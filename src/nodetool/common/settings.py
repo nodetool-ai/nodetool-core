@@ -15,6 +15,9 @@ Key components:
 - File locations:
   - Linux/Mac: ~/.config/nodetool/
   - Windows: %APPDATA%/nodetool/
+- Data locations:
+  - Linux/Mac: ~/.local/share/nodetool/
+  - Windows: %LOCALAPPDATA%/nodetool/
 
 Usage:
     settings, secrets = load_settings()
@@ -35,33 +38,71 @@ NOT_GIVEN = object()
 
 
 class SettingsModel(BaseModel):
-    FONT_PATH: str | None = Field(default=None, description="Location of font folder")
+    FONT_PATH: str | None = Field(
+        default=None,
+        description="Location of font folder used by image processing nodes like RenderText. "
+        "This should point to a directory containing TrueType (.ttf) or OpenType (.otf) fonts. "
+        "If not specified, the system will use default fonts.",
+    )
     COMFY_FOLDER: str | None = Field(
-        default=None, description="Location of ComfyUI folder"
+        default=None,
+        description="Location of ComfyUI folder for integration with ComfyUI models and workflows. "
+        "Set this to use models from your existing ComfyUI installation. "
+        "This allows nodetool to access and use models, checkpoints, and other resources "
+        "from your ComfyUI setup without duplicating files.",
     )
     CHROMA_PATH: str | None = Field(
-        default=None, description="Location of ChromaDB folder"
+        default=None,
+        description="Location of ChromaDB folder for vector database storage. "
+        "ChromaDB is used to store and retrieve embeddings for semantic search and RAG applications. "
+        "This can be any folder path - ChromaDB will create and manage the storage automatically. "
+        "In Docker deployments, this path is mounted as a volume to persist data between container restarts.",
     )
 
 
 class SecretsModel(BaseModel):
-    OPENAI_API_KEY: str | None = Field(default=None, description="OpenAI API key")
-    ANTHROPIC_API_KEY: str | None = Field(default=None, description="ANTHROPIC API key")
-    HF_TOKEN: str | None = Field(default=None, description="Hugging Face Token")
+    OPENAI_API_KEY: str | None = Field(
+        default=None,
+        description="OpenAI API key for accessing GPT models, DALL-E, and other OpenAI services",
+    )
+    ANTHROPIC_API_KEY: str | None = Field(
+        default=None,
+        description="Anthropic API key for accessing Claude models and other Anthropic services",
+    )
+    HF_TOKEN: str | None = Field(
+        default=None,
+        description="Hugging Face Token for accessing gated or private models on the Hugging Face Hub",
+    )
     REPLICATE_API_TOKEN: str | None = Field(
-        default=None, description="Replicate API Token"
+        default=None,
+        description="Replicate API Token for running models on Replicate's cloud infrastructure",
     )
-    AIME_USER: str | None = Field(default=None, description="Aime user")
-    AIME_API_KEY: str | None = Field(default=None, description="Aime API key")
-    GOOGLE_MAIL_USER: str | None = Field(default=None, description="Google mail user")
+    AIME_USER: str | None = Field(
+        default=None,
+        description="Aime user credential for authentication with Aime services",
+    )
+    AIME_API_KEY: str | None = Field(
+        default=None, description="Aime API key for accessing Aime AI services"
+    )
+    GOOGLE_MAIL_USER: str | None = Field(
+        default=None, description="Google mail user for email integration features"
+    )
     GOOGLE_APP_PASSWORD: str | None = Field(
-        default=None, description="Google app password"
+        default=None,
+        description="Google app password for secure authentication with Google services",
     )
-    GEMINI_API_KEY: str | None = Field(default=None, description="Gemini API key")
+    GEMINI_API_KEY: str | None = Field(
+        default=None,
+        description="Gemini API key for accessing Google's Gemini AI models",
+    )
     ELEVENLABS_API_KEY: str | None = Field(
-        default=None, description="ElevenLabs API key"
+        default=None,
+        description="ElevenLabs API key for high-quality text-to-speech services",
     )
-    FAL_API_KEY: str | None = Field(default=None, description="FAL API key")
+    FAL_API_KEY: str | None = Field(
+        default=None,
+        description="FAL API key for accessing FAL.ai's serverless AI infrastructure",
+    )
 
 
 def get_system_file_path(filename: str) -> Path:
