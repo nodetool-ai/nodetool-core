@@ -48,4 +48,4 @@ poetry run black .
 
 ## License
 
-[MIT License](LICENSE)
+[AGPL License](LICENSE)
