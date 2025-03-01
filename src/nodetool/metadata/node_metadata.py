@@ -1,4 +1,4 @@
-from typing import Any, List, Set
+from typing import Any, List, Set, Dict, Optional
 import json
 import os
 import importlib
@@ -17,6 +17,8 @@ from nodetool.workflows.base_node import (
     BaseNode,
     NODE_BY_TYPE,
 )
+import yaml
+from pathlib import Path
 
 
 # Configure logging
@@ -26,6 +28,22 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger(__name__)
+
+
+class PackageModel(BaseModel):
+    """Metadata model for a node package."""
+
+    name: str = Field(description="Unique name of the package")
+    description: str = Field(
+        description="Description of the package and its functionality"
+    )
+    version: str = Field(description="Version of the package (semver format)")
+    authors: List[str] = Field(description="Authors of the package")
+    packages: List[str] = Field(description="Namespaces provided by this package")
+    repo_id: str = Field(description="Repository ID in the format <owner>/<project>")
+    nodes: Optional[List[NodeMetadata]] = Field(
+        default_factory=list, description="List of nodes provided by this package"
+    )
 
 
 class NodeMetadata(BaseModel):
@@ -155,91 +173,3 @@ def get_node_classes_from_namespace(
             logger.info(f"Found {len(node_classes)} node classes in module {submodule}")
 
     return all_node_classes
-
-
-def main():
-    parser = argparse.ArgumentParser(description="Generate node metadata JSON file")
-    parser.add_argument(
-        "--namespaces",
-        nargs="+",
-        required=True,
-        help="List of namespaces to search for BaseNode subclasses",
-    )
-    parser.add_argument("--output", required=True, help="Path to output JSON file")
-    parser.add_argument(
-        "--include-invisible",
-        action="store_true",
-        help="Include invisible nodes in the output",
-    )
-    parser.add_argument(
-        "--verbose", "-v", action="store_true", help="Enable verbose output"
-    )
-
-    args = parser.parse_args()
-
-    # Set logging level based on verbosity
-    if args.verbose:
-        logger.setLevel(logging.DEBUG)
-        logger.debug("Verbose mode enabled")
-
-    # Collect all node classes from the specified namespaces
-    all_node_classes = []
-    for namespace in args.namespaces:
-        try:
-            node_classes = get_node_classes_from_namespace(namespace, args.verbose)
-            all_node_classes.extend(node_classes)
-            logger.info(
-                f"Found {len(node_classes)} total node classes in namespace {namespace} and its submodules"
-            )
-        except Exception as e:
-            logger.error(f"Error processing namespace {namespace}: {e}")
-
-    # Filter nodes by visibility if needed
-    if args.include_invisible:
-        filtered_node_classes = all_node_classes
-        logger.info(
-            f"Including all {len(filtered_node_classes)} nodes (including invisible ones)"
-        )
-    else:
-        filtered_node_classes = [
-            node_class for node_class in all_node_classes if node_class.is_visible()
-        ]
-        logger.info(
-            f"Including only {len(filtered_node_classes)} visible nodes out of {len(all_node_classes)} total nodes"
-        )
-
-    # Get metadata for all filtered node classes
-    node_metadata = []
-    for node_class in filtered_node_classes:
-        try:
-            metadata = node_class.metadata().model_dump()
-            node_metadata.append(metadata)
-            if args.verbose:
-                logger.debug(f"Added metadata for node: {node_class.__name__}")
-        except Exception as e:
-            logger.error(
-                f"Error getting metadata for node class {node_class.__name__}: {e}"
-            )
-
-    # Create the directory if it doesn't exist
-    os.makedirs(os.path.dirname(args.output), exist_ok=True)
-
-    # Write metadata to the specified output file
-    try:
-        with open(args.output, "w") as f:
-            json.dump(
-                node_metadata,
-                f,
-                cls=EnumEncoder,
-                indent=2,
-            )
-        logger.info(
-            f"Successfully wrote metadata for {len(node_metadata)} nodes to {args.output}"
-        )
-    except Exception as e:
-        logger.error(f"Error writing metadata to {args.output}: {e}")
-        sys.exit(1)
-
-
-if __name__ == "__main__":
-    main()
