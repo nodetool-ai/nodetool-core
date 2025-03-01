@@ -18,14 +18,6 @@ from nodetool.metadata.types import (
     SeabornPlotType,
     SeabornStatistic,
 )
-from nodetool.nodes.lib.audio.synthesis import (
-    Envelope,
-    FM_Synthesis,
-    Oscillator,
-    PinkNoise,
-    PitchEnvelopeCurve,
-    WhiteNoise,
-)
 from nodetool.workflows.base_node import BaseNode
 from nodetool.workflows.processing_context import ProcessingContext
 
@@ -933,6 +925,15 @@ class SynthesizerAgent(BaseNode):
     )
 
     async def process(self, context: ProcessingContext) -> AudioRef:
+        from nodetool.nodes.lib.audio.synthesis import (  # type: ignore
+            Envelope,
+            FM_Synthesis,
+            Oscillator,
+            PinkNoise,
+            PitchEnvelopeCurve,
+            WhiteNoise,
+        )
+
         messages = [
             Message(
                 role="system",
