@@ -1,5 +1,6 @@
 from enum import Enum, EnumMeta
 import os
+import sys
 import inspect
 import pkgutil
 from types import GenericAlias, UnionType
@@ -256,13 +257,15 @@ def create_dsl_modules(source_root: str, target_path: str, target_module_name: s
 
 
 if __name__ == "__main__":
+    # Add the src directory to the Python path to allow relative imports
+    sys.path.append("src")
+
     parser = argparse.ArgumentParser(
         description="Generate DSL modules from node definitions",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python -m nodetool.dsl.codegen --source nodetool.nodes --output ./generated_dsl
-  python -m nodetool.dsl.codegen -s nodetool.custom_nodes -o /path/to/output
+  python -m nodetool.dsl.codegen -s nodetool.nodes.my_package
         """,
     )
 
@@ -273,25 +276,36 @@ Examples:
         help="Source root module containing node definitions (default: nodetool.nodes)",
     )
 
-    parser.add_argument(
-        "-o",
-        "--output",
-        required=True,
-        help="Output directory path where DSL modules will be generated",
-    )
-
-    parser.add_argument(
-        "-m",
-        "--module-name",
-        required=True,
-        help="Module name to use in imports within generated code (e.g. 'custom.dsl')",
-    )
-
     args = parser.parse_args()
 
-    print(f"Generating DSL modules from {args.source} to {args.output}...")
-    print(f"Using module name: {args.module_name}")
+    # Validate that source is within nodetool.nodes
+    if not args.source.startswith("nodetool.nodes"):
+        raise ValueError(
+            f"Source module must be within nodetool.nodes namespace. Got: {args.source}"
+        )
 
-    create_dsl_modules(args.source, args.output, args.module_name)
+    # Infer output path and module name from source
+    source_parts = args.source.split(".")
+
+    # Extract namespace from source module (everything after nodetool.nodes)
+    if len(source_parts) > 2:
+        namespace = ".".join(source_parts[2:])
+    else:
+        namespace = ""
+
+    # Construct output path
+    output_path = os.path.join("src", "nodetool", "dsl")
+    if namespace:
+        output_path = os.path.join(output_path, namespace.replace(".", os.sep))
+
+    # Construct module name
+    module_name = "nodetool.dsl"
+    if namespace:
+        module_name = f"{module_name}.{namespace}"
+
+    print(f"Generating DSL modules from {args.source} to {output_path}...")
+    print(f"Using module name: {module_name}")
+
+    create_dsl_modules(args.source, output_path, module_name)
 
     print("DSL module generation complete!")

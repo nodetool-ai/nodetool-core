@@ -64,7 +64,7 @@ from nodetool.common.chroma_client import get_chroma_client
 
 
 from io import BytesIO
-from typing import IO, Any, AsyncGenerator, Literal, Union
+from typing import IO, Any, AsyncGenerator, Literal, Union, Callable
 from chromadb.api import ClientAPI
 from pickle import dumps, loads
 from chromadb.config import Settings
@@ -502,7 +502,7 @@ class ProcessingContext:
         provider: Provider,
         model: str,
         run_prediction_function: Callable[
-            [Prediction],
+            [Prediction, dict[str, str]],
             AsyncGenerator[PredictionResult | Prediction | ChatResponse, None],
         ],
         params: dict[str, Any] | None = None,
