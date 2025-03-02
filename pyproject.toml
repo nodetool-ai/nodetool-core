@@ -13,6 +13,7 @@ package-mode = true
 
 [tool.poetry.dependencies]
 python = "^3.10"
+
 # Core dependencies
 pydantic = "2.9.2"
 python-multipart = "0.0.17"
@@ -32,6 +33,7 @@ tqdm = "4.67.0"
 
 # Document processing dependencies
 bs4 = "0.0.2"
+langchain-text-splitters = "0.3.4"
 
 # AI dependencies
 # anthropic = "0.39.0"
