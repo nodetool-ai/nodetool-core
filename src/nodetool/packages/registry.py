@@ -297,10 +297,10 @@ class Registry:
         """
         packages = []
 
-        for yaml_file in self.packages_dir.glob("*.yaml"):
+        for yaml_file in self.packages_dir.glob("*.json"):
             try:
                 with open(yaml_file, "r") as f:
-                    package_data = yaml.safe_load(f)
+                    package_data = json.load(f)
                     packages.append(PackageModel(**package_data))
             except Exception as e:
                 print(f"Error loading package metadata from {yaml_file}: {e}")
