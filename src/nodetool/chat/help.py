@@ -30,16 +30,13 @@ from pydantic import BaseModel
 import chromadb
 
 from nodetool.common.settings import get_system_data_path
-from nodetool.providers.ollama.ollama_service import get_ollama_client
+from nodetool.chat.ollama_service import get_ollama_client
 from nodetool.common.environment import Environment
 from nodetool.metadata.types import (
     Message,
     MessageTextContent,
 )
-from nodetool.workflows.base_node import (
-    BaseNode,
-    get_registered_node_classes,
-)
+from nodetool.packages.registry import Registry
 from jsonschema import validators
 from chromadb.api.types import IncludeEnum
 
@@ -101,40 +98,19 @@ def index_documentation(collection: chromadb.Collection):
     """
     Index the documentation if it doesn't exist yet.
     """
-    import nodetool.nodes.aime
-    import nodetool.nodes.anthropic
 
-    # import nodetool.nodes.comfy
-    import nodetool.nodes.elevenlabs
-    import nodetool.nodes.fal
-    import nodetool.nodes.google
-    import nodetool.nodes.huggingface
-    import nodetool.nodes.lib
-    import nodetool.nodes.nodetool
-    import nodetool.nodes.ollama
-    import nodetool.nodes.openai
-    import nodetool.nodes.replicate
+    registry = Registry()
+    installed_packages = registry.list_installed_packages()
 
-    if not Environment.is_production():
-        import nodetool.nodes.chroma
-        import nodetool.nodes.apple
-
-    print("Indexing documentation")
-
-    def doc_for(c: type[BaseNode]):
-        return f"{c.get_title()}: {c.get_description()}"
-
-    def metadata_for(c: type[BaseNode]):
-        return {
-            "title": c.get_title(),
-            "node_type": c.get_node_type(),
-            "json_schema": json.dumps(c.get_json_schema()),
-        }
-
-    classes = get_registered_node_classes()
-    ids = [c.get_node_type() for c in classes]
-    docs = [doc_for(c) for c in classes]
-    metadata = [dict(metadata_for(c)) for c in classes]
+    ids = []
+    docs = []
+    metadata = []
+    for package in installed_packages:
+        if package.nodes:
+            for node in package.nodes:
+                ids.append(node.node_type)
+                docs.append(node.description)
+                metadata.append(node.model_dump())
 
     collection.add(ids, documents=docs, metadatas=metadata)  # type: ignore
     return collection
