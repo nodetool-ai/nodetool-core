@@ -29,6 +29,8 @@ Usage:
     registry.install_package("nodetool/my-package")
 """
 
+from enum import Enum
+import json
 import os
 import yaml
 import subprocess
@@ -37,9 +39,8 @@ import tomli
 import re
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field
 from urllib.parse import urlparse
-from tabulate import tabulate
 
 from nodetool.common.settings import get_system_file_path
 from nodetool.metadata.node_metadata import PackageModel
@@ -48,9 +49,17 @@ from nodetool.metadata.node_metadata import PackageModel
 # Constants
 PACKAGES_DIR = "packages"
 REGISTRY_URL = (
-    "https://raw.githubusercontent.com/nodetool/package-registry/main/packages/"
+    "https://raw.githubusercontent.com/nodetool-ai/nodetool-registry/main/index.json"
 )
 DEFAULT_REGISTRY_REPO = "https://github.com/nodetool/package-registry.git"
+
+
+def json_serializer(obj: Any) -> dict:
+    if isinstance(obj, BaseModel):
+        return obj.model_dump()
+    elif isinstance(obj, Enum):
+        return obj.value
+    raise TypeError("Type not serializable")
 
 
 def validate_repo_id(repo_id: str) -> Tuple[bool, Optional[str]]:
@@ -122,8 +131,9 @@ def get_package_metadata_from_github(github_repo: str) -> Optional[PackageModel]
     repo_id = f"{path_parts[0]}/{path_parts[1]}"
 
     # Get the pyproject.toml file from the GitHub repository
-    pyproject_url = f"{github_repo}/pyproject.toml"
-    response = requests.get(pyproject_url)
+    raw_url = f"https://raw.githubusercontent.com/{repo_id}/main/pyproject.toml"
+
+    response = requests.get(raw_url)
     response.raise_for_status()
     pyproject_data = tomli.loads(response.text)
 
@@ -141,7 +151,6 @@ def get_package_metadata_from_github(github_repo: str) -> Optional[PackageModel]
         description=project_data.get("description", ""),
         version=project_data.get("version", "0.1.0"),
         authors=project_data.get("authors", []),
-        packages=project_data.get("packages", []),
         repo_id=repo_id,
     )
 
@@ -189,7 +198,7 @@ def extract_node_metadata_from_package(
     package.nodes = []
 
     # Process each namespace provided by the package
-    for namespace in package.packages:
+    for namespace in package.namespaces:
         try:
             if verbose:
                 print(f"Searching for nodes in namespace: {namespace}")
@@ -213,8 +222,17 @@ def extract_node_metadata_from_package(
 
 
 class PackageInfo(BaseModel):
+    """
+    Package information model for nodetool.
+    This is the model for the package index in the registry.
+    """
+
     name: str
+    description: str
     repo_id: str = Field(description="Repository ID in the format <owner>/<project>")
+    namespaces: List[str] = Field(
+        default_factory=list, description="Namespaces provided by this package"
+    )
 
 
 class Registry:
@@ -261,8 +279,8 @@ class Registry:
         Returns:
             str: The filename for the package's metadata file
         """
-        # Replace / with -- to create a valid filename
-        return f"{repo_id.replace('/', '--')}.yaml"
+        owner, project = repo_id.split("/")
+        return f"{project}.json"
 
     def list_installed_packages(self) -> List[PackageModel]:
         """
@@ -303,16 +321,11 @@ class Registry:
         Note:
             Returns an empty list if the registry cannot be reached or the index cannot be parsed.
         """
-        try:
-            # Get the list of packages from the registry index
-            response = requests.get(f"{self.registry_url}index.json")
-            response.raise_for_status()
-            packages_data = response.json()["packages"]
+        response = requests.get(self.registry_url)
+        response.raise_for_status()
+        packages_data = response.json()["packages"]
 
-            return [PackageInfo(**package) for package in packages_data]
-        except Exception as e:
-            print(f"Error fetching package list from registry: {e}")
-            return []
+        return [PackageInfo(**package) for package in packages_data]
 
     def get_package_metadata(
         self,
@@ -336,26 +349,31 @@ class Registry:
         package_file = self.packages_dir / self._get_package_filename(repo_id)
 
         if package_file.exists():
-            try:
-                with open(package_file, "r") as f:
-                    package_data = yaml.safe_load(f)
-                    return PackageModel(**package_data)
-            except Exception as e:
-                print(f"Error loading package metadata from {package_file}: {e}")
-                return None
+            with open(package_file, "r") as f:
+                package_data = json.load(f)
+                return PackageModel(**package_data)
         else:
             return None
 
-    def install_package(self, repo_id: str) -> bool:
+    def get_package_info(self, repo_id: str) -> Optional[PackageInfo]:
+        """
+        Get package info for a specific package from the local package registry.
+        """
+        all_packages = self.list_available_packages()
+        for available_package in all_packages:
+            if available_package.repo_id == repo_id:
+                return available_package
+        return None
+
+    def install_package(self, repo_id: str) -> None:
         """
         Install a package by repository ID.
 
         This method:
         1. Validates the repo_id format
-        2. Fetches package metadata from the remote repo
-        3. Saves the metadata locally
-        4. Installs the package using the appropriate package manager
-        5. Finds all node classes in the package and adds their metadata to the package
+        2. Installs the package using the appropriate package manager
+        3. Finds all node classes in the package and adds their metadata to the package
+        4. Saves the metadata locally
 
         Args:
             repo_id: Repository ID in the format <owner>/<project>
@@ -371,23 +389,28 @@ class Registry:
         if not is_valid:
             raise ValueError(error_msg)
 
-        # Try to construct GitHub URL from repo_id
-        github_url = f"https://github.com/{repo_id}"
-        try:
-            package = get_package_metadata_from_github(github_url)
-            if not package:
-                print(f"Package {repo_id} not found on GitHub")
-                return False
-        except Exception as e:
-            print(f"Error fetching package metadata from GitHub for {repo_id}: {e}")
-            return False
+        # find package info from registry
+        package_info = self.get_package_info(repo_id)
+        if not package_info:
+            raise ValueError(f"Package {repo_id} not found in registry")
 
         # Install package via package manager
         try:
             # Use github_repo from package if available, otherwise construct from repo_id
-            install_url = f"https://github.com/{repo_id}"
+            install_url = f"git+https://github.com/{repo_id}"
             subprocess.check_call([*self.pkg_mgr, "install", install_url])
             print(f"Successfully installed package {repo_id}")
+
+            # Try to get metadata from the installed package
+            package = get_package_metadata_from_pip(repo_id)
+            if not package:
+                raise ValueError(f"Failed to get pip metadata for {repo_id}")
+
+            package_info = self.get_package_info(repo_id)
+            if not package_info:
+                raise ValueError(f"Failed to get package info for {repo_id}")
+
+            package.namespaces = package_info.namespaces
 
             # Extract node metadata from the package
             package = extract_node_metadata_from_package(package, verbose=True)
@@ -395,20 +418,19 @@ class Registry:
             # Save updated package metadata with nodes
             package_file = self.packages_dir / self._get_package_filename(repo_id)
             with open(package_file, "w") as f:
-                yaml.dump(package.model_dump(), f)
+                json.dump(package.model_dump(), f, indent=4, default=json_serializer)
 
             # We ensure package.nodes is never None in extract_node_metadata_from_package,
             # but the type checker doesn't know that, so we check again here
             node_count = len(package.nodes) if package.nodes is not None else 0
             print(f"Saved metadata for {node_count} nodes from package {repo_id}")
-            return True
         except subprocess.CalledProcessError as e:
             print(f"Error installing package {repo_id}: {e}")
             # Clean up metadata file if installation failed
             package_file = self.packages_dir / self._get_package_filename(repo_id)
             if package_file.exists():
                 package_file.unlink()
-            return False
+            raise e
 
     def uninstall_package(self, repo_id: str) -> bool:
         """
@@ -515,3 +537,49 @@ class Registry:
         except subprocess.CalledProcessError as e:
             print(f"Error updating package {repo_id}: {e}")
             return False
+
+
+def get_package_metadata_from_pip(repo_id: str) -> Optional[PackageModel]:
+    """
+    Get package metadata from an installed pip package.
+
+    This function uses pip's metadata API to extract information about an installed package
+    and converts it to a PackageModel instance.
+
+    Args:
+        repo_id: Repository ID in the format <owner>/<project>
+
+    Returns:
+        PackageModel: A populated PackageModel instance if successful
+        None: If metadata could not be retrieved or parsed
+    """
+    # Use pip's metadata API to get package information
+    import importlib.metadata as metadata
+
+    is_valid, error_msg = validate_repo_id(repo_id)
+    if not is_valid:
+        raise ValueError(error_msg)
+
+    owner, project = repo_id.split("/")
+
+    # Get package distribution
+    dist = metadata.distribution(project)
+
+    # Extract metadata
+    metadata_dict = {k: v for k, v in dist.metadata.items()}  # type: ignore
+
+    # Parse author information
+    authors = []
+    if "Author" in metadata_dict:
+        authors.append(metadata_dict["Author"])
+    elif "Author-email" in metadata_dict:
+        authors.append(metadata_dict["Author-email"])
+
+    return PackageModel(
+        name=project,
+        description=metadata_dict.get("Summary", ""),
+        version=metadata_dict.get("Version", "0.1.0"),
+        authors=authors,
+        namespaces=[],
+        repo_id=repo_id,
+    )

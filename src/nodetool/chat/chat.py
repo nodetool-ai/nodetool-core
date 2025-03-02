@@ -63,6 +63,7 @@ from nodetool.metadata.types import (
     ColumnDef,
     FunctionModel,
     Message,
+    OpenAIModel,
     Provider,
     ToolCall,
 )
@@ -71,16 +72,33 @@ from nodetool.metadata.types import (
     MessageImageContent,
     MessageTextContent,
 )
-from nodetool.providers.ollama.ollama_service import (
+from nodetool.chat.ollama_service import (
     get_ollama_client,
     get_ollama_models,
 )
-from nodetool.providers.openai.prediction import get_openai_models
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.chat.tools import ListDirectoryTool, ReadFileTool, WriteFileTool
 import anthropic
 import readline
 import os
+
+
+async def get_openai_models():
+    env = Environment.get_environment()
+    api_key = env.get("OPENAI_API_KEY")
+    assert api_key, "OPENAI_API_KEY is not set"
+
+    client = openai.AsyncClient(api_key=api_key)
+    res = await client.models.list()
+    return [
+        OpenAIModel(
+            id=model.id,
+            object=model.object,
+            created=model.created,
+            owned_by=model.owned_by,
+        )
+        for model in res.data
+    ]
 
 
 AVAILABLE_CHAT_TOOLS = [

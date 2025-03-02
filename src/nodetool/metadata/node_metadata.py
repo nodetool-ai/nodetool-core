@@ -58,7 +58,9 @@ class PackageModel(BaseModel):
     )
     version: str = Field(description="Version of the package (semver format)")
     authors: List[str] = Field(description="Authors of the package")
-    packages: List[str] = Field(description="Namespaces provided by this package")
+    namespaces: List[str] = Field(
+        default_factory=list, description="Namespaces provided by this package"
+    )
     repo_id: str = Field(description="Repository ID in the format <owner>/<project>")
     nodes: Optional[List[NodeMetadata]] = Field(
         default_factory=list, description="List of nodes provided by this package"

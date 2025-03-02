@@ -1,5 +1,6 @@
 # CLI Implementation
 import sys
+import traceback
 import click
 from tabulate import tabulate
 
@@ -83,7 +84,13 @@ def install_package_cmd(repo_id):
             show_percent=True,
         ) as bar:
             bar.update(10)  # Start progress
-            success = registry.install_package(repo_id)
+            try:
+                registry.install_package(repo_id)
+                success = True
+            except Exception as e:
+                success = False
+                traceback.print_exc()
+                raise e
             bar.update(90)  # Complete progress
 
         if success:
@@ -197,8 +204,8 @@ def package_info(repo_id):
         if package.authors:
             click.echo(f"👤 Authors: {', '.join(package.authors)}")
 
-        if package.packages:
-            click.echo(f"📚 Namespaces: {', '.join(package.packages)}")
+        if package.namespaces:
+            click.echo(f"📚 Namespaces: {', '.join(package.namespaces)}")
 
         if package.nodes:
             click.echo(f"🧩 Nodes ({len(package.nodes)}):")
