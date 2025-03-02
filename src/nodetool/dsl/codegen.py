@@ -6,13 +6,26 @@ from types import GenericAlias, UnionType
 from typing import Any, Union
 import importlib
 import shutil
+import argparse
 
 from nodetool.metadata.utils import is_enum_type
 from nodetool.workflows.base_node import BaseNode
 
 
 """
-This script generates DSL modules based on all nodes in the source root module.
+Code Generation Module for NodeTool DSL
+
+This module provides functionality to automatically generate Domain Specific Language (DSL)
+modules based on node definitions in the source module. It creates Python classes that act as
+wrappers around the base node classes, providing a more intuitive and user-friendly interface
+for connecting nodes in a graph.
+
+The generated DSL classes maintain the same structure and field definitions as the original
+node classes but add additional type hints and functionality to make them work seamlessly
+in a graph-based workflow environment.
+
+Typical usage:
+    create_dsl_modules("nodetool.nodes", "nodetool.dsl")
 """
 
 
@@ -20,12 +33,15 @@ def create_python_module_file(filename: str, content: str) -> None:
     """
     Create a Python module file with the given filename and content.
 
+    This function creates the necessary directory structure if it doesn't exist
+    and writes the provided content to the specified file.
+
     Args:
-      filename (str): The path and name of the file to be created.
-      content (str): The content to be written to the file.
+        filename (str): The path and name of the file to be created.
+        content (str): The content to be written to the file.
 
     Returns:
-      None
+        None
     """
     os.makedirs(os.path.dirname(filename), exist_ok=True)
     with open(filename, "w") as file:
@@ -34,14 +50,23 @@ def create_python_module_file(filename: str, content: str) -> None:
 
 def type_to_string(field_type: type) -> str:
     """
-    Converts a Python type to a string representation.
+    Converts a Python type to its string representation.
+
+    This function handles various Python types including Union types, generic types
+    (like List, Dict, etc.), and regular types, converting them to their string
+    representation for use in generated code.
 
     Args:
-      field_type (type): The Python type to convert.
-      enum_name (str): The name of the enum type if the field type is an enum.
+        field_type (type): The Python type to convert.
 
     Returns:
-      str: The string representation of the type.
+        str: The string representation of the type that can be used in generated code.
+
+    Examples:
+        >>> type_to_string(list[str])
+        'list[str]'
+        >>> type_to_string(Union[int, str])
+        'int | str'
     """
     if isinstance(field_type, UnionType):
         return str(field_type)
@@ -70,13 +95,26 @@ def field_default(default_value: Any, enum_name: str | None = None) -> str:
     """
     Returns a string representation of the default value for a field.
 
+    This function handles different types of default values, including None values
+    and enum values, converting them to their string representation for use in
+    generated code.
+
     Args:
-      default_value: The default value of the field.
-      enum_name: The name of the enum type if the default value is an enum.
+        default_value (Any): The default value of the field.
+        enum_name (str | None, optional): The name of the enum type if the default
+                                         value is an enum. Defaults to None.
 
     Returns:
-      str: The string representation of the default value.
+        str: The string representation of the default value that can be used in
+             generated code.
 
+    Examples:
+        >>> field_default(None)
+        'None'
+        >>> field_default("test")
+        "'test'"
+        >>> field_default(42)
+        '42'
     """
     if default_value is None:
         return "None"
@@ -88,13 +126,23 @@ def field_default(default_value: Any, enum_name: str | None = None) -> str:
 def generate_class_source(node_cls: type[BaseNode]) -> str:
     """
     Generate the source code for a graph node class based on the provided node class.
-    This class acts as a DSL wrapper for easier connection between nodes.
+
+    This function creates a DSL wrapper class that inherits from GraphNode and maintains
+    the same structure and field definitions as the original node class. It handles
+    special cases like enum types and adds appropriate type hints and field definitions.
+
+    The generated class acts as a DSL wrapper for easier connection between nodes in a
+    graph-based workflow.
 
     Args:
-      node_cls (type[BaseNode]): The node class to generate the source code for.
+        node_cls (type[BaseNode]): The node class to generate the source code for.
 
     Returns:
-      str: The generated source code for the class.
+        str: The generated source code for the class as a string.
+
+    Note:
+        The generated class will have the same name as the original class but will
+        inherit from GraphNode instead of BaseNode.
     """
     imports = ""
     class_body = f"class {node_cls.__name__}(GraphNode):\n"
@@ -138,33 +186,46 @@ def generate_class_source(node_cls: type[BaseNode]) -> str:
     return imports + "\n" + class_body
 
 
-def create_dsl_modules(source_root: str, target_root: str):
+def create_dsl_modules(source_root: str, target_path: str, target_module_name: str):
     """
-    Generate DSL modules based on the source root and target root.
+    Generate DSL modules based on node classes found in the source module.
+
+    This function walks through all packages and modules in the source root,
+    finds all node classes (subclasses of BaseNode), and generates corresponding
+    DSL wrapper classes in the target directory. It maintains the same module
+    hierarchy as the source.
 
     Args:
-      source_root (str): The source root module name.
-      target_root (str): The target root module name.
+        source_root (str): The source root module name (e.g., "nodetool.nodes").
+        target_path (str): The filesystem path where the target modules should be generated.
+        target_module_name (str): The module name to use in imports within generated code.
+
+    Example:
+        >>> create_dsl_modules("nodetool.nodes", "/path/to/output", "custom.dsl")
+        # This will generate DSL modules in the specified output directory
     """
     source_root_module = importlib.import_module(source_root)
-    target_root_module = importlib.import_module(target_root)
-    target_root_path = str(target_root_module.__path__[0])
 
-    # Remove existing target directory
-    # shutil.rmtree(target_root_path)
+    # Create the target directory if it doesn't exist
+    os.makedirs(target_path, exist_ok=True)
 
     for _, module_name, _ in pkgutil.walk_packages(
         source_root_module.__path__, prefix=source_root_module.__name__ + "."
     ):
-        target_module_name: str = module_name.replace(source_root, target_root)
-        target_module_path = target_module_name.replace(
-            target_root_module.__name__ + ".", ""
-        ).replace(".", "/")
+        # Get the relative part of the module path
+        relative_module = module_name[len(source_root) + 1 :]
+        # Convert to filesystem path
+        relative_path = relative_module.replace(".", "/")
 
-        full_target_path = os.path.join(target_root_path, target_module_path)
-        print(f"Removing {full_target_path}")
+        # Create the full target path
+        full_target_path = os.path.join(target_path, relative_path)
+        print(f"Processing {relative_module} -> {full_target_path}")
+
         if os.path.exists(full_target_path):
-            shutil.rmtree(full_target_path)
+            if os.path.isdir(full_target_path):
+                shutil.rmtree(full_target_path)
+            else:
+                os.remove(full_target_path)
 
         module = importlib.import_module(module_name)
         source_code = ""
@@ -178,11 +239,9 @@ def create_dsl_modules(source_root: str, target_root: str):
 
         # Check if the original module is an __init__.py file
         if module.__file__.endswith("__init__.py"):  # type: ignore
-            target_path = os.path.join(
-                target_root_path, target_module_path, "__init__.py"
-            )
+            target_file_path = os.path.join(full_target_path, "__init__.py")
         else:
-            target_path = os.path.join(target_root_path, target_module_path) + ".py"
+            target_file_path = full_target_path + ".py"
 
         source_code = (
             "from pydantic import BaseModel, Field\n"
@@ -192,9 +251,47 @@ def create_dsl_modules(source_root: str, target_root: str):
             "from nodetool.dsl.graph import GraphNode\n\n"
         ) + source_code
 
-        print(f"Writing {target_path}")
-        create_python_module_file(target_path, source_code)
+        print(f"Writing {target_file_path}")
+        create_python_module_file(target_file_path, source_code)
 
 
 if __name__ == "__main__":
-    create_dsl_modules("nodetool.nodes", "nodetool.dsl")
+    parser = argparse.ArgumentParser(
+        description="Generate DSL modules from node definitions",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  python -m nodetool.dsl.codegen --source nodetool.nodes --output ./generated_dsl
+  python -m nodetool.dsl.codegen -s nodetool.custom_nodes -o /path/to/output
+        """,
+    )
+
+    parser.add_argument(
+        "-s",
+        "--source",
+        default="nodetool.nodes",
+        help="Source root module containing node definitions (default: nodetool.nodes)",
+    )
+
+    parser.add_argument(
+        "-o",
+        "--output",
+        required=True,
+        help="Output directory path where DSL modules will be generated",
+    )
+
+    parser.add_argument(
+        "-m",
+        "--module-name",
+        required=True,
+        help="Module name to use in imports within generated code (e.g. 'custom.dsl')",
+    )
+
+    args = parser.parse_args()
+
+    print(f"Generating DSL modules from {args.source} to {args.output}...")
+    print(f"Using module name: {args.module_name}")
+
+    create_dsl_modules(args.source, args.output, args.module_name)
+
+    print("DSL module generation complete!")
