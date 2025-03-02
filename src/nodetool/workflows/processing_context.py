@@ -501,6 +501,10 @@ class ProcessingContext:
         node_id: str,
         provider: Provider,
         model: str,
+        run_prediction_function: Callable[
+            [Prediction],
+            AsyncGenerator[PredictionResult | Prediction | ChatResponse, None],
+        ],
         params: dict[str, Any] | None = None,
         data: Any = None,
     ) -> Any:
@@ -511,17 +515,15 @@ class ProcessingContext:
             node_id (str): The ID of the node making the prediction.
             provider (Provider): The provider to use for the prediction.
             model (str): The model to use for the prediction.
+            run_prediction_function (Callable[[Prediction], AsyncGenerator[PredictionResult | Prediction | ChatResponse, None]]): A function to run the prediction.
             params (dict[str, Any] | None, optional): Parameters for the prediction. Defaults to None.
             data (Any, optional): Data for the prediction. Defaults to None.
-
         Returns:
             Any: The prediction result.
 
         Raises:
             ValueError: If the prediction did not return a result.
         """
-        from nodetool.providers.run_prediction import run_prediction
-
         prediction = await self._prepare_prediction(
             node_id, provider, model, params, data
         )
@@ -539,6 +541,10 @@ class ProcessingContext:
         node_id: str,
         provider: Provider,
         model: str,
+        run_prediction_function: Callable[
+            [Prediction],
+            AsyncGenerator[PredictionResult | Prediction | ChatResponse, None],
+        ],
         params: dict[str, Any] | None = None,
         data: Any = None,
     ) -> AsyncGenerator[PredictionResult | Prediction | ChatResponse, None]:
@@ -549,19 +555,18 @@ class ProcessingContext:
             node_id (str): The ID of the node making the prediction.
             provider (Provider): The provider to use for the prediction.
             model (str): The model to use for the prediction.
+            run_prediction_function (Callable[[Prediction], AsyncGenerator[PredictionResult | Prediction | ChatResponse, None]]): A function to run the prediction.
             params (dict[str, Any] | None, optional): Parameters for the prediction. Defaults to None.
             data (Any, optional): Data for the prediction. Defaults to None.
 
         Returns:
             AsyncGenerator[PredictionResult | Prediction | ChatResponse, None]: An async generator yielding prediction results.
         """
-        from nodetool.providers.run_prediction import run_prediction
-
         prediction = await self._prepare_prediction(
             node_id, provider, model, params, data
         )
 
-        async for msg in run_prediction(prediction, self.environment):
+        async for msg in run_prediction_function(prediction, self.environment):
             yield msg
 
     async def paginate_assets(
