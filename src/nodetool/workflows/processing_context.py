@@ -13,7 +13,6 @@ import joblib
 import base64
 import PIL.Image
 import numpy as np
-from ollama import ChatResponse
 import pandas as pd
 from pydub import AudioSegment
 from starlette.datastructures import URL
@@ -24,9 +23,7 @@ from nodetool.types.asset import Asset, AssetCreateRequest, AssetList
 from nodetool.types.chat import (
     MessageList,
     MessageCreateRequest,
-    TaskCreateRequest,
     TaskList,
-    TaskUpdateRequest,
 )
 from nodetool.types.graph import Node
 from nodetool.types.job import Job, JobUpdate
@@ -67,7 +64,6 @@ from io import BytesIO
 from typing import IO, Any, AsyncGenerator, Literal, Union, Callable
 from chromadb.api import ClientAPI
 from pickle import dumps, loads
-from chromadb.config import Settings
 import platform
 
 
@@ -503,7 +499,7 @@ class ProcessingContext:
         model: str,
         run_prediction_function: Callable[
             [Prediction, dict[str, str]],
-            AsyncGenerator[PredictionResult | Prediction | ChatResponse, None],
+            AsyncGenerator[Any, None],
         ],
         params: dict[str, Any] | None = None,
         data: Any = None,
@@ -528,7 +524,7 @@ class ProcessingContext:
             node_id, provider, model, params, data
         )
 
-        async for msg in run_prediction(prediction, self.environment):
+        async for msg in run_prediction_function(prediction, self.environment):
             if isinstance(msg, PredictionResult):
                 return msg.decode_content()
             elif isinstance(msg, Prediction):
@@ -542,12 +538,12 @@ class ProcessingContext:
         provider: Provider,
         model: str,
         run_prediction_function: Callable[
-            [Prediction],
-            AsyncGenerator[PredictionResult | Prediction | ChatResponse, None],
+            [Prediction, dict[str, str]],
+            AsyncGenerator[Any, None],
         ],
         params: dict[str, Any] | None = None,
         data: Any = None,
-    ) -> AsyncGenerator[PredictionResult | Prediction | ChatResponse, None]:
+    ) -> AsyncGenerator[Any, None]:
         """
         Stream prediction results from a third-party provider.
 

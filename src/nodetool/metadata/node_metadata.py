@@ -8,6 +8,7 @@ import pkgutil
 import inspect
 import logging
 from functools import lru_cache
+from pydantic import BaseModel, Field
 from nodetool.common.environment import Environment
 from nodetool.workflows.property import Property
 from nodetool.metadata.types import OutputSlot, HuggingFaceModel
@@ -30,22 +31,6 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-class PackageModel(BaseModel):
-    """Metadata model for a node package."""
-
-    name: str = Field(description="Unique name of the package")
-    description: str = Field(
-        description="Description of the package and its functionality"
-    )
-    version: str = Field(description="Version of the package (semver format)")
-    authors: List[str] = Field(description="Authors of the package")
-    packages: List[str] = Field(description="Namespaces provided by this package")
-    repo_id: str = Field(description="Repository ID in the format <owner>/<project>")
-    nodes: Optional[List[NodeMetadata]] = Field(
-        default_factory=list, description="List of nodes provided by this package"
-    )
-
-
 class NodeMetadata(BaseModel):
     """
     Metadata for a node.
@@ -62,6 +47,22 @@ class NodeMetadata(BaseModel):
     recommended_models: list[HuggingFaceModel]
     basic_fields: list[str]
     is_dynamic: bool
+
+
+class PackageModel(BaseModel):
+    """Metadata model for a node package."""
+
+    name: str = Field(description="Unique name of the package")
+    description: str = Field(
+        description="Description of the package and its functionality"
+    )
+    version: str = Field(description="Version of the package (semver format)")
+    authors: List[str] = Field(description="Authors of the package")
+    packages: List[str] = Field(description="Namespaces provided by this package")
+    repo_id: str = Field(description="Repository ID in the format <owner>/<project>")
+    nodes: Optional[List[NodeMetadata]] = Field(
+        default_factory=list, description="List of nodes provided by this package"
+    )
 
 
 class EnumEncoder(json.JSONEncoder):
