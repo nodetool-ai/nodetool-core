@@ -50,6 +50,7 @@ ffmpeg-python = "0.2.0"
 pillow = "11.0.0"
 imageio = "2.36.0"
 pydub = "0.25.1"
+opencv-python-headless = "4.10.0.84"
 
 # Data dependencies
 numpy = "1.26.4"
