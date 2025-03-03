@@ -44,15 +44,23 @@ def list_packages(available):
 
 @cli.command("install")
 @click.argument("repo_id")
-def install_package_cmd(repo_id):
-    """Install a package by repository ID (owner/project)."""
+@click.option(
+    "--local",
+    "-l",
+    type=click.Path(exists=True, file_okay=False, dir_okay=True),
+    help="Install from a local directory instead of the registry",
+)
+def install_package_cmd(repo_id, local):
+    """Install a package by repository ID (owner/project) or from a local directory."""
     registry = Registry()
 
     try:
-        is_valid, error_msg = validate_repo_id(repo_id)
-        if not is_valid:
-            click.echo(f"Error: {error_msg}", err=True)
-            sys.exit(1)
+        # If installing from local path, skip repo_id validation
+        if not local:
+            is_valid, error_msg = validate_repo_id(repo_id)
+            if not is_valid:
+                click.echo(f"Error: {error_msg}", err=True)
+                sys.exit(1)
 
         with click.progressbar(
             length=100,
@@ -62,7 +70,7 @@ def install_package_cmd(repo_id):
         ) as bar:
             bar.update(10)  # Start progress
             try:
-                registry.install_package(repo_id)
+                registry.install_package(repo_id, local_path=local)
                 success = True
             except Exception as e:
                 success = False

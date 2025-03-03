@@ -412,18 +412,19 @@ class Registry:
             print(f"Error getting commit hash for {repo_id}: {e}")
             return None
 
-    def install_package(self, repo_id: str) -> None:
+    def install_package(self, repo_id: str, local_path: Optional[str] = None) -> None:
         """
-        Install a package by repository ID.
+        Install a package by repository ID or from a local path.
 
         This method:
-        1. Validates the repo_id format
+        1. Validates the repo_id format (if not installing from local path)
         2. Installs the package using the appropriate package manager
         3. Finds all node classes in the package and adds their metadata to the package
         4. Saves the metadata locally
 
         Args:
             repo_id: Repository ID in the format <owner>/<project>
+            local_path: Optional path to a local package directory for development/testing
 
         Returns:
             bool: True if installation was successful, False otherwise
@@ -431,23 +432,28 @@ class Registry:
         Note:
             If installation fails, any created metadata file is removed.
         """
-        # Validate repo_id format
-        is_valid, error_msg = validate_repo_id(repo_id)
-        if not is_valid:
-            raise ValueError(error_msg)
+        if local_path:
+            # For local installation, use the local path directly
+            install_path = local_path
+            # Use the last directory name as the project name
+            project_name = os.path.basename(os.path.normpath(local_path))
+            repo_id = f"local/{project_name}"
+        else:
+            # Validate repo_id format for remote installation
+            is_valid, error_msg = validate_repo_id(repo_id)
+            if not is_valid:
+                raise ValueError(error_msg)
 
-        # find package info from registry
-        package_info = self.get_package_info(repo_id)
-        if not package_info:
-            raise ValueError(f"Package {repo_id} not found in registry")
+            # find package info from registry
+            package_info = self.get_package_info(repo_id)
+            if not package_info:
+                raise ValueError(f"Package {repo_id} not found in registry")
 
-        # Get the commit hash before installation
-        git_hash = self.get_git_commit_hash(repo_id)
+            install_path = f"git+https://github.com/{repo_id}"
 
         try:
-            # Use github_repo from package if available, otherwise construct from repo_id
-            install_url = f"git+https://github.com/{repo_id}"
-            subprocess.check_call([*self.pkg_mgr, "install", install_url])
+            # Install the package
+            subprocess.check_call([*self.pkg_mgr, "install", install_path])
             print(f"Successfully installed package {repo_id}")
 
             # Try to get metadata from the installed package
@@ -455,13 +461,32 @@ class Registry:
             if not package:
                 raise ValueError(f"Failed to get pip metadata for {repo_id}")
 
-            package_info = self.get_package_info(repo_id)
-            if not package_info:
-                raise ValueError(f"Failed to get package info for {repo_id}")
+            # For local installation, try to get namespaces from pyproject.toml
+            if local_path:
+                try:
+                    with open(os.path.join(local_path, "pyproject.toml"), "rb") as f:
+                        pyproject_data = tomli.load(f)
+                        project_data = pyproject_data.get("project", {})
+                        if not project_data:
+                            project_data = pyproject_data.get("tool", {}).get(
+                                "poetry", {}
+                            )
+                        package.namespaces = project_data.get("namespaces", [])
+                except Exception as e:
+                    print(
+                        f"Warning: Could not read namespaces from pyproject.toml: {e}"
+                    )
+                    package.namespaces = []
+            else:
+                # For remote installation, get namespaces from registry
+                package_info = self.get_package_info(repo_id)
+                if not package_info:
+                    raise ValueError(f"Failed to get package info for {repo_id}")
+                package.namespaces = package_info.namespaces
 
-            package.namespaces = package_info.namespaces
-            # Store the git hash in the package metadata
-            package.git_hash = git_hash
+            # Store the git hash for remote installations
+            if not local_path:
+                package.git_hash = self.get_git_commit_hash(repo_id)
 
             # Extract node metadata from the package
             package = extract_node_metadata_from_package(package, verbose=True)
