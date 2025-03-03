@@ -286,7 +286,7 @@ class Registry:
         """
         List all installed packages.
 
-        This method scans the local packages directory for YAML metadata files
+        This method scans the local packages directory for JSON metadata files
         and loads them into PackageModel instances.
 
         Returns:
@@ -297,15 +297,29 @@ class Registry:
         """
         packages = []
 
-        for yaml_file in self.packages_dir.glob("*.json"):
+        for json_file in self.packages_dir.glob("*.json"):
             try:
-                with open(yaml_file, "r") as f:
+                with open(json_file, "r") as f:
                     package_data = json.load(f)
-                    packages.append(PackageModel(**package_data))
+                    package = PackageModel(**package_data)
+                    packages.append(package)
             except Exception as e:
-                print(f"Error loading package metadata from {yaml_file}: {e}")
+                print(f"Error loading package metadata from {json_file}: {e}")
 
         return packages
+
+    def print_installed_packages(self) -> None:
+        """
+        Print information about all installed packages.
+        """
+        packages = self.list_installed_packages()
+        for package in packages:
+            hash_info = (
+                f" ({package.git_hash[:8]})"
+                if hasattr(package, "git_hash") and package.git_hash
+                else ""
+            )
+            print(f"{package.repo_id}{hash_info}: {package.description}")
 
     def list_available_packages(self) -> List[PackageInfo]:
         """
@@ -365,6 +379,26 @@ class Registry:
                 return available_package
         return None
 
+    def get_git_commit_hash(self, repo_id: str) -> Optional[str]:
+        """
+        Get the latest commit hash from a GitHub repository.
+
+        Args:
+            repo_id: Repository ID in the format <owner>/<project>
+
+        Returns:
+            str: The commit hash if successful
+            None: If the request fails
+        """
+        api_url = f"https://api.github.com/repos/{repo_id}/commits/main"
+        try:
+            response = requests.get(api_url)
+            response.raise_for_status()
+            return response.json()["sha"]
+        except Exception as e:
+            print(f"Error getting commit hash for {repo_id}: {e}")
+            return None
+
     def install_package(self, repo_id: str) -> None:
         """
         Install a package by repository ID.
@@ -394,7 +428,9 @@ class Registry:
         if not package_info:
             raise ValueError(f"Package {repo_id} not found in registry")
 
-        # Install package via package manager
+        # Get the commit hash before installation
+        git_hash = self.get_git_commit_hash(repo_id)
+
         try:
             # Use github_repo from package if available, otherwise construct from repo_id
             install_url = f"git+https://github.com/{repo_id}"
@@ -411,6 +447,8 @@ class Registry:
                 raise ValueError(f"Failed to get package info for {repo_id}")
 
             package.namespaces = package_info.namespaces
+            # Store the git hash in the package metadata
+            package.git_hash = git_hash
 
             # Extract node metadata from the package
             package = extract_node_metadata_from_package(package, verbose=True)
@@ -468,7 +506,7 @@ class Registry:
 
         # Uninstall package via package manager
         try:
-            subprocess.check_call([*self.pkg_mgr, "uninstall", "-y", package.name])
+            subprocess.check_call([*self.pkg_mgr, "uninstall", package.name, "--yes"])
             print(f"Successfully uninstalled package {repo_id}")
             return True
         except subprocess.CalledProcessError as e:

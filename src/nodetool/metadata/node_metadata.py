@@ -65,6 +65,9 @@ class PackageModel(BaseModel):
     nodes: Optional[List[NodeMetadata]] = Field(
         default_factory=list, description="List of nodes provided by this package"
     )
+    git_hash: Optional[str] = Field(
+        default=None, description="Git commit hash of the package"
+    )
 
 
 class EnumEncoder(json.JSONEncoder):

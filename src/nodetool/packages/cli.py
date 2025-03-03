@@ -43,7 +43,7 @@ def list_packages(available, verbose):
             for pkg in packages:
                 click.echo(f"{pkg.repo_id}")
     else:
-        packages = registry.list_installed_packages()
+        packages = registry.print_installed_packages()
         if not packages:
             click.echo("No packages installed.")
             return
