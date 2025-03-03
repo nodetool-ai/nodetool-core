@@ -9,7 +9,7 @@ from typing import Any, Literal, Optional, Type, Union
 from typing import Literal
 import base64
 from datetime import datetime
-from typing import Optional, List, Union
+from typing import Optional, Union
 from pydantic import BaseModel, Field
 
 from nodetool.metadata.type_metadata import TypeMetadata
@@ -1611,8 +1611,8 @@ class EmailSearchCriteria(BaseType):
     cc: Optional[str] = None
     bcc: Optional[str] = None
     date_condition: Optional[DateSearchCondition] = None
-    flags: List[EmailFlag] = []
-    keywords: List[str] = []
+    flags: list[EmailFlag] = []
+    keywords: list[str] = []
     folder: Optional[str] = None
     text: Optional[str] = None
 
