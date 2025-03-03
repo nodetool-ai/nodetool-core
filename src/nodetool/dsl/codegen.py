@@ -8,7 +8,9 @@ from typing import Any, Union
 import importlib
 import shutil
 import argparse
+import typing
 
+from nodetool.metadata.types import BaseType
 from nodetool.metadata.utils import is_enum_type
 from nodetool.workflows.base_node import BaseNode
 
@@ -49,7 +51,7 @@ def create_python_module_file(filename: str, content: str) -> None:
         file.write(content)
 
 
-def type_to_string(field_type: type) -> str:
+def type_to_string(field_type: type | GenericAlias | UnionType) -> str:
     """
     Converts a Python type to its string representation.
 
@@ -71,14 +73,6 @@ def type_to_string(field_type: type) -> str:
     """
     if isinstance(field_type, UnionType):
         return str(field_type)
-    if isinstance(field_type, str):
-        return field_type
-    if isinstance(field_type, dict):
-        return "dict"
-    if field_type.__name__ == "Optional":
-        return f"{type_to_string(field_type.__args__[0])} | None"
-    if field_type == Union:
-        return " | ".join(field_type.__args__)
     if isinstance(field_type, GenericAlias):
         args = [type_to_string(arg) for arg in field_type.__args__]
         if field_type.__origin__ == list:
@@ -89,6 +83,19 @@ def type_to_string(field_type: type) -> str:
             return f"set[{args[0]}]"
         elif field_type.__origin__ == tuple:
             return f"tuple[{', '.join(args)}]"
+
+    assert isinstance(field_type, type)
+
+    if issubclass(field_type, BaseType):
+        return f"types.{field_type.__name__}"
+    if isinstance(field_type, str):
+        return field_type
+    if isinstance(field_type, dict):
+        return "dict"
+    if field_type.__name__ == "Optional":
+        return f"{type_to_string(field_type.__args__[0])} | None"
+    if field_type == Union:
+        return " | ".join(field_type.__args__)
     return field_type.__name__
 
 
@@ -121,6 +128,8 @@ def field_default(default_value: Any, enum_name: str | None = None) -> str:
         return "None"
     if enum_name is not None:
         return f"{enum_name}({repr(default_value)})"
+    if isinstance(default_value, BaseType):
+        return f"types.{repr(default_value)}"
     return repr(default_value)
 
 
@@ -165,21 +174,25 @@ def generate_class_source(node_cls: type[BaseNode]) -> str:
 
     # Then add the fields
     for field_name, field_type in node_cls.field_types().items():
-        if not field_name in fields:
-            continue
-        field = fields[field_name]
-        if is_enum_type(field_type):
-            new_field_type = (
-                f"{field_type.__module__}.{node_cls.__name__}.{field_type.__name__}"
-            )
-            if isinstance(field.default, Enum):
-                field_def = f"Field(default={field_type.__name__}.{field.default.name}, description={repr(field.description)})"
+        try:
+            if not field_name in fields:
+                continue
+            field = fields[field_name]
+            if is_enum_type(field_type):
+                new_field_type = (
+                    f"{field_type.__module__}.{node_cls.__name__}.{field_type.__name__}"
+                )
+                if isinstance(field.default, Enum):
+                    field_def = f"Field(default={field_type.__name__}.{field.default.name}, description={repr(field.description)})"
+                else:
+                    field_def = f"Field(default={field_type.__name__}({repr(field.default)}), description={repr(field.description)})"
             else:
-                field_def = f"Field(default={field_type.__name__}({repr(field.default)}), description={repr(field.description)})"
-        else:
-            new_field_type = f"{type_to_string(field_type)} | GraphNode | tuple[GraphNode, str]"  # type: ignore
-            field_def = f"Field(default={field_default(field.default)}, description={repr(field.description)})"
-        class_body += f"    {field_name}: {new_field_type} = {field_def}\n"
+                new_field_type = f"{type_to_string(field_type)} | GraphNode | tuple[GraphNode, str]"  # type: ignore
+                field_def = f"Field(default={field_default(field.default)}, description={repr(field.description)})"
+                class_body += f"    {field_name}: {new_field_type} = {field_def}\n"
+        except Exception as e:
+            print(f"Error generating field {field_name} for {node_cls.__name__}: {e}")
+            raise e
 
     class_body += "\n    @classmethod\n"
     class_body += f'    def get_node_type(cls): return "{node_type}"\n'
@@ -247,8 +260,8 @@ def create_dsl_modules(source_root: str, target_path: str, target_module_name: s
         source_code = (
             "from pydantic import BaseModel, Field\n"
             "import typing\n"
-            "import nodetool.metadata.types\n"
-            "from nodetool.metadata.types import *\n"
+            "from typing import Any\n"
+            "import nodetool.metadata.types as types\n"
             "from nodetool.dsl.graph import GraphNode\n\n"
         ) + source_code
 
