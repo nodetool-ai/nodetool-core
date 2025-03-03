@@ -313,13 +313,26 @@ class Registry:
         Print information about all installed packages.
         """
         packages = self.list_installed_packages()
+        if not packages:
+            print("No packages installed.")
+            return
+
+        headers = ["Repository ID", "Version", "Description"]
+        table_data = []
+
         for package in packages:
-            hash_info = (
-                f" ({package.git_hash[:8]})"
-                if hasattr(package, "git_hash") and package.git_hash
-                else ""
-            )
-            print(f"{package.repo_id}{hash_info}: {package.description}")
+            repo_id = package.repo_id
+            if hasattr(package, "git_hash") and package.git_hash:
+                version = package.git_hash[:8]
+            else:
+                version = package.version if hasattr(package, "version") else ""
+
+            description = package.description
+            table_data.append([repo_id, version, description])
+
+        from tabulate import tabulate
+
+        print(tabulate(table_data, headers=headers, tablefmt="grid"))
 
     def list_available_packages(self) -> List[PackageInfo]:
         """

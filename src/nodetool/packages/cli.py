@@ -22,8 +22,7 @@ def cli():
 @click.option(
     "--available", "-a", is_flag=True, help="List available packages from the registry"
 )
-@click.option("--verbose", "-v", is_flag=True, help="Show detailed information")
-def list_packages(available, verbose):
+def list_packages(available):
     """List installed or available packages."""
     registry = Registry()
 
@@ -35,34 +34,12 @@ def list_packages(available, verbose):
             )
             return
 
-        if verbose:
-            headers = ["Name", "Repository ID"]
-            table_data = [[pkg.name, pkg.repo_id] for pkg in packages]
-            click.echo(tabulate(table_data, headers=headers, tablefmt="grid"))
-        else:
-            for pkg in packages:
-                click.echo(f"{pkg.repo_id}")
+        print(packages)
+        headers = ["Name", "Repository ID"]
+        table_data = [[pkg.name, pkg.repo_id] for pkg in packages]
+        click.echo(tabulate(table_data, headers=headers, tablefmt="grid"))
     else:
         packages = registry.print_installed_packages()
-        if not packages:
-            click.echo("No packages installed.")
-            return
-
-        if verbose:
-            headers = ["Name", "Version", "Repository ID", "Nodes"]
-            table_data = [
-                [
-                    pkg.name,
-                    pkg.version,
-                    pkg.repo_id,
-                    len(pkg.nodes) if pkg.nodes is not None else 0,
-                ]
-                for pkg in packages
-            ]
-            click.echo(tabulate(table_data, headers=headers, tablefmt="grid"))
-        else:
-            for pkg in packages:
-                click.echo(f"{pkg.repo_id}")
 
 
 @cli.command("install")
