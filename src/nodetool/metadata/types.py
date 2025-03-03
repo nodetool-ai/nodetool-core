@@ -1590,23 +1590,10 @@ class EmailFlag(str, Enum):
     UNFLAGGED = "UNFLAGGED"
 
 
-class LogicalOperator(str, Enum):
-    AND = "AND"
-    OR = "OR"
-    NOT = "NOT"
-
-
 class DateCriteria(str, Enum):
     BEFORE = "BEFORE"
     SINCE = "SINCE"
     ON = "ON"
-
-
-class SearchCondition(BaseType):
-    type: Literal["search_condition"] = "search_condition"
-    field: str
-    value: str
-    operator: Optional[LogicalOperator] = LogicalOperator.AND
 
 
 class DateSearchCondition(BaseType):
