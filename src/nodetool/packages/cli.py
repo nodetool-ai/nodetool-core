@@ -50,7 +50,13 @@ def list_packages(available):
     type=click.Path(exists=True, file_okay=False, dir_okay=True),
     help="Install from a local directory instead of the registry",
 )
-def install_package_cmd(repo_id, local):
+@click.option(
+    "--namespace",
+    "-n",
+    type=str,
+    help="Namespace to install from the package",
+)
+def install_package_cmd(repo_id, local, namespace):
     """Install a package by repository ID (owner/project) or from a local directory."""
     registry = Registry()
 
@@ -70,7 +76,11 @@ def install_package_cmd(repo_id, local):
         ) as bar:
             bar.update(10)  # Start progress
             try:
-                registry.install_package(repo_id, local_path=local)
+                registry.install_package(
+                    repo_id,
+                    local_path=local,
+                    namespaces=[namespace] if namespace else None,
+                )
                 success = True
             except Exception as e:
                 success = False

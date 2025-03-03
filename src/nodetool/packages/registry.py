@@ -269,6 +269,25 @@ class Registry:
         self.packages_dir = get_packages_dir()
         self.pkg_mgr = get_package_manager_command()
 
+    def pip_install(
+        self, install_path: str, editable: bool = False, upgrade: bool = False
+    ) -> None:
+        """
+        Call the pip install command.
+        """
+        if upgrade:
+            subprocess.check_call([*self.pkg_mgr, "install", "--upgrade", install_path])
+        elif editable:
+            subprocess.check_call([*self.pkg_mgr, "install", "-e", install_path])
+        else:
+            subprocess.check_call([*self.pkg_mgr, "install", install_path])
+
+    def pip_uninstall(self, package_name: str) -> None:
+        """
+        Call the pip uninstall command.
+        """
+        subprocess.check_call([*self.pkg_mgr, "uninstall", package_name, "--yes"])
+
     def _get_package_filename(self, repo_id: str) -> str:
         """
         Get the filename for a package's metadata file.
@@ -412,7 +431,12 @@ class Registry:
             print(f"Error getting commit hash for {repo_id}: {e}")
             return None
 
-    def install_package(self, repo_id: str, local_path: Optional[str] = None) -> None:
+    def install_package(
+        self,
+        repo_id: str,
+        local_path: Optional[str] = None,
+        namespaces: Optional[List[str]] = None,
+    ) -> None:
         """
         Install a package by repository ID or from a local path.
 
@@ -438,6 +462,9 @@ class Registry:
             # Use the last directory name as the project name
             project_name = os.path.basename(os.path.normpath(local_path))
             repo_id = f"local/{project_name}"
+            # Install the package
+            self.pip_install(install_path, editable=True)
+            print(f"Successfully installed package {repo_id}")
         else:
             # Validate repo_id format for remote installation
             is_valid, error_msg = validate_repo_id(repo_id)
@@ -450,33 +477,21 @@ class Registry:
                 raise ValueError(f"Package {repo_id} not found in registry")
 
             install_path = f"git+https://github.com/{repo_id}"
-
-        try:
             # Install the package
-            subprocess.check_call([*self.pkg_mgr, "install", install_path])
+            self.pip_install(install_path)
             print(f"Successfully installed package {repo_id}")
 
+        try:
             # Try to get metadata from the installed package
             package = get_package_metadata_from_pip(repo_id)
             if not package:
                 raise ValueError(f"Failed to get pip metadata for {repo_id}")
-
-            # For local installation, try to get namespaces from pyproject.toml
             if local_path:
-                try:
-                    with open(os.path.join(local_path, "pyproject.toml"), "rb") as f:
-                        pyproject_data = tomli.load(f)
-                        project_data = pyproject_data.get("project", {})
-                        if not project_data:
-                            project_data = pyproject_data.get("tool", {}).get(
-                                "poetry", {}
-                            )
-                        package.namespaces = project_data.get("namespaces", [])
-                except Exception as e:
-                    print(
-                        f"Warning: Could not read namespaces from pyproject.toml: {e}"
+                if not namespaces:
+                    raise ValueError(
+                        "Namespaces must be provided for local installations"
                     )
-                    package.namespaces = []
+                package.namespaces = namespaces
             else:
                 # For remote installation, get namespaces from registry
                 package_info = self.get_package_info(repo_id)
@@ -544,7 +559,7 @@ class Registry:
 
         # Uninstall package via package manager
         try:
-            subprocess.check_call([*self.pkg_mgr, "uninstall", package.name, "--yes"])
+            self.pip_uninstall(package.name)
             print(f"Successfully uninstalled package {repo_id}")
             return True
         except subprocess.CalledProcessError as e:
@@ -586,7 +601,7 @@ class Registry:
         try:
             # Use github_repo from package if available, otherwise construct from repo_id
             install_url = f"https://github.com/{repo_id}"
-            subprocess.check_call([*self.pkg_mgr, "install", "--upgrade", install_url])
+            self.pip_install(install_url, upgrade=True)
 
             # Try to get updated metadata from GitHub
             updated_package = get_package_metadata_from_github(install_url)
