@@ -32,11 +32,13 @@ Usage:
 from enum import Enum
 import json
 import os
-import yaml
 import subprocess
 import requests
 import tomli
 import re
+import pkgutil
+import importlib
+import importlib.metadata
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
 from pydantic import BaseModel, Field
@@ -174,53 +176,6 @@ def get_package_manager_command() -> List[str]:
         return ["pip"]
 
 
-def extract_node_metadata_from_package(
-    package: PackageModel, verbose: bool = False
-) -> PackageModel:
-    """
-    Extract metadata from all node classes in a package.
-
-    This function:
-    1. Finds all node classes in the namespaces provided by the package
-    2. Extracts metadata from each node class
-    3. Adds the metadata to the package model
-
-    Args:
-        package: The package model to extract node metadata from
-        verbose: Whether to print verbose output
-
-    Returns:
-        The updated package model with node metadata
-    """
-    from nodetool.metadata.node_metadata import get_node_classes_from_namespace
-
-    # Initialize empty nodes list (ensure it's never None)
-    package.nodes = []
-
-    # Process each namespace provided by the package
-    for namespace in package.namespaces:
-        try:
-            if verbose:
-                print(f"Searching for nodes in namespace: {namespace}")
-            node_classes = get_node_classes_from_namespace(namespace, verbose=verbose)
-
-            # Extract metadata from each node class
-            for node_class in node_classes:
-                try:
-                    node_metadata = node_class.metadata()
-                    package.nodes.append(node_metadata)
-                    if verbose:
-                        print(f"Added metadata for node: {node_metadata.title}")
-                except Exception as e:
-                    print(
-                        f"Error extracting metadata from node class {node_class.__name__}: {e}"
-                    )
-        except Exception as e:
-            print(f"Error processing namespace {namespace}: {e}")
-
-    return package
-
-
 class PackageInfo(BaseModel):
     """
     Package information model for nodetool.
@@ -237,36 +192,13 @@ class PackageInfo(BaseModel):
 
 class Registry:
     """
-    Package registry manager for nodetool.
+    Simplified package registry manager that works with Python's package system.
 
-    This class provides methods for managing packages in the nodetool ecosystem,
-    including listing, installing, uninstalling, and updating packages.
-    It interacts with both local package metadata and the remote package registry.
-
-    Packages are identified by their repository ID (repo_id) which follows the format <owner>/<project>.
-    For example: "nodetool/package-registry".
-
-    The repo_id is used to:
-    - Uniquely identify packages
-    - Generate local metadata filenames (replacing '/' with '--')
-    - Construct GitHub URLs when needed
-
-    Usage:
-        registry = Registry()
-        packages = registry.list_installed_packages()
-        registry.install_package("nodetool/my-package")
+    Packages are discovered through the nodetool.nodes namespace and metadata
+    is stored in nodes.json files within each package.
     """
 
-    def __init__(self, registry_url: str = REGISTRY_URL):
-        """
-        Initialize the registry manager.
-
-        Args:
-            registry_url: URL of the remote package registry.
-                         Defaults to the official nodetool package registry.
-        """
-        self.registry_url = registry_url
-        self.packages_dir = get_packages_dir()
+    def __init__(self):
         self.pkg_mgr = get_package_manager_command()
 
     def pip_install(
@@ -288,70 +220,9 @@ class Registry:
         """
         subprocess.check_call([*self.pkg_mgr, "uninstall", package_name, "--yes"])
 
-    def _get_package_filename(self, repo_id: str) -> str:
-        """
-        Get the filename for a package's metadata file.
-
-        Args:
-            repo_id: Repository ID in the format <owner>/<project>
-
-        Returns:
-            str: The filename for the package's metadata file
-        """
-        owner, project = repo_id.split("/")
-        return f"{project}.json"
-
     def list_installed_packages(self) -> List[PackageModel]:
-        """
-        List all installed packages.
-
-        This method scans the local packages directory for JSON metadata files
-        and loads them into PackageModel instances.
-
-        Returns:
-            List[PackageModel]: A list of PackageModel instances representing installed packages
-
-        Note:
-            Errors loading individual package metadata files are logged but don't stop the process.
-        """
-        packages = []
-
-        for json_file in self.packages_dir.glob("*.json"):
-            try:
-                with open(json_file, "r") as f:
-                    package_data = json.load(f)
-                    package = PackageModel(**package_data)
-                    packages.append(package)
-            except Exception as e:
-                print(f"Error loading package metadata from {json_file}: {e}")
-
-        return packages
-
-    def print_installed_packages(self) -> None:
-        """
-        Print information about all installed packages.
-        """
-        packages = self.list_installed_packages()
-        if not packages:
-            print("No packages installed.")
-            return
-
-        headers = ["Repository ID", "Version", "Description"]
-        table_data = []
-
-        for package in packages:
-            repo_id = package.repo_id
-            if hasattr(package, "git_hash") and package.git_hash:
-                version = package.git_hash[:8]
-            else:
-                version = package.version if hasattr(package, "version") else ""
-
-            description = package.description
-            table_data.append([repo_id, version, description])
-
-        from tabulate import tabulate
-
-        print(tabulate(table_data, headers=headers, tablefmt="grid"))
+        """List all installed node packages."""
+        return discover_node_packages()
 
     def list_available_packages(self) -> List[PackageInfo]:
         """
@@ -367,199 +238,29 @@ class Registry:
         Note:
             Returns an empty list if the registry cannot be reached or the index cannot be parsed.
         """
-        response = requests.get(self.registry_url)
+        response = requests.get(REGISTRY_URL)
         response.raise_for_status()
         packages_data = response.json()["packages"]
 
         return [PackageInfo(**package) for package in packages_data]
 
-    def get_package_metadata(
-        self,
-        repo_id: str,
-    ) -> Optional[PackageModel]:
-        """
-        Get metadata for a specific package from the local package registry.
-
-        Args:
-            repo_id: Repository ID in the format <owner>/<project>
-
-        Returns:
-            PackageModel: Package metadata if found
-            None: If package metadata could not be found or loaded
-        """
-        # Validate repo_id format
-        is_valid, error_msg = validate_repo_id(repo_id)
-        if not is_valid:
-            raise ValueError(error_msg)
-
-        package_file = self.packages_dir / self._get_package_filename(repo_id)
-
-        if package_file.exists():
-            with open(package_file, "r") as f:
-                package_data = json.load(f)
-                return PackageModel(**package_data)
-        else:
-            return None
-
-    def get_package_info(self, repo_id: str) -> Optional[PackageInfo]:
-        """
-        Get package info for a specific package from the local package registry.
-        """
-        all_packages = self.list_available_packages()
-        for available_package in all_packages:
-            if available_package.repo_id == repo_id:
-                return available_package
-        return None
-
-    def get_git_commit_hash(self, repo_id: str) -> Optional[str]:
-        """
-        Get the latest commit hash from a GitHub repository.
-
-        Args:
-            repo_id: Repository ID in the format <owner>/<project>
-
-        Returns:
-            str: The commit hash if successful
-            None: If the request fails
-        """
-        api_url = f"https://api.github.com/repos/{repo_id}/commits/main"
-        try:
-            response = requests.get(api_url)
-            response.raise_for_status()
-            return response.json()["sha"]
-        except Exception as e:
-            print(f"Error getting commit hash for {repo_id}: {e}")
-            return None
-
-    def install_package(
-        self,
-        repo_id: str,
-        local_path: Optional[str] = None,
-        namespaces: Optional[List[str]] = None,
-    ) -> None:
-        """
-        Install a package by repository ID or from a local path.
-
-        This method:
-        1. Validates the repo_id format (if not installing from local path)
-        2. Installs the package using the appropriate package manager
-        3. Finds all node classes in the package and adds their metadata to the package
-        4. Saves the metadata locally
-
-        Args:
-            repo_id: Repository ID in the format <owner>/<project>
-            local_path: Optional path to a local package directory for development/testing
-
-        Returns:
-            bool: True if installation was successful, False otherwise
-
-        Note:
-            If installation fails, any created metadata file is removed.
-        """
+    def install_package(self, repo_id: str, local_path: Optional[str] = None) -> None:
+        """Install a package by repository ID or from local path."""
         if local_path:
-            # For local installation, use the local path directly
-            install_path = local_path
-            # Use the last directory name as the project name
-            project_name = os.path.basename(os.path.normpath(local_path))
-            repo_id = f"local/{project_name}"
-            # Install the package
-            self.pip_install(install_path, editable=True)
-            print(f"Successfully installed package {repo_id}")
+            self.pip_install(local_path, editable=True)
         else:
-            # Validate repo_id format for remote installation
-            is_valid, error_msg = validate_repo_id(repo_id)
-            if not is_valid:
-                raise ValueError(error_msg)
-
-            # find package info from registry
-            package_info = self.get_package_info(repo_id)
-            if not package_info:
-                raise ValueError(f"Package {repo_id} not found in registry")
-
             install_path = f"git+https://github.com/{repo_id}"
-            # Install the package
             self.pip_install(install_path)
-            print(f"Successfully installed package {repo_id}")
-
-        try:
-            # Try to get metadata from the installed package
-            package = get_package_metadata_from_pip(repo_id)
-            if not package:
-                raise ValueError(f"Failed to get pip metadata for {repo_id}")
-            if local_path:
-                if not namespaces:
-                    raise ValueError(
-                        "Namespaces must be provided for local installations"
-                    )
-                package.namespaces = namespaces
-            else:
-                # For remote installation, get namespaces from registry
-                package_info = self.get_package_info(repo_id)
-                if not package_info:
-                    raise ValueError(f"Failed to get package info for {repo_id}")
-                package.namespaces = package_info.namespaces
-
-            # Store the git hash for remote installations
-            if not local_path:
-                package.git_hash = self.get_git_commit_hash(repo_id)
-
-            # Extract node metadata from the package
-            package = extract_node_metadata_from_package(package, verbose=True)
-
-            # Save updated package metadata with nodes
-            package_file = self.packages_dir / self._get_package_filename(repo_id)
-            with open(package_file, "w") as f:
-                json.dump(package.model_dump(), f, indent=4, default=json_serializer)
-
-            # We ensure package.nodes is never None in extract_node_metadata_from_package,
-            # but the type checker doesn't know that, so we check again here
-            node_count = len(package.nodes) if package.nodes is not None else 0
-            print(f"Saved metadata for {node_count} nodes from package {repo_id}")
-        except subprocess.CalledProcessError as e:
-            print(f"Error installing package {repo_id}: {e}")
-            # Clean up metadata file if installation failed
-            package_file = self.packages_dir / self._get_package_filename(repo_id)
-            if package_file.exists():
-                package_file.unlink()
-            raise e
 
     def uninstall_package(self, repo_id: str) -> bool:
-        """
-        Uninstall a package by repository ID.
-
-        This method:
-        1. Validates the repo_id format
-        2. Removes the local package metadata file
-        3. Uninstalls the package using the appropriate package manager
-
-        Args:
-            repo_id: Repository ID in the format <owner>/<project>
-
-        Returns:
-            bool: True if uninstallation was successful, False otherwise
-
-        Note:
-            Returns False if the package is not installed or if uninstallation fails.
-        """
-        # Validate repo_id format
+        """Uninstall a package by repository ID."""
         is_valid, error_msg = validate_repo_id(repo_id)
         if not is_valid:
             raise ValueError(error_msg)
 
-        package = self.get_package_metadata(repo_id)
-
-        if not package:
-            print(f"Package {repo_id} not installed")
-            return False
-
-        # Remove package metadata
-        package_file = self.packages_dir / self._get_package_filename(repo_id)
-        if package_file.exists():
-            package_file.unlink()
-
-        # Uninstall package via package manager
+        _, project = repo_id.split("/")
         try:
-            self.pip_uninstall(package.name)
+            self.pip_uninstall(project)
             print(f"Successfully uninstalled package {repo_id}")
             return True
         except subprocess.CalledProcessError as e:
@@ -567,63 +268,15 @@ class Registry:
             return False
 
     def update_package(self, repo_id: str) -> bool:
-        """
-        Update a package to the latest version.
-
-        This method:
-        1. Validates the repo_id format
-        2. Checks if the package is installed
-        3. Updates the package using the appropriate package manager
-        4. Updates the local package metadata
-        5. Updates the node metadata for all nodes in the package
-
-        Args:
-            repo_id: Repository ID in the format <owner>/<project>
-
-        Returns:
-            bool: True if update was successful, False otherwise
-
-        Note:
-            Returns False if the package is not installed or if the update fails.
-        """
-        # Validate repo_id format
+        """Update a package to the latest version."""
         is_valid, error_msg = validate_repo_id(repo_id)
         if not is_valid:
             raise ValueError(error_msg)
 
-        package = self.get_package_metadata(repo_id)
-
-        if not package:
-            print(f"Package {repo_id} not installed")
-            return False
-
-        # Update package via package manager
         try:
-            # Use github_repo from package if available, otherwise construct from repo_id
-            install_url = f"https://github.com/{repo_id}"
+            install_url = f"git+https://github.com/{repo_id}"
             self.pip_install(install_url, upgrade=True)
-
-            # Try to get updated metadata from GitHub
-            updated_package = get_package_metadata_from_github(install_url)
-            if not updated_package:
-                updated_package = package  # Fall back to existing metadata
-
-            # Extract node metadata from the package
-            updated_package = extract_node_metadata_from_package(
-                updated_package, verbose=True
-            )
-
-            # Save updated package metadata
-            package_file = self.packages_dir / self._get_package_filename(repo_id)
-            with open(package_file, "w") as f:
-                yaml.dump(updated_package.model_dump(), f)
-
-            # We ensure updated_package.nodes is never None in extract_node_metadata_from_package,
-            # but the type checker doesn't know that, so we check again here
-            node_count = (
-                len(updated_package.nodes) if updated_package.nodes is not None else 0
-            )
-            print(f"Successfully updated package {repo_id} with {node_count} nodes")
+            print(f"Successfully updated package {repo_id}")
             return True
         except subprocess.CalledProcessError as e:
             print(f"Error updating package {repo_id}: {e}")
@@ -674,3 +327,58 @@ def get_package_metadata_from_pip(repo_id: str) -> Optional[PackageModel]:
         namespaces=[],
         repo_id=repo_id,
     )
+
+
+def discover_node_packages() -> List[PackageModel]:
+    """
+    Discover all installed node packages by scanning the nodetool.nodes namespace.
+
+    This function:
+    1. Scans nodetool.nodes and nodetool.nodes.lib for Python modules
+    2. For each module, looks for nodes.json metadata file
+    3. Creates PackageModel instances for each discovered package
+
+    Returns:
+        List[PackageModel]: List of discovered packages with their node metadata
+    """
+    import nodetool.nodes
+
+    packages = []
+
+    # Helper function to process a module
+    def process_module(module_info: pkgutil.ModuleInfo) -> Optional[PackageModel]:
+        try:
+            # Import the module to get its path
+            module = importlib.import_module(module_info.name)
+            module_path = Path(module.__file__).parent  # type: ignore
+
+            # Look for nodes.json in the module directory
+            metadata_file = module_path / "nodes.json"
+            if not metadata_file.exists():
+                return None
+
+            # Load and validate metadata
+            with open(metadata_file) as f:
+                metadata = json.load(f)
+                return PackageModel(**metadata)
+
+        except Exception as e:
+            print(f"Error processing module {module_info.name}: {e}")
+            return None
+
+    # Scan main nodes namespace
+    for module_info in pkgutil.iter_modules(nodetool.nodes.__path__):  # type: ignore
+        if package := process_module(module_info):
+            packages.append(package)
+
+    # Scan lib subdirectory if it exists
+    try:
+        import nodetool.nodes.lib
+
+        for module_info in pkgutil.iter_modules(nodetool.nodes.lib.__path__):  # type: ignore
+            if package := process_module(module_info):
+                packages.append(package)
+    except ImportError:
+        pass
+
+    return packages

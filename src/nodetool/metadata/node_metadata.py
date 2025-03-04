@@ -57,15 +57,17 @@ class PackageModel(BaseModel):
         description="Description of the package and its functionality"
     )
     version: str = Field(description="Version of the package (semver format)")
-    authors: List[str] = Field(description="Authors of the package")
-    namespaces: List[str] = Field(
+    authors: list[str] = Field(description="Authors of the package")
+    namespaces: list[str] = Field(
         default_factory=list, description="Namespaces provided by this package"
     )
-    repo_id: str = Field(description="Repository ID in the format <owner>/<project>")
-    nodes: Optional[List[NodeMetadata]] = Field(
+    repo_id: str | None = Field(
+        default=None, description="Repository ID in the format <owner>/<project>"
+    )
+    nodes: List[NodeMetadata] | None = Field(
         default_factory=list, description="List of nodes provided by this package"
     )
-    git_hash: Optional[str] = Field(
+    git_hash: str | None = Field(
         default=None, description="Git commit hash of the package"
     )
 
