@@ -84,7 +84,9 @@ def type_to_string(field_type: type | GenericAlias | UnionType) -> str:
         elif field_type.__origin__ == tuple:
             return f"tuple[{', '.join(args)}]"
 
-    assert isinstance(field_type, type)
+    assert isinstance(
+        field_type, type
+    ), f"Field type is not a type: {field_type}, generic aliases like List[str] are not supported, use list[str] instead"
 
     if issubclass(field_type, BaseType):
         return f"types.{field_type.__name__}"
