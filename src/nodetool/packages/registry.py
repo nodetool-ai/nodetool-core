@@ -3,30 +3,33 @@ Package registry module for nodetool application.
 
 This module provides functionality for managing node packages in the nodetool ecosystem.
 It handles:
-
-- Loading/saving package metadata from YAML files
-- Installing/uninstalling packages
-- Listing available packages
-- Updating packages
+- Installing packages from GitHub repositories or local paths
+- Uninstalling packages
+- Listing installed and available packages
+- Updating packages to their latest versions
 
 Key components:
-- PackageModel: Package metadata model that defines the structure of package information
-- NodeMetadata: Metadata model for individual nodes within a package
+- PackageInfo: Model for package information in the registry index
+- PackageModel: Package metadata model imported from nodetool.metadata.node_metadata
 - Registry: Package registry manager that handles all package operations
-- File locations:
-  - Package metadata: ~/.config/nodetool/packages/
-  - Package registry: GitHub repository with YAML files
+- Helper functions:
+  - validate_repo_id: Validates repository IDs in owner/project format
+  - get_package_metadata_from_github: Extracts metadata from GitHub repository
+  - get_package_metadata_from_pip: Extracts metadata from installed pip packages
+  - discover_node_packages: Scans for installed packages in nodetool.nodes namespace
 
-Packages are identified by their repository ID (repo_id) which follows the format <owner>/<project>.
-For example: "nodetool/package-registry".
-
-The module uses a combination of local storage and remote registry to manage packages.
-Packages are installed using either uv or pip package managers, with preference for uv.
+Package management:
+- Uses either uv or pip as the package manager (preferring uv if available)
+- Packages are identified by their repository ID (repo_id) in the format <owner>/<project>
+- Package metadata is retrieved from pyproject.toml files and nodes.json
+- Available packages are listed from a central registry at REGISTRY_URL
 
 Usage:
     registry = Registry()
     packages = registry.list_installed_packages()
-    registry.install_package("nodetool/my-package")
+    registry.install_package("owner/project")
+    registry.uninstall_package("owner/project")
+    registry.update_package("owner/project")
 """
 
 from enum import Enum
