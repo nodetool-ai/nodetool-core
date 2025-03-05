@@ -176,7 +176,7 @@ def init_project():
     version = "0.1.0"
     description = click.prompt("Description", type=str, default="")
     author = click.prompt("Author (name <email>)", type=str)
-    python_version = "3.10"
+    python_version = "^3.10"
 
     # Create pyproject.toml content
     pyproject_content = f"""[build-system]
