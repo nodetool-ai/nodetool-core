@@ -349,29 +349,27 @@ def discover_node_packages() -> List[PackageModel]:
     packages = []
 
     # Helper function to process a module
-    def process_module(module_info: pkgutil.ModuleInfo) -> Optional[PackageModel]:
-        try:
-            # Import the module to get its path
-            module = importlib.import_module(module_info.name)
-            module_path = Path(module.__file__).parent  # type: ignore
+    def process_module(
+        parent_module: str, module_info: pkgutil.ModuleInfo
+    ) -> Optional[PackageModel]:
+        print(module_info)
+        # Import the module to get its path
+        module = importlib.import_module(f"{parent_module}.{module_info.name}")
+        module_path = Path(module.__file__).parent  # type: ignore
 
-            # Look for nodes.json in the module directory
-            metadata_file = module_path / "nodes.json"
-            if not metadata_file.exists():
-                return None
-
-            # Load and validate metadata
-            with open(metadata_file) as f:
-                metadata = json.load(f)
-                return PackageModel(**metadata)
-
-        except Exception as e:
-            print(f"Error processing module {module_info.name}: {e}")
+        # Look for nodes.json in the module directory
+        metadata_file = module_path / "nodes.json"
+        if not metadata_file.exists():
             return None
+
+        # Load and validate metadata
+        with open(metadata_file) as f:
+            metadata = json.load(f)
+            return PackageModel(**metadata)
 
     # Scan main nodes namespace
     for module_info in pkgutil.iter_modules(nodetool.nodes.__path__):  # type: ignore
-        if package := process_module(module_info):
+        if package := process_module("nodetool.nodes", module_info):
             packages.append(package)
 
     # Scan lib subdirectory if it exists
@@ -379,7 +377,7 @@ def discover_node_packages() -> List[PackageModel]:
         import nodetool.nodes.lib
 
         for module_info in pkgutil.iter_modules(nodetool.nodes.lib.__path__):  # type: ignore
-            if package := process_module(module_info):
+            if package := process_module("nodetool.nodes.lib", module_info):
                 packages.append(package)
     except ImportError:
         pass
