@@ -203,13 +203,11 @@ nodetool-core = {{ git = "https://github.com/nodetool-ai/nodetool-core.git", rev
         f.write(pyproject_content)
 
     # Create basic directory structure
-    os.makedirs("src/nodetool/nodes/" + name, exist_ok=True)
     os.makedirs("src/nodetool/package_metadata", exist_ok=True)
 
     click.echo("✅ Successfully initialized Nodetool project")
     click.echo("Created:")
     click.echo("  - pyproject.toml")
-    click.echo("  - src/nodetool/nodes/" + name)
     click.echo("  - src/nodetool/package_metadata/")
 
 
