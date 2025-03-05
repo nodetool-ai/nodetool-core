@@ -165,5 +165,56 @@ def scan_package(verbose):
         sys.exit(1)
 
 
+@cli.command("init")
+def init_project():
+    """Initialize a new Nodetool project with pyproject.toml."""
+    if os.path.exists("pyproject.toml"):
+        if not click.confirm(
+            "pyproject.toml already exists. Do you want to overwrite it?"
+        ):
+            return
+
+    # Gather project information
+    name = click.prompt("Project name", type=str)
+    version = "0.1.0"
+    description = click.prompt("Description", type=str, default="")
+    author = click.prompt("Author (name <email>)", type=str)
+    python_version = "3.10"
+
+    # Create pyproject.toml content
+    pyproject_content = f"""[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry]
+name = "{name}"
+version = "{version}"
+description = "{description}"
+readme = "README.md"
+authors = ["{author}"]
+packages = [{{ include = "nodetool", from = "src" }}]
+package-mode = true
+include = ["src/nodetool/package-metadata/{name}.json"]
+
+[tool.poetry.dependencies]
+python = "{python_version}"
+nodetool-core = {{ git = "https://github.com/nodetool-ai/nodetool-core.git", rev = "main" }}
+"""
+
+    # Write to pyproject.toml
+    with open("pyproject.toml", "w") as f:
+        f.write(pyproject_content)
+
+    # Create basic directory structure
+    os.makedirs("src/nodetool/nodes/" + name, exist_ok=True)
+    os.makedirs("src/nodetool/package_metadata", exist_ok=True)
+
+    click.echo("✅ Successfully initialized Nodetool project")
+    click.echo("Created:")
+    click.echo("  - pyproject.toml")
+    click.echo("  - src/nodetool/nodes/" + name)
+    click.echo("  - src/nodetool/package_metadata/")
+
+
 if __name__ == "__main__":
     cli()

@@ -316,13 +316,17 @@ def discover_node_packages() -> list[PackageModel]:
                     print(f"Error processing {metadata_file}: {e}")
 
     # Get all installed distributions
+    visited_paths = set()
     for dist in importlib.metadata.distributions():
         package_name = dist.metadata["Name"]
         if not package_name.startswith("nodetool-"):
             continue
 
         # If no dev location found, try site-packages
-        base_path = str(dist.locate_file("nodetool/package"))
+        base_path = str(dist.locate_file("nodetool/package_metadata"))
+        if base_path in visited_paths:
+            continue
+        visited_paths.add(base_path)
         metadata_files = list(Path(base_path).glob("*.json"))
 
         for metadata_file in metadata_files:
