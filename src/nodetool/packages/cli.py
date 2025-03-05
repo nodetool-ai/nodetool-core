@@ -14,8 +14,6 @@ from nodetool.metadata.node_metadata import (
 )
 from nodetool.packages.registry import (
     Registry,
-    get_package_metadata_from_pip,
-    validate_repo_id,
 )
 
 
@@ -56,44 +54,12 @@ def list_packages(available):
             click.echo("No packages installed.")
             return
 
-        headers = ["Name", "Repository ID"]
-        table_data = [[pkg.name, pkg.repo_id] for pkg in packages]
+        headers = ["Name", "Version", "Description", "Nodes"]
+        table_data = [
+            [pkg.name, pkg.version, pkg.description, len(pkg.nodes or [])]
+            for pkg in packages
+        ]
         click.echo(tabulate(table_data, headers=headers, tablefmt="grid"))
-
-
-@cli.command("info")
-@click.argument("repo_id")
-def package_info(repo_id):
-    """Show detailed information about an installed package."""
-    registry = Registry()
-
-    try:
-        is_valid, error_msg = validate_repo_id(repo_id)
-        if not is_valid:
-            click.echo(f"Error: {error_msg}", err=True)
-            sys.exit(1)
-
-        package = get_package_metadata_from_pip(repo_id)
-        if not package:
-            click.echo(f"Package {repo_id} is not installed.", err=True)
-            sys.exit(1)
-
-        # Display package information
-        click.echo(f"📦 Package: {package.name}")
-        click.echo(f"📝 Description: {package.description}")
-        click.echo(f"🔖 Version: {package.version}")
-        click.echo(f"🔗 Repository: https://github.com/{package.repo_id}")
-
-        if package.authors:
-            click.echo(f"👤 Authors: {', '.join(package.authors)}")
-
-        if package.nodes:
-            click.echo(f"🧩 Nodes ({len(package.nodes)}):")
-            for node in package.nodes:
-                click.echo(f"  - {node.title}")
-    except Exception as e:
-        click.echo(f"Error: {str(e)}", err=True)
-        sys.exit(1)
 
 
 @cli.command("scan")

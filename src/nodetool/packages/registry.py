@@ -286,100 +286,51 @@ class Registry:
             return False
 
 
-def get_package_metadata_from_pip(repo_id: str) -> Optional[PackageModel]:
+def discover_node_packages() -> list[PackageModel]:
     """
-    Get package metadata from an installed pip package.
-
-    This function uses pip's metadata API to extract information about an installed package
-    and converts it to a PackageModel instance.
-
-    Args:
-        repo_id: Repository ID in the format <owner>/<project>
-
-    Returns:
-        PackageModel: A populated PackageModel instance if successful
-        None: If metadata could not be retrieved or parsed
-    """
-    # Use pip's metadata API to get package information
-    import importlib.metadata as metadata
-
-    is_valid, error_msg = validate_repo_id(repo_id)
-    if not is_valid:
-        raise ValueError(error_msg)
-
-    owner, project = repo_id.split("/")
-
-    # Get package distribution
-    dist = metadata.distribution(project)
-
-    # Extract metadata
-    metadata_dict = {k: v for k, v in dist.metadata.items()}  # type: ignore
-
-    # Parse author information
-    authors = []
-    if "Author" in metadata_dict:
-        authors.append(metadata_dict["Author"])
-    elif "Author-email" in metadata_dict:
-        authors.append(metadata_dict["Author-email"])
-
-    return PackageModel(
-        name=project,
-        description=metadata_dict.get("Summary", ""),
-        version=metadata_dict.get("Version", "0.1.0"),
-        authors=authors,
-        namespaces=[],
-        repo_id=repo_id,
-    )
-
-
-def discover_node_packages() -> List[PackageModel]:
-    """
-    Discover all installed node packages by scanning the nodetool.nodes namespace.
+    Discover all installed node packages by finding packages that start with 'nodetool-'.
 
     This function:
-    1. Scans nodetool.nodes and nodetool.nodes.lib for Python modules
-    2. For each module, looks for nodes.json metadata file
+    1. Gets all installed packages using importlib.metadata
+    2. Filters for packages starting with 'nodetool-'
     3. Creates PackageModel instances for each discovered package
+    4. Handles both regular installations and editable installs
 
     Returns:
         List[PackageModel]: List of discovered packages with their node metadata
     """
-    import nodetool.nodes
-
     packages = []
+    import sys
 
-    # Helper function to process a module
-    def process_module(
-        parent_module: str, module_info: pkgutil.ModuleInfo
-    ) -> Optional[PackageModel]:
-        print(module_info)
-        # Import the module to get its path
-        module = importlib.import_module(f"{parent_module}.{module_info.name}")
-        module_path = Path(module.__file__).parent  # type: ignore
+    # First try to get the package's development location (for editable installs)
+    for path in sys.path:
+        if "nodetool-" in path:
+            nodes_path = Path(path) / "nodetool" / "nodes"
+            metadata_files = list(nodes_path.glob("**/nodes.json"))
+            for metadata_file in metadata_files:
+                try:
+                    with open(metadata_file) as f:
+                        metadata = json.load(f)
+                        packages.append(PackageModel(**metadata))
+                except Exception as e:
+                    print(f"Error processing {metadata_file}: {e}")
 
-        # Look for nodes.json in the module directory
-        metadata_file = module_path / "nodes.json"
-        if not metadata_file.exists():
-            return None
+    # Get all installed distributions
+    for dist in importlib.metadata.distributions():
+        package_name = dist.metadata["Name"]
+        if not package_name.startswith("nodetool-"):
+            continue
 
-        # Load and validate metadata
-        with open(metadata_file) as f:
-            metadata = json.load(f)
-            return PackageModel(**metadata)
+        # If no dev location found, try site-packages
+        base_path = str(dist.locate_file("nodetool/nodes"))
+        metadata_files = list(Path(base_path).glob("**/nodes.json"))
 
-    # Scan main nodes namespace
-    for module_info in pkgutil.iter_modules(nodetool.nodes.__path__):  # type: ignore
-        if package := process_module("nodetool.nodes", module_info):
-            packages.append(package)
-
-    # Scan lib subdirectory if it exists
-    try:
-        import nodetool.nodes.lib
-
-        for module_info in pkgutil.iter_modules(nodetool.nodes.lib.__path__):  # type: ignore
-            if package := process_module("nodetool.nodes.lib", module_info):
-                packages.append(package)
-    except ImportError:
-        pass
+        for metadata_file in metadata_files:
+            with open(metadata_file) as f:
+                try:
+                    metadata = json.load(f)
+                    packages.append(PackageModel(**metadata))
+                except Exception as e:
+                    print(f"Error processing {metadata_file}: {e}")
 
     return packages
