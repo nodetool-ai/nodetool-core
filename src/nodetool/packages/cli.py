@@ -6,6 +6,8 @@ from tabulate import tabulate
 import os
 import tomli
 import json
+import importlib.util
+import importlib.machinery
 
 from nodetool.metadata.node_metadata import (
     EnumEncoder,
@@ -98,8 +100,6 @@ def scan_package(verbose):
         # Add src directory to Python path temporarily
         src_path = os.path.abspath("src/nodetool/nodes")
         if os.path.exists(src_path):
-            sys.path.insert(0, src_path)
-
             # Find all Python modules under src
             with click.progressbar(
                 length=100,
@@ -123,12 +123,12 @@ def scan_package(verbose):
                                 click.echo(f"Scanning module: {module_name}")
 
                             try:
+                                full_module_name = f"nodetool.nodes.{module_name}"
                                 node_classes = get_node_classes_from_module(
-                                    module_name, verbose
+                                    full_module_name, verbose
                                 )
                                 if node_classes:
                                     assert package.nodes is not None
-                                    # Add to package total
                                     package.nodes.extend(
                                         node_class.metadata()
                                         for node_class in node_classes
@@ -140,9 +140,6 @@ def scan_package(verbose):
                                     )
 
                 bar.update(90)
-
-            # Remove src from path
-            sys.path.remove(src_path)
 
             # Write the single nodes.json file in the root directory
             os.makedirs("src/nodetool/package_metadata", exist_ok=True)
