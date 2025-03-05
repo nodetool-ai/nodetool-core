@@ -96,7 +96,7 @@ def scan_package(verbose):
         )
 
         # Add src directory to Python path temporarily
-        src_path = os.path.abspath("src")
+        src_path = os.path.abspath("src/nodetool/nodes")
         if os.path.exists(src_path):
             sys.path.insert(0, src_path)
 
@@ -145,7 +145,8 @@ def scan_package(verbose):
             sys.path.remove(src_path)
 
             # Write the single nodes.json file in the root directory
-            with open("nodes.json", "w") as f:
+            os.makedirs("src/nodetool/package_metadata", exist_ok=True)
+            with open(f"src/nodetool/package_metadata/{package.name}.json", "w") as f:
                 json.dump(
                     package.model_dump(exclude_defaults=True),
                     f,
@@ -154,7 +155,7 @@ def scan_package(verbose):
                 )
 
         click.echo(
-            f"✅ Successfully created nodes.json with {len(package.nodes or [])} total nodes"
+            f"✅ Successfully created package metadata for {package.name} with {len(package.nodes or [])} total nodes"
         )
 
     except Exception as e:

@@ -305,8 +305,8 @@ def discover_node_packages() -> list[PackageModel]:
     # First try to get the package's development location (for editable installs)
     for path in sys.path:
         if "nodetool-" in path:
-            nodes_path = Path(path) / "nodetool" / "nodes"
-            metadata_files = list(nodes_path.glob("**/nodes.json"))
+            package_path = Path(path) / "nodetool" / "package_metadata"
+            metadata_files = list(package_path.glob("*.json"))
             for metadata_file in metadata_files:
                 try:
                     with open(metadata_file) as f:
@@ -322,8 +322,8 @@ def discover_node_packages() -> list[PackageModel]:
             continue
 
         # If no dev location found, try site-packages
-        base_path = str(dist.locate_file("nodetool/nodes"))
-        metadata_files = list(Path(base_path).glob("**/nodes.json"))
+        base_path = str(dist.locate_file("nodetool/package"))
+        metadata_files = list(Path(base_path).glob("*.json"))
 
         for metadata_file in metadata_files:
             with open(metadata_file) as f:
@@ -334,3 +334,53 @@ def discover_node_packages() -> list[PackageModel]:
                     print(f"Error processing {metadata_file}: {e}")
 
     return packages
+
+
+# def discover_node_packages() -> list[PackageModel]:
+#     """
+#     Discover all installed node packages by finding packages that start with 'nodetool-'.
+
+#     This function:
+#     1. Gets all installed packages using importlib.metadata
+#     2. Filters for packages starting with 'nodetool-'
+#     3. Creates PackageModel instances for each discovered package
+#     4. Handles both regular installations and editable installs
+
+#     Returns:
+#         List[PackageModel]: List of discovered packages with their node metadata
+#     """
+#     packages = []
+#     import sys
+
+#     # First try to get the package's development location (for editable installs)
+#     for path in sys.path:
+#         if "nodetool-" in path:
+#             nodes_path = Path(path) / "nodetool" / "nodes"
+#             metadata_files = list(nodes_path.glob("**/nodes.json"))
+#             for metadata_file in metadata_files:
+#                 try:
+#                     with open(metadata_file) as f:
+#                         metadata = json.load(f)
+#                         packages.append(PackageModel(**metadata))
+#                 except Exception as e:
+#                     print(f"Error processing {metadata_file}: {e}")
+
+#     # Get all installed distributions
+#     for dist in importlib.metadata.distributions():
+#         package_name = dist.metadata["Name"]
+#         if not package_name.startswith("nodetool-"):
+#             continue
+
+#         # If no dev location found, try site-packages
+#         base_path = str(dist.locate_file("nodetool/nodes"))
+#         metadata_files = list(Path(base_path).glob("**/nodes.json"))
+
+#         for metadata_file in metadata_files:
+#             with open(metadata_file) as f:
+#                 try:
+#                     metadata = json.load(f)
+#                     packages.append(PackageModel(**metadata))
+#                 except Exception as e:
+#                     print(f"Error processing {metadata_file}: {e}")
+
+#     return packages
