@@ -67,7 +67,7 @@ def list_packages(available):
     "--verbose", "-v", is_flag=True, help="Enable verbose output during scanning"
 )
 def scan_package(verbose):
-    """Scan current directory for nodes and create nodes.json metadata file."""
+    """Scan current directory for nodes and create a single nodes.json metadata file."""
     try:
         # Check for pyproject.toml in current directory
         if not os.path.exists("pyproject.toml"):
@@ -109,9 +109,6 @@ def scan_package(verbose):
             ) as bar:
                 bar.update(10)
 
-                # Track nodes by module
-                module_nodes = {}
-
                 # Discover nodes
                 for root, _, files in os.walk(src_path):
                     for file in files:
@@ -121,7 +118,6 @@ def scan_package(verbose):
                             module_name = os.path.splitext(rel_path)[0].replace(
                                 os.sep, "."
                             )
-                            module_dir = os.path.dirname(module_path)
 
                             if verbose:
                                 click.echo(f"Scanning module: {module_name}")
@@ -131,36 +127,6 @@ def scan_package(verbose):
                                     module_name, verbose
                                 )
                                 if node_classes:
-                                    # Create nodes.json in the module directory
-                                    module_package = PackageModel(
-                                        name=project_data.get("name", ""),
-                                        description=project_data.get("description", ""),
-                                        version=project_data.get("version", "0.1.0"),
-                                        authors=project_data.get("authors", []),
-                                        nodes=[
-                                            node_class.metadata()
-                                            for node_class in node_classes
-                                        ],
-                                    )
-
-                                    nodes_json_path = os.path.join(
-                                        module_dir, "nodes.json"
-                                    )
-                                    with open(nodes_json_path, "w") as f:
-                                        json.dump(
-                                            module_package.model_dump(
-                                                exclude_defaults=True
-                                            ),
-                                            f,
-                                            indent=2,
-                                            cls=EnumEncoder,
-                                        )
-
-                                    if verbose:
-                                        click.echo(
-                                            f"Created nodes.json in {module_dir}"
-                                        )
-
                                     assert package.nodes is not None
                                     # Add to package total
                                     package.nodes.extend(
@@ -178,8 +144,17 @@ def scan_package(verbose):
             # Remove src from path
             sys.path.remove(src_path)
 
+            # Write the single nodes.json file in the root directory
+            with open("nodes.json", "w") as f:
+                json.dump(
+                    package.model_dump(exclude_defaults=True),
+                    f,
+                    indent=2,
+                    cls=EnumEncoder,
+                )
+
         click.echo(
-            f"✅ Successfully created nodes.json files for {len(package.nodes or [])} total nodes"
+            f"✅ Successfully created nodes.json with {len(package.nodes or [])} total nodes"
         )
 
     except Exception as e:
