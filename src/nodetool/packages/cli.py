@@ -265,84 +265,18 @@ def generate_docs(output_dir: str, compact: bool):
         # Create index.html and CSS files
         os.makedirs(output_dir, exist_ok=True)
 
-        # Create styles.css
-        css_content = """
-        :root {
-            --primary-color: #2563eb;
-            --background-color: #ffffff;
-            --text-color: #1f2937;
-            --code-bg: #f3f4f6;
-        }
-
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            line-height: 1.6;
-            color: var(--text-color);
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 2rem;
-            background: var(--background-color);
-        }
-
-        h1, h2, h3 {
-            color: var(--primary-color);
-            margin-top: 2rem;
-        }
-
-        .node-card {
-            border: 1px solid #e5e7eb;
-            border-radius: 8px;
-            padding: 1.5rem;
-            margin: 1rem 0;
-            background: white;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-        }
-
-        code {
-            background: var(--code-bg);
-            padding: 0.2em 0.4em;
-            border-radius: 3px;
-            font-size: 0.9em;
-        }
-
-        pre {
-            background: var(--code-bg);
-            padding: 1rem;
-            border-radius: 8px;
-            overflow-x: auto;
-        }
-
-        nav {
-            padding: 1rem 0;
-            border-bottom: 1px solid #e5e7eb;
-            margin-bottom: 2rem;
-        }
-
-        .search-box {
-            width: 100%;
-            padding: 0.5rem;
-            margin: 1rem 0;
-            border: 1px solid #e5e7eb;
-            border-radius: 4px;
-        }
-        """
-
-        with open(os.path.join(output_dir, "styles.css"), "w") as f:
-            f.write(css_content)
-
         # Create initial index.md with front matter
         index_content = f"""---
 layout: default
 title: {package_name} Documentation
+nav_order: 1
+permalink: /
 ---
 
 # {package_name} Documentation
 
-<input type="text" class="search-box" placeholder="Search nodes..." id="searchBox">
+## Available Nodes
 
-## Available Node Modules
-
-<div id="content">
 """
         # Track all module documentation files
         module_links = []
@@ -365,31 +299,54 @@ title: {package_name} Documentation
                         module_name = os.path.splitext(rel_path)[0].replace(os.sep, ".")
                         full_module_name = f"nodetool.nodes.{module_name}"
 
-                        # Generate documentation file
-                        doc_content = generate_documentation(
+                        # Generate documentation file with front matter for navigation
+                        doc_content = f"""---
+layout: default
+title: {module_name}
+parent: Nodes
+has_children: false
+nav_order: 2
+---
+
+"""
+                        doc_content += generate_documentation(
                             full_module_name,
                             compact=compact,
                         )
-                        index_content += doc_content
+
+                        # Create a separate file for each module
+                        module_filename = f"{module_name.replace('.', '_')}.md"
+                        with open(os.path.join(output_dir, module_filename), "w") as f:
+                            f.write(doc_content)
+
+                        # Add to module links for the index
+                        module_links.append(f"- [{module_name}]({module_filename})")
 
             bar.update(90)
+
+        # Create a nodes.md file as a parent for all node pages
+        nodes_content = """---
+layout: default
+title: Nodes
+nav_order: 2
+has_children: true
+permalink: /nodes
+---
+
+# Nodes
+
+This section contains documentation for all available nodes.
+"""
+        with open(os.path.join(output_dir, "nodes.md"), "w") as f:
+            f.write(nodes_content)
 
         # Add module links to index.md
         index_content += "\n".join(sorted(module_links))
         index_content += """
 
-</div>
+## Navigation
 
-<script>
-    // Simple search functionality
-    document.getElementById('searchBox').addEventListener('input', function(e) {
-        const searchTerm = e.target.value.toLowerCase();
-        document.querySelectorAll('#content h2').forEach(item => {
-            const text = item.textContent.toLowerCase();
-            item.style.display = text.includes(searchTerm) ? 'block' : 'none';
-        });
-    });
-</script>
+Use the sidebar navigation to explore detailed documentation for each node.
 """
         with open(os.path.join(output_dir, "index.md"), "w") as f:
             f.write(index_content)
@@ -454,9 +411,34 @@ url: ""
 
 # Build settings
 markdown: kramdown
-theme: jekyll-theme-minimal
+theme: just-the-docs
 plugins:
   - jekyll-feed
+
+# Navigation Structure
+nav_sort: case_sensitive
+heading_anchors: true
+
+# Enable search
+search_enabled: true
+search:
+  heading_level: 3
+  previews: 3
+  preview_words_before: 5
+  preview_words_after: 10
+  tokenizer_separator: /[\s/]+/
+  rel_url: true
+  button: false
+
+# Aux links for the upper right navigation
+aux_links:
+  "View on GitHub":
+    - "https://github.com/nodetool-ai/nodetool-core"
+
+aux_links_new_tab: true
+
+# Color scheme
+color_scheme: dark
 
 # Exclude files from processing
 exclude:
@@ -474,6 +456,7 @@ exclude:
 
 gem "jekyll"
 gem "github-pages", group: :jekyll_plugins
+gem "just-the-docs", "0.10.1"
 """
 
         with open(os.path.join(output_dir, "Gemfile"), "w") as f:
