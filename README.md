@@ -268,9 +268,6 @@ results = context.get_results()
 ```bash
 # Install using Poetry
 poetry install
-
-# Or using pip (after requirements are exported)
-pip install -r requirements.txt
 ```
 
 ## Development
