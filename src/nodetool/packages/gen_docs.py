@@ -143,21 +143,17 @@ SKIPPED_METHODS = ["__init__", "process"]
 
 
 def generate_documentation(
-    base_module: Union[str, Type[Any]], output_dir, compact: bool = False
-) -> None:
+    base_module: Union[str, Type[Any]], compact: bool = False
+) -> str:
     """
     Generate comprehensive documentation for a given module.
 
     Args:
         base_module (Union[str, Type[Any]]): The base module to document. Can be a string (module name) or a module object.
-        output_dir (str): The directory where documentation will be generated.
         compact (bool): If True, generates compact documentation for LLM usage. Defaults to False.
 
-    This function will:
-    1. Process the given module and its contents.
-    2. Generate markdown files with detailed documentation.
-    3. Create a directory structure mirroring the module structure.
-    4. If compact is True, generate simplified documentation for LLM usage.
+    Returns:
+        str: The generated documentation as a markdown string.
     """
     # Convert module object to string name if needed
     base_module_name = (
@@ -169,37 +165,30 @@ def generate_documentation(
         # Import the module
         module = importlib.import_module(base_module_name)
 
-        # Calculate the relative path
-        module_parts = base_module_name.split(".")
-        root_module = module_parts[0]
-        relative_parts = (
-            module_parts[2:] if len(module_parts) > 2 else []
-        )  # Skip nodetool.nodes
-        module_path_name = "/".join(relative_parts) if relative_parts else "index"
+        # Use StringIO instead of file writing
+        from io import StringIO
 
-        # Create module documentation file
-        module_path = os.path.join(output_dir, f"{module_path_name}.md")
-        os.makedirs(os.path.dirname(module_path), exist_ok=True)
-        logger.debug(f"Writing documentation to: {module_path}")
+        output = StringIO()
 
-        with open(module_path, "w", encoding="utf-8") as file:
-            file.write(f"# {base_module_name}\n\n")
-            if module.__doc__:
-                file.write(f"{module.__doc__.strip()}\n\n")
+        output.write(f"# {base_module_name}\n\n")
+        if module.__doc__:
+            output.write(f"{module.__doc__.strip()}\n\n")
 
-            # Document module contents
-            documented_items = 0
-            for name, obj in inspect.getmembers(module):
-                if name.startswith("_"):
-                    continue
-                if defined_in_module(obj, module):
-                    if inspect.isclass(obj):
-                        document_class(file, obj, compact)
-                        documented_items += 1
-                    elif inspect.isfunction(obj):
-                        document_function(file, obj, compact=compact)
-                        documented_items += 1
-            logger.debug(f"Documented {documented_items} items in {base_module_name}")
+        # Document module contents
+        documented_items = 0
+        for name, obj in inspect.getmembers(module):
+            if name.startswith("_"):
+                continue
+            if defined_in_module(obj, module):
+                if inspect.isclass(obj):
+                    document_class(output, obj, compact)
+                    documented_items += 1
+                elif inspect.isfunction(obj):
+                    document_function(output, obj, compact=compact)
+                    documented_items += 1
+        logger.debug(f"Documented {documented_items} items in {base_module_name}")
+
+        return output.getvalue()
 
     except Exception as e:
         logger.error(f"Error processing module {base_module_name}: {e}")

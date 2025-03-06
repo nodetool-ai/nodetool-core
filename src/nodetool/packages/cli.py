@@ -330,44 +330,24 @@ def generate_docs(output_dir: str, compact: bool):
         with open(os.path.join(output_dir, "styles.css"), "w") as f:
             f.write(css_content)
 
-        # Create base index.html
-        index_content = f"""
-        <!DOCTYPE html>
-        <html lang="en">
-        <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>{package_name} Documentation</title>
-            <meta name="description" content="Documentation for {package_name} nodes">
-            <link rel="stylesheet" href="styles.css">
-            <link rel="icon" href="data:,">
-        </head>
-        <body>
-            <nav>
-                <h1>{package_name}</h1>
-                <input type="text" class="search-box" placeholder="Search nodes..." id="searchBox">
-            </nav>
-            <main id="content">
-                <!-- Node documentation will be inserted here -->
-            </main>
-            <script>
-                // Simple search functionality
-                document.getElementById('searchBox').addEventListener('input', function(e) {{
-                    const searchTerm = e.target.value.toLowerCase();
-                    document.querySelectorAll('.node-card').forEach(card => {{
-                        const text = card.textContent.toLowerCase();
-                        card.style.display = text.includes(searchTerm) ? 'block' : 'none';
-                    }});
-                }});
-            </script>
-        </body>
-        </html>
-        """
+        # Create initial index.md with front matter
+        index_content = f"""---
+layout: default
+title: {package_name} Documentation
+---
 
-        with open(os.path.join(output_dir, "index.html"), "w") as f:
-            f.write(index_content)
+# {package_name} Documentation
 
-        # Continue with existing documentation generation
+<input type="text" class="search-box" placeholder="Search nodes..." id="searchBox">
+
+## Available Node Modules
+
+<div id="content">
+"""
+        # Track all module documentation files
+        module_links = []
+
+        # Continue with documentation generation
         with click.progressbar(
             length=100,
             label="Generating documentation",
@@ -385,26 +365,44 @@ def generate_docs(output_dir: str, compact: bool):
                         module_name = os.path.splitext(rel_path)[0].replace(os.sep, ".")
                         full_module_name = f"nodetool.nodes.{module_name}"
 
-                        try:
-                            generate_documentation(
-                                full_module_name, output_dir, compact=compact
-                            )
-                        except Exception as e:
-                            click.echo(f"Error processing {module_name}: {e}", err=True)
+                        # Generate documentation file
+                        doc_content = generate_documentation(
+                            full_module_name,
+                            compact=compact,
+                        )
+                        index_content += doc_content
 
             bar.update(90)
 
-        click.echo(f"✅ Successfully generated documentation in {output_dir}")
+        # Add module links to index.md
+        index_content += "\n".join(sorted(module_links))
+        index_content += """
+
+</div>
+
+<script>
+    // Simple search functionality
+    document.getElementById('searchBox').addEventListener('input', function(e) {
+        const searchTerm = e.target.value.toLowerCase();
+        document.querySelectorAll('#content h2').forEach(item => {
+            const text = item.textContent.toLowerCase();
+            item.style.display = text.includes(searchTerm) ? 'block' : 'none';
+        });
+    });
+</script>
+"""
+        with open(os.path.join(output_dir, "index.md"), "w") as f:
+            f.write(index_content)
 
         # Create GitHub Actions workflow for Pages
         workflow_dir = ".github/workflows"
         os.makedirs(workflow_dir, exist_ok=True)
 
-        workflow_content = """name: Deploy Documentation
+        workflow_content = """name: Deploy Jekyll with GitHub Pages dependencies preinstalled
+
 on:
   push:
-    branches:
-      - main
+    branches: ["main"]
   workflow_dispatch:
 
 permissions:
@@ -417,23 +415,28 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+      - name: Build with Jekyll
+        uses: actions/jekyll-build-pages@v1
+        with:
+          source: ./docs
+          destination: ./_site
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+
   deploy:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
+    needs: build
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      
-      - name: Setup Pages
-        uses: actions/configure-pages@v4
-        
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: './docs'
-          
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
@@ -443,8 +446,43 @@ jobs:
         with open(workflow_path, "w") as f:
             f.write(workflow_content)
 
+        # Create Jekyll configuration
+        jekyll_config = f"""title: {package_name} Documentation
+description: Documentation for {package_name} nodes
+baseurl: ""
+url: ""
+
+# Build settings
+markdown: kramdown
+theme: jekyll-theme-minimal
+plugins:
+  - jekyll-feed
+
+# Exclude files from processing
+exclude:
+  - Gemfile
+  - Gemfile.lock
+  - node_modules
+  - vendor
+"""
+
+        with open(os.path.join(output_dir, "_config.yml"), "w") as f:
+            f.write(jekyll_config)
+
+        # Create Gemfile
+        gemfile_content = """source "https://rubygems.org"
+
+gem "jekyll"
+gem "github-pages", group: :jekyll_plugins
+"""
+
+        with open(os.path.join(output_dir, "Gemfile"), "w") as f:
+            f.write(gemfile_content)
+
         click.echo("\nSetup GitHub Pages deployment:")
         click.echo("  - Created .github/workflows/deploy-docs.yml")
+        click.echo("  - Created docs/_config.yml")
+        click.echo("  - Created docs/Gemfile")
         click.echo("\nTo enable GitHub Pages:")
         click.echo("1. Go to your repository settings")
         click.echo("2. Navigate to Pages section")
