@@ -1,7 +1,6 @@
 import asyncio
 from enum import Enum
 import json
-import time
 import uuid
 from fastapi.websockets import WebSocketState
 import msgpack
@@ -20,7 +19,6 @@ from nodetool.workflows.workflow_runner import WorkflowRunner
 from nodetool.workflows.threaded_event_loop import ThreadedEventLoop
 from nodetool.workflows.types import Error, RunFunction
 import gc
-import torch
 
 log = Environment.get_logger()
 

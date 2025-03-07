@@ -3,7 +3,14 @@ from typing import Any
 from pymemcache import Client
 from pymemcache.serde import PickleSerde
 from pymemcache.exceptions import MemcacheUnknownError
-from nodetool.metadata.types import BaseType
+
+try:
+    import torch
+
+    TORCH_AVAILABLE = True
+except ImportError:
+    TORCH_AVAILABLE = False
+
 from .abstract_node_cache import AbstractNodeCache
 
 
@@ -24,13 +31,8 @@ class MemcachedNodeCache(AbstractNodeCache):
             return {k: self.move_to_device(v, device) for k, v in value.items()}
         if isinstance(value, list):
             return [self.move_to_device(v, device) for v in value]
-        try:
-            import torch
-
-            if isinstance(value, torch.Tensor):
-                return value.to(device)
-        except ImportError:
-            pass
+        if TORCH_AVAILABLE and isinstance(value, torch.Tensor):
+            return value.to(device)
         return value
 
     def get(self, key: str) -> Any:

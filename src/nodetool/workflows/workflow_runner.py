@@ -2,7 +2,7 @@
 Workflow execution engine for processing directed acyclic graphs (DAGs) of computational nodes.
 
 This module provides the core workflow execution functionality, handling parallel processing,
-resource management, and orchestration of computational nodes. It supports both CPU and 
+resource management, and orchestration of computational nodes. It supports both CPU and
 GPU-based computations with automatic device selection and memory management.
 
 Key Components:
