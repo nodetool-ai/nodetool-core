@@ -6,7 +6,7 @@ import uuid
 from fastapi.websockets import WebSocketState
 import msgpack
 from typing import Any, AsyncGenerator, Callable
-from anthropic import BaseModel
+from pydantic import BaseModel
 from fastapi import WebSocket, WebSocketDisconnect
 from nodetool.common.environment import Environment
 from nodetool.common.model_manager import ModelManager
