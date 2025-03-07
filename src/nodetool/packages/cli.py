@@ -262,6 +262,13 @@ def generate_docs(output_dir: str, compact: bool):
             click.echo("Error: No package name found in pyproject.toml", err=True)
             sys.exit(1)
 
+        repository = project_data.get("repository")
+        if not repository:
+            click.echo("Error: No repository found in pyproject.toml", err=True)
+            sys.exit(1)
+
+        owner = repository.split("/")[-2]
+
         # Create index.html and CSS files
         os.makedirs(output_dir, exist_ok=True)
 
@@ -406,14 +413,16 @@ jobs:
         # Create Jekyll configuration
         jekyll_config = f"""title: {package_name} Documentation
 description: Documentation for {package_name} nodes
-baseurl: ""
-url: ""
+remote_theme: just-the-docs/just-the-docs
+baseurl: "{repository}"
+url: "{repository}"
 
 # Build settings
 markdown: kramdown
 theme: just-the-docs
 plugins:
   - jekyll-feed
+  - jekyll-remote-theme
 
 # Navigation Structure
 nav_sort: case_sensitive
@@ -433,7 +442,7 @@ search:
 # Aux links for the upper right navigation
 aux_links:
   "View on GitHub":
-    - "https://github.com/nodetool-ai/nodetool-core"
+    - "{repository}"
 
 aux_links_new_tab: true
 
@@ -456,7 +465,8 @@ exclude:
 
 gem "jekyll"
 gem "github-pages", group: :jekyll_plugins
-gem "just-the-docs", "0.10.1"
+gem "just-the-docs", "0.7.0"
+gem "jekyll-remote-theme"
 """
 
         with open(os.path.join(output_dir, "Gemfile"), "w") as f:
