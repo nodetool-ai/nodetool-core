@@ -417,11 +417,7 @@ remote_theme: just-the-docs/just-the-docs
 baseurl: "{repository}"
 url: "{repository}"
 
-# Build settings
-markdown: kramdown
-theme: just-the-docs
-plugins:
-  - jekyll-feed
+# Build settingsplugins:
   - jekyll-remote-theme
 
 # Navigation Structure
@@ -465,7 +461,6 @@ exclude:
 
 gem "jekyll"
 gem "github-pages", group: :jekyll_plugins
-gem "just-the-docs", "0.7.0"
 gem "jekyll-remote-theme"
 """
 
