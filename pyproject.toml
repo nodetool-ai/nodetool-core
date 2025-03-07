@@ -61,6 +61,7 @@ chromadb = "0.6.3"
 aiofiles = "24.1.0"
 boto3 = "1.35.63"
 pymemcache = "4.0.0"
+protobuf = "3.20.3"
 
 # Web and networking
 httpx = "0.27.2"
