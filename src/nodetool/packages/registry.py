@@ -148,8 +148,15 @@ def get_package_metadata_from_github(github_repo: str) -> Optional[PackageModel]
         project_data = pyproject_data.get("tool", {}).get("poetry", {})
 
     if not project_data:
-        print(f"No project metadata found in pyproject.toml for {github_repo}")
-        return None
+        raise ValueError(
+            f"No project metadata found in pyproject.toml for {github_repo}"
+        )
+
+    # Check if repository is defined
+    if "repository" not in project_data:
+        raise ValueError(
+            f"'repository' field is missing in pyproject.toml for {github_repo}. Please define the repository URL."
+        )
 
     return PackageModel(
         name=project_data.get("name", github_repo),
