@@ -203,6 +203,8 @@ def scan(verbose):
         get_node_classes_from_module,
     )
 
+    sys.path.append(os.path.abspath("src"))
+
     try:
         # Check for pyproject.toml in current directory
         if not os.path.exists("pyproject.toml"):
@@ -222,12 +224,16 @@ def scan(verbose):
             click.echo("Error: No project metadata found in pyproject.toml", err=True)
             sys.exit(1)
 
+        repo_id = project_data.get("repository", "").split("/")[-2:]
+        repo_id = "/".join(repo_id)
+
         # Create package model
         package = PackageModel(
             name=project_data.get("name", ""),
             description=project_data.get("description", ""),
             version=project_data.get("version", "0.1.0"),
             authors=project_data.get("authors", []),
+            repo_id=repo_id,
         )
 
         # Add src directory to Python path temporarily
