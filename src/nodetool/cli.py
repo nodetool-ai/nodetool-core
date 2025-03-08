@@ -1,3 +1,4 @@
+import os
 import click
 from nodetool.common.environment import Environment
 
@@ -27,6 +28,7 @@ def cli():
 @click.option("--apps-folder", default=None, help="Path to the apps folder.")
 @click.option("--force-fp16", is_flag=True, help="Force FP16.")
 @click.option("--reload", is_flag=True, help="Reload the server on changes.")
+@click.option("--production", is_flag=True, help="Run in production mode.")
 @click.option(
     "--remote-auth",
     is_flag=True,
@@ -41,9 +43,12 @@ def serve(
     remote_auth: bool = False,
     worker_url: str | None = None,
     apps_folder: str | None = None,
+    production: bool = False,
 ):
     """Serve the Nodetool API server."""
     from nodetool.api.server import create_app, run_uvicorn_server
+
+    os.environ["ENV"] = "production" if production else "development"
 
     try:
         import comfy.cli_args  # type: ignore

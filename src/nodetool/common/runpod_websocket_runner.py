@@ -24,12 +24,10 @@ import time
 from enum import Enum
 import aiohttp
 import msgpack
-import requests
-from anthropic import BaseModel
+from pydantic import BaseModel
 from fastapi import WebSocket, WebSocketDisconnect
 from typing import Any, Optional
 from nodetool.common.environment import Environment
-from nodetool.types.job import JobUpdate
 from nodetool.workflows.run_job_request import RunJobRequest
 
 log = Environment.get_logger()

@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 
-from enum import Enum
-from typing import Dict, List, Optional, Sequence, Union
+from typing import Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from nodetool.api.utils import current_user, User
@@ -14,12 +13,6 @@ from markitdown import MarkItDown
 import pymupdf
 import pymupdf4llm
 
-from llama_index.core.node_parser import (
-    SemanticSplitterNodeParser,
-)
-from llama_index.core.schema import Document, TextNode
-from llama_index.embeddings.ollama import OllamaEmbedding
-
 from nodetool.metadata.types import Collection, FilePath
 from nodetool.models.workflow import Workflow
 from nodetool.workflows.processing_context import ProcessingContext
@@ -29,6 +22,12 @@ from nodetool.workflows.run_job_request import RunJobRequest
 router = APIRouter(prefix="/api/collections", tags=["collections"])
 
 DEFAULT_EMBEDDING_MODEL = "all-minilm:latest"
+
+
+class Document(BaseModel):
+    text: str
+    doc_id: str
+    metadata: dict[str, str] = {}
 
 
 class IndexFile(BaseModel):

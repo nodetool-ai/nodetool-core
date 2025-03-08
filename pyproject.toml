@@ -45,16 +45,20 @@ tqdm = "4.67.0"
 # Document processing dependencies
 bs4 = "0.0.2"
 langchain-text-splitters = "0.3.4"
+markitdown = "*"
+PyMuPDF = "1.25.2"
+pymupdf4llm = "0.0.17"
 
 # AI dependencies
-# anthropic = "0.39.0"
-# huggingface_hub = "0.26.2"
-# openai = "1.54.4"
+anthropic = "0.39.0"
+huggingface_hub = "0.26.2"
+openai = "*"
 # fal-client = "0.5.6"
-# ollama = "0.4.7"
-# tiktoken = "0.8.0"
+ollama = "*"
+tiktoken = "*"
 # replicate = "1.0.3"
 # runpod = "1.7.6"
+
 
 # Media dependencies
 ffmpeg-python = "0.2.0"
