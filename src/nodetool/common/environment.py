@@ -165,6 +165,13 @@ class Environment(object):
         return cls.get("ENV")
 
     @classmethod
+    def set_env(cls, env: str):
+        """
+        Set the environment.
+        """
+        os.environ["ENV"] = env
+
+    @classmethod
     def is_production(cls):
         """
         Is the environment production?

@@ -48,8 +48,6 @@ def serve(
     """Serve the Nodetool API server."""
     from nodetool.api.server import create_app, run_uvicorn_server
 
-    os.environ["ENV"] = "production" if production else "development"
-
     try:
         import comfy.cli_args  # type: ignore
 
