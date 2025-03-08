@@ -1,42 +1,164 @@
-# CLI Implementation
-import sys
-import traceback
 import click
-from tabulate import tabulate
-import os
-import tomli
-import json
-import importlib.util
-import importlib.machinery
+from nodetool.common.environment import Environment
 
-from nodetool.metadata.node_metadata import (
-    EnumEncoder,
-    PackageModel,
-    get_node_classes_from_module,
-)
-from nodetool.packages.registry import (
-    Registry,
-)
-from nodetool.packages.gen_docs import generate_documentation
+# silence warnings on the command line
+import warnings
+
+warnings.filterwarnings("ignore")
+log = Environment.get_logger()
 
 
 @click.group()
-@click.version_option(version="0.1.0")
 def cli():
-    """
-    Nodetool Package Manager CLI.
-
-    This tool helps you manage packages for the Nodetool ecosystem.
-    """
+    """Nodetool CLI - A tool for managing and running Nodetool workflows and packages."""
     pass
 
 
-@cli.command("list")
+@cli.command("serve")
+@click.option("--host", default="127.0.0.1", help="Host address to serve on.")
+@click.option("--port", default=8000, help="Port to serve on.", type=int)
+@click.option("--worker-url", default=None, help="URL of the worker to connect to.")
+@click.option(
+    "--static-folder",
+    default=None,
+    help="Path to the static folder to serve.",
+    type=click.Path(exists=True, resolve_path=True, file_okay=False, dir_okay=True),
+)
+@click.option("--apps-folder", default=None, help="Path to the apps folder.")
+@click.option("--force-fp16", is_flag=True, help="Force FP16.")
+@click.option("--reload", is_flag=True, help="Reload the server on changes.")
+@click.option(
+    "--remote-auth",
+    is_flag=True,
+    help="Use single local user with id 1 for authentication. Will be ingnored on production.",
+)
+def serve(
+    host: str,
+    port: int,
+    static_folder: str | None = None,
+    reload: bool = False,
+    force_fp16: bool = False,
+    remote_auth: bool = False,
+    worker_url: str | None = None,
+    apps_folder: str | None = None,
+):
+    """Serve the Nodetool API server."""
+    from nodetool.api.server import create_app, run_uvicorn_server
+
+    try:
+        import comfy.cli_args  # type: ignore
+
+        comfy.cli_args.args.force_fp16 = force_fp16
+    except ImportError:
+        pass
+
+    Environment.set_remote_auth(remote_auth)
+
+    if worker_url:
+        Environment.set_worker_url(worker_url)
+
+    if Environment.is_production():
+        Environment.set_nodetool_api_url(f"https://api.nodetool.ai")
+    else:
+        Environment.set_nodetool_api_url(f"http://127.0.0.1:{port}")
+
+    if not reload:
+        app = create_app(static_folder=static_folder, apps_folder=apps_folder)
+    else:
+        if static_folder:
+            raise Exception("static folder and reload are exclusive options")
+        if apps_folder:
+            raise Exception("apps folder and reload are exclusive options")
+        app = "nodetool.api.app:app"
+
+    run_uvicorn_server(app=app, host=host, port=port, reload=reload)
+
+
+@cli.command("worker")
+@click.option("--host", default="127.0.0.1", help="Host address to serve on.")
+@click.option("--port", default=8001, help="Port to serve on.", type=int)
+@click.option("--force-fp16", is_flag=True, help="Force FP16.")
+@click.option("--reload", is_flag=True, help="Reload the server on changes.")
+def worker(
+    host: str,
+    port: int,
+    reload: bool = False,
+    force_fp16: bool = False,
+):
+    """Start a Nodetool worker instance."""
+    from nodetool.api.server import run_uvicorn_server
+
+    try:
+        import comfy.cli_args  # type: ignore
+        import comfy.model_management  # type: ignore
+        import comfy.utils  # type: ignore
+        from nodes import init_extra_nodes  # type: ignore
+
+        comfy.cli_args.args.force_fp16 = force_fp16
+    except ImportError:
+        pass
+
+    app = "nodetool.api.worker:app"
+    init_extra_nodes()
+    run_uvicorn_server(app=app, host=host, port=port, reload=reload)
+
+
+@cli.command()
+@click.argument("workflow_id", type=str)
+def run(workflow_id: str):
+    """Run a workflow from a file."""
+    import asyncio
+    import traceback
+    from nodetool.workflows.run_job_request import RunJobRequest
+    from nodetool.workflows.run_workflow import run_workflow
+
+    request = RunJobRequest(
+        workflow_id=workflow_id, user_id="1", auth_token="local_token"
+    )
+
+    async def run_workflow_async():
+        print("Running workflow...")
+        try:
+            async for message in run_workflow(request):
+                # Print message type and content
+                if hasattr(message, "type"):
+                    print(f"{message.type}: {message.model_dump_json()}")
+                else:
+                    print(message)
+            print("Workflow finished")
+        except Exception as e:
+            print(f"Error running workflow: {e}")
+            traceback.print_exc()
+            exit(1)
+
+    asyncio.run(run_workflow_async())
+
+
+@cli.command()
+def chat():
+    """Start a nodetool chat."""
+    import asyncio
+    from nodetool.chat.chat import chat_cli
+
+    asyncio.run(chat_cli())
+
+
+# Package Commands Group
+@click.group()
+def package():
+    """Commands for managing Nodetool packages."""
+    pass
+
+
+@package.command("list")
 @click.option(
     "--available", "-a", is_flag=True, help="List available packages from the registry"
 )
 def list_packages(available):
     """List installed or available packages."""
+    from tabulate import tabulate
+    from nodetool.packages.registry import Registry
+
     registry = Registry()
 
     if available:
@@ -47,7 +169,6 @@ def list_packages(available):
             )
             return
 
-        print(packages)
         headers = ["Name", "Repository ID"]
         table_data = [[pkg.name, pkg.repo_id] for pkg in packages]
         click.echo(tabulate(table_data, headers=headers, tablefmt="grid"))
@@ -65,12 +186,23 @@ def list_packages(available):
         click.echo(tabulate(table_data, headers=headers, tablefmt="grid"))
 
 
-@cli.command("scan")
+@package.command()
 @click.option(
     "--verbose", "-v", is_flag=True, help="Enable verbose output during scanning"
 )
-def scan_package(verbose):
-    """Scan current directory for nodes and create a single nodes.json metadata file."""
+def scan(verbose):
+    """Scan current directory for nodes and create package metadata."""
+    import os
+    import sys
+    import tomli
+    import json
+    import traceback
+    from nodetool.metadata.node_metadata import (
+        EnumEncoder,
+        PackageModel,
+        get_node_classes_from_module,
+    )
+
     try:
         # Check for pyproject.toml in current directory
         if not os.path.exists("pyproject.toml"):
@@ -101,7 +233,6 @@ def scan_package(verbose):
         # Add src directory to Python path temporarily
         src_path = os.path.abspath("src/nodetool/nodes")
         if os.path.exists(src_path):
-            # Find all Python modules under src
             with click.progressbar(
                 length=100,
                 label="Scanning for nodes",
@@ -163,9 +294,11 @@ def scan_package(verbose):
         sys.exit(1)
 
 
-@cli.command("init")
-def init_project():
-    """Initialize a new Nodetool project with pyproject.toml."""
+@package.command()
+def init():
+    """Initialize a new Nodetool project."""
+    import os
+
     if os.path.exists("pyproject.toml"):
         if not click.confirm(
             "pyproject.toml already exists. Do you want to overwrite it?"
@@ -212,7 +345,7 @@ nodetool-core = {{ git = "https://github.com/nodetool-ai/nodetool-core.git", rev
     click.echo("  - src/nodetool/package_metadata/")
 
 
-@cli.command("docs")
+@package.command()
 @click.option(
     "--output-dir",
     "-o",
@@ -225,8 +358,14 @@ nodetool-core = {{ git = "https://github.com/nodetool-ai/nodetool-core.git", rev
     is_flag=True,
     help="Generate compact documentation for LLM usage",
 )
-def generate_docs(output_dir: str, compact: bool):
-    """Generate documentation for the package nodes and setup GitHub Pages."""
+def docs(output_dir: str, compact: bool):
+    """Generate documentation for the package nodes."""
+    import os
+    import sys
+    import tomli
+    import traceback
+    from nodetool.packages.gen_docs import generate_documentation
+
     try:
         # Add src directory to Python path temporarily
         src_path = os.path.abspath("src")
@@ -269,26 +408,7 @@ def generate_docs(output_dir: str, compact: bool):
 
         owner = repository.split("/")[-2]
 
-        # Create index.html and CSS files
-        os.makedirs(output_dir, exist_ok=True)
-
-        # Create initial index.md with front matter
-        index_content = f"""---
-layout: default
-title: {package_name} Documentation
-nav_order: 1
-permalink: /
----
-
-# {package_name} Documentation
-
-## Available Nodes
-
-"""
-        # Track all module documentation files
-        module_links = []
-
-        # Continue with documentation generation
+        # Generate documentation
         with click.progressbar(
             length=100,
             label="Generating documentation",
@@ -296,190 +416,25 @@ permalink: /
             show_percent=True,
         ) as bar:
             bar.update(10)
+            # Generate the documentation
+            docs = generate_documentation(package_name, compact)
 
-            # Process each Python module under src/nodetool/nodes
-            for root, _, files in os.walk(nodes_path):
-                for file in files:
-                    if file.endswith(".py"):
-                        module_path = os.path.join(root, file)
-                        rel_path = os.path.relpath(module_path, nodes_path)
-                        module_name = os.path.splitext(rel_path)[0].replace(os.sep, ".")
-                        full_module_name = f"nodetool.nodes.{module_name}"
-
-                        # Generate documentation file with front matter for navigation
-                        doc_content = f"""---
-layout: default
-title: {module_name}
-parent: Nodes
-has_children: false
-nav_order: 2
----
-
-"""
-                        doc_content += generate_documentation(
-                            full_module_name,
-                            compact=compact,
-                        )
-
-                        # Create a separate file for each module
-                        module_filename = f"{module_name.replace('.', '_')}.md"
-                        with open(os.path.join(output_dir, module_filename), "w") as f:
-                            f.write(doc_content)
-
-                        # Add to module links for the index
-                        module_links.append(f"- [{module_name}]({module_filename})")
-
+            # Write to output file
+            os.makedirs(output_dir, exist_ok=True)
+            with open(os.path.join(output_dir, "index.md"), "w") as f:
+                f.write(docs)
             bar.update(90)
 
-        # Create a nodes.md file as a parent for all node pages
-        nodes_content = """---
-layout: default
-title: Nodes
-nav_order: 2
-has_children: true
-permalink: /nodes
----
-
-# Nodes
-
-This section contains documentation for all available nodes.
-"""
-        with open(os.path.join(output_dir, "nodes.md"), "w") as f:
-            f.write(nodes_content)
-
-        # Add module links to index.md
-        index_content += "\n".join(sorted(module_links))
-        index_content += """
-
-## Navigation
-
-Use the sidebar navigation to explore detailed documentation for each node.
-"""
-        with open(os.path.join(output_dir, "index.md"), "w") as f:
-            f.write(index_content)
-
-        # Create GitHub Actions workflow for Pages
-        workflow_dir = ".github/workflows"
-        os.makedirs(workflow_dir, exist_ok=True)
-
-        workflow_content = """name: Deploy Jekyll with GitHub Pages dependencies preinstalled
-
-on:
-  push:
-    branches: ["main"]
-  workflow_dispatch:
-
-permissions:
-  contents: read
-  pages: write
-  id-token: write
-
-concurrency:
-  group: "pages"
-  cancel-in-progress: false
-
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Setup Pages
-        uses: actions/configure-pages@v5
-      - name: Build with Jekyll
-        uses: actions/jekyll-build-pages@v1
-        with:
-          source: ./docs
-          destination: ./_site
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
-
-  deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
-    needs: build
-    steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
-"""
-
-        workflow_path = os.path.join(workflow_dir, "deploy-docs.yml")
-        with open(workflow_path, "w") as f:
-            f.write(workflow_content)
-
-        # Create Jekyll configuration
-        jekyll_config = f"""title: {package_name} Documentation
-description: Documentation for {package_name} nodes
-remote_theme: just-the-docs/just-the-docs
-baseurl: "{repository}"
-url: "{repository}"
-
-# Build settingsplugins:
-  - jekyll-remote-theme
-
-# Navigation Structure
-nav_sort: case_sensitive
-heading_anchors: true
-
-# Enable search
-search_enabled: true
-search:
-  heading_level: 3
-  previews: 3
-  preview_words_before: 5
-  preview_words_after: 10
-  tokenizer_separator: /[\s/]+/
-  rel_url: true
-  button: false
-
-# Aux links for the upper right navigation
-aux_links:
-  "View on GitHub":
-    - "{repository}"
-
-aux_links_new_tab: true
-
-# Color scheme
-color_scheme: dark
-
-# Exclude files from processing
-exclude:
-  - Gemfile
-  - Gemfile.lock
-  - node_modules
-  - vendor
-"""
-
-        with open(os.path.join(output_dir, "_config.yml"), "w") as f:
-            f.write(jekyll_config)
-
-        # Create Gemfile
-        gemfile_content = """source "https://rubygems.org"
-
-gem "jekyll"
-gem "github-pages", group: :jekyll_plugins
-gem "jekyll-remote-theme"
-"""
-
-        with open(os.path.join(output_dir, "Gemfile"), "w") as f:
-            f.write(gemfile_content)
-
-        click.echo("\nSetup GitHub Pages deployment:")
-        click.echo("  - Created .github/workflows/deploy-docs.yml")
-        click.echo("  - Created docs/_config.yml")
-        click.echo("  - Created docs/Gemfile")
-        click.echo("\nTo enable GitHub Pages:")
-        click.echo("1. Go to your repository settings")
-        click.echo("2. Navigate to Pages section")
-        click.echo("3. Select 'GitHub Actions' as the source")
+        click.echo(f"✅ Documentation generated in {output_dir}")
 
     except Exception as e:
         click.echo(f"Error: {str(e)}", err=True)
         traceback.print_exc()
         sys.exit(1)
+
+
+# Add package group to the main CLI
+cli.add_command(package)
 
 
 if __name__ == "__main__":

@@ -1,8 +1,10 @@
 import PIL.Image
 import PIL.ImageChops
 import pytest
+from nodetool.metadata.types import ImageRef
 from nodetool.types.graph import Node, Edge
 from nodetool.types.job import JobUpdate
+from nodetool.workflows.base_node import BaseNode, InputNode, OutputNode
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.processing_context import ProcessingContext
@@ -11,16 +13,49 @@ from nodetool.workflows.graph import Graph
 from nodetool.types.graph import (
     Graph as APIGraph,
 )
-from nodetool.nodes.nodetool.constant import Float, List, String
-from nodetool.nodes.nodetool.input import (
-    FloatInput,
-    GroupInput,
-    ImageInput,
-    IntegerInput,
-)
-from nodetool.nodes.nodetool.group import Loop
-from nodetool.nodes.nodetool.math import Add, Multiply
-from nodetool.nodes.nodetool.output import ImageOutput, IntegerOutput
+
+
+class String(BaseNode):
+    value: str = ""
+
+    async def process(self, context: ProcessingContext) -> str:
+        return self.value
+
+
+class Float(BaseNode):
+    value: float = 0.0
+
+    async def process(self, context: ProcessingContext) -> float:
+        return self.value
+
+
+class Add(BaseNode):
+    a: float = 0.0
+    b: float = 0.0
+
+    async def process(self, context: ProcessingContext) -> float:
+        return self.a + self.b
+
+
+class IntegerOutput(OutputNode):
+    value: int = 0
+
+    async def process(self, context: ProcessingContext) -> int:
+        return self.value
+
+
+class IntegerInput(InputNode):
+    value: int = 0
+
+    async def process(self, context: ProcessingContext) -> int:
+        return self.value
+
+
+class ImageInput(InputNode):
+    value: ImageRef = ImageRef()
+
+    async def process(self, context: ProcessingContext) -> ImageRef:
+        return self.value
 
 
 @pytest.fixture

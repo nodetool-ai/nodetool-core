@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from nodetool.metadata.types import Message, MessageContent, Task, ToolCall
+from nodetool.metadata.types import Message, MessageContent, ToolCall
 
 
 class MessageCreateRequest(BaseModel):
@@ -16,25 +16,3 @@ class MessageCreateRequest(BaseModel):
 class MessageList(BaseModel):
     next: str | None
     messages: list[Message]
-
-
-class TaskList(BaseModel):
-    next: str | None
-    tasks: list[Task]
-
-
-class TaskCreateRequest(BaseModel):
-    task_type: str
-    thread_id: str
-    name: str
-    instructions: str
-    dependencies: list[str] = []
-
-
-class TaskUpdateRequest(BaseModel):
-    status: str | None = None
-    error: str | None = None
-    result: str | None = None
-    cost: float | None = None
-    started_at: str | None = None
-    finished_at: str | None = None

@@ -1,8 +1,7 @@
 import pytest
-from nodetool.nodes.nodetool.group import Loop
-from nodetool.nodes.nodetool.input import IntegerInput
-from nodetool.nodes.nodetool.math import Multiply
 from nodetool.types.graph import Node, Edge
+from nodetool.workflows.base_node import BaseNode, GroupNode, InputNode
+from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.read_graph import read_graph, GraphParsingError
 
 
@@ -98,18 +97,37 @@ if False:
         assert result_edges_tuples == expected_edges_data
 
 
+class Loop(GroupNode):
+    pass
+
+
+class IntegerInput(InputNode):
+    value: int = 0
+
+    async def process(self, context: ProcessingContext) -> int:
+        return self.value
+
+
+class Multiply(BaseNode):
+    a: int = 0
+    b: int = 0
+
+    async def process(self, context: ProcessingContext) -> int:
+        return self.a * self.b
+
+
 def test_read_graph_custom_format():
     custom_json = {
-        "input_node": {"type": "nodetool.input.IntegerInput", "data": {"value": 10}},
+        "input_node": {"type": IntegerInput.get_node_type(), "data": {"value": 10}},
         "multiply_node": {
-            "type": "nodetool.math.Multiply",
+            "type": Multiply.get_node_type(),
             "data": {"a": ["input_node", "value"], "b": 2},
         },
     }
 
     expected_nodes = [
-        Node(id="input_node", type="nodetool.input.IntegerInput", data={"value": 10}),
-        Node(id="multiply_node", type="nodetool.math.Multiply", data={"b": 2}),
+        Node(id="input_node", type=IntegerInput.get_node_type(), data={"value": 10}),
+        Node(id="multiply_node", type=Multiply.get_node_type(), data={"b": 2}),
     ]
 
     expected_edges_data = {
@@ -145,7 +163,7 @@ def test_read_graph_invalid_node_type():
 def test_read_graph_missing_source_node():
     invalid_json = {
         "node1": {
-            "type": "IntegerInput",
+            "type": IntegerInput.get_node_type(),
             "data": {"input": ["non_existent_node", "output"]},
         }
     }
@@ -156,7 +174,7 @@ def test_read_graph_missing_source_node():
 def test_read_graph_with_ui_properties():
     json_with_ui = {
         "node1": {
-            "type": "nodetool.input.IntegerInput",
+            "type": IntegerInput.get_node_type(),
             "position": [100, 200],
             "width": 150,
             "height": 100,
@@ -176,10 +194,10 @@ def test_read_graph_with_ui_properties():
 def test_read_graph_with_parent_id():
     json_with_parent = {
         "parent_node": {
-            "type": "nodetool.group.Loop",
+            "type": Loop.get_node_type(),
         },
         "child_node": {
-            "type": "nodetool.input.IntegerInput",
+            "type": IntegerInput.get_node_type(),
             "parent_id": "parent_node",
         },
     }

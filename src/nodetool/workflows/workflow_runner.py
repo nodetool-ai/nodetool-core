@@ -33,7 +33,6 @@ Dependencies:
 
 import asyncio
 from contextlib import contextmanager
-from datetime import datetime
 import gc
 import time
 from typing import Any, Optional
@@ -43,11 +42,8 @@ import random
 from pydantic import BaseModel
 
 from nodetool.common.model_manager import ModelManager
-from nodetool.metadata.type_metadata import TypeMetadata
 from nodetool.metadata.types import DataframeRef
-from nodetool.nodes.nodetool.output import GroupOutput
 from nodetool.types.job import JobUpdate
-from nodetool.nodes.nodetool.input import ChatInput, GroupInput
 from nodetool.workflows.base_node import GroupNode, BaseNode
 from nodetool.workflows.types import NodeProgress, NodeUpdate
 from nodetool.workflows.run_job_request import RunJobRequest
@@ -272,14 +268,17 @@ class WorkflowRunner:
         if req.messages:
             # find chat input node
             chat_input_node = next(
-                (node for node in context.graph.nodes if isinstance(node, ChatInput)),
+                (
+                    node
+                    for node in context.graph.nodes
+                    if node.get_node_type() == "nodetool.input.ChatInput"
+                ),
                 None,
             )
             if chat_input_node is None:
                 raise ValueError(
                     "Chat input node not found. Make sure you have a ChatInput node in your graph."
                 )
-            assert isinstance(chat_input_node, ChatInput)
             chat_input_node.assign_property("value", req.messages)
 
         with self.torch_context(context):
@@ -700,8 +699,12 @@ class WorkflowRunner:
         child_nodes = [
             node for node in context.graph.nodes if node.parent_id == group_node._id
         ]
-        input_nodes = [n for n in child_nodes if isinstance(n, GroupInput)]
-        output_nodes = [n for n in child_nodes if isinstance(n, GroupOutput)]
+        input_nodes = [
+            n for n in child_nodes if n.get_node_type() == "nodetool.input.GroupInput"
+        ]
+        output_nodes = [
+            n for n in child_nodes if n.get_node_type() == "nodetool.output.GroupOutput"
+        ]
 
         if group_node.get_node_type() == "nodetool.group.Loop":
             if len(input_nodes) == 0:
@@ -732,14 +735,14 @@ class WorkflowRunner:
                 # passing global graph for lookups
                 # set the result of the input node
                 for input_node in input_nodes:
-                    input_node._value = input[i]
+                    setattr(input_node, "_value", input[i])
 
                 graph = Graph(nodes=child_nodes, edges=context.graph.edges)
                 await self.process_graph(sub_context, graph, parent_id=group_node._id)
 
                 # Get the result of the subgraph and add it to the results.
                 for output_node in output_nodes:
-                    results[output_node._id].append(output_node.input)
+                    results[output_node._id].append(getattr(output_node, "_value"))
 
             if len(results) > 1:
                 log.warning("Multiple output nodes are not fully supported.")
@@ -752,13 +755,13 @@ class WorkflowRunner:
 
             # Set input values to input nodes
             for input_node in input_nodes:
-                input_node._value = input
+                setattr(input_node, "_value", input)
 
             graph = Graph(nodes=child_nodes, edges=context.graph.edges)
             await self.process_graph(sub_context, graph, parent_id=group_node._id)
 
             # Collect results from output nodes
-            results = {node._id: node.input for node in output_nodes}
+            results = {node._id: getattr(node, "input") for node in output_nodes}
 
         if len(results) == 0:
             return {}

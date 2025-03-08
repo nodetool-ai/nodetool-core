@@ -23,7 +23,6 @@ from nodetool.types.asset import Asset, AssetCreateRequest, AssetList
 from nodetool.types.chat import (
     MessageList,
     MessageCreateRequest,
-    TaskList,
 )
 from nodetool.types.graph import Node
 from nodetool.types.job import Job, JobUpdate
@@ -32,8 +31,8 @@ from nodetool.types.prediction import (
     PredictionResult,
 )
 from nodetool.types.workflow import Workflow
-from nodetool.common.nodetool_api_client import NodetoolAPIClient, Response
-from nodetool.metadata.types import ComfyModel, Message, Provider, Task
+from nodetool.common.nodetool_api_client import NodetoolAPIClient
+from nodetool.metadata.types import ComfyModel, Message, Provider
 from nodetool.workflows.graph import Graph
 from nodetool.workflows.types import (
     NodeProgress,
@@ -717,19 +716,6 @@ class ProcessingContext:
             params={"thread_id": thread_id, "limit": limit, "cursor": start_key},
         )
         return MessageList(**res.json())
-
-    async def get_tasks(self, thread_id: str):
-        """
-        Gets tasks for a thread.
-
-        Args:
-            thread_id (str): The ID of the thread.
-
-        Returns:
-            TaskList: The list of tasks.
-        """
-        res = await self.api_client.get("api/tasks/", params={"thread_id": thread_id})
-        return TaskList(**res.json())
 
     async def download_asset(self, asset_id: str) -> IO:
         """

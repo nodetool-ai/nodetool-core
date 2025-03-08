@@ -263,6 +263,215 @@ await runner.run(request, context)
 results = context.get_results()
 ```
 
+## Architecture 🏗️
+
+NodeTool's architecture is designed to be flexible and extensible.
+
+```mermaid
+graph TD
+A[NodeTool Editor<br>ReactJS] -->|HTTP/WebSocket| B[API Server]
+A <-->|WebSocket| C[WebSocket Runner]
+B <-->|Internal Communication| C
+C <-->|WebSocket| D[Worker with ML Models<br>CPU/GPU<br>Local/Cloud]
+D <-->|HTTP Callbacks| B
+E[Other Apps/Websites] -->|HTTP| B
+E <-->|WebSocket| C
+D -->|Optional API Calls| F[OpenAI<br>Replicate<br>Anthropic<br>Others]
+
+    classDef default fill:#e0eee0,stroke:#333,stroke-width:2px,color:#000;
+    classDef frontend fill:#ffcccc,stroke:#333,stroke-width:2px,color:#000;
+    classDef server fill:#cce5ff,stroke:#333,stroke-width:2px,color:#000;
+    classDef runner fill:#ccffe5,stroke:#333,stroke-width:2px,color:#000;
+    classDef worker fill:#ccf2ff,stroke:#333,stroke-width:2px,color:#000;
+    classDef api fill:#e0e0e0,stroke:#333,stroke-width:2px,color:#000;
+    classDef darkgray fill:#a9a9a9,stroke:#333,stroke-width:2px,color:#000;
+
+    class A frontend;
+    class B server;
+    class C runner;
+    class D worker;
+    class E other;
+    class F api;
+```
+
+### Components Overview
+
+1. **🖥️ Frontend**: The NodeTool Editor for managing workflows and assets, built with ReactJS and TypeScript.
+2. **🌐 API Server**: Manages connections from the frontend and handles user sessions and workflow storage.
+3. **🔌 WebSocket Runner**: Runs workflows in real-time and keeps track of their state.
+
+## Using the Workflow API 🔌
+
+NodeTool provides a powerful Workflow API that allows you to integrate and run your AI workflows programmatically.
+
+You can use the API locally now, `api.nodetool.ai` access is limited to Alpha users.
+
+### API Usage
+
+#### Loading Workflows
+
+```javascript
+const response = await fetch("http://localhost:8000/api/workflows/");
+const workflows = await response.json();
+```
+
+#### Running a Workflow
+
+##### HTTP API
+
+```bash
+curl -X POST "http://localhost:8000/api/workflows/<workflow_id>/run" \
+-H "Content-Type: application/json" \
+-d '{
+    "params": {
+        "param_name": "param_value"
+    }
+}'
+```
+
+```javascript
+const response = await fetch(
+  "http://localhost:8000/api/workflows/<workflow_id>/run",
+  {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      params: params,
+    }),
+  }
+);
+
+const outputs = await response.json();
+// outputs is an object with one property for each output node in the workflow
+// the value is the output of the node, which can be a string, image, audio, etc.
+```
+
+#### Streaming API
+
+The streaming API is useful for getting real-time updates on the status of the workflow.
+
+See [run_workflow_streaming.js](examples/run_workflow_streaming.js) for an example.
+
+These updates include:
+
+- job_update: The overall status of the job (e.g. running, completed, failed, cancelled)
+- node_update: The status of a specific node (e.g. running, completed, error)
+- node_progress: The progress of a specific node (e.g. 20% complete)
+
+The final result of the workflow is also streamed as a single job_update with the status "completed".
+
+```javascript
+const response = await fetch(
+  "http://localhost:8000/api/workflows/<workflow_id>/run?stream=true",
+  {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      params: params,
+    }),
+  }
+);
+
+const reader = response.body.getReader();
+const decoder = new TextDecoder();
+
+while (true) {
+  const { done, value } = await reader.read();
+  if (done) break;
+
+  const lines = decoder.decode(value).split("\n");
+  for (const line of lines) {
+    if (line.trim() === "") continue;
+
+    const message = JSON.parse(line);
+    switch (message.type) {
+      case "job_update":
+        console.log("Job status:", message.status);
+        if (message.status === "completed") {
+          console.log("Workflow completed:", message.result);
+        }
+        break;
+      case "node_progress":
+        console.log(
+          "Node progress:",
+          message.node_name,
+          (message.progress / message.total) * 100
+        );
+        break;
+      case "node_update":
+        console.log(
+          "Node update:",
+          message.node_name,
+          message.status,
+          message.error
+        );
+        break;
+    }
+  }
+}
+```
+
+##### WebSocket API
+
+The WebSocket API is useful for getting real-time updates on the status of the workflow.
+It is similar to the streaming API, but it uses a more efficient binary encoding.
+It offers additional features like canceling jobs.
+
+See [run_workflow_websocket.js](examples/run_workflow_websocket.js) for an example.
+
+```javascript
+const socket = new WebSocket("ws://localhost:8000/predict");
+
+const request = {
+  type: "run_job_request",
+  workflow_id: "YOUR_WORKFLOW_ID",
+  params: {
+    /* workflow parameters */
+  },
+};
+
+// Run a workflow
+socket.send(
+  msgpack.encode({
+    command: "run_job",
+    data: request,
+  })
+);
+
+// Handle messages from the server
+socket.onmessage = async (event) => {
+  const data = msgpack.decode(new Uint8Array(await event.data.arrayBuffer()));
+  if (data.type === "job_update" && data.status === "completed") {
+    console.log("Workflow completed:", data.result);
+  } else if (data.type === "node_update") {
+    console.log("Node update:", data.node_name, data.status, data.error);
+  } else if (data.type === "node_progress") {
+    console.log("Progress:", (data.progress / data.total) * 100);
+  }
+  // Handle other message types as needed
+};
+
+// Cancel a running job
+socket.send(msgpack.encode({ command: "cancel_job" }));
+
+// Get the status of the job
+socket.send(msgpack.encode({ command: "get_status" }));
+```
+
+### API Demo
+
+- Download the [html file](<(api-demo.html)>)
+- Open in a browser locally.
+- Select the endpoint, local or api.nodetool.ai (for alpha users)
+- Enter API token (from Nodetool settings dialog)
+- Select workflow
+- Run workflow
+- The page will live stream the output from the local or remote API
+
 ## Installation
 
 ```bash
