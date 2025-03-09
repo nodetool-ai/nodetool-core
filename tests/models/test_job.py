@@ -1,6 +1,5 @@
 import datetime
-import pytest
-from tests.conftest import make_job
+from conftest import make_job
 from nodetool.models.job import Job
 from nodetool.models.user import User
 
@@ -13,10 +12,8 @@ def test_find_job(user: User):
 
     found_job = Job.find(user.id, job.id)
 
-    if found_job:
-        assert job.id == found_job.id
-    else:
-        pytest.fail("Job not found")
+    assert found_job is not None
+    assert job.id == found_job.id
 
     # Test finding a job that does not exist in the database
     not_found_job = Job.find(user.id, "invalid_id")

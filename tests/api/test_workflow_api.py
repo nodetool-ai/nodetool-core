@@ -8,12 +8,13 @@ from nodetool.models.user import User
 from nodetool.models.workflow import Workflow
 
 
-def test_create_workflow(
-    client: TestClient, workflow: Workflow, headers: dict[str, str], user: User
-):
+def test_create_workflow(client: TestClient, headers: dict[str, str], user: User):
     params = {
         "name": "Test Workflow",
-        "graph": workflow.graph,
+        "graph": {
+            "nodes": [],
+            "edges": [],
+        },
         "description": "Test Workflow Description",
         "thumbnail": "Test Workflow Thumbnail",
         "access": "private",
@@ -28,7 +29,10 @@ def test_create_workflow(
     assert w is not None
     assert w.name == "Test Workflow"
     assert w.user_id == user.id
-    assert w.graph == workflow.graph
+    assert w.graph == {
+        "nodes": [],
+        "edges": [],
+    }
 
 
 def test_get_workflows(client: TestClient, workflow: Workflow, headers: dict[str, str]):

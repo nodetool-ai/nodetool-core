@@ -4,7 +4,7 @@ from nodetool.models.asset import (
     Asset,
 )
 from nodetool.models.user import User
-from tests.conftest import make_image
+from conftest import make_image
 
 
 def test_asset_find(user: User):

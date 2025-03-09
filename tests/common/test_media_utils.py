@@ -15,20 +15,18 @@ from nodetool.common.media_utils import (
 
 test_mp4 = os.path.join(os.path.dirname(os.path.dirname(__file__)), "test.mp4")
 test_jpg = os.path.join(os.path.dirname(os.path.dirname(__file__)), "test.jpg")
+test_mp3 = os.path.join(os.path.dirname(os.path.dirname(__file__)), "test.mp3")
 
 
 def test_get_audio_duration():
-    # Create a small silent audio file in memory for testing
-    audio_bytes = BytesIO()
+    with open(test_mp3, "rb") as f:
+        audio_bytes = BytesIO(f.read())
+        audio_bytes.seek(0)
+        duration = get_audio_duration(audio_bytes)
 
-    silence = AudioSegment.silent(duration=2000)
-    silence.export(audio_bytes, format="mp3")
-
-    duration = get_audio_duration(audio_bytes)
-
-    assert duration is not None, "Duration should not be None"
-    assert isinstance(duration, float), "Duration should be a float"
-    assert duration > 0.0, "Duration should be greater than 0.0"
+        assert duration is not None, "Duration should not be None"
+        assert isinstance(duration, float), "Duration should be a float"
+        assert duration > 0.0, "Duration should be greater than 0.0"
 
 
 @pytest.mark.asyncio
