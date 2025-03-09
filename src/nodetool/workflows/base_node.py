@@ -416,13 +416,11 @@ class BaseNode(BaseModel):
         """
         Assign a value to a node property, performing type checking and conversion.
         If the property is dynamic, it will be added to the _dynamic_properties dictionary.
+        If the property cannot be assigned, we will not fail.
 
         Args:
             name (str): The name of the property to assign.
             value (Any): The value to assign to the property.
-
-        Raises:
-            ValueError: If the value is not assignable to the property type.
 
         Note:
             This method handles type conversion for enums, lists, and objects with 'model_validate' method.
@@ -432,9 +430,10 @@ class BaseNode(BaseModel):
         type_args = prop.type.type_args
 
         if not is_assignable(prop.type, value):
-            raise ValueError(
+            print(
                 f"[{self.__class__.__name__}] Invalid value for property `{name}`: {type(value)} (expected {prop.type})"
             )
+            return
 
         if prop.type.is_enum_type():
             v = python_type(value)
