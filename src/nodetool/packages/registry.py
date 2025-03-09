@@ -39,13 +39,14 @@ import subprocess
 import requests
 import tomli
 import re
-import pkgutil
 import importlib
 import importlib.metadata
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Optional, Tuple, Set
 from pydantic import BaseModel, Field
 from urllib.parse import urlparse
+import httpx
+import asyncio
 
 from nodetool.common.settings import get_system_file_path
 from nodetool.metadata.node_metadata import PackageModel
@@ -210,6 +211,7 @@ class Registry:
 
     def __init__(self):
         self.pkg_mgr = get_package_manager_command()
+        self._node_cache = None  # Cache for node metadata
 
     def pip_install(
         self, install_path: str, editable: bool = False, upgrade: bool = False
@@ -291,6 +293,141 @@ class Registry:
         except subprocess.CalledProcessError as e:
             print(f"Error updating package {repo_id}: {e}")
             return False
+
+    async def search_nodes(self, query: str = "") -> List[Dict[str, Any]]:
+        """
+        Search for nodes across all available packages asynchronously.
+
+        This method fetches node metadata from all available packages in parallel and
+        filters them based on the provided query string. The results are
+        cached for subsequent searches.
+
+        Args:
+            query: Optional search string to filter nodes by name or description
+                  If empty, returns all available nodes
+
+        Returns:
+            List[Dict[str, Any]]: A list of node metadata dictionaries matching the query
+        """
+        # Use cached nodes if available
+        if self._node_cache is None:
+            self._node_cache = await self._fetch_all_nodes_async()
+
+        # If no query, return all nodes
+        if not query:
+            return self._node_cache
+
+        # Filter nodes based on query (case-insensitive)
+        query = query.lower()
+        return [
+            node
+            for node in self._node_cache
+            if query in node.get("name", "").lower()
+            or query in node.get("description", "").lower()
+        ]
+
+    async def _fetch_all_nodes_async(self) -> List[Dict[str, Any]]:
+        """
+        Fetch node metadata from all available packages asynchronously.
+
+        This method:
+        1. Gets all available packages from the registry
+        2. For each package, fetches the package metadata JSON file in parallel
+        3. Extracts node information from each metadata file
+
+        Returns:
+            List[Dict[str, Any]]: A list of node metadata dictionaries
+        """
+        all_nodes = []
+        available_packages = self.list_available_packages()
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            # Create tasks for all package metadata fetches
+            tasks = []
+            for package in available_packages:
+                # Construct the URL to the package metadata file
+                package_name = package.repo_id.split("/")[1]
+                metadata_url = f"https://raw.githubusercontent.com/{package.repo_id}/main/src/nodetool/package_metadata/{package_name}.json"
+                tasks.append(
+                    self._fetch_package_nodes(client, metadata_url, package.repo_id)
+                )
+
+            # Run all tasks in parallel and gather results
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+
+            # Process results
+            for package_nodes in results:
+                if isinstance(package_nodes, Exception):
+                    # Skip failed requests
+                    continue
+                all_nodes.extend(package_nodes)
+
+        return all_nodes
+
+    async def _fetch_package_nodes(
+        self, client: httpx.AsyncClient, url: str, repo_id: str
+    ) -> List[Dict[str, Any]]:
+        """
+        Fetch node metadata for a single package.
+
+        Args:
+            client: httpx AsyncClient to use for the request
+            url: URL to the package metadata file
+            repo_id: Repository ID of the package
+
+        Returns:
+            List[Dict[str, Any]]: List of node metadata dictionaries for the package
+
+        Raises:
+            Exception: If the request fails or the response cannot be parsed
+        """
+        try:
+            response = await client.get(url)
+            response.raise_for_status()
+
+            # Parse the node metadata
+            package_metadata = response.json()
+            package_nodes = package_metadata.get("nodes", [])
+
+            # Add package information to each node
+            for node in package_nodes:
+                node["package"] = repo_id
+
+            return package_nodes
+
+        except (httpx.RequestError, json.JSONDecodeError) as e:
+            print(f"Error fetching nodes from {repo_id}: {e}")
+            raise
+
+    async def get_package_for_node_type(self, node_type: str) -> Optional[str]:
+        """
+        Get the package that provides a specific node type.
+
+        Args:
+            node_type: The type identifier of the node
+
+        Returns:
+            Optional[str]: The repository ID of the package providing the node,
+                          or None if the node type is not found
+        """
+        # Ensure the node cache is populated
+        if self._node_cache is None:
+            self._node_cache = await self._fetch_all_nodes_async()
+
+        # Search for the node type in the cache
+        for node in self._node_cache:
+            if node.get("node_type") == node_type:
+                return node.get("package")
+
+        return None
+
+    def clear_node_cache(self) -> None:
+        """
+        Clear the node metadata cache.
+
+        This forces the next search to fetch fresh node metadata.
+        """
+        self._node_cache = None
 
 
 def discover_node_packages() -> list[PackageModel]:

@@ -35,6 +35,17 @@ class InstalledPackageListResponse(BaseModel):
     count: int
 
 
+class NodeSearchResponse(BaseModel):
+    nodes: List[dict]
+    count: int
+
+
+class PackageForNodeResponse(BaseModel):
+    node_type: str
+    package: Optional[str] = None
+    found: bool
+
+
 # Initialize registry
 registry = Registry()
 
@@ -46,6 +57,42 @@ async def list_available_packages(
     """List all available packages from the registry."""
     packages = registry.list_available_packages()
     return PackageListResponse(packages=packages, count=len(packages))
+
+
+@router.get("/nodes/search", response_model=NodeSearchResponse)
+async def search_nodes(
+    query: str = "", user: User = Depends(current_user)
+) -> NodeSearchResponse:
+    """
+    Search for nodes across all available packages.
+
+    Args:
+        query: Optional search string to filter nodes by name or description
+
+    Returns:
+        NodeSearchResponse: List of nodes matching the search query
+    """
+    nodes = await registry.search_nodes(query)
+    return NodeSearchResponse(nodes=nodes, count=len(nodes))
+
+
+@router.get("/nodes/package", response_model=PackageForNodeResponse)
+async def get_package_for_node(
+    node_type: str, user: User = Depends(current_user)
+) -> PackageForNodeResponse:
+    """
+    Get the package that provides a specific node type.
+
+    Args:
+        node_type: The type identifier of the node
+
+    Returns:
+        PackageForNodeResponse: Information about the package providing the node
+    """
+    package = await registry.get_package_for_node_type(node_type)
+    return PackageForNodeResponse(
+        node_type=node_type, package=package, found=package is not None
+    )
 
 
 @router.get("/installed", response_model=InstalledPackageListResponse)
@@ -115,3 +162,16 @@ async def update_package(
             status_code=404,
             detail=f"Package {repo_id} not found or could not be updated",
         )
+
+
+@router.get("/nodes/all", response_model=NodeSearchResponse)
+async def get_all_nodes(user: User = Depends(current_user)) -> NodeSearchResponse:
+    """
+    Get all available nodes from all packages.
+
+    Returns:
+        NodeSearchResponse: List of all available nodes
+    """
+    # Reuse the search_nodes functionality with an empty query to get all nodes
+    nodes = await registry.search_nodes("")
+    return NodeSearchResponse(nodes=nodes, count=len(nodes))
