@@ -155,10 +155,12 @@ def generate_documentation(
     Returns:
         str: The generated documentation as a markdown string.
     """
-    # Convert module object to string name if needed
-    base_module_name = (
-        base_module if isinstance(base_module, str) else base_module.__name__
-    )
+    if isinstance(base_module, str):
+        imported_module = importlib.import_module(base_module)
+        base_module_name = imported_module.__name__
+    else:
+        base_module_name = base_module.__name__
+
     logger.debug(f"Processing module: {base_module_name}")
 
     try:

@@ -356,6 +356,12 @@ nodetool-core = {{ git = "https://github.com/nodetool-ai/nodetool-core.git", rev
 
 @package.command()
 @click.option(
+    "--module-name",
+    "-m",
+    default="nodetool.nodes.",
+    help="Module name to generate documentation for",
+)
+@click.option(
     "--output-dir",
     "-o",
     default="docs",
@@ -367,7 +373,7 @@ nodetool-core = {{ git = "https://github.com/nodetool-ai/nodetool-core.git", rev
     is_flag=True,
     help="Generate compact documentation for LLM usage",
 )
-def docs(output_dir: str, compact: bool):
+def docs(module_name: str, output_dir: str, compact: bool):
     """Generate documentation for the package nodes."""
     import os
     import sys
@@ -426,7 +432,7 @@ def docs(output_dir: str, compact: bool):
         ) as bar:
             bar.update(10)
             # Generate the documentation
-            docs = generate_documentation(package_name, compact)
+            docs = generate_documentation(module_name, compact)
 
             # Write to output file
             os.makedirs(output_dir, exist_ok=True)
