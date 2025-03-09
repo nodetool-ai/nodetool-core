@@ -565,7 +565,7 @@ class BaseNode(BaseModel):
         if properties is not None:
             for p in properties:
                 value = self.read_property(p)
-                if isinstance(value, torch.Tensor):
+                if TORCH_AVAILABLE and isinstance(value, torch.Tensor):
                     pass
                 elif isinstance(value, ComfyData):
                     pass
