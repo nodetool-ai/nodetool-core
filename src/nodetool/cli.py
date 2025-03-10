@@ -356,12 +356,6 @@ nodetool-core = {{ git = "https://github.com/nodetool-ai/nodetool-core.git", rev
 
 @package.command()
 @click.option(
-    "--module-name",
-    "-m",
-    default="nodetool.nodes.",
-    help="Module name to generate documentation for",
-)
-@click.option(
     "--output-dir",
     "-o",
     default="docs",
@@ -373,13 +367,17 @@ nodetool-core = {{ git = "https://github.com/nodetool-ai/nodetool-core.git", rev
     is_flag=True,
     help="Generate compact documentation for LLM usage",
 )
-def docs(module_name: str, output_dir: str, compact: bool):
+@click.option(
+    "--verbose", "-v", is_flag=True, help="Enable verbose output during scanning"
+)
+def docs(output_dir: str, compact: bool, verbose: bool):
     """Generate documentation for the package nodes."""
     import os
     import sys
     import tomli
     import traceback
     from nodetool.packages.gen_docs import generate_documentation
+    from nodetool.metadata.node_metadata import get_node_classes_from_module
 
     try:
         # Add src directory to Python path temporarily
@@ -387,6 +385,8 @@ def docs(module_name: str, output_dir: str, compact: bool):
         if not os.path.exists(src_path):
             click.echo("Error: No src directory found", err=True)
             sys.exit(1)
+
+        sys.path.append(src_path)
 
         nodes_path = os.path.join(src_path, "nodetool", "nodes")
         if not os.path.exists(nodes_path):
@@ -423,22 +423,53 @@ def docs(module_name: str, output_dir: str, compact: bool):
 
         owner = repository.split("/")[-2]
 
-        # Generate documentation
+        # Discover node classes by scanning the directory
+        node_classes = []
         with click.progressbar(
             length=100,
-            label="Generating documentation",
+            label="Scanning for nodes",
             show_eta=False,
             show_percent=True,
         ) as bar:
             bar.update(10)
+
+            # Scan for node classes
+            for root, _, files in os.walk(nodes_path):
+                for file in files:
+                    if file.endswith(".py"):
+                        module_path = os.path.join(root, file)
+                        rel_path = os.path.relpath(module_path, src_path)
+                        module_name = os.path.splitext(rel_path)[0].replace(os.sep, ".")
+
+                        click.echo(f"Scanning module: {module_name}")
+
+                        try:
+                            classes = get_node_classes_from_module(module_name, verbose)
+                            if classes:
+                                node_classes.extend(classes)
+                        except Exception as e:
+                            if verbose:
+                                click.echo(
+                                    f"Error processing {module_name}: {e}", err=True
+                                )
+
+            bar.update(40)
+
+            if not node_classes:
+                click.echo("Warning: No node classes found during scanning", err=True)
+            else:
+                click.echo(f"Found {len(node_classes)} node classes")
+
             # Generate the documentation
-            docs = generate_documentation(module_name, compact)
+            docs = generate_documentation(node_classes, compact)
+
+            bar.update(40)
 
             # Write to output file
             os.makedirs(output_dir, exist_ok=True)
             with open(os.path.join(output_dir, "index.md"), "w") as f:
                 f.write(docs)
-            bar.update(90)
+            bar.update(10)
 
         click.echo(f"✅ Documentation generated in {output_dir}")
 

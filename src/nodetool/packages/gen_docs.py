@@ -143,58 +143,32 @@ SKIPPED_METHODS = ["__init__", "process"]
 
 
 def generate_documentation(
-    base_module: Union[str, Type[Any]], compact: bool = False
+    classes: list[type[BaseNode]],
+    compact: bool = False,
 ) -> str:
     """
     Generate comprehensive documentation for a given module.
 
     Args:
-        base_module (Union[str, Type[Any]]): The base module to document. Can be a string (module name) or a module object.
+        classes (list[type[BaseNode]]): The classes to document.
         compact (bool): If True, generates compact documentation for LLM usage. Defaults to False.
-
     Returns:
         str: The generated documentation as a markdown string.
     """
-    if isinstance(base_module, str):
-        imported_module = importlib.import_module(base_module)
-        base_module_name = imported_module.__name__
-    else:
-        base_module_name = base_module.__name__
+    from io import StringIO
 
-    logger.debug(f"Processing module: {base_module_name}")
+    output = StringIO()
 
-    try:
-        # Import the module
-        module = importlib.import_module(base_module_name)
+    output.write(f"# {classes[0].__module__}\n\n")
 
-        # Use StringIO instead of file writing
-        from io import StringIO
+    # Document module contents
+    documented_items = 0
+    for cls in classes:
+        document_class(output, cls, compact)
+        documented_items += 1
+    logger.debug(f"Documented {documented_items} items in {classes[0].__module__}")
 
-        output = StringIO()
-
-        output.write(f"# {base_module_name}\n\n")
-        if module.__doc__:
-            output.write(f"{module.__doc__.strip()}\n\n")
-
-        # Document module contents
-        documented_items = 0
-        for name, obj in inspect.getmembers(module):
-            if name.startswith("_"):
-                continue
-            if defined_in_module(obj, module):
-                if inspect.isclass(obj):
-                    document_class(output, obj, compact)
-                    documented_items += 1
-                elif inspect.isfunction(obj):
-                    document_function(output, obj, compact=compact)
-                    documented_items += 1
-        logger.debug(f"Documented {documented_items} items in {base_module_name}")
-
-        return output.getvalue()
-
-    except Exception as e:
-        logger.error(f"Error processing module {base_module_name}: {e}")
-        raise
+    return output.getvalue()
 
 
 def process_module(
