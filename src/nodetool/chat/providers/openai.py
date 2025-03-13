@@ -3,6 +3,7 @@ OpenAI provider implementation for chat completions.
 
 This module implements the ChatProvider interface for OpenAI models,
 handling message conversion, streaming, and tool integration.
+
 """
 
 import json
@@ -42,6 +43,41 @@ class OpenAIProvider(ChatProvider):
 
     Handles conversion between internal message format and OpenAI's API format,
     as well as streaming completions and tool calling.
+
+    OpenAI's message structure follows a specific format:
+
+    1. Message Format:
+       - Each message is a dict with "role" and "content" fields
+       - Role can be: "system", "user", "assistant", or "tool"
+       - Content contains the message text (string) or content blocks (for multimodal)
+       - Messages can have optional "name" field to identify specific users/assistants
+
+    2. Tool Calls:
+       - When a model wants to call a tool, the response includes a "tool_calls" field
+       - Each tool call contains:
+         - "id": A unique identifier for the tool call
+         - "function": An object with "name" and "arguments" (JSON string)
+       - When responding to a tool call, you provide a message with:
+         - "role": "tool"
+         - "tool_call_id": The ID of the tool call being responded to
+         - "name": The name of the function that was called
+         - "content": The result of the function call
+
+    3. Response Structure:
+       - response.choices[0].message contains the model's response
+       - It includes fields like "role", "content", and optionally "tool_calls"
+       - response.usage contains token usage statistics
+         - "prompt_tokens": Number of tokens in the input
+         - "completion_tokens": Number of tokens in the output
+         - "total_tokens": Total tokens used
+
+    4. Tool Call Flow:
+       - Model generates a response with tool_calls
+       - Application executes the tool(s) based on arguments
+       - Result is sent back as a "tool" message
+       - Model generates a new response incorporating tool results
+
+    For more details, see: https://platform.openai.com/docs/guides/function-calling
     """
 
     def __init__(self):

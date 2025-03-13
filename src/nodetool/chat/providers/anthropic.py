@@ -33,6 +33,36 @@ class AnthropicProvider(ChatProvider):
 
     Handles conversion between internal message format and Anthropic's API format,
     as well as streaming completions and tool calling.
+
+    Anthropic's message structure follows a specific format:
+
+    1. Message Format:
+       - Messages are exchanged as alternating 'user' and 'assistant' roles
+       - Each message has a 'role' and 'content'
+       - Content can be a string or an array of content blocks (e.g., text, images, tool use)
+
+    2. Content Block Types:
+       - TextBlock: Simple text content ({"type": "text", "text": "content"})
+       - ToolUseBlock: Used when Claude wants to call a tool
+         ({"type": "tool_use", "id": "tool_id", "name": "tool_name", "input": {...}})
+       - Images and other media types are also supported
+
+    3. Response Structure:
+       - id: Unique identifier for the response
+       - model: The Claude model used
+       - type: Always "message"
+       - role: Always "assistant"
+       - content: Array of content blocks
+       - stop_reason: Why generation stopped (e.g., "end_turn", "max_tokens", "tool_use")
+       - stop_sequence: The sequence that triggered stopping (if applicable)
+       - usage: Token usage statistics
+
+    4. Tool Use Flow:
+       - Claude requests to use a tool via a ToolUseBlock
+       - The application executes the tool and returns results
+       - Results are provided back as a tool_result message
+
+    For more details, see: https://docs.anthropic.com/claude/reference/messages_post
     """
 
     def __init__(self):

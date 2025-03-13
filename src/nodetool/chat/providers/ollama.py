@@ -28,6 +28,39 @@ class OllamaProvider(ChatProvider):
 
     Handles conversion between internal message format and Ollama's API format,
     as well as streaming completions and tool calling.
+
+    Ollama's message structure follows a specific format:
+
+    1. Message Format:
+       - Each message is a dict with "role" and "content" fields
+       - Role can be: "user", "assistant", or "tool"
+       - Content contains the message text (string)
+       - The message history is passed as a list of these message objects
+
+    2. Tool Calls:
+       - When a model wants to call a tool, the response includes a "tool_calls" field
+       - Each tool call contains:
+         - "function": An object with "name" and "arguments" (dict)
+         - "arguments" contains the parameters to be passed to the function
+       - When responding to a tool call, you provide a message with:
+         - "role": "tool"
+         - "name": The name of the function that was called
+         - "content": The result of the function call
+
+    3. Response Structure:
+       - response["message"] contains the model's response
+       - It includes fields like "role", "content", and optionally "tool_calls"
+       - The response message format is consistent with the input message format
+       - If a tool is called, response["message"]["tool_calls"] will be present
+
+    4. Tool Call Flow:
+       - Model generates a response with tool_calls
+       - Application executes the tool(s) based on arguments
+       - Result is sent back as a "tool" role message
+       - Model generates a new response incorporating tool results
+
+    For more details, see: https://ollama.com/blog/tool-support
+
     """
 
     def __init__(self):
