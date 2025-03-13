@@ -5,7 +5,7 @@ This module contains a collection of Tool classes that provide different functio
 
 File Operations:
 - ReadFileTool: Read contents of files
-- WriteFileTool: Write/append content to files  
+- WriteFileTool: Write/append content to files
 - ListDirectoryTool: List directory contents
 - SearchFileTool: Search files for text patterns
 - ExtractPDFTextTool: Extract text from PDFs
@@ -1225,9 +1225,9 @@ class CreateAppleNoteTool(Tool):
         }
 
     async def process(self, context: ProcessingContext, params: dict) -> Any:
-        from nodetool.nodes.apple.notes import CreateNote, ReadNotes
-
         try:
+            from nodetool.nodes.apple.notes import CreateNote, ReadNotes  # type: ignore
+
             create_note = CreateNote(
                 title=params["title"],
                 body=params["body"],
@@ -1266,7 +1266,7 @@ class ReadAppleNotesTool(Tool):
 
     async def process(self, context: ProcessingContext, params: dict) -> Any:
         try:
-            from nodetool.nodes.apple.notes import ReadNotes
+            from nodetool.nodes.apple.notes import ReadNotes  # type: ignore
 
             read_notes = ReadNotes(
                 note_limit=params.get("note_limit", 10),
