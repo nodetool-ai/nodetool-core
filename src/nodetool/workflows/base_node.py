@@ -36,7 +36,7 @@ from types import UnionType
 from weakref import WeakKeyDictionary
 from pydantic import BaseModel, Field
 from pydantic.fields import FieldInfo
-
+import traceback
 from typing import Any, Callable, Type, TypeVar
 
 from nodetool.types.graph import Edge
@@ -1086,7 +1086,8 @@ def get_node_class(node_type: str) -> type[BaseNode] | None:
                 if node_type in NODE_BY_TYPE:
                     return NODE_BY_TYPE[node_type]
         except Exception as e:
-            log.debug(f"Could not import module {module_path}: {e}")
+            log.error(f"Could not import module {module_path}: {e}")
+            traceback.print_exc()
         return find_node_class_by_name(node_type.split(".")[-1])
 
 
