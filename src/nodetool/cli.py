@@ -141,7 +141,7 @@ def run(workflow_id: str):
 def chat():
     """Start a nodetool chat."""
     import asyncio
-    from nodetool.chat.chat import chat_cli
+    from nodetool.chat.chat_cli import chat_cli
 
     asyncio.run(chat_cli())
 
