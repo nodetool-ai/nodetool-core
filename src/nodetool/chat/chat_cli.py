@@ -10,6 +10,7 @@ Features:
 - Model selection and provider management
 - Chain of Thought reasoning with step-by-step output
 - Tool usage and execution
+- Debug mode to display tool calls and results
 """
 
 import asyncio
@@ -49,6 +50,7 @@ async def chat_cli():
     - Tool execution capabilities
     - Streaming responses with real-time display
     - Chain of Thought (CoT) agent mode for step-by-step reasoning
+    - Debug mode to display all tool calls and results
 
     Commands:
         /provider [openai|anthropic|ollama]: Switch between AI providers
@@ -56,6 +58,7 @@ async def chat_cli():
         /models: List available models for the current provider
         /clear: Clear the conversation history
         /agent [on|off]: Toggle CoT agent mode
+        /debug [on|off]: Toggle debug mode to display tool calls and results
         /tools: List available tools or show details about a specific tool
         /quit or /exit: Exit the chat interface
         /help: Display available commands
@@ -86,6 +89,9 @@ async def chat_cli():
     agent_mode = False
     cot_agent = None
 
+    # Debug mode setting
+    debug_mode = False
+
     # Set up readline
     histfile = os.path.join(os.path.expanduser("~"), ".nodetool_history")
     try:
@@ -103,10 +109,12 @@ async def chat_cli():
         "models",
         "clear",
         "agent",
+        "debug",
         "tools",
     ]
     PROVIDERS = [p.value.lower() for p in Provider]
     AGENT_OPTIONS = ["on", "off"]
+    DEBUG_OPTIONS = ["on", "off"]
 
     def completer(text, state):
         if text.startswith("/"):
@@ -132,6 +140,12 @@ async def chat_cli():
             agent_text = text.split()[-1]
             options = [
                 f"/agent {opt}" for opt in AGENT_OPTIONS if opt.startswith(agent_text)
+            ]
+            return options[state] if state < len(options) else None
+        elif text.startswith("/debug "):
+            debug_text = text.split()[-1]
+            options = [
+                f"/debug {opt}" for opt in DEBUG_OPTIONS if opt.startswith(debug_text)
             ]
             return options[state] if state < len(options) else None
         elif text.startswith("/tools "):
@@ -209,6 +223,7 @@ async def chat_cli():
     print("Chat CLI - Type /help for commands")
     print(f"Using {provider.value} with model {model.name}")
     print("Agent mode is OFF (use /agent on to enable Chain of Thought reasoning)")
+    print("Debug mode is OFF (use /debug on to display tool calls and results)")
 
     while True:
         try:
@@ -228,6 +243,9 @@ async def chat_cli():
                     print("  /model [model_name] - Set the model")
                     print("  /models - List available models for the current provider")
                     print("  /agent [on|off] - Toggle Chain of Thought agent mode")
+                    print(
+                        "  /debug [on|off] - Toggle debug mode to display tool calls and results"
+                    )
                     print("  /tools - List available tools")
                     print("  /tools [tool_name] - Show details about a specific tool")
                     print("  /clear - Clear chat history")
@@ -309,6 +327,24 @@ async def chat_cli():
                     else:
                         print("Usage: /agent [on|off]")
                     continue
+                elif cmd == "debug":
+                    if not args:
+                        print(
+                            f"Debug mode is currently: {'ON' if debug_mode else 'OFF'}"
+                        )
+                        continue
+
+                    if args[0].lower() == "on":
+                        debug_mode = True
+                        print(
+                            "Debug mode turned ON - Will display tool calls and results"
+                        )
+                    elif args[0].lower() == "off":
+                        debug_mode = False
+                        print("Debug mode turned OFF - Tool calls and results hidden")
+                    else:
+                        print("Usage: /debug [on|off]")
+                    continue
                 elif cmd == "tools":
                     cmd_tools(args)
                     continue
@@ -351,11 +387,23 @@ async def chat_cli():
                             print("")
 
                     if isinstance(chunk, ToolCall):
-                        # print(f"Running {chunk.name} with {chunk.args}")
+                        # Display tool call in debug mode
+                        if debug_mode:
+                            print("\n[Debug] Tool Call:")
+                            print(f"  Name: {chunk.name}")
+                            print(f"  Arguments: {json.dumps(chunk.args, indent=2)}")
+
                         tool_result = await run_tool(
                             context, chunk, AVAILABLE_CHAT_TOOLS
                         )
-                        # print(tool_result)
+
+                        # Display tool result in debug mode
+                        if debug_mode:
+                            print("[Debug] Tool Result:")
+                            print(
+                                f"  {json.dumps(tool_result.result, indent=2, default=default_serializer)}\n"
+                            )
+
                         unprocessed_messages.append(
                             Message(role="assistant", tool_calls=[chunk])
                         )
