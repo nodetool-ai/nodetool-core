@@ -5,7 +5,11 @@ This module provides tools for interacting with web browsers and web pages.
 """
 
 from typing import Any
+import aiohttp
+import json
+import urllib.parse
 
+from nodetool.common.environment import Environment
 from nodetool.workflows.processing_context import ProcessingContext
 from .base import Tool
 
@@ -204,3 +208,129 @@ class ScreenshotTool(Tool):
 
         except Exception as e:
             return {"error": str(e)}
+
+
+class GoogleSearchTool(Tool):
+    """
+    A tool that allows searching Google using Brightdata's API.
+
+    This tool enables language models to perform Google searches and get
+    the search results without directly interacting with a browser.
+    """
+
+    def __init__(self):
+        """
+        Initialize the GoogleSearchTool with Brightdata API credentials.
+
+        Args:
+            api_key (str, optional): Brightdata API key. If not provided, it must be in the context.
+            zone (str, optional): Brightdata zone to use. Defaults to "nodetool".
+        """
+        super().__init__(
+            name="google_search",
+            description="Search Google using Brightdata's API to retrieve search results",
+        )
+        self.input_schema = {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "The search query to submit to Google",
+                },
+                "num_results": {
+                    "type": "integer",
+                    "description": "Number of results to return (optional)",
+                    "default": 10,
+                },
+            },
+            "required": ["query"],
+        }
+
+    def _remove_base64_images(self, data):
+        """Remove image elements entirely from the API response to reduce size."""
+        if isinstance(data, dict):
+            keys_to_remove = ["image", "image_alt", "image_base64", "image_url"]
+            for key in list(data.keys()):
+                if key in keys_to_remove:
+                    data.pop(key, None)
+                elif isinstance(data[key], str):
+                    if data[key].startswith("data:"):
+                        data.pop(key, None)
+                elif isinstance(data[key], (dict, list)):
+                    data[key] = self._remove_base64_images(data[key])
+        elif isinstance(data, list):
+            for i in range(len(data)):
+                data[i] = self._remove_base64_images(data[i])
+        return data
+
+    async def process(self, context: ProcessingContext, params: dict) -> Any:
+        """
+        Execute a Google search using Brightdata's API.
+
+        Args:
+            context: The processing context which may contain API credentials
+            params: Dictionary including:
+                query (str): The search term to look up on Google
+                num_results (int, optional): Number of results to return
+
+        Returns:
+            dict: Search results or error message
+        """
+        try:
+            # Get API key from context if not provided during initialization
+            api_key = Environment.get("BRIGHTDATA_API_KEY")
+            if not api_key:
+                return {
+                    "error": "Brightdata API key not found. Please provide it in the secrets as 'BRIGHTDATA_API_KEY'."
+                }
+
+            # Get required parameters
+            query = params.get("query")
+            if not query:
+                return {"error": "Search query is required"}
+
+            zone = Environment.get("BRIGHTDATA_ZONE")
+            if not zone:
+                return {
+                    "error": "Brightdata zone not found. Please provide it in the secrets as 'BRIGHTDATA_ZONE'."
+                }
+
+            url_encoded_query = urllib.parse.quote(query)
+            # Construct Google search URL
+            search_url = (
+                f"https://www.google.com/search?q={url_encoded_query}&brd_json=1"
+            )
+            if params.get("num_results"):
+                search_url += f"&num={params.get('num_results')}"
+
+            # Prepare request to Brightdata API
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {api_key}",
+            }
+
+            payload = {"zone": zone, "url": search_url, "format": "json"}
+
+            # Make the API request
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    "https://api.brightdata.com/request", headers=headers, json=payload
+                ) as response:
+                    if response.status != 200:
+                        error_text = await response.text()
+                        return {
+                            "error": f"Brightdata API request failed with status {response.status}: {error_text}"
+                        }
+
+                    result = await response.json()
+                    if result["status_code"] == 200:
+                        body = json.loads(result["body"])
+                        body = self._remove_base64_images(body)
+                        return {"success": True, "query": query, "result": body}
+
+                    return {
+                        "error": f"Google search failed with status {result['status_code']}: {result['body']}"
+                    }
+
+        except Exception as e:
+            return {"error": f"Error performing Google search: {str(e)}"}

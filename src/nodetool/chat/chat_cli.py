@@ -16,21 +16,18 @@ Features:
 import asyncio
 import json
 import os
+import tempfile
 import traceback
 import readline
-import warnings
 from typing import List, Dict, Any, Sequence, Optional
 
 from nodetool.chat.cot_agent import CoTAgent
 from nodetool.chat.providers import get_provider, Chunk
 from nodetool.chat.tools import Tool
 from nodetool.chat.chat import (
-    AVAILABLE_CHAT_TOOLS,
-    AVAILABLE_CHAT_TOOLS_BY_NAME,
-    generate_messages,
     run_tool,
-    default_serializer,
 )
+from nodetool.chat.regular_chat import process_regular_chat
 from nodetool.metadata.types import Provider, Message, ToolCall, FunctionModel
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.chat.ollama_service import get_ollama_models
@@ -59,7 +56,6 @@ async def chat_cli():
         /clear: Clear the conversation history
         /agent [on|off]: Toggle CoT agent mode
         /debug [on|off]: Toggle debug mode to display tool calls and results
-        /tools: List available tools or show details about a specific tool
         /quit or /exit: Exit the chat interface
         /help: Display available commands
 
@@ -77,7 +73,7 @@ async def chat_cli():
     # Define default models for each provider
     default_models = {
         Provider.OpenAI: "gpt-4o",
-        Provider.Anthropic: "claude-3-5-sonnet-20241022",
+        Provider.Anthropic: "claude-3-7-sonnet-20250219",
         Provider.Ollama: "llama3.2:3b",
     }
 
@@ -110,7 +106,6 @@ async def chat_cli():
         "clear",
         "agent",
         "debug",
-        "tools",
     ]
     PROVIDERS = [p.value.lower() for p in Provider]
     AGENT_OPTIONS = ["on", "off"]
@@ -148,14 +143,6 @@ async def chat_cli():
                 f"/debug {opt}" for opt in DEBUG_OPTIONS if opt.startswith(debug_text)
             ]
             return options[state] if state < len(options) else None
-        elif text.startswith("/tools "):
-            tool_text = text.split()[-1]
-            options = [
-                f"/tools {t}"
-                for t in AVAILABLE_CHAT_TOOLS_BY_NAME.keys()
-                if t.startswith(tool_text)
-            ]
-            return options[state] if state < len(options) else None
         return None
 
     readline.set_completer(completer)
@@ -164,33 +151,26 @@ async def chat_cli():
     # Initialize CoT agent with the default provider and model
     async def initialize_cot_agent():
         nonlocal cot_agent
+        # create temp folder for workspace
+        workspace_dir = tempfile.mkdtemp()
+
         provider_instance = get_provider(provider)
         cot_agent = CoTAgent(
             provider=provider_instance,
             model=model,
-            tools=AVAILABLE_CHAT_TOOLS,
+            workspace_dir=workspace_dir,
         )
         return cot_agent
 
     # Initialize the CoT agent
     cot_agent = await initialize_cot_agent()
 
-    # Display available tools
-    def cmd_tools(args=None):
-        if not args:
-            print("\nAvailable tools:")
-            for tool in sorted(AVAILABLE_CHAT_TOOLS, key=lambda t: t.name):
-                print(f"- {tool.name}: {tool.description[:60]}...")
-            return
-
-        tool_name = args[0]
-        if tool_name in AVAILABLE_CHAT_TOOLS_BY_NAME:
-            tool = AVAILABLE_CHAT_TOOLS_BY_NAME[tool_name]
-            print(f"\nTool: {tool.name}")
-            print(f"Description: {tool.description}")
-            print(f"Parameters: {json.dumps(tool.input_schema, indent=2)}")
-        else:
-            print(f"Tool '{tool_name}' not found.")
+    def find_tool_by_name(name: str) -> Optional[Tool]:
+        if cot_agent:
+            for tool in cot_agent.tools:
+                if tool.name == name:
+                    return tool
+        return None
 
     # Process CoT agent responses
     async def process_cot_response(problem):
@@ -199,8 +179,6 @@ async def chat_cli():
             print("Error: CoT agent not initialized")
             return
 
-        print("\nThinking with Chain of Thought...\n")
-
         try:
             # Get and display the step-by-step reasoning
             async for item in cot_agent.solve_problem(problem, show_thinking=True):
@@ -208,12 +186,12 @@ async def chat_cli():
                     print(item.content, end="", flush=True)
                 elif isinstance(item, ToolCall):
                     # Show tool usage
-                    print(f"\n[Using tool: {item.name}]")
-                    print(f"Arguments: {json.dumps(item.args, indent=2)}")
+                    print(f"\n[{item.name}]: {json.dumps(item.args)}")
 
                     # Execute the tool
-                    tool_result = await run_tool(context, item, AVAILABLE_CHAT_TOOLS)
-                    print(f"Result: {json.dumps(tool_result.result, indent=2)}")
+                    tool_result = await run_tool(context, item, cot_agent.tools)
+                    if debug_mode:
+                        print(f"Result: {json.dumps(tool_result.result, indent=2)}")
 
             print("\n")  # Add a final newline
         except Exception as e:
@@ -266,7 +244,8 @@ async def chat_cli():
                             print("- claude-3-opus-20240229")
                             print("- claude-3-sonnet-20240229")
                             print("- claude-3-haiku-20240307")
-                            print("- claude-3-5-sonnet-20241022")
+                            print("- claude-3-5-sonnet-2024102")
+                            print("- claude-3-7-sonnet-20250219")
                         print()
                     except Exception as e:
                         print(f"Error listing models: {e}")
@@ -345,9 +324,6 @@ async def chat_cli():
                     else:
                         print("Usage: /debug [on|off]")
                     continue
-                elif cmd == "tools":
-                    cmd_tools(args)
-                    continue
                 else:
                     print("Unknown command. Type /help for available commands")
                     continue
@@ -361,62 +337,14 @@ async def chat_cli():
                 await process_cot_response(user_input)  # type: ignore
                 continue
 
-            # Regular chat flow - Add user message
-            messages.append(Message(role="user", content=user_input))
-            unprocessed_messages = messages
-
-            while unprocessed_messages:
-                messages_to_send = messages + unprocessed_messages
-                unprocessed_messages = []
-                async for chunk in generate_messages(
-                    messages=messages_to_send,
-                    model=model,
-                    tools=AVAILABLE_CHAT_TOOLS,
-                ):
-                    if isinstance(chunk, Chunk):
-                        current_chunk = str(chunk.content)
-                        print(chunk.content, end="", flush=True)
-                        if messages[-1].role == "assistant":
-                            assert isinstance(messages[-1].content, str)
-                            messages[-1].content += current_chunk
-                        else:
-                            messages.append(
-                                Message(role="assistant", content=current_chunk)
-                            )
-                        if chunk.done:
-                            print("")
-
-                    if isinstance(chunk, ToolCall):
-                        # Display tool call in debug mode
-                        if debug_mode:
-                            print("\n[Debug] Tool Call:")
-                            print(f"  Name: {chunk.name}")
-                            print(f"  Arguments: {json.dumps(chunk.args, indent=2)}")
-
-                        tool_result = await run_tool(
-                            context, chunk, AVAILABLE_CHAT_TOOLS
-                        )
-
-                        # Display tool result in debug mode
-                        if debug_mode:
-                            print("[Debug] Tool Result:")
-                            print(
-                                f"  {json.dumps(tool_result.result, indent=2, default=default_serializer)}\n"
-                            )
-
-                        unprocessed_messages.append(
-                            Message(role="assistant", tool_calls=[chunk])
-                        )
-                        unprocessed_messages.append(
-                            Message(
-                                role="tool",
-                                tool_call_id=tool_result.id,
-                                name=chunk.name,
-                                content=json.dumps(
-                                    tool_result.result, default=default_serializer
-                                ),
-                            )
-                        )
+            # Regular chat flow - Use the refactored module
+            messages = await process_regular_chat(
+                user_input=user_input,
+                messages=messages,
+                model=model,
+                context=context,
+                debug_mode=debug_mode,
+            )
 
         except KeyboardInterrupt:
             return

@@ -45,6 +45,7 @@ from nodetool.chat.tools import (
     SearchEmailTool,
     SearchFileTool,
     SemanticDocSearchTool,
+    GoogleSearchTool,
     Tool,
 )
 
@@ -98,6 +99,7 @@ async def get_openai_models():
 
 AVAILABLE_CHAT_TOOLS = [
     SearchEmailTool(),
+    GoogleSearchTool(),
     AddLabelTool(),
     ListDirectoryTool(),
     ReadFileTool(),

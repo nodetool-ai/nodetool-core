@@ -120,7 +120,7 @@ class Environment(object):
         return env
 
     @classmethod
-    def get(cls, key: str, default: Any = ...):
+    def get(cls, key: str, default: Any = None):
         if cls.settings is None or cls.secrets is None:
             cls.load_settings()
         assert cls.settings is not None and cls.secrets is not None

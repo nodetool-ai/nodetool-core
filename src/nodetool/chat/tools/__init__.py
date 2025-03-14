@@ -33,11 +33,34 @@ Apple Notes:
 - CreateAppleNoteTool: Create notes in Apple Notes
 - ReadAppleNotesTool: Read from Apple Notes
 
+Google Services:
+- GoogleSearchTool: Search Google via SerpAPI
+- GoogleFinanceTool: Retrieve financial data via Google Finance
+- GoogleFlightsTool: Search flight information via Google Flights
+- GoogleNewsTool: Search Google News for articles and topics
+
 System:
 - ExecuteShellTool: Run shell commands
 - ProcessNodeTool: Process workflow nodes
 - TestTool: Tool for integration testing
 - FindNodeTool: Find nodes in node library
+
+Workspace Management:
+- CreateWorkspaceFileTool: Create a new file in the agent workspace
+- ReadWorkspaceFileTool: Read contents of files in the workspace
+- UpdateWorkspaceFileTool: Update existing files in the workspace
+- DeleteWorkspaceFileTool: Delete files from the workspace
+- ListWorkspaceContentsTool: List contents of the workspace
+- ExecuteWorkspaceCommandTool: Execute commands in the workspace
+
+Task Management:
+- ListTasksTool: List tasks from a markdown file
+- AddTaskTool: Add a new task to the list
+- CompleteTaskTool: Mark a task as complete
+- UncompleteTaskTool: Mark a task as incomplete
+- DeleteTaskTool: Delete a task from the list
+- UpdateTaskTool: Update a task's text
+- MoveTaskTool: Move a task to a different position or parent
 
 Each tool inherits from the base Tool class and implements:
 - input_schema: JSON schema defining the tool's parameters
@@ -69,6 +92,7 @@ from nodetool.chat.tools.system import (
 from nodetool.chat.tools.browser import (
     BrowserTool,
     ScreenshotTool,
+    GoogleSearchTool,
 )
 
 # PDF tools
@@ -101,6 +125,26 @@ from nodetool.chat.tools.apple_notes import (
     ReadAppleNotesTool,
 )
 
+# Workspace tools
+from nodetool.chat.tools.workspace import (
+    WorkspaceBaseTool,
+    CreateWorkspaceFileTool,
+    ReadWorkspaceFileTool,
+    UpdateWorkspaceFileTool,
+    DeleteWorkspaceFileTool,
+    ListWorkspaceContentsTool,
+    ExecuteWorkspaceCommandTool,
+)
+
+# Task management tools
+from nodetool.chat.tools.task_management import (
+    TaskBaseTool,
+    AddTaskTool,
+    FinishTaskTool,
+    TaskList,
+)
+
+
 __all__ = [
     # Base
     "Tool",
@@ -118,6 +162,7 @@ __all__ = [
     # Web and browser
     "BrowserTool",
     "ScreenshotTool",
+    "GoogleSearchTool",
     # PDF
     "ExtractPDFTextTool",
     "ExtractPDFTablesTool",
@@ -136,4 +181,17 @@ __all__ = [
     # Apple Notes
     "CreateAppleNoteTool",
     "ReadAppleNotesTool",
+    # Workspace tools
+    "WorkspaceBaseTool",
+    "CreateWorkspaceFileTool",
+    "ReadWorkspaceFileTool",
+    "UpdateWorkspaceFileTool",
+    "DeleteWorkspaceFileTool",
+    "ListWorkspaceContentsTool",
+    "ExecuteWorkspaceCommandTool",
+    # Task management tools
+    "TaskBaseTool",
+    "AddTaskTool",
+    "FinishTaskTool",
+    "TaskList",
 ]

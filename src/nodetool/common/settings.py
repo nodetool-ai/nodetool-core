@@ -103,6 +103,14 @@ class SecretsModel(BaseModel):
         default=None,
         description="FAL API key for accessing FAL.ai's serverless AI infrastructure",
     )
+    BRIGHTDATA_API_KEY: str | None = Field(
+        default=None,
+        description="Brightdata API key for accessing Brightdata's proxy infrastructure",
+    )
+    BRIGHTDATA_ZONE: str | None = Field(
+        default=None,
+        description="Brightdata zone for accessing Brightdata's proxy infrastructure",
+    )
 
 
 def get_system_file_path(filename: str) -> Path:
