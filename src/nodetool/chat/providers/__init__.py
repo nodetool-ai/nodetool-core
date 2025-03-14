@@ -20,10 +20,14 @@ from nodetool.chat.providers.ollama import OllamaProvider
 # Provider factory
 from nodetool.metadata.types import Provider as ProviderEnum
 
+# Provider instance cache
+_provider_cache: dict[ProviderEnum, ChatProvider] = {}
+
 
 def get_provider(provider_type: ProviderEnum) -> ChatProvider:
     """
     Get a chat provider instance based on the provider type.
+    Providers are cached after first creation.
 
     Args:
         provider_type: The provider type enum
@@ -34,14 +38,21 @@ def get_provider(provider_type: ProviderEnum) -> ChatProvider:
     Raises:
         ValueError: If the provider type is not supported
     """
+    if provider_type in _provider_cache:
+        return _provider_cache[provider_type]
+
+    provider: ChatProvider
     if provider_type == ProviderEnum.OpenAI:
-        return OpenAIProvider()
+        provider = OpenAIProvider()
     elif provider_type == ProviderEnum.Anthropic:
-        return AnthropicProvider()
+        provider = AnthropicProvider()
     elif provider_type == ProviderEnum.Ollama:
-        return OllamaProvider()
+        provider = OllamaProvider()
     else:
         raise ValueError(f"Provider {provider_type} not supported")
+
+    _provider_cache[provider_type] = provider
+    return provider
 
 
 # Export all providers

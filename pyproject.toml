@@ -50,8 +50,8 @@ PyMuPDF = "1.25.2"
 pymupdf4llm = "0.0.17"
 
 # AI dependencies
-anthropic = "0.39.0"
-huggingface_hub = "0.26.2"
+anthropic = "*"
+huggingface_hub = "*"
 openai = "*"
 # fal-client = "0.5.6"
 ollama = "*"

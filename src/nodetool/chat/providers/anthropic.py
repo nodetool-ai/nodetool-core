@@ -67,6 +67,7 @@ class AnthropicProvider(ChatProvider):
 
     def __init__(self):
         """Initialize the Anthropic provider with client credentials."""
+        super().__init__()
         env = Environment.get_environment()
         api_key = env.get("ANTHROPIC_API_KEY")
         assert api_key, "ANTHROPIC_API_KEY is not set"
@@ -74,6 +75,13 @@ class AnthropicProvider(ChatProvider):
             api_key=api_key,
             default_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
         )
+        # Initialize usage tracking
+        self.usage = {
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+        }
 
     def convert_message(self, message: Message) -> MessageParam:
         """Convert an internal message to Anthropic's format."""
@@ -202,4 +210,17 @@ class AnthropicProvider(ChatProvider):
                             args=event.content_block.input,  # type: ignore
                         )
                 elif event.type == "message_stop":
+                    # Update usage statistics when the message is complete
+                    if hasattr(event, "message") and hasattr(event.message, "usage"):
+                        usage = event.message.usage
+                        self.usage["input_tokens"] += usage.input_tokens
+                        self.usage["output_tokens"] += usage.output_tokens
+                        if usage.cache_creation_input_tokens:
+                            self.usage[
+                                "cache_creation_input_tokens"
+                            ] += usage.cache_creation_input_tokens
+                        if usage.cache_read_input_tokens:
+                            self.usage[
+                                "cache_read_input_tokens"
+                            ] += usage.cache_read_input_tokens
                     yield Chunk(content="", done=True)

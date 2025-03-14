@@ -29,6 +29,15 @@ class ChatProvider(ABC):
     the generate_messages method to define provider-specific behavior.
     """
 
+    def __init__(self):
+        self.usage = {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+            "cached_prompt_tokens": 0,
+            "reasoning_tokens": 0,
+        }
+
     @abstractmethod
     async def generate_messages(
         self,

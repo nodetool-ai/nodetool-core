@@ -328,7 +328,7 @@ class CoTAgent:
         return filtered_messages
 
     async def solve_problem(
-        self, problem: str, show_thinking: bool = True
+        self, problem: str, show_thinking: bool = True, print_usage: bool = False
     ) -> AsyncGenerator[Union[Message, Chunk, ToolCall], None]:
         """
         Solves the given problem using a three-phase approach: planning, then execution.
@@ -336,6 +336,7 @@ class CoTAgent:
         Args:
             problem (str): The problem or question to solve
             show_thinking (bool, optional): Whether to include thinking steps in the output
+            print_usage (bool, optional): Whether to print provider usage statistics. Defaults to False
 
         Yields:
             Union[Message, Chunk, ToolCall]: Objects representing parts of the reasoning process
@@ -498,6 +499,11 @@ class CoTAgent:
                 model=self.model,
                 tools=self.tools,
             )
+
+            if print_usage:
+                yield Chunk(
+                    content=f"\nProvider usage: {self.provider.usage}\n", done=False
+                )
 
             async for chunk in generator:  # type: ignore
                 yield chunk

@@ -82,10 +82,12 @@ class OpenAIProvider(ChatProvider):
 
     def __init__(self):
         """Initialize the OpenAI provider with client credentials."""
+        super().__init__()
         env = Environment.get_environment()
         api_key = env.get("OPENAI_API_KEY")
         assert api_key, "OPENAI_API_KEY is not set"
         self.client = openai.AsyncClient(api_key=api_key)
+        # Initialize usage tracking
 
     def message_content_to_openai_content_part(
         self, content: MessageContent
@@ -219,13 +221,37 @@ class OpenAIProvider(ChatProvider):
             model=model.name,
             messages=openai_messages,
             stream=True,
+            stream_options={"include_usage": True},
             **kwargs,
         )
 
         current_tool_call = None
-        async for chunk in completion:
-            delta = chunk.choices[0].delta
 
+        async for chunk in completion:
+            # Track usage information (only available in the final chunk)
+            if hasattr(chunk, "usage") and chunk.usage:
+                self.usage["prompt_tokens"] += chunk.usage.prompt_tokens
+                self.usage["completion_tokens"] += chunk.usage.completion_tokens
+                self.usage["total_tokens"] += chunk.usage.total_tokens
+                if (
+                    chunk.usage.prompt_tokens_details
+                    and chunk.usage.prompt_tokens_details.cached_tokens
+                ):
+                    self.usage[
+                        "cached_prompt_tokens"
+                    ] += chunk.usage.prompt_tokens_details.cached_tokens
+                if (
+                    chunk.usage.completion_tokens_details
+                    and chunk.usage.completion_tokens_details.reasoning_tokens
+                ):
+                    self.usage[
+                        "reasoning_tokens"
+                    ] += chunk.usage.completion_tokens_details.reasoning_tokens
+
+            if not chunk.choices:
+                continue
+
+            delta = chunk.choices[0].delta
             if delta.content or chunk.choices[0].finish_reason == "stop":
                 yield Chunk(
                     content=delta.content or "",
@@ -259,3 +285,11 @@ class OpenAIProvider(ChatProvider):
                     assert (
                         current_tool_call is not None
                     ), "Current tool call must not be None"
+
+    def get_usage(self) -> dict:
+        """Return the current accumulated token usage statistics."""
+        return self.usage.copy()
+
+    def reset_usage(self) -> None:
+        """Reset the usage counters to zero."""
+        self.usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}

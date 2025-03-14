@@ -56,6 +56,7 @@ async def chat_cli():
         /clear: Clear the conversation history
         /agent [on|off]: Toggle CoT agent mode
         /debug [on|off]: Toggle debug mode to display tool calls and results
+        /usage: Display current provider's usage statistics
         /quit or /exit: Exit the chat interface
         /help: Display available commands
 
@@ -73,7 +74,8 @@ async def chat_cli():
     # Define default models for each provider
     default_models = {
         Provider.OpenAI: "gpt-4o",
-        Provider.Anthropic: "claude-3-7-sonnet-20250219",
+        # Provider.Anthropic: "claude-3-7-sonnet-20250219",
+        Provider.Anthropic: "claude-3-5-sonnet-20241022",
         Provider.Ollama: "llama3.2:3b",
     }
 
@@ -106,44 +108,43 @@ async def chat_cli():
         "clear",
         "agent",
         "debug",
+        "usage",
     ]
     PROVIDERS = [p.value.lower() for p in Provider]
     AGENT_OPTIONS = ["on", "off"]
     DEBUG_OPTIONS = ["on", "off"]
 
     def completer(text, state):
-        if text.startswith("/"):
-            text = text[1:]
-            options = [f"/{cmd}" for cmd in COMMANDS if cmd.startswith(text)]
-            return options[state] if state < len(options) else None
-        elif text.startswith("/model "):
+        if text.startswith("model"):
             model_text = text.split()[-1]
             options = [
-                f"/model {m}" for m in ollama_models if m.name.startswith(model_text)
+                f"model {m}" for m in ollama_models if m.name.startswith(model_text)
             ]
             options.extend(
-                [f"/model {m}" for m in openai_models if m.id.startswith(model_text)]
+                [f"model {m}" for m in openai_models if m.id.startswith(model_text)]
             )
             return options[state] if state < len(options) else None
-        elif text.startswith("/provider "):
+        elif text.startswith("provider"):
             provider_text = text.split()[-1]
             options = [
-                f"/provider {p}" for p in PROVIDERS if p.startswith(provider_text)
+                f"provider {p}" for p in PROVIDERS if p.startswith(provider_text)
             ]
             return options[state] if state < len(options) else None
-        elif text.startswith("/agent "):
+        elif text.startswith("agent"):
             agent_text = text.split()[-1]
             options = [
-                f"/agent {opt}" for opt in AGENT_OPTIONS if opt.startswith(agent_text)
+                f"agent {opt}" for opt in AGENT_OPTIONS if opt.startswith(agent_text)
             ]
             return options[state] if state < len(options) else None
-        elif text.startswith("/debug "):
+        elif text.startswith("debug"):
             debug_text = text.split()[-1]
             options = [
-                f"/debug {opt}" for opt in DEBUG_OPTIONS if opt.startswith(debug_text)
+                f"debug {opt}" for opt in DEBUG_OPTIONS if opt.startswith(debug_text)
             ]
             return options[state] if state < len(options) else None
-        return None
+        else:
+            options = [f"{cmd}" for cmd in COMMANDS if cmd.startswith(text)]
+            return options[state] if state < len(options) else None
 
     readline.set_completer(completer)
     readline.parse_and_bind("tab: complete")
@@ -182,6 +183,7 @@ async def chat_cli():
         try:
             # Get and display the step-by-step reasoning
             async for item in cot_agent.solve_problem(problem, show_thinking=True):
+
                 if isinstance(item, Chunk):
                     print(item.content, end="", flush=True)
                 elif isinstance(item, ToolCall):
@@ -224,6 +226,7 @@ async def chat_cli():
                     print(
                         "  /debug [on|off] - Toggle debug mode to display tool calls and results"
                     )
+                    print("  /usage - Display current provider's usage statistics")
                     print("  /tools - List available tools")
                     print("  /tools [tool_name] - Show details about a specific tool")
                     print("  /clear - Clear chat history")
@@ -323,6 +326,13 @@ async def chat_cli():
                         print("Debug mode turned OFF - Tool calls and results hidden")
                     else:
                         print("Usage: /debug [on|off]")
+                    continue
+                elif cmd == "usage":
+                    if cot_agent and cot_agent.provider:
+                        print(f"\nProvider usage statistics:")
+                        print(json.dumps(cot_agent.provider.usage, indent=2))
+                    else:
+                        print("No usage statistics available")
                     continue
                 else:
                     print("Unknown command. Type /help for available commands")
