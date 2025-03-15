@@ -1211,6 +1211,11 @@ class Message(BaseType):
     For unsaved workflows, the whole graph needs to be provided.
     """
 
+    task_id: str | None = None
+    """
+    The unique identifier of the task the message belongs to.
+    """
+
     thread_id: str | None = None
     """
     The unique identifier of the thread the message belongs to.

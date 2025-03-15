@@ -81,7 +81,7 @@ class AnthropicProvider(ChatProvider):
             "cache_read_input_tokens": 0,
         }
 
-    def convert_message(self, message: Message) -> MessageParam:
+    def convert_message(self, message: Message) -> MessageParam | None:
         """Convert an internal message to Anthropic's format."""
         if message.role == "tool":
             assert message.tool_call_id is not None, "Tool call ID must not be None"
@@ -122,18 +122,11 @@ class AnthropicProvider(ChatProvider):
                         )
                 return {"role": "user", "content": content}
         elif message.role == "assistant":
-            if isinstance(message.content, str):
-                return {"role": "assistant", "content": message.content}
-            elif isinstance(message.content, list):
-                content = []
-                assert (
-                    message.content is not None
-                ), "Assistant message content must not be None"
-                for part in message.content:
-                    if isinstance(part, MessageTextContent):
-                        content.append({"type": "text", "text": part.text})
-                return {"role": "assistant", "content": content}
-            elif message.tool_calls:
+            # Skip assistant messages with empty content
+            if not message.content and not message.tool_calls:
+                return None  # Will be filtered out later
+
+            if message.tool_calls:
                 return {
                     "role": "assistant",
                     "content": [
@@ -146,6 +139,17 @@ class AnthropicProvider(ChatProvider):
                         for tool_call in message.tool_calls
                     ],
                 }
+            elif isinstance(message.content, str):
+                return {"role": "assistant", "content": message.content}
+            elif isinstance(message.content, list):
+                content = []
+                assert (
+                    message.content is not None
+                ), "Assistant message content must not be None"
+                for part in message.content:
+                    if isinstance(part, MessageTextContent):
+                        content.append({"type": "text", "text": part.text})
+                return {"role": "assistant", "content": content}
             else:
                 raise ValueError(
                     f"Unknown message content type {type(message.content)}"
@@ -193,10 +197,21 @@ class AnthropicProvider(ChatProvider):
 
         # Convert messages and tools to Anthropic format
         anthropic_messages = [
-            self.convert_message(msg) for msg in messages if msg.role != "system"
+            msg
+            for msg in [
+                self.convert_message(msg) for msg in messages if msg.role != "system"
+            ]
+            if msg is not None
         ]
 
         anthropic_tools = self.format_tools(tools)
+
+        # print("***************************************")
+
+        # for msg in anthropic_messages:
+        #     print("--------------------------------")
+        #     print(json.dumps(msg, indent=2))
+        #     print("--------------------------------")
 
         async with self.client.messages.stream(
             model=model.name,

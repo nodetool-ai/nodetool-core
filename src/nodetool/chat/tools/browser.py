@@ -4,6 +4,7 @@ Browser interaction tools.
 This module provides tools for interacting with web browsers and web pages.
 """
 
+import os
 from typing import Any
 import aiohttp
 import json
@@ -165,11 +166,12 @@ class BrowserTool(Tool):
 
 
 class ScreenshotTool(Tool):
-    def __init__(self):
+    def __init__(self, workspace_dir: str):
         super().__init__(
             name="take_screenshot",
             description="Take a screenshot of the current browser window or a specific element",
         )
+        self.workspace_dir = workspace_dir
         self.input_schema = {
             "type": "object",
             "properties": {
@@ -179,7 +181,7 @@ class ScreenshotTool(Tool):
                 },
                 "path": {
                     "type": "string",
-                    "description": "Path where to save the screenshot",
+                    "description": "Workspace relative path to save the screenshot",
                     "default": "screenshot.png",
                 },
             },
@@ -192,19 +194,19 @@ class ScreenshotTool(Tool):
                 return {"error": "No browser session available"}
 
             path = params.get("path", "screenshot.png")
-
+            full_path = os.path.join(self.workspace_dir, path)
             if "selector" in params:
                 element = await page.query_selector(params["selector"])
                 if element:
-                    await element.screenshot(path=path)
+                    await element.screenshot(path=full_path)
                 else:
                     return {
                         "error": f"No element found matching selector: {params['selector']}"
                     }
             else:
-                await page.screenshot(path=path)
+                await page.screenshot(path=full_path)
 
-            return {"success": True, "path": path}
+            return {"success": True, "path": full_path}
 
         except Exception as e:
             return {"error": str(e)}

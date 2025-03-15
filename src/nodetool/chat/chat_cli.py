@@ -334,11 +334,6 @@ class ChatCLI:
                     if len(args) > 60:
                         args = args[:60] + "..."
                     print(f"\n[{item.name}]: {args}")
-                    tool_result = await run_tool(
-                        self.context, item, self.cot_agent.tools
-                    )
-                    if self.debug_mode:
-                        print(f"Result: {json.dumps(tool_result.result, indent=2)}")
             print("\n")
         except Exception as e:
             print(f"\nError during CoT reasoning: {e}")

@@ -105,7 +105,6 @@ AVAILABLE_CHAT_TOOLS = [
     ReadFileTool(),
     WriteFileTool(),
     BrowserTool(),
-    ScreenshotTool(),
     SearchFileTool(),
     ChromaTextSearchTool(),
     ChromaHybridSearchTool(),

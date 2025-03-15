@@ -27,7 +27,8 @@ import re
 import shutil
 import subprocess
 import platform
-from typing import AsyncGenerator, Sequence, List, Optional, Union, Dict, Any
+import tiktoken
+from typing import AsyncGenerator, List, Optional, Union, Dict, Any
 
 from nodetool.chat.providers import ChatProvider, Chunk
 from nodetool.chat.tools import Tool
@@ -219,13 +220,17 @@ class CoTAgent:
         self.workspace_dir = workspace_dir
         # Add short-term memory to store tool results
         self.tool_memory: Dict[str, Any] = {}
+        # Add tokenizer instance for token counting
+        self.encoding = tiktoken.get_encoding(
+            "cl100k_base"
+        )  # Default to Anthropic/OpenAI encoding
 
         self.tools: List[Tool] = [
             SearchEmailTool(),
             GoogleSearchTool(),
             AddLabelTool(),
             BrowserTool(),
-            ScreenshotTool(),
+            ScreenshotTool(workspace_dir),
             SearchFileTool(),
             ChromaTextSearchTool(),
             ChromaHybridSearchTool(),
@@ -269,41 +274,35 @@ class CoTAgent:
         All file operations should be performed within this workspace directory.
         
         PLANNING INSTRUCTIONS:
-        1. Analyze the problem to identify key components and challenges
-        2. Break down the problem into logical, sequential steps
-        3. Top level tasks should have sub tasks.
-        4. The sub tasks will get executed in the execution phase, in the order they are written.
-        5. The tasks should not include planning, which only happens in the planning phase.
-        6. Each sub task should get a unique id which can be used to reference the task in the execution phase.
-        7. Each sub task should reference the tool it will use.
-        8. Each sub task has an ID, a title, a description, and a list of dependencies.
-        9. The dependencies are other task IDs that must be completed before the sub task can be executed.
-        10. The dependencies should be direct dependencies only - don't create indirect dependencies.
-        11. The sub tasks should be actionable.
-        12. When working with files, always use the workspace directory as the root.
+        1. Create MINIMAL plans - use only as many tasks as absolutely necessary.
+        2. Match plan complexity to objective complexity - simple objectives should have few tasks.
+        3. Combine related steps into single tasks whenever possible.
+        4. Each top-level task should have 1-3 subtasks for most objectives.
+        5. Only create separate subtasks when there's a clear dependency or tool change.
+        6. The sub tasks will get executed in the execution phase, in the order they are written.
+        7. Each sub task should get a unique id which can be used to reference the task.
+        8. Each sub task should reference the tool it will use.
+        9. Dependencies are other task IDs that must be completed before the subtask can be executed.
+        10. Keep the plan as streamlined as possible while still achieving the objective.
+        11. When working with files, always use the workspace directory as the root.
 
         Write JSON with the following format:
         ```json
         {
-            "title": "Write an Original Poem",
+            "title": "Write a Simple Note",
             "tasks": [
                 {
-                "title": "Brainstorming Phase",
+                "title": "Create and Write Note",
                 "subtasks": [
                     {
-                    "id": "br1",
-                    "content": "Create a new workspace file 'poem_ideas.txt' to store brainstorming notes",
+                    "id": "note1",
+                    "content": "Create a new note file 'quick_note.txt' with initial content",
                     "tool": "create_workspace_file",
                     "dependencies": []
-                    },
-                    {
-                    "id": "br2", 
-                    "content": "Write initial theme ideas and potential topics in poem_ideas.txt",
-                    "tool": "update_workspace_file",
-                    "dependencies": ["br1"]
                     }
                 ]
-            },
+                }
+            ]
         }
         ```
 
@@ -369,69 +368,46 @@ class CoTAgent:
             "  - dependencies (list of strings)\n"
         )
 
-    def _filter_context(self, messages: List[Message]) -> List[Message]:
+    def _count_tokens(self, messages: List[Message]) -> int:
         """
-        Filter conversation history to keep only recent tool results.
+        Count the number of tokens in the message history.
 
         Args:
-            messages (List[Message]): The full conversation history
+            messages (List[Message]): The messages to count tokens for
 
         Returns:
-            List[Message]: Filtered conversation history
+            int: The approximate token count
         """
-        if len(messages) <= 2:  # Keep at least system prompt and user query
-            return messages
+        # Simple token counting approach
+        token_count = 0
 
-        # Always include system message and the most recent user message
-        system_message = next((msg for msg in messages if msg.role == "system"), None)
-        user_messages = [msg for msg in messages if msg.role == "user"]
-        latest_user_message = user_messages[-1] if user_messages else None
+        for msg in messages:
+            # Count tokens in the message content
+            if hasattr(msg, "content") and msg.content:
+                if isinstance(msg.content, str):
+                    token_count += len(self.encoding.encode(msg.content))
+                elif isinstance(msg.content, list):
+                    # For multi-modal content, just count the text parts
+                    for part in msg.content:
+                        if isinstance(part, dict) and part.get("type") == "text":
+                            token_count += len(
+                                self.encoding.encode(part.get("text", ""))
+                            )
 
-        # Find tool result messages and their corresponding tool calls
-        tool_result_indices = []
-        for i, msg in enumerate(messages):
-            if msg.role == "tool":  # This is a tool result
-                tool_result_indices.append(i)
+            # Count tokens in tool calls if present
+            if hasattr(msg, "tool_calls") and msg.tool_calls:
+                for tool_call in msg.tool_calls:
+                    # Count function name
+                    token_count += len(self.encoding.encode(tool_call.name))
+                    # Count arguments
+                    if isinstance(tool_call.args, dict):
+                        token_count += len(
+                            self.encoding.encode(json.dumps(tool_call.args))
+                        )
+                    else:
+                        token_count += len(self.encoding.encode(str(tool_call.args)))
 
-        # Keep only the last N tool results and their tool calls
-        recent_tool_indices = set()
-        for idx in tool_result_indices[-self.max_tool_results :]:
-            recent_tool_indices.add(idx)  # The tool result
-            if (
-                idx > 0
-                and messages[idx - 1].role == "assistant"
-                and hasattr(messages[idx - 1], "tool_calls")
-            ):
-                recent_tool_indices.add(idx - 1)  # The corresponding tool call
-
-        # Build the filtered message list
-        filtered_messages = []
-
-        # Add system message if it exists
-        if system_message:
-            filtered_messages.append(system_message)
-
-        # Add recent assistant responses, tool calls, and tool results
-        for i, msg in enumerate(messages):
-            # Skip system message (already added)
-            if msg.role == "system":
-                continue
-
-            # Keep relevant tool calls and results
-            if i in recent_tool_indices:
-                filtered_messages.append(msg)
-            # Keep assistant messages that aren't tool calls
-            elif msg.role == "assistant" and not hasattr(msg, "tool_calls"):
-                filtered_messages.append(msg)
-            # Keep all user messages
-            elif msg.role == "user":
-                filtered_messages.append(msg)
-
-        # Make sure we include the latest user message if it wasn't already added
-        if latest_user_message and latest_user_message not in filtered_messages:
-            filtered_messages.append(latest_user_message)
-
-        return filtered_messages
+        return token_count
 
     async def solve_problem(
         self, problem: str, show_thinking: bool = True, print_usage: bool = False
@@ -474,7 +450,6 @@ class CoTAgent:
         print("Planning phase")
 
         chunks = []
-        filtered_history = self._filter_context(self.history)
 
         # Get JSON schema from TaskList model
         response_format = {
@@ -486,7 +461,7 @@ class CoTAgent:
         }
 
         generator = self.provider.generate_messages(
-            messages=filtered_history,
+            messages=self.history,
             model=self.model,
             tools=[],
             response_format=response_format,  # Add response format parameter
@@ -545,7 +520,7 @@ class CoTAgent:
 
             # Create a specific prompt for this task with references to previous task outputs if needed
             task_prompt = f"""
-            Execut this sub task as part of a wider plan:
+            Execute this sub task to acomplish the high level task:
             Task Title: {task.title}
             Task Description: {task.description}
             Subtask ID: {sub_task.id}
@@ -555,17 +530,18 @@ class CoTAgent:
             # Check if subtask references other tasks
             for ref_id in sub_task.dependencies:
                 if ref_id in self.tool_memory:
-                    task_prompt += f"\n\nData from {ref_id}:\n{json.dumps(self.tool_memory[ref_id])}"
+                    task_prompt += f"\n\This task is depending on the output from {ref_id}:\n{json.dumps(self.tool_memory[ref_id])}"
 
             # print(task_prompt)
             # Add the task-specific prompt to history
-            self.history.append(Message(role="user", content=task_prompt))
+            self.history.append(
+                Message(role="user", content=task_prompt, task_id=sub_task.id)
+            )
 
             # Get response for this specific task
             chunks = []
-            filtered_history = self._filter_context(self.history)
             generator = self.provider.generate_messages(
-                messages=filtered_history,
+                messages=self.history,
                 model=self.model,
                 tools=self.tools,
             )
@@ -580,13 +556,20 @@ class CoTAgent:
                 chunks.append(chunk)
 
             # Process the chunks
-            await self._process_chunks(chunks)
+            await self._process_chunks(chunks, sub_task.id)
 
             # Mark this specific task as complete
             sub_task.completed = True
 
-            # for task in self.tasks_list.tasks:
-            #     print(task.to_markdown())
+            # Prune history to remove messages no longer needed
+            self._prune_history()
+
+            # Print token count after each task for debugging
+            token_count = self._count_tokens(self.history)
+            yield Chunk(
+                content=f"\n[Debug: {token_count} tokens in history after task {sub_task.id}]\n",
+                done=False,
+            )
 
         # Print workspace files when agent completes all tasks
         if os.path.exists(self.workspace_dir):
@@ -626,12 +609,15 @@ class CoTAgent:
 
         return None, None
 
-    async def _process_chunks(self, chunks: List[Union[Chunk, ToolCall]]) -> None:
+    async def _process_chunks(
+        self, chunks: List[Union[Chunk, ToolCall]], task_id: str
+    ) -> None:
         """
         Process a list of chunks and tool calls, updating the conversation history.
 
         Args:
             chunks: List of chunks and tool calls to process
+            task_id: The ID of the task the chunks belong to
         """
         for chunk in chunks:
             # Handle chunks and tool calls to update history
@@ -646,12 +632,20 @@ class CoTAgent:
                 else:
                     # Add new assistant message
                     self.history.append(
-                        Message(role="assistant", content=chunk.content)
+                        Message(
+                            role="assistant", content=chunk.content, task_id=task_id
+                        )
                     )
 
             elif isinstance(chunk, ToolCall):
                 # Add tool call to history
-                self.history.append(Message(role="assistant", tool_calls=[chunk]))
+                self.history.append(
+                    Message(
+                        role="assistant",
+                        tool_calls=[chunk],
+                        task_id=task_id,
+                    )
+                )
 
                 # Execute tool
                 tool_result = await self._execute_tool(chunk)
@@ -670,8 +664,70 @@ class CoTAgent:
                         tool_call_id=tool_result.id,
                         name=chunk.name,
                         content=json.dumps(tool_result.result),
+                        task_id=task_id,
                     )
                 )
+
+        # Prune history after processing chunks to remove unnecessary messages
+        # self._prune_history()
+
+    def _prune_history(self) -> None:
+        """
+        Remove messages from history that are no longer needed for dependency resolution.
+
+        This method identifies messages with task_ids that are no longer referenced
+        as dependencies in any remaining incomplete tasks and removes them from history.
+        """
+        # Skip if history is too short
+        if len(self.history) <= 2:  # Keep at least system prompt and user query
+            return
+
+        # Collect all task IDs that are still needed as dependencies
+        needed_task_ids = set()
+
+        # Add all task IDs from incomplete tasks and their dependencies
+        for task in self.tasks_list.tasks:
+            for subtask in task.subtasks:
+                if not subtask.completed:
+                    # The task itself is needed
+                    needed_task_ids.add(subtask.id)
+                    # All its dependencies are needed
+                    needed_task_ids.update(subtask.dependencies)
+
+        # Always keep system message and the most recent user message
+        pruned_history = []
+        for msg in self.history:
+            # Always keep system messages
+            if msg.role == "system":
+                pruned_history.append(msg)
+                continue
+
+            # Always keep the most recent user message
+            if msg.role == "user" and msg == self.history[-1]:
+                pruned_history.append(msg)
+                continue
+
+            # Keep messages without task_id
+            if not hasattr(msg, "task_id") or msg.task_id is None:
+                pruned_history.append(msg)
+                continue
+
+            # Keep messages with task_id that's still needed
+            if msg.task_id in needed_task_ids:
+                pruned_history.append(msg)
+                continue
+
+            # Keep tool results for completed tasks that are in tool_memory
+            # if (
+            #     msg.role == "tool"
+            #     and hasattr(msg, "task_id")
+            #     and msg.task_id in self.tool_memory
+            # ):
+            #     pruned_history.append(msg)
+            #     continue
+
+        # Update the history
+        self.history = pruned_history
 
     def _get_current_task(self) -> tuple[Optional[Task], Optional[SubTask]]:
         """
