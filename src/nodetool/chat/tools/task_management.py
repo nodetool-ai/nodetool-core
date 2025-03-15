@@ -12,34 +12,27 @@ Tasks are stored as markdown headings with subtasks as checkbox lists:
 - Completed subtasks are marked with [x]
 """
 
-import os
-import re
 from typing import Any, Dict, List, Optional
 
 from nodetool.workflows.processing_context import ProcessingContext
 from .base import Tool
+from pydantic import BaseModel, Field
 
 
-class SubTask:
-    """Represents a subtask in a task list."""
+class SubTask(BaseModel):
+    """A subtask item with completion status, dependencies, and tools."""
 
-    def __init__(
-        self,
-        content: str,
-        completed: bool = False,
-        subtask_id: Optional[str] = None,
-        dependencies: Optional[List[str]] = None,
-    ):
-        self.content = content.strip()
-        self.completed = completed
-        self.subtask_id = subtask_id or self._generate_id()
-        self.dependencies = dependencies or []
-
-    def _generate_id(self) -> str:
-        """Generate a unique ID for this subtask."""
-        import uuid
-
-        return str(uuid.uuid4())[:3]  # Using first 3 chars of a UUID for brevity
+    id: str = Field(default="", description="The ID of the subtask")
+    content: str = Field(default="", description="The content of the subtask")
+    tool: str = Field(
+        default="", description="The tool that can be used to complete the subtask"
+    )
+    completed: bool = Field(
+        default=False, description="Whether the subtask is completed"
+    )
+    dependencies: List[str] = Field(
+        default=[], description="The dependencies of the subtask, a list of subtask IDs"
+    )
 
     def to_markdown(self) -> str:
         """Convert the subtask to markdown format."""
@@ -49,33 +42,32 @@ class SubTask:
             if self.dependencies
             else ""
         )
-        return f"- {checkbox} #{self.subtask_id} {self.content}{deps_str}"
-
-    def add_dependency(self, dependency_id: str) -> None:
-        """Add a dependency to this subtask."""
-        if dependency_id not in self.dependencies:
-            self.dependencies.append(dependency_id)
+        return f"- {checkbox} #{self.id} {self.content}{deps_str}"
 
 
-class Task:
-    """Represents a task with a title (heading) and subtasks."""
+class Task(BaseModel):
+    """A task containing a title, description, and list of subtasks."""
 
-    def __init__(self, title: str, task_id: Optional[str] = None):
-        self.title = title.strip()
-        self.subtasks: List[SubTask] = []
+    title: str = Field(default="", description="The title of the task")
+    description: str = Field(
+        default="", description="A description of the task, not used for execution"
+    )
+    subtasks: List[SubTask] = Field(
+        default=[], description="The subtasks of the task, a list of subtask IDs"
+    )
 
     def _generate_id(self) -> str:
-        """Generate a unique ID for this task."""
+        """Creates a unique 8-character UUID for task identification."""
         import uuid
 
         return str(uuid.uuid4())[:8]
 
     def is_completed(self) -> bool:
-        """Check if all subtasks are completed."""
+        """Returns True if all subtasks are marked as completed."""
         return all(subtask.completed for subtask in self.subtasks)
 
     def to_markdown(self) -> str:
-        """Convert the task to markdown format with heading and subtasks."""
+        """Converts task and subtasks to markdown format with headings and checkboxes."""
         lines = f"# {self.title}\n"
         if self.subtasks:
             for subtask in self.subtasks:
@@ -84,18 +76,21 @@ class Task:
 
     def add_subtask(
         self,
+        subtask_id: str,
         content: str,
-        completed: bool = False,
-        subtask_id: Optional[str] = None,
-        dependencies: Optional[List[str]] = None,
+        dependencies: List[str] = [],
     ) -> SubTask:
-        """Add a subtask to this task."""
-        subtask = SubTask(content, completed, subtask_id, dependencies)
+        """Creates and adds a new subtask to the task."""
+        subtask = SubTask(
+            id=subtask_id,
+            content=content,
+            dependencies=dependencies,
+        )
         self.subtasks.append(subtask)
         return subtask
 
     def find_subtask_by_content(self, content: str) -> Optional[SubTask]:
-        """Find a subtask by its content."""
+        """Searches for a subtask by its content text, case-insensitive."""
         content = content.strip()
         for subtask in self.subtasks:
             if subtask.content.lower() == content.lower():
@@ -103,106 +98,20 @@ class Task:
         return None
 
     def find_subtask_by_id(self, subtask_id: str) -> Optional[SubTask]:
-        """Find a subtask by its ID."""
+        """Retrieves a subtask by its unique identifier."""
         for subtask in self.subtasks:
-            if subtask.subtask_id == subtask_id:
+            if subtask.id == subtask_id:
                 return subtask
         return None
 
 
-class TaskList:
-    """Manager for a task list stored in markdown format."""
+class TaskList(BaseModel):
+    """Manager for organizing and manipulating a collection of tasks."""
 
-    def __init__(self):
-        """
-        Initialize a task list from either a file path or markdown content.
-        """
-        self.tasks: List[Task] = []
-
-    def from_markdown(self, markdown_content: str) -> None:
-        """
-        Load tasks from a markdown string.
-
-        Args:
-            markdown_content: The markdown content to parse
-        """
-        self.tasks = []  # Clear existing tasks
-
-        if not markdown_content.strip():
-            return
-
-        lines = markdown_content.splitlines()
-        current_task = None
-
-        for line in lines:
-            line = line.rstrip()
-
-            # Skip empty lines
-            if not line.strip():
-                continue
-
-            heading_match = re.match(r"^#+\s+(.+)$", line)
-            if heading_match:
-                # Found a new task heading
-                task_title = heading_match.group(1).strip()
-                current_task = Task(task_title)
-                self.tasks.append(current_task)
-                continue
-
-            if current_task:
-                # Check for subtask with dependencies in the new format: - [ ] #id content (depends on #id1, #id2)
-                new_format_match = re.match(
-                    r"^- \[([ xX])\] #([a-zA-Z0-9]+) (.+?)(?:\s+\(depends on #([a-zA-Z0-9,\s#]+)\))?$",
-                    line,
-                )
-                if new_format_match:
-                    completed = new_format_match.group(1).lower() == "x"
-                    subtask_id = new_format_match.group(2)
-                    content = new_format_match.group(3).strip()
-                    dependencies = []
-                    if new_format_match.group(4):
-                        deps_str = new_format_match.group(4)
-                        # Handle both comma-separated or space-separated formats
-                        deps_list = re.findall(r"#([a-zA-Z0-9]+)", deps_str)
-                        dependencies = deps_list
-                    current_task.add_subtask(
-                        content, completed, subtask_id, dependencies
-                    )
-                    continue
-
-                # Check for subtask with ID
-                subtask_with_id_match = re.match(
-                    r"^- \[([ xX])\] (.+) \(([a-zA-Z0-9]+)\)$", line
-                )
-                if subtask_with_id_match:
-                    completed = subtask_with_id_match.group(1).lower() == "x"
-                    content = subtask_with_id_match.group(2).strip()
-                    subtask_id = subtask_with_id_match.group(3)
-                    current_task.add_subtask(content, completed, subtask_id)
-                    continue
-
-                # Regular subtask without ID (older format)
-                subtask_match = re.match(r"^- \[([ xX])\] (.+)$", line)
-                if subtask_match:
-                    completed = subtask_match.group(1).lower() == "x"
-                    content = subtask_match.group(2)
-                    current_task.add_subtask(content, completed)
-                    continue
-
-                # Check for alternative subtask formats
-                # 1. No space between dash and bracket: -[x] or -[ ]
-                alt_subtask_match = re.match(r"^-\[([ xX])\] (.+)$", line)
-                if alt_subtask_match:
-                    completed = alt_subtask_match.group(1).lower() == "x"
-                    content = alt_subtask_match.group(2)
-                    current_task.add_subtask(content, completed)
-                    continue
-
-                # 2. Simple list item without checkbox: "- Task"
-                simple_list_match = re.match(r"^- (.+)$", line)
-                if simple_list_match:
-                    content = simple_list_match.group(1)
-                    current_task.add_subtask(content, False)  # Assume uncompleted
+    title: str = Field(default="", description="The title of the task list")
+    tasks: List[Task] = Field(
+        default=[], description="The tasks of the task list, a list of task IDs"
+    )
 
     def to_markdown(self) -> str:
         """Convert all tasks to a markdown string."""
@@ -212,26 +121,6 @@ class TaskList:
 
         return "\n".join(lines)
 
-    def get_all_tasks(self) -> List[Dict[str, Any]]:
-        """Get a list of all tasks with their metadata."""
-        result = []
-        for task in self.tasks:
-            task_info = {
-                "title": task.title,
-                "completed": task.is_completed(),
-                "subtasks": [
-                    {
-                        "id": subtask.subtask_id,
-                        "content": subtask.content,
-                        "completed": subtask.completed,
-                        "dependencies": subtask.dependencies,
-                    }
-                    for subtask in task.subtasks
-                ],
-            }
-            result.append(task_info)
-        return result
-
     def find_task_by_title(self, title: str) -> Optional[Task]:
         """Find a task by its title."""
         title = title.strip()
@@ -240,9 +129,13 @@ class TaskList:
                 return task
         return None
 
-    def find_task_by_id(self, task_id: str) -> Optional[Task]:
+    def find_task_by_id(self, task_id: str) -> tuple[Optional[Task], Optional[SubTask]]:
         """Find a task by its ID."""
-        return None
+        for task in self.tasks:
+            for subtask in task.subtasks:
+                if subtask.id == task_id:
+                    return task, subtask
+        return None, None
 
     def find_subtask(
         self, task_title: str, subtask_content: str
@@ -255,16 +148,8 @@ class TaskList:
         subtask = task.find_subtask_by_content(subtask_content)
         return task, subtask
 
-    def add_task(self, title: str) -> Dict[str, Any]:
-        """
-        Add a new task with the given title.
-
-        Args:
-            title: The title of the task (will be used as heading)
-
-        Returns:
-            Dictionary with the new task's information
-        """
+    def add_task(self, title: str, description: str = "") -> Dict[str, Any]:
+        """Creates a new task with the given title if it doesn't already exist."""
         # Check if task with this title already exists
         existing_task = self.find_task_by_title(title)
         if existing_task:
@@ -274,7 +159,7 @@ class TaskList:
             }
 
         # Create the task
-        task = Task(title)
+        task = Task(title=title, description=description)
         self.tasks.append(task)
 
         return {
@@ -285,22 +170,11 @@ class TaskList:
     def add_subtask(
         self,
         task_title: str,
+        subtask_id: str,
         content: str,
-        completed: bool = False,
-        dependencies: Optional[List[str]] = None,
+        dependencies: List[str] = [],
     ) -> Dict[str, Any]:
-        """
-        Add a subtask to an existing task.
-
-        Args:
-            task_title: The title of the parent task
-            content: The text of the subtask
-            completed: Whether the subtask is already completed
-            dependencies: List of task IDs this subtask depends on
-
-        Returns:
-            Dictionary with the result
-        """
+        """Adds a subtask to an existing task, with optional completion status and dependencies."""
         task = self.find_task_by_title(task_title)
         if not task:
             return {
@@ -316,27 +190,18 @@ class TaskList:
             }
 
         # Create the subtask
-        subtask = task.add_subtask(content, completed, dependencies=dependencies)
+        subtask = task.add_subtask(subtask_id, content, dependencies=dependencies)
 
         return {
             "success": True,
             "task_title": task.title,
             "subtask_content": subtask.content,
-            "subtask_id": subtask.subtask_id,
+            "subtask_id": subtask.id,
             "dependencies": subtask.dependencies,
         }
 
     def finish_subtask(self, task_title: str, content: str) -> Dict[str, Any]:
-        """
-        Mark a subtask as complete.
-
-        Args:
-            task_title: The title of the parent task
-            content: The content of the subtask to mark as complete
-
-        Returns:
-            Dictionary with the result
-        """
+        """Marks a specific subtask as complete within its parent task."""
         task, subtask = self.find_subtask(task_title, content)
 
         if not task:
@@ -362,7 +227,7 @@ class TaskList:
 
 
 class TaskBaseTool(Tool):
-    """Base class for task management tools."""
+    """Base tool class for task management operations."""
 
     def __init__(self, name: str, description: str, task_list: TaskList):
         super().__init__(name=name, description=description)
@@ -375,6 +240,8 @@ class TaskBaseTool(Tool):
 
 
 class AddTaskTool(TaskBaseTool):
+    """Tool for creating new tasks or adding subtasks to existing tasks."""
+
     def __init__(self, task_list: TaskList):
         super().__init__(
             name="add_task",
@@ -426,6 +293,8 @@ class AddTaskTool(TaskBaseTool):
 
 
 class FinishTaskTool(TaskBaseTool):
+    """Tool for marking subtasks as complete."""
+
     def __init__(self, task_list: TaskList):
         super().__init__(
             name="finish_subtask",

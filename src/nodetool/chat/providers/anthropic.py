@@ -7,14 +7,13 @@ handling message conversion, streaming, and tool integration.
 
 import json
 import os
+import re
 from typing import Any, AsyncGenerator, Sequence
 
 import anthropic
 from anthropic.types.message_param import MessageParam
 from anthropic.types.image_block_param import ImageBlockParam
 from anthropic.types.tool_param import ToolParam
-from pydantic import BaseModel
-
 from nodetool.chat.providers.base import ChatProvider, Chunk
 from nodetool.metadata.types import (
     Message,
@@ -73,7 +72,6 @@ class AnthropicProvider(ChatProvider):
         assert api_key, "ANTHROPIC_API_KEY is not set"
         self.client = anthropic.AsyncAnthropic(
             api_key=api_key,
-            default_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
         )
         # Initialize usage tracking
         self.usage = {
@@ -177,12 +175,21 @@ class AnthropicProvider(ChatProvider):
         if "max_tokens" not in kwargs:
             kwargs["max_tokens"] = 4096
 
+        # Handle response_format parameter
+        response_format = kwargs.pop("response_format", None)
+
         system_messages = [message for message in messages if message.role == "system"]
         system_message = (
             str(system_messages[0].content)
             if len(system_messages) > 0
             else "You are a helpful assistant."
         )
+
+        # If JSON format is requested, modify the system prompt
+        if response_format == "json_schema":
+            system_message = f"{system_message}\nYou must respond with JSON only, without any explanations or conversation."
+            # Add anthropic-specific response_format parameter
+            kwargs["response_format"] = {"type": "json_object"}
 
         # Convert messages and tools to Anthropic format
         anthropic_messages = [
@@ -223,4 +230,5 @@ class AnthropicProvider(ChatProvider):
                             self.usage[
                                 "cache_read_input_tokens"
                             ] += usage.cache_read_input_tokens
+
                     yield Chunk(content="", done=True)

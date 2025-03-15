@@ -23,6 +23,10 @@ Features:
 import datetime
 import json
 import os
+import re
+import shutil
+import subprocess
+import platform
 from typing import AsyncGenerator, Sequence, List, Optional, Union, Dict, Any
 
 from nodetool.chat.providers import ChatProvider, Chunk
@@ -33,9 +37,6 @@ from nodetool.chat.tools import (
     SearchEmailTool,
     GoogleSearchTool,
     AddLabelTool,
-    ListDirectoryTool,
-    ReadFileTool,
-    WriteFileTool,
     BrowserTool,
     ScreenshotTool,
     SearchFileTool,
@@ -57,6 +58,114 @@ from nodetool.chat.tools import (
     AddTaskTool,
     TaskList,
 )
+from nodetool.chat.tools.development import (
+    RunNodeJSTool,
+    RunNpmCommandTool,
+    RunEslintTool,
+    DebugJavaScriptTool,
+    RunJestTestTool,
+    ValidateJavaScriptTool,
+)
+
+
+class WorkspaceManager:
+    """
+    Manages the workspace for the agent.
+    """
+
+    workspace_root = "/tmp/nodetool-workspaces"
+
+    def __init__(self):
+        os.makedirs(self.workspace_root, exist_ok=True)
+        self.create_new_workspace()
+
+    def create_new_workspace(self):
+        """Creates a new workspace with a unique name"""
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        workspace_name = f"workspace_{timestamp}"
+        workspace_path = os.path.join(self.workspace_root, workspace_name)
+        os.makedirs(workspace_path, exist_ok=True)
+        self.current_workspace = workspace_path
+
+    async def execute_command(self, cmd: str) -> str:
+        """Execute workspace commands"""
+        parts = cmd.split()
+        command = parts[0].lower()
+        args = parts[1:] if len(parts) > 1 else []
+
+        if command == "pwd" or command == "cwd":
+            return self.current_workspace or ""
+
+        elif command == "ls":
+            path = (
+                os.path.join(self.current_workspace, *args)
+                if args
+                else self.current_workspace
+            )
+            try:
+                items = os.listdir(path)
+                return "\n".join(items)
+            except Exception as e:
+                return f"Error: {str(e)}"
+
+        elif command == "cd":
+            if not args:
+                return "Error: Missing directory argument"
+            new_path = os.path.join(self.current_workspace, args[0])
+            if not os.path.exists(new_path):
+                return f"Error: Directory {args[0]} does not exist"
+            if not new_path.startswith(self.workspace_root):
+                return "Error: Cannot navigate outside workspace"
+            self.current_workspace = new_path
+            return f"Changed directory to {new_path}"
+
+        elif command == "mkdir":
+            if not args:
+                return "Error: Missing directory name"
+            try:
+                os.makedirs(
+                    os.path.join(self.current_workspace, args[0]), exist_ok=True
+                )
+                return f"Created directory {args[0]}"
+            except Exception as e:
+                return f"Error creating directory: {str(e)}"
+
+        elif command == "rm":
+            if not args:
+                return "Error: Missing path argument"
+            path = os.path.join(self.current_workspace, args[0])
+            if not path.startswith(self.workspace_root):
+                return "Error: Cannot remove files outside workspace"
+            try:
+                if os.path.isdir(path):
+                    if "-r" in args or "-rf" in args:
+                        shutil.rmtree(path)
+                    else:
+                        os.rmdir(path)
+                else:
+                    os.remove(path)
+                return f"Removed {args[0]}"
+            except Exception as e:
+                return f"Error removing {args[0]}: {str(e)}"
+
+        elif command == "open":
+            if not args:
+                return "Error: Missing file argument"
+            path = os.path.join(self.current_workspace, args[0])
+            if not os.path.exists(path):
+                return f"Error: File {args[0]} does not exist"
+            try:
+                if platform.system() == "Darwin":  # macOS
+                    subprocess.run(["open", path])
+                elif platform.system() == "Windows":  # Windows
+                    os.startfile(path)  # type: ignore
+                else:  # linux variants
+                    subprocess.run(["xdg-open", path])
+                return f"Opened {args[0]}"
+            except Exception as e:
+                return f"Error opening file: {str(e)}"
+
+        return f"Unknown command: {command}"
 
 
 class CoTAgent:
@@ -115,9 +224,6 @@ class CoTAgent:
             SearchEmailTool(),
             GoogleSearchTool(),
             AddLabelTool(),
-            ListDirectoryTool(),
-            ReadFileTool(),
-            WriteFileTool(),
             BrowserTool(),
             ScreenshotTool(),
             SearchFileTool(),
@@ -136,6 +242,12 @@ class CoTAgent:
             DeleteWorkspaceFileTool(workspace_dir),
             ListWorkspaceContentsTool(workspace_dir),
             ExecuteWorkspaceCommandTool(workspace_dir),
+            RunNodeJSTool(workspace_dir),
+            RunNpmCommandTool(workspace_dir),
+            RunEslintTool(workspace_dir),
+            DebugJavaScriptTool(workspace_dir),
+            RunJestTestTool(workspace_dir),
+            ValidateJavaScriptTool(workspace_dir),
             AddTaskTool(self.tasks_list),
             FinishTaskTool(self.tasks_list),
         ]
@@ -150,53 +262,59 @@ class CoTAgent:
         prompt = f"""
         You are a strategic planning assistant that creates clear, organized plans.
         Today is {datetime.datetime.now().strftime("%Y-%m-%d")}.
+        Your workspace directory is: {self.workspace_dir}
+        """
+
+        prompt += """
+        All file operations should be performed within this workspace directory.
         
         PLANNING INSTRUCTIONS:
         1. Analyze the problem to identify key components and challenges
         2. Break down the problem into logical, sequential steps
-        3. The tasks should be actionable.
-        4. The tasks should not include planning, which only happens in the planning phase.
-        5. For reasearch tasks, create only one summary task at the end.
-        6. Each major task should be written as a separate heading in markdown
-        7. Each subtask should be written as a list item under the appropriate heading
+        3. Top level tasks should have sub tasks.
+        4. The sub tasks will get executed in the execution phase, in the order they are written.
+        5. The tasks should not include planning, which only happens in the planning phase.
+        6. Each sub task should get a unique id which can be used to reference the task in the execution phase.
+        7. Each sub task should reference the tool it will use.
+        8. Each sub task has an ID, a title, a description, and a list of dependencies.
+        9. The dependencies are other task IDs that must be completed before the sub task can be executed.
+        10. The dependencies should be direct dependencies only - don't create indirect dependencies.
+        11. The sub tasks should be actionable.
+        12. When working with files, always use the workspace directory as the root.
+
+        Write JSON with the following format:
+        ```json
+        {
+            "title": "Write an Original Poem",
+            "tasks": [
+                {
+                "title": "Brainstorming Phase",
+                "subtasks": [
+                    {
+                    "id": "br1",
+                    "content": "Create a new workspace file 'poem_ideas.txt' to store brainstorming notes",
+                    "tool": "create_workspace_file",
+                    "dependencies": []
+                    },
+                    {
+                    "id": "br2", 
+                    "content": "Write initial theme ideas and potential topics in poem_ideas.txt",
+                    "tool": "update_workspace_file",
+                    "dependencies": ["br1"]
+                    }
+                ]
+            },
+        }
+        ```
 
         Consider the following tools to be used in sub tasks:
         """
         for tool in tools:
             prompt += f"- {tool.name}\n"
-            prompt += f"  - Description: {tool.description}\n"
         prompt += """
         """
 
         return prompt
-
-    def _get_dependency_system_prompt(self) -> str:
-        """
-        Get the system prompt for the dependency phase.
-
-        Returns:
-            str: The system prompt with instructions for identifying dependencies
-        """
-        return f"""
-        Today is {datetime.datetime.now().strftime("%Y-%m-%d")}.
-        You are an expert at managing task dependencies.
-        
-        DEPENDENCY PHASE INSTRUCTIONS:
-        1. Each task already has a unique ID
-        2. Review all tasks and identify which subtasks depend on outputs from other tasks
-        3. Mark dependencies using the format "(depends on #id)" and add it to the task title
-        4. Ensure the dependency graph is acyclic (no circular dependencies)
-        5. Focus on direct dependencies only - don't create indirect dependencies
-        6. Output the task list in markdown format
-        7. The task list should be formatted as follows:
-        # TASK LIST
-        ## High level task
-        - [ ] #subtask_id Subtask 1 (use tool: tool_name) (depends on #dependency_id)
-        - [ ] #subtask_id Subtask 2 (thinking about the problem)
-        ## High level task
-        - [ ] #subtask_id Subtask 1 (use tool: tool_name) (depends on #dependency_id)
-        - [ ] #subtask_id Subtask 2 (use tool: tool_name)
-        """
 
     def _get_execution_system_prompt(self) -> str:
         """
@@ -208,10 +326,19 @@ class CoTAgent:
         return f"""
         Today is {datetime.datetime.now().strftime("%Y-%m-%d")}.
         You are an agent that executes plans.
-        Focus on the task at hand and use the tools provided to you to complete the task.
-        When you need information from a previous tool execution, reference it by its task ID.
-        DO NOT include the full output of tools in your responses to save context space.
-        Respect task dependencies - do not execute a task until all its dependencies have been completed.
+        
+        Your workspace directory is: {self.workspace_dir}
+        All file operations must be performed within this workspace directory.
+        
+        EXECUTION INSTRUCTIONS:
+        1. Focus on the task at hand and use the tools provided to you to complete the task.
+        2. When you need information from a previous tool execution, reference it by its task ID.
+        3. DO NOT include the full output of tools in your responses to save context space.
+        4. Respect task dependencies - do not execute a task until all its dependencies have been completed.
+        5. When working with files:
+           - Always use paths relative to the workspace directory
+           - Do not attempt to access files outside the workspace
+           - Use the workspace tools for file operations
         """
 
     def _get_planning_user_prompt(self, problem: str) -> str:
@@ -233,34 +360,13 @@ class CoTAgent:
             "4. Breaking each task into subtasks\n"
             "5. Identifying tools you'll need during execution\n"
             "6. Considering which subtasks might depend on outputs from other tasks\n\n"
-            "7. Output the task list in markdown format\n"
-            "The task list should be formatted as follows:\n"
-            "# TASK LIST\n"
-            "## High level task\n"
-            "- [ ] Subtask 1 (use tool: tool_name)\n"
-            "- [ ] Subtask 2 (thinking about the problem)\n"
-            "## High level task\n"
-            "- [ ] Subtask 1 (use tool: tool_name)\n"
-            "- [ ] Subtask 2 (use tool: tool_name)\n"
-        )
-
-    def _get_dependency_user_prompt(self) -> str:
-        """
-        Creates a user prompt for the dependency phase.
-
-        Returns:
-            str: Formatted prompt for dependency identification
-        """
-        # Convert tasks to markdown to include in the prompt
-        task_markdown = self.tasks_list.to_markdown()
-
-        return (
-            "Review the task list and identify dependencies between tasks.\n\n"
-            "TASK LIST:\n"
-            f"{task_markdown}\n\n"
-            "For each task that depends on the output of another task, add 'depends on task <id>' to the task title.\n"
-            "Be specific about which task ID it depends on. If no dependencies, leave it as is.\n"
-            "Return the complete task list with dependencies marked.\n"
+            "Output the task list in the specified JSON format. Each task should have:\n"
+            "- A title\n"
+            "- A list of subtasks with:\n"
+            "  - content (string)\n"
+            "  - completed (boolean)\n"
+            "  - subtask_id (string)\n"
+            "  - dependencies (list of strings)\n"
         )
 
     def _filter_context(self, messages: List[Message]) -> List[Message]:
@@ -349,9 +455,6 @@ class CoTAgent:
         planning_system_message = Message(
             role="system", content=self._get_planning_system_prompt(self.tools)
         )
-        dependency_system_message = Message(
-            role="system", content=self._get_dependency_system_prompt()
-        )
         execution_system_message = Message(
             role="system", content=self._get_execution_system_prompt()
         )
@@ -366,18 +469,30 @@ class CoTAgent:
         # Add to chat history for reference
         self.chat_history.append(Message(role="user", content=problem))
 
-        # Run planning phase - single iteration only, no tools
+        # Run planning phase with JSON schema response format
         print("=" * 100)
         print("Planning phase")
 
         chunks = []
         filtered_history = self._filter_context(self.history)
+
+        # Get JSON schema from TaskList model
+        response_format = {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "task_list",
+                "schema": TaskList.model_json_schema(),
+            },
+        }
+
         generator = self.provider.generate_messages(
-            messages=filtered_history, model=self.model, tools=[]
+            messages=filtered_history,
+            model=self.model,
+            tools=[],
+            response_format=response_format,  # Add response format parameter
         )
 
         async for chunk in generator:  # type: ignore
-            yield chunk
             chunks.append(chunk)
 
         # Process the generated plan
@@ -396,70 +511,22 @@ class CoTAgent:
                         Message(role="assistant", content=chunk.content)
                     )
 
-        # Extract tasks from the planning response and add them
-        tasks = combined_content.split("# TASK LIST")[1]
-        self.tasks_list.from_markdown(tasks)
+        # Parse the JSON response and update task list
+        try:
+            json_pattern = r"```json(.*?)```"
+            json_match = re.search(
+                json_pattern, combined_content, re.DOTALL | re.MULTILINE
+            )
+            if json_match:
+                combined_content = json_match.group(1).strip()
+            tasks_json = json.loads(combined_content)
+            self.tasks_list = TaskList.model_validate(tasks_json)
+        except json.JSONDecodeError as e:
+            print(f"Error parsing JSON response: {e}")
+            return
 
-        # Second phase: Dependency identification
-        # print("=" * 100)
-        # print("Dependency phase")
-
-        # # Display current task list before dependency phase
-        # for task in self.tasks_list.tasks:
-        #     print(task.to_markdown())
-
-        # # Set up dependency phase conversation
-        # dependency_prompt = self._get_dependency_user_prompt()
-        # self.history = [
-        #     dependency_system_message,
-        #     Message(role="user", content=dependency_prompt),
-        # ]
-
-        # # Run dependency phase
-        # chunks = []
-        # filtered_history = self._filter_context(self.history)
-        # generator = self.provider.generate_messages(
-        #     messages=filtered_history, model=self.model, tools=[]
-        # )
-
-        # async for chunk in generator:  # type: ignore
-        #     yield chunk
-        #     chunks.append(chunk)
-
-        # # Process the dependency phase output
-        # combined_content = ""
-        # for chunk in chunks:
-        #     if isinstance(chunk, Chunk):
-        #         combined_content += chunk.content
-        #         if (
-        #             len(self.history) > 0
-        #             and self.history[-1].role == "assistant"
-        #             and isinstance(self.history[-1].content, str)
-        #         ):
-        #             self.history[-1].content += chunk.content
-        #         else:
-        #             self.history.append(
-        #                 Message(role="assistant", content=chunk.content)
-        #             )
-
-        # # Extract updated task list with dependencies
-        # if "# TASK LIST" in combined_content:
-        #     tasks = combined_content.split("# TASK LIST")[1]
-        # else:
-        #     tasks = combined_content
-
-        # print(tasks)
-
-        # # Update the task list with the new dependencies
-        # self.tasks_list.from_markdown(tasks)
-
-        # # Display updated task list with dependencies
-        # print("=" * 100)
-        # print("Execution phase")
-        # for task in self.tasks_list.tasks:
-        #     print(task.to_markdown())
-
-        # Third phase: Execution
+        for task in self.tasks_list.tasks:
+            print(task.to_markdown())
 
         # Transition to execution phase with the task list
         self.history = [
@@ -478,16 +545,19 @@ class CoTAgent:
 
             # Create a specific prompt for this task with references to previous task outputs if needed
             task_prompt = f"""
-            Execute this specific task: {task.title} - {sub_task.content}
-            Subtask ID: {sub_task.subtask_id}
+            Execut this sub task as part of a wider plan:
+            Task Title: {task.title}
+            Task Description: {task.description}
+            Subtask ID: {sub_task.id}
+            Subtask Content: {sub_task.content}
             """
 
             # Check if subtask references other tasks
-            references = self._extract_task_references(sub_task.content)
-            for ref_id in references:
+            for ref_id in sub_task.dependencies:
                 if ref_id in self.tool_memory:
                     task_prompt += f"\n\nData from {ref_id}:\n{json.dumps(self.tool_memory[ref_id])}"
 
+            # print(task_prompt)
             # Add the task-specific prompt to history
             self.history.append(Message(role="user", content=task_prompt))
 
@@ -544,27 +614,16 @@ class CoTAgent:
                     all_dependencies_met = True
                     for dep_id in subtask.dependencies:
                         # Find the dependent task and check if it's completed
-                        dependent_task = self.tasks_list.find_task_by_id(dep_id)
-                        if not dependent_task or not dependent_task.is_completed():
+                        task, dependent_task = self.tasks_list.find_task_by_id(dep_id)
+                        if not dependent_task:
+                            raise ValueError(f"Dependent task {dep_id} not found")
+                        if not dependent_task.completed:
                             all_dependencies_met = False
                             break
 
                     if all_dependencies_met:
                         return task, subtask
 
-        return None, None
-
-    def _get_next_incomplete_task(self) -> tuple[Optional[Task], Optional[SubTask]]:
-        """
-        Get the next incomplete task from the task list.
-
-        Returns:
-            Task: The next incomplete task, or None if all tasks are complete
-        """
-        for task in self.tasks_list.tasks:
-            for subtask in task.subtasks:
-                if not subtask.completed:
-                    return task, subtask
         return None, None
 
     async def _process_chunks(self, chunks: List[Union[Chunk, ToolCall]]) -> None:
@@ -599,9 +658,7 @@ class CoTAgent:
 
                 # Get current task and subtask ID for reference
                 task, subtask = self._get_current_task()
-                result_id = (
-                    subtask.subtask_id if task and subtask else f"tool_{chunk.id}"
-                )
+                result_id = subtask.id if task and subtask else f"tool_{chunk.id}"
 
                 # Store the result in memory for reference
                 self.tool_memory[result_id] = tool_result.result
@@ -648,11 +705,11 @@ class CoTAgent:
         Returns:
             bool: True if all tasks are complete, False otherwise
         """
-        tasks = self.tasks_list.get_all_tasks()
-        if not tasks:
-            return True  # No tasks means all tasks are complete
-
-        return all(task.get("completed", False) for task in tasks)
+        for task in self.tasks_list.tasks:
+            for subtask in task.subtasks:
+                if not subtask.completed:
+                    return False
+        return True
 
     async def _execute_tool(self, tool_call: ToolCall) -> ToolCall:
         """
@@ -694,26 +751,3 @@ class CoTAgent:
         """
         self.history = []
         return None
-
-    def _extract_task_references(self, content: str) -> List[str]:
-        """
-        Extract references to other task outputs from the task content.
-
-        Args:
-            content: The task content to analyze
-
-        Returns:
-            List[str]: List of task reference IDs
-        """
-        import re
-
-        # Look for dependency formats like "depends on #1", "depends on task_id", or "depends on #1, #2, #4"
-        task_ids = re.findall(r"depends on (?:#?([a-zA-Z0-9_]+))", content)
-        # Also match comma-separated lists of dependencies
-        comma_separated_ids = re.findall(
-            r"depends on #[a-zA-Z0-9_]+(?:, #([a-zA-Z0-9_]+))+", content
-        )
-        if comma_separated_ids:
-            task_ids.extend([id for sublist in comma_separated_ids for id in sublist])
-
-        return task_ids
