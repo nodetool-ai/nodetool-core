@@ -136,15 +136,6 @@ from nodetool.chat.tools.workspace import (
     ExecuteWorkspaceCommandTool,
 )
 
-# Task management tools
-from nodetool.chat.tools.task_management import (
-    TaskBaseTool,
-    AddTaskTool,
-    FinishTaskTool,
-    TaskList,
-)
-
-
 __all__ = [
     # Base
     "Tool",
@@ -189,9 +180,4 @@ __all__ = [
     "DeleteWorkspaceFileTool",
     "ListWorkspaceContentsTool",
     "ExecuteWorkspaceCommandTool",
-    # Task management tools
-    "TaskBaseTool",
-    "AddTaskTool",
-    "FinishTaskTool",
-    "TaskList",
 ]

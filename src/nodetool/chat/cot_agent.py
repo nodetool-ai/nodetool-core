@@ -7,9 +7,11 @@ step by step. The agent can leverage external tools to perform actions like math
 calculations, web browsing, file operations, and shell command execution.
 
 The implementation provides:
-1. A CoTAgent class that manages the step-by-step reasoning process
-2. Integration with the existing provider and tool system
-3. Support for streaming results during reasoning
+1. A TaskPlanner class that creates a task list with dependencies
+2. A TaskExecutor class that executes tasks in the correct order
+3. A CoTAgent class that combines planning and execution (legacy)
+4. Integration with the existing provider and tool system
+5. Support for streaming results during reasoning
 
 Features:
 - Three-phase approach: planning, dependency identification, and execution
@@ -32,8 +34,14 @@ from typing import AsyncGenerator, List, Optional, Union, Dict, Any
 
 from nodetool.chat.providers import ChatProvider, Chunk
 from nodetool.chat.tools import Tool
-from nodetool.chat.tools.task_management import FinishTaskTool, SubTask, Task, TaskList
-from nodetool.metadata.types import Message, ToolCall, FunctionModel
+from nodetool.metadata.types import (
+    Message,
+    ToolCall,
+    FunctionModel,
+    Task,
+    SubTask,
+    TaskList,
+)
 from nodetool.chat.tools import (
     SearchEmailTool,
     GoogleSearchTool,
@@ -56,8 +64,6 @@ from nodetool.chat.tools import (
     DeleteWorkspaceFileTool,
     ListWorkspaceContentsTool,
     ExecuteWorkspaceCommandTool,
-    AddTaskTool,
-    TaskList,
 )
 from nodetool.chat.tools.development import (
     RunNodeJSTool,
@@ -169,110 +175,56 @@ class WorkspaceManager:
         return f"Unknown command: {command}"
 
 
-class CoTAgent:
+class TaskPlanner:
     """
-    Agent that implements Chain of Thought (CoT) reasoning with language models.
+    Creates a task plan with dependencies using a language model.
 
-    The CoTAgent class orchestrates a step-by-step reasoning process using language models
-    to solve complex problems. It manages the conversational context, tool calling, and
-    the overall reasoning flow, breaking problems down into logical steps.
-
-    The agent operates in three phases:
-    1. Planning Phase: Breaks down the problem into tasks and subtasks
-    2. Dependency Phase: Identifies dependencies between tasks and creates a dependency graph
-    3. Execution Phase: Executes tasks in the correct order based on dependencies
-
-    This agent can work with different LLM providers (OpenAI, Anthropic, Ollama) and
-    can use various tools to augment the language model's capabilities.
+    This class handles the planning phase of the Chain of Thought process,
+    breaking down a problem into tasks and subtasks, and identifying
+    dependencies between them.
     """
 
     def __init__(
         self,
         provider: ChatProvider,
         model: FunctionModel,
-        workspace_dir: str,
-        max_steps: int = 30,
-        prompt_builder=None,
-        max_tool_results: int = 5,  # New parameter to control tool result history
+        tools: List[Tool],
+        objective: str,
+        system_prompt: str | None = None,
+        user_prompt: str | None = None,
     ):
         """
-        Initializes the CoT agent.
+        Initialize the TaskPlanner.
 
         Args:
             provider (ChatProvider): An LLM provider instance
             model (FunctionModel): The model to use with the provider
-            workspace_dir (str): Directory for workspace files
-            max_steps (int, optional): Maximum reasoning steps to prevent infinite loops. Defaults to 10
-            prompt_builder (callable, optional): Custom function to build the initial prompt.
-                                               Defaults to None (use internal builders)
-            max_tool_results (int, optional): Maximum number of recent tool results to keep. Defaults to 5
+            tools (List[Tool]): List of tools available for task execution
+            objective (str): The objective to solve
+            system_prompt (str, optional): Custom system prompt
+            user_prompt (str, optional): Custom user prompt
         """
         self.provider = provider
         self.model = model
-        self.max_steps = max_steps
-        self.prompt_builder = prompt_builder
-        self.max_tool_results = max_tool_results
-        self.history: List[Message] = []
-        self.chat_history: List[Message] = (
-            []
-        )  # Store all chat interactions for reference
-        self.tasks_list = TaskList()
-        self.workspace_dir = workspace_dir
-        # Add short-term memory to store tool results
-        self.tool_memory: Dict[str, Any] = {}
-        # Add tokenizer instance for token counting
-        self.encoding = tiktoken.get_encoding(
-            "cl100k_base"
-        )  # Default to Anthropic/OpenAI encoding
+        self.tools = tools
+        self.objective = objective
+        self.system_prompt = (
+            system_prompt if system_prompt else self._get_planning_system_prompt()
+        )
+        self.user_prompt = (
+            user_prompt if user_prompt else self._get_planning_user_prompt(objective)
+        )
+        self.encoding = tiktoken.get_encoding("cl100k_base")  # Default encoding
 
-        self.tools: List[Tool] = [
-            SearchEmailTool(),
-            GoogleSearchTool(),
-            AddLabelTool(),
-            BrowserTool(),
-            ScreenshotTool(workspace_dir),
-            SearchFileTool(),
-            ChromaTextSearchTool(),
-            ChromaHybridSearchTool(),
-            ExtractPDFTablesTool(),
-            ExtractPDFTextTool(),
-            ConvertPDFToMarkdownTool(),
-            CreateAppleNoteTool(),
-            ReadAppleNotesTool(),
-            SemanticDocSearchTool(),
-            KeywordDocSearchTool(),
-            CreateWorkspaceFileTool(workspace_dir),
-            ReadWorkspaceFileTool(workspace_dir),
-            UpdateWorkspaceFileTool(workspace_dir),
-            DeleteWorkspaceFileTool(workspace_dir),
-            ListWorkspaceContentsTool(workspace_dir),
-            ExecuteWorkspaceCommandTool(workspace_dir),
-            RunNodeJSTool(workspace_dir),
-            RunNpmCommandTool(workspace_dir),
-            RunEslintTool(workspace_dir),
-            DebugJavaScriptTool(workspace_dir),
-            RunJestTestTool(workspace_dir),
-            ValidateJavaScriptTool(workspace_dir),
-            AddTaskTool(self.tasks_list),
-            FinishTaskTool(self.tasks_list),
-        ]
-
-    def _get_planning_system_prompt(self, tools: List[Tool]) -> str:
+    def _get_planning_system_prompt(self) -> str:
         """
         Get the system prompt for the planning phase.
 
         Returns:
             str: The system prompt with instructions for planning
         """
-        prompt = f"""
+        prompt = """
         You are a strategic planning assistant that creates clear, organized plans.
-        Today is {datetime.datetime.now().strftime("%Y-%m-%d")}.
-        Your workspace directory is: {self.workspace_dir}
-        """
-
-        prompt += """
-        All file operations should be performed within this workspace directory.
-        
         PLANNING INSTRUCTIONS:
         1. Create MINIMAL plans - use only as many tasks as absolutely necessary.
         2. Match plan complexity to objective complexity - simple objectives should have few tasks.
@@ -289,16 +241,19 @@ class CoTAgent:
         Write JSON with the following format:
         ```json
         {
+            "type": "task_list",
             "title": "Write a Simple Note",
             "tasks": [
                 {
-                "title": "Create and Write Note",
-                "subtasks": [
-                    {
-                    "id": "note1",
-                    "content": "Create a new note file 'quick_note.txt' with initial content",
-                    "tool": "create_workspace_file",
-                    "dependencies": []
+                    "type": "task",
+                    "title": "Create and Write Note",
+                    "subtasks": [
+                        {
+                            "type": "subtask",
+                            "id": "note1",
+                            "content": "Create a new note file 'quick_note.txt' with initial content",
+                            "tool": "create_workspace_file",
+                            "dependencies": []
                     }
                 ]
                 }
@@ -308,50 +263,25 @@ class CoTAgent:
 
         Consider the following tools to be used in sub tasks:
         """
-        for tool in tools:
+        for tool in self.tools:
             prompt += f"- {tool.name}\n"
         prompt += """
         """
 
         return prompt
 
-    def _get_execution_system_prompt(self) -> str:
-        """
-        Get the system prompt for the execution phase.
-
-        Returns:
-            str: The system prompt with instructions for execution
-        """
-        return f"""
-        Today is {datetime.datetime.now().strftime("%Y-%m-%d")}.
-        You are an agent that executes plans.
-        
-        Your workspace directory is: {self.workspace_dir}
-        All file operations must be performed within this workspace directory.
-        
-        EXECUTION INSTRUCTIONS:
-        1. Focus on the task at hand and use the tools provided to you to complete the task.
-        2. When you need information from a previous tool execution, reference it by its task ID.
-        3. DO NOT include the full output of tools in your responses to save context space.
-        4. Respect task dependencies - do not execute a task until all its dependencies have been completed.
-        5. When working with files:
-           - Always use paths relative to the workspace directory
-           - Do not attempt to access files outside the workspace
-           - Use the workspace tools for file operations
-        """
-
-    def _get_planning_user_prompt(self, problem: str) -> str:
+    def _get_planning_user_prompt(self, objective: str) -> str:
         """
         Creates a user prompt for the planning phase.
 
         Args:
-            problem (str): The problem to solve
+            objective (str): The objective to solve
 
         Returns:
             str: Formatted prompt for planning
         """
         return (
-            f"Problem to solve: {problem}\n\n"
+            f"Objective to solve: {objective}\n\n"
             "Create an efficient plan by:\n"
             "1. Analyzing the problem requirements\n"
             "2. Thinking about the problem in-depth\n"
@@ -367,6 +297,134 @@ class CoTAgent:
             "  - subtask_id (string)\n"
             "  - dependencies (list of strings)\n"
         )
+
+    async def create_plan(self) -> TaskList:
+        """
+        Create a task plan for the given problem.
+
+        Returns:
+            TaskList: A structured plan with tasks and subtasks
+        """
+        history = [
+            Message(role="system", content=self.system_prompt),
+            Message(role="user", content=self.user_prompt),
+        ]
+
+        # Get JSON schema from TaskList model
+        response_format = {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "task_list",
+                "schema": TaskList.model_json_schema(),
+            },
+        }
+
+        # Generate plan
+        chunks = []
+        generator = self.provider.generate_messages(
+            messages=history,
+            model=self.model,
+            tools=[],
+            response_format=response_format,
+        )
+
+        combined_content = ""
+        async for chunk in generator:  # type: ignore
+            chunks.append(chunk)
+            if isinstance(chunk, Chunk):
+                combined_content += chunk.content
+
+        # Parse the JSON response and create TaskList
+        try:
+            json_pattern = r"```json(.*?)```"
+            json_match = re.search(
+                json_pattern, combined_content, re.DOTALL | re.MULTILINE
+            )
+            if json_match:
+                combined_content = json_match.group(1).strip()
+            tasks_json = json.loads(combined_content)
+            return TaskList.model_validate(tasks_json)
+        except json.JSONDecodeError as e:
+            print(f"Error parsing JSON response: {e}")
+            # Return an empty TaskList if parsing fails
+            return TaskList(title=f"Failed plan for: {self.objective}")
+
+
+class TaskExecutor:
+    """
+    Executes tasks from a TaskList using a language model and tools.
+
+    This class handles the execution phase of the Chain of Thought process,
+    executing tasks in the correct order based on their dependencies.
+    """
+
+    def __init__(
+        self,
+        provider: ChatProvider,
+        model: FunctionModel,
+        workspace_dir: str,
+        tools: List[Tool],
+        task_list: TaskList,
+        system_prompt: str | None = None,
+        max_steps: int = 30,
+        max_tool_results: int = 5,
+    ):
+        """
+        Initialize the TaskExecutor.
+
+        Args:
+            provider (ChatProvider): An LLM provider instance
+            model (FunctionModel): The model to use with the provider
+            workspace_dir (str): Directory for workspace files
+            tools (List[Tool]): List of tools available for task execution
+            task_list (TaskList): The task list to execute
+            system_prompt (str, optional): Custom system prompt
+            max_steps (int, optional): Maximum execution steps to prevent infinite loops. Defaults to 30
+            max_tool_results (int, optional): Maximum number of recent tool results to keep. Defaults to 5
+        """
+        self.provider = provider
+        self.model = model
+        self.workspace_dir = workspace_dir
+        self.tools = tools
+        self.task_list = task_list
+        prefix = f"""
+        Today is {datetime.datetime.now().strftime("%Y-%m-%d")}.
+        Your workspace directory is: {self.workspace_dir}
+        """
+        self.system_prompt = prefix + (
+            system_prompt if system_prompt else self._get_execution_system_prompt()
+        )
+        self.max_steps = max_steps
+        self.max_tool_results = max_tool_results
+        self.history: List[Message] = []
+        self.tool_memory: Dict[str, Any] = {}
+        self.encoding = tiktoken.get_encoding("cl100k_base")
+        self.history = [
+            Message(role="system", content=self._get_execution_system_prompt()),
+        ]
+
+    def _get_execution_system_prompt(self) -> str:
+        """
+        Get the system prompt for the execution phase.
+
+        Returns:
+            str: The system prompt with instructions for execution
+        """
+        return """
+        You are an agent that executes plans.
+        
+        All file operations must be performed within this workspace directory.
+        
+        EXECUTION INSTRUCTIONS:
+        1. Focus on the task at hand and use the tools provided to you to complete the task.
+        2. When you need information from a previous tool execution, reference it by its task ID.
+        3. DO NOT include the full output of tools in your responses to save context space.
+        4. Respect task dependencies - do not execute a task until all its dependencies have been completed.
+        5. When working with files:
+           - Always use paths relative to the workspace directory
+           - Do not attempt to access files outside the workspace
+           - Use the workspace tools for file operations
+        """
 
     def _count_tokens(self, messages: List[Message]) -> int:
         """
@@ -409,118 +467,40 @@ class CoTAgent:
 
         return token_count
 
-    async def solve_problem(
-        self, problem: str, show_thinking: bool = True, print_usage: bool = False
+    async def execute_tasks(
+        self,
+        show_thinking: bool = True,
+        print_usage: bool = False,
     ) -> AsyncGenerator[Union[Message, Chunk, ToolCall], None]:
         """
-        Solves the given problem using a three-phase approach: planning, then execution.
+        Execute the tasks in the provided task list.
 
         Args:
-            problem (str): The problem or question to solve
+            tasks_list (TaskList): The task list to execute
+            problem (str): The original problem statement
             show_thinking (bool, optional): Whether to include thinking steps in the output
-            print_usage (bool, optional): Whether to print provider usage statistics. Defaults to False
+            print_usage (bool, optional): Whether to print provider usage statistics
 
         Yields:
-            Union[Message, Chunk, ToolCall]: Objects representing parts of the reasoning process
+            Union[Message, Chunk, ToolCall]: Objects representing parts of the execution process
         """
-        planning_prompt = (
-            self._get_planning_user_prompt(problem)
-            if not self.prompt_builder
-            else self.prompt_builder(problem)
-        )
-        planning_system_message = Message(
-            role="system", content=self._get_planning_system_prompt(self.tools)
-        )
-        execution_system_message = Message(
-            role="system", content=self._get_execution_system_prompt()
-        )
-
-        # Reset history and tool memory
-        self.history = [
-            planning_system_message,
-            Message(role="user", content=planning_prompt),
-        ]
         self.tool_memory = {}
 
-        # Add to chat history for reference
-        self.chat_history.append(Message(role="user", content=problem))
-
-        # Run planning phase with JSON schema response format
-        print("=" * 100)
-        print("Planning phase")
-
-        chunks = []
-
-        # Get JSON schema from TaskList model
-        response_format = {
-            "type": "json_schema",
-            "json_schema": {
-                "name": "task_list",
-                "schema": TaskList.model_json_schema(),
-            },
-        }
-
-        generator = self.provider.generate_messages(
-            messages=self.history,
-            model=self.model,
-            tools=[],
-            response_format=response_format,  # Add response format parameter
-        )
-
-        async for chunk in generator:  # type: ignore
-            chunks.append(chunk)
-
-        # Process the generated plan
-        combined_content = ""
-        for chunk in chunks:
-            if isinstance(chunk, Chunk):
-                combined_content += chunk.content
-                if (
-                    len(self.history) > 0
-                    and self.history[-1].role == "assistant"
-                    and isinstance(self.history[-1].content, str)
-                ):
-                    self.history[-1].content += chunk.content
-                else:
-                    self.history.append(
-                        Message(role="assistant", content=chunk.content)
-                    )
-
-        # Parse the JSON response and update task list
-        try:
-            json_pattern = r"```json(.*?)```"
-            json_match = re.search(
-                json_pattern, combined_content, re.DOTALL | re.MULTILINE
-            )
-            if json_match:
-                combined_content = json_match.group(1).strip()
-            tasks_json = json.loads(combined_content)
-            self.tasks_list = TaskList.model_validate(tasks_json)
-        except json.JSONDecodeError as e:
-            print(f"Error parsing JSON response: {e}")
-            return
-
-        for task in self.tasks_list.tasks:
-            print(task.to_markdown())
-
-        # Transition to execution phase with the task list
-        self.history = [
-            execution_system_message,
-            Message(role="user", content=problem),
-        ]
-
         # Reasoning loop for execution with one task at a time
-        while not self._all_tasks_complete() and len(self.tasks_list.tasks) > 0:
+        while not self._all_tasks_complete() and len(self.task_list.tasks) > 0:
             # Find the next executable task
             task, sub_task = self._get_next_executable_task()
             if not task or not sub_task:
                 break
 
-            print(f"Executing task: {task.title} - {sub_task.content}")
+            yield Chunk(
+                content=f"\nExecuting task: {task.title} - {sub_task.content}\n",
+                done=False,
+            )
 
             # Create a specific prompt for this task with references to previous task outputs if needed
             task_prompt = f"""
-            Execute this sub task to acomplish the high level task:
+            Execute this sub task to accomplish the high level task:
             Task Title: {task.title}
             Task Description: {task.description}
             Subtask ID: {sub_task.id}
@@ -532,7 +512,6 @@ class CoTAgent:
                 if ref_id in self.tool_memory:
                     task_prompt += f"\n\This task is depending on the output from {ref_id}:\n{json.dumps(self.tool_memory[ref_id])}"
 
-            # print(task_prompt)
             # Add the task-specific prompt to history
             self.history.append(
                 Message(role="user", content=task_prompt, task_id=sub_task.id)
@@ -565,11 +544,12 @@ class CoTAgent:
             self._prune_history()
 
             # Print token count after each task for debugging
-            token_count = self._count_tokens(self.history)
-            yield Chunk(
-                content=f"\n[Debug: {token_count} tokens in history after task {sub_task.id}]\n",
-                done=False,
-            )
+            if show_thinking:
+                token_count = self._count_tokens(self.history)
+                yield Chunk(
+                    content=f"\n[Debug: {token_count} tokens in history after task {sub_task.id}]\n",
+                    done=False,
+                )
 
         # Print workspace files when agent completes all tasks
         if os.path.exists(self.workspace_dir):
@@ -588,16 +568,16 @@ class CoTAgent:
         Get the next executable task from the task list, respecting dependencies.
 
         Returns:
-            Task: The next executable task, or None if no tasks are executable
+            tuple: The next executable task and subtask, or (None, None) if no tasks are executable
         """
-        for task in self.tasks_list.tasks:
+        for task in self.task_list.tasks:
             for subtask in task.subtasks:
                 if not subtask.completed:
                     # Check if all dependencies are completed
                     all_dependencies_met = True
                     for dep_id in subtask.dependencies:
                         # Find the dependent task and check if it's completed
-                        task, dependent_task = self.tasks_list.find_task_by_id(dep_id)
+                        task, dependent_task = self.task_list.find_task_by_id(dep_id)
                         if not dependent_task:
                             raise ValueError(f"Dependent task {dep_id} not found")
                         if not dependent_task.completed:
@@ -668,9 +648,6 @@ class CoTAgent:
                     )
                 )
 
-        # Prune history after processing chunks to remove unnecessary messages
-        # self._prune_history()
-
     def _prune_history(self) -> None:
         """
         Remove messages from history that are no longer needed for dependency resolution.
@@ -686,7 +663,7 @@ class CoTAgent:
         needed_task_ids = set()
 
         # Add all task IDs from incomplete tasks and their dependencies
-        for task in self.tasks_list.tasks:
+        for task in self.task_list.tasks:
             for subtask in task.subtasks:
                 if not subtask.completed:
                     # The task itself is needed
@@ -717,15 +694,6 @@ class CoTAgent:
                 pruned_history.append(msg)
                 continue
 
-            # Keep tool results for completed tasks that are in tool_memory
-            # if (
-            #     msg.role == "tool"
-            #     and hasattr(msg, "task_id")
-            #     and msg.task_id in self.tool_memory
-            # ):
-            #     pruned_history.append(msg)
-            #     continue
-
         # Update the history
         self.history = pruned_history
 
@@ -736,23 +704,11 @@ class CoTAgent:
         Returns:
             tuple: The current task and subtask
         """
-        for task in self.tasks_list.tasks:
+        for task in self.task_list.tasks:
             for subtask in task.subtasks:
                 if not subtask.completed:
                     return task, subtask
         return None, None
-
-    def retrieve_from_memory(self, result_id: str) -> Any:
-        """
-        Retrieve a stored tool result from memory.
-
-        Args:
-            result_id: The ID of the stored result
-
-        Returns:
-            Any: The stored result, or None if not found
-        """
-        return self.tool_memory.get(result_id)
 
     def _all_tasks_complete(self) -> bool:
         """
@@ -761,7 +717,7 @@ class CoTAgent:
         Returns:
             bool: True if all tasks are complete, False otherwise
         """
-        for task in self.tasks_list.tasks:
+        for task in self.task_list.tasks:
             for subtask in task.subtasks:
                 if not subtask.completed:
                     return False
@@ -798,12 +754,116 @@ class CoTAgent:
             result={"error": f"Tool '{tool_call.name}' not found"},
         )
 
-    def clear_history(self) -> None:
-        """
-        Clears the conversation history.
 
-        Returns:
-            None
+class CoTAgent:
+    """
+    Agent that implements Chain of Thought (CoT) reasoning with language models.
+
+    The CoTAgent class orchestrates a step-by-step reasoning process using language models
+    to solve complex problems. It manages the conversational context, tool calling, and
+    the overall reasoning flow, breaking problems down into logical steps.
+
+    This class now uses TaskPlanner and TaskExecutor internally to separate the
+    planning and execution phases, making them available as standalone components.
+    """
+
+    def __init__(
+        self,
+        provider: ChatProvider,
+        model: FunctionModel,
+        objective: str,
+        workspace_dir: str,
+        max_steps: int = 30,
+        max_tool_results: int = 5,  # New parameter to control tool result history
+    ):
         """
-        self.history = []
-        return None
+        Initializes the CoT agent.
+
+        Args:
+            provider (ChatProvider): An LLM provider instance
+            model (FunctionModel): The model to use wCith the provider
+            objective (str): The objective to solve
+            workspace_dir (str): Directory for workspace files
+            max_steps (int, optional): Maximum reasoning steps to prevent infinite loops. Defaults to 10
+            max_tool_results (int, optional): Maximum number of recent tool results to keep. Defaults to 5
+                                               Defaults to None (use internal builders)
+            max_tool_results (int, optional): Maximum number of recent tool results to keep. Defaults to 5
+        """
+        self.provider = provider
+        self.model = model
+        self.objective = objective
+        self.max_steps = max_steps
+        self.max_tool_results = max_tool_results
+        self.workspace_dir = workspace_dir
+        self.chat_history: List[Message] = (
+            []
+        )  # Store all chat interactions for reference
+
+        # Tools list
+        self.tools: List[Tool] = [
+            SearchEmailTool(),
+            GoogleSearchTool(),
+            AddLabelTool(),
+            BrowserTool(),
+            ScreenshotTool(workspace_dir),
+            SearchFileTool(),
+            ChromaTextSearchTool(),
+            ChromaHybridSearchTool(),
+            ExtractPDFTablesTool(),
+            ExtractPDFTextTool(),
+            ConvertPDFToMarkdownTool(),
+            CreateAppleNoteTool(),
+            ReadAppleNotesTool(),
+            SemanticDocSearchTool(),
+            KeywordDocSearchTool(),
+            CreateWorkspaceFileTool(workspace_dir),
+            ReadWorkspaceFileTool(workspace_dir),
+            UpdateWorkspaceFileTool(workspace_dir),
+            DeleteWorkspaceFileTool(workspace_dir),
+            ListWorkspaceContentsTool(workspace_dir),
+            ExecuteWorkspaceCommandTool(workspace_dir),
+            RunNodeJSTool(workspace_dir),
+            RunNpmCommandTool(workspace_dir),
+            RunEslintTool(workspace_dir),
+            DebugJavaScriptTool(workspace_dir),
+            RunJestTestTool(workspace_dir),
+            ValidateJavaScriptTool(workspace_dir),
+        ]
+
+        # Create planner and executor components
+        self.planner = TaskPlanner(provider, model, self.tools, self.objective)
+
+    async def solve_problem(
+        self, show_thinking: bool = True, print_usage: bool = False
+    ) -> AsyncGenerator[Union[Message, Chunk, ToolCall], None]:
+        """
+        Solves the given problem using a two-phase approach: planning, then execution.
+
+        Args:
+            problem (str): The problem or question to solve
+            show_thinking (bool, optional): Whether to include thinking steps in the output
+            print_usage (bool, optional): Whether to print provider usage statistics. Defaults to False
+
+        Yields:
+            Union[Message, Chunk, ToolCall]: Objects representing parts of the reasoning process
+        """
+        # Add to chat history for reference
+        self.chat_history.append(Message(role="user", content=self.objective))
+
+        # Run planning phase
+        yield Chunk(content="Planning phase started...\n", done=False)
+        tasks_list = await self.planner.create_plan()
+
+        # Display the plan
+        yield Chunk(content="\nGenerated plan:\n", done=False)
+        for task in tasks_list.tasks:
+            yield Chunk(content=task.to_markdown() + "\n", done=False)
+
+        # Run execution phase
+        yield Chunk(content="\nExecution phase started...\n", done=False)
+        self.executor = TaskExecutor(
+            self.provider, self.model, self.workspace_dir, self.tools, tasks_list
+        )
+
+        async for result in self.executor.execute_tasks(show_thinking, print_usage):
+            yield result

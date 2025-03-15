@@ -32,14 +32,6 @@ from nodetool.chat.tools import (
     ReadAppleNotesTool,
     SemanticDocSearchTool,
     KeywordDocSearchTool,
-    CreateWorkspaceFileTool,
-    ReadWorkspaceFileTool,
-    UpdateWorkspaceFileTool,
-    DeleteWorkspaceFileTool,
-    ListWorkspaceContentsTool,
-    ExecuteWorkspaceCommandTool,
-    AddTaskTool,
-    TaskList,
 )
 
 
@@ -79,7 +71,7 @@ async def process_regular_chat(
         ReadFileTool(),
         WriteFileTool(),
         BrowserTool(),
-        ScreenshotTool(),
+        ScreenshotTool(workspace_dir="."),
         SearchFileTool(),
         ChromaTextSearchTool(),
         ChromaHybridSearchTool(),

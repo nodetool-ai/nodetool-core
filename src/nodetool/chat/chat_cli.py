@@ -32,6 +32,7 @@ from nodetool.chat.chat import (
     run_tool,
 )
 from nodetool.chat.regular_chat import process_regular_chat
+from nodetool.common.settings import get_system_data_path
 from nodetool.metadata.types import Provider, Message, ToolCall, FunctionModel
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.chat.ollama_service import get_ollama_models
@@ -160,15 +161,12 @@ class ChatCLI:
         self.providers = [p.value.lower() for p in Provider]
 
         # Set up workspace
-        self.workspace_root = Path(tempfile.gettempdir()) / "nodetool-workspaces"
+        self.workspace_root = get_system_data_path("workspaces")
         self.workspace_root.mkdir(exist_ok=True)
         self.workspace_name = f"workspace-{int(asyncio.get_event_loop().time())}"
         self.workspace_dir = self.workspace_root / self.workspace_name
         self.workspace_dir.mkdir(exist_ok=True)
         self.current_dir = self.workspace_dir
-
-        # Initialize CoT agent
-        self.initialize_cot_agent()
 
         # Set up readline
         self.setup_readline()
@@ -259,7 +257,7 @@ class ChatCLI:
             options = [f"{cmd}" for cmd in self.COMMANDS if cmd.startswith(text)]
             return options[state] if state < len(options) else None
 
-    def initialize_cot_agent(self):
+    def initialize_cot_agent(self, objective: str):
         """Initialize or reinitialize the CoT agent.
 
         Creates a new Chain of Thought agent instance with:
@@ -274,10 +272,11 @@ class ChatCLI:
             None
         """
         provider_instance = get_provider(self.provider)
-        self.cot_agent = CoTAgent(
+        return CoTAgent(
             provider=provider_instance,
             model=self.model,
             workspace_dir=str(self.workspace_dir),
+            objective=objective,
         )
 
     def find_tool_by_name(self, name: str) -> Optional[Tool]:
@@ -321,12 +320,10 @@ class ChatCLI:
         Note:
             This is only used when agent_mode is True.
         """
-        if not self.cot_agent:
-            print("Error: CoT agent not initialized")
-            return
+        self.cot_agent = self.initialize_cot_agent(problem)
 
         try:
-            async for item in self.cot_agent.solve_problem(problem, show_thinking=True):
+            async for item in self.cot_agent.solve_problem(show_thinking=True):
                 if isinstance(item, Chunk):
                     print(item.content, end="", flush=True)
                 elif isinstance(item, ToolCall):
@@ -504,7 +501,6 @@ class ChatCLI:
                 self.model = FunctionModel(
                     name=self.default_models[self.provider], provider=self.provider
                 )
-                self.initialize_cot_agent()
                 print(
                     f"Provider set to {self.provider.value} with default model {self.default_models[self.provider]}"
                 )
@@ -517,12 +513,9 @@ class ChatCLI:
 
             model_name = args[0]
             self.model = FunctionModel(name=model_name, provider=self.provider)
-            self.initialize_cot_agent()
             print(f"Model set to {model_name}")
         elif cmd == "clear":
             self.messages = []
-            if self.cot_agent:
-                self.cot_agent.clear_history()
             print("Chat history cleared")
         elif cmd == "agent":
             if not args:
