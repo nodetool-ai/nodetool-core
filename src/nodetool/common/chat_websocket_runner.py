@@ -35,6 +35,7 @@ from fastapi import WebSocket
 
 from nodetool.chat import tools
 from nodetool.chat.chat import Chunk, generate_messages, run_tool
+from nodetool.chat.tools.base import Tool, get_tool_by_name
 from nodetool.metadata.types import (
     AudioRef,
     DataframeRef,
@@ -52,7 +53,6 @@ from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.run_workflow import run_workflow
 from nodetool.workflows.workflow_runner import WorkflowRunner
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.chat.chat import AVAILABLE_CHAT_TOOLS_BY_NAME
 
 log = logging.getLogger(__name__)
 
@@ -141,11 +141,17 @@ class ChatWebSocketRunner:
 
         content = ""
         unprocessed_messages = []
+        workspace_dir = "/tmp/agent-workspace"
+
+        def init_tool(name: str) -> Tool:
+            tool_class = get_tool_by_name(name)
+            if tool_class:
+                return tool_class(workspace_dir)
+            else:
+                raise ValueError(f"Tool {name} not found")
 
         if last_message.tools:
-            selected_tools = [
-                AVAILABLE_CHAT_TOOLS_BY_NAME[name] for name in last_message.tools
-            ]
+            selected_tools = [init_tool(name) for name in last_message.tools]
         else:
             selected_tools = []
 

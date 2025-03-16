@@ -21,48 +21,21 @@ Key components:
 """
 
 import asyncio
-import json
-import traceback
 from typing import Any, AsyncGenerator, Sequence
 
 import openai
 from pydantic import BaseModel
 
 from nodetool.chat.providers import get_provider, Chunk
-from nodetool.chat.tools import (
-    AddLabelTool,
-    BrowserTool,
-    ChromaHybridSearchTool,
-    ChromaTextSearchTool,
-    CreateAppleNoteTool,
-    ExtractPDFTablesTool,
-    ExtractPDFTextTool,
-    ConvertPDFToMarkdownTool,
-    FindNodeTool,
-    KeywordDocSearchTool,
-    ReadAppleNotesTool,
-    ScreenshotTool,
-    SearchEmailTool,
-    SearchFileTool,
-    SemanticDocSearchTool,
-    GoogleSearchTool,
-    Tool,
-)
-
+from nodetool.chat.tools.base import Tool
 from nodetool.common.environment import Environment
 from nodetool.metadata.types import (
-    ColumnDef,
     FunctionModel,
     Message,
     OpenAIModel,
-    Provider,
     ToolCall,
 )
-from nodetool.chat.ollama_service import get_ollama_models
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.chat.tools import ListDirectoryTool, ReadFileTool, WriteFileTool
-import readline
-import os
 
 
 async def get_openai_models():
@@ -95,29 +68,6 @@ async def get_openai_models():
         )
         for model in res.data
     ]
-
-
-AVAILABLE_CHAT_TOOLS = [
-    SearchEmailTool(),
-    GoogleSearchTool(),
-    AddLabelTool(),
-    ListDirectoryTool(),
-    ReadFileTool(),
-    WriteFileTool(),
-    BrowserTool(),
-    SearchFileTool(),
-    ChromaTextSearchTool(),
-    ChromaHybridSearchTool(),
-    ExtractPDFTablesTool(),
-    ExtractPDFTextTool(),
-    ConvertPDFToMarkdownTool(),
-    CreateAppleNoteTool(),
-    ReadAppleNotesTool(),
-    SemanticDocSearchTool(),
-    KeywordDocSearchTool(),
-]
-
-AVAILABLE_CHAT_TOOLS_BY_NAME = {tool.name: tool for tool in AVAILABLE_CHAT_TOOLS}
 
 
 def default_serializer(obj: Any) -> dict:
