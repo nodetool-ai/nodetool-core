@@ -18,26 +18,23 @@ from .base import Tool
 
 
 class ReadFileTool(Tool):
-    def __init__(self):
-        super().__init__(
-            name="read_file",
-            description="Read the contents of a file at the specified path",
-        )
-        self.input_schema = {
-            "type": "object",
-            "properties": {
-                "path": {
-                    "type": "string",
-                    "description": "Path to the file to read",
-                },
-                "max_length": {
-                    "type": "integer",
-                    "description": "Maximum number of characters to read (optional)",
-                    "default": 100000,
-                },
+    name = "read_file"
+    description = "Read the contents of a file at the specified path"
+    input_schema = {
+        "type": "object",
+        "properties": {
+            "path": {
+                "type": "string",
+                "description": "Path to the file to read",
             },
-            "required": ["path"],
-        }
+            "max_length": {
+                "type": "integer",
+                "description": "Maximum number of characters to read (optional)",
+                "default": 100000,
+            },
+        },
+        "required": ["path"],
+    }
 
     async def process(self, context: ProcessingContext, params: dict) -> Any:
         try:
@@ -53,31 +50,28 @@ class ReadFileTool(Tool):
 
 
 class WriteFileTool(Tool):
-    def __init__(self):
-        super().__init__(
-            name="write_file",
-            description="Write content to a file at the specified path",
-        )
-        self.input_schema = {
-            "type": "object",
-            "properties": {
-                "path": {
-                    "type": "string",
-                    "description": "Path where the file should be written",
-                },
-                "content": {
-                    "type": "string",
-                    "description": "Content to write to the file",
-                },
-                "mode": {
-                    "type": "string",
-                    "description": "Write mode: 'w' for overwrite, 'a' for append",
-                    "enum": ["w", "a"],
-                    "default": "w",
-                },
+    name = "write_file"
+    description = "Write content to a file at the specified path"
+    input_schema = {
+        "type": "object",
+        "properties": {
+            "path": {
+                "type": "string",
+                "description": "Path where the file should be written",
             },
-            "required": ["path", "content"],
-        }
+            "content": {
+                "type": "string",
+                "description": "Content to write to the file",
+            },
+            "mode": {
+                "type": "string",
+                "description": "Write mode: 'w' for overwrite, 'a' for append",
+                "enum": ["w", "a"],
+                "default": "w",
+            },
+        },
+        "required": ["path", "content"],
+    }
 
     async def process(self, context: ProcessingContext, params: dict) -> Any:
         try:
@@ -90,21 +84,18 @@ class WriteFileTool(Tool):
 
 
 class ListDirectoryTool(Tool):
-    def __init__(self):
-        super().__init__(
-            name="list_directory",
-            description="List files and directories at the specified path",
-        )
-        self.input_schema = {
-            "type": "object",
-            "properties": {
-                "path": {
-                    "type": "string",
-                    "description": "Directory path to list",
-                },
+    name = "list_directory"
+    description = "List files and directories at the specified path"
+    input_schema = {
+        "type": "object",
+        "properties": {
+            "path": {
+                "type": "string",
+                "description": "Directory path to list",
             },
-            "required": ["path"],
-        }
+        },
+        "required": ["path"],
+    }
 
     async def process(self, context: ProcessingContext, params: dict) -> Any:
         try:
@@ -128,50 +119,47 @@ class ListDirectoryTool(Tool):
 
 
 class SearchFileTool(Tool):
-    def __init__(self):
-        super().__init__(
-            name="search_file",
-            description="Search for text patterns in files using grep-like functionality",
-        )
-        self.input_schema = {
-            "type": "object",
-            "properties": {
-                "path": {
-                    "type": "string",
-                    "description": "Path to search in (file or directory)",
-                },
-                "pattern": {
-                    "type": "string",
-                    "description": "Regex pattern to search for",
-                },
-                "recursive": {
-                    "type": "boolean",
-                    "description": "Search recursively in subdirectories",
-                    "default": False,
-                },
-                "case_sensitive": {
-                    "type": "boolean",
-                    "description": "Whether to perform case-sensitive search",
-                    "default": False,
-                },
-                "file_extensions": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "List of file extensions to search (e.g., ['.txt', '.py']). Empty means all files.",
-                    "default": [
-                        ".txt",
-                        ".py",
-                        ".md",
-                        ".json",
-                        ".yaml",
-                        ".yml",
-                        ".ini",
-                        ".cfg",
-                    ],
-                },
+    name = "search_file"
+    description = "Search for text patterns in files using grep-like functionality"
+    input_schema = {
+        "type": "object",
+        "properties": {
+            "path": {
+                "type": "string",
+                "description": "Path to search in (file or directory)",
             },
-            "required": ["path", "pattern"],
-        }
+            "pattern": {
+                "type": "string",
+                "description": "Regex pattern to search for",
+            },
+            "recursive": {
+                "type": "boolean",
+                "description": "Search recursively in subdirectories",
+                "default": False,
+            },
+            "case_sensitive": {
+                "type": "boolean",
+                "description": "Whether to perform case-sensitive search",
+                "default": False,
+            },
+            "file_extensions": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "List of file extensions to search (e.g., ['.txt', '.py']). Empty means all files.",
+                "default": [
+                    ".txt",
+                    ".py",
+                    ".md",
+                    ".json",
+                    ".yaml",
+                    ".yml",
+                    ".ini",
+                    ".cfg",
+                ],
+            },
+        },
+        "required": ["path", "pattern"],
+    }
 
     def is_binary(self, file_path):
         """Check if a file is binary by reading its first few bytes"""

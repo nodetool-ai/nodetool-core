@@ -23,31 +23,28 @@ from .base import Tool, sanitize_node_name
 
 
 class ExecuteShellTool(Tool):
-    def __init__(self):
-        super().__init__(
-            name="execute_shell",
-            description="Execute a shell command and return its output (use with caution)",
-        )
-        self.input_schema = {
-            "type": "object",
-            "properties": {
-                "command": {
-                    "type": "string",
-                    "description": "Shell command to execute",
-                },
-                "timeout": {
-                    "type": "integer",
-                    "description": "Maximum execution time in seconds",
-                    "default": 30,
-                },
-                "working_dir": {
-                    "type": "string",
-                    "description": "Working directory for command execution",
-                    "default": ".",
-                },
+    name = "execute_shell"
+    description = "Execute a shell command and return its output (use with caution)"
+    input_schema = {
+        "type": "object",
+        "properties": {
+            "command": {
+                "type": "string",
+                "description": "Shell command to execute",
             },
-            "required": ["command"],
-        }
+            "timeout": {
+                "type": "integer",
+                "description": "Maximum execution time in seconds",
+                "default": 30,
+            },
+            "working_dir": {
+                "type": "string",
+                "description": "Working directory for command execution",
+                "default": ".",
+            },
+        },
+        "required": ["command"],
+    }
 
     async def process(self, context: ProcessingContext, params: dict) -> Any:
         try:
@@ -82,51 +79,24 @@ class ExecuteShellTool(Tool):
             return {"error": str(e)}
 
 
-class ProcessNodeTool(Tool):
-    node_name: str
-    node_type: type[BaseNode]
-
-    def __init__(self, node_name: str):
-        super().__init__(
-            name=sanitize_node_name(node_name),
-            description=f"Process node {node_name}",
-        )
-        self.node_name = node_name
-        node_type = get_node_class(self.node_name)
-        if node_type is None:
-            raise ValueError(f"Node {self.node_name} does not exist")
-        self.node_type = node_type
-        self.input_schema = self.node_type.get_json_schema()
-
-    async def process(self, context: ProcessingContext, params: dict) -> Any:
-        node = self.node_type(id="")
-
-        for key, value in params.items():
-            node.assign_property(key, value)
-
-        res = await node.process(context)
-        out = await node.convert_output(context, res)
-        return out
-
-
 class TestTool(Tool):
-    def __init__(self):
-        super().__init__(name="test", description="A test tool for integration testing")
-        self.input_schema = {
-            "type": "object",
-            "properties": {
-                "message": {
-                    "type": "string",
-                    "description": "Test message to echo back",
-                },
-                "delay": {
-                    "type": "number",
-                    "description": "Optional delay in seconds",
-                    "default": 0,
-                },
+    name = "test"
+    description = "A test tool for integration testing"
+    input_schema = {
+        "type": "object",
+        "properties": {
+            "message": {
+                "type": "string",
+                "description": "Test message to echo back",
             },
-            "required": ["message"],
-        }
+            "delay": {
+                "type": "number",
+                "description": "Optional delay in seconds",
+                "default": 0,
+            },
+        },
+        "required": ["message"],
+    }
 
     async def process(self, context: ProcessingContext, params: dict) -> Any:
         if params.get("delay", 0) > 0:
@@ -140,20 +110,17 @@ class TestTool(Tool):
 
 
 class FindNodeTool(Tool):
-    def __init__(self):
-        super().__init__(
-            name="find_node",
-            description="Find a node in the node library",
-        )
-        self.input_schema = {
-            "type": "object",
-            "properties": {
-                "node_name": {
-                    "type": "string",
-                    "description": "Name of the node to find",
-                },
+    name = "find_node"
+    description = "Find a node in the node library"
+    input_schema = {
+        "type": "object",
+        "properties": {
+            "node_name": {
+                "type": "string",
+                "description": "Name of the node to find",
             },
-        }
+        },
+    }
 
     async def process(self, context: ProcessingContext, params: dict) -> dict:
         node_classes = get_registered_node_classes()

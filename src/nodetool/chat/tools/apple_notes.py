@@ -13,30 +13,27 @@ from .base import Tool
 
 
 class CreateAppleNoteTool(Tool):
-    def __init__(self):
-        super().__init__(
-            name="create_apple_note",
-            description="Create a new note in Apple Notes on macOS",
-        )
-        self.input_schema = {
-            "type": "object",
-            "properties": {
-                "title": {
-                    "type": "string",
-                    "description": "Title of the note",
-                },
-                "body": {
-                    "type": "string",
-                    "description": "Content of the note",
-                },
-                "folder": {
-                    "type": "string",
-                    "description": "Notes folder to save to (defaults to 'Notes')",
-                    "default": "Notes",
-                },
+    name = "create_apple_note"
+    description = "Create a new note in Apple Notes on macOS"
+    input_schema = {
+        "type": "object",
+        "properties": {
+            "title": {
+                "type": "string",
+                "description": "Title of the note",
             },
-            "required": ["title", "body"],
-        }
+            "body": {
+                "type": "string",
+                "description": "Content of the note",
+            },
+            "folder": {
+                "type": "string",
+                "description": "Notes folder to save to (defaults to 'Notes')",
+                "default": "Notes",
+            },
+        },
+        "required": ["title", "body"],
+    }
 
     async def process(self, context: ProcessingContext, params: dict) -> Any:
         try:
@@ -57,26 +54,23 @@ class CreateAppleNoteTool(Tool):
 
 
 class ReadAppleNotesTool(Tool):
-    def __init__(self):
-        super().__init__(
-            name="read_apple_notes",
-            description="Read notes from Apple Notes on macOS",
-        )
-        self.input_schema = {
-            "type": "object",
-            "properties": {
-                "note_limit": {
-                    "type": "integer",
-                    "description": "Maximum number of notes to read (0 for unlimited)",
-                    "default": 10,
-                },
-                "note_limit_per_folder": {
-                    "type": "integer",
-                    "description": "Maximum notes per folder (0 for unlimited)",
-                    "default": 10,
-                },
+    name = "read_apple_notes"
+    description = "Read notes from Apple Notes on macOS"
+    input_schema = {
+        "type": "object",
+        "properties": {
+            "note_limit": {
+                "type": "integer",
+                "description": "Maximum number of notes to read (0 for unlimited)",
+                "default": 10,
             },
-        }
+            "note_limit_per_folder": {
+                "type": "integer",
+                "description": "Maximum notes per folder (0 for unlimited)",
+                "default": 10,
+            },
+        },
+    }
 
     async def process(self, context: ProcessingContext, params: dict) -> Any:
         try:

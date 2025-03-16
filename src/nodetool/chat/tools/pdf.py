@@ -18,31 +18,28 @@ from .base import Tool
 
 
 class ExtractPDFTextTool(Tool):
-    def __init__(self):
-        super().__init__(
-            name="extract_pdf_text",
-            description="Extract plain text from a PDF document",
-        )
-        self.input_schema = {
-            "type": "object",
-            "properties": {
-                "path": {
-                    "type": "string",
-                    "description": "Path to the PDF file",
-                },
-                "start_page": {
-                    "type": "integer",
-                    "description": "First page to extract (0-based index)",
-                    "default": 0,
-                },
-                "end_page": {
-                    "type": "integer",
-                    "description": "Last page to extract (-1 for last page)",
-                    "default": -1,
-                },
+    name = "extract_pdf_text"
+    description = "Extract plain text from a PDF document"
+    input_schema = {
+        "type": "object",
+        "properties": {
+            "path": {
+                "type": "string",
+                "description": "Path to the PDF file",
             },
-            "required": ["path"],
-        }
+            "start_page": {
+                "type": "integer",
+                "description": "First page to extract (0-based index)",
+                "default": 0,
+            },
+            "end_page": {
+                "type": "integer",
+                "description": "Last page to extract (-1 for last page)",
+                "default": -1,
+            },
+        },
+        "required": ["path"],
+    }
 
     async def process(self, context: ProcessingContext, params: dict) -> Any:
         try:
@@ -64,30 +61,28 @@ class ExtractPDFTextTool(Tool):
 
 
 class ExtractPDFTablesTool(Tool):
-    def __init__(self):
-        super().__init__(
-            name="extract_pdf_tables", description="Extract tables from a PDF document"
-        )
-        self.input_schema = {
-            "type": "object",
-            "properties": {
-                "path": {
-                    "type": "string",
-                    "description": "Path to the PDF file",
-                },
-                "start_page": {
-                    "type": "integer",
-                    "description": "First page to extract (0-based index)",
-                    "default": 0,
-                },
-                "end_page": {
-                    "type": "integer",
-                    "description": "Last page to extract (-1 for last page)",
-                    "default": -1,
-                },
+    name = "extract_pdf_tables"
+    description = "Extract tables from a PDF document"
+    input_schema = {
+        "type": "object",
+        "properties": {
+            "path": {
+                "type": "string",
+                "description": "Path to the PDF file",
             },
-            "required": ["path"],
-        }
+            "start_page": {
+                "type": "integer",
+                "description": "First page to extract (0-based index)",
+                "default": 0,
+            },
+            "end_page": {
+                "type": "integer",
+                "description": "Last page to extract (-1 for last page)",
+                "default": -1,
+            },
+        },
+        "required": ["path"],
+    }
 
     async def process(self, context: ProcessingContext, params: dict) -> Any:
         try:
@@ -130,30 +125,28 @@ class ExtractPDFTablesTool(Tool):
 
 
 class ConvertPDFToMarkdownTool(Tool):
-    def __init__(self):
-        super().__init__(
-            name="convert_pdf_to_markdown", description="Convert PDF to Markdown format"
-        )
-        self.input_schema = {
-            "type": "object",
-            "properties": {
-                "path": {
-                    "type": "string",
-                    "description": "Path to the PDF file",
-                },
-                "start_page": {
-                    "type": "integer",
-                    "description": "First page to extract (0-based index)",
-                    "default": 0,
-                },
-                "end_page": {
-                    "type": "integer",
-                    "description": "Last page to extract (-1 for last page)",
-                    "default": -1,
-                },
+    name = "convert_pdf_to_markdown"
+    description = "Convert PDF to Markdown format"
+    input_schema = {
+        "type": "object",
+        "properties": {
+            "path": {
+                "type": "string",
+                "description": "Path to the PDF file",
             },
-            "required": ["path"],
-        }
+            "start_page": {
+                "type": "integer",
+                "description": "First page to extract (0-based index)",
+                "default": 0,
+            },
+            "end_page": {
+                "type": "integer",
+                "description": "Last page to extract (-1 for last page)",
+                "default": -1,
+            },
+        },
+        "required": ["path"],
+    }
 
     async def process(self, context: ProcessingContext, params: dict) -> Any:
         try:

@@ -311,10 +311,9 @@ class OpenAIEmbeddingModel(str, enum.Enum):
     LARGE = "text-embedding-3-large"
 
 
-class AnthropicModel(str, enum.Enum):
-    claude_3_opus = "claude-3-opus-20240229"
-    claude_3_haiku = "claude-3-haiku-20240307"
-    claude_3_5_sonnet = "claude-3-5-sonnet-20240620"
+class AgentModel(str, enum.Enum):
+    claude_3_5_sonnet = "claude-3-5-sonnet-2024102"
+    claude_3_7_sonnet = "claude-3-7-sonnet-20250219"
 
 
 class FunctionModel(BaseType):
@@ -952,6 +951,15 @@ class ChatConversation(OutputType):
         default_factory=list, description="The messages in the conversation"
     )
     response: str = Field(default="", description="The response from the chat system")
+
+
+class ToolName(BaseType):
+    """
+    A name for an LLM tool.
+    """
+
+    type: Literal["tool_name"] = "tool_name"
+    name: str = Field(default="", description="The name of the tool")
 
 
 class SubTask(BaseType):

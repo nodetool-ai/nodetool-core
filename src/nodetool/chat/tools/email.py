@@ -83,34 +83,31 @@ def parse_email_message(msg_data: tuple) -> Dict[str, Any]:
 
 
 class SearchEmailTool(Tool):
-    def __init__(self):
-        super().__init__(
-            name="search_email",
-            description="Search Gmail using various criteria like sender, subject, date, etc.",
-        )
-        self.input_schema = {
-            "type": "object",
-            "properties": {
-                "subject": {
-                    "type": "string",
-                    "description": "Text to search for in email subject",
-                },
-                "since_hours_ago": {
-                    "type": "integer",
-                    "description": "Number of hours ago to search for",
-                    "default": 6,
-                },
-                "text": {
-                    "type": "string",
-                    "description": "General text to search for anywhere in the email",
-                },
-                "max_results": {
-                    "type": "integer",
-                    "description": "Maximum number of emails to return",
-                    "default": 50,
-                },
+    name = "search_email"
+    description = "Search Gmail using various criteria like sender, subject, date, etc."
+    input_schema = {
+        "type": "object",
+        "properties": {
+            "subject": {
+                "type": "string",
+                "description": "Text to search for in email subject",
             },
-        }
+            "since_hours_ago": {
+                "type": "integer",
+                "description": "Number of hours ago to search for",
+                "default": 6,
+            },
+            "text": {
+                "type": "string",
+                "description": "General text to search for anywhere in the email",
+            },
+            "max_results": {
+                "type": "integer",
+                "description": "Maximum number of emails to return",
+                "default": 50,
+            },
+        },
+    }
 
     async def process(self, context: ProcessingContext, params: dict) -> Any:
         try:
@@ -174,22 +171,19 @@ class SearchEmailTool(Tool):
 
 
 class ArchiveEmailTool(Tool):
-    def __init__(self):
-        super().__init__(
-            name="archive_email",
-            description="Move specified emails to Gmail archive",
-        )
-        self.input_schema = {
-            "type": "object",
-            "properties": {
-                "message_ids": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "List of message IDs to archive",
-                },
+    name = "archive_email"
+    description = "Move specified emails to Gmail archive"
+    input_schema = {
+        "type": "object",
+        "properties": {
+            "message_ids": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "List of message IDs to archive",
             },
-            "required": ["message_ids"],
-        }
+        },
+        "required": ["message_ids"],
+    }
 
     async def process(self, context: ProcessingContext, params: dict) -> Any:
         try:
@@ -218,25 +212,22 @@ class ArchiveEmailTool(Tool):
 
 
 class AddLabelTool(Tool):
-    def __init__(self):
-        super().__init__(
-            name="add_label",
-            description="Add a label to a Gmail message",
-        )
-        self.input_schema = {
-            "type": "object",
-            "properties": {
-                "message_id": {
-                    "type": "string",
-                    "description": "Message ID to label",
-                },
-                "label": {
-                    "type": "string",
-                    "description": "Label to add to the message",
-                },
+    name = "add_label"
+    description = "Add a label to a Gmail message"
+    input_schema = {
+        "type": "object",
+        "properties": {
+            "message_id": {
+                "type": "string",
+                "description": "Message ID to label",
             },
-            "required": ["message_id", "label"],
-        }
+            "label": {
+                "type": "string",
+                "description": "Label to add to the message",
+            },
+        },
+        "required": ["message_id", "label"],
+    }
 
     async def process(self, context: ProcessingContext, params: dict) -> Any:
         try:

@@ -16,26 +16,25 @@ from .base import Tool
 
 
 class ChromaTextSearchTool(Tool):
-    def __init__(self):
-        super().__init__(
-            name="chroma_text_search",
-            description="Search all ChromaDB collections for similar text using semantic search",
-        )
-        self.input_schema = {
-            "type": "object",
-            "properties": {
-                "text": {
-                    "type": "string",
-                    "description": "The text to search for",
-                },
-                "n_results": {
-                    "type": "integer",
-                    "description": "Number of results to return",
-                    "default": 10,
-                },
+    name = "chroma_text_search"
+    description = (
+        "Search all ChromaDB collections for similar text using semantic search"
+    )
+    input_schema = {
+        "type": "object",
+        "properties": {
+            "text": {
+                "type": "string",
+                "description": "The text to search for",
             },
-            "required": ["text"],
-        }
+            "n_results": {
+                "type": "integer",
+                "description": "Number of results to return",
+                "default": 10,
+            },
+        },
+        "required": ["text"],
+    }
 
     async def process(self, context: ProcessingContext, params: dict) -> dict[str, str]:
         try:
@@ -76,36 +75,35 @@ class ChromaTextSearchTool(Tool):
 
 
 class ChromaHybridSearchTool(Tool):
-    def __init__(self):
-        super().__init__(
-            name="chroma_hybrid_search",
-            description="Search all ChromaDB collections using both semantic and keyword-based search",
-        )
-        self.input_schema = {
-            "type": "object",
-            "properties": {
-                "text": {
-                    "type": "string",
-                    "description": "The text to search for",
-                },
-                "n_results": {
-                    "type": "integer",
-                    "description": "Number of results to return per collection",
-                    "default": 5,
-                },
-                "k_constant": {
-                    "type": "number",
-                    "description": "Constant for reciprocal rank fusion",
-                    "default": 60.0,
-                },
-                "min_keyword_length": {
-                    "type": "integer",
-                    "description": "Minimum length for keyword tokens",
-                    "default": 3,
-                },
+    name = "chroma_hybrid_search"
+    description = (
+        "Search all ChromaDB collections using both semantic and keyword-based search"
+    )
+    input_schema = {
+        "type": "object",
+        "properties": {
+            "text": {
+                "type": "string",
+                "description": "The text to search for",
             },
-            "required": ["text"],
-        }
+            "n_results": {
+                "type": "integer",
+                "description": "Number of results to return per collection",
+                "default": 5,
+            },
+            "k_constant": {
+                "type": "number",
+                "description": "Constant for reciprocal rank fusion",
+                "default": 60.0,
+            },
+            "min_keyword_length": {
+                "type": "integer",
+                "description": "Minimum length for keyword tokens",
+                "default": 3,
+            },
+        },
+        "required": ["text"],
+    }
 
     def _get_keyword_query(self, text: str, min_length: int) -> dict:
         import re
@@ -207,21 +205,18 @@ class ChromaHybridSearchTool(Tool):
 
 
 class SemanticDocSearchTool(Tool):
-    def __init__(self):
-        super().__init__(
-            name="semantic_doc_search",
-            description="Search documentation using semantic similarity",
-        )
-        self.input_schema = {
-            "type": "object",
-            "properties": {
-                "query": {
-                    "type": "string",
-                    "description": "The text to search for in the documentation",
-                },
+    name = "semantic_doc_search"
+    description = "Search documentation using semantic similarity"
+    input_schema = {
+        "type": "object",
+        "properties": {
+            "query": {
+                "type": "string",
+                "description": "The text to search for in the documentation",
             },
-            "required": ["query"],
-        }
+        },
+        "required": ["query"],
+    }
 
     async def process(self, context: ProcessingContext, params: dict) -> Any:
         try:
@@ -243,21 +238,18 @@ class SemanticDocSearchTool(Tool):
 
 
 class KeywordDocSearchTool(Tool):
-    def __init__(self):
-        super().__init__(
-            name="keyword_doc_search",
-            description="Search documentation using keyword matching",
-        )
-        self.input_schema = {
-            "type": "object",
-            "properties": {
-                "query": {
-                    "type": "string",
-                    "description": "The text to search for in the documentation",
-                },
+    name = "keyword_doc_search"
+    description = "Search documentation using keyword matching"
+    input_schema = {
+        "type": "object",
+        "properties": {
+            "query": {
+                "type": "string",
+                "description": "The text to search for in the documentation",
             },
-            "required": ["query"],
-        }
+        },
+        "required": ["query"],
+    }
 
     async def process(self, context: ProcessingContext, params: dict) -> Any:
         try:

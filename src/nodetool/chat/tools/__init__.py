@@ -70,7 +70,7 @@ Tools are used by AI agents to perform operations and integrate with various ser
 """
 
 # Base tools
-from nodetool.chat.tools.base import Tool, sanitize_node_name
+from nodetool.chat.tools.base import Tool, sanitize_node_name, get_tool_by_name
 
 # File operations tools
 from nodetool.chat.tools.file_operations import (
@@ -83,7 +83,6 @@ from nodetool.chat.tools.file_operations import (
 # System tools
 from nodetool.chat.tools.system import (
     ExecuteShellTool,
-    ProcessNodeTool,
     TestTool,
     FindNodeTool,
 )
@@ -136,6 +135,13 @@ from nodetool.chat.tools.workspace import (
     ExecuteWorkspaceCommandTool,
 )
 
+# Asset tools
+from nodetool.chat.tools.assets import (
+    ListAssetsDirectoryTool,
+    ReadAssetTool,
+    SaveAssetTool,
+)
+
 __all__ = [
     # Base
     "Tool",
@@ -147,7 +153,6 @@ __all__ = [
     "SearchFileTool",
     # System
     "ExecuteShellTool",
-    "ProcessNodeTool",
     "TestTool",
     "FindNodeTool",
     # Web and browser
@@ -180,4 +185,10 @@ __all__ = [
     "DeleteWorkspaceFileTool",
     "ListWorkspaceContentsTool",
     "ExecuteWorkspaceCommandTool",
+    # Asset tools
+    "ListAssetsDirectoryTool",
+    "ReadAssetTool",
+    "SaveAssetTool",
+    # Other
+    "get_tool_by_name",
 ]

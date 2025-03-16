@@ -34,6 +34,11 @@ from typing import AsyncGenerator, List, Optional, Union, Dict, Any
 
 from nodetool.chat.providers import ChatProvider, Chunk
 from nodetool.chat.tools import Tool
+from nodetool.chat.tools.assets import (
+    ListAssetsDirectoryTool,
+    ReadAssetTool,
+    SaveAssetTool,
+)
 from nodetool.metadata.types import (
     Message,
     ToolCall,
@@ -42,37 +47,80 @@ from nodetool.metadata.types import (
     SubTask,
     TaskList,
 )
-from nodetool.chat.tools import (
-    SearchEmailTool,
-    GoogleSearchTool,
-    AddLabelTool,
-    BrowserTool,
-    ScreenshotTool,
-    SearchFileTool,
-    ChromaTextSearchTool,
-    ChromaHybridSearchTool,
-    ExtractPDFTablesTool,
-    ExtractPDFTextTool,
-    ConvertPDFToMarkdownTool,
-    CreateAppleNoteTool,
-    ReadAppleNotesTool,
-    SemanticDocSearchTool,
-    KeywordDocSearchTool,
-    CreateWorkspaceFileTool,
-    ReadWorkspaceFileTool,
-    UpdateWorkspaceFileTool,
-    DeleteWorkspaceFileTool,
-    ListWorkspaceContentsTool,
-    ExecuteWorkspaceCommandTool,
-)
-from nodetool.chat.tools.development import (
-    RunNodeJSTool,
-    RunNpmCommandTool,
-    RunEslintTool,
-    DebugJavaScriptTool,
-    RunJestTestTool,
-    ValidateJavaScriptTool,
-)
+
+# Add these constants at the top of the file, after the imports
+DEFAULT_PLANNING_SYSTEM_PROMPT = """
+You are a strategic planning assistant that creates clear, organized plans.
+PLANNING INSTRUCTIONS:
+1. Create MINIMAL plans - use only as many tasks as absolutely necessary.
+2. Match plan complexity to objective complexity - simple objectives should have few tasks.
+3. Combine related steps into single tasks whenever possible.
+4. Each top-level task should have 1-3 subtasks for most objectives.
+5. Only create separate subtasks when there's a clear dependency or tool change.
+6. The sub tasks will get executed in the execution phase, in the order they are written.
+7. Each sub task should get a unique id which can be used to reference the task.
+8. Each sub task should reference the tool it will use.
+9. Dependencies are other task IDs that must be completed before the subtask can be executed.
+10. Keep the plan as streamlined as possible while still achieving the objective.
+11. When working with files, always use the workspace directory as the root.
+
+Write JSON with the following format:
+```json
+{
+    "type": "task_list",
+    "title": "Write a Simple Note",
+    "tasks": [
+        {
+            "type": "task",
+            "title": "Create and Write Note",
+            "subtasks": [
+                {
+                    "type": "subtask",
+                    "id": "note1",
+                    "content": "Create a new note file 'quick_note.txt' with initial content",
+                    "tool": "create_workspace_file",
+                    "dependencies": []
+            }
+        ]
+        }
+    ]
+}
+```
+"""
+
+DEFAULT_PLANNING_USER_PROMPT_TEMPLATE = """
+Create an efficient plan by:
+1. Analyzing the problem requirements
+2. Thinking about the problem in-depth
+3. Breaking it into logical tasks
+4. Breaking each task into subtasks
+5. Identifying tools you'll need during execution
+6. Considering which subtasks might depend on outputs from other tasks
+
+Output the task list in the specified JSON format. Each task should have:
+- A title
+- A list of subtasks with:
+  - content (string)
+  - completed (boolean)
+  - subtask_id (string)
+  - dependencies (list of strings)
+"""
+
+DEFAULT_EXECUTION_SYSTEM_PROMPT = """
+You are an agent that executes plans.
+
+All file operations must be performed within this workspace directory.
+
+EXECUTION INSTRUCTIONS:
+1. Focus on the task at hand and use the tools provided to you to complete the task.
+2. When you need information from a previous tool execution, reference it by its task ID.
+3. DO NOT include the full output of tools in your responses to save context space.
+4. Respect task dependencies - do not execute a task until all its dependencies have been completed.
+5. When working with files:
+   - Always use paths relative to the workspace directory
+   - Do not attempt to access files outside the workspace
+   - Use the workspace tools for file operations
+"""
 
 
 class WorkspaceManager:
@@ -209,94 +257,22 @@ class TaskPlanner:
         self.tools = tools
         self.objective = objective
         self.system_prompt = (
-            system_prompt if system_prompt else self._get_planning_system_prompt()
+            system_prompt if system_prompt else DEFAULT_PLANNING_SYSTEM_PROMPT
         )
-        self.user_prompt = (
-            user_prompt if user_prompt else self._get_planning_user_prompt(objective)
-        )
-        self.encoding = tiktoken.get_encoding("cl100k_base")  # Default encoding
-
-    def _get_planning_system_prompt(self) -> str:
-        """
-        Get the system prompt for the planning phase.
-
-        Returns:
-            str: The system prompt with instructions for planning
-        """
-        prompt = """
-        You are a strategic planning assistant that creates clear, organized plans.
-        PLANNING INSTRUCTIONS:
-        1. Create MINIMAL plans - use only as many tasks as absolutely necessary.
-        2. Match plan complexity to objective complexity - simple objectives should have few tasks.
-        3. Combine related steps into single tasks whenever possible.
-        4. Each top-level task should have 1-3 subtasks for most objectives.
-        5. Only create separate subtasks when there's a clear dependency or tool change.
-        6. The sub tasks will get executed in the execution phase, in the order they are written.
-        7. Each sub task should get a unique id which can be used to reference the task.
-        8. Each sub task should reference the tool it will use.
-        9. Dependencies are other task IDs that must be completed before the subtask can be executed.
-        10. Keep the plan as streamlined as possible while still achieving the objective.
-        11. When working with files, always use the workspace directory as the root.
-
-        Write JSON with the following format:
-        ```json
-        {
-            "type": "task_list",
-            "title": "Write a Simple Note",
-            "tasks": [
-                {
-                    "type": "task",
-                    "title": "Create and Write Note",
-                    "subtasks": [
-                        {
-                            "type": "subtask",
-                            "id": "note1",
-                            "content": "Create a new note file 'quick_note.txt' with initial content",
-                            "tool": "create_workspace_file",
-                            "dependencies": []
-                    }
-                ]
-                }
-            ]
-        }
-        ```
-
+        self.system_prompt += """
         Consider the following tools to be used in sub tasks:
         """
         for tool in self.tools:
-            prompt += f"- {tool.name}\n"
-        prompt += """
+            self.system_prompt += f"- {tool.name}\n"
+        self.system_prompt += """
         """
-
-        return prompt
-
-    def _get_planning_user_prompt(self, objective: str) -> str:
-        """
-        Creates a user prompt for the planning phase.
-
-        Args:
-            objective (str): The objective to solve
-
-        Returns:
-            str: Formatted prompt for planning
-        """
-        return (
-            f"Objective to solve: {objective}\n\n"
-            "Create an efficient plan by:\n"
-            "1. Analyzing the problem requirements\n"
-            "2. Thinking about the problem in-depth\n"
-            "3. Breaking it into logical tasks\n"
-            "4. Breaking each task into subtasks\n"
-            "5. Identifying tools you'll need during execution\n"
-            "6. Considering which subtasks might depend on outputs from other tasks\n\n"
-            "Output the task list in the specified JSON format. Each task should have:\n"
-            "- A title\n"
-            "- A list of subtasks with:\n"
-            "  - content (string)\n"
-            "  - completed (boolean)\n"
-            "  - subtask_id (string)\n"
-            "  - dependencies (list of strings)\n"
+        self.user_prompt = (
+            user_prompt
+            if user_prompt
+            else DEFAULT_PLANNING_USER_PROMPT_TEMPLATE.format(objective=objective)
         )
+        self.user_prompt = f"Objective to solve: {objective}\n\n{self.user_prompt}"
+        self.encoding = tiktoken.get_encoding("cl100k_base")  # Default encoding
 
     async def create_plan(self) -> TaskList:
         """
@@ -367,7 +343,6 @@ class TaskExecutor:
         task_list: TaskList,
         system_prompt: str | None = None,
         max_steps: int = 30,
-        max_tool_results: int = 5,
     ):
         """
         Initialize the TaskExecutor.
@@ -380,7 +355,6 @@ class TaskExecutor:
             task_list (TaskList): The task list to execute
             system_prompt (str, optional): Custom system prompt
             max_steps (int, optional): Maximum execution steps to prevent infinite loops. Defaults to 30
-            max_tool_results (int, optional): Maximum number of recent tool results to keep. Defaults to 5
         """
         self.provider = provider
         self.model = model
@@ -392,39 +366,15 @@ class TaskExecutor:
         Your workspace directory is: {self.workspace_dir}
         """
         self.system_prompt = prefix + (
-            system_prompt if system_prompt else self._get_execution_system_prompt()
+            system_prompt if system_prompt else DEFAULT_EXECUTION_SYSTEM_PROMPT
         )
         self.max_steps = max_steps
-        self.max_tool_results = max_tool_results
         self.history: List[Message] = []
         self.tool_memory: Dict[str, Any] = {}
         self.encoding = tiktoken.get_encoding("cl100k_base")
         self.history = [
-            Message(role="system", content=self._get_execution_system_prompt()),
+            Message(role="system", content=self.system_prompt),
         ]
-
-    def _get_execution_system_prompt(self) -> str:
-        """
-        Get the system prompt for the execution phase.
-
-        Returns:
-            str: The system prompt with instructions for execution
-        """
-        return """
-        You are an agent that executes plans.
-        
-        All file operations must be performed within this workspace directory.
-        
-        EXECUTION INSTRUCTIONS:
-        1. Focus on the task at hand and use the tools provided to you to complete the task.
-        2. When you need information from a previous tool execution, reference it by its task ID.
-        3. DO NOT include the full output of tools in your responses to save context space.
-        4. Respect task dependencies - do not execute a task until all its dependencies have been completed.
-        5. When working with files:
-           - Always use paths relative to the workspace directory
-           - Do not attempt to access files outside the workspace
-           - Use the workspace tools for file operations
-        """
 
     def _count_tokens(self, messages: List[Message]) -> int:
         """
@@ -773,8 +723,8 @@ class CoTAgent:
         model: FunctionModel,
         objective: str,
         workspace_dir: str,
+        tools: List[Tool],
         max_steps: int = 30,
-        max_tool_results: int = 5,  # New parameter to control tool result history
     ):
         """
         Initializes the CoT agent.
@@ -785,51 +735,16 @@ class CoTAgent:
             objective (str): The objective to solve
             workspace_dir (str): Directory for workspace files
             max_steps (int, optional): Maximum reasoning steps to prevent infinite loops. Defaults to 10
-            max_tool_results (int, optional): Maximum number of recent tool results to keep. Defaults to 5
-                                               Defaults to None (use internal builders)
-            max_tool_results (int, optional): Maximum number of recent tool results to keep. Defaults to 5
         """
         self.provider = provider
         self.model = model
         self.objective = objective
         self.max_steps = max_steps
-        self.max_tool_results = max_tool_results
         self.workspace_dir = workspace_dir
+        self.tools = tools
         self.chat_history: List[Message] = (
             []
         )  # Store all chat interactions for reference
-
-        # Tools list
-        self.tools: List[Tool] = [
-            SearchEmailTool(),
-            GoogleSearchTool(),
-            AddLabelTool(),
-            BrowserTool(),
-            ScreenshotTool(workspace_dir),
-            SearchFileTool(),
-            ChromaTextSearchTool(),
-            ChromaHybridSearchTool(),
-            ExtractPDFTablesTool(),
-            ExtractPDFTextTool(),
-            ConvertPDFToMarkdownTool(),
-            CreateAppleNoteTool(),
-            ReadAppleNotesTool(),
-            SemanticDocSearchTool(),
-            KeywordDocSearchTool(),
-            CreateWorkspaceFileTool(workspace_dir),
-            ReadWorkspaceFileTool(workspace_dir),
-            UpdateWorkspaceFileTool(workspace_dir),
-            DeleteWorkspaceFileTool(workspace_dir),
-            ListWorkspaceContentsTool(workspace_dir),
-            ExecuteWorkspaceCommandTool(workspace_dir),
-            RunNodeJSTool(workspace_dir),
-            RunNpmCommandTool(workspace_dir),
-            RunEslintTool(workspace_dir),
-            DebugJavaScriptTool(workspace_dir),
-            RunJestTestTool(workspace_dir),
-            ValidateJavaScriptTool(workspace_dir),
-        ]
-
         # Create planner and executor components
         self.planner = TaskPlanner(provider, model, self.tools, self.objective)
 

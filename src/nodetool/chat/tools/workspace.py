@@ -23,12 +23,8 @@ from .base import Tool
 class WorkspaceBaseTool(Tool):
     """Base class for workspace tools that contains common functionality."""
 
-    def __init__(self, name: str, description: str, workspace_dir: str):
-        super().__init__(name=name, description=description)
-        self.workspace_dir = os.path.abspath(os.path.expanduser(workspace_dir))
-
-        # Ensure the workspace directory exists
-        os.makedirs(self.workspace_dir, exist_ok=True)
+    name = "workspace_base_tool"
+    description = "Base class for workspace tools that contains common functionality."
 
     def resolve_workspace_path(self, path: str) -> str:
         """
@@ -52,31 +48,27 @@ class WorkspaceBaseTool(Tool):
 
 
 class CreateWorkspaceFileTool(WorkspaceBaseTool):
-    def __init__(self, workspace_dir: str):
-        super().__init__(
-            name="create_workspace_file",
-            description="Create a new file in the agent workspace",
-            workspace_dir=workspace_dir,
-        )
-        self.input_schema = {
-            "type": "object",
-            "properties": {
-                "path": {
-                    "type": "string",
-                    "description": "Path to the file to create, relative to the workspace directory",
-                },
-                "content": {
-                    "type": "string",
-                    "description": "Content to write to the file",
-                },
-                "overwrite": {
-                    "type": "boolean",
-                    "description": "Whether to overwrite the file if it already exists",
-                    "default": False,
-                },
+    name = "create_workspace_file"
+    description = "Create a new file in the agent workspace"
+    input_schema = {
+        "type": "object",
+        "properties": {
+            "path": {
+                "type": "string",
+                "description": "Path to the file to create, relative to the workspace directory",
             },
-            "required": ["path", "content"],
-        }
+            "content": {
+                "type": "string",
+                "description": "Content to write to the file",
+            },
+            "overwrite": {
+                "type": "boolean",
+                "description": "Whether to overwrite the file if it already exists",
+                "default": False,
+            },
+        },
+        "required": ["path", "content"],
+    }
 
     async def process(self, context: ProcessingContext, params: dict) -> Any:
         try:
@@ -106,27 +98,23 @@ class CreateWorkspaceFileTool(WorkspaceBaseTool):
 
 
 class ReadWorkspaceFileTool(WorkspaceBaseTool):
-    def __init__(self, workspace_dir: str):
-        super().__init__(
-            name="read_workspace_file",
-            description="Read the contents of a file in the agent workspace",
-            workspace_dir=workspace_dir,
-        )
-        self.input_schema = {
-            "type": "object",
-            "properties": {
-                "path": {
-                    "type": "string",
-                    "description": "Path to the file to read, relative to the workspace directory",
-                },
-                "max_length": {
-                    "type": "integer",
-                    "description": "Maximum number of characters to read (optional)",
-                    "default": 100000,
-                },
+    name = "read_workspace_file"
+    description = "Read the contents of a file in the agent workspace"
+    input_schema = {
+        "type": "object",
+        "properties": {
+            "path": {
+                "type": "string",
+                "description": "Path to the file to read, relative to the workspace directory",
             },
-            "required": ["path"],
-        }
+            "max_length": {
+                "type": "integer",
+                "description": "Maximum number of characters to read (optional)",
+                "default": 100000,
+            },
+        },
+        "required": ["path"],
+    }
 
     async def process(self, context: ProcessingContext, params: dict) -> Any:
         try:
@@ -163,31 +151,27 @@ class ReadWorkspaceFileTool(WorkspaceBaseTool):
 
 
 class UpdateWorkspaceFileTool(WorkspaceBaseTool):
-    def __init__(self, workspace_dir: str):
-        super().__init__(
-            name="update_workspace_file",
-            description="Update an existing file in the agent workspace",
-            workspace_dir=workspace_dir,
-        )
-        self.input_schema = {
-            "type": "object",
-            "properties": {
-                "path": {
-                    "type": "string",
-                    "description": "Path to the file to update, relative to the workspace directory",
-                },
-                "content": {
-                    "type": "string",
-                    "description": "New content to write to the file",
-                },
-                "append": {
-                    "type": "boolean",
-                    "description": "Whether to append to the file instead of overwriting",
-                    "default": False,
-                },
+    name = "update_workspace_file"
+    description = "Update an existing file in the agent workspace"
+    input_schema = {
+        "type": "object",
+        "properties": {
+            "path": {
+                "type": "string",
+                "description": "Path to the file to update, relative to the workspace directory",
             },
-            "required": ["path", "content"],
-        }
+            "content": {
+                "type": "string",
+                "description": "New content to write to the file",
+            },
+            "append": {
+                "type": "boolean",
+                "description": "Whether to append to the file instead of overwriting",
+                "default": False,
+            },
+        },
+        "required": ["path", "content"],
+    }
 
     async def process(self, context: ProcessingContext, params: dict) -> Any:
         try:
@@ -225,27 +209,23 @@ class UpdateWorkspaceFileTool(WorkspaceBaseTool):
 
 
 class DeleteWorkspaceFileTool(WorkspaceBaseTool):
-    def __init__(self, workspace_dir: str):
-        super().__init__(
-            name="delete_workspace_file",
-            description="Delete a file or directory from the agent workspace",
-            workspace_dir=workspace_dir,
-        )
-        self.input_schema = {
-            "type": "object",
-            "properties": {
-                "path": {
-                    "type": "string",
-                    "description": "Path to the file or directory to delete, relative to the workspace directory",
-                },
-                "recursive": {
-                    "type": "boolean",
-                    "description": "Whether to recursively delete directories",
-                    "default": False,
-                },
+    name = "delete_workspace_file"
+    description = "Delete a file or directory from the agent workspace"
+    input_schema = {
+        "type": "object",
+        "properties": {
+            "path": {
+                "type": "string",
+                "description": "Path to the file or directory to delete, relative to the workspace directory",
             },
-            "required": ["path"],
-        }
+            "recursive": {
+                "type": "boolean",
+                "description": "Whether to recursively delete directories",
+                "default": False,
+            },
+        },
+        "required": ["path"],
+    }
 
     async def process(self, context: ProcessingContext, params: dict) -> Any:
         try:
@@ -299,33 +279,29 @@ class DeleteWorkspaceFileTool(WorkspaceBaseTool):
 
 
 class ListWorkspaceContentsTool(WorkspaceBaseTool):
-    def __init__(self, workspace_dir: str):
-        super().__init__(
-            name="list_workspace_contents",
-            description="List contents of the agent workspace directory",
-            workspace_dir=workspace_dir,
-        )
-        self.input_schema = {
-            "type": "object",
-            "properties": {
-                "path": {
-                    "type": "string",
-                    "description": "Path to the directory to list, relative to the workspace directory. Default is the root workspace.",
-                    "default": ".",
-                },
-                "recursive": {
-                    "type": "boolean",
-                    "description": "Whether to recursively list subdirectories",
-                    "default": False,
-                },
-                "include_hidden": {
-                    "type": "boolean",
-                    "description": "Whether to include hidden files (starting with .)",
-                    "default": False,
-                },
+    name = "list_workspace_contents"
+    description = "List contents of the agent workspace directory"
+    input_schema = {
+        "type": "object",
+        "properties": {
+            "path": {
+                "type": "string",
+                "description": "Path to the directory to list, relative to the workspace directory. Default is the root workspace.",
+                "default": ".",
             },
-            "required": [],
-        }
+            "recursive": {
+                "type": "boolean",
+                "description": "Whether to recursively list subdirectories",
+                "default": False,
+            },
+            "include_hidden": {
+                "type": "boolean",
+                "description": "Whether to include hidden files (starting with .)",
+                "default": False,
+            },
+        },
+        "required": [],
+    }
 
     async def process(self, context: ProcessingContext, params: dict) -> Any:
         try:
@@ -417,27 +393,23 @@ class ListWorkspaceContentsTool(WorkspaceBaseTool):
 
 
 class ExecuteWorkspaceCommandTool(WorkspaceBaseTool):
-    def __init__(self, workspace_dir: str):
-        super().__init__(
-            name="execute_workspace_command",
-            description="Execute a shell command in the agent workspace directory",
-            workspace_dir=workspace_dir,
-        )
-        self.input_schema = {
-            "type": "object",
-            "properties": {
-                "command": {
-                    "type": "string",
-                    "description": "The shell command to execute",
-                },
-                "timeout": {
-                    "type": "integer",
-                    "description": "Maximum execution time in seconds",
-                    "default": 60,
-                },
+    name = "execute_workspace_command"
+    description = "Execute a shell command in the agent workspace directory"
+    input_schema = {
+        "type": "object",
+        "properties": {
+            "command": {
+                "type": "string",
+                "description": "The shell command to execute",
             },
-            "required": ["command"],
-        }
+            "timeout": {
+                "type": "integer",
+                "description": "Maximum execution time in seconds",
+                "default": 60,
+            },
+        },
+        "required": ["command"],
+    }
 
     async def process(self, context: ProcessingContext, params: dict) -> Any:
         try:

@@ -28,15 +28,35 @@ from typing import List, Dict, Any, Sequence, Optional
 from nodetool.chat.cot_agent import CoTAgent
 from nodetool.chat.providers import get_provider, Chunk
 from nodetool.chat.tools import Tool
-from nodetool.chat.chat import (
-    run_tool,
-)
 from nodetool.chat.regular_chat import process_regular_chat
 from nodetool.common.settings import get_system_data_path
 from nodetool.metadata.types import Provider, Message, ToolCall, FunctionModel
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.chat.ollama_service import get_ollama_models
 from nodetool.chat.chat import get_openai_models
+from nodetool.chat.tools import (
+    SearchEmailTool,
+    GoogleSearchTool,
+    AddLabelTool,
+    BrowserTool,
+    ScreenshotTool,
+    SearchFileTool,
+    ChromaTextSearchTool,
+    ChromaHybridSearchTool,
+    ExtractPDFTablesTool,
+    ExtractPDFTextTool,
+    ConvertPDFToMarkdownTool,
+    CreateAppleNoteTool,
+    ReadAppleNotesTool,
+    SemanticDocSearchTool,
+    KeywordDocSearchTool,
+    CreateWorkspaceFileTool,
+    ReadWorkspaceFileTool,
+    UpdateWorkspaceFileTool,
+    DeleteWorkspaceFileTool,
+    ListWorkspaceContentsTool,
+    ExecuteWorkspaceCommandTool,
+)
 
 
 class ChatCLI:
@@ -137,6 +157,37 @@ class ChatCLI:
             name=self.default_models[self.provider], provider=self.provider
         )
 
+    def get_tools(self) -> List[Tool]:
+        """Get the list of tools available to the CoT agent.
+
+        Returns:
+            List[Tool]: A list of Tool objects
+        """
+        workspace_dir = str(self.workspace_dir)
+        return [
+            SearchEmailTool(workspace_dir),
+            GoogleSearchTool(workspace_dir),
+            AddLabelTool(workspace_dir),
+            BrowserTool(workspace_dir),
+            ScreenshotTool(workspace_dir),
+            SearchFileTool(workspace_dir),
+            ChromaTextSearchTool(workspace_dir),
+            ChromaHybridSearchTool(workspace_dir),
+            ExtractPDFTablesTool(workspace_dir),
+            ExtractPDFTextTool(workspace_dir),
+            ConvertPDFToMarkdownTool(workspace_dir),
+            CreateAppleNoteTool(workspace_dir),
+            ReadAppleNotesTool(workspace_dir),
+            SemanticDocSearchTool(workspace_dir),
+            KeywordDocSearchTool(workspace_dir),
+            CreateWorkspaceFileTool(workspace_dir),
+            ReadWorkspaceFileTool(workspace_dir),
+            UpdateWorkspaceFileTool(workspace_dir),
+            DeleteWorkspaceFileTool(workspace_dir),
+            ListWorkspaceContentsTool(workspace_dir),
+            ExecuteWorkspaceCommandTool(workspace_dir),
+        ]
+
     async def initialize(self):
         """Initialize async components and workspace.
 
@@ -167,6 +218,7 @@ class ChatCLI:
         self.workspace_dir = self.workspace_root / self.workspace_name
         self.workspace_dir.mkdir(exist_ok=True)
         self.current_dir = self.workspace_dir
+        self.tools = self.get_tools()
 
         # Set up readline
         self.setup_readline()
@@ -276,6 +328,7 @@ class ChatCLI:
             provider=provider_instance,
             model=self.model,
             workspace_dir=str(self.workspace_dir),
+            tools=self.tools,
             objective=objective,
         )
 

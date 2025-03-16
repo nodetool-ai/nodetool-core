@@ -342,6 +342,32 @@ class ProcessingContext:
         res = await self.api_client.get(f"api/assets/{asset_id}")
         return Asset(**res.json())
 
+    async def find_asset_by_filename(self, filename: str):
+        """
+        Finds an asset by filename.
+        """
+        res = await self.api_client.get(f"api/assets/by-filename/{filename}")
+        return Asset(**res.json())
+
+    async def list_assets(
+        self,
+        parent_id: str | None = None,
+        recursive: bool = False,
+        mime_type: str | None = None,
+    ):
+        """
+        Lists assets.
+        """
+        res = await self.api_client.get(
+            f"api/assets/",
+            params={
+                "parent_id": parent_id,
+                "recursive": recursive,
+                "mime_type": mime_type,
+            },
+        )
+        return AssetList(**res.json())
+
     async def get_asset_url(self, asset_id: str):
         """
         Returns the asset url.

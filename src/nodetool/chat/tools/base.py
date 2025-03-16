@@ -5,7 +5,7 @@ This module includes the fundamental Tool class that all tools inherit from,
 and utility functions used by multiple tools.
 """
 
-from typing import Any, Dict, List
+from typing import Any
 import os
 from datetime import datetime, timedelta
 from nodetool.workflows.base_node import (
@@ -33,7 +33,31 @@ def sanitize_node_name(node_name: str) -> str:
         return "__".join(node_name.split("."))
 
 
-WORKFLOW_PREFIX = "workflow__"
+# Tool registry to keep track of all tool subclasses
+_tool_registry = {}
+
+
+def get_registered_tools():
+    """
+    Get all registered tool classes.
+
+    Returns:
+        dict: A dictionary mapping tool class names to tool classes.
+    """
+    return _tool_registry.copy()
+
+
+def get_tool_by_name(name):
+    """
+    Get a tool class by its name.
+
+    Args:
+        name (str): The name of the tool class.
+
+    Returns:
+        The tool class if found, None otherwise.
+    """
+    return _tool_registry.get(name)
 
 
 class Tool:
@@ -42,10 +66,10 @@ class Tool:
     name: str
     description: str
     input_schema: Any
+    workspace_dir: str
 
-    def __init__(self, name: str, description: str):
-        self.name = name
-        self.description = description
+    def __init__(self, workspace_dir: str):
+        self.workspace_dir = workspace_dir
 
     def tool_param(self):
         return {
@@ -59,3 +83,11 @@ class Tool:
 
     async def process(self, context: ProcessingContext, params: dict) -> Any:
         return params
+
+    def __init_subclass__(cls, **kwargs):
+        """
+        Automatically register all Tool subclasses.
+        This method is called when a subclass of Tool is created.
+        """
+        super().__init_subclass__(**kwargs)
+        _tool_registry[cls.name] = cls

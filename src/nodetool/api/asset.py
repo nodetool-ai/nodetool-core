@@ -8,6 +8,7 @@ from uuid import uuid4
 import zipfile
 from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
+from nodetool.models.condition_builder import Field
 from nodetool.types.asset import (
     Asset,
     AssetCreateRequest,
@@ -382,3 +383,20 @@ async def get_assets_recursive(folder_id: str, user: User = Depends(current_user
     """
     assets = AssetModel.get_assets_recursive(user.id, folder_id)
     return assets
+
+
+@router.get("/by-filename/{filename}")
+async def get_by_filename(filename: str, user: User = Depends(current_user)) -> Asset:
+    """
+    Returns the asset for the given filename.
+    """
+    # Query for assets by the filename
+    assets, _ = AssetModel.query(condition=Field("file_name").equals(filename))
+    # Get the first matching asset if any exist
+    asset = next(iter(assets), None)
+
+    if asset is None:
+        log.info("Asset not found with filename: %s", filename)
+        raise HTTPException(status_code=404, detail="Asset not found")
+
+    return from_model(asset)

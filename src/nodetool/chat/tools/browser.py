@@ -24,43 +24,31 @@ class BrowserTool(Tool):
     content from web pages using Playwright.
     """
 
-    def __init__(self):
-        """
-        Initialize the BrowserTool with its name, description, and parameter schema.
-
-        Sets up the tool with a detailed parameter schema that defines different
-        actions that can be performed (navigate, click, type, get_text, quit) and
-        their respective required parameters.
-        """
-        super().__init__(
-            name="browser_control",
-            description="Control a web browser to navigate and interact with web pages",
-        )
-        self.input_schema = {
-            "type": "object",
-            "properties": {
-                "action": {
-                    "type": "string",
-                    "description": "Action to perform: 'navigate', 'click', 'type', 'quit'",
-                    "enum": ["navigate", "click", "type", "get_text", "quit"],
-                },
-                "url": {
-                    "type": "string",
-                    "description": "URL to navigate to (for 'navigate' action)",
-                },
-                "selector": {
-                    "type": "string",
-                    "description": "CSS selector for the target element (for 'click', 'type', 'get_text' actions)",
-                },
-                "text": {
-                    "type": "string",
-                    "description": "Text to type (for 'type' action)",
-                },
+    name = "browser_control"
+    description = "Control a web browser to navigate and interact with web pages"
+    input_schema = {
+        "type": "object",
+        "properties": {
+            "action": {
+                "type": "string",
+                "description": "Action to perform: 'navigate', 'click', 'type', 'quit'",
+                "enum": ["navigate", "click", "type", "get_text", "quit"],
             },
-            "required": ["action"],
-        }
-        self.browser = None
-        self.page = None
+            "url": {
+                "type": "string",
+                "description": "URL to navigate to (for 'navigate' action)",
+            },
+            "selector": {
+                "type": "string",
+                "description": "CSS selector for the target element (for 'click', 'type', 'get_text' actions)",
+            },
+            "text": {
+                "type": "string",
+                "description": "Text to type (for 'type' action)",
+            },
+        },
+        "required": ["action"],
+    }
 
     async def process(self, context: ProcessingContext, params: dict) -> Any:
         """
@@ -166,26 +154,31 @@ class BrowserTool(Tool):
 
 
 class ScreenshotTool(Tool):
-    def __init__(self, workspace_dir: str):
-        super().__init__(
-            name="take_screenshot",
-            description="Take a screenshot of the current browser window or a specific element",
-        )
-        self.workspace_dir = workspace_dir
-        self.input_schema = {
-            "type": "object",
-            "properties": {
-                "selector": {
-                    "type": "string",
-                    "description": "Optional CSS selector for capturing a specific element",
-                },
-                "path": {
-                    "type": "string",
-                    "description": "Workspace relative path to save the screenshot",
-                    "default": "screenshot.png",
-                },
+    """
+    A tool that allows taking screenshots of web pages or specific elements.
+
+    This tool enables language models to capture visual representations of web pages
+    or specific elements for analysis or documentation.
+    """
+
+    name = "take_screenshot"
+    description = (
+        "Take a screenshot of the current browser window or a specific element"
+    )
+    input_schema = {
+        "type": "object",
+        "properties": {
+            "selector": {
+                "type": "string",
+                "description": "Optional CSS selector for capturing a specific element",
             },
-        }
+            "path": {
+                "type": "string",
+                "description": "Workspace relative path to save the screenshot",
+                "default": "screenshot.png",
+            },
+        },
+    }
 
     async def process(self, context: ProcessingContext, params: dict) -> Any:
         try:
@@ -220,33 +213,23 @@ class GoogleSearchTool(Tool):
     the search results without directly interacting with a browser.
     """
 
-    def __init__(self):
-        """
-        Initialize the GoogleSearchTool with Brightdata API credentials.
-
-        Args:
-            api_key (str, optional): Brightdata API key. If not provided, it must be in the context.
-            zone (str, optional): Brightdata zone to use. Defaults to "nodetool".
-        """
-        super().__init__(
-            name="google_search",
-            description="Search Google using Brightdata's API to retrieve search results",
-        )
-        self.input_schema = {
-            "type": "object",
-            "properties": {
-                "query": {
-                    "type": "string",
-                    "description": "The search query to submit to Google",
-                },
-                "num_results": {
-                    "type": "integer",
-                    "description": "Number of results to return (optional)",
-                    "default": 10,
-                },
+    name = "google_search"
+    description = "Search Google using Brightdata's API to retrieve search results"
+    input_schema = {
+        "type": "object",
+        "properties": {
+            "query": {
+                "type": "string",
+                "description": "The search query to submit to Google",
             },
-            "required": ["query"],
-        }
+            "num_results": {
+                "type": "integer",
+                "description": "Number of results to return (optional)",
+                "default": 10,
+            },
+        },
+        "required": ["query"],
+    }
 
     def _remove_base64_images(self, data):
         """Remove image elements entirely from the API response to reduce size."""
