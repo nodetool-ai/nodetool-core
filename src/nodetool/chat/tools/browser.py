@@ -311,7 +311,20 @@ class GoogleSearchTool(Tool):
                     if result["status_code"] == 200:
                         body = json.loads(result["body"])
                         body = self._remove_base64_images(body)
-                        return {"success": True, "query": query, "result": body}
+                        # Create the raw search result
+                        search_result = {
+                            "success": True,
+                            "query": query,
+                            "result": body,
+                        }
+                        # Apply the extraction filter to organize links and titles
+                        extracted_data = extract_links_and_titles(search_result)
+                        # Return both the raw data and the extracted links/titles
+                        return {
+                            "success": True,
+                            "query": query,
+                            "result": extracted_data,
+                        }
 
                     return {
                         "error": f"Google search failed with status {result['status_code']}: {result['body']}"
@@ -319,3 +332,41 @@ class GoogleSearchTool(Tool):
 
         except Exception as e:
             return {"error": f"Error performing Google search: {str(e)}"}
+
+
+def extract_links_and_titles(search_result):
+    """Extract links and titles from Google search results."""
+    extracted_data = {}
+
+    # Extract from organic search results
+    if "organic" in search_result["result"]:
+        organic = []
+        for item in search_result["result"]["organic"]:
+            organic.append({"title": item["title"], "link": item["link"]})
+        extracted_data["organic"] = organic
+
+    # Extract from top stories
+    # if (
+    #     "top_stories" in search_result["result"]
+    #     and "items" in search_result["result"]["top_stories"]
+    # ):
+    #     top_stories = []
+    #     for item in search_result["result"]["top_stories"]["items"]:
+    #         top_stories.append({"title": item["title"], "link": item["link"]})
+    #     extracted_data["top_stories"] = top_stories
+
+    # # Extract from videos section
+    # if "videos" in search_result["result"]:
+    #     videos = []
+    #     for item in search_result["result"]["videos"]:
+    #         videos.append(
+    #             {
+    #                 "title": item.get(
+    #                     "title", f"Video by {item.get('author', 'Unknown')}"
+    #                 ),
+    #                 "link": item["link"],
+    #             }
+    #         )
+    #     extracted_data["videos"] = videos
+
+    return extracted_data

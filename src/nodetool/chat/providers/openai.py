@@ -225,6 +225,10 @@ class OpenAIProvider(ChatProvider):
             **kwargs,
         )
 
+        if "thinking" in kwargs:
+            kwargs.pop("thinking")
+            kwargs["reasoning"] = {"effort": "high"}
+
         current_tool_call = None
 
         async for chunk in completion:

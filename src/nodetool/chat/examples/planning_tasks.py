@@ -21,7 +21,7 @@ from typing import List, Union, Dict, Any
 from nodetool.chat.cot_agent import TaskPlanner, TaskExecutor
 from nodetool.chat.providers import ChatProvider, Chunk
 from nodetool.common.settings import get_system_data_path
-from nodetool.metadata.types import TaskList, ToolCall
+from nodetool.metadata.types import TaskPlan, ToolCall
 
 # Import a provider (this example uses Anthropic)
 from nodetool.chat.providers.anthropic import AnthropicProvider
@@ -39,7 +39,7 @@ from nodetool.chat.tools import (
 
 async def create_plan(
     provider: ChatProvider, model: FunctionModel, objective: str, tools: List
-) -> TaskList:
+) -> TaskPlan:
     """
     Create a task plan for a given problem.
 
@@ -50,33 +50,33 @@ async def create_plan(
         tools: List of available tools
 
     Returns:
-        TaskList: The generated plan
+        TaskPlan: The generated plan
     """
     planner = TaskPlanner(provider, model, tools, objective=objective)
-    task_list = await planner.create_plan()
+    task_plan = await planner.create_plan()
 
     print("\n=== Generated Plan ===")
-    print(task_list.to_markdown())
+    print(task_plan.to_markdown())
 
-    return task_list
+    return task_plan
 
 
-def save_plan(task_list: TaskList, filename: str) -> None:
+def save_plan(task_plan: TaskPlan, filename: str) -> None:
     """
     Save a task list to a JSON file.
 
     Args:
-        task_list: The task list to save
+        task_plan: The task list to save
         filename: The file to save to
     """
     # Convert to dict and save as JSON
     with open(filename, "w") as f:
-        json.dump(task_list.model_dump(), f, indent=2)
+        json.dump(task_plan.model_dump(), f, indent=2)
 
     print(f"Plan saved to {filename}")
 
 
-def load_plan(filename: str) -> TaskList:
+def load_plan(filename: str) -> TaskPlan:
     """
     Load a task list from a JSON file.
 
@@ -84,31 +84,31 @@ def load_plan(filename: str) -> TaskList:
         filename: The file to load from
 
     Returns:
-        TaskList: The loaded task list
+        TaskPlan: The loaded task list
     """
     with open(filename, "r") as f:
         data = json.load(f)
 
-    task_list = TaskList.model_validate(data)
+    task_plan = TaskPlan.model_validate(data)
     print(f"Plan loaded from {filename}")
 
-    return task_list
+    return task_plan
 
 
-def modify_plan(task_list: TaskList) -> TaskList:
+def modify_plan(task_plan: TaskPlan) -> TaskPlan:
     """
     Example of how to modify a plan before execution.
 
     Args:
-        task_list: The original task list
+        task_plan: The original task list
 
     Returns:
-        TaskList: The modified task list
+        TaskPlan: The modified task list
     """
     # Example: Add a new task
-    if len(task_list.tasks) > 0:
+    if len(task_plan.tasks) > 0:
         # Add a verification subtask to the first task
-        first_task = task_list.tasks[0]
+        first_task = task_plan.tasks[0]
 
         # Create a verification subtask
         verify_id = f"verify_{first_task.subtasks[-1].id}"
@@ -121,15 +121,15 @@ def modify_plan(task_list: TaskList) -> TaskList:
         )
 
         print("\n=== Modified Plan ===")
-        print(task_list.to_markdown())
+        print(task_plan.to_markdown())
 
-    return task_list
+    return task_plan
 
 
 async def execute_plan(
     provider: ChatProvider,
     model: FunctionModel,
-    task_list: TaskList,
+    task_plan: TaskPlan,
     workspace_dir: str,
     tools: List,
 ) -> None:
@@ -139,16 +139,16 @@ async def execute_plan(
     Args:
         provider: The chat provider to use
         model: The model to use
-        task_list: The task list to execute
+        task_plan: The task list to execute
         problem: The original problem statement
         workspace_dir: Directory for workspace files
         tools: List of available tools
     """
-    executor = TaskExecutor(provider, model, workspace_dir, tools, task_list)
+    executor = TaskExecutor(provider, model, workspace_dir, tools, task_plan)
 
     print("\n=== Executing Plan ===")
 
-    async for result in executor.execute_tasks(show_thinking=True):
+    async for result in executor.execute_tasks():
         if isinstance(result, Chunk):
             print(result.content, end="")
         elif isinstance(result, ToolCall):
@@ -179,19 +179,19 @@ async def main():
     problem = "Create a simple Python weather app that fetches current weather data for a given city using the OpenWeatherMap API. The app should have a README and a requirements.txt file."
 
     # Step 1: Create a plan
-    task_list = await create_plan(provider, model, problem, tools)
+    task_plan = await create_plan(provider, model, problem, tools)
 
     # Step 2: Save the plan (optional)
-    save_plan(task_list, "weather_app_plan.json")
+    save_plan(task_plan, "weather_app_plan.json")
 
     # Step 3: Load the plan (optional, demonstrating how plans can be saved/loaded)
-    # task_list = load_plan("weather_app_plan.json")
+    # task_plan = load_plan("weather_app_plan.json")
 
     # Step 4: Modify the plan (optional)
-    # task_list = modify_plan(task_list)
+    # task_plan = modify_plan(task_plan)
 
     # Step 5: Execute the plan
-    await execute_plan(provider, model, task_list, str(workspace_dir), tools)
+    await execute_plan(provider, model, task_plan, str(workspace_dir), tools)
 
 
 if __name__ == "__main__":

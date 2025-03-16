@@ -25,85 +25,166 @@ Features:
 import datetime
 import json
 import os
-import re
 import shutil
 import subprocess
 import platform
 import tiktoken
-from typing import AsyncGenerator, List, Optional, Union, Dict, Any
+from typing import AsyncGenerator, List, Optional, Union, Dict, Any, Set, Tuple
 
 from nodetool.chat.providers import ChatProvider, Chunk
 from nodetool.chat.tools import Tool
-from nodetool.chat.tools.assets import (
-    ListAssetsDirectoryTool,
-    ReadAssetTool,
-    SaveAssetTool,
-)
 from nodetool.metadata.types import (
     Message,
     ToolCall,
     FunctionModel,
     Task,
     SubTask,
-    TaskList,
+    TaskPlan,
 )
+from nodetool.workflows.processing_context import ProcessingContext
+from nodetool.chat.tools.workspace import WorkspaceBaseTool
+
+
+class CreateTaskPlanTool(Tool):
+    """
+    A tool that creates a task plan.
+    """
+
+    name = "create_task_plan"
+    description = "Create a task plan for the given objective"
+    input_schema = TaskPlan.model_json_schema()
+
+    _task_plan: TaskPlan | None = None
+
+    async def process(self, context: ProcessingContext, params: dict) -> str:
+        """
+        Create a task plan for the given objective.
+        """
+        self._task_plan = TaskPlan(**params)
+        return "Task plan created successfully"
+
+    def get_task_plan(self) -> TaskPlan:
+        """
+        Get the task plan.
+        """
+        if self._task_plan is None:
+            raise ValueError("Task plan not created")
+        return self._task_plan
+
+
+class FinishSubTaskTool(WorkspaceBaseTool):
+    """
+    A tool that finishes a subtask.
+    """
+
+    name = "finish_subtask"
+    description = """
+    Finish a subtask with its final result. 
+    Use this when you have completed all necessary work for a subtask.
+    Provide the full result of the subtask as the argument to the tool.
+    The result will be stored and retrieved for subsequent tasks.
+    Optionally, you can store a file to the workspace with the result.
+    """
+    input_schema = {
+        "type": "object",
+        "properties": {
+            "result": {
+                "type": "object",
+                "description": "The final result of the subtask",
+            },
+            "file_path": {
+                "type": "string",
+                "description": "Optional path to store result in a workspace file (relative to workspace directory)",
+            },
+        },
+        "required": ["result"],
+    }
+
+    async def process(self, context: ProcessingContext, params: dict) -> dict:
+        """
+        Mark a subtask as finished with its final result.
+
+        This method handles the completion of a subtask by:
+        1. Storing the result in memory
+        2. Optionally writing the result to a file in the workspace
+
+        Args:
+            context (ProcessingContext): The processing context
+            params (dict): Parameters containing the result and optional file_path
+
+        Returns:
+            dict: Response containing either the result or the file_path where result was stored
+        """
+        file_path = params.get("file_path")
+        result = params.get("result")
+
+        if file_path:
+            full_path = self.resolve_workspace_path(file_path)
+
+            # Create parent directories if they don't exist
+            os.makedirs(os.path.dirname(full_path), exist_ok=True)
+
+            # Write the content to the file
+            with open(full_path, "w", encoding="utf-8") as f:
+                if isinstance(result, str):
+                    f.write(result)
+                else:
+                    json.dump(result, f)
+
+            return {
+                "file_path": file_path,
+            }
+        else:
+            return {
+                "result": params.get("result"),
+            }
+
 
 # Add these constants at the top of the file, after the imports
 DEFAULT_PLANNING_SYSTEM_PROMPT = """
-You are a strategic planning assistant that creates clear, organized plans.
-PLANNING INSTRUCTIONS:
-1. Create MINIMAL plans - use only as many tasks as absolutely necessary.
-2. Match plan complexity to objective complexity - simple objectives should have few tasks.
-3. Combine related steps into single tasks whenever possible.
-4. Each top-level task should have 1-3 subtasks for most objectives.
-5. Only create separate subtasks when there's a clear dependency or tool change.
-6. The sub tasks will get executed in the execution phase, in the order they are written.
-7. Each sub task should get a unique id which can be used to reference the task.
-8. Each sub task should reference the tool it will use.
-9. Dependencies are other task IDs that must be completed before the subtask can be executed.
-10. Keep the plan as streamlined as possible while still achieving the objective.
-11. When working with files, always use the workspace directory as the root.
+You are a strategic planning assistant that creates clear, efficient, and organized plans.
 
-Write JSON with the following format:
+PLANNING INSTRUCTIONS:
+1. Generate MINIMAL plans—include only essential tasks.
+2. Match the complexity of the plan to the complexity of the objective: simpler objectives require fewer tasks.
+3. Provide thoughtful analysis and reasoning clearly in the "thoughts" field.
+4. Consolidate closely related actions into a single task whenever possible.
+5. Top-level tasks should generally contain between 1-3 subtasks.
+6. Create separate subtasks only when there is a distinct dependency or a necessary change in tools.
+7. Subtasks must be executed sequentially in the provided order.
+8. Assign a unique, concise ID to each subtask for clear referencing.
+9. Explicitly state the tool required for each subtask execution; tool calls are optional.
+10. Specify dependencies clearly by referencing the IDs of subtasks that must precede execution.
+11. Include a boolean field "thinking" for each subtask, indicating if thought processing is required.
+12. Ensure the overall plan remains as streamlined and concise as possible.
+13. Always reference the workspace directory as the root for file operations.
+
+Use the CreateTaskPlanTool to create the task plan.
+
+The task plan should be in the following format:
 ```json
 {
-    "type": "task_list",
-    "title": "Write a Simple Note",
+    "type": "task_plan",
+    "title": "Descriptive Title of Objective",
+    "thoughts": "Your detailed reasoning and strategic considerations.",
     "tasks": [
         {
             "type": "task",
-            "title": "Create and Write Note",
+            "title": "Clear Title for Task",
             "subtasks": [
                 {
                     "type": "subtask",
-                    "id": "note1",
-                    "content": "Create a new note file 'quick_note.txt' with initial content",
-                    "tool": "create_workspace_file",
-                    "dependencies": []
-            }
-        ]
+                    "id": "unique_subtask_id",
+                    "content": "Precise action description",
+                    "tool": "required_tool_name",
+                    "dependencies": ["id_of_dependency"],
+                    "thinking": true
+                }
+            ]
         }
     ]
 }
 ```
-"""
-
-DEFAULT_PLANNING_USER_PROMPT_TEMPLATE = """
-Create an efficient plan by:
-1. Analyzing the problem requirements
-2. Thinking about the problem in-depth
-3. Breaking it into logical tasks
-4. Breaking each task into subtasks
-5. Identifying tools you'll need during execution
-6. Considering which subtasks might depend on outputs from other tasks
-
-Output the task list in the specified JSON format. Each task should have:
-- A title
-- A list of subtasks with:
-  - content (string)
-  - completed (boolean)
-  - subtask_id (string)
-  - dependencies (list of strings)
 """
 
 DEFAULT_EXECUTION_SYSTEM_PROMPT = """
@@ -112,14 +193,15 @@ You are an agent that executes plans.
 All file operations must be performed within this workspace directory.
 
 EXECUTION INSTRUCTIONS:
-1. Focus on the task at hand and use the tools provided to you to complete the task.
-2. When you need information from a previous tool execution, reference it by its task ID.
-3. DO NOT include the full output of tools in your responses to save context space.
-4. Respect task dependencies - do not execute a task until all its dependencies have been completed.
-5. When working with files:
-   - Always use paths relative to the workspace directory
-   - Do not attempt to access files outside the workspace
-   - Use the workspace tools for file operations
+1. Focus on provided subtask.
+2. Follow the instructions provided in the subtask.
+3. Minimize the number of steps and tool calls to complete the subtask.
+4. When you have completed all necessary work for a subtask, use the finish_subtask tool
+5. Ideally, complete the subtask in one tool call (excluding finish_subtask tool)
+6. Pass the full result of the subtask as the argument to the finish_subtask tool
+7. Optionally, store a file to the workspace with the result.
+8. Always use paths relative to the workspace directory
+9. Use the workspace tools for file operations
 """
 
 
@@ -143,7 +225,27 @@ class WorkspaceManager:
         self.current_workspace = workspace_path
 
     async def execute_command(self, cmd: str) -> str:
-        """Execute workspace commands"""
+        """
+        Execute workspace commands in a controlled environment.
+
+        This method parses and executes file system commands within the workspace
+        boundary, preventing operations outside the allowed workspace directory.
+        All paths are validated to ensure they remain within the workspace.
+
+        Supported commands:
+            - pwd/cwd: Show current working directory
+            - ls [path]: List directory contents
+            - cd [path]: Change directory
+            - mkdir [path]: Create directory
+            - rm [-r/-rf] [path]: Remove file or directory
+            - open [path]: Open file with system default application
+
+        Args:
+            cmd (str): The command to execute
+
+        Returns:
+            str: The result of the command execution or error message
+        """
         parts = cmd.split()
         command = parts[0].lower()
         args = parts[1:] if len(parts) > 1 else []
@@ -239,7 +341,6 @@ class TaskPlanner:
         tools: List[Tool],
         objective: str,
         system_prompt: str | None = None,
-        user_prompt: str | None = None,
     ):
         """
         Initialize the TaskPlanner.
@@ -256,6 +357,7 @@ class TaskPlanner:
         self.model = model
         self.tools = tools
         self.objective = objective
+        self.task_plan = None
         self.system_prompt = (
             system_prompt if system_prompt else DEFAULT_PLANNING_SYSTEM_PROMPT
         )
@@ -266,127 +368,150 @@ class TaskPlanner:
             self.system_prompt += f"- {tool.name}\n"
         self.system_prompt += """
         """
-        self.user_prompt = (
-            user_prompt
-            if user_prompt
-            else DEFAULT_PLANNING_USER_PROMPT_TEMPLATE.format(objective=objective)
-        )
+        self.user_prompt = """
+        Create an efficient task plan for the following objective:
+
+        {objective}
+
+        Analyze requirements, think carefully about the problem, and then output the tasks and subtasks in the required JSON format.
+        """
+
         self.user_prompt = f"Objective to solve: {objective}\n\n{self.user_prompt}"
         self.encoding = tiktoken.get_encoding("cl100k_base")  # Default encoding
 
-    async def create_plan(self) -> TaskList:
+    async def create_plan(self) -> AsyncGenerator[Union[Message, Chunk], None]:
         """
-        Create a task plan for the given problem.
+        Create a task plan for the given problem using the LLM.
 
-        Returns:
-            TaskList: A structured plan with tasks and subtasks
+        This method:
+        1. Sends a system prompt and user prompt to the LLM
+        2. Uses CreateTaskPlanTool to capture a structured task plan
+        3. Yields chunks and tool calls during plan generation
+        4. Populates self.task_plan with the final plan structure
+
+        The method relies on the LLM to properly invoke the CreateTaskPlanTool
+        with valid TaskPlan data. If the LLM fails to do so, task_plan may remain None.
+
+        Yields:
+            Union[Message, Chunk]: Generation chunks during plan creation
+
+        Raises:
+            ValueError: If the plan couldn't be created after generation completes
         """
         history = [
             Message(role="system", content=self.system_prompt),
             Message(role="user", content=self.user_prompt),
         ]
 
-        # Get JSON schema from TaskList model
-        response_format = {
-            "type": "json_schema",
-            "json_schema": {
-                "name": "task_list",
-                "schema": TaskList.model_json_schema(),
-            },
-        }
+        # Get JSON schema from TaskPlan model
+        # response_format = {
+        #     "type": "json_schema",
+        #     "json_schema": {
+        #         "name": "task_plan",
+        #         "schema": TaskPlan.model_json_schema(),
+        #     },
+        # }
 
         # Generate plan
+        task_plan_tool = CreateTaskPlanTool("/tmp")
         chunks = []
         generator = self.provider.generate_messages(
             messages=history,
             model=self.model,
-            tools=[],
-            response_format=response_format,
+            tools=[task_plan_tool],
+            thinking=True,
         )
 
-        combined_content = ""
         async for chunk in generator:  # type: ignore
             chunks.append(chunk)
             if isinstance(chunk, Chunk):
-                combined_content += chunk.content
+                yield chunk
+            elif isinstance(chunk, ToolCall):
+                print(chunk)
+                self.task_plan = TaskPlan(**chunk.args)
+                break
 
-        # Parse the JSON response and create TaskList
-        try:
-            json_pattern = r"```json(.*?)```"
-            json_match = re.search(
-                json_pattern, combined_content, re.DOTALL | re.MULTILINE
-            )
-            if json_match:
-                combined_content = json_match.group(1).strip()
-            tasks_json = json.loads(combined_content)
-            return TaskList.model_validate(tasks_json)
-        except json.JSONDecodeError as e:
-            print(f"Error parsing JSON response: {e}")
-            # Return an empty TaskList if parsing fails
-            return TaskList(title=f"Failed plan for: {self.objective}")
+        # Parse the JSON response and create TaskPlan
+        # try:
+        #     json_pattern = r"```json(.*?)```"
+        #     json_match = re.search(
+        #         json_pattern, combined_content, re.DOTALL | re.MULTILINE
+        #     )
+        #     if json_match:
+        #         combined_content = json_match.group(1).strip()
+        #     tasks_json = json.loads(combined_content)
+        #     self.task_plan = TaskPlan.model_validate(tasks_json)
+        # except json.JSONDecodeError as e:
+        #     raise ValueError(f"Error parsing JSON response from agent planner: {e}")
 
 
-class TaskExecutor:
+class SubTaskContext:
     """
-    Executes tasks from a TaskList using a language model and tools.
+    Encapsulates the execution context for a single subtask.
 
-    This class handles the execution phase of the Chain of Thought process,
-    executing tasks in the correct order based on their dependencies.
+    This class maintains an isolated conversation history for each subtask,
+    ensuring that subtasks don't share message history and can be executed
+    independently while still being able to access results from dependencies.
     """
 
     def __init__(
         self,
-        provider: ChatProvider,
-        model: FunctionModel,
-        workspace_dir: str,
+        subtask_id: str,
+        system_prompt: str,
         tools: List[Tool],
-        task_list: TaskList,
-        system_prompt: str | None = None,
-        max_steps: int = 30,
+        model: FunctionModel,
+        provider: ChatProvider,
+        workspace_dir: str,
+        result_store: Dict[str, Any],
+        print_usage: bool = True,
     ):
         """
-        Initialize the TaskExecutor.
+        Initialize a subtask execution context.
 
         Args:
-            provider (ChatProvider): An LLM provider instance
-            model (FunctionModel): The model to use with the provider
-            workspace_dir (str): Directory for workspace files
-            tools (List[Tool]): List of tools available for task execution
-            task_list (TaskList): The task list to execute
-            system_prompt (str, optional): Custom system prompt
-            max_steps (int, optional): Maximum execution steps to prevent infinite loops. Defaults to 30
+            subtask_id (str): The ID of the subtask
+            system_prompt (str): The system prompt for this subtask
+            tools (List[Tool]): Tools available to this subtask
+            model (FunctionModel): The model to use for this subtask
+            provider (ChatProvider): The provider to use for this subtask
+            workspace_dir (str): The workspace directory
+            result_store (Dict[str, Any]): Global dictionary to store results
+            print_usage (bool): Whether to print token usage
         """
-        self.provider = provider
-        self.model = model
-        self.workspace_dir = workspace_dir
+        self.subtask_id = subtask_id
+        self.system_prompt = system_prompt
         self.tools = tools
-        self.task_list = task_list
-        prefix = f"""
-        Today is {datetime.datetime.now().strftime("%Y-%m-%d")}.
-        Your workspace directory is: {self.workspace_dir}
-        """
-        self.system_prompt = prefix + (
-            system_prompt if system_prompt else DEFAULT_EXECUTION_SYSTEM_PROMPT
-        )
-        self.max_steps = max_steps
-        self.history: List[Message] = []
-        self.tool_memory: Dict[str, Any] = {}
+        self.model = model
+        self.provider = provider
+        self.workspace_dir = workspace_dir
+        self.result_store = result_store  # Reference to global result store
+
+        # Initialize isolated message history for this subtask
+        self.history = [Message(role="system", content=system_prompt)]
+
+        # Track iterations for this subtask
+        self.iterations = 0
+        self.max_iterations = 10
+
+        # Track progress for this subtask
+        self.progress = []
+
+        # Flag to track if subtask is finished
+        self.completed = False
+
+        self.print_usage = print_usage
         self.encoding = tiktoken.get_encoding("cl100k_base")
-        self.history = [
-            Message(role="system", content=self.system_prompt),
-        ]
 
     def _count_tokens(self, messages: List[Message]) -> int:
         """
         Count the number of tokens in the message history.
 
         Args:
-            messages (List[Message]): The messages to count tokens for
+            messages: The messages to count tokens for
 
         Returns:
             int: The approximate token count
         """
-        # Simple token counting approach
         token_count = 0
 
         for msg in messages:
@@ -417,261 +542,139 @@ class TaskExecutor:
 
         return token_count
 
-    async def execute_tasks(
-        self,
-        show_thinking: bool = True,
-        print_usage: bool = False,
-    ) -> AsyncGenerator[Union[Message, Chunk, ToolCall], None]:
+    async def execute(
+        self, task_prompt: str, dependency_results: Dict[str, Any] = {}
+    ) -> AsyncGenerator[Union[Chunk, ToolCall], None]:
         """
-        Execute the tasks in the provided task list.
+        Execute this subtask with its isolated context.
+
+        This method:
+        1. Creates an enhanced prompt with dependency results
+        2. Manages an isolated conversation with the LLM for this subtask
+        3. Handles tool calls, including the finish_subtask tool
+        4. Stores results in the global result_store
+        5. Enforces maximum iterations to prevent infinite loops
+        6. Auto-completes the subtask if max iterations are reached
+
+        The method maintains contextual isolation to prevent context overflow
+        across different subtasks, while allowing access to dependency results.
 
         Args:
-            tasks_list (TaskList): The task list to execute
-            problem (str): The original problem statement
-            show_thinking (bool, optional): Whether to include thinking steps in the output
-            print_usage (bool, optional): Whether to print provider usage statistics
+            task_prompt (str): The base prompt for this subtask
+            dependency_results (Dict[str, Any], optional): Results from dependencies
 
         Yields:
-            Union[Message, Chunk, ToolCall]: Objects representing parts of the execution process
+            Union[Chunk, ToolCall]: Chunks of text or tool calls during execution
+
+        Warning:
+            If max_iterations is reached without the subtask being completed via
+            the finish_subtask tool, the method will auto-complete the subtask
+            with a summary of progress.
         """
-        self.tool_memory = {}
+        # Create the task prompt with dependency context
+        enhanced_prompt = task_prompt
 
-        # Reasoning loop for execution with one task at a time
-        while not self._all_tasks_complete() and len(self.task_list.tasks) > 0:
-            # Find the next executable task
-            task, sub_task = self._get_next_executable_task()
-            if not task or not sub_task:
-                break
+        # Include dependency results if available
+        if dependency_results:
+            enhanced_prompt += "\n\nRelevant context from dependencies:"
+            for dep_id, result in dependency_results.items():
+                enhanced_prompt += f"\n\nOutput from dependency {dep_id}:\n{result}"
 
-            yield Chunk(
-                content=f"\nExecuting task: {task.title} - {sub_task.content}\n",
-                done=False,
+        # Add the task prompt to this subtask's history
+        self.history.append(Message(role="user", content=enhanced_prompt))
+
+        # Signal that we're executing this subtask
+        print(f"Executing task: {self.subtask_id} - {enhanced_prompt.splitlines()[0]}")
+
+        # Continue executing until the task is completed or max iterations reached
+        while not self.completed and self.iterations < self.max_iterations:
+            self.iterations += 1
+            token_count = self._count_tokens(self.history)
+            print(
+                f"  Iteration {self.iterations}/{self.max_iterations} for subtask {self.subtask_id}"
             )
-
-            # Create a specific prompt for this task with references to previous task outputs if needed
-            task_prompt = f"""
-            Execute this sub task to accomplish the high level task:
-            Task Title: {task.title}
-            Task Description: {task.description}
-            Subtask ID: {sub_task.id}
-            Subtask Content: {sub_task.content}
-            """
-
-            # Check if subtask references other tasks
-            for ref_id in sub_task.dependencies:
-                if ref_id in self.tool_memory:
-                    task_prompt += f"\n\This task is depending on the output from {ref_id}:\n{json.dumps(self.tool_memory[ref_id])}"
-
-            # Add the task-specific prompt to history
-            self.history.append(
-                Message(role="user", content=task_prompt, task_id=sub_task.id)
+            print(
+                f"\n[Debug: {token_count} tokens in context for subtask {self.subtask_id}]\n"
             )
+            print(self.provider.usage)
 
-            # Get response for this specific task
-            chunks = []
+            # Get response for this subtask using its isolated history
             generator = self.provider.generate_messages(
                 messages=self.history,
                 model=self.model,
                 tools=self.tools,
             )
 
-            if print_usage:
-                yield Chunk(
-                    content=f"\nProvider usage: {self.provider.usage}\n", done=False
-                )
-
             async for chunk in generator:  # type: ignore
                 yield chunk
-                chunks.append(chunk)
 
-            # Process the chunks
-            await self._process_chunks(chunks, sub_task.id)
+                if isinstance(chunk, Chunk):
+                    # Update history with assistant message
+                    if (
+                        len(self.history) > 0
+                        and self.history[-1].role == "assistant"
+                        and isinstance(self.history[-1].content, str)
+                    ):
+                        # Update existing assistant message
+                        self.history[-1].content += chunk.content
+                    else:
+                        # Add new assistant message
+                        self.history.append(
+                            Message(role="assistant", content=chunk.content)
+                        )
 
-            # Mark this specific task as complete
-            sub_task.completed = True
-
-            # Prune history to remove messages no longer needed
-            self._prune_history()
-
-            # Print token count after each task for debugging
-            if show_thinking:
-                token_count = self._count_tokens(self.history)
-                yield Chunk(
-                    content=f"\n[Debug: {token_count} tokens in history after task {sub_task.id}]\n",
-                    done=False,
-                )
-
-        # Print workspace files when agent completes all tasks
-        if os.path.exists(self.workspace_dir):
-            yield Chunk(
-                content=f"\n\nWorkspace files in {self.workspace_dir}:\n",
-                done=False,
-            )
-            for root, dirs, files in os.walk(self.workspace_dir):
-                for file in files:
-                    file_path = os.path.join(root, file)
-                    relative_path = os.path.relpath(file_path, self.workspace_dir)
-                    yield Chunk(content=f"- {relative_path}\n", done=False)
-
-    def _get_next_executable_task(self) -> tuple[Optional[Task], Optional[SubTask]]:
-        """
-        Get the next executable task from the task list, respecting dependencies.
-
-        Returns:
-            tuple: The next executable task and subtask, or (None, None) if no tasks are executable
-        """
-        for task in self.task_list.tasks:
-            for subtask in task.subtasks:
-                if not subtask.completed:
-                    # Check if all dependencies are completed
-                    all_dependencies_met = True
-                    for dep_id in subtask.dependencies:
-                        # Find the dependent task and check if it's completed
-                        task, dependent_task = self.task_list.find_task_by_id(dep_id)
-                        if not dependent_task:
-                            raise ValueError(f"Dependent task {dep_id} not found")
-                        if not dependent_task.completed:
-                            all_dependencies_met = False
-                            break
-
-                    if all_dependencies_met:
-                        return task, subtask
-
-        return None, None
-
-    async def _process_chunks(
-        self, chunks: List[Union[Chunk, ToolCall]], task_id: str
-    ) -> None:
-        """
-        Process a list of chunks and tool calls, updating the conversation history.
-
-        Args:
-            chunks: List of chunks and tool calls to process
-            task_id: The ID of the task the chunks belong to
-        """
-        for chunk in chunks:
-            # Handle chunks and tool calls to update history
-            if isinstance(chunk, Chunk):
-                if (
-                    len(self.history) > 0
-                    and self.history[-1].role == "assistant"
-                    and isinstance(self.history[-1].content, str)
-                ):
-                    # Update existing assistant message
-                    self.history[-1].content += chunk.content
-                else:
-                    # Add new assistant message
+                elif isinstance(chunk, ToolCall):
+                    # Add tool call to history
                     self.history.append(
                         Message(
-                            role="assistant", content=chunk.content, task_id=task_id
+                            role="assistant",
+                            tool_calls=[chunk],
                         )
                     )
 
-            elif isinstance(chunk, ToolCall):
-                # Add tool call to history
-                self.history.append(
-                    Message(
-                        role="assistant",
-                        tool_calls=[chunk],
-                        task_id=task_id,
+                    # Execute the tool call
+                    tool_result = await self._execute_tool(chunk)
+
+                    print(f"Tool call: {chunk.name}")
+                    print(f"Tool result: {tool_result.result}")
+
+                    # Handle finish_subtask tool specially
+                    if chunk.name == "finish_subtask":
+                        # Get the result from the tool call
+                        result = chunk.args.get("result", {})
+
+                        # Store in the global result store
+                        self.result_store[self.subtask_id] = result
+
+                        # Mark subtask as finished
+                        self.completed = True
+
+                        # Add completion notice to progress
+                        print(f"Subtask {self.subtask_id} completed.")
+
+                    # Add the tool result to history
+                    self.history.append(
+                        Message(
+                            role="tool",
+                            tool_call_id=tool_result.id,
+                            name=chunk.name,
+                            content=json.dumps(tool_result.result),
+                        )
                     )
+
+            # If we've reached the last iteration and haven't completed yet, generate summary
+            if self.iterations >= self.max_iterations and not self.completed:
+                default_result = await self.request_summary()
+
+                # Store in the global result store
+                self.result_store[self.subtask_id] = default_result
+                self.completed = True
+
+                yield ToolCall(
+                    id=f"{self.subtask_id}_max_iterations_reached",
+                    name="finish_subtask",
+                    args=default_result,
                 )
-
-                # Execute tool
-                tool_result = await self._execute_tool(chunk)
-
-                # Get current task and subtask ID for reference
-                task, subtask = self._get_current_task()
-                result_id = subtask.id if task and subtask else f"tool_{chunk.id}"
-
-                # Store the result in memory for reference
-                self.tool_memory[result_id] = tool_result.result
-
-                # Add the full tool result to history instead of just a summary
-                self.history.append(
-                    Message(
-                        role="tool",
-                        tool_call_id=tool_result.id,
-                        name=chunk.name,
-                        content=json.dumps(tool_result.result),
-                        task_id=task_id,
-                    )
-                )
-
-    def _prune_history(self) -> None:
-        """
-        Remove messages from history that are no longer needed for dependency resolution.
-
-        This method identifies messages with task_ids that are no longer referenced
-        as dependencies in any remaining incomplete tasks and removes them from history.
-        """
-        # Skip if history is too short
-        if len(self.history) <= 2:  # Keep at least system prompt and user query
-            return
-
-        # Collect all task IDs that are still needed as dependencies
-        needed_task_ids = set()
-
-        # Add all task IDs from incomplete tasks and their dependencies
-        for task in self.task_list.tasks:
-            for subtask in task.subtasks:
-                if not subtask.completed:
-                    # The task itself is needed
-                    needed_task_ids.add(subtask.id)
-                    # All its dependencies are needed
-                    needed_task_ids.update(subtask.dependencies)
-
-        # Always keep system message and the most recent user message
-        pruned_history = []
-        for msg in self.history:
-            # Always keep system messages
-            if msg.role == "system":
-                pruned_history.append(msg)
-                continue
-
-            # Always keep the most recent user message
-            if msg.role == "user" and msg == self.history[-1]:
-                pruned_history.append(msg)
-                continue
-
-            # Keep messages without task_id
-            if not hasattr(msg, "task_id") or msg.task_id is None:
-                pruned_history.append(msg)
-                continue
-
-            # Keep messages with task_id that's still needed
-            if msg.task_id in needed_task_ids:
-                pruned_history.append(msg)
-                continue
-
-        # Update the history
-        self.history = pruned_history
-
-    def _get_current_task(self) -> tuple[Optional[Task], Optional[SubTask]]:
-        """
-        Get the current task being executed.
-
-        Returns:
-            tuple: The current task and subtask
-        """
-        for task in self.task_list.tasks:
-            for subtask in task.subtasks:
-                if not subtask.completed:
-                    return task, subtask
-        return None, None
-
-    def _all_tasks_complete(self) -> bool:
-        """
-        Check if all tasks are marked as complete.
-
-        Returns:
-            bool: True if all tasks are complete, False otherwise
-        """
-        for task in self.task_list.tasks:
-            for subtask in task.subtasks:
-                if not subtask.completed:
-                    return False
-        return True
 
     async def _execute_tool(self, tool_call: ToolCall) -> ToolCall:
         """
@@ -704,6 +707,274 @@ class TaskExecutor:
             result={"error": f"Tool '{tool_call.name}' not found"},
         )
 
+    async def request_summary(self) -> dict:
+        """
+        Request a final summary from the LLM when max iterations are reached.
+        This uses a modified system prompt to specifically ask for a summary
+        without tool calls, while including the full subtask history.
+        """
+        # Create a summary-specific system prompt
+        summary_system_prompt = """
+        You are tasked with providing a concise summary of work completed so far.
+        """
+
+        # Create a focused user prompt
+        summary_user_prompt = f"""
+        The subtask '{self.subtask_id}' has reached the maximum allowed iterations ({self.max_iterations}).
+        Please provide a brief summary of:
+        1. What has been accomplished
+        2. What remains to be done
+        3. Any blockers or issues encountered
+        
+        Respond with a clear, concise summary only.
+        """
+
+        # Create a minimal history with just the system prompt and summary request
+        summary_history = [
+            Message(role="system", content=summary_system_prompt),
+            *self.history[1:],
+            Message(role="user", content=summary_user_prompt),
+        ]
+
+        # Get response without tools
+        generator = self.provider.generate_messages(
+            messages=summary_history,
+            model=self.model,
+            tools=[],  # No tools allowed for summary
+        )
+
+        summary_content = ""
+        async for chunk in generator:  # type: ignore
+            if isinstance(chunk, Chunk):
+                summary_content += chunk.content
+
+        # Create a structured result with the summary
+        summary_result = {
+            "status": "max_iterations_reached",
+            "message": f"Reached maximum iterations ({self.max_iterations}) for subtask {self.subtask_id}",
+            "summary": summary_content,
+        }
+
+        return summary_result
+
+
+class TaskExecutor:
+    """
+    Executes tasks from a TaskPlan using isolated execution contexts.
+
+    This class handles the execution phase of the Chain of Thought process,
+    executing tasks in the correct order based on their dependencies. Each subtask
+    has its own isolated execution context to prevent context window overflow.
+    """
+
+    def __init__(
+        self,
+        provider: ChatProvider,
+        model: FunctionModel,
+        workspace_dir: str,
+        tools: List[Tool],
+        task_plan: TaskPlan,
+        system_prompt: str | None = None,
+        max_steps: int = 50,
+        max_subtask_iterations: int = 10,
+    ):
+        """
+        Initialize the IsolatedTaskExecutor.
+
+        Args:
+            provider (ChatProvider): An LLM provider instance
+            model (FunctionModel): The model to use with the provider
+            workspace_dir (str): Directory for workspace files
+            tools (List[Tool]): List of tools available for task execution
+            task_plan (TaskPlan): The task list to execute
+            system_prompt (str, optional): Custom system prompt
+            max_steps (int, optional): Maximum execution steps to prevent infinite loops
+            max_subtask_iterations (int, optional): Maximum iterations allowed per subtask
+        """
+        self.provider = provider
+        self.model = model
+        self.workspace_dir = workspace_dir
+        self.tools = tools
+        self.task_plan = task_plan
+
+        # Prepare system prompt
+        prefix = f"""
+        Today is {datetime.datetime.now().strftime("%Y-%m-%d")}.
+        Your workspace directory is: {self.workspace_dir}
+        """
+        self.system_prompt = prefix + (
+            system_prompt if system_prompt else DEFAULT_EXECUTION_SYSTEM_PROMPT
+        )
+
+        self.max_steps = max_steps
+        self.max_subtask_iterations = max_subtask_iterations
+        self.result_store = {}
+
+    async def execute_tasks(
+        self,
+        print_usage: bool = True,
+    ) -> AsyncGenerator[Union[Message, Chunk, ToolCall], None]:
+        """
+        Execute the tasks in the provided task plan sequentially.
+
+        Args:
+            print_usage (bool, optional): Whether to print provider usage statistics
+
+        Yields:
+            Union[Message, Chunk, ToolCall]: Objects representing parts of the execution process
+        """
+        steps_taken = 0
+
+        # Continue until all tasks are complete or we reach max steps
+        while not self._all_tasks_complete() and steps_taken < self.max_steps:
+            steps_taken += 1
+
+            # Find all executable tasks
+            executable_tasks = self._get_all_executable_tasks()
+
+            if not executable_tasks:
+                # If no tasks are executable but we're not done, there might be a dependency issue
+                if not self._all_tasks_complete():
+                    yield Chunk(
+                        content="\nNo executable tasks but not all complete. Possible dependency cycle.\n",
+                        done=False,
+                    )
+                break
+
+            # Execute the first available executable task (sequential execution)
+            task, subtask = executable_tasks[0]
+
+            # Create subtask context
+            context = SubTaskContext(
+                subtask_id=subtask.id,
+                system_prompt=self.system_prompt,
+                tools=self.tools,
+                model=self.model,
+                provider=self.provider,
+                workspace_dir=self.workspace_dir,
+                result_store=self.result_store,
+                print_usage=print_usage,
+            )
+
+            # Prepare dependency results
+            dependency_results = {}
+            for dep_id in subtask.dependencies:
+                if dep_id in self.result_store:
+                    dependency_results[dep_id] = self.result_store[dep_id]
+
+            # Create the task prompt
+            task_prompt = self._create_task_prompt(task, subtask)
+
+            # Start the subtask execution
+            print(f"Executing subtask {subtask.id}: {subtask.content}")
+
+            # Execute the subtask and forward messages directly
+            async for message in context.execute(task_prompt, dependency_results):
+                yield message
+
+            subtask.completed = True
+
+        # Print workspace files when agent completes all tasks
+        if os.path.exists(self.workspace_dir):
+            yield Chunk(
+                content=f"\n\nWorkspace files in {self.workspace_dir}:\n",
+                done=False,
+            )
+            for root, dirs, files in os.walk(self.workspace_dir):
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    relative_path = os.path.relpath(file_path, self.workspace_dir)
+                    yield Chunk(content=f"- {relative_path}\n", done=False)
+
+    def _get_all_executable_tasks(self) -> List[Tuple[Task, SubTask]]:
+        """
+        Get all executable tasks from the task list, respecting dependencies.
+
+        A subtask is considered executable when:
+        1. It has not been completed yet
+        2. All its dependencies (if any) have been completed
+
+        This method efficiently checks each subtask by:
+        1. Verifying its completion status
+        2. Looking up all dependencies in the task plan
+        3. Creating a list of tasks ready for execution
+
+        Note that this implementation enforces sequential execution order
+        based on defined dependencies, not parallel execution.
+
+        Returns:
+            List[Tuple[Task, SubTask]]: All executable tasks and subtasks
+
+        Raises:
+            ValueError: If a dependent task is referenced but not found in the plan
+        """
+        executable_tasks = []
+
+        for task in self.task_plan.tasks:
+            for subtask in task.subtasks:
+                if not subtask.completed and subtask.id:
+                    # Check if all dependencies are completed
+                    all_dependencies_met = True
+                    for dep_id in subtask.dependencies:
+                        # Find the dependent task and check if it's completed
+                        _, dependent_task = self.task_plan.find_task_by_id(dep_id)
+                        if not dependent_task:
+                            raise ValueError(f"Dependent task {dep_id} not found")
+                        if not dependent_task.completed:
+                            all_dependencies_met = False
+                            break
+
+                    if all_dependencies_met:
+                        executable_tasks.append((task, subtask))
+
+        return executable_tasks
+
+    def _create_task_prompt(self, task: Task, subtask: SubTask) -> str:
+        """
+        Create a specific prompt for this task.
+
+        Args:
+            task: The high-level task
+            subtask: The specific subtask to execute
+            iteration: The current iteration count
+
+        Returns:
+            str: The task-specific prompt
+        """
+        prompt = f"""
+        Execute this sub task to accomplish the high level task:
+        Task Title: {task.title}
+        Task Description: {task.description if task.description else task.title}
+        Subtask ID: {subtask.id}
+        Subtask Content: {subtask.content}
+        
+        When you have completed all necessary work for this subtask, call the finish_subtask tool with the final result.
+        """
+
+        return prompt
+
+    def _all_tasks_complete(self) -> bool:
+        """
+        Check if all tasks are marked as complete.
+
+        Returns:
+            bool: True if all tasks are complete, False otherwise
+        """
+        for task in self.task_plan.tasks:
+            for subtask in task.subtasks:
+                if not subtask.completed:
+                    return False
+        return True
+
+    def get_results(self) -> Dict[str, Any]:
+        """
+        Get all subtask results from the global result store.
+
+        Returns:
+            Dict[str, Any]: Dictionary of results indexed by subtask ID
+        """
+        return self.result_store
+
 
 class CoTAgent:
     """
@@ -713,8 +984,9 @@ class CoTAgent:
     to solve complex problems. It manages the conversational context, tool calling, and
     the overall reasoning flow, breaking problems down into logical steps.
 
-    This class now uses TaskPlanner and TaskExecutor internally to separate the
+    This class now uses TaskPlanner and IsolatedTaskExecutor internally to separate the
     planning and execution phases, making them available as standalone components.
+    Each subtask has its own isolated execution context to prevent context window overflow.
     """
 
     def __init__(
@@ -725,23 +997,33 @@ class CoTAgent:
         workspace_dir: str,
         tools: List[Tool],
         max_steps: int = 30,
+        max_subtask_iterations: int = 5,
     ):
         """
         Initializes the CoT agent.
 
         Args:
             provider (ChatProvider): An LLM provider instance
-            model (FunctionModel): The model to use wCith the provider
+            model (FunctionModel): The model to use with the provider
             objective (str): The objective to solve
             workspace_dir (str): Directory for workspace files
-            max_steps (int, optional): Maximum reasoning steps to prevent infinite loops. Defaults to 10
+            tools (List[Tool]): List of tools available for task execution
+            max_steps (int, optional): Maximum reasoning steps to prevent infinite loops. Defaults to 30
+            max_subtask_iterations (int, optional): Maximum iterations allowed per subtask. Defaults to 5
         """
         self.provider = provider
         self.model = model
         self.objective = objective
         self.max_steps = max_steps
+        self.max_subtask_iterations = max_subtask_iterations
         self.workspace_dir = workspace_dir
-        self.tools = tools
+
+        # Add FinishSubTaskTool to tools
+        finish_subtask_tool = FinishSubTaskTool(workspace_dir)
+        self.tools = (
+            tools + [finish_subtask_tool] if finish_subtask_tool not in tools else tools
+        )
+
         self.chat_history: List[Message] = (
             []
         )  # Store all chat interactions for reference
@@ -749,36 +1031,64 @@ class CoTAgent:
         self.planner = TaskPlanner(provider, model, self.tools, self.objective)
 
     async def solve_problem(
-        self, show_thinking: bool = True, print_usage: bool = False
+        self, print_usage: bool = False
     ) -> AsyncGenerator[Union[Message, Chunk, ToolCall], None]:
         """
         Solves the given problem using a two-phase approach: planning, then execution.
 
+        This is the main method that coordinates the entire problem-solving process:
+        1. Planning Phase: Uses TaskPlanner to break down the objective into tasks
+        2. Execution Phase: Uses TaskExecutor to execute each task in the correct order
+
+        The method yields intermediate results during both phases, allowing
+        for streaming progress to the caller. When execution completes, all
+        task results are stored and can be retrieved via get_results().
+
         Args:
-            problem (str): The problem or question to solve
-            show_thinking (bool, optional): Whether to include thinking steps in the output
-            print_usage (bool, optional): Whether to print provider usage statistics. Defaults to False
+            print_usage (bool, optional): Whether to print provider usage statistics
 
         Yields:
             Union[Message, Chunk, ToolCall]: Objects representing parts of the reasoning process
+
+        Raises:
+            ValueError: If planning fails to generate a valid task plan
         """
         # Add to chat history for reference
         self.chat_history.append(Message(role="user", content=self.objective))
 
         # Run planning phase
         yield Chunk(content="Planning phase started...\n", done=False)
-        tasks_list = await self.planner.create_plan()
+        async for chunk in self.planner.create_plan():
+            yield chunk
+        task_plan = self.planner.task_plan
+        if not task_plan:
+            raise ValueError("No task plan generated")
 
         # Display the plan
         yield Chunk(content="\nGenerated plan:\n", done=False)
-        for task in tasks_list.tasks:
-            yield Chunk(content=task.to_markdown() + "\n", done=False)
+        yield Chunk(content=task_plan.to_markdown() + "\n", done=False)
 
         # Run execution phase
         yield Chunk(content="\nExecution phase started...\n", done=False)
         self.executor = TaskExecutor(
-            self.provider, self.model, self.workspace_dir, self.tools, tasks_list
+            self.provider,
+            self.model,
+            self.workspace_dir,
+            self.tools,
+            task_plan,
+            max_subtask_iterations=self.max_subtask_iterations,
         )
 
-        async for result in self.executor.execute_tasks(show_thinking, print_usage):
+        async for result in self.executor.execute_tasks(print_usage):
             yield result
+
+    def get_results(self) -> Dict[str, Any]:
+        """
+        Get all subtask results from the global result store.
+
+        Returns:
+            Dict[str, Any]: Dictionary of results indexed by subtask ID
+        """
+        if hasattr(self, "executor"):
+            return self.executor.get_results()
+        return {}

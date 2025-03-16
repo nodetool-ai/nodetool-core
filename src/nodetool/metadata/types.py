@@ -971,6 +971,9 @@ class SubTask(BaseType):
 
     id: str = Field(default="", description="The ID of the subtask")
     content: str = Field(default="", description="The content of the subtask")
+    thinking: bool = Field(
+        default=False, description="Whether the subtask requires thinking"
+    )
     tool: str = Field(
         default="", description="The tool that can be used to complete the subtask"
     )
@@ -989,7 +992,11 @@ class SubTask(BaseType):
             if self.dependencies
             else ""
         )
-        return f"- {checkbox} #{self.id} {self.content}{deps_str}"
+        thinking_str = " (thinking)" if self.thinking else ""
+        tool_str = f" (tool: {self.tool})" if self.tool else ""
+        return (
+            f"- {checkbox} #{self.id} {self.content}{deps_str}{thinking_str}{tool_str}"
+        )
 
 
 class Task(BaseModel):
@@ -1048,14 +1055,18 @@ class Task(BaseModel):
         return None
 
 
-class TaskList(BaseType):
-    """Manager for organizing and manipulating a collection of tasks."""
+class TaskPlan(BaseType):
+    """
+    A plan for an agent to achieve a specific objective.
+    The plan is a list of tasks that are executed in order.
+    The tasks are a list of subtasks that are executed in order.
+    Each task has a title, description, and list of subtasks.
+    """
 
-    type: Literal["task_list"] = "task_list"
+    type: Literal["task_plan"] = "task_plan"
     title: str = Field(default="", description="The title of the task list")
-    tasks: list[Task] = Field(
-        default=[], description="The tasks of the task list, a list of task IDs"
-    )
+    thoughts: str = Field(default="", description="Agent planning thoughts")
+    tasks: list[Task] = Field(default=[], description="The tasks of the task list")
 
     def to_markdown(self) -> str:
         """Convert all tasks to a markdown string."""

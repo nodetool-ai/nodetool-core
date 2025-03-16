@@ -5,9 +5,6 @@ This module implements the ChatProvider interface for Anthropic Claude models,
 handling message conversion, streaming, and tool integration.
 """
 
-import json
-import os
-import re
 from typing import Any, AsyncGenerator, Sequence
 
 import anthropic
@@ -177,7 +174,7 @@ class AnthropicProvider(ChatProvider):
     ) -> AsyncGenerator[Chunk | ToolCall, Any]:
         """Generate streaming completions from Anthropic."""
         if "max_tokens" not in kwargs:
-            kwargs["max_tokens"] = 4096
+            kwargs["max_tokens"] = 16384
 
         # Handle response_format parameter
         response_format = kwargs.pop("response_format", None)
@@ -194,6 +191,9 @@ class AnthropicProvider(ChatProvider):
             system_message = f"{system_message}\nYou must respond with JSON only, without any explanations or conversation."
             # Add anthropic-specific response_format parameter
             kwargs["response_format"] = {"type": "json_object"}
+
+        if "thinking" in kwargs:
+            kwargs["thinking"] = {"type": "enabled", "budget_tokens": 8192}
 
         # Convert messages and tools to Anthropic format
         anthropic_messages = [
@@ -224,6 +224,15 @@ class AnthropicProvider(ChatProvider):
                 if event.type == "content_block_delta":
                     if event.delta.type == "text_delta":
                         yield Chunk(content=event.delta.text, done=False)
+                    elif event.delta.type == "thinking_delta":
+                        yield Chunk(content=event.delta.thinking, done=False)
+                elif event.type == "content_block_start":
+                    if (
+                        hasattr(event, "content_block")
+                        and event.content_block.type == "thinking"
+                    ):
+                        # Handle start of a thinking block if needed
+                        pass
                 elif event.type == "content_block_stop":
                     if event.content_block.type == "tool_use":
                         yield ToolCall(
@@ -231,6 +240,9 @@ class AnthropicProvider(ChatProvider):
                             name=event.content_block.name,
                             args=event.content_block.input,  # type: ignore
                         )
+                    elif event.content_block.type == "thinking":
+                        # Handle complete thinking blocks if needed
+                        pass
                 elif event.type == "message_stop":
                     # Update usage statistics when the message is complete
                     if hasattr(event, "message") and hasattr(event.message, "usage"):

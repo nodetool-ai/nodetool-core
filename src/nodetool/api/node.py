@@ -16,6 +16,7 @@ from nodetool.metadata.types import (
     Email,
     FilePath,
     SVGElement,
+    TaskPlan,
     WorkflowRef,
     AudioRef,
     DataframeRef,
@@ -146,6 +147,7 @@ UnionType = (
     | HFVoiceActivityDetection
     | SVGElement
     | SystemStats
+    | TaskPlan
     | dict
 )
 

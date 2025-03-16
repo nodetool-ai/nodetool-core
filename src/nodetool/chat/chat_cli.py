@@ -17,13 +17,11 @@ Features:
 import asyncio
 import json
 import os
-import tempfile
 import traceback
 import readline
 import subprocess
 import sys
-from pathlib import Path
-from typing import List, Dict, Any, Sequence, Optional
+from typing import List, Optional
 
 from nodetool.chat.cot_agent import CoTAgent
 from nodetool.chat.providers import get_provider, Chunk
@@ -149,10 +147,10 @@ class ChatCLI:
         # Set up default models and provider
         self.default_models = {
             Provider.OpenAI: "gpt-4o",
-            Provider.Anthropic: "claude-3-5-sonnet-20241022",
+            Provider.Anthropic: "claude-3-7-sonnet-20250219",
             Provider.Ollama: "llama3.2:3b",
         }
-        self.provider = Provider.OpenAI
+        self.provider = Provider.Anthropic
         self.model = FunctionModel(
             name=self.default_models[self.provider], provider=self.provider
         )
@@ -376,7 +374,7 @@ class ChatCLI:
         self.cot_agent = self.initialize_cot_agent(problem)
 
         try:
-            async for item in self.cot_agent.solve_problem(show_thinking=True):
+            async for item in self.cot_agent.solve_problem():
                 if isinstance(item, Chunk):
                     print(item.content, end="", flush=True)
                 elif isinstance(item, ToolCall):
@@ -675,6 +673,7 @@ class ChatCLI:
                         user_input=user_input,
                         messages=self.messages,
                         model=self.model,
+                        workspace_dir=str(self.workspace_dir),
                         context=self.context,
                         debug_mode=self.debug_mode,
                     )

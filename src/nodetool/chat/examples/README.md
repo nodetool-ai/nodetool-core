@@ -19,14 +19,14 @@ For greater flexibility, you can use the planner and executor components separat
 ```python
 # Create a plan using TaskPlanner
 planner = TaskPlanner(provider, model, tools)
-task_list = await planner.create_plan(problem)
+task_plan = await planner.create_plan(problem)
 
 # Inspect or modify the plan if needed
-task_list = modify_plan(task_list)
+task_plan = modify_plan(task_plan)
 
 # Execute the plan using TaskExecutor
 executor = TaskExecutor(provider, model, workspace_dir, tools)
-async for result in executor.execute_tasks(task_list, problem):
+async for result in executor.execute_tasks(task_plan, problem):
     # Handle results
     pass
 ```
@@ -76,7 +76,7 @@ The components support a wide range of tools, including:
 Tasks are organized into a hierarchical structure:
 
 ```
-TaskList
+TaskPlan
 └── Task
     └── SubTask (with dependencies)
 ```
