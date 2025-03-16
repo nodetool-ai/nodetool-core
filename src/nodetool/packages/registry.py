@@ -360,7 +360,7 @@ class Registry:
                 if isinstance(package_nodes, Exception):
                     # Skip failed requests
                     continue
-                all_nodes.extend(package_nodes)
+                all_nodes.extend(package_nodes)  # type: ignore
 
         return all_nodes
 

@@ -180,7 +180,9 @@ def type_metadata(python_type: Type | UnionType) -> TypeMetadata:
             values=[e.value for e in python_type.__members__.values()],  # type: ignore
         )
     else:
-        raise ValueError(f"Unknown type: {python_type}")
+        raise ValueError(
+            f"Unknown type: {python_type}. Types must derive from BaseType"
+        )
 
 
 T = TypeVar("T")
@@ -809,13 +811,10 @@ class BaseNode(BaseModel):
 
         types = cls.field_types()
         fields = cls.inherited_fields()
-        try:
-            return [
-                Property.from_field(name, type_metadata(types[name]), field)
-                for name, field in fields.items()
-            ]
-        except Exception as e:
-            raise ValueError(f"Error getting properties for {cls.__name__}: {e}")
+        return [
+            Property.from_field(name, type_metadata(types[name]), field)
+            for name, field in fields.items()
+        ]
 
     @memoized_class_method
     def properties_dict(cls) -> dict[str, Any]:

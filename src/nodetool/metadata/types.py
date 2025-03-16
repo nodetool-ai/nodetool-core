@@ -100,9 +100,11 @@ class BaseType(BaseModel):
         """
         type_name = data.get("type")
         if type_name is None:
-            raise ValueError("Type name is missing")
+            raise ValueError("Type name is missing. Types must derive from BaseType")
         if type_name not in NameToType:
-            raise ValueError(f"Unknown type name: {type_name}")
+            raise ValueError(
+                f"Unknown type name: {type_name}. Types must derive from BaseType"
+            )
         return NameToType[type_name](**data)
 
 
@@ -1046,7 +1048,7 @@ class Task(BaseModel):
         return None
 
 
-class TaskList(BaseModel):
+class TaskList(BaseType):
     """Manager for organizing and manipulating a collection of tasks."""
 
     type: Literal["task_list"] = "task_list"

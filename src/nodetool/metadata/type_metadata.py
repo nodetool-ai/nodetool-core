@@ -115,11 +115,15 @@ class TypeMetadata(BaseModel):
 
         if self.is_enum_type():
             if not self.type_name in NameToType:
-                raise ValueError(f"Unknown enum type: {self.type_name}")
+                raise ValueError(
+                    f"Unknown enum type: {self.type_name}. Types must derive from BaseType"
+                )
             return NameToType[self.type_name]
         else:
             if not self.type in NameToType:
-                raise ValueError(f"Unknown type: {self.type}")
+                raise ValueError(
+                    f"Unknown type: {self.type}. Types must derive from BaseType"
+                )
             return NameToType[self.type]
 
     def get_json_schema(self) -> dict[str, Any]:
