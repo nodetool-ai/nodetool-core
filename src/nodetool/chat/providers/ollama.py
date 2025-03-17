@@ -65,7 +65,13 @@ class OllamaProvider(ChatProvider):
 
     def __init__(self):
         """Initialize the Ollama provider."""
+        super().__init__()
         self.client = get_ollama_client()
+        self.usage = {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+        }
 
     def convert_message(self, message: Message) -> Dict[str, Any]:
         """Convert an internal message to Ollama's format."""
@@ -136,11 +142,26 @@ class OllamaProvider(ChatProvider):
         if len(tools) > 0:
             kwargs["tools"] = self.format_tools(tools)
 
+        if "thinking" in kwargs:
+            kwargs.pop("thinking")
+
+        print(ollama_messages)
+
         completion = await self.client.chat(
             model=model.name, messages=ollama_messages, stream=True, **kwargs
         )
 
         async for response in completion:
+            # Track usage metrics when we receive the final response
+            if response.done:
+                # Accumulate token counts in self.usage
+                prompt_tokens = getattr(response, "prompt_eval_count", 0)
+                completion_tokens = getattr(response, "eval_count", 0)
+
+                self.usage["prompt_tokens"] += prompt_tokens
+                self.usage["completion_tokens"] += completion_tokens
+                self.usage["total_tokens"] += prompt_tokens + completion_tokens
+
             if response.message.tool_calls is not None:
                 for tool_call in response.message.tool_calls:
                     yield ToolCall(

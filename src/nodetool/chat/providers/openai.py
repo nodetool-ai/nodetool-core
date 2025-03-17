@@ -87,7 +87,13 @@ class OpenAIProvider(ChatProvider):
         api_key = env.get("OPENAI_API_KEY")
         assert api_key, "OPENAI_API_KEY is not set"
         self.client = openai.AsyncClient(api_key=api_key)
-        # Initialize usage tracking
+        self.usage = {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+            "cached_prompt_tokens": 0,
+            "reasoning_tokens": 0,
+        }
 
     def message_content_to_openai_content_part(
         self, content: MessageContent
@@ -196,7 +202,7 @@ class OpenAIProvider(ChatProvider):
         """Generate streaming completions from OpenAI."""
         # Convert system messages to user messages for O1/O3 models
         if model.name.startswith("o1") or model.name.startswith("o3"):
-            kwargs["max_completion_tokens"] = kwargs.pop("max_tokens", 1000)
+            kwargs["max_completion_tokens"] = kwargs.pop("max_tokens", 4096)
             kwargs.pop("temperature", None)
             converted_messages = []
             for msg in messages:

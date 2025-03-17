@@ -32,6 +32,7 @@ import tiktoken
 from typing import AsyncGenerator, List, Optional, Union, Dict, Any, Set, Tuple
 
 from nodetool.chat.providers import ChatProvider, Chunk
+from nodetool.chat.providers.ollama import OllamaProvider
 from nodetool.chat.tools import Tool
 from nodetool.metadata.types import (
     Message,
@@ -409,24 +410,61 @@ class TaskPlanner:
             Message(role="user", content=self.user_prompt),
         ]
 
-        # Generate plan
-        task_plan_tool = CreateTaskPlanTool("/tmp")
-        chunks = []
-        generator = self.provider.generate_messages(
-            messages=history,
-            model=self.model,
-            tools=[task_plan_tool],
-            thinking=True,
-        )
+        # Check if provider is Ollama to use structured output
+        if isinstance(self.provider, OllamaProvider):
+            # Use structured output for Ollama
+            format_schema = TaskPlan.model_json_schema()
 
-        async for chunk in generator:  # type: ignore
-            chunks.append(chunk)
-            if isinstance(chunk, Chunk):
-                yield chunk
-            elif isinstance(chunk, ToolCall):
-                print(chunk)
-                self.task_plan = TaskPlan(**chunk.args)
-                break
+            # Generate plan using structured output
+            chunks = []
+            content = ""
+            generator = self.provider.generate_messages(
+                messages=history,
+                model=self.model,
+                format=format_schema,  # Pass the schema as format
+                thinking=True,
+            )
+
+            async for chunk in generator:  # type: ignore
+                chunks.append(chunk)
+                if isinstance(chunk, Chunk):
+                    yield chunk
+                    content += chunk.content
+
+            # Parse the resulting JSON
+            try:
+                # Try to find JSON in the content if not already parsed
+                start = content.find("{")
+                end = content.rfind("}") + 1
+                if start != -1 and end != -1:
+                    self.task_plan = TaskPlan(**json.loads(content[start:end]))
+            except Exception as e:
+                raise ValueError(f"Failed to parse task plan from Ollama: {e}")
+        else:
+            # Original implementation for other providers using tool calling
+            task_plan_tool = CreateTaskPlanTool("/tmp")
+            chunks = []
+            generator = self.provider.generate_messages(
+                messages=history,
+                model=self.model,
+                tools=[task_plan_tool],
+                thinking=True,
+            )
+
+            content = ""
+            async for chunk in generator:  # type: ignore
+                chunks.append(chunk)
+                if isinstance(chunk, Chunk):
+                    yield chunk
+                    content += chunk.content
+                    print(chunk.content, end="")
+                elif isinstance(chunk, ToolCall):
+                    print(chunk)
+                    self.task_plan = TaskPlan(**chunk.args)
+                    break
+
+            if self.task_plan is None:
+                raise ValueError("LLM did not call the create_task_plan tool")
 
 
 class SubTaskContext:
@@ -1020,15 +1058,12 @@ class TaskExecutor:
             str: The task-specific prompt
         """
         prompt = f"""
-        Execute this sub task to accomplish the high level task:
-        Task Title: {task.title}
-        Task Description: {task.description if task.description else task.title}
-        Subtask ID: {subtask.id}
-        Subtask Content: {subtask.content}
-        Use Thinking: {subtask.thinking}
-        Dependencies: {subtask.dependencies}
+        Context: {task.title} - {task.description if task.description else task.title}
+        YOUR GOAL FOR THIS SUBTASK: {subtask.content}
+        {f'Use Thinking: {subtask.thinking}' if subtask.thinking else ''}
 
-        When you have completed all necessary work for this subtask, call the finish_subtask tool with the final result.
+        Execute this sub task to accomplish the high level task:
+        IMPORTANT: Call the `finish_subtask` tool with the final result of this task!
         """
 
         return prompt

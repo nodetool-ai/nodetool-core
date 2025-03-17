@@ -22,6 +22,7 @@ import readline
 import subprocess
 import sys
 from typing import List, Optional
+from pathlib import Path
 
 from nodetool.chat.cot_agent import CoTAgent
 from nodetool.chat.providers import get_provider, Chunk
@@ -150,7 +151,7 @@ class ChatCLI:
         # Set up default models and provider
         self.default_models = {
             Provider.OpenAI: "gpt-4o",
-            Provider.Anthropic: "claude-3-5-sonnet-20241022",
+            Provider.Anthropic: "claude-3-7-sonnet-20250222",
             Provider.Ollama: "llama3.2:3b",
         }
         self.provider = Provider.Anthropic
@@ -161,6 +162,12 @@ class ChatCLI:
         # Initialize planner and executor models with the same model as default
         self.planner_model = self.model
         self.executor_model = self.model
+
+        # Settings file path
+        self.settings_file = os.path.join(os.path.expanduser("~"), ".nodetool_settings")
+
+        # Load settings if they exist
+        self.load_settings()
 
     def get_tools(self) -> List[Tool]:
         """Get the list of tools available to the CoT agent.
@@ -404,8 +411,8 @@ class ChatCLI:
                     print(item.content, end="", flush=True)
                 elif isinstance(item, ToolCall):
                     args = json.dumps(item.args)
-                    if len(args) > 60:
-                        args = args[:60] + "..."
+                    if len(args) > 120:
+                        args = args[:120] + "..."
                     print(f"\n[{item.name}]: {args}")
             print("\n")
         except Exception as e:
@@ -504,6 +511,78 @@ class ChatCLI:
         except Exception as e:
             print(f"Error: {e}")
 
+    def save_settings(self) -> None:
+        """Save current settings to the dotfile.
+
+        Saves the following settings:
+        - Provider
+        - Model (both planner and executor)
+        - Planner model
+        - Executor model
+        - Agent mode
+        - Debug mode
+
+        This is called whenever any of these settings change.
+        """
+        settings = {
+            "provider": self.provider.value,
+            "model": self.model.name,
+            "planner_model": self.planner_model.name,
+            "executor_model": self.executor_model.name,
+            "agent_mode": self.agent_mode,
+            "debug_mode": self.debug_mode,
+        }
+
+        try:
+            with open(self.settings_file, "w") as f:
+                json.dump(settings, f, indent=2)
+        except Exception as e:
+            print(f"Warning: Failed to save settings: {e}")
+
+    def load_settings(self) -> None:
+        """Load settings from the dotfile.
+
+        Loads and applies previously saved settings if the file exists.
+        If the file doesn't exist or is invalid, the default settings are kept.
+        """
+        try:
+            if os.path.exists(self.settings_file):
+                with open(self.settings_file, "r") as f:
+                    settings = json.load(f)
+
+                # Apply loaded settings
+                if "provider" in settings:
+                    if settings["provider"] == "openai":
+                        self.provider = Provider.OpenAI
+                    elif settings["provider"] == "anthropic":
+                        self.provider = Provider.Anthropic
+                    elif settings["provider"] == "ollama":
+                        self.provider = Provider.Ollama
+
+                # Set model
+                model_name = settings.get("model", self.model.name)
+                self.model = FunctionModel(name=model_name, provider=self.provider)
+
+                # Set planner model
+                planner_model_name = settings.get("planner_model", self.model.name)
+                self.planner_model = FunctionModel(
+                    name=planner_model_name, provider=self.provider
+                )
+
+                # Set executor model
+                executor_model_name = settings.get("executor_model", self.model.name)
+                self.executor_model = FunctionModel(
+                    name=executor_model_name, provider=self.provider
+                )
+
+                # Set modes
+                self.agent_mode = settings.get("agent_mode", False)
+                self.debug_mode = settings.get("debug_mode", False)
+        except Exception as e:
+            print(f"Warning: Failed to load settings: {e}")
+            # Keep default settings
+            pass
+
     def handle_command(self, cmd: str, args: List[str]) -> bool:
         """Handle CLI commands (starting with /).
 
@@ -587,6 +666,8 @@ class ChatCLI:
                 print(
                     f"Provider set to {self.provider.value} with default model {self.default_models[self.provider]}"
                 )
+                # Save settings after changing provider
+                self.save_settings()
             except KeyError:
                 print(f"Invalid provider. Choose from: {[p.value for p in Provider]}")
         elif cmd == "model":
@@ -602,6 +683,8 @@ class ChatCLI:
             self.planner_model = self.model
             self.executor_model = self.model
             print(f"Model set to {model_name} for both planner and executor")
+            # Save settings after changing model
+            self.save_settings()
         elif cmd == "planner":
             if not args:
                 print(f"Current planner model: {self.planner_model.name}")
@@ -610,6 +693,8 @@ class ChatCLI:
             model_name = args[0]
             self.planner_model = FunctionModel(name=model_name, provider=self.provider)
             print(f"Planner model set to {model_name}")
+            # Save settings after changing planner model
+            self.save_settings()
         elif cmd == "executor":
             if not args:
                 print(f"Current executor model: {self.executor_model.name}")
@@ -618,6 +703,8 @@ class ChatCLI:
             model_name = args[0]
             self.executor_model = FunctionModel(name=model_name, provider=self.provider)
             print(f"Executor model set to {model_name}")
+            # Save settings after changing executor model
+            self.save_settings()
         elif cmd == "clear":
             self.messages = []
             print("Chat history cleared")
@@ -629,9 +716,13 @@ class ChatCLI:
             if args[0].lower() == "on":
                 self.agent_mode = True
                 print("Agent mode turned ON - Using Chain of Thought reasoning")
+                # Save settings after changing agent mode
+                self.save_settings()
             elif args[0].lower() == "off":
                 self.agent_mode = False
                 print("Agent mode turned OFF - Using standard chat")
+                # Save settings after changing agent mode
+                self.save_settings()
             else:
                 print("Usage: /agent [on|off]")
         elif cmd == "debug":
@@ -642,9 +733,13 @@ class ChatCLI:
             if args[0].lower() == "on":
                 self.debug_mode = True
                 print("Debug mode turned ON - Will display tool calls and results")
+                # Save settings after changing debug mode
+                self.save_settings()
             elif args[0].lower() == "off":
                 self.debug_mode = False
                 print("Debug mode turned OFF - Tool calls and results hidden")
+                # Save settings after changing debug mode
+                self.save_settings()
             else:
                 print("Usage: /debug [on|off]")
         elif cmd == "usage":
@@ -687,8 +782,8 @@ class ChatCLI:
         print(f"Using {self.provider.value} with model {self.model.name}")
         print(f"Planner model: {self.planner_model.name}")
         print(f"Executor model: {self.executor_model.name}")
-        print("Agent mode is OFF (use /agent on to enable Chain of Thought reasoning)")
-        print("Debug mode is OFF (use /debug on to display tool calls and results)")
+        print(f"Agent mode is {'ON' if self.agent_mode else 'OFF'}")
+        print(f"Debug mode is {'ON' if self.debug_mode else 'OFF'}")
         print(f"\nWorkspace created at: {self.workspace_dir}")
         print("Use workspace commands: pwd, ls, cd, mkdir, rm, open")
 

@@ -500,12 +500,12 @@ class GoogleSearchTool(Tool):
 
             # Add excluded terms
             if params.get("exclude_terms"):
-                for term in params.get("exclude_terms"):
+                for term in params.get("exclude_terms", []):
                     search_query += f" -{term}"
 
             # Add OR terms
             if params.get("or_terms"):
-                or_clause = " OR ".join(params.get("or_terms"))
+                or_clause = " OR ".join(params.get("or_terms", []))
                 search_query += f" ({or_clause})"
 
             # Add related search
