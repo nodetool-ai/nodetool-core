@@ -83,30 +83,34 @@ class FinishSubTaskTool(WorkspaceBaseTool):
     Use this when you have completed all necessary work for a subtask.
     Provide the full result of the subtask as the argument to the tool.
     The result will be stored and retrieved for subsequent tasks.
-    Optionally, you can store a file to the workspace with the result.
     """
     input_schema = {
         "type": "object",
         "properties": {
             "result": {
-                "type": "object",
-                "description": "The final result of the subtask",
+                "oneOf": [
+                    {
+                        "type": "object",
+                        "description": "The final result of the subtask as a structured object",
+                    },
+                    {
+                        "type": "string",
+                        "description": "The final result of the subtask as a simple string",
+                    },
+                ],
+                "description": "The final result of the subtask (can be an object or string)",
             },
-            "file_path": {
-                "type": "string",
-                "description": "Optional path to store result in a workspace file (relative to workspace directory)",
+            "metadata": {
+                "type": "object",
+                "description": "Metadata for the result",
             },
         },
-        "required": ["result"],
+        "required": ["result", "metadata"],
     }
 
     async def process(self, context: ProcessingContext, params: dict) -> dict:
         """
         Mark a subtask as finished with its final result.
-
-        This method handles the completion of a subtask by:
-        1. Storing the result in memory
-        2. Optionally writing the result to a file in the workspace
 
         Args:
             context (ProcessingContext): The processing context
@@ -115,70 +119,53 @@ class FinishSubTaskTool(WorkspaceBaseTool):
         Returns:
             dict: Response containing either the result or the file_path where result was stored
         """
-        file_path = params.get("file_path")
-        result = params.get("result")
-
-        if file_path:
-            full_path = self.resolve_workspace_path(file_path)
-
-            # Create parent directories if they don't exist
-            os.makedirs(os.path.dirname(full_path), exist_ok=True)
-
-            # Write the content to the file
-            with open(full_path, "w", encoding="utf-8") as f:
-                if isinstance(result, str):
-                    f.write(result)
-                else:
-                    json.dump(result, f)
-
-            return {
-                "file_path": file_path,
-            }
-        else:
-            return {
-                "result": params.get("result"),
-            }
+        return {
+            "result": params.get("result"),
+            "metadata": params.get("metadata"),
+        }
 
 
 # Add these constants at the top of the file, after the imports
 DEFAULT_PLANNING_SYSTEM_PROMPT = """
-You are a strategic planning assistant that creates clear, efficient, and organized plans.
+You are a strategic planning assistant that creates precise, efficient task plans.
 
 PLANNING INSTRUCTIONS:
-1. Generate MINIMAL plans—include only essential tasks.
-2. Match the complexity of the plan to the complexity of the objective: simpler objectives require fewer tasks.
-3. Provide thoughtful analysis and reasoning clearly in the "thoughts" field.
-4. Consolidate closely related actions into a single task whenever possible.
-5. Top-level tasks should generally contain between 1-3 subtasks.
-6. Create separate subtasks only when there is a distinct dependency or a necessary change in tools.
-7. Subtasks must be executed sequentially in the provided order.
-8. Assign a unique, concise ID to each subtask for clear referencing.
-9. Explicitly state the tool required for each subtask execution; tool calls are optional.
-10. Specify dependencies clearly by referencing the IDs of subtasks that must precede execution.
-11. Include a boolean field "thinking" for each subtask, indicating if thought processing is required.
-12. Ensure the overall plan remains as streamlined and concise as possible.
-13. Always reference the workspace directory as the root for file operations.
+1. Create MINIMAL plans with only essential tasks - fewer tasks are better.
+2. Scale plan complexity to match objective complexity - simple objectives need 1-3 tasks.
+3. Document your reasoning in the "thoughts" field with clear analysis.
+4. Merge related actions into single tasks - avoid fragmentation.
+5. Order subtasks logically - they execute sequentially in the order provided.
+6. Use descriptive IDs for each subtask (e.g., "research_topic", "analyze_data").
+7. Define dependencies using exact subtask IDs.
+8. Set "output_type": "text" for results that has prose, formatting, or other non-structured data.
+9. Set "output_type": "object" for results that has structured data.
+10. Make sure to save artifacts in the workspace directory.
+11. A good artifact is Markdown file for sub reports, or a CSV file for data analysis.
+12. Set "thinking" for subtasks that require reasoning.
+13. Set "thinking": false to focus on executing tools.
+14. Eliminate redundant steps - optimize for efficiency.
+15. Use absolute paths from workspace root for all file operations.
 
-Use the CreateTaskPlanTool to create the task plan.
+Use the CreateTaskPlanTool to submit your final task plan.
 
-The task plan should be in the following format:
+TASK PLAN FORMAT:
 ```json
 {
     "type": "task_plan",
-    "title": "Descriptive Title of Objective",
-    "thoughts": "Your detailed reasoning and strategic considerations.",
+    "title": "Concise Objective Title",
+    "thoughts": "Your strategic analysis and reasoning for this plan structure",
     "tasks": [
         {
             "type": "task",
-            "title": "Clear Title for Task",
+            "title": "Task Title",
             "subtasks": [
                 {
                     "type": "subtask",
-                    "id": "unique_subtask_id",
-                    "content": "Precise action description",
-                    "tool": "required_tool_name",
-                    "dependencies": ["id_of_dependency"],
-                    "thinking": true
+                    "id": "descriptive_id",
+                    "content": "Specific action to perform",
+                    "thinking": false,
+                    "output_type": "text",
+                    "dependencies": ["prior_subtask_id"]
                 }
             ]
         }
@@ -188,20 +175,49 @@ The task plan should be in the following format:
 """
 
 DEFAULT_EXECUTION_SYSTEM_PROMPT = """
-You are an agent that executes plans.
+You are a task execution agent that completes subtasks efficiently.
 
-All file operations must be performed within this workspace directory.
+WORKSPACE CONSTRAINTS:
+- All file operations must use the workspace directory as root
+- Never attempt to access files outside the workspace directory
+- Use absolute paths from workspace root for all file operations
+- Make sure to save artifacts in the workspace directory.
 
-EXECUTION INSTRUCTIONS:
-1. Focus on provided subtask.
-2. Follow the instructions provided in the subtask.
-3. Minimize the number of steps and tool calls to complete the subtask.
-4. When you have completed all necessary work for a subtask, use the finish_subtask tool
-5. Ideally, complete the subtask in one tool call (excluding finish_subtask tool)
-6. Pass the full result of the subtask as the argument to the finish_subtask tool
-7. Optionally, store a file to the workspace with the result.
-8. Always use paths relative to the workspace directory
-9. Use the workspace tools for file operations
+EXECUTION CONTEXT:
+- You are executing a single subtask from a larger task plan
+- You have access to specific tools defined in the subtask
+- Results from dependency subtasks are provided when available
+- Each subtask must be completed with a call to finish_subtask
+
+EXECUTION PROTOCOL:
+1. Focus exclusively on the current subtask - ignore other subtasks
+2. Always call finish_subtask when the subtask is complete
+3. You can make 0-5 tool calls per subtask
+
+WEB CRAWLING:
+- You can use `google_search` tool to find web pages
+- You can fetch web pages with `browser_control` tool
+- You can fetch multiple pages with `batch_download` tool
+- Try to batch as many pages as possible to save time
+
+RESULT REQUIREMENTS:
+1. Results can be a string, a JSON object
+2. Pick the output type defined in the subtask
+3. Include metadata with these fields:
+   - title: Descriptive title of the result
+   - description: Detailed description of what was accomplished
+   - source: Origin of the data (e.g., URL, calculation, file)
+4. Call finish_subtask with a result object or string
+
+MULTIMEDIA:
+1. Link to images, videos, and other files in the result
+2. Use screenshot tool to capture images
+
+CITING:
+1. Subtask results include metadata with source information
+2. You should cite the source of the data in the result
+3. Provide many links in the final report
+
 """
 
 
@@ -338,7 +354,6 @@ class TaskPlanner:
         self,
         provider: ChatProvider,
         model: FunctionModel,
-        tools: List[Tool],
         objective: str,
         system_prompt: str | None = None,
     ):
@@ -348,26 +363,17 @@ class TaskPlanner:
         Args:
             provider (ChatProvider): An LLM provider instance
             model (FunctionModel): The model to use with the provider
-            tools (List[Tool]): List of tools available for task execution
             objective (str): The objective to solve
             system_prompt (str, optional): Custom system prompt
             user_prompt (str, optional): Custom user prompt
         """
         self.provider = provider
         self.model = model
-        self.tools = tools
         self.objective = objective
         self.task_plan = None
         self.system_prompt = (
             system_prompt if system_prompt else DEFAULT_PLANNING_SYSTEM_PROMPT
         )
-        self.system_prompt += """
-        Consider the following tools to be used in sub tasks:
-        """
-        for tool in self.tools:
-            self.system_prompt += f"- {tool.name}\n"
-        self.system_prompt += """
-        """
         self.user_prompt = """
         Create an efficient task plan for the following objective:
 
@@ -403,15 +409,6 @@ class TaskPlanner:
             Message(role="user", content=self.user_prompt),
         ]
 
-        # Get JSON schema from TaskPlan model
-        # response_format = {
-        #     "type": "json_schema",
-        #     "json_schema": {
-        #         "name": "task_plan",
-        #         "schema": TaskPlan.model_json_schema(),
-        #     },
-        # }
-
         # Generate plan
         task_plan_tool = CreateTaskPlanTool("/tmp")
         chunks = []
@@ -431,19 +428,6 @@ class TaskPlanner:
                 self.task_plan = TaskPlan(**chunk.args)
                 break
 
-        # Parse the JSON response and create TaskPlan
-        # try:
-        #     json_pattern = r"```json(.*?)```"
-        #     json_match = re.search(
-        #         json_pattern, combined_content, re.DOTALL | re.MULTILINE
-        #     )
-        #     if json_match:
-        #         combined_content = json_match.group(1).strip()
-        #     tasks_json = json.loads(combined_content)
-        #     self.task_plan = TaskPlan.model_validate(tasks_json)
-        # except json.JSONDecodeError as e:
-        #     raise ValueError(f"Error parsing JSON response from agent planner: {e}")
-
 
 class SubTaskContext:
     """
@@ -456,7 +440,8 @@ class SubTaskContext:
 
     def __init__(
         self,
-        subtask_id: str,
+        task: Task,
+        subtask: SubTask,
         system_prompt: str,
         tools: List[Tool],
         model: FunctionModel,
@@ -464,12 +449,14 @@ class SubTaskContext:
         workspace_dir: str,
         result_store: Dict[str, Any],
         print_usage: bool = True,
+        max_token_limit: int = 4000,
     ):
         """
         Initialize a subtask execution context.
 
         Args:
-            subtask_id (str): The ID of the subtask
+            task (Task): The task to execute
+            subtask (SubTask): The subtask to execute
             system_prompt (str): The system prompt for this subtask
             tools (List[Tool]): Tools available to this subtask
             model (FunctionModel): The model to use for this subtask
@@ -477,14 +464,17 @@ class SubTaskContext:
             workspace_dir (str): The workspace directory
             result_store (Dict[str, Any]): Global dictionary to store results
             print_usage (bool): Whether to print token usage
+            max_token_limit (int): Maximum token limit before summarization
         """
-        self.subtask_id = subtask_id
+        self.task = task
+        self.subtask = subtask
         self.system_prompt = system_prompt
         self.tools = tools
         self.model = model
         self.provider = provider
         self.workspace_dir = workspace_dir
         self.result_store = result_store  # Reference to global result store
+        self.max_token_limit = max_token_limit
 
         # Initialize isolated message history for this subtask
         self.history = [Message(role="system", content=system_prompt)]
@@ -555,6 +545,7 @@ class SubTaskContext:
         4. Stores results in the global result_store
         5. Enforces maximum iterations to prevent infinite loops
         6. Auto-completes the subtask if max iterations are reached
+        7. Summarizes context if token count exceeds the limit
 
         The method maintains contextual isolation to prevent context overflow
         across different subtasks, while allowing access to dependency results.
@@ -576,27 +567,34 @@ class SubTaskContext:
 
         # Include dependency results if available
         if dependency_results:
-            enhanced_prompt += "\n\nRelevant context from dependencies:"
-            for dep_id, result in dependency_results.items():
-                enhanced_prompt += f"\n\nOutput from dependency {dep_id}:\n{result}"
+            enhanced_prompt += f"\n\nDependencies: {json.dumps(dependency_results)}"
 
         # Add the task prompt to this subtask's history
         self.history.append(Message(role="user", content=enhanced_prompt))
 
         # Signal that we're executing this subtask
-        print(f"Executing task: {self.subtask_id} - {enhanced_prompt.splitlines()[0]}")
+        print(f"Executing task: {self.task.title} - {self.subtask.content}")
 
         # Continue executing until the task is completed or max iterations reached
         while not self.completed and self.iterations < self.max_iterations:
             self.iterations += 1
             token_count = self._count_tokens(self.history)
             print(
-                f"  Iteration {self.iterations}/{self.max_iterations} for subtask {self.subtask_id}"
+                f"  Iteration {self.iterations}/{self.max_iterations} for subtask {self.subtask.id}"
             )
             print(
-                f"\n[Debug: {token_count} tokens in context for subtask {self.subtask_id}]\n"
+                f"\n[Debug: {token_count} tokens in context for subtask {self.subtask.id}]\n"
             )
             print(self.provider.usage)
+
+            # Check if token count exceeds limit and summarize if needed
+            if token_count > self.max_token_limit:
+                print(
+                    f"Token count ({token_count}) exceeds limit ({self.max_token_limit}). Summarizing context..."
+                )
+                await self._summarize_context()
+                token_count = self._count_tokens(self.history)
+                print(f"After summarization: {token_count} tokens in context")
 
             # Get response for this subtask using its isolated history
             generator = self.provider.generate_messages(
@@ -644,13 +642,13 @@ class SubTaskContext:
                         result = chunk.args.get("result", {})
 
                         # Store in the global result store
-                        self.result_store[self.subtask_id] = result
+                        self.result_store[self.subtask.id] = result
 
                         # Mark subtask as finished
                         self.completed = True
 
                         # Add completion notice to progress
-                        print(f"Subtask {self.subtask_id} completed.")
+                        print(f"Subtask {self.subtask.id} completed.")
 
                     # Add the tool result to history
                     self.history.append(
@@ -667,11 +665,11 @@ class SubTaskContext:
                 default_result = await self.request_summary()
 
                 # Store in the global result store
-                self.result_store[self.subtask_id] = default_result
+                self.result_store[self.subtask.id] = default_result
                 self.completed = True
 
                 yield ToolCall(
-                    id=f"{self.subtask_id}_max_iterations_reached",
+                    id=f"{self.subtask.id}_max_iterations_reached",
                     name="finish_subtask",
                     args=default_result,
                 )
@@ -720,7 +718,7 @@ class SubTaskContext:
 
         # Create a focused user prompt
         summary_user_prompt = f"""
-        The subtask '{self.subtask_id}' has reached the maximum allowed iterations ({self.max_iterations}).
+        The subtask '{self.subtask.id}' has reached the maximum allowed iterations ({self.max_iterations}).
         Please provide a brief summary of:
         1. What has been accomplished
         2. What remains to be done
@@ -751,11 +749,80 @@ class SubTaskContext:
         # Create a structured result with the summary
         summary_result = {
             "status": "max_iterations_reached",
-            "message": f"Reached maximum iterations ({self.max_iterations}) for subtask {self.subtask_id}",
+            "message": f"Reached maximum iterations ({self.max_iterations}) for subtask {self.subtask.id}",
             "summary": summary_content,
         }
 
         return summary_result
+
+    async def _summarize_context(self) -> None:
+        """
+        Summarize the conversation history to reduce token count.
+
+        This method:
+        1. Preserves the system prompt
+        2. Summarizes the conversation history
+        3. Replaces the history with the system prompt and summary
+        """
+        # Keep the system prompt
+        system_prompt = self.history[0]
+
+        # Create a summary-specific system prompt
+        summary_system_prompt = """
+        You are tasked with creating a concise summary of the conversation so far.
+        Focus on the most important information, decisions made, and current state.
+        Your summary will replace the detailed conversation history to reduce token usage.
+        """
+
+        # Create a focused user prompt
+        summary_user_prompt = f"""
+        Please summarize the conversation history for subtask '{self.subtask.id}' so far.
+        Include:
+        1. The original task/objective
+        2. Key information discovered
+        3. Actions taken and their results
+        4. Current state and what needs to be done next
+        
+        Keep only the essential information needed to continue the task.
+        """
+
+        # Create a minimal history with just the system prompt and summary request
+        summary_history = [
+            Message(role="system", content=summary_system_prompt),
+            Message(
+                role="user",
+                content=summary_user_prompt
+                + "\n\nHere's the conversation to summarize:\n"
+                + "\n".join(
+                    [
+                        f"{msg.role}: {msg.content}"
+                        for msg in self.history[1:]
+                        if hasattr(msg, "content") and msg.content
+                    ]
+                ),
+            ),
+        ]
+
+        # Get response without tools
+        generator = self.provider.generate_messages(
+            messages=summary_history,
+            model=self.model,
+            tools=[],  # No tools allowed for summary
+        )
+
+        summary_content = ""
+        async for chunk in generator:  # type: ignore
+            if isinstance(chunk, Chunk):
+                summary_content += chunk.content
+
+        # Replace history with system prompt and summary
+        self.history = [
+            system_prompt,
+            Message(
+                role="user",
+                content=f"CONVERSATION SUMMARY SO FAR:\n{summary_content}\n\nPlease continue with the task based on this summary.",
+            ),
+        ]
 
 
 class TaskExecutor:
@@ -777,6 +844,7 @@ class TaskExecutor:
         system_prompt: str | None = None,
         max_steps: int = 50,
         max_subtask_iterations: int = 10,
+        max_token_limit: int = 8000,  # Default token limit
     ):
         """
         Initialize the IsolatedTaskExecutor.
@@ -790,12 +858,14 @@ class TaskExecutor:
             system_prompt (str, optional): Custom system prompt
             max_steps (int, optional): Maximum execution steps to prevent infinite loops
             max_subtask_iterations (int, optional): Maximum iterations allowed per subtask
+            max_token_limit (int, optional): Maximum token limit before summarization
         """
         self.provider = provider
         self.model = model
         self.workspace_dir = workspace_dir
         self.tools = tools
         self.task_plan = task_plan
+        self.max_token_limit = max_token_limit
 
         # Prepare system prompt
         prefix = f"""
@@ -846,7 +916,8 @@ class TaskExecutor:
 
             # Create subtask context
             context = SubTaskContext(
-                subtask_id=subtask.id,
+                task=task,
+                subtask=subtask,
                 system_prompt=self.system_prompt,
                 tools=self.tools,
                 model=self.model,
@@ -854,6 +925,7 @@ class TaskExecutor:
                 workspace_dir=self.workspace_dir,
                 result_store=self.result_store,
                 print_usage=print_usage,
+                max_token_limit=self.max_token_limit,  # Pass the token limit
             )
 
             # Prepare dependency results
@@ -947,7 +1019,9 @@ class TaskExecutor:
         Task Description: {task.description if task.description else task.title}
         Subtask ID: {subtask.id}
         Subtask Content: {subtask.content}
-        
+        Use Thinking: {subtask.thinking}
+        Dependencies: {subtask.dependencies}
+
         When you have completed all necessary work for this subtask, call the finish_subtask tool with the final result.
         """
 
@@ -998,6 +1072,7 @@ class CoTAgent:
         tools: List[Tool],
         max_steps: int = 30,
         max_subtask_iterations: int = 5,
+        max_token_limit: int = 8000,  # Default token limit
     ):
         """
         Initializes the CoT agent.
@@ -1010,12 +1085,14 @@ class CoTAgent:
             tools (List[Tool]): List of tools available for task execution
             max_steps (int, optional): Maximum reasoning steps to prevent infinite loops. Defaults to 30
             max_subtask_iterations (int, optional): Maximum iterations allowed per subtask. Defaults to 5
+            max_token_limit (int, optional): Maximum token limit before summarization. Defaults to 8000
         """
         self.provider = provider
         self.model = model
         self.objective = objective
         self.max_steps = max_steps
         self.max_subtask_iterations = max_subtask_iterations
+        self.max_token_limit = max_token_limit
         self.workspace_dir = workspace_dir
 
         # Add FinishSubTaskTool to tools
@@ -1028,7 +1105,7 @@ class CoTAgent:
             []
         )  # Store all chat interactions for reference
         # Create planner and executor components
-        self.planner = TaskPlanner(provider, model, self.tools, self.objective)
+        self.planner = TaskPlanner(provider, model, self.objective)
 
     async def solve_problem(
         self, print_usage: bool = False
@@ -1077,6 +1154,7 @@ class CoTAgent:
             self.tools,
             task_plan,
             max_subtask_iterations=self.max_subtask_iterations,
+            max_token_limit=self.max_token_limit,  # Pass the token limit
         )
 
         async for result in self.executor.execute_tasks(print_usage):

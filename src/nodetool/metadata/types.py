@@ -974,14 +974,14 @@ class SubTask(BaseType):
     thinking: bool = Field(
         default=False, description="Whether the subtask requires thinking"
     )
-    tool: str = Field(
-        default="", description="The tool that can be used to complete the subtask"
-    )
     completed: bool = Field(
         default=False, description="Whether the subtask is completed"
     )
     dependencies: list[str] = Field(
         default=[], description="The dependencies of the subtask, a list of subtask IDs"
+    )
+    output_type: Literal["text", "object"] = Field(
+        default="text", description="The type of output the subtask will return"
     )
 
     def to_markdown(self) -> str:
@@ -993,10 +993,7 @@ class SubTask(BaseType):
             else ""
         )
         thinking_str = " (thinking)" if self.thinking else ""
-        tool_str = f" (tool: {self.tool})" if self.tool else ""
-        return (
-            f"- {checkbox} #{self.id} {self.content}{deps_str}{thinking_str}{tool_str}"
-        )
+        return f"- {checkbox} #{self.id} {self.content}{deps_str}{thinking_str}"
 
 
 class Task(BaseModel):

@@ -147,7 +147,7 @@ class ChatCLI:
         # Set up default models and provider
         self.default_models = {
             Provider.OpenAI: "gpt-4o",
-            Provider.Anthropic: "claude-3-7-sonnet-20250219",
+            Provider.Anthropic: "claude-3-5-sonnet-20241022",
             Provider.Ollama: "llama3.2:3b",
         }
         self.provider = Provider.Anthropic

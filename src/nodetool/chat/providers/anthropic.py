@@ -6,7 +6,7 @@ handling message conversion, streaming, and tool integration.
 """
 
 from typing import Any, AsyncGenerator, Sequence
-
+import random
 import anthropic
 from anthropic.types.message_param import MessageParam
 from anthropic.types.image_block_param import ImageBlockParam
@@ -174,7 +174,7 @@ class AnthropicProvider(ChatProvider):
     ) -> AsyncGenerator[Chunk | ToolCall, Any]:
         """Generate streaming completions from Anthropic."""
         if "max_tokens" not in kwargs:
-            kwargs["max_tokens"] = 16384
+            kwargs["max_tokens"] = 8192
 
         # Handle response_format parameter
         response_format = kwargs.pop("response_format", None)
@@ -193,7 +193,9 @@ class AnthropicProvider(ChatProvider):
             kwargs["response_format"] = {"type": "json_object"}
 
         if "thinking" in kwargs:
-            kwargs["thinking"] = {"type": "enabled", "budget_tokens": 8192}
+            kwargs["thinking"] = {"type": "enabled", "budget_tokens": 4096}
+            if model.name < "claude-3-7":
+                kwargs.pop("thinking")
 
         # Convert messages and tools to Anthropic format
         anthropic_messages = [
@@ -206,56 +208,81 @@ class AnthropicProvider(ChatProvider):
 
         anthropic_tools = self.format_tools(tools)
 
-        # print("***************************************")
+        # Add retry logic with exponential backoff
+        import asyncio
+        from anthropic import APIStatusError
 
-        # for msg in anthropic_messages:
-        #     print("--------------------------------")
-        #     print(json.dumps(msg, indent=2))
-        #     print("--------------------------------")
+        max_retries = 5
+        base_delay = 1  # Start with 1 second delay
 
-        async with self.client.messages.stream(
-            model=model.name,
-            messages=anthropic_messages,
-            system=system_message,
-            tools=anthropic_tools,
-            **kwargs,
-        ) as stream:
-            async for event in stream:
-                if event.type == "content_block_delta":
-                    if event.delta.type == "text_delta":
-                        yield Chunk(content=event.delta.text, done=False)
-                    elif event.delta.type == "thinking_delta":
-                        yield Chunk(content=event.delta.thinking, done=False)
-                elif event.type == "content_block_start":
-                    if (
-                        hasattr(event, "content_block")
-                        and event.content_block.type == "thinking"
-                    ):
-                        # Handle start of a thinking block if needed
-                        pass
-                elif event.type == "content_block_stop":
-                    if event.content_block.type == "tool_use":
-                        yield ToolCall(
-                            id=str(event.content_block.id),
-                            name=event.content_block.name,
-                            args=event.content_block.input,  # type: ignore
-                        )
-                    elif event.content_block.type == "thinking":
-                        # Handle complete thinking blocks if needed
-                        pass
-                elif event.type == "message_stop":
-                    # Update usage statistics when the message is complete
-                    if hasattr(event, "message") and hasattr(event.message, "usage"):
-                        usage = event.message.usage
-                        self.usage["input_tokens"] += usage.input_tokens
-                        self.usage["output_tokens"] += usage.output_tokens
-                        if usage.cache_creation_input_tokens:
-                            self.usage[
-                                "cache_creation_input_tokens"
-                            ] += usage.cache_creation_input_tokens
-                        if usage.cache_read_input_tokens:
-                            self.usage[
-                                "cache_read_input_tokens"
-                            ] += usage.cache_read_input_tokens
+        for retry in range(max_retries):
+            try:
+                async with self.client.messages.stream(
+                    model=model.name,
+                    messages=anthropic_messages,
+                    system=system_message,
+                    tools=anthropic_tools,
+                    **kwargs,
+                ) as stream:
+                    async for event in stream:
+                        if event.type == "content_block_delta":
+                            if event.delta.type == "text_delta":
+                                yield Chunk(content=event.delta.text, done=False)
+                            elif event.delta.type == "thinking_delta":
+                                yield Chunk(content=event.delta.thinking, done=False)
+                        elif event.type == "content_block_start":
+                            if (
+                                hasattr(event, "content_block")
+                                and event.content_block.type == "thinking"
+                            ):
+                                # Handle start of a thinking block if needed
+                                pass
+                        elif event.type == "content_block_stop":
+                            if event.content_block.type == "tool_use":
+                                yield ToolCall(
+                                    id=str(event.content_block.id),
+                                    name=event.content_block.name,
+                                    args=event.content_block.input,  # type: ignore
+                                )
+                            elif event.content_block.type == "thinking":
+                                # Handle complete thinking blocks if needed
+                                pass
+                        elif event.type == "message_stop":
+                            # Update usage statistics when the message is complete
+                            if hasattr(event, "message") and hasattr(
+                                event.message, "usage"
+                            ):
+                                usage = event.message.usage
+                                self.usage["input_tokens"] += usage.input_tokens
+                                self.usage["output_tokens"] += usage.output_tokens
+                                if usage.cache_creation_input_tokens:
+                                    self.usage[
+                                        "cache_creation_input_tokens"
+                                    ] += usage.cache_creation_input_tokens
+                                if usage.cache_read_input_tokens:
+                                    self.usage[
+                                        "cache_read_input_tokens"
+                                    ] += usage.cache_read_input_tokens
 
-                    yield Chunk(content="", done=True)
+                            yield Chunk(content="", done=True)
+                # If we get here, the API call was successful, so break out of the retry loop
+                break
+
+            except APIStatusError as e:
+                # Only retry on 429 (rate limit), 500, 502, 503, 504 (server errors)
+                if (
+                    e.status_code == 429
+                    or e.status_code >= 500
+                    and retry < max_retries - 1
+                ):
+                    # Calculate exponential backoff with jitter
+                    delay = base_delay * (2**retry) + (random.random() * 0.5)
+                    # Log the error and retry attempt
+                    print(
+                        f"Anthropic API error: {e}. Retrying in {delay:.2f} seconds (attempt {retry+1}/{max_retries})"
+                    )
+                    await asyncio.sleep(delay)
+                    continue
+                else:
+                    # If we've exhausted retries or it's not a retryable error, re-raise
+                    raise

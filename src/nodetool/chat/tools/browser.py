@@ -9,6 +9,7 @@ from typing import Any
 import aiohttp
 import json
 import urllib.parse
+import asyncio
 
 from nodetool.common.environment import Environment
 from nodetool.workflows.processing_context import ProcessingContext
@@ -31,12 +32,30 @@ class BrowserTool(Tool):
         "properties": {
             "action": {
                 "type": "string",
-                "description": "Action to perform: 'navigate', 'click', 'type', 'quit'",
-                "enum": ["navigate", "click", "type", "get_text", "quit"],
+                "description": "Action to perform: 'navigate', 'click', 'type', 'get_text', 'get_page_content', 'quit', 'batch_download'",
+                "enum": [
+                    "navigate",
+                    "click",
+                    "type",
+                    "get_text",
+                    "get_page_content",
+                    "quit",
+                    "batch_download",
+                ],
             },
             "url": {
                 "type": "string",
                 "description": "URL to navigate to (for 'navigate' action)",
+            },
+            "urls": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "List of URLs to navigate to (for 'batch_download' action)",
+            },
+            "max_concurrent": {
+                "type": "integer",
+                "description": "Maximum number of concurrent requests for batch_download (default: 3)",
+                "default": 3,
             },
             "selector": {
                 "type": "string",
@@ -60,8 +79,10 @@ class BrowserTool(Tool):
         Args:
             context: The processing context
             params: Dictionary including:
-                action (str): The action to perform ('navigate', 'click', 'type', 'get_text', 'quit')
+                action (str): The action to perform ('navigate', 'click', 'type', 'get_text', 'get_page_content', 'quit', 'batch_download')
                 url (str, optional): URL to navigate to (for 'navigate' action)
+                urls (list, optional): List of URLs to navigate to (for 'batch_download' action)
+                max_concurrent (int, optional): Maximum number of concurrent requests for batch_download
                 selector (str, optional): CSS selector for element (for 'click', 'type', 'get_text' actions)
                 text (str, optional): Text to type (for 'type' action)
 
@@ -117,8 +138,74 @@ class BrowserTool(Tool):
                 if not url:
                     return {"error": "URL is required for navigate action"}
                 await page.goto(url)
+                return {"success": True, "url": url}
+
+            elif action == "batch_download":
+                urls = params.get("urls")
+                if not urls:
+                    return {"error": "URLs list is required for batch_download action"}
+
+                max_concurrent = params.get("max_concurrent", 3)
+
+                # Create a semaphore to limit concurrent browser instances
+                semaphore = asyncio.Semaphore(max_concurrent)
+
+                async def fetch_url_content(url):
+                    async with semaphore:
+                        try:
+                            # Create a new browser context for each URL to avoid interference
+                            playwright_instance = context.get("playwright_instance")
+                            browser = context.get("playwright_browser")
+
+                            if not playwright_instance or not browser:
+                                return {
+                                    "url": url,
+                                    "success": False,
+                                    "error": "Browser not initialized",
+                                }
+
+                            # Create a new page in the existing browser
+                            page = await browser.new_page()
+                            try:
+                                await page.goto(url)
+                                page_text = await page.inner_text("body")
+                                page_title = await page.title()
+                                return {
+                                    "url": url,
+                                    "success": True,
+                                    "title": page_title,
+                                    "content": page_text,
+                                }
+                            finally:
+                                # Always close the page when done
+                                await page.close()
+                        except Exception as e:
+                            return {"url": url, "success": False, "error": str(e)}
+
+                # Create tasks for all URLs
+                tasks = [fetch_url_content(url) for url in urls]
+
+                try:
+                    # Execute all tasks concurrently and gather results
+                    results = await asyncio.gather(*tasks)
+
+                    # Summarize results
+                    success_count = sum(1 for r in results if r.get("success", False))
+
+                    return {
+                        "success": True,
+                        "total": len(urls),
+                        "successful": success_count,
+                        "failed": len(urls) - success_count,
+                        "results": results,
+                    }
+                except Exception as e:
+                    return {"error": f"Error in batch navigation: {str(e)}"}
+
+            elif action == "get_page_content":
                 page_text = await page.inner_text("body")
-                return {"success": True, "url": url, "body": page_text}
+                current_url = page.url
+                return {"success": True, "url": current_url, "body": page_text}
 
             elif action in ["click", "type", "get_text"]:
                 selector = params.get("selector")
@@ -205,6 +292,71 @@ class ScreenshotTool(Tool):
             return {"error": str(e)}
 
 
+def _remove_base64_images(data):
+    """Remove image elements entirely from the API response to reduce size."""
+    if isinstance(data, dict):
+        keys_to_remove = ["image", "image_alt", "image_base64", "image_url"]
+        for key in list(data.keys()):
+            if key in keys_to_remove:
+                data.pop(key, None)
+            elif isinstance(data[key], str):
+                if data[key].startswith("data:"):
+                    data.pop(key, None)
+            elif isinstance(data[key], (dict, list)):
+                data[key] = _remove_base64_images(data[key])
+    elif isinstance(data, list):
+        for i in range(len(data)):
+            data[i] = _remove_base64_images(data[i])
+    return data
+
+
+async def make_api_request(search_url: str):
+    """Make an API request and handle common error cases."""
+    try:
+        async with aiohttp.ClientSession() as session:
+            url = "https://api.brightdata.com/request"
+            api_key = get_required_api_key(
+                "BRIGHTDATA_API_KEY",
+                "Brightdata API key not found. Please provide it in the secrets as 'BRIGHTDATA_API_KEY'.",
+            )
+            if isinstance(api_key, dict) and "error" in api_key:
+                return api_key
+
+            zone = get_required_api_key(
+                "BRIGHTDATA_ZONE",
+                "Brightdata zone not found. Please provide it in the secrets as 'BRIGHTDATA_ZONE'.",
+            )
+            if isinstance(zone, dict) and "error" in zone:
+                return zone
+            # Brightdata-specific request preparation
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {api_key}",
+            }
+            payload = {"zone": zone, "url": search_url, "format": "json"}
+
+            async with session.post(url, headers=headers, json=payload) as response:
+                if response.status != 200:
+                    error_text = await response.text()
+                    return {
+                        "error": f"API request failed with status {response.status}: {error_text}"
+                    }
+
+                return await response.json()
+    except Exception as e:
+        return {"error": f"Error making API request: {str(e)}"}
+
+
+def get_required_api_key(key_name, error_message=None):
+    """Get a required API key from environment variables."""
+    api_key = Environment.get(key_name)
+    if not api_key:
+        return {
+            "error": error_message or f"{key_name} not found in environment variables."
+        }
+    return api_key
+
+
 class GoogleSearchTool(Tool):
     """
     A tool that allows searching Google using Brightdata's API.
@@ -227,26 +379,75 @@ class GoogleSearchTool(Tool):
                 "description": "Number of results to return (optional)",
                 "default": 10,
             },
+            "maps": {
+                "type": "boolean",
+                "description": "Whether to perform a Google Maps search instead of a regular search",
+                "default": False,
+            },
+            "site": {
+                "type": "string",
+                "description": "Limit search results to a specific website (e.g., 'site:example.com')",
+            },
+            "filetype": {
+                "type": "string",
+                "description": "Limit search results to specific file types (e.g., 'pdf', 'doc', 'xls')",
+            },
+            "time_period": {
+                "type": "string",
+                "description": "Limit results to a specific time period",
+                "enum": ["past_24h", "past_week", "past_month", "past_year"],
+            },
+            "exact_phrase": {
+                "type": "string",
+                "description": "Search for an exact phrase (will be enclosed in quotes)",
+            },
+            "exclude_terms": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Terms to exclude from search results (will be prefixed with minus sign)",
+            },
+            "or_terms": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Search for results containing any of these terms (will be joined with OR)",
+            },
+            "related": {
+                "type": "string",
+                "description": "Find sites related to a specific URL",
+            },
+            "intitle": {
+                "type": "string",
+                "description": "Search for pages with specific text in the title",
+            },
+            "inurl": {
+                "type": "string",
+                "description": "Search for pages with specific text in the URL",
+            },
+            "intext": {
+                "type": "string",
+                "description": "Search for pages with specific text in their content",
+            },
+            "safe_search": {
+                "type": "boolean",
+                "description": "Enable or disable safe search filtering",
+                "default": True,
+            },
+            "country": {
+                "type": "string",
+                "description": "Country code to localize search results (e.g., 'us', 'uk', 'ca')",
+            },
+            "language": {
+                "type": "string",
+                "description": "Language code to filter results (e.g., 'en', 'es', 'fr')",
+            },
+            "start": {
+                "type": "integer",
+                "description": "Start index for pagination of search results",
+                "default": 0,
+            },
         },
         "required": ["query"],
     }
-
-    def _remove_base64_images(self, data):
-        """Remove image elements entirely from the API response to reduce size."""
-        if isinstance(data, dict):
-            keys_to_remove = ["image", "image_alt", "image_base64", "image_url"]
-            for key in list(data.keys()):
-                if key in keys_to_remove:
-                    data.pop(key, None)
-                elif isinstance(data[key], str):
-                    if data[key].startswith("data:"):
-                        data.pop(key, None)
-                elif isinstance(data[key], (dict, list)):
-                    data[key] = self._remove_base64_images(data[key])
-        elif isinstance(data, list):
-            for i in range(len(data)):
-                data[i] = self._remove_base64_images(data[i])
-        return data
 
     async def process(self, context: ProcessingContext, params: dict) -> Any:
         """
@@ -257,78 +458,154 @@ class GoogleSearchTool(Tool):
             params: Dictionary including:
                 query (str): The search term to look up on Google
                 num_results (int, optional): Number of results to return
+                maps (bool, optional): Whether to perform a Google Maps search
+                site (str, optional): Limit search to a specific website
+                filetype (str, optional): Limit search to specific file types
+                time_period (str, optional): Limit results to a specific time period
+                exact_phrase (str, optional): Search for an exact phrase
+                exclude_terms (list, optional): Terms to exclude from search results
+                or_terms (list, optional): Search for results containing any of these terms
+                related (str, optional): Find sites related to a specific URL
+                intitle (str, optional): Search for pages with specific text in the title
+                inurl (str, optional): Search for pages with specific text in the URL
+                intext (str, optional): Search for pages with specific text in their content
+                safe_search (bool, optional): Enable or disable safe search filtering
+                country (str, optional): Country code to localize search results
+                language (str, optional): Language code to filter results
+                start (int, optional): Start index for pagination of search results
 
         Returns:
             dict: Search results or error message
         """
         try:
-            # Get API key from context if not provided during initialization
-            api_key = Environment.get("BRIGHTDATA_API_KEY")
-            if not api_key:
-                return {
-                    "error": "Brightdata API key not found. Please provide it in the secrets as 'BRIGHTDATA_API_KEY'."
-                }
-
             # Get required parameters
             query = params.get("query")
             if not query:
                 return {"error": "Search query is required"}
 
-            zone = Environment.get("BRIGHTDATA_ZONE")
-            if not zone:
-                return {
-                    "error": "Brightdata zone not found. Please provide it in the secrets as 'BRIGHTDATA_ZONE'."
-                }
+            # Build the search query with advanced parameters
+            search_query = query
 
-            url_encoded_query = urllib.parse.quote(query)
-            # Construct Google search URL
-            search_url = (
-                f"https://www.google.com/search?q={url_encoded_query}&brd_json=1"
-            )
-            if params.get("num_results"):
-                search_url += f"&num={params.get('num_results')}"
+            # Add site-specific search
+            if params.get("site"):
+                search_query += f" site:{params.get('site')}"
 
-            # Prepare request to Brightdata API
-            headers = {
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {api_key}",
-            }
+            # Add filetype filter
+            if params.get("filetype"):
+                search_query += f" filetype:{params.get('filetype')}"
 
-            payload = {"zone": zone, "url": search_url, "format": "json"}
+            # Add exact phrase search
+            if params.get("exact_phrase"):
+                search_query += f' "{params.get("exact_phrase")}"'
+
+            # Add excluded terms
+            if params.get("exclude_terms"):
+                for term in params.get("exclude_terms"):
+                    search_query += f" -{term}"
+
+            # Add OR terms
+            if params.get("or_terms"):
+                or_clause = " OR ".join(params.get("or_terms"))
+                search_query += f" ({or_clause})"
+
+            # Add related search
+            if params.get("related"):
+                search_query += f" related:{params.get('related')}"
+
+            # Add intitle search
+            if params.get("intitle"):
+                search_query += f" intitle:{params.get('intitle')}"
+
+            # Add inurl search
+            if params.get("inurl"):
+                search_query += f" inurl:{params.get('inurl')}"
+
+            # Add intext search
+            if params.get("intext"):
+                search_query += f" intext:{params.get('intext')}"
+
+            # URL construction based on search type
+            url_encoded_query = urllib.parse.quote(search_query)
+
+            if params.get("maps", False):
+                # Google Maps search
+                search_url = (
+                    f"https://www.google.com/maps/search/{url_encoded_query}?brd_json=1"
+                )
+            else:
+                # Regular Google search
+                search_url = (
+                    f"https://www.google.com/search?q={url_encoded_query}&brd_json=1"
+                )
+
+                # Add number of results parameter
+                if params.get("num_results"):
+                    search_url += f"&num={params.get('num_results')}"
+
+                # Add time period filter
+                if params.get("time_period"):
+                    time_param = None
+                    if params.get("time_period") == "past_24h":
+                        time_param = "qdr:d"
+                    elif params.get("time_period") == "past_week":
+                        time_param = "qdr:w"
+                    elif params.get("time_period") == "past_month":
+                        time_param = "qdr:m"
+                    elif params.get("time_period") == "past_year":
+                        time_param = "qdr:y"
+
+                    if time_param:
+                        search_url += f"&tbs={time_param}"
+
+                # Add safe search parameter
+                if "safe_search" in params:
+                    safe = "active" if params.get("safe_search") else "off"
+                    search_url += f"&safe={safe}"
+
+                # Add country parameter
+                if params.get("country"):
+                    search_url += f"&gl={params.get('country')}"
+
+                # Add language parameter
+                if params.get("language"):
+                    search_url += f"&hl={params.get('language')}"
+
+                # Add start index for pagination
+                if params.get("start"):
+                    search_url += f"&start={params.get('start')}"
 
             # Make the API request
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    "https://api.brightdata.com/request", headers=headers, json=payload
-                ) as response:
-                    if response.status != 200:
-                        error_text = await response.text()
-                        return {
-                            "error": f"Brightdata API request failed with status {response.status}: {error_text}"
-                        }
+            result = await make_api_request(search_url)
+            if "error" in result:
+                return result
 
-                    result = await response.json()
-                    if result["status_code"] == 200:
-                        body = json.loads(result["body"])
-                        body = self._remove_base64_images(body)
-                        # Create the raw search result
-                        search_result = {
-                            "success": True,
-                            "query": query,
-                            "result": body,
-                        }
-                        # Apply the extraction filter to organize links and titles
-                        extracted_data = extract_links_and_titles(search_result)
-                        # Return both the raw data and the extracted links/titles
-                        return {
-                            "success": True,
-                            "query": query,
-                            "result": extracted_data,
-                        }
+            # Google-specific response handling
+            if result["status_code"] == 200:
+                body = json.loads(result["body"])
+                body = _remove_base64_images(body)
+                # Create the raw search result
+                search_result = {
+                    "success": True,
+                    "query": search_query,
+                    "result": body,
+                }
 
-                    return {
-                        "error": f"Google search failed with status {result['status_code']}: {result['body']}"
-                    }
+                # Apply the appropriate extraction filter
+                if params.get("maps", False):
+                    extracted_data = extract_maps_data(search_result)
+                else:
+                    extracted_data = extract_links_and_titles(search_result)
+
+                # Return both the raw data and the extracted data
+                return {
+                    "success": True,
+                    "query": search_query,
+                    "result": extracted_data,
+                }
+
+            return {
+                "error": f"Google search failed with status {result['status_code']}: {result['body']}"
+            }
 
         except Exception as e:
             return {"error": f"Error performing Google search: {str(e)}"}
@@ -368,5 +645,33 @@ def extract_links_and_titles(search_result):
     #             }
     #         )
     #     extracted_data["videos"] = videos
+
+    return extracted_data
+
+
+def extract_maps_data(search_result):
+    """Extract location data from Google Maps search results."""
+    extracted_data = {"locations": [], "map_info": {}}
+
+    # Extract location data from the maps results
+    if "local_results" in search_result["result"]:
+        for item in search_result["result"]["local_results"]:
+            location = {
+                "name": item.get("title", "Unknown location"),
+                "address": item.get("address", ""),
+                "rating": item.get("rating", None),
+                "reviews": item.get("reviews", None),
+                "type": item.get("type", ""),
+                "link": item.get("link", ""),
+                "coordinates": item.get("gps_coordinates", {}),
+            }
+            extracted_data["locations"].append(location)
+
+    # Extract any other relevant map data
+    if "map" in search_result["result"]:
+        extracted_data["map_info"] = {
+            "center": search_result["result"]["map"].get("center", {}),
+            "zoom": search_result["result"]["map"].get("zoom", None),
+        }
 
     return extracted_data

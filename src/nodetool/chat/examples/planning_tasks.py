@@ -14,9 +14,7 @@ where you might want to review or modify plans before execution.
 
 import asyncio
 import json
-import os
-from pathlib import Path
-from typing import List, Union, Dict, Any
+from typing import List
 
 from nodetool.chat.cot_agent import TaskPlanner, TaskExecutor
 from nodetool.chat.providers import ChatProvider, Chunk
@@ -52,7 +50,7 @@ async def create_plan(
     Returns:
         TaskPlan: The generated plan
     """
-    planner = TaskPlanner(provider, model, tools, objective=objective)
+    planner = TaskPlanner(provider, model, objective=objective)
     task_plan = await planner.create_plan()
 
     print("\n=== Generated Plan ===")
