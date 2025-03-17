@@ -9,7 +9,8 @@ from typing import Any
 import aiohttp
 import json
 import urllib.parse
-import asyncio
+import html2text
+from bs4 import BeautifulSoup
 
 from nodetool.common.environment import Environment
 from nodetool.workflows.processing_context import ProcessingContext
@@ -32,34 +33,22 @@ class BrowserTool(Tool):
         "properties": {
             "action": {
                 "type": "string",
-                "description": "Action to perform: 'navigate', 'click', 'type', 'get_text', 'get_page_content', 'quit', 'batch_download'",
+                "description": "Action to perform",
                 "enum": [
                     "navigate",
                     "click",
                     "type",
-                    "get_text",
                     "get_page_content",
                     "quit",
-                    "batch_download",
                 ],
             },
             "url": {
                 "type": "string",
                 "description": "URL to navigate to (for 'navigate' action)",
             },
-            "urls": {
-                "type": "array",
-                "items": {"type": "string"},
-                "description": "List of URLs to navigate to (for 'batch_download' action)",
-            },
-            "max_concurrent": {
-                "type": "integer",
-                "description": "Maximum number of concurrent requests for batch_download (default: 3)",
-                "default": 3,
-            },
             "selector": {
                 "type": "string",
-                "description": "CSS selector for the target element (for 'click', 'type', 'get_text' actions)",
+                "description": "CSS selector for the target element (for 'click', 'type', 'get_page_content' actions)",
             },
             "text": {
                 "type": "string",
@@ -81,8 +70,6 @@ class BrowserTool(Tool):
             params: Dictionary including:
                 action (str): The action to perform ('navigate', 'click', 'type', 'get_text', 'get_page_content', 'quit', 'batch_download')
                 url (str, optional): URL to navigate to (for 'navigate' action)
-                urls (list, optional): List of URLs to navigate to (for 'batch_download' action)
-                max_concurrent (int, optional): Maximum number of concurrent requests for batch_download
                 selector (str, optional): CSS selector for element (for 'click', 'type', 'get_text' actions)
                 text (str, optional): Text to type (for 'type' action)
 
@@ -140,71 +127,17 @@ class BrowserTool(Tool):
                 await page.goto(url)
                 return {"success": True, "url": url}
 
-            elif action == "batch_download":
-                urls = params.get("urls")
-                if not urls:
-                    return {"error": "URLs list is required for batch_download action"}
-
-                max_concurrent = params.get("max_concurrent", 3)
-
-                # Create a semaphore to limit concurrent browser instances
-                semaphore = asyncio.Semaphore(max_concurrent)
-
-                async def fetch_url_content(url):
-                    async with semaphore:
-                        try:
-                            # Create a new browser context for each URL to avoid interference
-                            playwright_instance = context.get("playwright_instance")
-                            browser = context.get("playwright_browser")
-
-                            if not playwright_instance or not browser:
-                                return {
-                                    "url": url,
-                                    "success": False,
-                                    "error": "Browser not initialized",
-                                }
-
-                            # Create a new page in the existing browser
-                            page = await browser.new_page()
-                            try:
-                                await page.goto(url)
-                                page_text = await page.inner_text("body")
-                                page_title = await page.title()
-                                return {
-                                    "url": url,
-                                    "success": True,
-                                    "title": page_title,
-                                    "content": page_text,
-                                }
-                            finally:
-                                # Always close the page when done
-                                await page.close()
-                        except Exception as e:
-                            return {"url": url, "success": False, "error": str(e)}
-
-                # Create tasks for all URLs
-                tasks = [fetch_url_content(url) for url in urls]
-
-                try:
-                    # Execute all tasks concurrently and gather results
-                    results = await asyncio.gather(*tasks)
-
-                    # Summarize results
-                    success_count = sum(1 for r in results if r.get("success", False))
-
-                    return {
-                        "success": True,
-                        "total": len(urls),
-                        "successful": success_count,
-                        "failed": len(urls) - success_count,
-                        "results": results,
-                    }
-                except Exception as e:
-                    return {"error": f"Error in batch navigation: {str(e)}"}
-
             elif action == "get_page_content":
-                page_text = await page.inner_text("body")
+                # Check if we need to navigate first
+                requested_url = params.get("url")
+                if not requested_url:
+                    return {"error": "URL is required for get_page_content action"}
+
+                await page.goto(requested_url, wait_until="networkidle")
                 current_url = page.url
+
+                page_html = await page.inner_html("body")
+                page_text = html2text.html2text(page_html)
                 return {"success": True, "url": current_url, "body": page_text}
 
             elif action in ["click", "type", "get_text"]:
@@ -379,11 +312,6 @@ class GoogleSearchTool(Tool):
                 "description": "Number of results to return (optional)",
                 "default": 10,
             },
-            "maps": {
-                "type": "boolean",
-                "description": "Whether to perform a Google Maps search instead of a regular search",
-                "default": False,
-            },
             "site": {
                 "type": "string",
                 "description": "Limit search results to a specific website (e.g., 'site:example.com')",
@@ -401,16 +329,6 @@ class GoogleSearchTool(Tool):
                 "type": "string",
                 "description": "Search for an exact phrase (will be enclosed in quotes)",
             },
-            "exclude_terms": {
-                "type": "array",
-                "items": {"type": "string"},
-                "description": "Terms to exclude from search results (will be prefixed with minus sign)",
-            },
-            "or_terms": {
-                "type": "array",
-                "items": {"type": "string"},
-                "description": "Search for results containing any of these terms (will be joined with OR)",
-            },
             "related": {
                 "type": "string",
                 "description": "Find sites related to a specific URL",
@@ -426,11 +344,6 @@ class GoogleSearchTool(Tool):
             "intext": {
                 "type": "string",
                 "description": "Search for pages with specific text in their content",
-            },
-            "safe_search": {
-                "type": "boolean",
-                "description": "Enable or disable safe search filtering",
-                "default": True,
             },
             "country": {
                 "type": "string",
@@ -463,13 +376,10 @@ class GoogleSearchTool(Tool):
                 filetype (str, optional): Limit search to specific file types
                 time_period (str, optional): Limit results to a specific time period
                 exact_phrase (str, optional): Search for an exact phrase
-                exclude_terms (list, optional): Terms to exclude from search results
-                or_terms (list, optional): Search for results containing any of these terms
                 related (str, optional): Find sites related to a specific URL
                 intitle (str, optional): Search for pages with specific text in the title
                 inurl (str, optional): Search for pages with specific text in the URL
                 intext (str, optional): Search for pages with specific text in their content
-                safe_search (bool, optional): Enable or disable safe search filtering
                 country (str, optional): Country code to localize search results
                 language (str, optional): Language code to filter results
                 start (int, optional): Start index for pagination of search results
@@ -498,16 +408,6 @@ class GoogleSearchTool(Tool):
             if params.get("exact_phrase"):
                 search_query += f' "{params.get("exact_phrase")}"'
 
-            # Add excluded terms
-            if params.get("exclude_terms"):
-                for term in params.get("exclude_terms", []):
-                    search_query += f" -{term}"
-
-            # Add OR terms
-            if params.get("or_terms"):
-                or_clause = " OR ".join(params.get("or_terms", []))
-                search_query += f" ({or_clause})"
-
             # Add related search
             if params.get("related"):
                 search_query += f" related:{params.get('related')}"
@@ -526,53 +426,46 @@ class GoogleSearchTool(Tool):
 
             # URL construction based on search type
             url_encoded_query = urllib.parse.quote(search_query)
+            # Regular Google search
+            search_url = (
+                f"https://www.google.com/search?q={url_encoded_query}&brd_json=1"
+            )
 
-            if params.get("maps", False):
-                # Google Maps search
-                search_url = (
-                    f"https://www.google.com/maps/search/{url_encoded_query}?brd_json=1"
-                )
-            else:
-                # Regular Google search
-                search_url = (
-                    f"https://www.google.com/search?q={url_encoded_query}&brd_json=1"
-                )
+            # Add number of results parameter
+            if params.get("num_results"):
+                search_url += f"&num={params.get('num_results')}"
 
-                # Add number of results parameter
-                if params.get("num_results"):
-                    search_url += f"&num={params.get('num_results')}"
+            # Add time period filter
+            if params.get("time_period"):
+                time_param = None
+                if params.get("time_period") == "past_24h":
+                    time_param = "qdr:d"
+                elif params.get("time_period") == "past_week":
+                    time_param = "qdr:w"
+                elif params.get("time_period") == "past_month":
+                    time_param = "qdr:m"
+                elif params.get("time_period") == "past_year":
+                    time_param = "qdr:y"
 
-                # Add time period filter
-                if params.get("time_period"):
-                    time_param = None
-                    if params.get("time_period") == "past_24h":
-                        time_param = "qdr:d"
-                    elif params.get("time_period") == "past_week":
-                        time_param = "qdr:w"
-                    elif params.get("time_period") == "past_month":
-                        time_param = "qdr:m"
-                    elif params.get("time_period") == "past_year":
-                        time_param = "qdr:y"
+                if time_param:
+                    search_url += f"&tbs={time_param}"
 
-                    if time_param:
-                        search_url += f"&tbs={time_param}"
+            # Add safe search parameter
+            if "safe_search" in params:
+                safe = "active" if params.get("safe_search") else "off"
+                search_url += f"&safe={safe}"
 
-                # Add safe search parameter
-                if "safe_search" in params:
-                    safe = "active" if params.get("safe_search") else "off"
-                    search_url += f"&safe={safe}"
+            # Add country parameter
+            if params.get("country"):
+                search_url += f"&gl={params.get('country')}"
 
-                # Add country parameter
-                if params.get("country"):
-                    search_url += f"&gl={params.get('country')}"
+            # Add language parameter
+            if params.get("language"):
+                search_url += f"&hl={params.get('language')}"
 
-                # Add language parameter
-                if params.get("language"):
-                    search_url += f"&hl={params.get('language')}"
-
-                # Add start index for pagination
-                if params.get("start"):
-                    search_url += f"&start={params.get('start')}"
+            # Add start index for pagination
+            if params.get("start"):
+                search_url += f"&start={params.get('start')}"
 
             # Make the API request
             result = await make_api_request(search_url)
@@ -582,27 +475,20 @@ class GoogleSearchTool(Tool):
             # Google-specific response handling
             if result["status_code"] == 200:
                 body = json.loads(result["body"])
-                body = _remove_base64_images(body)
-                # Create the raw search result
-                search_result = {
-                    "success": True,
-                    "query": search_query,
-                    "result": body,
-                }
 
-                # Apply the appropriate extraction filter
-                if params.get("maps", False):
-                    extracted_data = extract_maps_data(search_result)
-                else:
-                    extracted_data = extract_links_and_titles(search_result)
-
-                # Return both the raw data and the extracted data
                 return {
                     "success": True,
-                    "query": search_query,
-                    "result": extracted_data,
+                    "general": body["general"],
+                    "input": body["input"],
+                    "organic": [
+                        {
+                            "title": item["title"],
+                            "link": item["link"],
+                            "description": item["description"],
+                        }
+                        for item in body["organic"]
+                    ],
                 }
-
             return {
                 "error": f"Google search failed with status {result['status_code']}: {result['body']}"
             }
@@ -611,67 +497,107 @@ class GoogleSearchTool(Tool):
             return {"error": f"Error performing Google search: {str(e)}"}
 
 
-def extract_links_and_titles(search_result):
-    """Extract links and titles from Google search results."""
-    extracted_data = {}
+class WebFetchTool(Tool):
+    """
+    A tool that fetches HTML content from a URL and converts it to text.
 
-    # Extract from organic search results
-    if "organic" in search_result["result"]:
-        organic = []
-        for item in search_result["result"]["organic"]:
-            organic.append({"title": item["title"], "link": item["link"]})
-        extracted_data["organic"] = organic
+    This tool enables language models to retrieve and process web content without
+    needing a full browser, using BeautifulSoup for HTML parsing and html2text for
+    conversion to plain text.
+    """
 
-    # Extract from top stories
-    # if (
-    #     "top_stories" in search_result["result"]
-    #     and "items" in search_result["result"]["top_stories"]
-    # ):
-    #     top_stories = []
-    #     for item in search_result["result"]["top_stories"]["items"]:
-    #         top_stories.append({"title": item["title"], "link": item["link"]})
-    #     extracted_data["top_stories"] = top_stories
+    name = "web_fetch"
+    description = "Fetch HTML from a URL and extract text content using BeautifulSoup"
+    input_schema = {
+        "type": "object",
+        "properties": {
+            "url": {
+                "type": "string",
+                "description": "URL to fetch content from",
+            },
+            "selector": {
+                "type": "string",
+                "description": "Optional CSS selector to extract specific elements (defaults to 'body')",
+                "default": "body",
+            },
+            "headers": {
+                "type": "object",
+                "description": "Optional HTTP headers for the request",
+            },
+            "timeout": {
+                "type": "number",
+                "description": "Optional timeout for the request in seconds",
+                "default": 30,
+            },
+        },
+        "required": ["url"],
+    }
 
-    # # Extract from videos section
-    # if "videos" in search_result["result"]:
-    #     videos = []
-    #     for item in search_result["result"]["videos"]:
-    #         videos.append(
-    #             {
-    #                 "title": item.get(
-    #                     "title", f"Video by {item.get('author', 'Unknown')}"
-    #                 ),
-    #                 "link": item["link"],
-    #             }
-    #         )
-    #     extracted_data["videos"] = videos
+    async def process(self, context: ProcessingContext, params: dict) -> Any:
+        """
+        Fetches HTML from a URL, extracts content using BeautifulSoup, and converts to text.
 
-    return extracted_data
+        Args:
+            context: The processing context
+            params: Dictionary including:
+                url (str): The URL to fetch content from
+                selector (str, optional): CSS selector for extracting specific elements (defaults to 'body')
+                headers (dict, optional): HTTP headers for the request
+                timeout (int, optional): Timeout for the request in seconds
 
+        Returns:
+            dict: Result containing the extracted text content or error message
+        """
+        try:
+            url = params.get("url")
+            if not url:
+                return {"error": "URL is required"}
 
-def extract_maps_data(search_result):
-    """Extract location data from Google Maps search results."""
-    extracted_data = {"locations": [], "map_info": {}}
+            selector = params.get("selector", "body")
+            headers = params.get("headers", {})
+            timeout = params.get("timeout", 30)
 
-    # Extract location data from the maps results
-    if "local_results" in search_result["result"]:
-        for item in search_result["result"]["local_results"]:
-            location = {
-                "name": item.get("title", "Unknown location"),
-                "address": item.get("address", ""),
-                "rating": item.get("rating", None),
-                "reviews": item.get("reviews", None),
-                "type": item.get("type", ""),
-                "link": item.get("link", ""),
-                "coordinates": item.get("gps_coordinates", {}),
+            # Make HTTP request
+            async with aiohttp.ClientSession() as session:
+                async with session.get(
+                    url, headers=headers, timeout=timeout
+                ) as response:
+                    if response.status != 200:
+                        return {
+                            "error": f"HTTP request failed with status {response.status}",
+                            "status_code": response.status,
+                        }
+
+                    html_content = await response.text()
+
+            # Parse HTML with BeautifulSoup
+            soup = BeautifulSoup(html_content, "html.parser")
+
+            # Extract content based on selector
+            if selector:
+                elements = soup.select(selector)
+                if not elements:
+                    return {
+                        "error": f"No elements found matching selector: {selector}",
+                        "url": url,
+                    }
+
+                # Get HTML content of all matching elements
+                extracted_html = "".join(str(element) for element in elements)
+            else:
+                # Default to body if no selector provided
+                body = soup.body
+                if body:
+                    extracted_html = str(body)
+                else:
+                    return {"error": "No body element found in the HTML", "url": url}
+
+            return html2text.html2text(extracted_html)
+
+        except aiohttp.ClientError as e:
+            return {"error": f"HTTP request error: {str(e)}", "url": url}
+        except Exception as e:
+            return {
+                "error": f"Error fetching and processing content: {str(e)}",
+                "url": url,
             }
-            extracted_data["locations"].append(location)
-
-    # Extract any other relevant map data
-    if "map" in search_result["result"]:
-        extracted_data["map_info"] = {
-            "center": search_result["result"]["map"].get("center", {}),
-            "zoom": search_result["result"]["map"].get("zoom", None),
-        }
-
-    return extracted_data

@@ -971,14 +971,20 @@ class SubTask(BaseType):
 
     id: str = Field(default="", description="The ID of the subtask")
     content: str = Field(default="", description="The content of the subtask")
+    output_file: str = Field(
+        default="", description="The file path where the subtask will save its output"
+    )
     thinking: bool = Field(
         default=False, description="Whether the subtask requires thinking"
+    )
+    max_tool_calls: int = Field(
+        default=2, description="The maximum number of tool calls for the subtask"
     )
     completed: bool = Field(
         default=False, description="Whether the subtask is completed"
     )
-    dependencies: list[str] = Field(
-        default=[], description="The dependencies of the subtask, a list of subtask IDs"
+    file_dependencies: list[str] = Field(
+        default=[], description="The dependencies of the subtask, a list of file paths"
     )
     output_type: Literal["text", "object"] = Field(
         default="text", description="The type of output the subtask will return"
@@ -988,11 +994,11 @@ class SubTask(BaseType):
         """Convert the subtask to markdown format."""
         checkbox = "[x]" if self.completed else "[ ]"
         deps_str = (
-            f" (depends on #{', #'.join(self.dependencies)})"
-            if self.dependencies
+            f" (depends on {', '.join(self.file_dependencies)})"
+            if self.file_dependencies
             else ""
         )
-        thinking_str = " (thinking)" if self.thinking else ""
+        thinking_str = " (required thinking)" if self.thinking else ""
         return f"- {checkbox} #{self.id} {self.content}{deps_str}{thinking_str}"
 
 
@@ -1001,6 +1007,9 @@ class Task(BaseModel):
 
     type: Literal["task"] = "task"
 
+    agent_name: str = Field(
+        default="", description="The name of the agent to use for the task"
+    )
     title: str = Field(default="", description="The title of the task")
     description: str = Field(
         default="", description="A description of the task, not used for execution"
@@ -1025,13 +1034,13 @@ class Task(BaseModel):
         self,
         subtask_id: str,
         content: str,
-        dependencies: list[str] = [],
+        file_dependencies: list[str] = [],
     ) -> SubTask:
         """Creates and adds a new subtask to the task."""
         subtask = SubTask(
             id=subtask_id,
             content=content,
-            dependencies=dependencies,
+            file_dependencies=file_dependencies,
         )
         self.subtasks.append(subtask)
         return subtask
@@ -1062,12 +1071,15 @@ class TaskPlan(BaseType):
 
     type: Literal["task_plan"] = "task_plan"
     title: str = Field(default="", description="The title of the task list")
-    thoughts: str = Field(default="", description="Agent planning thoughts")
     tasks: list[Task] = Field(default=[], description="The tasks of the task list")
 
     def to_markdown(self) -> str:
         """Convert all tasks to a markdown string."""
-        return "\n".join(task.to_markdown() for task in self.tasks)
+        lines = f"# {self.title}\n"
+        if self.tasks:
+            for task in self.tasks:
+                lines += f"{task.to_markdown()}\n"
+        return lines
 
     def find_task_by_title(self, title: str) -> Optional[Task]:
         """Find a task by its title."""
@@ -1120,7 +1132,7 @@ class TaskPlan(BaseType):
         task_title: str,
         subtask_id: str,
         content: str,
-        dependencies: list[str] = [],
+        file_dependencies: list[str] = [],
     ) -> dict[str, Any]:
         """Adds a subtask to an existing task, with optional completion status and dependencies."""
         task = self.find_task_by_title(task_title)
@@ -1138,14 +1150,16 @@ class TaskPlan(BaseType):
             }
 
         # Create the subtask
-        subtask = task.add_subtask(subtask_id, content, dependencies=dependencies)
+        subtask = task.add_subtask(
+            subtask_id, content, file_dependencies=file_dependencies
+        )
 
         return {
             "success": True,
             "task_title": task.title,
             "subtask_content": subtask.content,
             "subtask_id": subtask.id,
-            "dependencies": subtask.dependencies,
+            "file_dependencies": subtask.file_dependencies,
         }
 
     def finish_subtask(self, task_title: str, content: str) -> dict[str, Any]:

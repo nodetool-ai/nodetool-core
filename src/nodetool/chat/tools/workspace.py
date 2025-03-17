@@ -29,19 +29,32 @@ class WorkspaceBaseTool(Tool):
     def resolve_workspace_path(self, path: str) -> str:
         """
         Resolve a path relative to the workspace directory.
+        Handles paths with /workspace prefix by stripping it and resolving against the actual workspace directory.
 
         Args:
-            path (str): The path, either absolute or relative to the workspace
+            path (str): The path, can be:
+                - absolute with /workspace prefix
+                - absolute within the actual workspace directory
+                - relative to the workspace directory
 
         Returns:
-            str: The absolute path
+            str: The absolute path in the actual filesystem
         """
-        if os.path.isabs(path):
+        # Handle paths with /workspace prefix
+        if path.startswith("/workspace/"):
+            # Strip the /workspace prefix and treat as relative path
+            relative_path = path[len("/workspace/") :]
+            return os.path.normpath(os.path.join(self.workspace_dir, relative_path))
+
+        # Handle absolute paths
+        elif os.path.isabs(path):
             # Security check to ensure the path is inside the workspace
             abs_path = os.path.normpath(path)
             if not abs_path.startswith(self.workspace_dir):
                 raise ValueError(f"Path '{path}' is outside the workspace directory")
             return abs_path
+
+        # Handle relative paths
         else:
             # Relative path within the workspace
             return os.path.normpath(os.path.join(self.workspace_dir, path))

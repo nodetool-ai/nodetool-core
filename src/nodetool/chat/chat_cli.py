@@ -24,39 +24,28 @@ import sys
 from typing import List, Optional
 from pathlib import Path
 
-from nodetool.chat.cot_agent import CoTAgent
+from nodetool.chat.multi_agent import MultiAgentCoordinator
+from nodetool.chat.agent import Agent
 from nodetool.chat.providers import get_provider, Chunk
-from nodetool.chat.tools import Tool
 from nodetool.chat.regular_chat import process_regular_chat
-from nodetool.common.settings import get_system_data_path
+from nodetool.chat.tools.browser import WebFetchTool
 from nodetool.metadata.types import Provider, Message, ToolCall, FunctionModel
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.chat.ollama_service import get_ollama_models
 from nodetool.chat.chat import get_openai_models
 from nodetool.chat.tools import (
-    SearchEmailTool,
     GoogleSearchTool,
-    AddLabelTool,
     BrowserTool,
     ScreenshotTool,
-    SearchFileTool,
     ChromaTextSearchTool,
     ChromaHybridSearchTool,
     ExtractPDFTablesTool,
     ExtractPDFTextTool,
     ConvertPDFToMarkdownTool,
-    CreateAppleNoteTool,
-    ReadAppleNotesTool,
-    SemanticDocSearchTool,
-    KeywordDocSearchTool,
-    CreateWorkspaceFileTool,
     ReadWorkspaceFileTool,
-    UpdateWorkspaceFileTool,
-    DeleteWorkspaceFileTool,
     ListWorkspaceContentsTool,
     ExecuteWorkspaceCommandTool,
 )
-from nodetool.chat.cot_agent import TaskPlanner
 
 
 class ChatCLI:
@@ -146,12 +135,12 @@ class ChatCLI:
         self.messages: list[Message] = []
         self.agent_mode = False
         self.debug_mode = False
-        self.cot_agent = None
+        self.agent = None
 
         # Set up default models and provider
         self.default_models = {
             Provider.OpenAI: "gpt-4o",
-            Provider.Anthropic: "claude-3-7-sonnet-20250222",
+            Provider.Anthropic: "claude-3-7-sonnet-20250219",
             Provider.Ollama: "llama3.2:3b",
         }
         self.provider = Provider.Anthropic
@@ -169,37 +158,6 @@ class ChatCLI:
         # Load settings if they exist
         self.load_settings()
 
-    def get_tools(self) -> List[Tool]:
-        """Get the list of tools available to the CoT agent.
-
-        Returns:
-            List[Tool]: A list of Tool objects
-        """
-        workspace_dir = str(self.workspace_dir)
-        return [
-            # SearchEmailTool(workspace_dir),
-            # AddLabelTool(workspace_dir),
-            GoogleSearchTool(workspace_dir),
-            BrowserTool(workspace_dir),
-            ScreenshotTool(workspace_dir),
-            # SearchFileTool(workspace_dir),
-            ChromaTextSearchTool(workspace_dir),
-            ChromaHybridSearchTool(workspace_dir),
-            ExtractPDFTablesTool(workspace_dir),
-            ExtractPDFTextTool(workspace_dir),
-            ConvertPDFToMarkdownTool(workspace_dir),
-            # CreateAppleNoteTool(workspace_dir),
-            # ReadAppleNotesTool(workspace_dir),
-            # SemanticDocSearchTool(workspace_dir),
-            # KeywordDocSearchTool(workspace_dir),
-            CreateWorkspaceFileTool(workspace_dir),
-            ReadWorkspaceFileTool(workspace_dir),
-            UpdateWorkspaceFileTool(workspace_dir),
-            DeleteWorkspaceFileTool(workspace_dir),
-            ListWorkspaceContentsTool(workspace_dir),
-            ExecuteWorkspaceCommandTool(workspace_dir),
-        ]
-
     async def initialize(self):
         """Initialize async components and workspace.
 
@@ -209,7 +167,7 @@ class ChatCLI:
         3. Initializes the CoT agent
         4. Sets up readline with history and tab completion
 
-        The workspace is created as a unique directory in the system's temp directory.
+        The workspace is created as a unique directory in ~/.nodetool-workspaces.
 
         Returns:
             None
@@ -223,14 +181,37 @@ class ChatCLI:
         self.openai_models = await get_openai_models()
         self.providers = [p.value.lower() for p in Provider]
 
-        # Set up workspace
-        self.workspace_root = get_system_data_path("workspaces")
+        # Set up workspace in user's home directory
+        self.workspace_root = Path(os.path.expanduser("~")) / ".nodetool-workspaces"
         self.workspace_root.mkdir(exist_ok=True)
         self.workspace_name = f"workspace-{int(asyncio.get_event_loop().time())}"
         self.workspace_dir = self.workspace_root / self.workspace_name
         self.workspace_dir.mkdir(exist_ok=True)
         self.current_dir = self.workspace_dir
-        self.tools = self.get_tools()
+        workspace_dir = str(self.workspace_dir)
+
+        print(f"Created new workspace at: {self.workspace_dir}")
+
+        self.retrieval_tools = [
+            ChromaTextSearchTool(workspace_dir),
+            ChromaHybridSearchTool(workspace_dir),
+            ExtractPDFTablesTool(workspace_dir),
+            ExtractPDFTextTool(workspace_dir),
+            ConvertPDFToMarkdownTool(workspace_dir),
+            GoogleSearchTool(workspace_dir),
+            WebFetchTool(workspace_dir),
+            BrowserTool(workspace_dir),
+            ScreenshotTool(workspace_dir),
+            ReadWorkspaceFileTool(workspace_dir),
+            ListWorkspaceContentsTool(workspace_dir),
+            ExecuteWorkspaceCommandTool(workspace_dir),
+        ]
+
+        self.summarization_tools = [
+            ReadWorkspaceFileTool(workspace_dir),
+            ListWorkspaceContentsTool(workspace_dir),
+            ExecuteWorkspaceCommandTool(workspace_dir),
+        ]
 
         # Set up readline
         self.setup_readline()
@@ -326,12 +307,12 @@ class ChatCLI:
             options = [f"{cmd}" for cmd in self.COMMANDS if cmd.startswith(text)]
             return options[state] if state < len(options) else None
 
-    def initialize_cot_agent(self, objective: str):
-        """Initialize or reinitialize the CoT agent.
+    def initialize_agent(self, objective: str):
+        """Initialize or reinitialize the agent.
 
-        Creates a new Chain of Thought agent instance with:
+        Creates a new MultiAgentCoordinator instance with:
         1. The current provider (OpenAI, Anthropic, or Ollama)
-        2. Separate models for planning and execution
+        2. The model for planning and execution
         3. The workspace directory for file system operations
 
         This method is called during initial setup and whenever
@@ -341,52 +322,50 @@ class ChatCLI:
             objective (str): The problem or objective to solve
 
         Returns:
-            CoTAgent: A new CoT agent instance
+            MultiAgentCoordinator: A new MultiAgentCoordinator instance
         """
         provider_instance = get_provider(self.provider)
 
-        # Create a CoTAgent with the executor model
-        # The CoTAgent will create its own TaskPlanner internally
-        cot_agent = CoTAgent(
+        # Create a MultiAgentCoordinator instance
+        agent = MultiAgentCoordinator(
             provider=provider_instance,
-            model=self.executor_model,  # Use executor model for the agent
-            workspace_dir=str(self.workspace_dir),
-            tools=self.tools,
+            planner_model=self.planner_model,
+            planning_steps=3,
+            planning_tools=self.retrieval_tools,
             objective=objective,
+            workspace_dir=str(self.workspace_dir),
+            agents=[
+                Agent(
+                    name="Research Agent",
+                    objective="Research information from the web.",
+                    description="A research agent that uses the research tools to research information from the web.",
+                    provider=provider_instance,
+                    model=self.executor_model,
+                    workspace_dir=str(self.workspace_dir),
+                    tools=self.retrieval_tools,
+                ),
+                Agent(
+                    name="Summarization Agent",
+                    objective="Summarize information from the workspace.",
+                    description="A summarization agent that uses the summarization tools to summarize information from the workspace.",
+                    provider=provider_instance,
+                    model=self.executor_model,
+                    workspace_dir=str(self.workspace_dir),
+                    tools=self.summarization_tools,
+                ),
+            ],
+            max_steps=30,
+            max_subtask_iterations=5,
+            max_token_limit=20000,
         )
 
-        # Replace the planner with our custom planner using the planner model
-        cot_agent.planner = TaskPlanner(
-            provider=provider_instance, model=self.planner_model, objective=objective
-        )
+        return agent
 
-        return cot_agent
-
-    def find_tool_by_name(self, name: str) -> Optional[Tool]:
-        """Find a tool by its name.
-
-        Searches the CoT agent's available tools for a tool with the given name.
-
-        Args:
-            name (str): The name of the tool to find
-
-        Returns:
-            Optional[Tool]: The Tool object if found, None otherwise
-
-        Note:
-            Returns None if the CoT agent is not initialized.
-        """
-        if self.cot_agent:
-            for tool in self.cot_agent.tools:
-                if tool.name == name:
-                    return tool
-        return None
-
-    async def process_cot_response(self, problem: str):
-        """Process a problem with the CoT agent and display the step-by-step reasoning.
+    async def process_agent_response(self, problem: str):
+        """Process a problem with the MultiAgentCoordinator and display the step-by-step reasoning.
 
         This method:
-        1. Sends the user's input to the CoT agent
+        1. Sends the user's input to the MultiAgentCoordinator
         2. Displays the agent's step-by-step reasoning as it's generated
         3. Executes any tool calls the agent makes
         4. Optionally displays tool results (if debug mode is on)
@@ -398,15 +377,15 @@ class ChatCLI:
             None
 
         Raises:
-            Exception: If there's an error during CoT reasoning (handled internally)
+            Exception: If there's an error during agent reasoning (handled internally)
 
         Note:
             This is only used when agent_mode is True.
         """
-        self.cot_agent = self.initialize_cot_agent(problem)
+        self.agent = self.initialize_agent(problem)
 
         try:
-            async for item in self.cot_agent.solve_problem():
+            async for item in self.agent.solve_problem():
                 if isinstance(item, Chunk):
                     print(item.content, end="", flush=True)
                 elif isinstance(item, ToolCall):
@@ -416,7 +395,7 @@ class ChatCLI:
                     print(f"\n[{item.name}]: {args}")
             print("\n")
         except Exception as e:
-            print(f"\nError during CoT reasoning: {e}")
+            print(f"\nError during agent reasoning: {e}")
             print(traceback.format_exc())
 
     def handle_workspace_command(self, cmd: str, args: List[str]) -> None:
@@ -619,7 +598,7 @@ class ChatCLI:
             print("  /planner [model_name] - Set the planner model")
             print("  /executor [model_name] - Set the executor model")
             print("  /models - List available models for the current provider")
-            print("  /agent [on|off] - Toggle Chain of Thought agent mode")
+            print("  /agent [on|off] - Toggle agent mode")
             print(
                 "  /debug [on|off] - Toggle debug mode to display tool calls and results"
             )
@@ -715,12 +694,12 @@ class ChatCLI:
 
             if args[0].lower() == "on":
                 self.agent_mode = True
-                print("Agent mode turned ON - Using Chain of Thought reasoning")
+                print("Agent mode turned ON")
                 # Save settings after changing agent mode
                 self.save_settings()
             elif args[0].lower() == "off":
                 self.agent_mode = False
-                print("Agent mode turned OFF - Using standard chat")
+                print("Agent mode turned OFF")
                 # Save settings after changing agent mode
                 self.save_settings()
             else:
@@ -743,9 +722,9 @@ class ChatCLI:
             else:
                 print("Usage: /debug [on|off]")
         elif cmd == "usage":
-            if self.cot_agent and self.cot_agent.provider:
+            if self.agent and self.agent.provider:
                 print(f"\nProvider usage statistics:")
-                print(json.dumps(self.cot_agent.provider.usage, indent=2))
+                print(json.dumps(self.agent.provider.usage, indent=2))
             else:
                 print("No usage statistics available")
         else:
@@ -784,6 +763,7 @@ class ChatCLI:
         print(f"Executor model: {self.executor_model.name}")
         print(f"Agent mode is {'ON' if self.agent_mode else 'OFF'}")
         print(f"Debug mode is {'ON' if self.debug_mode else 'OFF'}")
+
         print(f"\nWorkspace created at: {self.workspace_dir}")
         print("Use workspace commands: pwd, ls, cd, mkdir, rm, open")
 
@@ -817,7 +797,7 @@ class ChatCLI:
 
                 # Process chat input
                 if self.agent_mode:
-                    await self.process_cot_response(user_input)
+                    await self.process_agent_response(user_input)
                 else:
                     self.messages = await process_regular_chat(
                         user_input=user_input,
