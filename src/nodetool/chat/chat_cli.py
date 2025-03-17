@@ -55,6 +55,7 @@ from nodetool.chat.tools import (
     ListWorkspaceContentsTool,
     ExecuteWorkspaceCommandTool,
 )
+from nodetool.chat.cot_agent import TaskPlanner
 
 
 class ChatCLI:
@@ -113,6 +114,8 @@ class ChatCLI:
         "mkdir",
         "rm",
         "open",
+        "planner",
+        "executor",
     ]
     AGENT_OPTIONS = ["on", "off"]
     DEBUG_OPTIONS = ["on", "off"]
@@ -155,6 +158,10 @@ class ChatCLI:
             name=self.default_models[self.provider], provider=self.provider
         )
 
+        # Initialize planner and executor models with the same model as default
+        self.planner_model = self.model
+        self.executor_model = self.model
+
     def get_tools(self) -> List[Tool]:
         """Get the list of tools available to the CoT agent.
 
@@ -163,21 +170,21 @@ class ChatCLI:
         """
         workspace_dir = str(self.workspace_dir)
         return [
-            SearchEmailTool(workspace_dir),
+            # SearchEmailTool(workspace_dir),
+            # AddLabelTool(workspace_dir),
             GoogleSearchTool(workspace_dir),
-            AddLabelTool(workspace_dir),
             BrowserTool(workspace_dir),
             ScreenshotTool(workspace_dir),
-            SearchFileTool(workspace_dir),
+            # SearchFileTool(workspace_dir),
             ChromaTextSearchTool(workspace_dir),
             ChromaHybridSearchTool(workspace_dir),
             ExtractPDFTablesTool(workspace_dir),
             ExtractPDFTextTool(workspace_dir),
             ConvertPDFToMarkdownTool(workspace_dir),
-            CreateAppleNoteTool(workspace_dir),
-            ReadAppleNotesTool(workspace_dir),
-            SemanticDocSearchTool(workspace_dir),
-            KeywordDocSearchTool(workspace_dir),
+            # CreateAppleNoteTool(workspace_dir),
+            # ReadAppleNotesTool(workspace_dir),
+            # SemanticDocSearchTool(workspace_dir),
+            # KeywordDocSearchTool(workspace_dir),
             CreateWorkspaceFileTool(workspace_dir),
             ReadWorkspaceFileTool(workspace_dir),
             UpdateWorkspaceFileTool(workspace_dir),
@@ -253,7 +260,7 @@ class ChatCLI:
         This method is called by the readline library to provide tab completion
         suggestions for the current input text. It handles completion for:
         1. Base commands (like /help, /model, etc.)
-        2. Model names when typing '/model ...'
+        2. Model names when typing '/model ...', '/planner ...', or '/executor ...'
         3. Provider names when typing '/provider ...'
         4. Agent mode options when typing '/agent ...'
         5. Debug mode options when typing '/debug ...'
@@ -266,16 +273,21 @@ class ChatCLI:
             Optional[str]: A completion suggestion, or None if no suggestions are available
                            or the state exceeds the number of available completions
         """
-        if text.startswith("model"):
+        if (
+            text.startswith("model")
+            or text.startswith("planner")
+            or text.startswith("executor")
+        ):
             model_text = text.split()[-1]
+            cmd = text.split()[0]
             options = [
-                f"model {m}"
+                f"{cmd} {m}"
                 for m in self.ollama_models
                 if m.name.startswith(model_text)
             ]
             options.extend(
                 [
-                    f"model {m}"
+                    f"{cmd} {m}"
                     for m in self.openai_models
                     if m.id.startswith(model_text)
                 ]
@@ -312,23 +324,36 @@ class ChatCLI:
 
         Creates a new Chain of Thought agent instance with:
         1. The current provider (OpenAI, Anthropic, or Ollama)
-        2. The current model
+        2. Separate models for planning and execution
         3. The workspace directory for file system operations
 
         This method is called during initial setup and whenever
         the provider or model changes.
 
+        Args:
+            objective (str): The problem or objective to solve
+
         Returns:
-            None
+            CoTAgent: A new CoT agent instance
         """
         provider_instance = get_provider(self.provider)
-        return CoTAgent(
+
+        # Create a CoTAgent with the executor model
+        # The CoTAgent will create its own TaskPlanner internally
+        cot_agent = CoTAgent(
             provider=provider_instance,
-            model=self.model,
+            model=self.executor_model,  # Use executor model for the agent
             workspace_dir=str(self.workspace_dir),
             tools=self.tools,
             objective=objective,
         )
+
+        # Replace the planner with our custom planner using the planner model
+        cot_agent.planner = TaskPlanner(
+            provider=provider_instance, model=self.planner_model, objective=objective
+        )
+
+        return cot_agent
 
     def find_tool_by_name(self, name: str) -> Optional[Tool]:
         """Find a tool by its name.
@@ -488,6 +513,8 @@ class ChatCLI:
         - /models: List available models for the current provider
         - /provider [provider]: Set the AI provider
         - /model [model]: Set the model
+        - /planner [model]: Set the planner model
+        - /executor [model]: Set the executor model
         - /clear: Clear chat history
         - /agent [on|off]: Toggle CoT agent mode
         - /debug [on|off]: Toggle debug mode
@@ -509,7 +536,9 @@ class ChatCLI:
         elif cmd == "help":
             print("Commands:")
             print("  /provider [openai|anthropic|ollama] - Set the provider")
-            print("  /model [model_name] - Set the model")
+            print("  /model [model_name] - Set the model (both planner and executor)")
+            print("  /planner [model_name] - Set the planner model")
+            print("  /executor [model_name] - Set the executor model")
             print("  /models - List available models for the current provider")
             print("  /agent [on|off] - Toggle Chain of Thought agent mode")
             print(
@@ -552,6 +581,9 @@ class ChatCLI:
                 self.model = FunctionModel(
                     name=self.default_models[self.provider], provider=self.provider
                 )
+                # Update planner and executor models when provider changes
+                self.planner_model = self.model
+                self.executor_model = self.model
                 print(
                     f"Provider set to {self.provider.value} with default model {self.default_models[self.provider]}"
                 )
@@ -560,11 +592,32 @@ class ChatCLI:
         elif cmd == "model":
             if not args:
                 print(f"Current model: {self.model.name}")
+                print(f"Current planner model: {self.planner_model.name}")
+                print(f"Current executor model: {self.executor_model.name}")
                 return False
 
             model_name = args[0]
             self.model = FunctionModel(name=model_name, provider=self.provider)
-            print(f"Model set to {model_name}")
+            # Update both planner and executor models
+            self.planner_model = self.model
+            self.executor_model = self.model
+            print(f"Model set to {model_name} for both planner and executor")
+        elif cmd == "planner":
+            if not args:
+                print(f"Current planner model: {self.planner_model.name}")
+                return False
+
+            model_name = args[0]
+            self.planner_model = FunctionModel(name=model_name, provider=self.provider)
+            print(f"Planner model set to {model_name}")
+        elif cmd == "executor":
+            if not args:
+                print(f"Current executor model: {self.executor_model.name}")
+                return False
+
+            model_name = args[0]
+            self.executor_model = FunctionModel(name=model_name, provider=self.provider)
+            print(f"Executor model set to {model_name}")
         elif cmd == "clear":
             self.messages = []
             print("Chat history cleared")
@@ -632,6 +685,8 @@ class ChatCLI:
 
         print("Chat CLI - Type /help for commands")
         print(f"Using {self.provider.value} with model {self.model.name}")
+        print(f"Planner model: {self.planner_model.name}")
+        print(f"Executor model: {self.executor_model.name}")
         print("Agent mode is OFF (use /agent on to enable Chain of Thought reasoning)")
         print("Debug mode is OFF (use /debug on to display tool calls and results)")
         print(f"\nWorkspace created at: {self.workspace_dir}")

@@ -174,7 +174,10 @@ class AnthropicProvider(ChatProvider):
     ) -> AsyncGenerator[Chunk | ToolCall, Any]:
         """Generate streaming completions from Anthropic."""
         if "max_tokens" not in kwargs:
-            kwargs["max_tokens"] = 8192
+            if "haiku" in model.name:
+                kwargs["max_tokens"] = 4096
+            else:
+                kwargs["max_tokens"] = 8192
 
         # Handle response_format parameter
         response_format = kwargs.pop("response_format", None)

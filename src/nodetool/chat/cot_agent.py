@@ -449,7 +449,7 @@ class SubTaskContext:
         workspace_dir: str,
         result_store: Dict[str, Any],
         print_usage: bool = True,
-        max_token_limit: int = 4000,
+        max_token_limit: int = 20000,
     ):
         """
         Initialize a subtask execution context.
@@ -761,7 +761,7 @@ class SubTaskContext:
 
         This method:
         1. Preserves the system prompt
-        2. Summarizes the conversation history
+        2. Summarizes the conversation history to approximately half its original length
         3. Replaces the history with the system prompt and summary
         """
         # Keep the system prompt
@@ -769,21 +769,27 @@ class SubTaskContext:
 
         # Create a summary-specific system prompt
         summary_system_prompt = """
-        You are tasked with creating a concise summary of the conversation so far.
-        Focus on the most important information, decisions made, and current state.
+        You are tasked with creating a detailed summary of the conversation so far.
+        Maintain approximately 50% of the original content length.
+        Include all important information, decisions made, and current state.
         Your summary will replace the detailed conversation history to reduce token usage.
+        Do not compress too aggressively - aim for about 50% reduction, not more.
         """
 
         # Create a focused user prompt
         summary_user_prompt = f"""
         Please summarize the conversation history for subtask '{self.subtask.id}' so far.
-        Include:
-        1. The original task/objective
-        2. Key information discovered
-        3. Actions taken and their results
-        4. Current state and what needs to be done next
         
-        Keep only the essential information needed to continue the task.
+        IMPORTANT: Create a summary that is approximately 50% of the original length.
+        
+        Include:
+        1. The original task/objective in full detail
+        2. All key information discovered
+        3. All actions taken and their results
+        4. Current state and what needs to be done next
+        5. Any important context or details that would be needed to continue the task
+        
+        Do not compress too aggressively. Maintain approximately 50% of the original content.
         """
 
         # Create a minimal history with just the system prompt and summary request
@@ -820,7 +826,7 @@ class SubTaskContext:
             system_prompt,
             Message(
                 role="user",
-                content=f"CONVERSATION SUMMARY SO FAR:\n{summary_content}\n\nPlease continue with the task based on this summary.",
+                content=f"CONVERSATION HISTORY (SUMMARIZED TO ~50% LENGTH):\n{summary_content}\n\nPlease continue with the task based on this detailed summary.",
             ),
         ]
 
@@ -1118,47 +1124,46 @@ class CoTAgent:
         2. Execution Phase: Uses TaskExecutor to execute each task in the correct order
 
         The method yields intermediate results during both phases, allowing
-        for streaming progress to the caller. When execution completes, all
-        task results are stored and can be retrieved via get_results().
+        for streaming output to the user.
 
         Args:
-            print_usage (bool, optional): Whether to print provider usage statistics
+            print_usage (bool, optional): Whether to print token usage statistics. Defaults to False.
 
         Yields:
-            Union[Message, Chunk, ToolCall]: Objects representing parts of the reasoning process
+            Union[Message, Chunk, ToolCall]: Intermediate results during planning and execution
 
         Raises:
-            ValueError: If planning fails to generate a valid task plan
+            ValueError: If the planner fails to create a valid task plan
         """
-        # Add to chat history for reference
-        self.chat_history.append(Message(role="user", content=self.objective))
+        # Phase 1: Planning
+        # The planner is already initialized in __init__ or set externally
+        async for item in self.planner.create_plan():
+            yield item
 
-        # Run planning phase
-        yield Chunk(content="Planning phase started...\n", done=False)
-        async for chunk in self.planner.create_plan():
-            yield chunk
+        # Get the task plan from the planner
         task_plan = self.planner.task_plan
         if not task_plan:
-            raise ValueError("No task plan generated")
+            raise ValueError("Failed to create a valid task plan")
 
-        # Display the plan
-        yield Chunk(content="\nGenerated plan:\n", done=False)
-        yield Chunk(content=task_plan.to_markdown() + "\n", done=False)
-
-        # Run execution phase
-        yield Chunk(content="\nExecution phase started...\n", done=False)
-        self.executor = TaskExecutor(
-            self.provider,
-            self.model,
-            self.workspace_dir,
-            self.tools,
-            task_plan,
+        # Phase 2: Execution
+        # Create a task executor with the same model as the agent
+        executor = TaskExecutor(
+            provider=self.provider,
+            model=self.model,  # Use the executor model
+            workspace_dir=self.workspace_dir,
+            tools=self.tools,
+            task_plan=task_plan,
+            max_steps=self.max_steps,
             max_subtask_iterations=self.max_subtask_iterations,
-            max_token_limit=self.max_token_limit,  # Pass the token limit
+            max_token_limit=self.max_token_limit,
         )
 
-        async for result in self.executor.execute_tasks(print_usage):
-            yield result
+        # Execute the tasks and yield results
+        async for item in executor.execute_tasks(print_usage=print_usage):
+            yield item
+
+        # Store the results for later retrieval
+        self.results = executor.get_results()
 
     def get_results(self) -> Dict[str, Any]:
         """
@@ -1167,6 +1172,6 @@ class CoTAgent:
         Returns:
             Dict[str, Any]: Dictionary of results indexed by subtask ID
         """
-        if hasattr(self, "executor"):
-            return self.executor.get_results()
+        if hasattr(self, "results"):
+            return self.results
         return {}
