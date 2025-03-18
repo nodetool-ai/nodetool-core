@@ -101,6 +101,7 @@ async def main():
         max_steps=5,
         max_subtask_iterations=2,
     )
+    task_models = ["gpt-4o-mini", "gpt-4o", "o3-mini", "o1"]
     # Create planner with retrieval tools
     planner = TaskPlanner(
         provider=provider,
@@ -108,6 +109,7 @@ async def main():
         objective=research_objective,
         workspace_dir=str(workspace_dir),
         tools=retrieval_tools,
+        task_models=task_models,
         agents=[retrieval_agent, summary_agent],
         system_prompt=PLANNING_SYSTEM_PROMPT,
         max_research_iterations=1,

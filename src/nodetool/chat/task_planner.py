@@ -237,11 +237,11 @@ class TaskPlanner:
         self,
         provider: ChatProvider,
         model: str,
-        task_models: list[str],
         objective: str,
         workspace_dir: str,
         tools: List[Tool],
         agents: List[Agent],
+        task_models: list[str] = [],
         system_prompt: str | None = None,
         max_research_iterations: int = 3,
     ):
@@ -600,7 +600,7 @@ class TaskPlanner:
         Agent description: {agent.description}
         Agent objective: {agent.objective}
         Current provider: {self.provider.__class__.__name__}
-        Available models: {self.task_models}
+        {f"Available models: {self.task_models}" if self.task_models else ""}
         
         Research Findings:
         {research_summary}

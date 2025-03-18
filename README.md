@@ -1,6 +1,245 @@
-# Nodetool Core
+# NodeTool Core <img src="https://img.shields.io/badge/version-1.0.0-blue.svg" alt="Version Badge">
 
-Nodetool Core is the core library for Nodetool, providing the necessary functionality for building and running AI workflows.
+<p align="center">
+  <img src="https://img.shields.io/badge/Python-3.11%2B-blue.svg" alt="Python Version Badge">
+  <img src="https://img.shields.io/github/actions/workflow/status/yourusername/nodetool-core/test.yml?branch=main" alt="Build Status">
+  <img src="https://img.shields.io/badge/License-AGPL%20v3-blue.svg" alt="License Badge">
+  <img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg" alt="PRs Welcome Badge">
+  <img src="https://img.shields.io/discord/123456789?logo=discord" alt="Discord">
+</p>
+
+<p align="center">
+  <b>Powerful, Flexible Node-Based Workflows for AI Applications</b>
+</p>
+
+<p align="center">
+  <img src="https://via.placeholder.com/800x400?text=NodeTool+Core+Workflow+Example" alt="NodeTool Core Example" width="800">
+</p>
+
+## 📚 Overview
+
+NodeTool Core is a powerful Python library for building and running AI workflows using a modular, node-based approach. It provides the foundation for the NodeTool ecosystem, enabling developers to create sophisticated AI applications with minimal code.
+
+### ✨ Key Features
+
+- 🔄 **Node-based workflow system** - Compose complex workflows from simple building blocks
+- 🤖 **Multi-provider AI support** - Seamless integration with OpenAI, Anthropic, Ollama, and more
+- 🧩 **Modular architecture** - Easily extend with custom nodes and functionality
+- ⚡ **High-performance execution engine** - Run workflows efficiently on CPU or GPU
+- 🔄 **Workflow streaming API** - Get real-time updates on workflow progress
+- 🧠 **Advanced agent system** - Create intelligent agents with specialized capabilities
+- 💾 **Storage and persistence** - Save and manage workflows and results
+- 📊 **Type system** - Strong typing for workflow validation and documentation
+
+## 🚀 Quick Start
+
+### Installation
+
+```bash
+# Install using pip
+pip install nodetool-core
+
+# Or with Poetry
+poetry add nodetool-core
+```
+
+### Basic Usage
+
+```python
+import asyncio
+from nodetool.dsl.graph import graph, run_graph
+from nodetool.dsl.providers.openai import ChatCompletion
+from nodetool.metadata.types import OpenAIModel
+
+# Create a simple workflow
+g = ChatCompletion(
+    model=OpenAIModel(model="gpt-4"),
+    messages=[{"role": "user", "content": "Explain quantum computing in simple terms"}]
+)
+
+# Run the workflow
+result = asyncio.run(run_graph(graph(g)))
+print(result)
+```
+
+## 📖 Documentation
+
+Comprehensive documentation is available at [docs.nodetool.ai](https://docs.nodetool.ai).
+
+- [Concepts and Architecture](https://docs.nodetool.ai/concepts/)
+- [Getting Started Guide](https://docs.nodetool.ai/getting-started/)
+- [API Reference](https://docs.nodetool.ai/api-reference/)
+- [Examples](https://docs.nodetool.ai/examples/)
+- [Advanced Usage](https://docs.nodetool.ai/advanced/)
+
+## 🧩 Examples
+
+### Email Summarization
+
+This example demonstrates how to create a workflow that retrieves recent emails from Gmail, formats them, and generates a summary using advanced AI agents:
+
+```python
+import asyncio
+from nodetool.chat.agent import Agent
+from nodetool.chat.task_planner import TaskPlanner
+from nodetool.chat.providers.anthropic import AnthropicProvider
+from nodetool.chat.tools.email import GmailTool
+from nodetool.chat.tools.web import SearchTool, BrowserTool
+from nodetool.chat.tools.basic import FinishSubtaskTool
+from nodetool.metadata.types import TaskPlan
+
+# Initialize a provider
+provider = AnthropicProvider(api_key="your-api-key")
+
+# Create specialized agents
+research_agent = Agent(
+    name="EmailRetriever",
+    objective="Gather and organize recent emails",
+    description="Specialized in retrieving and organizing email content",
+    provider=provider,
+    model="claude-3-opus-20240229",
+    workspace_dir="./workspace",
+    tools=[GmailTool(), FinishSubtaskTool()],
+    system_prompt="You retrieve and organize email information. Focus on sender, subject, and key content.",
+    max_steps=20
+)
+
+summary_agent = Agent(
+    name="EmailSummarizer",
+    objective="Create concise summaries of email collections",
+    description="Specialized in analyzing and summarizing multiple emails",
+    provider=provider,
+    model="claude-3-opus-20240229",
+    workspace_dir="./workspace",
+    tools=[SearchTool(), BrowserTool(), FinishSubtaskTool()],
+    system_prompt="You are a summarizer. Create concise, well-structured summaries of email collections.",
+    max_steps=30
+)
+
+# Initialize the task planner
+planner = TaskPlanner(
+    provider=provider,
+    model="claude-3-opus-20240229",
+    objective="Retrieve recent emails and create a comprehensive summary",
+    workspace_dir="./workspace",
+    tools=[GmailTool(), SearchTool(), BrowserTool()],
+    agents=[research_agent, summary_agent],
+    max_research_iterations=2
+)
+
+async def process_emails():
+    # Create the plan
+    print("Creating task plan...")
+    async for chunk in planner.create_plan():
+        print(chunk.content)
+
+    # Get the task plan
+    task_plan = planner.task_plan
+    print(f"Task plan created with {len(task_plan.tasks)} tasks")
+
+    # Execute tasks for each agent
+    results = {}
+    for task in task_plan.tasks:
+        print(f"\nExecuting task: {task.name} with agent: {task.agent_name}")
+
+        if task.agent_name == "EmailRetriever":
+            async for item in research_agent.execute_task(task_plan, task):
+                print(f"Research agent: {item.content if hasattr(item, 'content') else item}")
+                results[task.id] = item
+
+        elif task.agent_name == "EmailSummarizer":
+            async for item in summary_agent.execute_task(task_plan, task):
+                print(f"Summary agent: {item.content if hasattr(item, 'content') else item}")
+                results[task.id] = item
+
+    print("\nEmail processing complete!")
+    print(results)
+
+# Run the workflow
+asyncio.run(process_emails())
+```
+
+More examples can be found in the [examples](./examples) directory.
+
+## 🏗️ Architecture
+
+NodeTool's architecture is designed to be flexible and extensible.
+
+```mermaid
+graph TD
+A[NodeTool Editor<br>ReactJS] -->|HTTP/WebSocket| B[API Server]
+A <-->|WebSocket| C[WebSocket Runner]
+B <-->|Internal Communication| C
+C <-->|WebSocket| D[Worker with ML Models<br>CPU/GPU<br>Local/Cloud]
+D <-->|HTTP Callbacks| B
+E[Other Apps/Websites] -->|HTTP| B
+E <-->|WebSocket| C
+D -->|Optional API Calls| F[OpenAI<br>Replicate<br>Anthropic<br>Others]
+
+    classDef default fill:#e0eee0,stroke:#333,stroke-width:2px,color:#000;
+    classDef frontend fill:#ffcccc,stroke:#333,stroke-width:2px,color:#000;
+    classDef server fill:#cce5ff,stroke:#333,stroke-width:2px,color:#000;
+    classDef runner fill:#ccffe5,stroke:#333,stroke-width:2px,color:#000;
+    classDef worker fill:#ccf2ff,stroke:#333,stroke-width:2px,color:#000;
+    classDef api fill:#e0e0e0,stroke:#333,stroke-width:2px,color:#000;
+    classDef darkgray fill:#a9a9a9,stroke:#333,stroke-width:2px,color:#000;
+
+    class A frontend;
+    class B server;
+    class C runner;
+    class D worker;
+    class E other;
+    class F api;
+```
+
+## 🤝 Contributing
+
+We welcome contributions from the community! Please see our [Contributing Guidelines](./CONTRIBUTING.md) for more information on how to get involved.
+
+### Development Setup
+
+1. Clone the repository
+
+   ```bash
+   git clone https://github.com/yourusername/nodetool-core.git
+   cd nodetool-core
+   ```
+
+2. Install dependencies with Poetry
+
+   ```bash
+   poetry install
+   ```
+
+3. Install pre-commit hooks
+
+   ```bash
+   pre-commit install
+   ```
+
+4. Run tests
+   ```bash
+   poetry run pytest
+   ```
+
+## 📄 License
+
+[AGPL License](./LICENSE)
+
+## 🌟 Showcase
+
+Here are some projects built with NodeTool Core:
+
+- [Project 1](https://example.com) - Description of project 1
+- [Project 2](https://example.com) - Description of project 2
+- [Project 3](https://example.com) - Description of project 3
+
+## 📚 Learn More
+
+- [NodeTool Website](https://nodetool.ai)
+- [Discord Community](https://discord.gg/nodetool)
+- [Twitter](https://twitter.com/nodetool)
+- [Blog](https://blog.nodetool.ai)
 
 ## Features
 
@@ -26,55 +265,83 @@ This example demonstrates how to create a workflow that retrieves recent emails 
 
 ```python
 import asyncio
-from nodetool.dsl.google.mail import GmailSearch, EmailFlag
-from nodetool.dsl.graph import graph, run_graph
-from nodetool.dsl.nodetool.output import StringOutput
-from nodetool.dsl.nodetool.text import Join, Concat
-from nodetool.dsl.ollama.text import Ollama
-from nodetool.dsl.nodetool.list import MapTemplate
-from nodetool.metadata.types import LlamaModel
+from nodetool.chat.agent import Agent
+from nodetool.chat.task_planner import TaskPlanner
+from nodetool.chat.providers.anthropic import AnthropicProvider
+from nodetool.chat.tools.email import GmailTool
+from nodetool.chat.tools.web import SearchTool, BrowserTool
+from nodetool.chat.tools.basic import FinishSubtaskTool
+from nodetool.metadata.types import TaskPlan
 
-# Search Gmail for recent emails
-emails = GmailSearch(
-    date_filter=GmailSearch.DateFilter.SINCE_ONE_DAY,
-    max_results=2,
+# Initialize a provider
+provider = AnthropicProvider(api_key="your-api-key")
+
+# Create specialized agents
+research_agent = Agent(
+    name="EmailRetriever",
+    objective="Gather and organize recent emails",
+    description="Specialized in retrieving and organizing email content",
+    provider=provider,
+    model="claude-3-opus-20240229",
+    workspace_dir="./workspace",
+    tools=[GmailTool(), FinishSubtaskTool()],
+    system_prompt="You retrieve and organize email information. Focus on sender, subject, and key content.",
+    max_steps=20
 )
 
-# Format emails into a template
-formatted_emails = MapTemplate(
-    values=emails,
-    template="==================\nFrom: {sender}\nSubject: {subject}\nBody: {body}\n==================",
+summary_agent = Agent(
+    name="EmailSummarizer",
+    objective="Create concise summaries of email collections",
+    description="Specialized in analyzing and summarizing multiple emails",
+    provider=provider,
+    model="claude-3-opus-20240229",
+    workspace_dir="./workspace",
+    tools=[SearchTool(), BrowserTool(), FinishSubtaskTool()],
+    system_prompt="You are a summarizer. Create concise, well-structured summaries of email collections.",
+    max_steps=30
 )
 
-# Join all formatted emails
-joined_emails = Join(strings=formatted_emails, separator="")
-
-# Add summarization prompt
-prompt = Concat(
-    a=joined_emails,
-    b="Create a concise and well-structured summary of the emails above. Prioritize important topics at the top, group related emails together, and include a separate section for newsletters. Summarize each email briefly, highlighting key details, and organize the digest for easy scanning and action.",
+# Initialize the task planner
+planner = TaskPlanner(
+    provider=provider,
+    model="claude-3-opus-20240229",
+    objective="Retrieve recent emails and create a comprehensive summary",
+    workspace_dir="./workspace",
+    tools=[GmailTool(), SearchTool(), BrowserTool()],
+    agents=[research_agent, summary_agent],
+    max_research_iterations=2
 )
 
-# Generate summary using Llama
-summary = Ollama(
-    prompt=prompt,
-    model=LlamaModel(repo_id="llama3.2:3b"),
-    system_prompt="You are a summarizer.",
-    context_window=65536,
-    temperature=0,
-    top_k=50,
-    top_p=0.95,
-)
+async def process_emails():
+    # Create the plan
+    print("Creating task plan...")
+    async for chunk in planner.create_plan():
+        print(chunk.content)
 
-output = StringOutput(
-    name="summary",
-    description="Summary of the emails",
-    value=summary,
-)
+    # Get the task plan
+    task_plan = planner.task_plan
+    print(f"Task plan created with {len(task_plan.tasks)} tasks")
 
-# Run the workflow and print the result
-summary_str = asyncio.run(run_graph(graph(output)))
-print(summary_str)
+    # Execute tasks for each agent
+    results = {}
+    for task in task_plan.tasks:
+        print(f"\nExecuting task: {task.name} with agent: {task.agent_name}")
+
+        if task.agent_name == "EmailRetriever":
+            async for item in research_agent.execute_task(task_plan, task):
+                print(f"Research agent: {item.content if hasattr(item, 'content') else item}")
+                results[task.id] = item
+
+        elif task.agent_name == "EmailSummarizer":
+            async for item in summary_agent.execute_task(task_plan, task):
+                print(f"Summary agent: {item.content if hasattr(item, 'content') else item}")
+                results[task.id] = item
+
+    print("\nEmail processing complete!")
+    print(results)
+
+# Run the workflow
+asyncio.run(process_emails())
 ```
 
 #### Example 2: PDF Indexing for RAG Applications
@@ -109,74 +376,6 @@ g = IndexTextChunks(
 
 # Run the workflow
 asyncio.run(run_graph(graph(g)))
-```
-
-#### Example 3: Machine Learning with scikit-learn
-
-This example demonstrates how to create a machine learning workflow that loads the Iris dataset, splits it into training and testing sets, scales the features, trains a Random Forest classifier, makes predictions, and calculates accuracy:
-
-```python
-import asyncio
-from nodetool.dsl.graph import graph, run_graph
-from nodetool.dsl.lib.ml.sklearn import PredictNode
-from nodetool.dsl.lib.ml.sklearn.datasets import LoadIrisDataset
-from nodetool.dsl.lib.ml.sklearn.metrics import AccuracyNode
-from nodetool.dsl.lib.ml.sklearn.preprocessing import (
-    StandardScalerNode,
-    TransformNode,
-)
-from nodetool.dsl.lib.ml.sklearn.model_selection import TrainTestSplitNode
-from nodetool.dsl.lib.ml.sklearn.ensemble import RandomForestClassifierNode
-from nodetool.nodes.lib.ml.sklearn.ensemble import RandomForestCriterion
-
-# Create dataset
-dataset = LoadIrisDataset()
-
-# Split data
-split = TrainTestSplitNode(
-    X=(dataset, "data"),
-    y=(dataset, "target"),
-    test_size=0.25,
-    shuffle=True,
-)
-
-# Scale features
-scaler = StandardScalerNode(
-    X=(split, "X_train"),
-    with_mean=True,
-    with_std=True,
-)
-
-# Transform test data
-transform = TransformNode(
-    X=(split, "X_test"),
-    model=(scaler, "model"),
-)
-
-# Train classifier
-clf = RandomForestClassifierNode(
-    X_train=(scaler, "transformed"),
-    y_train=(split, "y_train"),
-    n_estimators=100,
-    criterion=RandomForestCriterion.ENTROPY,
-    random_state=32,
-)
-
-# Make predictions
-predictions = PredictNode(
-    X=(transform, "transformed"),
-    model=(clf, "model"),
-)
-
-# Calculate accuracy
-accuracy = AccuracyNode(
-    y_true=(split, "y_test"),
-    y_pred=(predictions, "output"),
-)
-
-# Run the workflow
-g = graph(accuracy)
-asyncio.run(run_graph(g))
 ```
 
 ### Key Concepts
@@ -262,6 +461,305 @@ await runner.run(request, context)
 # Access results from the context
 results = context.get_results()
 ```
+
+## Agent System
+
+The NodeTool Agent System provides a powerful framework for building intelligent agents that can solve complex problems through reasoning, research, and collaboration.
+
+### Overview
+
+The NodeTool Agent System provides:
+
+- **Strategic Task Planning**: Break down complex objectives into structured, executable plans
+- **Chain of Thought Reasoning**: Enable step-by-step problem solving with explicit reasoning
+- **Multi-Agent Coordination**: Orchestrate specialized agents with different capabilities
+- **Sophisticated Tool Integration**: Provide agents with capabilities like web browsing, file operations, and more
+- **Context Management**: Efficiently handle context limitations through automatic summarization
+- **Streaming Results**: Get live updates during the reasoning and execution process
+
+### Architecture
+
+The system is composed of three primary components:
+
+1. **Agents**: Specialized problem-solvers with specific capabilities and objectives
+2. **Task Planner**: Creates structured, dependency-aware execution plans
+3. **Task Execution System**: Executes plans while managing resources and tracking progress
+
+```mermaid
+flowchart TD
+    classDef plannerClass fill:#f96,stroke:#333,stroke-width:2px,color:black
+    classDef planClass fill:#9cf,stroke:#333,stroke-width:2px,color:black
+    classDef executorClass fill:#9f6,stroke:#333,stroke-width:2px,color:black
+    classDef toolsClass fill:#fc9,stroke:#333,stroke-width:2px,color:black
+    classDef agentsClass fill:#c9f,stroke:#333,stroke-width:2px,color:black
+    classDef contextClass fill:#f9c,stroke:#333,stroke-width:2px,color:black
+
+    subgraph Core["Core System Components"]
+        TP[TaskPlanner] --> |creates| PLAN[Task Plan]
+        PLAN --> |executed by| TE[Task Executor]
+    end
+
+    subgraph Tools["Research & Analysis"]
+        RT[Research Tools]
+        RT1[Search]
+        RT2[Web Browser]
+        RT3[File Operations]
+        RT4[Math Calculations]
+        RT1 & RT2 & RT3 & RT4 -.-> RT
+    end
+
+    subgraph Agents["Agent Types"]
+        SA[Specialized Agents]
+        A1[Retrieval Agents]
+        A2[Summarization Agents]
+        A3[Reasoning Agents]
+        A1 & A2 & A3 -.-> SA
+    end
+
+    subgraph Context["Execution Environment"]
+        STC[SubTaskContext]
+        STC1[Conversation History]
+        STC2[Token Tracking]
+        STC3[Tool Calling Stage]
+        STC4[Conclusion Stage]
+        STC1 & STC2 & STC3 & STC4 -.-> STC
+    end
+
+    TP --> |uses| RT
+    TE --> |coordinates| SA
+    SA --> |operates in| STC
+
+    class TP plannerClass
+    class PLAN planClass
+    class TE executorClass
+    class RT,RT1,RT2,RT3,RT4 toolsClass
+    class SA,A1,A2,A3 agentsClass
+    class STC,STC1,STC2,STC3,STC4 contextClass
+```
+
+### Key Components
+
+#### Agent Base Class
+
+The `Agent` class is the foundation for specialized agents with different capabilities:
+
+- **Retrieval Agents**: Focus on gathering information from external sources
+- **Summarization Agents**: Synthesize and condense information efficiently
+- **Reasoning Agents**: Apply logical thinking to solve analytical problems
+
+Each agent is configured with:
+
+- A specific objective and description
+- LLM provider and model
+- Available tools
+- System prompt tailored to its role
+- Workspace for storing results
+
+#### Task Planner
+
+The `TaskPlanner` strategically decomposes complex objectives into manageable tasks:
+
+- Conducts initial research to inform planning
+- Creates a directed acyclic graph (DAG) of tasks with dependencies
+- Optimizes for parallel execution where possible
+- Assigns tasks to appropriate specialized agents
+- Saves plans for later execution or review
+
+Planning follows a structured approach:
+
+1. **Research Phase**: Gather relevant information to inform the plan
+2. **Decomposition**: Break down the objective into sub-goals
+3. **Task Creation**: Design specific tasks for each agent type
+4. **Dependency Mapping**: Establish relationships between tasks
+
+#### SubTaskContext
+
+The `SubTaskContext` provides an isolated execution environment for each subtask:
+
+- Manages conversation history and token tracking
+- Implements a two-stage execution model:
+  - **Tool Calling Stage**: Multiple iterations of information gathering using any tools
+  - **Conclusion Stage**: Final synthesis with restricted access (only finish_subtask tool)
+- Handles automatic context summarization when token limits are exceeded
+- Tracks progress and enforces execution constraints
+
+#### Task Types
+
+The system supports different task types to match the nature of the work:
+
+- **reasoning**: Complex tasks requiring detailed chain-of-thought reasoning
+- **multi_step**: Tasks requiring multiple tool calls but minimal reasoning
+
+### Usage Examples
+
+#### Creating a Basic Agent
+
+```python
+from nodetool.chat.agent import Agent
+from nodetool.chat.providers.anthropic import AnthropicProvider
+
+# Initialize a provider
+provider = AnthropicProvider(api_key="your-api-key")
+
+# Create a retrieval agent
+retrieval_agent = Agent(
+    name="Researcher",
+    objective="Gather comprehensive information about quantum computing",
+    description="Specialized in efficient information retrieval from the web",
+    provider=provider,
+    model="claude-3-opus-20240229",
+    workspace_dir="./workspace",
+    tools=[SearchTool(), BrowserTool()],
+    system_prompt=RETRIEVAL_SYSTEM_PROMPT,
+    max_steps=50
+)
+```
+
+#### Creating and Executing a Task Plan
+
+```python
+from nodetool.chat.task_planner import TaskPlanner
+from nodetool.metadata.types import TaskPlan
+
+# Create specialized agents
+retrieval_agent = Agent(...)
+summary_agent = Agent(...)
+
+# Initialize the task planner
+planner = TaskPlanner(
+    provider=provider,
+    model="claude-3-opus-20240229",
+    objective="Research and summarize recent advances in quantum computing",
+    workspace_dir="./workspace",
+    tools=[SearchTool(), BrowserTool()],
+    agents=[retrieval_agent, summary_agent],
+    max_research_iterations=3
+)
+
+# Create the plan
+async for chunk in planner.create_plan():
+    print(chunk.content)
+
+# Get the task plan
+task_plan = planner.task_plan
+
+# Execute a task for a specific agent
+async for item in retrieval_agent.execute_task(task_plan, task_plan.tasks[0]):
+    if isinstance(item, Chunk):
+        print(item.content)
+```
+
+#### Creating a Multi-Agent System
+
+```python
+# Create specialized agents
+retrieval_agent = Agent(
+    name="Researcher",
+    objective="Gather information",
+    # ... other parameters ...
+)
+
+summary_agent = Agent(
+    name="Summarizer",
+    objective="Create concise summaries",
+    # ... other parameters ...
+)
+
+# Initialize task planner
+planner = TaskPlanner(
+    provider=provider,
+    model="claude-3-opus-20240229",
+    objective="Research and summarize quantum computing advances",
+    workspace_dir="./workspace",
+    tools=[SearchTool(), BrowserTool()],
+    agents=[retrieval_agent, summary_agent]
+)
+
+# Create and execute the plan
+async for chunk in planner.create_plan():
+    print(chunk.content)
+
+# Execute tasks for each agent
+task_plan = planner.task_plan
+for task in task_plan.tasks:
+    if task.agent_name == "Researcher":
+        async for item in retrieval_agent.execute_task(task_plan, task):
+            print(item.content)
+    elif task.agent_name == "Summarizer":
+        async for item in summary_agent.execute_task(task_plan, task):
+            print(item.content)
+```
+
+### System Prompts
+
+The system includes specialized prompts for different agent types:
+
+- **RETRIEVAL_SYSTEM_PROMPT**: Optimized for information gathering with emphasis on supplementary file downloads and focused search
+- **SUMMARIZATION_SYSTEM_PROMPT**: Designed for efficient synthesis of information with proper citations
+- **DETAILED_COT_SYSTEM_PROMPT**: Enables structured chain-of-thought reasoning for complex analytical tasks
+- **DEFAULT_PLANNING_SYSTEM_PROMPT**: Guides the creation of optimal task plans with dependency management
+
+### Advanced Features
+
+#### Context Management
+
+The system automatically manages token limits through:
+
+- Token counting and tracking for conversation history
+- Automatic summarization when limits are approached
+- Preserving critical information during summarization
+
+#### Tool Integration
+
+Agents can use various tools:
+
+- Web browsing and search tools
+- File operations (read/write)
+- Mathematical calculations
+- Custom domain-specific tools
+
+#### Two-Stage Execution Model
+
+Complex tasks are executed in two phases:
+
+1. **Tool Calling Stage**: Information gathering using any available tools
+2. **Conclusion Stage**: Final synthesis with restricted tools (only finish_subtask)
+
+This ensures agents properly conclude their reasoning and produce final outputs.
+
+### Integration with NodeTool Core
+
+The Agent System is designed to work seamlessly with the broader NodeTool ecosystem:
+
+- Nodes can utilize agents for specific workflow steps
+- Results from agent tasks can feed into NodeTool workflows
+- Agents can leverage NodeTool's existing provider integrations (OpenAI, Anthropic, Ollama)
+
+### Limitations and Considerations
+
+- **Token Limits**: LLMs have context window limitations that may require summarization during complex tasks
+- **Tool Constraints**: Each tool has specific capabilities and limitations
+- **Model Capabilities**: Different LLMs have varying reasoning abilities and should be selected appropriately
+- **Task Complexity**: Very complex objectives may need careful decomposition into subtasks
+
+### Advanced Examples
+
+For more detailed examples, see the examples directory:
+
+1. **Retrieval Agent**: Demonstrates simple information gathering
+2. **Task Planning and Execution**: Shows separation of planning and execution phases
+3. **Multi-Agent Coordination**: Illustrates how multiple specialized agents work together
+
+### Next Steps
+
+After understanding the basics:
+
+1. Create custom agents for your specific use cases
+2. Develop new tools to expand agent capabilities
+3. Build multi-agent systems with specialized roles
+4. Integrate these capabilities into your NodeTool workflows
+
+For more information, refer to the main NodeTool documentation.
 
 ## Architecture 🏗️
 
@@ -508,3 +1006,121 @@ poetry run black .
 ## License
 
 [AGPL License](LICENSE)
+
+## Email Processing with NodeTool Agent System
+
+Here's an example that transforms the email summarization workflow into one using NodeTool's Agent System:
+
+```python
+import asyncio
+from nodetool.chat.agent import Agent
+from nodetool.chat.task_planner import TaskPlanner
+from nodetool.chat.providers.anthropic import AnthropicProvider
+from nodetool.chat.tools.email import GmailTool
+from nodetool.chat.tools.web import SearchTool, BrowserTool
+from nodetool.chat.tools.basic import FinishSubtaskTool
+from nodetool.metadata.types import TaskPlan
+
+# Initialize a provider
+provider = AnthropicProvider(api_key="your-api-key")
+
+# Create specialized agents
+research_agent = Agent(
+    name="EmailRetriever",
+    objective="Gather and organize recent emails",
+    description="Specialized in retrieving and organizing email content",
+    provider=provider,
+    model="claude-3-opus-20240229",
+    workspace_dir="./workspace",
+    tools=[GmailTool(), FinishSubtaskTool()],
+    system_prompt="You retrieve and organize email information. Focus on sender, subject, and key content.",
+    max_steps=20
+)
+
+summary_agent = Agent(
+    name="EmailSummarizer",
+    objective="Create concise summaries of email collections",
+    description="Specialized in analyzing and summarizing multiple emails",
+    provider=provider,
+    model="claude-3-opus-20240229",
+    workspace_dir="./workspace",
+    tools=[SearchTool(), BrowserTool(), FinishSubtaskTool()],
+    system_prompt="You are a summarizer. Create concise, well-structured summaries of email collections.",
+    max_steps=30
+)
+
+# Initialize the task planner
+planner = TaskPlanner(
+    provider=provider,
+    model="claude-3-opus-20240229",
+    objective="Retrieve recent emails and create a comprehensive summary",
+    workspace_dir="./workspace",
+    tools=[GmailTool(), SearchTool(), BrowserTool()],
+    agents=[research_agent, summary_agent],
+    max_research_iterations=2
+)
+
+async def process_emails():
+    # Create the plan
+    print("Creating task plan...")
+    async for chunk in planner.create_plan():
+        print(chunk.content)
+
+    # Get the task plan
+    task_plan = planner.task_plan
+    print(f"Task plan created with {len(task_plan.tasks)} tasks")
+
+    # Execute tasks for each agent
+    results = {}
+    for task in task_plan.tasks:
+        print(f"\nExecuting task: {task.name} with agent: {task.agent_name}")
+
+        if task.agent_name == "EmailRetriever":
+            async for item in research_agent.execute_task(task_plan, task):
+                print(f"Research agent: {item.content if hasattr(item, 'content') else item}")
+                results[task.id] = item
+
+        elif task.agent_name == "EmailSummarizer":
+            async for item in summary_agent.execute_task(task_plan, task):
+                print(f"Summary agent: {item.content if hasattr(item, 'content') else item}")
+                results[task.id] = item
+
+    print("\nEmail processing complete!")
+    print(results)
+
+# Run the workflow
+asyncio.run(process_emails())
+```
+
+## How This Works
+
+This example demonstrates using NodeTool's Agent System for email processing:
+
+1. **Specialized Agents**:
+
+   - `EmailRetriever`: Responsible for gathering and organizing email data
+   - `EmailSummarizer`: Creates concise summaries of the collected emails
+
+2. **Task Planning**:
+
+   - The TaskPlanner intelligently breaks down the email processing objective
+   - It assigns tasks to the appropriate specialized agents
+   - It creates a dependency graph, ensuring the summarizer works with retrieved data
+
+3. **Tool Integration**:
+
+   - `GmailTool`: Provides email access capabilities
+   - `SearchTool` and `BrowserTool`: Additional tools for research if needed
+   - `FinishSubtaskTool`: Required to properly conclude tasks
+
+4. **Execution Flow**:
+   - First, the EmailRetriever agent gathers recent emails
+   - Then, the EmailSummarizer agent processes those emails to create a summary
+   - Results are streamed in real-time during execution
+
+This approach offers several advantages over the original workflow:
+
+- More flexible and adaptable to varying email content
+- Can handle complex reasoning about email topics and importance
+- Built-in context management for handling large numbers of emails
+- Ability to incorporate additional research when summarizing emails

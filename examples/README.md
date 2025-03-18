@@ -1,3 +1,63 @@
+# NodeTool Core Examples
+
+This directory contains example scripts that demonstrate how to use NodeTool Core for various use cases.
+
+## Prerequisites
+
+Before running these examples, you'll need to:
+
+1. Install NodeTool Core
+
+   ```bash
+   pip install nodetool-core
+   ```
+
+2. Set up necessary API keys
+   - Create a `.env` file in the examples directory
+   - Add your API keys (OPENAI_API_KEY, ANTHROPIC_API_KEY, etc.)
+
+## Available Examples
+
+### 1. Simple Chat (`simple_chat.py`)
+
+A basic example showing how to use NodeTool Core to create a simple chat workflow with OpenAI's ChatGPT.
+
+**Usage:**
+
+```bash
+python simple_chat.py
+```
+
+### 2. Agent-Based Research (`agent_based_research.py`)
+
+Demonstrates how to use NodeTool Core's agent system to perform web research on quantum computing and produce a detailed summary.
+
+**Usage:**
+
+```bash
+python agent_based_research.py
+```
+
+### 3. PDF Processing for RAG Applications (`pdf_rag.py`)
+
+Shows how to extract text from PDF documents, split it into chunks, and index it in a vector database for retrieval-augmented generation (RAG) applications.
+
+**Usage:**
+
+```bash
+python pdf_rag.py
+```
+
+### 4. Email Summarization (`email_summarization.py`)
+
+Demonstrates how to use NodeTool Core to retrieve emails from Gmail and generate summaries.
+
+**Usage:**
+
+```bash
+python email_summarization.py
+```
+
 ## Overview of Examples
 
 ### 1. Retrieval Agent (`test_retrieval_agent.py`)
