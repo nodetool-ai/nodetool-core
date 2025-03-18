@@ -19,6 +19,7 @@ import json
 import os
 from pathlib import Path
 from typing import Any, AsyncGenerator, Dict, List, Tuple, Union
+import time
 
 DEFAULT_EXECUTION_SYSTEM_PROMPT = """
 You are a task execution agent that completes subtasks efficiently with minimal steps.
@@ -83,10 +84,10 @@ class TaskExecutor:
     def __init__(
         self,
         provider: ChatProvider,
-        model: FunctionModel,
+        model: str,
         workspace_dir: str,
         tools: List[Tool],
-        task_plan: TaskPlan,
+        task: Task,
         system_prompt: str | None = None,
         max_steps: int = 50,
         max_subtask_iterations: int = 5,
@@ -100,7 +101,7 @@ class TaskExecutor:
             model (FunctionModel): The model to use with the provider
             workspace_dir (str): Directory for workspace files
             tools (List[Tool]): List of tools available for task execution
-            task_plan (TaskPlan): The task list to execute
+            tasks (List[Task]): List of tasks to execute
             system_prompt (str, optional): Custom system prompt
             max_steps (int, optional): Maximum execution steps to prevent infinite loops
             max_subtask_iterations (int, optional): Maximum iterations allowed per subtask
@@ -110,7 +111,7 @@ class TaskExecutor:
         self.model = model
         self.workspace_dir = workspace_dir
         self.tools = tools
-        self.task_plan = task_plan
+        self.task = task
         self.max_token_limit = max_token_limit
 
         # Prepare system prompt
@@ -124,7 +125,7 @@ class TaskExecutor:
 
         self.max_steps = max_steps
         self.max_subtask_iterations = max_subtask_iterations
-        self.result_store = {}
+        self.output_files = []
 
         # Check if tasks.json exists in the workspace directory
         self.tasks_file_path = Path(workspace_dir) / "tasks.json"
@@ -175,10 +176,10 @@ class TaskExecutor:
             subtask_generators = []
 
             # Create execution contexts for all executable subtasks
-            for task, subtask in executable_tasks:
+            for subtask in executable_tasks:
                 # Create subtask context
                 context = SubTaskContext(
-                    task=task,
+                    task=self.task,
                     subtask=subtask,
                     system_prompt=self.system_prompt,
                     tools=self.tools,
@@ -190,10 +191,9 @@ class TaskExecutor:
                 )
 
                 # Create the task prompt
-                task_prompt = self._create_task_prompt(task, subtask)
+                task_prompt = self._create_task_prompt(self.task, subtask)
 
                 # Start the subtask execution and add it to our generators
-                print(f"Preparing to execute subtask {subtask.id}: {subtask.content}")
                 subtask_generators.append(context.execute(task_prompt))
 
             if not subtask_generators:
@@ -206,67 +206,54 @@ class TaskExecutor:
             async for message in wrap_generators_parallel(*subtask_generators):
                 yield message
 
-                # Check if this message indicates a completed subtask (ToolCall with finish_subtask)
-                if isinstance(message, ToolCall) and message.name == "finish_subtask":
-                    # Find the matching subtask and mark it as completed
-                    for task in self.task_plan.tasks:
-                        for subtask in task.subtasks:
-                            if subtask.output_file == message.args.get("output_file"):
-                                subtask.completed = True
-                                await self._update_task_plan_file()
-                                print(
-                                    f"Marked subtask for {subtask.output_file} as completed"
-                                )
-
-            # Update the task plan file after each batch of parallel execution
-            await self._update_task_plan_file()
-
-        # Print workspace files when agent completes all tasks
-        if os.path.exists(self.workspace_dir):
-            yield Chunk(
-                content=f"\n\nWorkspace files in {self.workspace_dir}:\n",
-                done=False,
-            )
-            for root, dirs, files in os.walk(self.workspace_dir):
-                for file in files:
-                    file_path = os.path.join(root, file)
-                    relative_path = os.path.relpath(file_path, self.workspace_dir)
-                    yield Chunk(content=f"- {relative_path}\n", done=False)
-
-    def _get_all_executable_tasks(self) -> List[Tuple[Task, SubTask]]:
+    def _get_all_executable_tasks(self) -> List[SubTask]:
         """
         Get all executable tasks from the task list, respecting file dependencies.
 
         A subtask is considered executable when:
         1. It has not been completed yet
-        2. All its file dependencies (if any) exist in the workspace
+        2. It is not currently running
+        3. All its file dependencies (if any) exist in the workspace
 
         Returns:
-            List[Tuple[Task, SubTask]]: All executable tasks and subtasks
+            List[SubTask]: All executable subtasks
         """
         executable_tasks = []
 
-        for task in self.task_plan.tasks:
-            for subtask in task.subtasks:
-                if not subtask.completed and subtask.id:
-                    # Check if all file dependencies exist
-                    all_dependencies_met = True
-                    for file_path in subtask.file_dependencies:
-                        # Handle /workspace prefixed paths
-                        if file_path.startswith("/workspace/"):
-                            relative_path = file_path[len("/workspace/") :]
-                            full_path = os.path.join(self.workspace_dir, relative_path)
-                        else:
-                            full_path = os.path.join(self.workspace_dir, file_path)
+        for subtask in self.task.subtasks:
+            if not subtask.completed and not subtask.is_running():
+                # Check if all file dependencies exist
+                all_dependencies_met = self._check_file_dependencies(
+                    subtask.file_dependencies
+                )
 
-                        if not os.path.exists(full_path):
-                            all_dependencies_met = False
-                            break
-
-                    if all_dependencies_met:
-                        executable_tasks.append((task, subtask))
+                if all_dependencies_met:
+                    executable_tasks.append(subtask)
 
         return executable_tasks
+
+    def _check_file_dependencies(self, file_dependencies: List[str]) -> bool:
+        """
+        Check if all file dependencies exist in the workspace.
+
+        Args:
+            file_dependencies: List of file paths to check
+
+        Returns:
+            bool: True if all dependencies exist, False otherwise
+        """
+        for file_path in file_dependencies:
+            # Handle /workspace prefixed paths
+            if file_path.startswith("/workspace/"):
+                relative_path = file_path[len("/workspace/") :]
+                full_path = os.path.join(self.workspace_dir, relative_path)
+            else:
+                full_path = os.path.join(self.workspace_dir, file_path)
+
+            if not os.path.exists(full_path):
+                return False
+
+        return True
 
     def _create_task_prompt(self, task: Task, subtask: SubTask) -> str:
         """
@@ -283,7 +270,7 @@ class TaskExecutor:
         prompt = f"""
         Context: {task.title} - {task.description if task.description else task.title}
         YOUR GOAL FOR THIS SUBTASK: {subtask.content}
-        {f'This is a thinking task. You should think about the task and come up with a plan.' if subtask.thinking else ''}
+        TASK TYPE: {subtask.task_type}
         
         Read these files for context:
         {json.dumps(subtask.file_dependencies)}
@@ -303,28 +290,23 @@ class TaskExecutor:
         Returns:
             bool: True if all tasks are complete, False otherwise
         """
-        for task in self.task_plan.tasks:
-            for subtask in task.subtasks:
-                if not subtask.completed:
-                    return False
+        for subtask in self.task.subtasks:
+            if not subtask.completed:
+                return False
         return True
 
     def get_results(self) -> Dict[str, Any]:
         """
         Get all subtask results from the global result store.
+        Dynamically reads output files for completed subtasks if they aren't already in the result store.
 
         Returns:
             Dict[str, Any]: Dictionary of results indexed by subtask ID
         """
-        return self.result_store
+        # Update result store with any new completed subtasks
+        results = {}
+        for subtask in self.task.subtasks:
+            if subtask.completed and subtask.output_file:
+                results[subtask.id] = subtask.output_file
 
-    async def _update_task_plan_file(self) -> None:
-        """
-        Update the tasks.json file in the workspace with the current task plan state.
-        This allows for persistence and resuming from where execution left off.
-        """
-        try:
-            with open(self.tasks_file_path, "w") as f:
-                f.write(self.task_plan.model_dump_json(indent=2))
-        except Exception as e:
-            print(f"Error updating task plan file: {e}")
+        return results

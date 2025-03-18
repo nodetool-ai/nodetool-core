@@ -2,7 +2,7 @@ from nodetool.chat.providers import ChatProvider, Chunk
 from nodetool.chat.tools import Tool
 from nodetool.chat.tools.workspace import WorkspaceBaseTool
 from nodetool.metadata.types import FunctionModel, Message, SubTask, Task, ToolCall
-
+from nodetool.workflows.processing_context import ProcessingContext
 
 import tiktoken
 import yaml
@@ -10,6 +10,7 @@ import yaml
 
 import json
 import os
+import time
 from typing import Any, AsyncGenerator, List, Union
 
 from nodetool.workflows.processing_context import ProcessingContext
@@ -61,20 +62,24 @@ class SubTaskContext:
     🧠 The Task-Specific Brain - Isolated execution environment for a single subtask
 
     This class maintains a completely isolated context for each subtask, with its own:
-    - Message history
-    - System prompt (based on subtask type)
-    - Tools
-    - Token tracking and context management
+    - Message history: Tracks all interactions in this specific subtask
+    - System prompt: Automatically selected based on subtask type (reasoning vs. standard)
+    - Tools: Available for information gathering and task completion
+    - Token tracking: Monitors context size with automatic summarization when needed
 
-    It's like giving each subtask its own dedicated worker who has exactly the right
-    skills and information for that specific job, without getting distracted by other tasks.
+    Each subtask operates like a dedicated worker with exactly the right skills and
+    information for that specific job, without interference from other tasks.
 
-    Features:
-    - Token limit monitoring with automatic summarization
-    - Two-stage execution: tool calling stage followed by conclusion stage
-    - Iteration tracking with max iterations safety
-    - Explicit reasoning for "thinking" subtasks
-    - Progress reporting during execution
+    Key Features:
+    - Token limit monitoring with automatic context summarization when exceeding thresholds
+    - Two-stage execution model: tool calling stage → conclusion stage
+    - Safety limits: iteration tracking, max tool calls, and max token controls
+    - Explicit reasoning capabilities for "thinking" subtasks
+    - Progress reporting throughout execution
+
+    Supported Task Types:
+    - reasoning: Uses detailed chain-of-thought reasoning with specialized system prompt
+    - multi_step: Uses the two-stage approach (tool calling then conclusion)
     """
 
     def __init__(
@@ -83,7 +88,7 @@ class SubTaskContext:
         subtask: SubTask,
         system_prompt: str,
         tools: List[Tool],
-        model: FunctionModel,
+        model: str,
         provider: ChatProvider,
         workspace_dir: str,
         print_usage: bool = True,
@@ -98,7 +103,7 @@ class SubTaskContext:
             subtask (SubTask): The subtask to execute
             system_prompt (str): The system prompt for this subtask
             tools (List[Tool]): Tools available to this subtask
-            model (FunctionModel): The model to use for this subtask
+            model (str): The model to use for this subtask
             provider (ChatProvider): The provider to use for this subtask
             workspace_dir (str): The workspace directory
             print_usage (bool): Whether to print token usage
@@ -109,7 +114,7 @@ class SubTaskContext:
         self.subtask = subtask
 
         # Use the DETAILED_COT_SYSTEM_PROMPT for tasks that require thinking
-        if subtask.thinking:
+        if subtask.task_type == "reasoning":
             self.system_prompt = DETAILED_COT_SYSTEM_PROMPT
         else:
             self.system_prompt = system_prompt
@@ -138,8 +143,6 @@ class SubTaskContext:
         # Track progress for this subtask
         self.progress = []
 
-        # Flag to track if subtask is finished
-        self.completed = False
         # Flag to track which stage we're in - normal execution flow for all tasks
         self.in_conclusion_stage = False
 
@@ -199,7 +202,7 @@ class SubTaskContext:
 
         return token_count
 
-    def _save_to_output_file(self, result: dict[str, Any]) -> None:
+    def _save_to_output_file(self, result: Any) -> None:
         """
         Save the result of a tool call to the output file.
         Includes metadata in the appropriate format based on file type.
@@ -210,6 +213,8 @@ class SubTaskContext:
         # Get the file extension to determine format
         _, file_ext = os.path.splitext(self.output_file_path)
         is_markdown = file_ext.lower() in [".md", ".markdown"]
+
+        print(f"Saving result to {self.output_file_path}")
 
         with open(self.output_file_path, "w") as f:
             if is_markdown:
@@ -245,296 +250,314 @@ class SubTaskContext:
         task_prompt: str,
     ) -> AsyncGenerator[Union[Chunk, ToolCall], None]:
         """
-        ⚙️ Task Executor - Runs a single subtask to completion using a two-stage approach:
+        ⚙️ Task Executor - Runs a single subtask to completion using appropriate strategy
 
-        STAGE 1: TOOL CALLING STAGE
-        - Allows the agent to use all available tools to complete the task
-        - Limited to a maximum number of iterations (max_tool_calling_iterations)
-        - Encourages efficient information gathering and task progress
-        - SKIPPED for thinking tasks (subtask.thinking = True)
+        Execution strategies:
+        - reasoning: Two-phase execution - Detailed chain-of-thought reasoning with specialized
+                    system prompt, following the tool calling → conclusion stage pattern.
+        - multi_step: Two-phase execution - Multiple tool calls allowed in first phase, followed
+                    by conclusion synthesis phase with restricted tools.
 
-        STAGE 2: CONCLUSION STAGE
-        - Only has access to the finish_subtask tool
-        - Forces the agent to synthesize findings and complete the task
-        - Prevents endless tool calling loops
-        - Direct entry point for thinking tasks
+        This execution path handles complex tasks requiring multiple steps:
+        1. Tool Calling Stage: Multiple iterations of information gathering using any tools
+        2. Conclusion Stage: Final synthesis with restricted access (only finish_subtask tool)
 
-        This two-stage approach ensures:
-        1. Focused and efficient task execution
-        2. Clear transition from exploration to conclusion
-        3. Minimal iterations while still accomplishing the task effectively
+        The method automatically tracks iterations, manages token limits, and enforces
+        transitions between stages based on limits or progress.
 
         Args:
-            task_prompt (str): The specific instructions for this subtask
+            task_prompt (str): The task prompt with specific instructions
 
         Yields:
             Union[Chunk, ToolCall]: Live updates during task execution
         """
-        # Create the task prompt with file dependency context and two-stage explanation
-        if self.subtask.thinking:
-            # For thinking tasks, enhance the prompt but don't skip tool calling stage
-            enhanced_prompt = (
-                task_prompt
-                + """
-            
-            IMPORTANT: This task will be executed in TWO STAGES, with emphasis on detailed reasoning:
-            
-            STAGE 1: TOOL CALLING STAGE
-            - You may use any available tools to gather information and make progress
-            - This stage is limited to a maximum of """
-                + str(self.max_tool_calling_iterations)
-                + """ iterations
-            - Be efficient with your tool calls and focus on making meaningful progress
-            - After """
-                + str(self.max_tool_calling_iterations)
-                + """ iterations, you will automatically transition to Stage 2
-            
-            STAGE 2: CONCLUSION STAGE
-            - You will ONLY have access to the finish_subtask tool
-            - You must synthesize your findings and complete the task
-            - No further information gathering will be possible
-            
-            Since this is a thinking task, please use this Chain of Thought approach:
-            1. First, understand what needs to be accomplished
-            2. Break down the problem into manageable parts
-            3. For each part, explain your approach clearly
-            4. Show your work for each step before moving to the next
-            5. Verify your intermediate results as you go
-            6. If you get stuck, try a different approach and explain why
-            7. Synthesize your findings into a final solution
-            
-            Your goal is to complete the task in as few iterations as possible while producing high-quality results.
-            """
-            )
-        else:
-            # Normal two-stage process for non-thinking tasks
-            enhanced_prompt = (
-                task_prompt
-                + """
-            
-            IMPORTANT: This task will be executed in TWO STAGES:
-            
-            STAGE 1: TOOL CALLING STAGE
-            - You may use any available tools to gather information and make progress
-            - This stage is limited to a maximum of """
-                + str(self.max_tool_calling_iterations)
-                + """ iterations
-            - Be efficient with your tool calls and focus on making meaningful progress
-            - After """
-                + str(self.max_tool_calling_iterations)
-                + """ iterations, you will automatically transition to Stage 2
-            
-            STAGE 2: CONCLUSION STAGE
-            - You will ONLY have access to the finish_subtask tool
-            - You must synthesize your findings and complete the task
-            - No further information gathering will be possible
-            
-            Your goal is to complete the task in as few iterations as possible while producing high-quality results.
-            """
-            )
+        # Record the start time of the subtask
+        current_time = int(time.time())
+        self.subtask.start_time = current_time
+
+        # Create the enhanced prompt with two-stage explanation
+        enhanced_prompt = self._create_enhanced_prompt(task_prompt)
 
         # Add the task prompt to this subtask's history
         self.history.append(Message(role="user", content=enhanced_prompt))
 
         # Signal that we're executing this subtask
-        print(f"Executing task: {self.task.title} - {self.subtask.content}")
-
-        if self.subtask.thinking:
-            print(
-                f"  This is a thinking task - processing with Chain of Thought reasoning"
-            )
+        print(f"Executing subtask: {self.subtask.content}")
 
         # Continue executing until the task is completed or max iterations reached
-        while not self.completed and self.iterations < self.max_iterations:
+        while not self.subtask.completed and self.iterations < self.max_iterations:
             self.iterations += 1
             token_count = self._count_tokens(self.history)
 
-            # Determine which stage we're in
+            # Check if we need to transition to conclusion stage
             if (
                 self.iterations > self.max_tool_calling_iterations
                 and not self.in_conclusion_stage
-                and not self.subtask.thinking
             ):
-                self.in_conclusion_stage = True
-                # Create a list with only the finish_subtask tool
-                conclusion_tools = [
-                    tool for tool in self.tools if tool.name == "finish_subtask"
-                ]
-
-                # Add transition message to history
-                transition_message = """
-                STAGE 1 (TOOL CALLING) COMPLETE ⚠️
-                
-                You have reached the maximum number of iterations for the tool calling stage.
-                
-                ENTERING STAGE 2: CONCLUSION STAGE
-                
-                In this stage, you ONLY have access to the finish_subtask tool.
-                You must now synthesize all the information you've gathered and complete the task.
-                
-                Please summarize what you've learned, draw conclusions, and use the finish_subtask
-                tool to save your final result.
-                """
-                self.history.append(Message(role="user", content=transition_message))
-
-                print(
-                    f"  Transitioning to conclusion stage for subtask {self.subtask.id}"
-                )
-                print(
-                    f"  Iteration {self.iterations}/{self.max_iterations} (CONCLUSION STAGE)"
-                )
-            else:
-                if self.subtask.thinking:
-                    if self.in_conclusion_stage:
-                        print(
-                            f"  Iteration {self.iterations}/{self.max_iterations} (THINKING - CONCLUSION STAGE)"
-                        )
-                    else:
-                        print(
-                            f"  Iteration {self.iterations}/{self.max_iterations} (THINKING - TOOL CALLING STAGE)"
-                        )
-                elif self.in_conclusion_stage:
-                    print(
-                        f"  Iteration {self.iterations}/{self.max_iterations} (CONCLUSION STAGE)"
-                    )
-                else:
-                    print(
-                        f"  Iteration {self.iterations}/{self.max_iterations} (TOOL CALLING STAGE)"
-                    )
+                await self._transition_to_conclusion_stage()
 
             # Check if token count exceeds limit and summarize if needed
             if token_count > self.max_token_limit:
-                print(
-                    f"Token count ({token_count}) exceeds limit ({self.max_token_limit}). Summarizing context..."
-                )
-                await self._summarize_context()
+                await self._handle_token_limit_exceeded(token_count)
                 token_count = self._count_tokens(self.history)
-                print(f"After summarization: {token_count} tokens in context")
 
-            # Get response for this subtask using its isolated history
-            # Use the appropriate tools based on the stage
-            current_tools = (
-                [tool for tool in self.tools if tool.name == "finish_subtask"]
-                if self.in_conclusion_stage
-                else self.tools
-            )
-
-            generator = self.provider.generate_messages(
-                messages=self.history,
-                model=self.model,
-                tools=current_tools,
-            )
-
-            async for chunk in generator:  # type: ignore
+            # Process current iteration
+            async for chunk in self._process_iteration():
                 yield chunk
 
-                if isinstance(chunk, Chunk):
-                    # Update history with assistant message
-                    if (
-                        len(self.history) > 0
-                        and self.history[-1].role == "assistant"
-                        and isinstance(self.history[-1].content, str)
-                    ):
-                        # Update existing assistant message
-                        self.history[-1].content += chunk.content
-                    else:
-                        # Add new assistant message
-                        self.history.append(
-                            Message(role="assistant", content=chunk.content)
-                        )
-
-                elif isinstance(chunk, ToolCall):
-                    # Add tool call to history
-                    self.history.append(
-                        Message(
-                            role="assistant",
-                            tool_calls=[chunk],
-                        )
-                    )
-
-                    # Increment tool call counter
-                    self.tool_call_count += 1
-                    print(
-                        f"Tool call {self.tool_call_count}/{self.max_tool_calls if self.max_tool_calls != float('inf') else 'unlimited'}: {chunk.name}"
-                    )
-
-                    # Execute the tool call
-                    tool_result = await self._execute_tool(chunk)
-
-                    # Handle finish_subtask tool specially
-                    if chunk.name == "finish_subtask":
-                        self.completed = True
-                        self._save_to_output_file(tool_result.result)
-
-                        print(f"Subtask {self.subtask.id} completed.")
-
-                    # Add the tool result to history
-                    self.history.append(
-                        Message(
-                            role="tool",
-                            tool_call_id=tool_result.id,
-                            name=chunk.name,
-                            content=json.dumps(tool_result.result),
-                        )
-                    )
-
-                    # Check if we've reached the tool call limit and force conclusion stage if needed
-                    if (
-                        not self.in_conclusion_stage
-                        and self.tool_call_count >= self.max_tool_calls
-                        and chunk.name != "finish_subtask"
-                    ):
-                        self.in_conclusion_stage = True
-                        # Create a list with only the finish_subtask tool
-                        conclusion_tools = [
-                            tool for tool in self.tools if tool.name == "finish_subtask"
-                        ]
-
-                        # Add transition message to history
-                        transition_message = f"""
-                        MAXIMUM TOOL CALLS REACHED ⚠️
-                        
-                        You have reached the maximum number of allowed tool calls ({self.max_tool_calls}).
-                        
-                        ENTERING STAGE 2: CONCLUSION STAGE
-                        
-                        In this stage, you ONLY have access to the finish_subtask tool.
-                        You must now synthesize all the information you've gathered and complete the task.
-                        
-                        Please summarize what you've learned, draw conclusions, and use the finish_subtask
-                        tool to save your final result.
-                        """
-                        self.history.append(
-                            Message(role="user", content=transition_message)
-                        )
-
-                        print(
-                            f"  Reached maximum tool calls ({self.max_tool_calls}). Transitioning to conclusion stage."
-                        )
-
             # If we've reached the last iteration and haven't completed yet, generate summary
-            if self.iterations >= self.max_iterations and not self.completed:
-                default_result = await self.request_summary()
-                self._save_to_output_file(default_result)
-                self.completed = True
+            if self.iterations >= self.max_iterations and not self.subtask.completed:
+                yield await self._handle_max_iterations_reached()
 
-                yield ToolCall(
-                    id=f"{self.subtask.id}_max_iterations_reached",
-                    name="finish_subtask",
-                    args={
-                        "result": default_result,
-                        "output_file": self.subtask.output_file,
-                        "metadata": {
-                            "title": "Max Iterations Reached",
-                            "description": "The subtask reached maximum iterations without completing normally",
-                            "status": "timeout",
-                        },
-                    },
-                )
-        print(
-            f"\n[Debug: {token_count} tokens in context for subtask {self.subtask.id}]\n"
+        # print(
+        #     f"\n[Debug: {token_count} tokens in context for subtask {self.subtask.id}]\n"
+        # )
+        # print(self.provider.usage)
+
+    def _create_enhanced_prompt(self, task_prompt: str) -> str:
+        """
+        Create an enhanced prompt with two-stage execution explanation.
+
+        Appends instructions about the two-stage execution model to the original task prompt,
+        helping the LLM understand the constraints and expectations of each stage.
+
+        Args:
+            task_prompt (str): The original task prompt
+
+        Returns:
+            str: The enhanced prompt with two-stage execution instructions
+        """
+        return (
+            task_prompt
+            + """
+        
+        IMPORTANT: This task will be executed in TWO STAGES:
+        
+        STAGE 1: TOOL CALLING STAGE
+        - You may use any available tools to gather information and make progress
+        - This stage is limited to a maximum of """
+            + str(self.max_tool_calling_iterations)
+            + """ iterations
+        - Be efficient with your tool calls and focus on making meaningful progress
+        - After """
+            + str(self.max_tool_calling_iterations)
+            + """ iterations, you will automatically transition to Stage 2
+        
+        STAGE 2: CONCLUSION STAGE
+        - You will ONLY have access to the finish_subtask tool
+        - You must synthesize your findings and complete the task
+        - No further information gathering will be possible
+        
+        Your goal is to complete the task in as few iterations as possible while producing high-quality results.
+        """
         )
-        print(self.provider.usage)
+
+    async def _transition_to_conclusion_stage(self) -> None:
+        """
+        Transition from tool calling stage to conclusion stage.
+
+        This method:
+        1. Sets the conclusion stage flag
+        2. Adds a clear transition message to the conversation history
+        3. Logs the transition to the console
+        4. Restricts available tools to only finish_subtask
+        """
+        self.in_conclusion_stage = True
+
+        # Add transition message to history
+        transition_message = """
+        STAGE 1 (TOOL CALLING) COMPLETE ⚠️
+        
+        You have reached the maximum number of iterations for the tool calling stage.
+        
+        ENTERING STAGE 2: CONCLUSION STAGE
+        
+        In this stage, you ONLY have access to the finish_subtask tool.
+        You must now synthesize all the information you've gathered and complete the task.
+        
+        Please summarize what you've learned, draw conclusions, and use the finish_subtask
+        tool to save your final result.
+        """
+        self.history.append(Message(role="user", content=transition_message))
+
+    async def _handle_token_limit_exceeded(self, token_count: int) -> None:
+        """
+        Handle the case where token count exceeds the limit.
+
+        This method:
+        1. Logs the token overflow situation
+        2. Triggers context summarization to reduce token count
+        3. Logs the new token count after summarization
+
+        Args:
+            token_count (int): The current token count that exceeded the limit
+        """
+        print(
+            f"Token count ({token_count}) exceeds limit ({self.max_token_limit}). Summarizing context..."
+        )
+        await self._summarize_context()
+        print(
+            f"After summarization: {self._count_tokens(self.history)} tokens in context"
+        )
+
+    async def _process_iteration(self) -> AsyncGenerator[Union[Chunk, ToolCall], None]:
+        """
+        Process a single iteration of the task.
+
+        An iteration consists of:
+        1. Selecting appropriate tools based on current stage
+        2. Generating a response from the LLM
+        3. Processing each chunk or tool call from the response
+        4. Updating conversation history with results
+
+        Yields:
+            Union[Chunk, ToolCall]: Live updates during iteration processing
+        """
+        # Get the appropriate tools based on the stage
+        current_tools = (
+            [tool for tool in self.tools if tool.name == "finish_subtask"]
+            if self.in_conclusion_stage
+            else self.tools
+        )
+
+        # Generate response
+        generator = self.provider.generate_messages(
+            messages=self.history,
+            model=self.model,
+            tools=current_tools,
+        )
+
+        async for chunk in generator:  # type: ignore
+            yield chunk
+
+            if isinstance(chunk, Chunk):
+                await self._handle_chunk(chunk)
+            elif isinstance(chunk, ToolCall):
+                await self._handle_tool_call(chunk)
+
+    async def _handle_chunk(self, chunk: Chunk) -> None:
+        """
+        Handle a response chunk.
+
+        Args:
+            chunk (Chunk): The chunk to handle
+        """
+        # Update history with assistant message
+        if (
+            len(self.history) > 0
+            and self.history[-1].role == "assistant"
+            and isinstance(self.history[-1].content, str)
+        ):
+            # Update existing assistant message
+            self.history[-1].content += chunk.content
+        else:
+            # Add new assistant message
+            self.history.append(Message(role="assistant", content=chunk.content))
+
+    async def _handle_tool_call(self, chunk: ToolCall) -> None:
+        """
+        Handle a tool call.
+
+        Args:
+            chunk (ToolCall): The tool call to handle
+        """
+        # Add tool call to history
+        self.history.append(
+            Message(
+                role="assistant",
+                tool_calls=[chunk],
+            )
+        )
+
+        # Increment tool call counter
+        self.tool_call_count += 1
+        # print(
+        #     f"Tool call {self.tool_call_count}/{self.max_tool_calls if self.max_tool_calls != float('inf') else 'unlimited'}: {chunk.name}"
+        # )
+
+        # Execute the tool call
+        tool_result = await self._execute_tool(chunk)
+
+        # print(f"Tool result: {tool_result}")
+
+        # Handle finish_subtask tool specially
+        if chunk.name == "finish_subtask":
+            self.subtask.completed = True
+            self._save_to_output_file(tool_result.result)
+            # Record the end time when the subtask is completed
+            self.subtask.end_time = int(time.time())
+            # print(f"Subtask {self.subtask.id} completed.")
+
+        # Add the tool result to history
+        self.history.append(
+            Message(
+                role="tool",
+                tool_call_id=tool_result.id,
+                name=chunk.name,
+                content=json.dumps(tool_result.result),
+            )
+        )
+
+        # Check if we've reached the tool call limit and force conclusion stage if needed
+        if (
+            not self.in_conclusion_stage
+            and self.tool_call_count >= self.max_tool_calls
+            and chunk.name != "finish_subtask"
+        ):
+            await self._force_conclusion_stage_tool_limit()
+
+    async def _force_conclusion_stage_tool_limit(self) -> None:
+        """
+        Force transition to conclusion stage due to reaching max tool calls.
+        """
+        self.in_conclusion_stage = True
+
+        # Add transition message to history
+        transition_message = f"""
+        MAXIMUM TOOL CALLS REACHED ⚠️
+        
+        You have reached the maximum number of allowed tool calls ({self.max_tool_calls}).
+        
+        ENTERING STAGE 2: CONCLUSION STAGE
+        
+        In this stage, you ONLY have access to the finish_subtask tool.
+        You must now synthesize all the information you've gathered and complete the task.
+        
+        Please summarize what you've learned, draw conclusions, and use the finish_subtask
+        tool to save your final result.
+        """
+        self.history.append(Message(role="user", content=transition_message))
+
+        print(
+            f"  Reached maximum tool calls ({self.max_tool_calls}). Transitioning to conclusion stage."
+        )
+
+    async def _handle_max_iterations_reached(self) -> ToolCall:
+        """
+        Handle the case where max iterations are reached without completion.
+
+        Returns:
+            ToolCall: A tool call representing the summary result
+        """
+        default_result = await self.request_summary()
+        self._save_to_output_file(default_result)
+        self.subtask.completed = True
+        # Record the end time even for incomplete tasks that reach max iterations
+        self.subtask.end_time = int(time.time())
+
+        return ToolCall(
+            id=f"{self.subtask.id}_max_iterations_reached",
+            name="finish_subtask",
+            args={
+                "result": default_result,
+                "output_file": self.subtask.output_file,
+                "metadata": {
+                    "title": "Max Iterations Reached",
+                    "description": "The subtask reached maximum iterations without completing normally",
+                    "status": "timeout",
+                },
+            },
+        )
 
     async def _execute_tool(self, tool_call: ToolCall) -> ToolCall:
         """
@@ -548,7 +571,6 @@ class SubTaskContext:
         """
         for tool in self.tools:
             if tool.name == tool_call.name:
-                from nodetool.workflows.processing_context import ProcessingContext
 
                 context = ProcessingContext(user_id="cot_agent", auth_token="")
                 result = await tool.process(context, tool_call.args)
@@ -628,11 +650,14 @@ class SubTaskContext:
         """
         Summarize the conversation history to reduce token count.
 
-        This method:
-        1. Preserves the system prompt
-        2. Preserves which stage the subtask is currently in (Tool Calling or Conclusion)
-        3. Summarizes the conversation history to approximately half its original length
-        4. Replaces the history with the system prompt and summary
+        This token management method:
+        1. Preserves the system prompt (always kept intact)
+        2. Preserves the current execution stage information
+        3. Uses the LLM to summarize conversation to ~50% of original length
+        4. Replaces detailed history with the compressed summary
+        5. Maintains all critical information needed to continue execution
+
+        This helps prevent context overflow while preserving execution continuity.
         """
         # Keep the system prompt
         system_prompt = self.history[0]
@@ -710,18 +735,32 @@ class FinishSubTaskTool(WorkspaceBaseTool):
     """
     🏁 Task Completion Tool - Marks a subtask as done and saves its results
 
-    This tool is the finish line for subtasks, saving their final output to the workspace
-    and marking them as completed. It's the equivalent of signing off on a piece of work
-    and filing it away for others to use.
+    This tool serves as the formal completion mechanism for subtasks by:
+    1. Saving the final output to the designated workspace location
+    2. Preserving structured metadata about the results
+    3. Marking the subtask as completed
 
-    EXCLUSIVELY AVAILABLE IN CONCLUSION STAGE:
-    This tool is the ONLY tool available during the Conclusion Stage of subtask execution.
-    It forces the agent to synthesize findings and complete the task without further
-    information gathering.
+    This tool is EXCLUSIVELY AVAILABLE during the Conclusion Stage of complex subtasks,
+    forcing the agent to synthesize findings before completion. For simple 'tool_call'
+    subtasks, it is called immediately after the information-gathering tool.
 
-    The result gets saved to the designated output file, making it available for
-    dependent subtasks and final reporting. Think of it as publishing a report
-    that other team members can now build upon.
+    Usage pattern:
+    - First call information tools to gather data (Tool Calling Stage)
+    - Then call finish_subtask to formalize and save results (Conclusion Stage)
+
+    Example result format:
+    {
+        "content": {
+            "analysis": "The data shows a clear trend of...",
+            "recommendations": ["First, consider...", "Second, implement..."]
+        },
+        "metadata": {
+            "title": "Market Analysis Results",
+            "description": "Comprehensive analysis of market trends",
+            "source": "calculation",
+            "timestamp": "2023-06-15T10:30:00Z"
+        }
+    }
     """
 
     name = "finish_subtask"

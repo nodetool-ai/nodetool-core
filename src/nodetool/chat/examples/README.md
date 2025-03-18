@@ -1,84 +1,84 @@
-# Chain of Thought (CoT) Agent Components
+## Overview of Examples
 
-This module provides components for implementing Chain of Thought (CoT) reasoning using large language models (LLMs).
+### 1. Retrieval Agent (`test_retrieval_agent.py`)
 
-## Components
+A simple example demonstrating how to create and use a retrieval agent with browser tools. This script:
 
-The module offers three main components:
+- Creates a research agent with Google search and browser capabilities
+- Executes a hard-coded task plan without using the task planner
+- Performs web searches and fetches specific web content
+- Saves the retrieved information to markdown files
 
-1. **TaskPlanner**: Creates task plans with dependencies
-2. **TaskExecutor**: Executes tasks from plans
-3. **CoTAgent**: Combines planning and execution (legacy)
+This is a good starting point to understand how agents interact with tools and execute tasks.
 
-## Usage
+### 2. Task Planning and Execution (`test_planner.py`)
 
-### Using Planner and Executor Separately
+This example demonstrates the separation of planning and execution phases, allowing for:
 
-For greater flexibility, you can use the planner and executor components separately:
+- Creating task plans using TaskPlanner
+- Saving and loading plans between sessions
+- Inspecting or modifying plans before execution
+- Executing plans using TaskExecutor
 
-```python
-# Create a plan using TaskPlanner
-planner = TaskPlanner(provider, model, tools)
-task_plan = await planner.create_plan(problem)
+This approach provides greater flexibility for workflows where you might want to review or adjust plans before execution.
 
-# Inspect or modify the plan if needed
-task_plan = modify_plan(task_plan)
+### 3. Multi-Agent Coordination (`test_multi_agent.py`)
 
-# Execute the plan using TaskExecutor
-executor = TaskExecutor(provider, model, workspace_dir, tools)
-async for result in executor.execute_tasks(task_plan, problem):
-    # Handle results
-    pass
+An advanced example showing how multiple specialized agents can work together. This script:
+
+- Sets up a Research Agent for retrieving information from the web
+- Creates a Summary Agent for processing and condensing the collected information
+- Uses MultiAgentCoordinator to manage task dependencies and workflow
+- Demonstrates a complete research workflow from information retrieval to summarization
+
+This example is ideal for understanding complex, multi-stage workflows that require different specialized capabilities.
+
+## Running the Examples
+
+To run any of these examples:
+
+1. Ensure you have NodeTool installed and configured
+2. Set up the required API keys for the chosen providers (Anthropic or OpenAI)
+3. Run the script using Python:
+
+```bash
+python nodetool-core/src/nodetool/chat/examples/test_retrieval_agent.py
 ```
 
-This approach allows you to:
+Each example will:
 
-- Review and modify plans before execution
-- Save plans to files for later use
-- Create plans with one model and execute with another
-- Execute the same plan multiple times with different parameters
+- Create a workspace directory for storing outputs
+- Connect to the specified provider (Anthropic Claude or OpenAI GPT models)
+- Execute the tasks and display progress
+- Save results to the workspace directory
 
-### Using the Legacy CoTAgent
+## Key Concepts
 
-The `CoTAgent` class combines planning and execution in a single interface:
+- **Agent**: An AI assistant configured with specific tools, objectives, and capabilities
+- **Tools**: Components that enable agents to interact with external systems (web browsers, search engines, etc.)
+- **Tasks & Subtasks**: Units of work defining what an agent needs to accomplish
+- **TaskPlanner**: Creates structured plans for solving complex problems
+- **TaskExecutor**: Carries out the planned tasks using the appropriate agents
+- **MultiAgentCoordinator**: Orchestrates multiple specialized agents to solve complex problems
 
-```python
-agent = CoTAgent(provider, model, workspace_dir)
-async for result in agent.solve_problem(problem):
-    # Handle results
-    pass
-```
+## Customizing Examples
 
-## Example Scripts
+You can modify these examples to experiment with:
 
-- **use_components_separately.py**: Demonstrates how to use TaskPlanner and TaskExecutor independently
-  - Creates a plan with TaskPlanner
-  - Saves/loads plans to/from JSON files
-  - Modifies plans programmatically
-  - Executes plans with TaskExecutor
+- Different AI models (Claude, GPT-4, etc.)
+- Custom system prompts for specialized behavior
+- Additional tools and capabilities
+- More complex task structures and dependencies
 
-## Required Environment Variables
+Each example is well-commented to help you understand the components and how they work together.
 
-- `ANTHROPIC_API_KEY`: Required if using the AnthropicProvider
+## Next Steps
 
-## Supported Tools
+After exploring these examples, you can:
 
-The components support a wide range of tools, including:
+1. Create custom agents for your specific use cases
+2. Develop new tools to expand agent capabilities
+3. Build more complex multi-agent systems with specialized roles
+4. Integrate these capabilities into your applications
 
-- Web searching
-- File operations
-- PDF processing
-- Workspace management
-- Development tools (Node.js, npm, ESLint, etc.)
-
-## Task Structure
-
-Tasks are organized into a hierarchical structure:
-
-```
-TaskPlan
-└── Task
-    └── SubTask (with dependencies)
-```
-
-Each SubTask can reference tools and depend on other subtasks. The TaskExecutor ensures tasks are executed in the correct order based on their dependencies.
+For more information, refer to the main NodeTool documentation.

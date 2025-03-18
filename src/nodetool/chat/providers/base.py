@@ -42,7 +42,7 @@ class ChatProvider(ABC):
     async def generate_messages(
         self,
         messages: Sequence[Message],
-        model: FunctionModel,
+        model: str,
         tools: Sequence[Any] = [],
         **kwargs
     ) -> AsyncGenerator[Chunk | ToolCall, Any]:
@@ -51,7 +51,7 @@ class ChatProvider(ABC):
 
         Args:
             messages: Sequence of Message objects representing the conversation
-            model: FunctionModel containing model information
+            model: str containing model information
             tools: Available tools for the model to use
             **kwargs: Additional provider-specific parameters
 

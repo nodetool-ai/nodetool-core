@@ -1,4 +1,5 @@
 import asyncio
+import traceback
 
 
 async def wrap_generators_parallel(*generators):
@@ -35,12 +36,20 @@ async def wrap_generators_parallel(*generators):
     """
     queue = asyncio.Queue()
     active_generators = len(generators)
+    exceptions = []
 
     async def producer(gen):
         nonlocal active_generators
         try:
             async for item in gen:
                 await queue.put(item)
+        except Exception as e:
+            exceptions.append(
+                {
+                    "exception": e,
+                    "stack_trace": traceback.format_exc(),
+                }
+            )
         finally:
             active_generators -= 1
             await queue.put(None)  # Signal completion
@@ -57,3 +66,11 @@ async def wrap_generators_parallel(*generators):
 
     # Wait for all tasks to complete
     await asyncio.wait(tasks)
+
+    # Raise exceptions if any were caught
+    if exceptions:
+        for exception in exceptions:
+            print(exception["stack_trace"])
+        raise Exception(
+            f"Exceptions occurred in generators: {exceptions[0]['exception']}"
+        )

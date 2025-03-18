@@ -18,7 +18,6 @@ from nodetool.metadata.types import (
     MessageContent,
     MessageImageContent,
     MessageTextContent,
-    FunctionModel,
 )
 from nodetool.common.environment import Environment
 
@@ -168,13 +167,13 @@ class AnthropicProvider(ChatProvider):
     async def generate_messages(
         self,
         messages: Sequence[Message],
-        model: FunctionModel,
+        model: str,
         tools: Sequence[Any] = [],
         **kwargs,
     ) -> AsyncGenerator[Chunk | ToolCall, Any]:
         """Generate streaming completions from Anthropic."""
         if "max_tokens" not in kwargs:
-            if "haiku" in model.name:
+            if "haiku" in model:
                 kwargs["max_tokens"] = 4096
             else:
                 kwargs["max_tokens"] = 8192
@@ -197,7 +196,7 @@ class AnthropicProvider(ChatProvider):
 
         if "thinking" in kwargs:
             kwargs["thinking"] = {"type": "enabled", "budget_tokens": 4096}
-            if model.name < "claude-3-7":
+            if "haiku" in model:
                 kwargs.pop("thinking")
 
         # Convert messages and tools to Anthropic format
@@ -221,7 +220,7 @@ class AnthropicProvider(ChatProvider):
         for retry in range(max_retries):
             try:
                 async with self.client.messages.stream(
-                    model=model.name,
+                    model=model,
                     messages=anthropic_messages,
                     system=system_message,
                     tools=anthropic_tools,

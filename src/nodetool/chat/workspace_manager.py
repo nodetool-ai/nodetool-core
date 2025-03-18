@@ -47,6 +47,128 @@ class WorkspaceManager:
         self.current_workspace = workspace_path
         print(f"Created new workspace at: {self.current_workspace}")
 
+    def get_current_directory(self) -> str:
+        """
+        Get the current working directory.
+
+        Returns:
+            str: The current working directory path
+        """
+        return self.current_workspace or ""
+
+    def list_directory(self, path=None) -> str:
+        """
+        List contents of a directory.
+
+        Args:
+            path (str, optional): Path to list. Defaults to current directory.
+
+        Returns:
+            str: Newline-separated list of directory contents or error message
+        """
+        full_path = (
+            os.path.join(self.current_workspace, path)
+            if path
+            else self.current_workspace
+        )
+        try:
+            items = os.listdir(full_path)
+            return "\n".join(items)
+        except Exception as e:
+            return f"Error: {str(e)}"
+
+    def change_directory(self, path) -> str:
+        """
+        Change the current working directory.
+
+        Args:
+            path (str): Target directory path
+
+        Returns:
+            str: Success message or error message
+        """
+        if not path:
+            return "Error: Missing directory argument"
+        new_path = os.path.join(self.current_workspace, path)
+        if not os.path.exists(new_path):
+            return f"Error: Directory {path} does not exist"
+        if not new_path.startswith(self.workspace_root):
+            return "Error: Cannot navigate outside workspace"
+        self.current_workspace = new_path
+        return f"Changed directory to {new_path}"
+
+    def make_directory(self, path) -> str:
+        """
+        Create a new directory.
+
+        Args:
+            path (str): Directory path to create
+
+        Returns:
+            str: Success message or error message
+        """
+        if not path:
+            return "Error: Missing directory name"
+        try:
+            os.makedirs(os.path.join(self.current_workspace, path), exist_ok=True)
+            return f"Created directory {path}"
+        except Exception as e:
+            return f"Error creating directory: {str(e)}"
+
+    def remove_item(self, path, recursive=False) -> str:
+        """
+        Remove a file or directory.
+
+        Args:
+            path (str): Path to remove
+            recursive (bool, optional): If True, recursively remove directories. Defaults to False.
+
+        Returns:
+            str: Success message or error message
+        """
+        if not path:
+            return "Error: Missing path argument"
+        full_path = os.path.join(self.current_workspace, path)
+        if not full_path.startswith(self.workspace_root):
+            return "Error: Cannot remove files outside workspace"
+        try:
+            if os.path.isdir(full_path):
+                if recursive:
+                    shutil.rmtree(full_path)
+                else:
+                    os.rmdir(full_path)
+            else:
+                os.remove(full_path)
+            return f"Removed {path}"
+        except Exception as e:
+            return f"Error removing {path}: {str(e)}"
+
+    def open_file(self, path) -> str:
+        """
+        Open a file with the system default application.
+
+        Args:
+            path (str): Path to the file to open
+
+        Returns:
+            str: Success message or error message
+        """
+        if not path:
+            return "Error: Missing file argument"
+        full_path = os.path.join(self.current_workspace, path)
+        if not os.path.exists(full_path):
+            return f"Error: File {path} does not exist"
+        try:
+            if platform.system() == "Darwin":  # macOS
+                subprocess.run(["open", full_path])
+            elif platform.system() == "Windows":  # Windows
+                os.startfile(full_path)  # type: ignore
+            else:  # linux variants
+                subprocess.run(["xdg-open", full_path])
+            return f"Opened {path}"
+        except Exception as e:
+            return f"Error opening file: {str(e)}"
+
     async def execute_command(self, cmd: str) -> str:
         """
         Execute workspace commands in a controlled environment.
@@ -74,75 +196,35 @@ class WorkspaceManager:
         args = parts[1:] if len(parts) > 1 else []
 
         if command == "pwd" or command == "cwd":
-            return self.current_workspace or ""
+            return self.get_current_directory()
 
         elif command == "ls":
-            path = (
-                os.path.join(self.current_workspace, *args)
-                if args
-                else self.current_workspace
-            )
-            try:
-                items = os.listdir(path)
-                return "\n".join(items)
-            except Exception as e:
-                return f"Error: {str(e)}"
+            path = args[0] if args else None
+            return self.list_directory(path)
 
         elif command == "cd":
             if not args:
                 return "Error: Missing directory argument"
-            new_path = os.path.join(self.current_workspace, args[0])
-            if not os.path.exists(new_path):
-                return f"Error: Directory {args[0]} does not exist"
-            if not new_path.startswith(self.workspace_root):
-                return "Error: Cannot navigate outside workspace"
-            self.current_workspace = new_path
-            return f"Changed directory to {new_path}"
+            return self.change_directory(args[0])
 
         elif command == "mkdir":
             if not args:
                 return "Error: Missing directory name"
-            try:
-                os.makedirs(
-                    os.path.join(self.current_workspace, args[0]), exist_ok=True
-                )
-                return f"Created directory {args[0]}"
-            except Exception as e:
-                return f"Error creating directory: {str(e)}"
+            return self.make_directory(args[0])
 
         elif command == "rm":
             if not args:
                 return "Error: Missing path argument"
-            path = os.path.join(self.current_workspace, args[0])
-            if not path.startswith(self.workspace_root):
-                return "Error: Cannot remove files outside workspace"
-            try:
-                if os.path.isdir(path):
-                    if "-r" in args or "-rf" in args:
-                        shutil.rmtree(path)
-                    else:
-                        os.rmdir(path)
-                else:
-                    os.remove(path)
-                return f"Removed {args[0]}"
-            except Exception as e:
-                return f"Error removing {args[0]}: {str(e)}"
+            recursive = "-r" in args or "-rf" in args
+            # Find the actual path argument (not the flags)
+            path_arg = next((arg for arg in args if not arg.startswith("-")), None)
+            if not path_arg:
+                return "Error: Missing path argument"
+            return self.remove_item(path_arg, recursive)
 
         elif command == "open":
             if not args:
                 return "Error: Missing file argument"
-            path = os.path.join(self.current_workspace, args[0])
-            if not os.path.exists(path):
-                return f"Error: File {args[0]} does not exist"
-            try:
-                if platform.system() == "Darwin":  # macOS
-                    subprocess.run(["open", path])
-                elif platform.system() == "Windows":  # Windows
-                    os.startfile(path)  # type: ignore
-                else:  # linux variants
-                    subprocess.run(["xdg-open", path])
-                return f"Opened {args[0]}"
-            except Exception as e:
-                return f"Error opening file: {str(e)}"
+            return self.open_file(args[0])
 
         return f"Unknown command: {command}"

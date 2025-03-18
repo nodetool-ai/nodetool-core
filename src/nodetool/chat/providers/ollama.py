@@ -17,7 +17,6 @@ from nodetool.metadata.types import (
     MessageContent,
     MessageImageContent,
     MessageTextContent,
-    FunctionModel,
 )
 from nodetool.chat.ollama_service import get_ollama_client
 
@@ -132,7 +131,7 @@ class OllamaProvider(ChatProvider):
     async def generate_messages(
         self,
         messages: Sequence[Message],
-        model: FunctionModel,
+        model: str,
         tools: Sequence[Any] = [],
         **kwargs,
     ) -> AsyncGenerator[Chunk | ToolCall, Any]:
@@ -148,7 +147,7 @@ class OllamaProvider(ChatProvider):
         print(ollama_messages)
 
         completion = await self.client.chat(
-            model=model.name, messages=ollama_messages, stream=True, **kwargs
+            model=model, messages=ollama_messages, stream=True, **kwargs
         )
 
         async for response in completion:

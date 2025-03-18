@@ -38,7 +38,7 @@ from nodetool.chat.tools import (
 async def process_regular_chat(
     user_input: str,
     messages: List[Message],
-    model: FunctionModel,
+    model: str,
     workspace_dir: str,
     context: ProcessingContext,
     debug_mode: bool = False,

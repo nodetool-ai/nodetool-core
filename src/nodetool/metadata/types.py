@@ -974,8 +974,8 @@ class SubTask(BaseType):
     output_file: str = Field(
         default="", description="The file path where the subtask will save its output"
     )
-    thinking: bool = Field(
-        default=False, description="Whether the subtask requires thinking"
+    task_type: Literal["reasoning", "multi_step"] = Field(
+        default="reasoning", description="The type of task the subtask will perform"
     )
     max_tool_calls: int = Field(
         default=2, description="The maximum number of tool calls for the subtask"
@@ -983,23 +983,38 @@ class SubTask(BaseType):
     completed: bool = Field(
         default=False, description="Whether the subtask is completed"
     )
+    start_time: int = Field(default=0, description="The start time of the subtask")
+    end_time: int = Field(default=0, description="The end time of the subtask")
     file_dependencies: list[str] = Field(
         default=[], description="The dependencies of the subtask, a list of file paths"
     )
-    output_type: Literal["text", "object"] = Field(
-        default="text", description="The type of output the subtask will return"
+    output_type: Literal["md", "json", "txt"] = Field(
+        default="txt", description="The type of output the subtask will return"
     )
 
     def to_markdown(self) -> str:
         """Convert the subtask to markdown format."""
-        checkbox = "[x]" if self.completed else "[ ]"
+        checkbox = "[x]" if self.completed else "[ ]" if self.is_running() else "[*]"
         deps_str = (
             f" (depends on {', '.join(self.file_dependencies)})"
             if self.file_dependencies
             else ""
         )
-        thinking_str = " (required thinking)" if self.thinking else ""
-        return f"- {checkbox} #{self.id} {self.content}{deps_str}{thinking_str}"
+        return f"- {checkbox} #{self.id} {self.content}{deps_str} ({self.task_type})"
+
+    def is_running(self) -> bool:
+        """
+        Check if the subtask is currently running.
+
+        A subtask is considered running if:
+        1. It has a non-zero start time (execution has begun)
+        2. It has a zero end time (execution has not completed)
+        3. It is not marked as completed
+
+        Returns:
+            bool: True if the subtask is currently running, False otherwise
+        """
+        return self.start_time > 0 and self.end_time == 0 and not self.completed
 
 
 class Task(BaseModel):
@@ -1076,9 +1091,8 @@ class TaskPlan(BaseType):
     def to_markdown(self) -> str:
         """Convert all tasks to a markdown string."""
         lines = f"# {self.title}\n"
-        if self.tasks:
-            for task in self.tasks:
-                lines += f"{task.to_markdown()}\n"
+        for task in self.tasks:
+            lines += f"{task.to_markdown()}\n"
         return lines
 
     def find_task_by_title(self, title: str) -> Optional[Task]:

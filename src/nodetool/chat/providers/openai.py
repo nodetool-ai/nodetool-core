@@ -32,7 +32,6 @@ from nodetool.metadata.types import (
     MessageContent,
     MessageImageContent,
     MessageTextContent,
-    FunctionModel,
 )
 from nodetool.common.environment import Environment
 
@@ -195,13 +194,13 @@ class OpenAIProvider(ChatProvider):
     async def generate_messages(
         self,
         messages: Sequence[Message],
-        model: FunctionModel,
+        model: str,
         tools: Sequence[Any] = [],
         **kwargs,
     ) -> AsyncGenerator[Chunk | ToolCall, Any]:
         """Generate streaming completions from OpenAI."""
         # Convert system messages to user messages for O1/O3 models
-        if model.name.startswith("o1") or model.name.startswith("o3"):
+        if model.startswith("o1") or model.startswith("o3"):
             kwargs["max_completion_tokens"] = kwargs.pop("max_tokens", 4096)
             kwargs.pop("temperature", None)
             converted_messages = []
@@ -223,18 +222,18 @@ class OpenAIProvider(ChatProvider):
 
         openai_messages = [self.convert_message(m) for m in messages]
 
+        if "thinking" in kwargs:
+            kwargs.pop("thinking")
+            if model.startswith("o1") or model.startswith("o3"):
+                kwargs["reasoning_effort"] = "high"
+
         completion = await self.client.chat.completions.create(
-            model=model.name,
+            model=model,
             messages=openai_messages,
             stream=True,
             stream_options={"include_usage": True},
             **kwargs,
         )
-
-        if "thinking" in kwargs:
-            kwargs.pop("thinking")
-            kwargs["reasoning"] = {"effort": "high"}
-
         current_tool_call = None
 
         async for chunk in completion:

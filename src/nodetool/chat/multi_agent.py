@@ -2,7 +2,7 @@ from nodetool.chat.agent import Agent
 from nodetool.chat.providers import ChatProvider, Chunk
 from nodetool.chat.task_planner import TaskPlanner
 from nodetool.chat.tools import Tool
-from nodetool.metadata.types import FunctionModel, Message, Task, TaskPlan, ToolCall
+from nodetool.metadata.types import Message, Task, TaskPlan, ToolCall
 
 
 import os
@@ -35,28 +35,18 @@ class MultiAgentCoordinator:
     def __init__(
         self,
         provider: ChatProvider,
-        planner_model: FunctionModel,
-        objective: str,
+        planner: TaskPlanner,
         workspace_dir: str,
         agents: List[Agent],
         max_steps: int = 30,
-        planning_steps: int = 3,
-        planning_tools: List[Tool] = [],
-        max_subtask_iterations: int = 3,
-        max_token_limit: int = 8000,
     ):
         """
         Initialize the multi-agent coordinator.
         """
         self.provider = provider
-        self.planner_model = planner_model
-        self.objective = objective
+        self.planner = planner
         self.workspace_dir = workspace_dir
         self.max_steps = max_steps
-        self.planning_steps = planning_steps
-        self.planning_tools = planning_tools
-        self.max_subtask_iterations = max_subtask_iterations
-        self.max_token_limit = max_token_limit
         self.agents = agents
         self.tasks_file_path = Path(workspace_dir) / "tasks.json"
 
@@ -96,17 +86,6 @@ class MultiAgentCoordinator:
         else:
             yield Chunk(content="Phase 1: Planning the approach...\n", done=False)
 
-        # Create planner with retrieval tools
-        self.planner = TaskPlanner(
-            provider=self.provider,
-            model=self.planner_model,
-            objective=self.objective,
-            workspace_dir=self.workspace_dir,
-            tools=self.planning_tools,
-            agents=self.agents,
-            max_research_iterations=self.planning_steps,
-        )
-
         async for item in self.planner.create_plan():
             yield item
 
@@ -124,80 +103,21 @@ class MultiAgentCoordinator:
             content="\nPhase 2: Executing with specialized agents...\n", done=False
         )
 
-        steps_taken = 0
-        all_tasks_complete = False
-
-        # Continue until all tasks are complete or max steps reached
-        while not all_tasks_complete and steps_taken < self.max_steps:
-            steps_taken += 1
-
-            # Find all executable tasks (at the task level)
-            executable_tasks = self._get_executable_tasks(task_plan)
-
-            if not executable_tasks:
-                # Check if all tasks are complete
-                all_tasks_complete = self._all_tasks_complete(task_plan)
-
-                if all_tasks_complete:
-                    break
-                else:
-                    yield Chunk(
-                        content="\nNo executable tasks but not all complete. Possible file dependency issues.\n",
-                        done=False,
-                    )
-                    break
-
-            # Execute the first executable task
-            task = executable_tasks[0]
-
-            # Get the appropriate agent
+        for task in task_plan.tasks:
+            yield Chunk(
+                content=f"\nExecuting task: {task.title}\n",
+                done=False,
+            )
             agent = self._get_agent_for_task(task)
 
-            # Execute the entire task with the appropriate agent
-            # The agent will handle all subtasks
+            assert task is not None, f"Task not found for agent: {agent.name}"
             async for item in agent.execute_task(task_plan, task):
                 yield item
-
-            # Update the task plan file after each task is executed
-            try:
-                with open(self.tasks_file_path, "w") as f:
-                    f.write(task_plan.model_dump_json(indent=2))
-            except Exception as e:
-                print(f"Error updating task plan file: {e}")
-
-        # Summary of results
-        if all_tasks_complete:
-            yield Chunk(
-                content="\nAll tasks completed successfully! Final results:\n",
-                done=False,
-            )
-        else:
-            yield Chunk(
-                content="\nTask execution paused. Progress saved in tasks.json. Final results so far:\n",
-                done=False,
-            )
-
-        for task in task_plan.tasks:
-            # Calculate completion percentage
-            completed_subtasks = sum(
-                1 for subtask in task.subtasks if subtask.completed
-            )
-            total_subtasks = len(task.subtasks)
-            completion_pct = (
-                (completed_subtasks / total_subtasks) * 100 if total_subtasks > 0 else 0
-            )
-
-            yield Chunk(
-                content=f"\nAgent: {task.agent_name} "
-                f"({completed_subtasks}/{total_subtasks} - {completion_pct:.1f}% complete)\n",
-                done=False,
-            )
-            for subtask in task.subtasks:
-                status = "✓ DONE" if subtask.completed else "➤ PENDING"
-                yield Chunk(
-                    content=f"- [{status}] {subtask.id}: {subtask.output_file}\n",
-                    done=False,
-                )
+                if isinstance(item, ToolCall) and item.name == "finish_subtask":
+                    yield Chunk(
+                        content="\n" + task_plan.to_markdown() + "\n",
+                        done=False,
+                    )
 
     def _get_agent_for_task(self, task: Task) -> Agent:
         """
@@ -213,50 +133,6 @@ class MultiAgentCoordinator:
             if agent.name == task.agent_name:
                 return agent
         raise ValueError(f"No agent found for task type: {task.agent_name}")
-
-    def _get_executable_tasks(self, task_plan: TaskPlan) -> List[Task]:
-        """
-        Get all executable tasks from the task plan.
-
-        A task is considered executable when:
-        1. Not all of its subtasks are completed yet
-        2. All file dependencies for at least one of its incomplete subtasks are met
-
-        Returns:
-            List[Task]: List of executable tasks
-        """
-        executable_tasks = []
-
-        for task in task_plan.tasks:
-            # Skip if all subtasks in this task are already complete
-            if all(subtask.completed for subtask in task.subtasks):
-                continue
-
-            # Check if at least one subtask is executable
-            for subtask in task.subtasks:
-                if subtask.completed:
-                    continue
-
-                # Check if all file dependencies exist for this subtask
-                all_dependencies_met = True
-                for file_path in subtask.file_dependencies:
-                    # Strip /workspace prefix for file system operations
-                    if file_path.startswith("/workspace/"):
-                        relative_path = os.path.relpath(file_path, "/workspace")
-                        full_path = os.path.join(self.workspace_dir, relative_path)
-                    else:
-                        full_path = os.path.join(self.workspace_dir, file_path)
-
-                    if not os.path.exists(full_path):
-                        all_dependencies_met = False
-                        break
-
-                if all_dependencies_met:
-                    # This task has at least one executable subtask
-                    executable_tasks.append(task)
-                    break
-
-        return executable_tasks
 
     def _all_tasks_complete(self, task_plan: TaskPlan) -> bool:
         """

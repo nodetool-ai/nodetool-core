@@ -38,7 +38,6 @@ class BrowserTool(Tool):
                     "navigate",
                     "click",
                     "type",
-                    "get_page_content",
                     "quit",
                 ],
             },
@@ -48,7 +47,7 @@ class BrowserTool(Tool):
             },
             "selector": {
                 "type": "string",
-                "description": "CSS selector for the target element (for 'click', 'type', 'get_page_content' actions)",
+                "description": "CSS selector for the target element (for 'click', 'type' actions)",
             },
             "text": {
                 "type": "string",
@@ -68,7 +67,7 @@ class BrowserTool(Tool):
         Args:
             context: The processing context
             params: Dictionary including:
-                action (str): The action to perform ('navigate', 'click', 'type', 'get_text', 'get_page_content', 'quit', 'batch_download')
+                action (str): The action to perform ('navigate', 'click', 'type', 'get_text', 'quit')
                 url (str, optional): URL to navigate to (for 'navigate' action)
                 selector (str, optional): CSS selector for element (for 'click', 'type', 'get_text' actions)
                 text (str, optional): Text to type (for 'type' action)
@@ -124,21 +123,10 @@ class BrowserTool(Tool):
                 url = params.get("url")
                 if not url:
                     return {"error": "URL is required for navigate action"}
-                await page.goto(url)
-                return {"success": True, "url": url}
-
-            elif action == "get_page_content":
-                # Check if we need to navigate first
-                requested_url = params.get("url")
-                if not requested_url:
-                    return {"error": "URL is required for get_page_content action"}
-
-                await page.goto(requested_url, wait_until="networkidle")
-                current_url = page.url
-
+                await page.goto(url, wait_until="networkidle")
                 page_html = await page.inner_html("body")
                 page_text = html2text.html2text(page_html)
-                return {"success": True, "url": current_url, "body": page_text}
+                return {"success": True, "url": url, "body": page_text}
 
             elif action in ["click", "type", "get_text"]:
                 selector = params.get("selector")
@@ -601,3 +589,167 @@ class WebFetchTool(Tool):
                 "error": f"Error fetching and processing content: {str(e)}",
                 "url": url,
             }
+
+
+class DownloadFilesTool(Tool):
+    """
+    A tool that downloads files from URLs and saves them to disk.
+
+    This tool enables language models to retrieve files of any type from the web
+    and save them to the workspace directory for further processing or analysis.
+    Supports downloading multiple files in parallel.
+    """
+
+    name = "download_file"
+    description = "Download one or more files from URLs and save them to disk"
+    input_schema = {
+        "type": "object",
+        "properties": {
+            "urls": {
+                "type": "array",
+                "description": "URL or list of URLs of the files to download",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "url": {
+                            "type": "string",
+                            "description": "UjRL of the file to download",
+                        },
+                        "path": {
+                            "type": "string",
+                            "description": "Workspace relative path where to save the file",
+                        },
+                    },
+                },
+            },
+            "max_concurrent": {
+                "type": "integer",
+                "description": "Maximum number of concurrent downloads",
+                "default": 5,
+            },
+        },
+        "required": ["urls", "paths"],
+    }
+
+    async def process(self, context: ProcessingContext, params: dict) -> Any:
+        """
+        Downloads one or more files from URLs and saves them to the specified paths.
+        Downloads are performed in parallel for better efficiency.
+
+        Args:
+            context: The processing context
+            params: Dictionary including:
+                urls (str or list): URL or list of URLs of the files to download
+                paths (str or list): Path or list of paths where to save the files
+                headers (dict, optional): HTTP headers for the requests
+                timeout (int, optional): Timeout for the requests in seconds
+                max_concurrent (int, optional): Maximum number of concurrent downloads
+
+        Returns:
+            dict: Result containing download status information for each file
+        """
+        try:
+            # Handle both single URL and list of URLs
+            urls = params.get("urls")
+            paths = params.get("paths")
+
+            if not urls:
+                return {"error": "URLs are required"}
+            if not paths:
+                return {"error": "Save paths are required"}
+
+            # Convert single values to lists for uniform processing
+            if isinstance(urls, str):
+                urls = [urls]
+            if isinstance(paths, str):
+                paths = [paths]
+
+            # Validate that URLs and paths have the same length
+            if len(urls) != len(paths):
+                return {"error": "Number of URLs must match number of paths"}
+
+            headers = params.get("headers", {})
+            timeout = params.get("timeout", 60)
+            max_concurrent = params.get("max_concurrent", 5)
+
+            # Create a semaphore to limit concurrent downloads
+            import asyncio
+
+            semaphore = asyncio.Semaphore(max_concurrent)
+
+            # Define the download function for a single file
+            async def download_single_file(url, path):
+                async with semaphore:
+                    try:
+                        # Ensure the directory exists
+                        full_path = os.path.join(self.workspace_dir, path)
+                        os.makedirs(os.path.dirname(full_path), exist_ok=True)
+
+                        async with aiohttp.ClientSession() as session:
+                            async with session.get(
+                                url, headers=headers, timeout=timeout
+                            ) as response:
+                                if response.status != 200:
+                                    return {
+                                        "url": url,
+                                        "path": path,
+                                        "success": False,
+                                        "error": f"HTTP request failed with status {response.status}",
+                                        "status_code": response.status,
+                                    }
+
+                                # Get content type and size
+                                content_type = response.headers.get(
+                                    "Content-Type", "unknown"
+                                )
+                                content_length = response.headers.get("Content-Length")
+                                file_size = (
+                                    int(content_length) if content_length else None
+                                )
+
+                                # Read the file data and write to disk
+                                with open(full_path, "wb") as f:
+                                    f.write(await response.read())
+
+                                return {
+                                    "url": url,
+                                    "path": full_path,
+                                    "success": True,
+                                    "content_type": content_type,
+                                    "file_size_bytes": file_size,
+                                }
+                    except aiohttp.ClientError as e:
+                        return {
+                            "url": url,
+                            "path": path,
+                            "success": False,
+                            "error": f"HTTP request error: {str(e)}",
+                        }
+                    except Exception as e:
+                        return {
+                            "url": url,
+                            "path": path,
+                            "success": False,
+                            "error": f"Error downloading file: {str(e)}",
+                        }
+
+            # Run downloads in parallel
+            download_tasks = [
+                download_single_file(url, path) for url, path in zip(urls, paths)
+            ]
+            results = await asyncio.gather(*download_tasks)
+
+            # Compile the final results
+            successful = [r for r in results if r.get("success")]
+            failed = [r for r in results if not r.get("success")]
+
+            return {
+                "total": len(results),
+                "successful": len(successful),
+                "failed": len(failed),
+                "results": results,
+                "message": f"Downloaded {len(successful)} of {len(results)} files successfully",
+            }
+
+        except Exception as e:
+            return {"error": f"Error in download process: {str(e)}"}

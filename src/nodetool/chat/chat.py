@@ -30,7 +30,6 @@ from nodetool.chat.providers import get_provider, Chunk
 from nodetool.chat.tools.base import Tool
 from nodetool.common.environment import Environment
 from nodetool.metadata.types import (
-    FunctionModel,
     Message,
     OpenAIModel,
     ToolCall,
@@ -92,7 +91,7 @@ def default_serializer(obj: Any) -> dict:
 
 async def generate_messages(
     messages: Sequence[Message],
-    model: FunctionModel,
+    model: str,
     tools: Sequence[Tool] = [],
     **kwargs,
 ) -> AsyncGenerator[Chunk | ToolCall, Any]:
@@ -123,7 +122,7 @@ async def generate_messages(
 
 async def process_messages(
     messages: Sequence[Message],
-    model: FunctionModel,
+    model: str,
     tools: Sequence[Tool] = [],
     **kwargs,
 ) -> Message:

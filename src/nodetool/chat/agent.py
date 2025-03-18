@@ -55,26 +55,22 @@ RETRIEVAL INSTRUCTIONS:
 9. EXECUTE ONE FOCUSED RETRIEVAL ACTION - each subtask should have exactly one search concept
 10. NEVER CHAIN MULTIPLE SEARCHES - your subtask should perform only one search query
 
+SUPPLEMENTARY FILE DOWNLOADS:
+1. ALWAYS download and save relevant supplementary files that complement the text information
+2. Pay special attention to and prioritize downloading:
+   - Diagrams, charts, and informational images
+   - Data spreadsheets (CSV, Excel, etc.)
+   - PDF documents
+   - Presentation files
+   - Audio files where relevant
+3. Save all downloaded files to the /workspace directory with descriptive filenames
+4. When encountering visual information (diagrams, charts, etc.), ALWAYS download the image rather than just describing it
+5. Reference downloaded files in your retrieval notes for context
+
 WORKSPACE CONSTRAINTS:
-- All file operations must use the /workspace directory as root
-- Never attempt to access files outside the /workspace directory
+- All generated files must use the /workspace directory as root
 - All file paths must start with /workspace/ for proper access
 - Make sure to save artifacts in the /workspace directory
-
-WEB CRAWLING EFFICIENCY:
-- Use `google_search` to find relevant pages for your SPECIFIC search topic only
-- ALWAYS PREFER `web_fetch` over `browser_control` - it's significantly faster
-- Only use `browser_control` when `web_fetch` fails or for dynamic content that requires interaction
-- Use `batch_download` to fetch MULTIPLE pages in a single operation
-- Avoid sequential browsing - retrieve everything in minimal batched calls
-- Take screenshots only of critical visual content
-- ONE SEARCH TOPIC PER SUBTASK - do not try to be comprehensive
-
-DATA STORAGE:
-- Save raw content in appropriate formats (html, txt, csv, json)
-- Use descriptive filenames that indicate specific content source
-- Create focused output files with clear naming conventions
-- Include metadata with each saved file (source URL, timestamp)
 
 REASONING APPROACH:
 1. First, identify exactly what information you need to collect
@@ -82,13 +78,15 @@ REASONING APPROACH:
 3. Choose the most appropriate tool for the specific data needed
 4. Execute your search with specific, targeted parameters
 5. Validate that the retrieved data matches what was requested
-6. Store the data in a clean, organized format
+6. Identify and download all supplementary files (images, PDFs, etc.)
+7. Store all data in a clean, organized format
 
 RESULT REQUIREMENTS:
 1. Save all retrieved information as files in the /workspace directory
 2. Use descriptive filenames that indicate specific content
 3. Include metadata with sources for all retrieved information
-4. Call finish_subtask with a manifest of all retrieved information
+4. Download and save ALL supplementary files (images, diagrams, spreadsheets, PDFs, etc.)
+5. Call finish_subtask with a manifest of all retrieved information and downloaded files
 """
 
 # Modified SUMMARIZATION_SYSTEM_PROMPT with emphasis on focused summarization and chain-of-thought
@@ -109,12 +107,6 @@ WORKSPACE CONSTRAINTS:
 - Never attempt to access files outside the /workspace directory
 - All file paths must start with /workspace/ for proper access
 - Make sure to save artifacts in the /workspace directory
-
-EFFICIENCY REQUIREMENTS:
-- Read only files relevant to your specific subtask
-- Analyze all content before starting to write summaries
-- Avoid multiple passes over the same content
-- Create focused summaries in a single writing phase
 
 REASONING APPROACH:
 1. First, scan all input files to understand the available information
@@ -163,7 +155,7 @@ class Agent:
         objective: str,
         description: str,
         provider: ChatProvider,
-        model: FunctionModel,
+        model: str,
         workspace_dir: str,
         tools: List[Tool],
         system_prompt: str | None = None,
@@ -234,7 +226,7 @@ class Agent:
             model=self.model,
             workspace_dir=self.workspace_dir,
             tools=self.tools,
-            task_plan=task_plan,
+            task=task,
             system_prompt=self.system_prompt,
             max_steps=self.max_steps,
             max_subtask_iterations=self.max_subtask_iterations,

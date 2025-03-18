@@ -92,6 +92,8 @@ from nodetool.chat.tools.browser import (
     BrowserTool,
     ScreenshotTool,
     GoogleSearchTool,
+    WebFetchTool,
+    DownloadFilesTool,
 )
 
 # PDF tools
@@ -159,6 +161,8 @@ __all__ = [
     "BrowserTool",
     "ScreenshotTool",
     "GoogleSearchTool",
+    "WebFetchTool",
+    "DownloadFilesTool",
     # PDF
     "ExtractPDFTextTool",
     "ExtractPDFTablesTool",

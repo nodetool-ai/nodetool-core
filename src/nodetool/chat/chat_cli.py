@@ -28,14 +28,16 @@ from nodetool.chat.multi_agent import MultiAgentCoordinator
 from nodetool.chat.agent import Agent
 from nodetool.chat.providers import get_provider, Chunk
 from nodetool.chat.regular_chat import process_regular_chat
-from nodetool.chat.tools.browser import WebFetchTool
-from nodetool.metadata.types import Provider, Message, ToolCall, FunctionModel
+from nodetool.chat.task_planner import TaskPlanner
+from nodetool.metadata.types import Provider, Message, ToolCall
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.chat.ollama_service import get_ollama_models
 from nodetool.chat.chat import get_openai_models
 from nodetool.chat.tools import (
     GoogleSearchTool,
     BrowserTool,
+    DownloadFilesTool,
+    WebFetchTool,
     ScreenshotTool,
     ChromaTextSearchTool,
     ChromaHybridSearchTool,
@@ -144,10 +146,7 @@ class ChatCLI:
             Provider.Ollama: "llama3.2:3b",
         }
         self.provider = Provider.Anthropic
-        self.model = FunctionModel(
-            name=self.default_models[self.provider], provider=self.provider
-        )
-
+        self.model = self.default_models[self.provider]
         # Initialize planner and executor models with the same model as default
         self.planner_model = self.model
         self.executor_model = self.model
@@ -200,6 +199,7 @@ class ChatCLI:
             ConvertPDFToMarkdownTool(workspace_dir),
             GoogleSearchTool(workspace_dir),
             WebFetchTool(workspace_dir),
+            DownloadFilesTool(workspace_dir),
             BrowserTool(workspace_dir),
             ScreenshotTool(workspace_dir),
             ReadWorkspaceFileTool(workspace_dir),
@@ -208,6 +208,8 @@ class ChatCLI:
         ]
 
         self.summarization_tools = [
+            ChromaTextSearchTool(workspace_dir),
+            ChromaHybridSearchTool(workspace_dir),
             ReadWorkspaceFileTool(workspace_dir),
             ListWorkspaceContentsTool(workspace_dir),
             ExecuteWorkspaceCommandTool(workspace_dir),
@@ -325,38 +327,43 @@ class ChatCLI:
             MultiAgentCoordinator: A new MultiAgentCoordinator instance
         """
         provider_instance = get_provider(self.provider)
+        agents = [
+            Agent(
+                name="Research Agent",
+                objective="Research information from the web.",
+                description="A research agent that uses the research tools to research information from the web.",
+                provider=provider_instance,
+                model=self.executor_model,
+                workspace_dir=str(self.workspace_dir),
+                tools=self.retrieval_tools,
+            ),
+            Agent(
+                name="Summarization Agent",
+                objective="Summarize information from the workspace.",
+                description="A summarization agent that uses the summarization tools to summarize information from the workspace.",
+                provider=provider_instance,
+                model=self.executor_model,
+                workspace_dir=str(self.workspace_dir),
+                tools=self.summarization_tools,
+            ),
+        ]
+
+        planner = TaskPlanner(
+            provider=provider_instance,
+            model=self.planner_model,
+            objective=objective,
+            workspace_dir=str(self.workspace_dir),
+            tools=self.retrieval_tools,
+            agents=agents,
+        )
 
         # Create a MultiAgentCoordinator instance
         agent = MultiAgentCoordinator(
             provider=provider_instance,
-            planner_model=self.planner_model,
-            planning_steps=3,
-            planning_tools=self.retrieval_tools,
-            objective=objective,
+            planner=planner,
+            agents=agents,
             workspace_dir=str(self.workspace_dir),
-            agents=[
-                Agent(
-                    name="Research Agent",
-                    objective="Research information from the web.",
-                    description="A research agent that uses the research tools to research information from the web.",
-                    provider=provider_instance,
-                    model=self.executor_model,
-                    workspace_dir=str(self.workspace_dir),
-                    tools=self.retrieval_tools,
-                ),
-                Agent(
-                    name="Summarization Agent",
-                    objective="Summarize information from the workspace.",
-                    description="A summarization agent that uses the summarization tools to summarize information from the workspace.",
-                    provider=provider_instance,
-                    model=self.executor_model,
-                    workspace_dir=str(self.workspace_dir),
-                    tools=self.summarization_tools,
-                ),
-            ],
             max_steps=30,
-            max_subtask_iterations=5,
-            max_token_limit=20000,
         )
 
         return agent
@@ -505,9 +512,9 @@ class ChatCLI:
         """
         settings = {
             "provider": self.provider.value,
-            "model": self.model.name,
-            "planner_model": self.planner_model.name,
-            "executor_model": self.executor_model.name,
+            "model": self.model,
+            "planner_model": self.planner_model,
+            "executor_model": self.executor_model,
             "agent_mode": self.agent_mode,
             "debug_mode": self.debug_mode,
         }
@@ -539,20 +546,13 @@ class ChatCLI:
                         self.provider = Provider.Ollama
 
                 # Set model
-                model_name = settings.get("model", self.model.name)
-                self.model = FunctionModel(name=model_name, provider=self.provider)
+                self.model = settings.get("model", self.model)
 
                 # Set planner model
-                planner_model_name = settings.get("planner_model", self.model.name)
-                self.planner_model = FunctionModel(
-                    name=planner_model_name, provider=self.provider
-                )
+                self.planner_model = settings.get("planner_model", self.model)
 
                 # Set executor model
-                executor_model_name = settings.get("executor_model", self.model.name)
-                self.executor_model = FunctionModel(
-                    name=executor_model_name, provider=self.provider
-                )
+                self.executor_model = settings.get("executor_model", self.model)
 
                 # Set modes
                 self.agent_mode = settings.get("agent_mode", False)
@@ -622,7 +622,7 @@ class ChatCLI:
                     print("- claude-3-opus-20240229")
                     print("- claude-3-sonnet-20240229")
                     print("- claude-3-haiku-20240307")
-                    print("- claude-3-5-sonnet-2024102")
+                    print("- claude-3-5-sonnet-20241022")
                     print("- claude-3-7-sonnet-20250219")
                 print()
             except Exception as e:
@@ -633,12 +633,18 @@ class ChatCLI:
                 print(f"Available providers: {[p.value for p in Provider]}")
                 return False
 
-            provider_name = args[0].capitalize()
+            provider_name = args[0]
             try:
-                self.provider = Provider[provider_name]
-                self.model = FunctionModel(
-                    name=self.default_models[self.provider], provider=self.provider
+                self.provider = (
+                    Provider.OpenAI
+                    if provider_name == "openai"
+                    else (
+                        Provider.Anthropic
+                        if provider_name == "anthropic"
+                        else Provider.Ollama
+                    )
                 )
+                self.model = self.default_models[self.provider]
                 # Update planner and executor models when provider changes
                 self.planner_model = self.model
                 self.executor_model = self.model
@@ -651,13 +657,13 @@ class ChatCLI:
                 print(f"Invalid provider. Choose from: {[p.value for p in Provider]}")
         elif cmd == "model":
             if not args:
-                print(f"Current model: {self.model.name}")
-                print(f"Current planner model: {self.planner_model.name}")
-                print(f"Current executor model: {self.executor_model.name}")
+                print(f"Current model: {self.model}")
+                print(f"Current planner model: {self.planner_model}")
+                print(f"Current executor model: {self.executor_model}")
                 return False
 
             model_name = args[0]
-            self.model = FunctionModel(name=model_name, provider=self.provider)
+            self.model = model_name
             # Update both planner and executor models
             self.planner_model = self.model
             self.executor_model = self.model
@@ -666,21 +672,21 @@ class ChatCLI:
             self.save_settings()
         elif cmd == "planner":
             if not args:
-                print(f"Current planner model: {self.planner_model.name}")
+                print(f"Current planner model: {self.planner_model}")
                 return False
 
             model_name = args[0]
-            self.planner_model = FunctionModel(name=model_name, provider=self.provider)
+            self.planner_model = model_name
             print(f"Planner model set to {model_name}")
             # Save settings after changing planner model
             self.save_settings()
         elif cmd == "executor":
             if not args:
-                print(f"Current executor model: {self.executor_model.name}")
+                print(f"Current executor model: {self.executor_model}")
                 return False
 
             model_name = args[0]
-            self.executor_model = FunctionModel(name=model_name, provider=self.provider)
+            self.executor_model = model_name
             print(f"Executor model set to {model_name}")
             # Save settings after changing executor model
             self.save_settings()
@@ -758,9 +764,9 @@ class ChatCLI:
         await self.initialize()
 
         print("Chat CLI - Type /help for commands")
-        print(f"Using {self.provider.value} with model {self.model.name}")
-        print(f"Planner model: {self.planner_model.name}")
-        print(f"Executor model: {self.executor_model.name}")
+        print(f"Using {self.provider.value} with model {self.model}")
+        print(f"Planner model: {self.planner_model}")
+        print(f"Executor model: {self.executor_model}")
         print(f"Agent mode is {'ON' if self.agent_mode else 'OFF'}")
         print(f"Debug mode is {'ON' if self.debug_mode else 'OFF'}")
 
