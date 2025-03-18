@@ -107,7 +107,8 @@ class ChatCLI:
         "rm",
         "open",
         "planner",
-        "executor",
+        "summarization",
+        "retrieval",
     ]
     AGENT_OPTIONS = ["on", "off"]
     DEBUG_OPTIONS = ["on", "off"]
@@ -147,9 +148,10 @@ class ChatCLI:
         }
         self.provider = Provider.Anthropic
         self.model = self.default_models[self.provider]
-        # Initialize planner and executor models with the same model as default
+        # Initialize specialized models
         self.planner_model = self.model
-        self.executor_model = self.model
+        self.summarization_model = self.model
+        self.retrieval_model = self.model
 
         # Settings file path
         self.settings_file = os.path.join(os.path.expanduser("~"), ".nodetool_settings")
@@ -333,7 +335,7 @@ class ChatCLI:
                 objective="Research information from the web.",
                 description="A research agent that uses the research tools to research information from the web.",
                 provider=provider_instance,
-                model=self.executor_model,
+                model=self.retrieval_model,
                 workspace_dir=str(self.workspace_dir),
                 tools=self.retrieval_tools,
             ),
@@ -342,15 +344,25 @@ class ChatCLI:
                 objective="Summarize information from the workspace.",
                 description="A summarization agent that uses the summarization tools to summarize information from the workspace.",
                 provider=provider_instance,
-                model=self.executor_model,
+                model=self.summarization_model,
                 workspace_dir=str(self.workspace_dir),
                 tools=self.summarization_tools,
             ),
         ]
 
+        if self.provider == Provider.OpenAI:
+            task_models = ["gpt-4o-mini", "gpt-4o", "o3-mini", "o1"]
+        elif self.provider == Provider.Anthropic:
+            task_models = ["claude-3-5-haiku-20240307", "claude-3-7-sonnet-20250219"]
+        elif self.provider == Provider.Ollama:
+            task_models = ["llama3.1:8b", "llama3.1"]
+        else:
+            raise ValueError(f"Unsupported provider: {self.provider}")
+
         planner = TaskPlanner(
             provider=provider_instance,
             model=self.planner_model,
+            task_models=task_models,
             objective=objective,
             workspace_dir=str(self.workspace_dir),
             tools=self.retrieval_tools,
@@ -502,9 +514,10 @@ class ChatCLI:
 
         Saves the following settings:
         - Provider
-        - Model (both planner and executor)
+        - Model (general model)
         - Planner model
-        - Executor model
+        - Summarization model
+        - Retrieval model
         - Agent mode
         - Debug mode
 
@@ -514,7 +527,8 @@ class ChatCLI:
             "provider": self.provider.value,
             "model": self.model,
             "planner_model": self.planner_model,
-            "executor_model": self.executor_model,
+            "summarization_model": self.summarization_model,
+            "retrieval_model": self.retrieval_model,
             "agent_mode": self.agent_mode,
             "debug_mode": self.debug_mode,
         }
@@ -548,11 +562,12 @@ class ChatCLI:
                 # Set model
                 self.model = settings.get("model", self.model)
 
-                # Set planner model
+                # Set specialized models
                 self.planner_model = settings.get("planner_model", self.model)
-
-                # Set executor model
-                self.executor_model = settings.get("executor_model", self.model)
+                self.summarization_model = settings.get(
+                    "summarization_model", self.model
+                )
+                self.retrieval_model = settings.get("retrieval_model", self.model)
 
                 # Set modes
                 self.agent_mode = settings.get("agent_mode", False)
@@ -572,7 +587,8 @@ class ChatCLI:
         - /provider [provider]: Set the AI provider
         - /model [model]: Set the model
         - /planner [model]: Set the planner model
-        - /executor [model]: Set the executor model
+        - /summarization [model]: Set the summarization model
+        - /retrieval [model]: Set the retrieval model
         - /clear: Clear chat history
         - /agent [on|off]: Toggle CoT agent mode
         - /debug [on|off]: Toggle debug mode
@@ -594,9 +610,10 @@ class ChatCLI:
         elif cmd == "help":
             print("Commands:")
             print("  /provider [openai|anthropic|ollama] - Set the provider")
-            print("  /model [model_name] - Set the model (both planner and executor)")
+            print("  /model [model_name] - Set the model (all specialized models)")
             print("  /planner [model_name] - Set the planner model")
-            print("  /executor [model_name] - Set the executor model")
+            print("  /summarization [model_name] - Set the summarization model")
+            print("  /retrieval [model_name] - Set the retrieval model")
             print("  /models - List available models for the current provider")
             print("  /agent [on|off] - Toggle agent mode")
             print(
@@ -645,9 +662,10 @@ class ChatCLI:
                     )
                 )
                 self.model = self.default_models[self.provider]
-                # Update planner and executor models when provider changes
+                # Update specialized models when provider changes
                 self.planner_model = self.model
-                self.executor_model = self.model
+                self.summarization_model = self.model
+                self.retrieval_model = self.model
                 print(
                     f"Provider set to {self.provider.value} with default model {self.default_models[self.provider]}"
                 )
@@ -659,15 +677,17 @@ class ChatCLI:
             if not args:
                 print(f"Current model: {self.model}")
                 print(f"Current planner model: {self.planner_model}")
-                print(f"Current executor model: {self.executor_model}")
+                print(f"Current summarization model: {self.summarization_model}")
+                print(f"Current retrieval model: {self.retrieval_model}")
                 return False
 
             model_name = args[0]
             self.model = model_name
-            # Update both planner and executor models
+            # Update all specialized models
             self.planner_model = self.model
-            self.executor_model = self.model
-            print(f"Model set to {model_name} for both planner and executor")
+            self.summarization_model = self.model
+            self.retrieval_model = self.model
+            print(f"Model set to {model_name} for all agents")
             # Save settings after changing model
             self.save_settings()
         elif cmd == "planner":
@@ -680,15 +700,25 @@ class ChatCLI:
             print(f"Planner model set to {model_name}")
             # Save settings after changing planner model
             self.save_settings()
-        elif cmd == "executor":
+        elif cmd == "summarization":
             if not args:
-                print(f"Current executor model: {self.executor_model}")
+                print(f"Current summarization model: {self.summarization_model}")
                 return False
 
             model_name = args[0]
-            self.executor_model = model_name
-            print(f"Executor model set to {model_name}")
-            # Save settings after changing executor model
+            self.summarization_model = model_name
+            print(f"Summarization model set to {model_name}")
+            # Save settings after changing model
+            self.save_settings()
+        elif cmd == "retrieval":
+            if not args:
+                print(f"Current retrieval model: {self.retrieval_model}")
+                return False
+
+            model_name = args[0]
+            self.retrieval_model = model_name
+            print(f"Retrieval model set to {model_name}")
+            # Save settings after changing model
             self.save_settings()
         elif cmd == "clear":
             self.messages = []
@@ -766,7 +796,8 @@ class ChatCLI:
         print("Chat CLI - Type /help for commands")
         print(f"Using {self.provider.value} with model {self.model}")
         print(f"Planner model: {self.planner_model}")
-        print(f"Executor model: {self.executor_model}")
+        print(f"Summarization model: {self.summarization_model}")
+        print(f"Retrieval model: {self.retrieval_model}")
         print(f"Agent mode is {'ON' if self.agent_mode else 'OFF'}")
         print(f"Debug mode is {'ON' if self.debug_mode else 'OFF'}")
 

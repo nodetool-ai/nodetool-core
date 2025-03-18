@@ -88,11 +88,25 @@ SUBTASK TYPES - CHOOSE THE MOST EFFICIENT TYPE FOR EACH SUBTASK:
 - multi_step: Use for subtasks requiring multiple tool calls but minimal reasoning
   * Example: "Search for X, then summarize the results"
   * Set max_tool_calls to the number of tool calls needed
-  
-- reasoning: Use for complex subtasks requiring detailed chain-of-thought reasoning
-  * Example: "Analyze data and explain the implications"
-  * Set max_tool_calls to the number of tool calls needed
-  * Reserve for tasks requiring significant analysis or creativity
+
+SUBTASK MODEL:
+- Use the model field to specify the model to use for the subtask
+- If the model is not specified, the default model will be used
+- Select the most efficient model for the subtask
+- Use only models for the provider you are using
+- For OpenAI models, o1 and o3-mini are recommended for reasoning tasks
+- For OpenAI models, gpt-4o is recommended for multi-step tasks
+- For OpenAI models, gpt-4o-mini is recommended for long context windows
+- For Anthropic models, claude-3-7-sonnet-20250219 is recommended for reasoning tasks
+- For Anthropic models, claude-3-5-haiku-20240307 is recommended for long context windows
+- For Ollama models, llama3.1 and llama3.1:8b are recommended for reasoning tasks
+- For Ollama models, llama3.1:8b is recommended for multi-step tasks
+
+REASONING
+- Use for complex subtasks requiring detailed chain-of-thought reasoning
+- Example: "Analyze data and explain the implications"
+- Set max_tool_calls to the number of tool calls needed
+- Reserve for tasks requiring significant analysis or creativity
 
 IMPLEMENTATION DETAILS:
 - Use precise, descriptive task IDs that indicate purpose
@@ -223,6 +237,7 @@ class TaskPlanner:
         self,
         provider: ChatProvider,
         model: str,
+        task_models: list[str],
         objective: str,
         workspace_dir: str,
         tools: List[Tool],
@@ -236,6 +251,7 @@ class TaskPlanner:
         Args:
             provider (ChatProvider): An LLM provider instance
             model (str): The model to use with the provider
+            task_models (list[str]): The models to use for the tasks
             objective (str): The objective to solve
             workspace_dir (str): The workspace directory path
             tools (List[Tool]): Tools available for research during planning
@@ -245,6 +261,7 @@ class TaskPlanner:
         """
         self.provider = provider
         self.model = model
+        self.task_models = task_models
         self.objective = objective
         self.workspace_dir = workspace_dir
         self.task_plan = None
@@ -579,12 +596,11 @@ class TaskPlanner:
 
         agent_task_prompt = f"""
         Overall Objective: {self.objective}
-        
         Create a list of subtasks for the agent: {agent.name}
-        
         Agent description: {agent.description}
-        
         Agent objective: {agent.objective}
+        Current provider: {self.provider.__class__.__name__}
+        Available models: {self.task_models}
         
         Research Findings:
         {research_summary}
@@ -601,6 +617,8 @@ class TaskPlanner:
         6. Which subtask type is most appropriate for each subtask:
            - Use "multi_step" when multiple tools are needed but with minimal reasoning
            - Use "reasoning" only for complex tasks requiring deep analysis
+        7. Use reasoning models for reasoning tasks
+        8. Use smaller models for summarization tasks
 
         Create subtasks that are clear and executable.
         Focus on making the task leverage the agent's specific capabilities.

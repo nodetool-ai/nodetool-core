@@ -971,6 +971,7 @@ class SubTask(BaseType):
 
     id: str = Field(default="", description="The ID of the subtask")
     content: str = Field(default="", description="The content of the subtask")
+    model: str = Field(default="", description="The model to use for the subtask")
     output_file: str = Field(
         default="", description="The file path where the subtask will save its output"
     )
@@ -1000,7 +1001,7 @@ class SubTask(BaseType):
             if self.file_dependencies
             else ""
         )
-        return f"- {checkbox} #{self.id} {self.content}{deps_str} ({self.task_type})"
+        return f"- {checkbox} #{self.id} {self.content}{deps_str} ({self.task_type}) {self.model}"
 
     def is_running(self) -> bool:
         """

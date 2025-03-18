@@ -183,7 +183,7 @@ class TaskExecutor:
                     subtask=subtask,
                     system_prompt=self.system_prompt,
                     tools=self.tools,
-                    model=self.model,
+                    model=self.model if subtask.model == "" else subtask.model,
                     provider=self.provider,
                     workspace_dir=self.workspace_dir,
                     print_usage=print_usage,
