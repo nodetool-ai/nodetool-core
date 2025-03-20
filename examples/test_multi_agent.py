@@ -41,15 +41,6 @@ Follow these guidelines:
 - Use clear language and proper citation when referencing sources
 - Structure your summaries with clear organization (headings, bullet points when appropriate)
 """
-PLANNING_SYSTEM_PROMPT = (
-    DEFAULT_PLANNING_SYSTEM_PROMPT
-    + """
-SUMMARIZATION PLANNING INSTRUCTIONS:
-- Create one task and one subtask for the summarization agent
-- The task should be to summarize the research collected by the retrieval agent
-- The subtask should be to write the summary to a file
-"""
-)
 
 
 async def main():
@@ -62,10 +53,8 @@ async def main():
     # provider = get_provider(Provider.Anthropic)
     # model = "claude-3-7-sonnet-20250219"
     # Uncomment to use OpenAI instead
-    # provider = get_provider(Provider.OpenAI)
-    # model = "gpt-4o"
-    provider = get_provider(Provider.Ollama)
-    model = "qwen2.5:14b"
+    provider = get_provider(Provider.OpenAI)
+    model = "gpt-4o"
 
     # 3. Set up tools for retrieval
     retrieval_tools = [
@@ -79,29 +68,30 @@ async def main():
     # 5. Create a retrieval agent for gathering information
     retrieval_agent = Agent(
         name="Research Agent",
-        objective="Research information about unusual sports and competitions, focusing on recent developments.",
-        description="A research agent that retrieves information from the web and saves results to files.",
+        objective="Research information about LLM architectures and their capabilities.",
+        description="""
+        You are a world-class researcher that can use the internet to find information about LLM architectures and their capabilities.
+        You are also able to use the browser to search the web for information.
+        """,
         provider=provider,
         model=model,
         workspace_dir=str(workspace_dir),
         tools=retrieval_tools,
         system_prompt=RETRIEVAL_SYSTEM_PROMPT,
-        max_steps=10,
-        max_subtask_iterations=3,
     )
 
     # 6. Create a summarization agent for processing collected information
     summary_agent = Agent(
         name="Summary Agent",
         objective="Create well-structured summaries of the collected research on unusual sports and competitions.",
-        description="A summarization agent that analyzes collected information and creates comprehensive summaries.",
+        description="""
+        You are a world-class writer that can analyze collected information and create comprehensive summaries.
+        """,
         provider=provider,
         model=model,
         workspace_dir=str(workspace_dir),
         tools=[ReadWorkspaceFileTool(str(workspace_dir))],
         system_prompt=SUMMARIZER_SYSTEM_PROMPT,
-        max_steps=5,
-        max_subtask_iterations=2,
     )
     # Create planner with retrieval tools
     planner = TaskPlanner(
@@ -111,7 +101,6 @@ async def main():
         workspace_dir=str(workspace_dir),
         tools=retrieval_tools,
         agents=[retrieval_agent, summary_agent],
-        system_prompt=PLANNING_SYSTEM_PROMPT,
         max_research_iterations=1,
     )
 
@@ -125,15 +114,11 @@ async def main():
     )
 
     # 8. Solve the problem using the multi-agent coordinator
-    print(f"\nSolving research objective: {research_objective}")
-    print("\nThis may take several minutes as the agents work through their tasks...")
-    processing_context = ProcessingContext(user_id="test_user", auth_token="test_token")
+    processing_context = ProcessingContext()
     async for item in coordinator.solve_problem(processing_context):
         if isinstance(item, Chunk):
             print(item.content, end="", flush=True)
 
-    # 9. Print completion message
-    print("\n\nMulti-agent task execution completed.")
     print(f"\nWorkspace: {workspace_dir}")
 
 

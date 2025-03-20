@@ -18,7 +18,7 @@ import datetime
 import json
 import os
 from pathlib import Path
-from typing import Any, AsyncGenerator, Dict, List, Tuple, Union
+from typing import Any, AsyncGenerator, Dict, List, Sequence, Tuple, Union
 import time
 
 from nodetool.workflows.processing_context import ProcessingContext
@@ -42,7 +42,6 @@ FILE DEPENDENCY CONSTRAINTS:
 - Check that all required file dependencies exist before proceeding
 - Use the same file naming conventions defined in the task plan
 - Read input files when needed but avoid unnecessary reads
-- Always save your output to the specified output_file path
 
 EXECUTION CONTEXT:
 - You are executing a single subtask from a larger task plan
@@ -89,7 +88,7 @@ class TaskExecutor:
         model: str,
         workspace_dir: str,
         processing_context: ProcessingContext,
-        tools: List[Tool],
+        tools: Sequence[Tool],
         task: Task,
         system_prompt: str | None = None,
         max_steps: int = 50,

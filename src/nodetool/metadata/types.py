@@ -985,8 +985,9 @@ class SubTask(BaseType):
     file_dependencies: list[str] = Field(
         default=[], description="The dependencies of the subtask, a list of file paths"
     )
-    output_type: Literal["md", "json", "txt"] = Field(
-        default="txt", description="The type of output the subtask will return"
+    output_type: dict[str, Any] = Field(
+        default={},
+        description="json schema for the output of the subtask",
     )
 
     def to_markdown(self) -> str:

@@ -8,6 +8,7 @@ This module provides tools for working with email (Gmail):
 """
 
 import imaplib
+import html2text
 import email
 from email.header import decode_header
 from datetime import datetime, timedelta
@@ -35,6 +36,62 @@ def create_gmail_connection(
     return imap, email_address, app_password
 
 
+def decode_bytes(byte_data: bytes, charset: str = "utf-8") -> str:
+    """Helper function to decode bytes with multiple fallback options
+
+    Args:
+        byte_data: The bytes to decode
+        charset: The initial charset to try (defaults to utf-8)
+
+    Returns:
+        Decoded string
+    """
+    # Guard against None bytes
+    if byte_data is None:
+        return ""
+
+    # Try the specified charset first
+    if charset:
+        try:
+            return byte_data.decode(charset)
+        except (UnicodeDecodeError, LookupError):
+            pass  # Continue to fallbacks
+
+    # Try common encodings, including East Asian encodings
+    encodings = [
+        # Unicode encodings
+        "utf-8",
+        # Chinese encodings
+        "gb2312",
+        "gbk",
+        "big5",
+        "gb18030",
+        # Japanese encodings
+        "shift_jis",
+        "euc-jp",
+        "iso-2022-jp",
+        # Korean encodings
+        "euc-kr",
+        "cp949",
+        "iso-2022-kr",
+        # Western encodings
+        "latin1",
+        "cp1252",
+        "iso-8859-1",
+        # Last resort
+        "ascii",
+    ]
+
+    for encoding in encodings:
+        try:
+            return byte_data.decode(encoding)
+        except (UnicodeDecodeError, LookupError):
+            continue
+
+    # Absolute last resort: use utf-8 with replacement for invalid chars
+    return byte_data.decode("utf-8", errors="replace")
+
+
 def parse_email_message(msg_data: tuple) -> Dict[str, Any]:
     """Helper function to parse email message data"""
     email_body = email.message_from_bytes(msg_data[0][1])
@@ -44,13 +101,7 @@ def parse_email_message(msg_data: tuple) -> Dict[str, Any]:
     if isinstance(subject[0], bytes):
         # Try to decode with the specified charset, fall back to alternatives if that fails
         charset = subject[1] or "utf-8"
-        try:
-            subject_text = subject[0].decode(charset)
-        except UnicodeDecodeError:
-            try:
-                subject_text = subject[0].decode("latin1")
-            except UnicodeDecodeError:
-                subject_text = subject[0].decode("utf-8", errors="replace")
+        subject_text = decode_bytes(subject[0], charset)
     else:
         subject_text = str(subject[0])
 
@@ -65,12 +116,10 @@ def parse_email_message(msg_data: tuple) -> Dict[str, Any]:
         else:
             body = email_body.get_payload(decode=True)
 
-        # Try UTF-8 first
-        body = body.decode("utf-8")  # type: ignore
-    except UnicodeDecodeError:
-        body = body.decode("latin1")  # type: ignore
+        # Decode body
+        body = decode_bytes(body)  # type: ignore
     except Exception:
-        body = body.decode("utf-8", errors="replace")  # type: ignore
+        body = ""
 
     return {
         "id": msg_data[0][0].decode(),
@@ -78,13 +127,15 @@ def parse_email_message(msg_data: tuple) -> Dict[str, Any]:
         "from_address": email_body["from"],
         "to_address": email_body["to"],
         "date": email_body["date"],
-        "body": body[:500] + "..." if len(body) > 500 else body,
+        "body": body,
     }
 
 
 class SearchEmailTool(Tool):
     name = "search_email"
-    description = "Search Gmail using various criteria like sender, subject, date, etc."
+    description = (
+        "Search Gmail using various criteria and return subject, sender and message IDs"
+    )
     input_schema = {
         "type": "object",
         "properties": {
@@ -118,6 +169,7 @@ class SearchEmailTool(Tool):
                 imap.select("INBOX")
 
                 # Build search criteria using Gmail's search syntax
+
                 search_criteria = []
 
                 if params.get("subject"):
@@ -152,13 +204,53 @@ class SearchEmailTool(Tool):
 
                 # Limit results
                 max_results = min(len(email_ids), int(params.get("max_results") or 50))
-                results = []
 
+                # Fetch only header information for each email
+                detailed_results = []
                 for i in range(max_results):
-                    _, msg_data = imap.uid("fetch", email_ids[i], "(RFC822)")  # type: ignore
-                    results.append(parse_email_message(msg_data))  # type: ignore
+                    email_id = email_ids[i]
+                    _, msg_data = imap.uid("fetch", email_id, "(RFC822)")
+                    if msg_data and msg_data[0] is not None:
+                        # Parse the header data
+                        header_data = email.message_from_bytes(msg_data[0][1])
+                        subject = decode_header(header_data["subject"])[0]
+                        if isinstance(subject[0], bytes):
+                            charset = subject[1] or "utf-8"
+                            subject_text = decode_bytes(subject[0], charset)
+                        else:
+                            subject_text = str(subject[0]) if subject[0] else ""
 
-                return {"results": results, "count": len(results)}
+                        body = ""
+                        is_html = False
+                        if header_data.is_multipart():
+                            for part in header_data.walk():
+                                body = part.get_payload(decode=True)
+                                if part.get_content_type() == "text/html":
+                                    is_html = True
+                                break
+                        else:
+                            body = header_data.get_payload(decode=True)
+
+                        if isinstance(body, bytes):
+                            body = decode_bytes(body)  # type: ignore
+                        elif isinstance(body, list):
+                            body = "\n".join(decode_bytes(item) for item in body)
+
+                        if is_html:
+                            body = html2text.html2text(body)  # type: ignore
+
+                        detailed_results.append(
+                            {
+                                "message_id": email_id.decode(),
+                                "subject": subject_text,
+                                "sender": header_data["from"],
+                                "body": body,
+                            }
+                        )
+
+                print(f"Found {len(detailed_results)} emails")
+                print(f"Detailed results: {detailed_results}")
+                return {"results": detailed_results, "count": len(detailed_results)}
 
             finally:
                 imap.logout()

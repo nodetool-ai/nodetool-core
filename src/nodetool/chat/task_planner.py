@@ -82,13 +82,18 @@ TASK DESIGN PRINCIPLES:
 FILE MANAGEMENT:
 - Use the output_file field to specify the path to the file where the task result will be saved
 - Use the file_dependencies field to specify the paths to the files that the task depends on
-- Use read_workspace_file tool to read the dependencies, set max_tool_calls high enough to read the dependencies
+- Use read_workspace_file tool to read the dependencies
 - The workspace directory is /workspace
 - DO NOT USE FILES FROM THE RESEARCH PLANNING PHASE IN THE TASK PLAN
 
+OUTPUT FORMAT:
+- Use the output_type field to specify the format of the output
+- Use the output_file field to specify the path to the file where the task result will be saved
+- Prefer YAML format for structured data
+- Prefer Markdown format for reports, summaries, and other text-based outputs
+
 IMPLEMENTATION DETAILS:
 - Use content to describe the subtask
-- Define the max_tool_calls field to specify the maximum number of tool calls for the subtask
 - Specify exact file paths for all dependencies and outputs
 
 TASK FORMAT:
@@ -100,21 +105,41 @@ TASK FORMAT:
         "subtasks": [
             {
                 "type": "subtask",
-                "content": "Analyze the market trends",
-                "output_type": "md",
-                "output_file": "/workspace/analyze_market_trends.md",
+                "content": "Identify top 10 trending topics on Google",
+                "output_type": {
+                    "type": "array",
+                    "items": {
+                        "type": "string",
+                    }
+                },
+                "output_file": "/workspace/trending_topics.yaml",
             },
             {
                 "type": "subtask",
-                "content": "Analyze the competitors",
-                "file_dependencies": ["/workspace/analyze_market_trends.md"],
-                "output_type": "md",
+                "content": "Search for the top 10 trending topics on Google",
+                "file_dependencies": ["/workspace/trending_topics.yaml"],
+                "output_type": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "title": {"type": "string"},
+                            "description": {"type": "string"},
+                            "url": {"type": "string"},
+                        },
+                    },
+                },
+                "output_file": "/workspace/google_trends.yaml",
             },
             {
                 "type": "subtask",
                 "content": "Summarize the findings",
-                "file_dependencies": ["/workspace/analyze_market_trends.md", "/workspace/analyze_competitors.md"],
-                "output_type": "md",
+                "file_dependencies": ["/workspace/market_trends.yaml", "/workspace/google_trends.yaml"],
+                "output_type": {
+                    "type": "string",
+                    "description": "A comprehensive markdown report of the findings",
+                },
+                k"output_file": "/workspace/report.md",
             }
         ]
     }
@@ -146,8 +171,7 @@ class CreateTaskTool(Tool):
                         "type": {"type": "string", "const": "subtask"},
                         "id": {"type": "string"},
                         "content": {"type": "string"},
-                        "max_tool_calls": {"type": "number"},
-                        "output_type": {"type": "string"},
+                        "output_type": {"type": "object"},
                         "output_file": {"type": "string"},
                         "file_dependencies": {
                             "type": "array",
@@ -188,6 +212,56 @@ class CreateTaskTool(Tool):
         return self._tasks
 
 
+# Add these constants at the module level, after DEFAULT_PLANNING_SYSTEM_PROMPT
+DEFAULT_RESEARCH_SYSTEM_PROMPT = """
+You are a research assistant tasked with gathering information to help plan a complex task.
+Your goal is to use search and browsing tools to collect relevant information about the objective.
+
+RESEARCH STRATEGY:
+1. First, identify what information you need to create an effective plan
+2. Use search tools to find relevant sources and information
+3. Use browser tools to access and extract key information from websites
+4. Focus on gathering practical, actionable information
+5. Store findings in an organized format for later use
+
+Be concise, focused, and thorough in your research. Only search for information directly
+relevant to planning the task. Don't go down rabbit holes.
+"""
+
+DEFAULT_RESEARCH_PROMPT = """
+I need you to research information that will help me plan how to accomplish this objective:
+
+OBJECTIVE: {objective}
+
+What information should we gather to create an effective plan? Use the available search and browser
+tools to conduct focused research on this objective. Limit yourself to {max_research_iterations}
+search or browser actions.
+
+After each search or browsing action, summarize what you've learned and how it informs the planning.
+"""
+
+DEFAULT_AGENT_TASK_PROMPT = """
+Overall Objective: {objective}
+Create a list of subtasks for the agent: {agent_name}
+Agent description: {agent_description}
+Agent objective: {agent_objective}
+Current provider: {provider_name}
+{models_info}
+
+Previously created tasks:
+{previous_tasks}
+
+Think carefully about:
+1. What this specific agent is best suited to work on
+2. How this task relates to any previously created tasks
+3. What dependencies exist between this task and previous tasks
+4. How to structure subtasks to make them clear and executable
+5. How to structure the task to make it clear and executable
+
+Create subtasks that are clear and executable.
+"""
+
+
 class TaskPlanner:
     """
     🧩 The Master Planner - Breaks complex problems into executable chunks
@@ -218,6 +292,9 @@ class TaskPlanner:
         agents: Sequence[Agent],
         task_models: Sequence[str] = [],
         system_prompt: str | None = None,
+        research_system_prompt: str | None = None,
+        research_prompt: str | None = None,
+        agent_task_prompt: str | None = None,
         max_research_iterations: int = 3,
         enable_tracing: bool = True,
     ):
@@ -233,6 +310,9 @@ class TaskPlanner:
             tools (List[Tool]): Tools available for research during planning
             agents (List[Agent]): Agents available for planning
             system_prompt (str, optional): Custom system prompt
+            research_system_prompt (str, optional): Custom research system prompt
+            research_prompt (str, optional): Custom research prompt
+            agent_task_prompt (str, optional): Custom agent task prompt
             max_research_iterations (int, optional): Maximum number of research iterations
             enable_tracing (bool, optional): Whether to enable LLM trace logging
         """
@@ -243,9 +323,23 @@ class TaskPlanner:
         self.workspace_dir = workspace_dir
         self.task_plan = None
         self.agents = agents
+
+        # Store configurable prompts
         self.system_prompt = (
             system_prompt if system_prompt else DEFAULT_PLANNING_SYSTEM_PROMPT
         )
+        self.research_system_prompt = (
+            research_system_prompt
+            if research_system_prompt
+            else DEFAULT_RESEARCH_SYSTEM_PROMPT
+        )
+        self.research_prompt = (
+            research_prompt if research_prompt else DEFAULT_RESEARCH_PROMPT
+        )
+        self.agent_task_prompt = (
+            agent_task_prompt if agent_task_prompt else DEFAULT_AGENT_TASK_PROMPT
+        )
+
         self.encoding = tiktoken.get_encoding("cl100k_base")  # Default encoding
         self.enable_tracing = enable_tracing
 
@@ -256,18 +350,12 @@ class TaskPlanner:
         self.tools = tools or []
         self.max_research_iterations = max_research_iterations
 
-        if not self.tools:
-            raise ValueError("No tools provided to TaskPlanner")
-
         if not self.agents:
             raise ValueError("No agents provided to TaskPlanner")
 
         # Create a directory to store research findings
         self.research_dir = os.path.join(workspace_dir, "research")
         os.makedirs(self.research_dir, exist_ok=True)
-
-        # Store research findings
-        self.research_findings = []
 
         # Setup tracing directory and file
         if self.enable_tracing:
@@ -328,50 +416,30 @@ class TaskPlanner:
                 return False
         return False
 
-    async def _prepare_research(self) -> tuple[str, str, List[Message]]:
+    async def _prepare_research(self) -> tuple[str, str]:
         """
         Prepare the system prompt, research prompt, and initial history for research.
 
         Returns:
             tuple: (system_prompt, research_prompt, initial_history)
         """
-        research_system_prompt = """
-        You are a research assistant tasked with gathering information to help plan a complex task.
-        Your goal is to use search and browsing tools to collect relevant information about the objective.
-        
-        RESEARCH STRATEGY:
-        1. First, identify what information you need to create an effective plan
-        2. Use search tools to find relevant sources and information
-        3. Use browser tools to access and extract key information from websites
-        4. Focus on gathering practical, actionable information
-        5. Store findings in an organized format for later use
-        
-        Be concise, focused, and thorough in your research. Only search for information directly
-        relevant to planning the task. Don't go down rabbit holes.
-        """
-
-        research_prompt = f"""
-        I need you to research information that will help me plan how to accomplish this objective:
-        
-        OBJECTIVE: {self.objective}
-        
-        What information should we gather to create an effective plan? Use the available search and browser
-        tools to conduct focused research on this objective. Limit yourself to {self.max_research_iterations}
-        search or browser actions.
-        
-        After each search or browsing action, summarize what you've learned and how it informs the planning.
-        """
+        # Format the research prompt with current objective and max iterations
+        formatted_research_prompt = self.research_prompt.format(
+            objective=self.objective,
+            max_research_iterations=self.max_research_iterations,
+        )
 
         # Initialize research history
-        research_history = [
-            Message(role="system", content=research_system_prompt),
-            Message(role="user", content=research_prompt),
+        self.research_history = [
+            Message(role="system", content=self.research_system_prompt),
+            Message(role="user", content=formatted_research_prompt),
         ]
 
-        return research_system_prompt, research_prompt, research_history
+        return self.research_system_prompt, formatted_research_prompt
 
     async def _process_tool_call(
-        self, chunk: ToolCall, research_history: List[Message]
+        self,
+        chunk: ToolCall,
     ) -> AsyncGenerator[Chunk, None]:
         """
         Process a tool call during research and update research findings.
@@ -384,7 +452,7 @@ class TaskPlanner:
             Chunk: Progress updates
         """
         # Add tool call to history
-        research_history.append(
+        self.research_history.append(
             Message(
                 role="assistant",
                 tool_calls=[chunk],
@@ -415,7 +483,7 @@ class TaskPlanner:
                 yield Chunk(content=f"\nUsed tool: {chunk.name}\n", done=False)
 
                 # Add the tool result to history
-                research_history.append(
+                self.research_history.append(
                     Message(
                         role="tool",
                         tool_call_id=chunk.id,
@@ -423,7 +491,6 @@ class TaskPlanner:
                         content=json.dumps(tool_result),
                     )
                 )
-                self.research_findings.append(tool_result)
 
                 # Log tool result in trace
                 if self.enable_tracing:
@@ -456,7 +523,8 @@ class TaskPlanner:
                 break
 
     async def _conduct_research_iteration(
-        self, iteration: int, research_history: List[Message]
+        self,
+        iteration: int,
     ) -> AsyncGenerator[Union[Message, Chunk], None]:
         """
         Conduct a single research iteration.
@@ -473,26 +541,15 @@ class TaskPlanner:
             done=False,
         )
 
-        # Log research iteration start in trace
-        if self.enable_tracing:
-            self._log_trace_event(
-                "research_iteration_start",
-                {
-                    "iteration": iteration,
-                    "max_iterations": self.max_research_iterations,
-                },
-            )
-
         # Generate research step using available tools
         generator = self.provider.generate_messages(
-            messages=research_history,
+            messages=self.research_history,
             model=self.model,
             tools=self.tools,
             thinking=True,
         )
 
         content = ""
-        tool_used = False
         accumulated_content = ""  # Track accumulated content from chunks
 
         async for chunk in generator:  # type: ignore
@@ -518,13 +575,13 @@ class TaskPlanner:
 
                 # Update research history with assistant message
                 if (
-                    len(research_history) > 0
-                    and research_history[-1].role == "assistant"
-                    and isinstance(research_history[-1].content, str)
+                    len(self.research_history) > 0
+                    and self.research_history[-1].role == "assistant"
+                    and isinstance(self.research_history[-1].content, str)
                 ):
-                    research_history[-1].content += chunk.content
+                    self.research_history[-1].content += chunk.content
                 else:
-                    research_history.append(
+                    self.research_history.append(
                         Message(role="assistant", content=chunk.content)
                     )
 
@@ -543,151 +600,14 @@ class TaskPlanner:
                     accumulated_content = ""  # Reset after logging
 
                 tool_used = True
-                async for tool_chunk in self._process_tool_call(
-                    chunk, research_history
-                ):
+                async for tool_chunk in self._process_tool_call(chunk):
                     yield tool_chunk
-
-        # Add a reflection step after each research iteration
-        if tool_used:
-            reflection_prompt = """
-            Based on the research findings so far, reflect on:
-            1. What key information have we discovered?
-            2. What questions still need to be answered?
-            3. How does this information help with planning the objective?
-            
-            Be brief and focus on implications for creating an effective task plan.
-            """
-            research_history.append(Message(role="user", content=reflection_prompt))
-
-            # Log reflection prompt in trace
-            if self.enable_tracing:
-                self._log_trace_event(
-                    "message",
-                    {
-                        "direction": "outgoing",
-                        "content": reflection_prompt,
-                        "role": "user",
-                        "type": "reflection",
-                    },
-                )
-        else:
-            # If no tool was used, we might be stuck or have enough information
-            prompt = (
-                "You didn't use any research tools in the last iteration. "
-                "Do you have sufficient information to create a plan now? "
-                "If not, please use the available search or browser tools "
-                "to gather more information."
-            )
-            research_history.append(
-                Message(
-                    role="user",
-                    content=prompt,
-                )
-            )
-
-            # Log no-tool-use prompt in trace
-            if self.enable_tracing:
-                self._log_trace_event(
-                    "message",
-                    {
-                        "direction": "outgoing",
-                        "content": prompt,
-                        "role": "user",
-                        "type": "no_tool_used_prompt",
-                    },
-                )
-
-        # Log research iteration end in trace
-        if self.enable_tracing:
-            self._log_trace_event(
-                "research_iteration_end",
-                {
-                    "iteration": iteration,
-                    "tool_used": tool_used,
-                },
-            )
-
-    async def _summarize_research(
-        self, research_history: List[Message]
-    ) -> AsyncGenerator[Chunk, None]:
-        """
-        Generate a summary of all research findings.
-
-        Args:
-            research_history: The research conversation history
-
-        Yields:
-            Chunk: Progress updates
-        """
-        summary_prompt = f"""
-        Please provide a concise summary of all the research findings related to our objective:
-        
-        OBJECTIVE: {self.objective}
-        
-        Synthesize the key information discovered during research into an organized summary
-        that will inform the planning process. Focus on actionable insights and important
-        constraints or requirements discovered.
-        """
-
-        research_history.append(Message(role="user", content=summary_prompt))
-
-        # Log summary prompt in trace
-        if self.enable_tracing:
-            self._log_trace_event(
-                "research_summary_request",
-                {
-                    "prompt": summary_prompt,
-                },
-            )
-
-        generator = self.provider.generate_messages(
-            messages=research_history,
-            model=self.model,
-            tools=[],  # No tools for summary
-        )
-
-        summary_content = ""
-        async for chunk in generator:  # type: ignore
-            if isinstance(chunk, Chunk):
-                yield chunk
-                summary_content += chunk.content
-
-                # Log summary chunk in trace
-                if self.enable_tracing and chunk.content.strip():
-                    self._log_trace_event(
-                        "research_summary_chunk",
-                        {
-                            "content": chunk.content,
-                            "is_partial": not chunk.done,
-                        },
-                    )
-
-        # Save research summary
-        summary_file = os.path.join(self.research_dir, "research_summary.md")
-        with open(summary_file, "w") as f:
-            f.write(summary_content)
-
-        # Log completed summary in trace
-        if self.enable_tracing:
-            self._log_trace_event(
-                "research_summary_complete",
-                {
-                    "summary_file": summary_file,
-                    "summary_length": len(summary_content),
-                },
-            )
-
-        yield Chunk(
-            content=f"\nResearch completed. Findings saved to {summary_file}\n",
-            done=False,
-        )
 
     async def research_objective(self) -> AsyncGenerator[Union[Message, Chunk], None]:
         """
         📚 Knowledge Hunter - Gathers info before creating a plan
 
-        This method uses search and browsing tools to conduct research on the objective,
+        This method can use search and browsing tools to conduct research on the objective,
         allowing the planning process to be well-informed. It's like doing homework
         before drawing up a project plan.
 
@@ -697,16 +617,10 @@ class TaskPlanner:
         Yields:
             Union[Message, Chunk]: Live updates during the research process
         """
-        if not self.tools:
-            yield Chunk(
-                content="No research tools available for planning phase.\n", done=False
-            )
-            return
-
         yield Chunk(content=f"Researching objective: {self.objective}\n", done=False)
 
         # Prepare research prompts and history
-        _, _, research_history = await self._prepare_research()
+        await self._prepare_research()
 
         # Conduct research iterations
         iterations = 0
@@ -714,13 +628,9 @@ class TaskPlanner:
         while iterations < self.max_research_iterations:
             iterations += 1
             async for chunk in self._conduct_research_iteration(
-                iterations, research_history
+                iterations,
             ):
                 yield chunk
-
-        # Generate research summary
-        async for chunk in self._summarize_research(research_history):
-            yield chunk
 
     async def _validate_subtasks(self, subtasks):
         """
@@ -761,33 +671,26 @@ class TaskPlanner:
         if all_tasks:
             tasks_created_so_far = [t.model_dump() for t in all_tasks]
 
-        # Compile research summary
-        research_summary = "\n\n".join(str(x) for x in self.research_findings)
+        # Format models info
+        models_info = (
+            f"Available models: {self.task_models}" if self.task_models else ""
+        )
 
-        # Build the prompt
-        return f"""
-        Overall Objective: {self.objective}
-        Create a list of subtasks for the agent: {agent.name}
-        Agent description: {agent.description}
-        Agent objective: {agent.objective}
-        Current provider: {self.provider.__class__.__name__}
-        {f"Available models: {self.task_models}" if self.task_models else ""}
-        
-        Research Findings:
-        {research_summary}
-        
-        Previously created tasks:
-        {json.dumps(tasks_created_so_far) if all_tasks else "No tasks created yet."}
-        
-        Think carefully about:
-        1. What this specific agent is best suited to work on
-        2. How this task relates to any previously created tasks
-        3. What dependencies exist between this task and previous tasks
-        4. How to structure subtasks to make them clear and executable
-        5. How to structure the task to make it clear and executable
+        # Format previous tasks info
+        previous_tasks = (
+            json.dumps(tasks_created_so_far) if all_tasks else "No tasks created yet."
+        )
 
-        Create subtasks that are clear and executable.
-        """
+        # Format the agent task prompt
+        return self.agent_task_prompt.format(
+            objective=self.objective,
+            agent_name=agent.name,
+            agent_description=agent.description,
+            agent_objective=agent.objective,
+            provider_name=self.provider.__class__.__name__,
+            models_info=models_info,
+            previous_tasks=previous_tasks,
+        )
 
     async def _process_json_blocks(
         self, content: str, agent: Agent, all_tasks: List[Task]
@@ -992,6 +895,7 @@ class TaskPlanner:
         # Initialize conversation history
         history = [
             Message(role="system", content=self.system_prompt),
+            *self.research_history,
             Message(role="user", content=agent_task_prompt),
         ]
 
@@ -1175,7 +1079,7 @@ class TaskPlanner:
             return
 
         # Research the objective if we have tools available
-        yield Chunk(content="\Researching the objective...\n", done=False)
+        yield Chunk(content="Researching the objective...\n", done=False)
         async for chunk in self.research_objective():
             yield chunk
 

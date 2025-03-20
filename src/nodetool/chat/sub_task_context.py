@@ -12,7 +12,7 @@ import yaml
 import json
 import os
 import time
-from typing import Any, AsyncGenerator, List, Union
+from typing import Any, AsyncGenerator, List, Sequence, Union
 
 from nodetool.workflows.processing_context import ProcessingContext
 
@@ -44,7 +44,7 @@ class SubTaskContext:
         subtask: SubTask,
         processing_context: ProcessingContext,
         system_prompt: str,
-        tools: List[Tool],
+        tools: Sequence[Tool],
         model: str,
         provider: ChatProvider,
         workspace_dir: str,
@@ -74,12 +74,17 @@ class SubTaskContext:
         self.subtask = subtask
         self.processing_context = processing_context
         self.system_prompt = system_prompt
-        self.tools = tools
         self.model = model
         self.provider = provider
         self.workspace_dir = workspace_dir
         self.max_token_limit = max_token_limit
         self.enable_tracing = enable_tracing
+        self.tools = list(tools) + [
+            FinishSubTaskTool(
+                self.workspace_dir,
+                self.subtask.output_type,
+            )
+        ]
 
         # Initialize isolated message history for this subtask
         self.history = [Message(role="system", content=self.system_prompt)]
@@ -210,7 +215,7 @@ class SubTaskContext:
         print(f"Saving result to {self.output_file_path}")
         is_markdown = self.output_file_path.endswith(".md")
         is_json = self.output_file_path.endswith(".json")
-
+        is_yaml = self.output_file_path.endswith(".yaml")
         with open(self.output_file_path, "w") as f:
             if is_markdown:
                 # For Markdown files, add metadata as YAML frontmatter
@@ -220,10 +225,11 @@ class SubTaskContext:
                     f.write("---\n\n")
 
                 f.write(str(result))
+            elif is_yaml:
+                output = {"data": result, "metadata": metadata}
+                yaml.dump(output, f)
             elif is_json:
                 output = {"data": result, "metadata": metadata}
-                if metadata:
-                    output["metadata"] = metadata
                 json.dump(output, f, indent=2)
             else:
                 # For string results being written to non-markdown files
@@ -293,14 +299,9 @@ class SubTaskContext:
             # Check if we need to transition to conclusion stage
             if (
                 self.iterations > self.max_tool_calling_iterations
-                and not self.in_conclusion_stage
-            ):
+                or token_count > self.max_token_limit
+            ) and not self.in_conclusion_stage:
                 await self._transition_to_conclusion_stage()
-
-            # Check if token count exceeds limit and summarize if needed
-            if token_count > self.max_token_limit:
-                await self._handle_token_limit_exceeded(token_count)
-                token_count = self._count_tokens(self.history)
 
             # Process current iteration
             async for chunk in self._process_iteration():
@@ -333,10 +334,6 @@ class SubTaskContext:
         
         STAGE 1: TOOL CALLING STAGE
         - You may use any available tools to gather information and make progress
-        - This stage is limited to a maximum of """
-            + str(self.max_tool_calling_iterations)
-            + """ iterations
-        - Be efficient with your tool calls and focus on making meaningful progress
         - After """
             + str(self.max_tool_calling_iterations)
             + """ iterations, you will automatically transition to Stage 2
@@ -345,8 +342,6 @@ class SubTaskContext:
         - You will ONLY have access to the finish_subtask tool
         - You must synthesize your findings and complete the task
         - No further information gathering will be possible
-        
-        Your goal is to complete the task in as few iterations as possible while producing high-quality results.
         """
         )
 
@@ -362,8 +357,7 @@ class SubTaskContext:
         """
         self.in_conclusion_stage = True
 
-        # Add transition message to history
-        transition_message = """
+        transition_message = f"""
         STAGE 1 (TOOL CALLING) COMPLETE ⚠️
         
         You have reached the maximum number of iterations for the tool calling stage.
@@ -372,7 +366,6 @@ class SubTaskContext:
         
         In this stage, you ONLY have access to the finish_subtask tool.
         You must now synthesize all the information you've gathered and complete the task.
-        
         Please summarize what you've learned, draw conclusions, and use the finish_subtask
         tool to save your final result.
         """
@@ -390,26 +383,6 @@ class SubTaskContext:
                 },
             )
 
-    async def _handle_token_limit_exceeded(self, token_count: int) -> None:
-        """
-        Handle the case where token count exceeds the limit.
-
-        This method:
-        1. Logs the token overflow situation
-        2. Triggers context summarization to reduce token count
-        3. Logs the new token count after summarization
-
-        Args:
-            token_count (int): The current token count that exceeded the limit
-        """
-        print(
-            f"Token count ({token_count}) exceeds limit ({self.max_token_limit}). Summarizing context..."
-        )
-        await self._summarize_context()
-        print(
-            f"After summarization: {self._count_tokens(self.history)} tokens in context"
-        )
-
     async def _process_iteration(self) -> AsyncGenerator[Union[Chunk, ToolCall], None]:
         """
         Process a single iteration of the task.
@@ -423,18 +396,10 @@ class SubTaskContext:
         Yields:
             Union[Chunk, ToolCall]: Live updates during iteration processing
         """
-        # Get the appropriate tools based on the stage
-        current_tools = (
-            [tool for tool in self.tools if tool.name == "finish_subtask"]
-            if self.in_conclusion_stage
-            else self.tools
-        )
-
-        # Generate response
         generator = self.provider.generate_messages(
             messages=self.history,
             model=self.model,
-            tools=current_tools,
+            tools=self.tools,
         )
 
         async for chunk in generator:  # type: ignore
@@ -518,7 +483,8 @@ class SubTaskContext:
         # Increment tool call counter
         self.tool_call_count += 1
 
-        print(f"Executing tool: {chunk.name}")
+        args_json = json.dumps(chunk.args)[:100]
+        print(f"Executing tool: {chunk.name} with {args_json}")
         tool_result = await self._execute_tool(chunk)
 
         # Log tool result in trace
@@ -584,7 +550,6 @@ class SubTaskContext:
         
         In this stage, you ONLY have access to the finish_subtask tool.
         You must now synthesize all the information you've gathered and complete the task.
-        
         Please summarize what you've learned, draw conclusions, and use the finish_subtask
         tool to save your final result.
         """
@@ -618,9 +583,19 @@ class SubTaskContext:
         """
         for tool in self.tools:
             if tool.name == tool_call.name:
-
                 try:
                     result = await tool.process(self.processing_context, tool_call.args)
+
+                    # Validate output against schema if finish_subtask and output_type exists
+                    if (
+                        tool_call.name == "finish_subtask"
+                        and hasattr(self.subtask, "output_type")
+                        and self.subtask.output_type
+                    ):
+                        # In a more complete implementation, you might want to add proper JSON schema validation here
+                        # For now, we just note that validation should happen
+                        pass
+
                     return ToolCall(
                         id=tool_call.id,
                         name=tool_call.name,
@@ -681,75 +656,36 @@ class SubTaskContext:
 
         return summary_content
 
-    async def _summarize_context(self) -> None:
-        """
-        Summarize the conversation history to reduce token count.
 
-        This token management method:
-        1. Preserves the system prompt (always kept intact)
-        2. Preserves the current execution stage information
-        3. Uses the LLM to summarize conversation to ~50% of original length
-        4. Replaces detailed history with the compressed summary
-        5. Maintains all critical information needed to continue execution
-
-        This helps prevent context overflow while preserving execution continuity.
-        """
-        # Keep the system prompt
-        system_prompt = self.history[0]
-
-        # Create a summary-specific system prompt
-        summary_system_prompt = """
-        You are tasked with creating a detailed summary of the conversation so far.
-        Do not compress too aggressively - aim for about 30% reduction, not more.
-        """
-
-        # Create a focused user prompt
-        summary_user_prompt = f"""
-        Please summarize the conversation history for the subtask so far.
-        
-        Include:
-        1. The original task/objective in full detail
-        2. All key information discovered
-        3. Any important context or details that would be needed to continue the task
-        """
-
-        # Create a minimal history with just the system prompt and summary request
-        summary_history = [
-            Message(role="system", content=summary_system_prompt),
-            Message(
-                role="user",
-                content=summary_user_prompt
-                + "\n\nHere's the conversation to summarize:\n"
-                + "\n".join(
-                    [
-                        f"{msg.role}: {msg.content}"
-                        for msg in self.history[1:]
-                        if hasattr(msg, "content") and msg.content
-                    ]
-                ),
-            ),
-        ]
-
-        # Get response without tools
-        generator = self.provider.generate_messages(
-            messages=summary_history,
-            model=self.model,
-            tools=[],  # No tools allowed for summary
-        )
-
-        summary_content = ""
-        async for chunk in generator:  # type: ignore
-            if isinstance(chunk, Chunk):
-                summary_content += chunk.content
-
-        # Replace history with system prompt and summary
-        self.history = [
-            system_prompt,
-            Message(
-                role="user",
-                content=f"CONVERSATION HISTORY (SUMMARIZED TO ~50% LENGTH):\n{summary_content}\n\nPlease continue with the task based on this detailed summary.",
-            ),
-        ]
+DEFAULT_METADATA_SCHEMA = {
+    "type": "object",
+    "description": "Metadata for the result",
+    "properties": {
+        "title": {
+            "type": "string",
+            "description": "The title of the result",
+        },
+        "tags": {
+            "type": "array",
+            "description": "Tags for the result",
+            "items": {"type": "string"},
+        },
+        "description": {
+            "type": "string",
+            "description": "The description of the result",
+        },
+        "source": {
+            "type": "string",
+            "description": "The source of the result",
+            "enum": ["search", "website", "file", "reasoning", "other"],
+        },
+        "url": {
+            "type": "string",
+            "description": "The URL of the data source",
+        },
+    },
+    "required": ["title", "description", "source", "url"],
+}
 
 
 class FinishSubTaskTool(WorkspaceBaseTool):
@@ -794,54 +730,22 @@ class FinishSubTaskTool(WorkspaceBaseTool):
     
     The result will be saved to the output_file path, defined in the subtask.
     """
-    input_schema = {
-        "type": "object",
-        "properties": {
-            "result": {
-                "oneOf": [
-                    {
-                        "type": "object",
-                        "description": "The final result of the subtask as a structured object",
-                    },
-                    {
-                        "type": "string",
-                        "description": "The final result of the subtask as a simple string",
-                    },
-                ],
-                "description": "The final result of the subtask (can be an object or string)",
+
+    def __init__(
+        self,
+        workspace_dir: str,
+        result_schema: dict,
+        metadata_schema: dict | None = None,
+    ):
+        self.workspace_dir = workspace_dir
+        self.input_schema = {
+            "type": "object",
+            "properties": {
+                "result": result_schema,
+                "metadata": metadata_schema or DEFAULT_METADATA_SCHEMA,
             },
-            "metadata": {
-                "type": "object",
-                "description": "Metadata for the result",
-                "properties": {
-                    "title": {
-                        "type": "string",
-                        "description": "The title of the result",
-                    },
-                    "tags": {
-                        "type": "array",
-                        "description": "Tags for the result",
-                        "items": {"type": "string"},
-                    },
-                    "description": {
-                        "type": "string",
-                        "description": "The description of the result",
-                    },
-                    "source": {
-                        "type": "string",
-                        "description": "The source of the result",
-                        "enum": ["search", "website", "file", "reasoning", "other"],
-                    },
-                    "url": {
-                        "type": "string",
-                        "description": "The URL of the data source",
-                    },
-                },
-                "required": ["title", "description", "source", "url"],
-            },
-        },
-        "required": ["result", "metadata"],
-    }
+            "required": ["result", "metadata"],
+        }
 
     async def process(self, context: ProcessingContext, params: dict):
         """

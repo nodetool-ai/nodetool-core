@@ -84,7 +84,7 @@ async def main():
         objective=objective,
         workspace_dir=str(workspace_dir),
         tools=tools,
-        agents=[agent],
+        agents=[agent, writer_agent],
         max_research_iterations=2,
     )
 

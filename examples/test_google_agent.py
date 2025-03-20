@@ -8,13 +8,10 @@ with browser-based retrieval tools and track its execution.
 """
 
 import asyncio
-import os
-import json
-from pathlib import Path
 
 from nodetool.chat.agent import Agent, RETRIEVAL_SYSTEM_PROMPT
 from nodetool.chat.providers import get_provider, Chunk
-from nodetool.chat.tools.browser import GoogleSearchTool, DownloadFilesTool
+from nodetool.chat.tools.browser import GoogleSearchTool
 from nodetool.metadata.types import Provider, Task, TaskPlan, SubTask
 from nodetool.chat.workspace_manager import WorkspaceManager
 from nodetool.workflows.processing_context import ProcessingContext
@@ -75,72 +72,202 @@ async def main():
                     SubTask(
                         content="Search the latest LLM models and their capabilities.",
                         max_tool_calls=10,
-                        output_type="md",
-                        output_file="/workspace/ai_models_search.md",
+                        output_type={
+                            "type": "object",
+                            "description": "Summary of recent LLM models and their capabilities",
+                            "properties": {
+                                "models": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "object",
+                                        "properties": {
+                                            "name": {"type": "string"},
+                                            "url": {"type": "string"},
+                                        },
+                                    },
+                                    "description": "List of LLM models identified",
+                                },
+                            },
+                        },
+                        output_file="/workspace/ai_models_search.yaml",
                         file_dependencies=[],
                     ),
                     # Site-specific search filter
                     SubTask(
                         content="Search for LLM benchmarks on site:huggingface.co and site:paperswithcode.com",
                         max_tool_calls=5,
-                        output_type="md",
-                        output_file="/workspace/llm_benchmarks_site_filtered.md",
+                        output_type={
+                            "type": "array",
+                            "description": "Collection of LLM benchmark data from specified sites",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "benchmark_name": {"type": "string"},
+                                    "models_evaluated": {
+                                        "type": "array",
+                                        "items": {"type": "string"},
+                                    },
+                                    "metrics": {"type": "object"},
+                                    "source": {"type": "string"},
+                                },
+                            },
+                        },
+                        output_file="/workspace/llm_benchmarks_site_filtered.yaml",
                         file_dependencies=[],
                     ),
                     # Filetype filter
                     SubTask(
                         content="Find research papers about 'multimodal AI models' with filetype:pdf",
                         max_tool_calls=5,
-                        output_type="md",
-                        output_file="/workspace/multimodal_papers.md",
+                        output_type={
+                            "type": "array",
+                            "description": "List of research papers on multimodal AI models",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "title": {"type": "string"},
+                                    "authors": {
+                                        "type": "array",
+                                        "items": {"type": "string"},
+                                    },
+                                    "publication_date": {"type": "string"},
+                                    "url": {"type": "string"},
+                                    "summary": {"type": "string"},
+                                },
+                            },
+                        },
+                        output_file="/workspace/multimodal_papers.yaml",
                         file_dependencies=[],
                     ),
                     # Exact phrase matching
                     SubTask(
                         content='Search for "state of AI report 2023" in quotes to find exact matches',
                         max_tool_calls=5,
-                        output_type="md",
-                        output_file="/workspace/state_of_ai_exact.md",
+                        output_type={
+                            "type": "object",
+                            "description": "Information about the State of AI Report 2023",
+                            "properties": {
+                                "report_details": {"type": "object"},
+                                "url": {
+                                    "type": "array",
+                                    "items": {"type": "string"},
+                                },
+                            },
+                        },
+                        output_file="/workspace/state_of_ai_exact.yaml",
                         file_dependencies=[],
                     ),
                     # Advanced parameters
                     SubTask(
                         content="Search for intitle:transformer intext:attention papers",
                         max_tool_calls=5,
-                        output_type="md",
-                        output_file="/workspace/transformer_advanced_search.md",
+                        output_type={
+                            "type": "array",
+                            "description": "Collection of papers about transformers with attention mechanisms",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "title": {"type": "string"},
+                                    "authors": {
+                                        "type": "array",
+                                        "items": {"type": "string"},
+                                    },
+                                    "key_concepts": {
+                                        "type": "array",
+                                        "items": {"type": "string"},
+                                    },
+                                    "url": {"type": "string"},
+                                },
+                            },
+                        },
+                        output_file="/workspace/transformer_advanced_search.yaml",
                         file_dependencies=[],
                     ),
                     # Time period filter
                     SubTask(
                         content="Find news about 'AI regulation' from the past_month",
                         max_tool_calls=5,
-                        output_type="md",
-                        output_file="/workspace/recent_ai_regulation.md",
+                        output_type={
+                            "type": "array",
+                            "description": "Recent news articles about AI regulation",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "title": {"type": "string"},
+                                    "publication": {"type": "string"},
+                                    "date": {"type": "string"},
+                                    "summary": {"type": "string"},
+                                },
+                            },
+                        },
+                        output_file="/workspace/recent_ai_regulation.yaml",
                         file_dependencies=[],
                     ),
                     # Language and country filter
                     SubTask(
                         content="Search for AI conferences in Germany (country:de) in German (lang:de)",
                         max_tool_calls=5,
-                        output_type="md",
-                        output_file="/workspace/german_ai_conferences.md",
+                        output_type={
+                            "type": "array",
+                            "description": "List of AI conferences in Germany (in German)",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "name": {"type": "string"},
+                                    "location": {"type": "string"},
+                                    "date": {"type": "string"},
+                                    "topics": {
+                                        "type": "array",
+                                        "items": {"type": "string"},
+                                    },
+                                },
+                            },
+                        },
+                        output_file="/workspace/german_ai_conferences.yaml",
                         file_dependencies=[],
                     ),
                     # Pagination testing
                     SubTask(
                         content="Search for 'open source LLMs' and get results from second page (start:10)",
                         max_tool_calls=5,
-                        output_type="md",
-                        output_file="/workspace/open_source_llms_page2.md",
+                        output_type={
+                            "type": "array",
+                            "description": "Information about open source LLM projects (from page 2 results)",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "model_name": {"type": "string"},
+                                    "repository": {"type": "string"},
+                                    "license": {"type": "string"},
+                                    "parameters": {"type": "string"},
+                                },
+                            },
+                        },
+                        output_file="/workspace/open_source_llms_page2.yaml",
                         file_dependencies=[],
                     ),
                     # Combined filters test
                     SubTask(
                         content="Find academic papers about 'transformer architecture' from the past_year on site:arxiv.org with filetype:pdf",
                         max_tool_calls=5,
-                        output_type="md",
-                        output_file="/workspace/transformer_papers_combined.md",
+                        output_type={
+                            "type": "array",
+                            "description": "Recent academic papers on transformer architecture from arXiv",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "title": {"type": "string"},
+                                    "authors": {
+                                        "type": "array",
+                                        "items": {"type": "string"},
+                                    },
+                                    "arxiv_id": {"type": "string"},
+                                    "publication_date": {"type": "string"},
+                                    "abstract": {"type": "string"},
+                                },
+                            },
+                        },
+                        output_file="/workspace/transformer_papers_combined.yaml",
                         file_dependencies=[],
                     ),
                 ],

@@ -135,11 +135,11 @@ class Agent:
         self,
         name: str,
         objective: str,
-        description: str,
         provider: ChatProvider,
         model: str,
         workspace_dir: str,
         tools: Sequence[Tool],
+        description: str = "",
         system_prompt: str | None = None,
         max_steps: int = 50,
         max_subtask_iterations: int = 5,
@@ -170,14 +170,17 @@ class Agent:
         self.max_steps = max_steps
         self.max_subtask_iterations = max_subtask_iterations
         self.max_token_limit = max_token_limit
-
-        # Add FinishSubTaskTool to tools
-        finish_subtask_tool = FinishSubTaskTool(workspace_dir)
-        self.tools = list(tools) + [finish_subtask_tool]
+        self.tools = tools
 
         # Set system prompt
         self.system_prompt = (
-            DEFAULT_EXECUTION_SYSTEM_PROMPT if system_prompt is None else system_prompt
+            (
+                DEFAULT_EXECUTION_SYSTEM_PROMPT
+                if system_prompt is None
+                else system_prompt
+            )
+            + "\n\n"
+            + description
         )
         self.results = []
 
