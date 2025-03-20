@@ -115,13 +115,6 @@ The `SubTaskContext` provides an isolated execution environment for each subtask
 - Handles automatic context summarization when token limits are exceeded
 - Tracks progress and enforces execution constraints
 
-### Task Types
-
-The system supports different task types to match the nature of the work:
-
-- **reasoning**: Complex tasks requiring detailed chain-of-thought reasoning
-- **multi_step**: Tasks requiring multiple tool calls but minimal reasoning
-
 ## Usage Examples
 
 ### Creating a Basic Agent

@@ -9,6 +9,7 @@ import json
 from typing import Any, AsyncGenerator, Sequence, Dict
 
 from pydantic import BaseModel
+import tiktoken
 
 from nodetool.chat.providers.base import ChatProvider, Chunk
 from nodetool.metadata.types import (
@@ -71,6 +72,47 @@ class OllamaProvider(ChatProvider):
             "completion_tokens": 0,
             "total_tokens": 0,
         }
+        self.encoding = tiktoken.get_encoding("cl100k_base")
+
+    def _count_tokens(self, messages: Sequence[Message]) -> int:
+        """
+        Count the number of tokens in the message history.
+
+        Args:
+            messages: The messages to count tokens for
+
+        Returns:
+            int: The approximate token count
+        """
+        token_count = 0
+
+        for msg in messages:
+            # Count tokens in the message content
+            if hasattr(msg, "content") and msg.content:
+                if isinstance(msg.content, str):
+                    token_count += len(self.encoding.encode(msg.content))
+                elif isinstance(msg.content, list):
+                    # For multi-modal content, just count the text parts
+                    for part in msg.content:
+                        if isinstance(part, dict) and part.get("type") == "text":
+                            token_count += len(
+                                self.encoding.encode(part.get("text", ""))
+                            )
+
+            # Count tokens in tool calls if present
+            if hasattr(msg, "tool_calls") and msg.tool_calls:
+                for tool_call in msg.tool_calls:
+                    # Count function name
+                    token_count += len(self.encoding.encode(tool_call.name))
+                    # Count arguments
+                    if isinstance(tool_call.args, dict):
+                        token_count += len(
+                            self.encoding.encode(json.dumps(tool_call.args))
+                        )
+                    else:
+                        token_count += len(self.encoding.encode(str(tool_call.args)))
+
+        return token_count
 
     def convert_message(self, message: Message) -> Dict[str, Any]:
         """Convert an internal message to Ollama's format."""
@@ -144,7 +186,25 @@ class OllamaProvider(ChatProvider):
         if "thinking" in kwargs:
             kwargs.pop("thinking")
 
-        print(ollama_messages)
+        if model.startswith("granite") or model.startswith("qwen"):
+            if "options" not in kwargs:
+                kwargs["options"] = {}
+
+            # Calculate appropriate context size based on token count
+            # Round up to nearest power of 2
+            min_ctx = 8192  # Keep current minimum
+            max_ctx = 128000  # Maximum context of 128k
+            suggested_ctx = self._count_tokens(messages)
+
+            # Round up to nearest power of 2 for better performance
+            # but cap at max_ctx and ensure at least min_ctx
+            power = 13  # 2^13 = 8192 (our minimum)
+            while (1 << power) < suggested_ctx and (1 << power) < max_ctx:
+                power += 1
+
+            ctx_size = min(max_ctx, max((1 << power), min_ctx))
+
+            kwargs["options"]["num_ctx"] = ctx_size
 
         completion = await self.client.chat(
             model=model, messages=ollama_messages, stream=True, **kwargs

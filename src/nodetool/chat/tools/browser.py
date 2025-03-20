@@ -5,6 +5,7 @@ This module provides tools for interacting with web browsers and web pages.
 """
 
 import os
+import traceback
 from typing import Any
 import aiohttp
 import json
@@ -107,8 +108,18 @@ class BrowserTool(Tool):
             page = context.get("playwright_page")
 
             if browser is None or page is None:
+                browser_endpoint = Environment.get(
+                    "BRIGHTDATA_SCRAPING_BROWSER_ENDPOINT"
+                )
+
                 playwright_instance = await async_playwright().start()
-                browser = await playwright_instance.chromium.launch(headless=True)
+                if browser_endpoint:
+                    print(f"Connecting to browser at {browser_endpoint}")
+                    browser = await playwright_instance.chromium.connect_over_cdp(
+                        browser_endpoint
+                    )
+                else:
+                    browser = await playwright_instance.chromium.launch(headless=True)
                 page = await browser.new_page()
 
                 context.set("playwright_instance", playwright_instance)
@@ -123,7 +134,7 @@ class BrowserTool(Tool):
                 url = params.get("url")
                 if not url:
                     return {"error": "URL is required for navigate action"}
-                await page.goto(url, wait_until="networkidle")
+                await page.goto(url, wait_until="domcontentloaded")
                 page_html = await page.inner_html("body")
                 page_text = html2text.html2text(page_html)
                 return {"success": True, "url": url, "body": page_text}
@@ -244,8 +255,8 @@ async def make_api_request(search_url: str):
                 return api_key
 
             zone = get_required_api_key(
-                "BRIGHTDATA_ZONE",
-                "Brightdata zone not found. Please provide it in the secrets as 'BRIGHTDATA_ZONE'.",
+                "BRIGHTDATA_SERP_ZONE",
+                "Brightdata SERP zone not found. Please provide it in the secrets as 'BRIGHTDATA_SERP_ZONE'.",
             )
             if isinstance(zone, dict) and "error" in zone:
                 return zone
@@ -272,9 +283,12 @@ def get_required_api_key(key_name, error_message=None):
     """Get a required API key from environment variables."""
     api_key = Environment.get(key_name)
     if not api_key:
-        return {
-            "error": error_message or f"{key_name} not found in environment variables."
-        }
+        print(
+            f"Error: {error_message or f'{key_name} not found in environment variables.'}"
+        )
+        raise ValueError(
+            error_message or f"{key_name} not found in environment variables."
+        )
     return api_key
 
 
@@ -415,9 +429,7 @@ class GoogleSearchTool(Tool):
             # URL construction based on search type
             url_encoded_query = urllib.parse.quote(search_query)
             # Regular Google search
-            search_url = (
-                f"https://www.google.com/search?q={url_encoded_query}&brd_json=1"
-            )
+            search_url = f"https://www.google.com/search?q={url_encoded_query}"
 
             # Add number of results parameter
             if params.get("num_results"):
@@ -462,26 +474,27 @@ class GoogleSearchTool(Tool):
 
             # Google-specific response handling
             if result["status_code"] == 200:
-                body = json.loads(result["body"])
+                soup = BeautifulSoup(result["body"], "html.parser")
+
+                # Extract a > h3 elements (commonly used in Google search results)
+                search_results = []
+                for a_tag in soup.select("a:has(h3)"):
+                    href = a_tag.get("href")
+                    h3_text = a_tag.h3.get_text(strip=True) if a_tag.h3 else ""
+
+                    search_results.append({"href": href, "text": h3_text})
 
                 return {
                     "success": True,
-                    "general": body["general"],
-                    "input": body["input"],
-                    "organic": [
-                        {
-                            "title": item["title"],
-                            "link": item["link"],
-                            "description": item["description"],
-                        }
-                        for item in body["organic"]
-                    ],
+                    "results": search_results,
+                    "num_results": len(search_results),
                 }
             return {
                 "error": f"Google search failed with status {result['status_code']}: {result['body']}"
             }
 
         except Exception as e:
+            traceback.print_exc()
             return {"error": f"Error performing Google search: {str(e)}"}
 
 

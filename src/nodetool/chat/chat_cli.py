@@ -402,9 +402,9 @@ class ChatCLI:
             This is only used when agent_mode is True.
         """
         self.agent = self.initialize_agent(problem)
-
+        processing_context = ProcessingContext()
         try:
-            async for item in self.agent.solve_problem():
+            async for item in self.agent.solve_problem(processing_context):
                 if isinstance(item, Chunk):
                     print(item.content, end="", flush=True)
                 elif isinstance(item, ToolCall):
@@ -840,6 +840,7 @@ class ChatCLI:
                         user_input=user_input,
                         messages=self.messages,
                         model=self.model,
+                        provider=get_provider(self.provider),
                         workspace_dir=str(self.workspace_dir),
                         context=self.context,
                         debug_mode=self.debug_mode,

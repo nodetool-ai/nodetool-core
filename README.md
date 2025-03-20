@@ -145,15 +145,10 @@ async def process_emails():
         if task.agent_name == "EmailRetriever":
             async for item in research_agent.execute_task(task_plan, task):
                 print(f"Research agent: {item.content if hasattr(item, 'content') else item}")
-                results[task.id] = item
 
         elif task.agent_name == "EmailSummarizer":
             async for item in summary_agent.execute_task(task_plan, task):
                 print(f"Summary agent: {item.content if hasattr(item, 'content') else item}")
-                results[task.id] = item
-
-    print("\nEmail processing complete!")
-    print(results)
 
 # Run the workflow
 asyncio.run(process_emails())
@@ -330,12 +325,10 @@ async def process_emails():
         if task.agent_name == "EmailRetriever":
             async for item in research_agent.execute_task(task_plan, task):
                 print(f"Research agent: {item.content if hasattr(item, 'content') else item}")
-                results[task.id] = item
 
         elif task.agent_name == "EmailSummarizer":
             async for item in summary_agent.execute_task(task_plan, task):
                 print(f"Summary agent: {item.content if hasattr(item, 'content') else item}")
-                results[task.id] = item
 
     print("\nEmail processing complete!")
     print(results)
@@ -582,13 +575,6 @@ The `SubTaskContext` provides an isolated execution environment for each subtask
   - **Conclusion Stage**: Final synthesis with restricted access (only finish_subtask tool)
 - Handles automatic context summarization when token limits are exceeded
 - Tracks progress and enforces execution constraints
-
-#### Task Types
-
-The system supports different task types to match the nature of the work:
-
-- **reasoning**: Complex tasks requiring detailed chain-of-thought reasoning
-- **multi_step**: Tasks requiring multiple tool calls but minimal reasoning
 
 ### Usage Examples
 
@@ -1078,15 +1064,10 @@ async def process_emails():
         if task.agent_name == "EmailRetriever":
             async for item in research_agent.execute_task(task_plan, task):
                 print(f"Research agent: {item.content if hasattr(item, 'content') else item}")
-                results[task.id] = item
 
         elif task.agent_name == "EmailSummarizer":
             async for item in summary_agent.execute_task(task_plan, task):
                 print(f"Summary agent: {item.content if hasattr(item, 'content') else item}")
-                results[task.id] = item
-
-    print("\nEmail processing complete!")
-    print(results)
 
 # Run the workflow
 asyncio.run(process_emails())

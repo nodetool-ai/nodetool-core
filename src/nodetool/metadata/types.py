@@ -969,17 +969,13 @@ class SubTask(BaseType):
 
     type: Literal["subtask"] = "subtask"
 
-    id: str = Field(default="", description="The ID of the subtask")
     content: str = Field(default="", description="The content of the subtask")
     model: str = Field(default="", description="The model to use for the subtask")
     output_file: str = Field(
         default="", description="The file path where the subtask will save its output"
     )
-    task_type: Literal["reasoning", "multi_step"] = Field(
-        default="reasoning", description="The type of task the subtask will perform"
-    )
     max_tool_calls: int = Field(
-        default=2, description="The maximum number of tool calls for the subtask"
+        default=5, description="The maximum number of tool calls for the subtask"
     )
     completed: bool = Field(
         default=False, description="Whether the subtask is completed"
@@ -995,13 +991,13 @@ class SubTask(BaseType):
 
     def to_markdown(self) -> str:
         """Convert the subtask to markdown format."""
-        checkbox = "[x]" if self.completed else "[ ]" if self.is_running() else "[*]"
+        checkbox = "[x]" if self.completed else "[*]" if self.is_running() else "[ ]"
         deps_str = (
             f" (depends on {', '.join(self.file_dependencies)})"
             if self.file_dependencies
             else ""
         )
-        return f"- {checkbox} #{self.id} {self.content}{deps_str} ({self.task_type}) {self.model}"
+        return f"- {checkbox} {self.content}{deps_str} {self.model}"
 
     def is_running(self) -> bool:
         """
@@ -1048,13 +1044,11 @@ class Task(BaseModel):
 
     def add_subtask(
         self,
-        subtask_id: str,
         content: str,
         file_dependencies: list[str] = [],
     ) -> SubTask:
         """Creates and adds a new subtask to the task."""
         subtask = SubTask(
-            id=subtask_id,
             content=content,
             file_dependencies=file_dependencies,
         )
@@ -1066,13 +1060,6 @@ class Task(BaseModel):
         content = content.strip()
         for subtask in self.subtasks:
             if subtask.content.lower() == content.lower():
-                return subtask
-        return None
-
-    def find_subtask_by_id(self, subtask_id: str) -> Optional[SubTask]:
-        """Retrieves a subtask by its unique identifier."""
-        for subtask in self.subtasks:
-            if subtask.id == subtask_id:
                 return subtask
         return None
 
@@ -1103,14 +1090,6 @@ class TaskPlan(BaseType):
             if task.title.lower() == title.lower():
                 return task
         return None
-
-    def find_task_by_id(self, task_id: str) -> tuple[Optional[Task], Optional[SubTask]]:
-        """Find a task by its ID."""
-        for task in self.tasks:
-            for subtask in task.subtasks:
-                if subtask.id == task_id:
-                    return task, subtask
-        return None, None
 
     def find_subtask(
         self, task_title: str, subtask_content: str
@@ -1145,7 +1124,6 @@ class TaskPlan(BaseType):
     def add_subtask(
         self,
         task_title: str,
-        subtask_id: str,
         content: str,
         file_dependencies: list[str] = [],
     ) -> dict[str, Any]:
@@ -1165,15 +1143,12 @@ class TaskPlan(BaseType):
             }
 
         # Create the subtask
-        subtask = task.add_subtask(
-            subtask_id, content, file_dependencies=file_dependencies
-        )
+        subtask = task.add_subtask(content, file_dependencies=file_dependencies)
 
         return {
             "success": True,
             "task_title": task.title,
             "subtask_content": subtask.content,
-            "subtask_id": subtask.id,
             "file_dependencies": subtask.file_dependencies,
         }
 

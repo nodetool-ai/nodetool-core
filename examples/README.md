@@ -13,8 +13,9 @@ Before running these examples, you'll need to:
    ```
 
 2. Set up necessary API keys
-   - Create a `.env` file in the examples directory
-   - Add your API keys (OPENAI_API_KEY, ANTHROPIC_API_KEY, etc.)
+   ```
+   nodetool settings edit
+   ```
 
 ## Available Examples
 

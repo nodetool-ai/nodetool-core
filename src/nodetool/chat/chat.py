@@ -35,6 +35,7 @@ from nodetool.metadata.types import (
     ToolCall,
 )
 from nodetool.workflows.processing_context import ProcessingContext
+from nodetool.chat.providers import ChatProvider
 
 
 async def get_openai_models():
@@ -92,6 +93,7 @@ def default_serializer(obj: Any) -> dict:
 async def generate_messages(
     messages: Sequence[Message],
     model: str,
+    provider: Provider,
     tools: Sequence[Tool] = [],
     **kwargs,
 ) -> AsyncGenerator[Chunk | ToolCall, Any]:
@@ -110,8 +112,7 @@ async def generate_messages(
     Yields:
         Chunk objects with content or ToolCall objects
     """
-    provider = get_provider(model.provider)
-    async for chunk in provider.generate_messages(
+    async for chunk in ChatProvider.get_provider(provider).generate_messages(
         messages=messages,
         model=model,
         tools=tools,

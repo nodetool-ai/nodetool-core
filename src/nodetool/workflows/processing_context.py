@@ -114,10 +114,10 @@ class ProcessingContext:
 
     def __init__(
         self,
-        user_id: str,
-        auth_token: str,
-        workflow_id: str = "",
-        graph: Graph = Graph(),
+        user_id: str | None = None,
+        auth_token: str | None = None,
+        workflow_id: str | None = None,
+        graph: Graph | None = None,
         variables: dict[str, Any] | None = None,
         environment: dict[str, str] | None = None,
         results: dict[str, Any] | None = None,
@@ -131,10 +131,10 @@ class ProcessingContext:
         upload_assets_to_s3: bool = False,
         chroma_client: ClientAPI | None = None,
     ):
-        self.user_id = user_id
-        self.auth_token = auth_token
-        self.workflow_id = workflow_id
-        self.graph = graph
+        self.user_id = user_id or "1"
+        self.auth_token = auth_token or "local_token"
+        self.workflow_id = workflow_id or ""
+        self.graph = graph or Graph()
         self.results = results if results else {}
         self.message_queue = message_queue if message_queue else asyncio.Queue()
         self.device = device
@@ -496,7 +496,7 @@ class ProcessingContext:
     async def _prepare_prediction(
         self,
         node_id: str,
-        provider: Provider,
+        provider: str,
         model: str,
         params: dict[str, Any] | None = None,
         data: Any = None,
@@ -520,7 +520,7 @@ class ProcessingContext:
     async def run_prediction(
         self,
         node_id: str,
-        provider: Provider,
+        provider: str,
         model: str,
         run_prediction_function: Callable[
             [Prediction, dict[str, str]],

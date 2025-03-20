@@ -25,7 +25,7 @@ from nodetool.chat.tools.browser import GoogleSearchTool, BrowserTool
 from nodetool.chat.tools.workspace import ReadWorkspaceFileTool
 from nodetool.chat.workspace_manager import WorkspaceManager
 from nodetool.metadata.types import Provider
-
+from nodetool.workflows.processing_context import ProcessingContext
 
 SUMMARIZER_SYSTEM_PROMPT = """You are a specialized Summarization Agent. Your role is to:
 1. Read research materials collected by other agents using the read_workspace_file tool
@@ -62,8 +62,10 @@ async def main():
     # provider = get_provider(Provider.Anthropic)
     # model = "claude-3-7-sonnet-20250219"
     # Uncomment to use OpenAI instead
-    provider = get_provider(Provider.OpenAI)
-    model = "gpt-4o"
+    # provider = get_provider(Provider.OpenAI)
+    # model = "gpt-4o"
+    provider = get_provider(Provider.Ollama)
+    model = "qwen2.5:14b"
 
     # 3. Set up tools for retrieval
     retrieval_tools = [
@@ -101,7 +103,6 @@ async def main():
         max_steps=5,
         max_subtask_iterations=2,
     )
-    task_models = ["gpt-4o-mini", "gpt-4o", "o3-mini", "o1"]
     # Create planner with retrieval tools
     planner = TaskPlanner(
         provider=provider,
@@ -109,7 +110,6 @@ async def main():
         objective=research_objective,
         workspace_dir=str(workspace_dir),
         tools=retrieval_tools,
-        task_models=task_models,
         agents=[retrieval_agent, summary_agent],
         system_prompt=PLANNING_SYSTEM_PROMPT,
         max_research_iterations=1,
@@ -127,23 +127,14 @@ async def main():
     # 8. Solve the problem using the multi-agent coordinator
     print(f"\nSolving research objective: {research_objective}")
     print("\nThis may take several minutes as the agents work through their tasks...")
-
-    async for item in coordinator.solve_problem():
+    processing_context = ProcessingContext(user_id="test_user", auth_token="test_token")
+    async for item in coordinator.solve_problem(processing_context):
         if isinstance(item, Chunk):
             print(item.content, end="", flush=True)
 
     # 9. Print completion message
     print("\n\nMulti-agent task execution completed.")
-    print(f"Results can be found in the workspace directory: {workspace_dir}")
-
-    # List the output files
-    print("\nOutput files:")
-    output_files = [
-        f for f in os.listdir(workspace_dir) if f.endswith(".md") or f.endswith(".json")
-    ]
-    for file in output_files:
-        file_path = Path(workspace_dir) / file
-        print(f"- {file} ({file_path.stat().st_size} bytes)")
+    print(f"\nWorkspace: {workspace_dir}")
 
 
 if __name__ == "__main__":

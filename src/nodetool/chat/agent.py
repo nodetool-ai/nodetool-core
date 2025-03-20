@@ -22,7 +22,7 @@ Features:
 - Task dependency management for proper execution order
 """
 
-from typing import AsyncGenerator, List, Union, Dict, Any
+from typing import AsyncGenerator, List, Sequence, Union, Dict, Any
 
 
 from nodetool.chat.sub_task_context import FinishSubTaskTool
@@ -36,6 +36,7 @@ from nodetool.metadata.types import (
     Task,
     TaskPlan,
 )
+from nodetool.workflows.processing_context import ProcessingContext
 
 
 # Modified DEFAULT_EXECUTION_SYSTEM_PROMPT with emphasis on /workspace prefix
@@ -45,48 +46,31 @@ You are a specialized retrieval agent focused on gathering information with mini
 
 RETRIEVAL INSTRUCTIONS:
 1. Your sole purpose is to gather information using retrieval tools
-2. Complete each retrieval task in as few steps as possible (ideally 1-2 tool calls per subtask)
-3. Use search, browser, and API tools to collect focused, specific data
-4. FOCUS ON ONE SPECIFIC PIECE OF INFORMATION PER SUBTASK
-5. DO NOT ATTEMPT COMPREHENSIVE RETRIEVALS - each subtask should gather one specific fact or dataset
-6. Store all retrieved information in the /workspace directory
-7. Format and organize information for later processing
-8. Do not attempt to analyze or summarize - just retrieve and store
-9. EXECUTE ONE FOCUSED RETRIEVAL ACTION - each subtask should have exactly one search concept
-10. NEVER CHAIN MULTIPLE SEARCHES - your subtask should perform only one search query
+2. Use search, browser, and API tools to collect focused, specific data
+3. FOCUS ON ONE SPECIFIC PIECE OF INFORMATION PER SUBTASK
+4. Store all retrieved information in the /workspace directory
+5. Format and organize information for later processing
 
-SUPPLEMENTARY FILE DOWNLOADS:
-1. ALWAYS download and save relevant supplementary files that complement the text information
-2. Pay special attention to and prioritize downloading:
-   - Diagrams, charts, and informational images
-   - Data spreadsheets (CSV, Excel, etc.)
-   - PDF documents
-   - Presentation files
-   - Audio files where relevant
-3. Save all downloaded files to the /workspace directory with descriptive filenames
-4. When encountering visual information (diagrams, charts, etc.), ALWAYS download the image rather than just describing it
-5. Reference downloaded files in your retrieval notes for context
-
+TOOLS:
+google_search - Execute precise Google searches with advanced parameters:
+   - Use site: filters (e.g., "site:example.com") to narrow results to specific websites
+   - Use filetype: filters (e.g., "filetype:pdf") to find specific document types
+   - Use exact phrase matching with quotes for precise searches
+   - Leverage advanced search parameters like intitle:, inurl:, and intext:
+   - Filter by time_period: "past_24h", "past_week", "past_month", "past_year"
+   - Specify country and language codes for localized results
+   - Control pagination with start parameter
+browser_control - Control a web browser to navigate and interact with web pages
+   - Use the browser_control tool to navigate, click, and interact with web pages
+   - The browser can access the internet and retrieve information from the web
+   - You can browse Reddit, Google, Facebook, Instagram, LinkedIn, X, and more
+   - Always use google_search to find the URL of the information you need
+   
 WORKSPACE CONSTRAINTS:
 - All generated files must use the /workspace directory as root
 - All file paths must start with /workspace/ for proper access
 - Make sure to save artifacts in the /workspace directory
-
-REASONING APPROACH:
-1. First, identify exactly what information you need to collect
-2. Think through the most direct way to retrieve that information
-3. Choose the most appropriate tool for the specific data needed
-4. Execute your search with specific, targeted parameters
-5. Validate that the retrieved data matches what was requested
-6. Identify and download all supplementary files (images, PDFs, etc.)
-7. Store all data in a clean, organized format
-
-RESULT REQUIREMENTS:
-1. Save all retrieved information as files in the /workspace directory
-2. Use descriptive filenames that indicate specific content
-3. Include metadata with sources for all retrieved information
-4. Download and save ALL supplementary files (images, diagrams, spreadsheets, PDFs, etc.)
-5. Call finish_subtask with a manifest of all retrieved information and downloaded files
+- Use descriptive filenames that indicate specific content
 """
 
 # Modified SUMMARIZATION_SYSTEM_PROMPT with emphasis on focused summarization and chain-of-thought
@@ -112,9 +96,7 @@ REASONING APPROACH:
 1. First, scan all input files to understand the available information
 2. Identify the key points relevant to your specific summary focus
 3. Organize these points in a logical hierarchy or structure
-4. Draft the summary, ensuring you maintain accuracy while being concise
-5. Include proper citations to source materials
-6. Review for completeness and accuracy before finalizing
+4. Include proper citations to source materials
 
 SUMMARY CREATION:
 - Create focused summary documents in markdown format
@@ -157,7 +139,7 @@ class Agent:
         provider: ChatProvider,
         model: str,
         workspace_dir: str,
-        tools: List[Tool],
+        tools: Sequence[Tool],
         system_prompt: str | None = None,
         max_steps: int = 50,
         max_subtask_iterations: int = 5,
@@ -191,20 +173,18 @@ class Agent:
 
         # Add FinishSubTaskTool to tools
         finish_subtask_tool = FinishSubTaskTool(workspace_dir)
-        self.tools = tools + [finish_subtask_tool]
+        self.tools = list(tools) + [finish_subtask_tool]
 
         # Set system prompt
         self.system_prompt = (
             DEFAULT_EXECUTION_SYSTEM_PROMPT if system_prompt is None else system_prompt
         )
-
-        # Results storage
-        self.results = {}
+        self.results = []
 
     async def execute_task(
         self,
-        task_plan: TaskPlan,
         task: Task,
+        processing_context: ProcessingContext,
     ) -> AsyncGenerator[Union[Message, Chunk, ToolCall], None]:
         """
         Execute a task with all its subtasks.
@@ -225,6 +205,7 @@ class Agent:
             provider=self.provider,
             model=self.model,
             workspace_dir=self.workspace_dir,
+            processing_context=processing_context,
             tools=self.tools,
             task=task,
             system_prompt=self.system_prompt,
@@ -238,13 +219,13 @@ class Agent:
             yield item
 
         # Store results
-        self.results.update(executor.get_results())
+        self.results.extend(executor.get_results())
 
-    def get_results(self) -> Dict[str, Any]:
+    def get_results(self) -> List[Any]:
         """
         Get the results produced by this agent.
 
         Returns:
-            Dict[str, Any]: Results indexed by subtask ID
+            List[Any]: Results
         """
         return self.results

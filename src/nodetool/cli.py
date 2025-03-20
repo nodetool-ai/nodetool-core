@@ -146,6 +146,163 @@ def chat():
     asyncio.run(chat_cli())
 
 
+@cli.command("traces")
+@click.option(
+    "--dir", "-d", default="./traces", help="Directory containing trace files."
+)
+def traces(dir: str):
+    """Explore trace log files in an interactive text UI."""
+    from nodetool.chat.trace_explorer import TraceExplorer
+    import curses
+
+    explorer = TraceExplorer(dir)
+    curses.wrapper(explorer.run)
+
+
+@cli.command("explorer")
+@click.option("--dir", "-d", default=".", help="Directory to start exploring from.")
+def explorer(dir: str):
+    """Explore files in an interactive text UI."""
+    from nodetool.chat.file_explorer import FileExplorer
+    import curses
+
+    explorer = FileExplorer(dir)
+    curses.wrapper(explorer.run)
+
+
+# Add this after the other @cli commands but before the package group
+
+
+@cli.group()
+def settings():
+    """Commands for managing NodeTool settings and secrets."""
+    pass
+
+
+@settings.command("show")
+@click.option("--secrets", is_flag=True, help="Show secrets instead of settings.")
+@click.option("--mask", is_flag=True, help="Mask secret values with ****.")
+def show_settings(secrets: bool, mask: bool):
+    """Show current settings or secrets."""
+    from nodetool.common.settings import load_settings
+    from tabulate import tabulate
+    import yaml
+
+    # Load settings and secrets
+    settings_obj, secrets_obj = load_settings()
+
+    # Choose which model to display
+    data = secrets_obj.model_dump() if secrets else settings_obj.model_dump()
+
+    # Mask secret values if requested
+    if secrets and mask:
+        masked_data = {}
+        for key, value in data.items():
+            if value is not None and value != "":
+                masked_data[key] = "****"
+            else:
+                masked_data[key] = value
+        data = masked_data
+
+    # Format the data for display
+    headers = ["Setting", "Value", "Description"]
+    settings_class = secrets_obj.__class__ if secrets else settings_obj.__class__
+    table_data = []
+
+    for key, value in data.items():
+        # Get field description from the model
+        field_info = settings_class.model_fields.get(key)
+        description = (
+            field_info.description if field_info and field_info.description else ""
+        )
+        table_data.append([key, value, description])
+
+    # Display the data
+    click.echo(
+        f"{'Secrets' if secrets else 'Settings'} from {settings_class.__name__}:"
+    )
+    click.echo(tabulate(table_data, headers=headers, tablefmt="grid"))
+
+
+@settings.command("edit")
+@click.option("--secrets", is_flag=True, help="Edit secrets instead of settings.")
+@click.option("--key", help="Specific setting/secret key to edit.")
+@click.option("--value", help="New value for the specified key.")
+def edit_settings(secrets: bool, key: str = None, value: str = None):
+    """Edit settings or secrets."""
+    from nodetool.common.settings import (
+        load_settings,
+        save_settings,
+        get_system_file_path,
+    )
+    from nodetool.common.settings import SETTINGS_FILE, SECRETS_FILE
+    import tempfile
+    import subprocess
+    import yaml
+    import os
+
+    # Load current settings and secrets
+    settings_obj, secrets_obj = load_settings()
+
+    # If specific key and value are provided, update directly
+    if key and value is not None:
+        if secrets:
+            # Check if the key exists in SecretsModel
+            if key in secrets_obj.model_fields:
+                setattr(secrets_obj, key, value)
+                click.echo(f"Updated secret: {key}")
+            else:
+                click.echo(f"Error: {key} is not a valid secret", err=True)
+                return
+        else:
+            # Check if the key exists in SettingsModel
+            if key in settings_obj.model_fields:
+                setattr(settings_obj, key, value)
+                click.echo(f"Updated setting: {key}")
+            else:
+                click.echo(f"Error: {key} is not a valid setting", err=True)
+                return
+
+        # Save the updated settings/secrets
+        save_settings(settings_obj, secrets_obj)
+        return
+
+    # If no specific key/value, open the file in an editor
+    file_path = get_system_file_path(SECRETS_FILE if secrets else SETTINGS_FILE)
+
+    if not os.path.exists(file_path):
+        # Create the file with empty content if it doesn't exist
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+        with open(file_path, "w") as f:
+            if secrets:
+                yaml.dump(secrets_obj.model_dump(), f)
+            else:
+                yaml.dump(settings_obj.model_dump(), f)
+
+    # Open the file in the default editor
+    click.echo(f"Opening {file_path} in your default editor...")
+
+    # Determine the editor to use
+    editor = os.environ.get("EDITOR", "vi")
+
+    try:
+        subprocess.run([editor, file_path], check=True)
+        click.echo(f"Settings saved to {file_path}")
+
+        # Reload settings to see changes
+        updated_settings, updated_secrets = load_settings()
+
+        # Show what changed
+        click.echo("\nUpdated values:")
+        if secrets:
+            show_settings(secrets=True, mask=False)
+        else:
+            show_settings(secrets=False, mask=False)
+
+    except subprocess.CalledProcessError:
+        click.echo("Error: Failed to edit the file", err=True)
+
+
 # Package Commands Group
 @click.group()
 def package():
@@ -481,6 +638,9 @@ def docs(output_dir: str, compact: bool, verbose: bool):
 
 # Add package group to the main CLI
 cli.add_command(package)
+
+# Add settings group to the main CLI
+cli.add_command(settings)
 
 
 if __name__ == "__main__":

@@ -9,6 +9,8 @@ import os
 from pathlib import Path
 from typing import AsyncGenerator, List, Union
 
+from nodetool.workflows.processing_context import ProcessingContext
+
 
 class MultiAgentCoordinator:
     """
@@ -52,7 +54,7 @@ class MultiAgentCoordinator:
 
     async def solve_problem(
         self,
-        print_usage: bool = False,
+        processing_context: ProcessingContext,
     ) -> AsyncGenerator[Union[Message, Chunk, ToolCall], None]:
         """
         🧩 The Grand Solution - Solves the entire objective using specialized agents
@@ -111,7 +113,7 @@ class MultiAgentCoordinator:
             agent = self._get_agent_for_task(task)
 
             assert task is not None, f"Task not found for agent: {agent.name}"
-            async for item in agent.execute_task(task_plan, task):
+            async for item in agent.execute_task(task, processing_context):
                 yield item
                 if isinstance(item, ToolCall) and item.name == "finish_subtask":
                     yield Chunk(

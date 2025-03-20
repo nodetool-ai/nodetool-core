@@ -21,6 +21,8 @@ from pathlib import Path
 from typing import Any, AsyncGenerator, Dict, List, Tuple, Union
 import time
 
+from nodetool.workflows.processing_context import ProcessingContext
+
 DEFAULT_EXECUTION_SYSTEM_PROMPT = """
 You are a task execution agent that completes subtasks efficiently with minimal steps.
 
@@ -86,6 +88,7 @@ class TaskExecutor:
         provider: ChatProvider,
         model: str,
         workspace_dir: str,
+        processing_context: ProcessingContext,
         tools: List[Tool],
         task: Task,
         system_prompt: str | None = None,
@@ -100,6 +103,7 @@ class TaskExecutor:
             provider (ChatProvider): An LLM provider instance
             model (FunctionModel): The model to use with the provider
             workspace_dir (str): Directory for workspace files
+            processing_context (ProcessingContext): The processing context
             tools (List[Tool]): List of tools available for task execution
             tasks (List[Task]): List of tasks to execute
             system_prompt (str, optional): Custom system prompt
@@ -112,6 +116,7 @@ class TaskExecutor:
         self.workspace_dir = workspace_dir
         self.tools = tools
         self.task = task
+        self.processing_context = processing_context
         self.max_token_limit = max_token_limit
 
         # Prepare system prompt
@@ -156,6 +161,9 @@ class TaskExecutor:
         """
         steps_taken = 0
 
+        print("Executing task:")
+        print(self.task.to_markdown())
+
         # Continue until all tasks are complete or we reach max steps
         while not self._all_tasks_complete() and steps_taken < self.max_steps:
             steps_taken += 1
@@ -181,6 +189,7 @@ class TaskExecutor:
                 context = SubTaskContext(
                     task=self.task,
                     subtask=subtask,
+                    processing_context=self.processing_context,
                     system_prompt=self.system_prompt,
                     tools=self.tools,
                     model=self.model if subtask.model == "" else subtask.model,
@@ -198,9 +207,6 @@ class TaskExecutor:
 
             if not subtask_generators:
                 continue
-
-            # Execute all subtasks in parallel
-            print(f"Executing {len(subtask_generators)} subtasks in parallel")
 
             # Use wrap_generators_parallel to execute all subtasks concurrently
             async for message in wrap_generators_parallel(*subtask_generators):
@@ -270,7 +276,6 @@ class TaskExecutor:
         prompt = f"""
         Context: {task.title} - {task.description if task.description else task.title}
         YOUR GOAL FOR THIS SUBTASK: {subtask.content}
-        TASK TYPE: {subtask.task_type}
         
         Read these files for context:
         {json.dumps(subtask.file_dependencies)}
@@ -295,18 +300,18 @@ class TaskExecutor:
                 return False
         return True
 
-    def get_results(self) -> Dict[str, Any]:
+    def get_results(self) -> list[str]:
         """
         Get all subtask results from the global result store.
         Dynamically reads output files for completed subtasks if they aren't already in the result store.
 
         Returns:
-            Dict[str, Any]: Dictionary of results indexed by subtask ID
+            List[str]: List of output files
         """
         # Update result store with any new completed subtasks
-        results = {}
+        results = []
         for subtask in self.task.subtasks:
             if subtask.completed and subtask.output_file:
-                results[subtask.id] = subtask.output_file
+                results.append(subtask.output_file)
 
         return results

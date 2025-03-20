@@ -9,6 +9,7 @@ import json
 from typing import List, Optional
 
 from nodetool.chat.providers import Chunk
+from nodetool.chat.providers.base import ChatProvider
 from nodetool.chat.tools import Tool
 from nodetool.chat.chat import generate_messages, run_tool, default_serializer
 from nodetool.metadata.types import Message, FunctionModel, ToolCall
@@ -39,6 +40,7 @@ async def process_regular_chat(
     user_input: str,
     messages: List[Message],
     model: str,
+    provider: ChatProvider,
     workspace_dir: str,
     context: ProcessingContext,
     debug_mode: bool = False,
@@ -90,6 +92,7 @@ async def process_regular_chat(
             messages=messages_to_send,
             model=model,
             tools=tools,
+            provider=provider,
         ):
             if isinstance(chunk, Chunk):
                 current_chunk = str(chunk.content)

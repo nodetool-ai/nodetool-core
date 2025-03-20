@@ -1,4 +1,5 @@
 from nodetool.chat.providers import ChatProvider, Chunk
+from nodetool.chat.providers.ollama import OllamaProvider
 from nodetool.chat.tools import Tool
 from nodetool.chat.tools.workspace import WorkspaceBaseTool
 from nodetool.metadata.types import FunctionModel, Message, SubTask, Task, ToolCall
@@ -14,47 +15,6 @@ import time
 from typing import Any, AsyncGenerator, List, Union
 
 from nodetool.workflows.processing_context import ProcessingContext
-
-# Add a new DETAILED_COT_SYSTEM_PROMPT after the existing system prompts
-DETAILED_COT_SYSTEM_PROMPT = """
-You are an advanced reasoning agent that uses Chain of Thought (CoT) to solve complex problems methodically.
-
-CHAIN OF THOUGHT PROCESS:
-1. UNDERSTAND THE PROBLEM: Break down the problem into clearly defined components
-2. PLAN YOUR APPROACH: Outline specific steps needed to solve each component
-3. IDENTIFY DEPENDENCIES: Determine what information or results you need before proceeding
-4. EXECUTE STEP-BY-STEP: Work through each step sequentially, showing your reasoning
-5. VERIFY INTERMEDIATE RESULTS: Validate the output of each step before proceeding
-6. RECONSIDER WHEN STUCK: If you encounter an obstacle, backtrack and try another approach
-7. SYNTHESIZE FINAL SOLUTION: Combine intermediate results into a comprehensive solution
-
-CRITICAL THINKING GUIDELINES:
-- EXPLICIT REASONING: Always explain your thought process for each step
-- CONSIDER ALTERNATIVES: Evaluate multiple approaches before choosing one
-- TEST ASSUMPTIONS: Verify that your premises are valid before building on them
-- ACKNOWLEDGE UNCERTAINTY: When information is incomplete, state assumptions clearly
-- STRUCTURED FORMAT: Present your reasoning in a clear, organized manner
-- USE TOOLS DELIBERATELY: Choose tools based on their specific capabilities for each step
-
-EFFECTIVE IMPLEMENTATION:
-- State each step and show your work for that step
-- Label intermediate conclusions clearly
-- Use numbered steps for complex calculations or multi-part reasoning
-- When using tools, explain why you chose that specific tool
-- After receiving tool results, interpret what they mean for your problem
-
-AVOID COMMON PITFALLS:
-- DON'T SKIP STEPS: Show each logical connection in your reasoning chain
-- DON'T ASSUME RESULTS: Verify that each calculation or conclusion is correct
-- DON'T RUSH TO CONCLUSIONS: Take time to evaluate alternative explanations
-- DON'T OVERUSE TOOLS: Only call tools when necessary for specific information
-
-RESULTS FORMAT:
-1. Present your final answer clearly after showing your complete reasoning
-2. Include a brief summary of how you arrived at the solution
-3. Note any limitations or assumptions in your approach
-4. When appropriate, suggest alternative approaches or next steps
-"""
 
 
 class SubTaskContext:
@@ -76,24 +36,22 @@ class SubTaskContext:
     - Safety limits: iteration tracking, max tool calls, and max token controls
     - Explicit reasoning capabilities for "thinking" subtasks
     - Progress reporting throughout execution
-
-    Supported Task Types:
-    - reasoning: Uses detailed chain-of-thought reasoning with specialized system prompt
-    - multi_step: Uses the two-stage approach (tool calling then conclusion)
     """
 
     def __init__(
         self,
         task: Task,
         subtask: SubTask,
+        processing_context: ProcessingContext,
         system_prompt: str,
         tools: List[Tool],
         model: str,
         provider: ChatProvider,
         workspace_dir: str,
         print_usage: bool = True,
-        max_token_limit: int = 20000,
+        max_token_limit: int = -1,
         max_iterations: int = 5,
+        enable_tracing: bool = True,
     ):
         """
         Initialize a subtask execution context.
@@ -101,6 +59,7 @@ class SubTaskContext:
         Args:
             task (Task): The task to execute
             subtask (SubTask): The subtask to execute
+            processing_context (ProcessingContext): The processing context
             system_prompt (str): The system prompt for this subtask
             tools (List[Tool]): Tools available to this subtask
             model (str): The model to use for this subtask
@@ -109,21 +68,18 @@ class SubTaskContext:
             print_usage (bool): Whether to print token usage
             max_token_limit (int): Maximum token limit before summarization
             max_iterations (int): Maximum iterations for the subtask
+            enable_tracing (bool): Whether to enable LLM message tracing
         """
         self.task = task
         self.subtask = subtask
-
-        # Use the DETAILED_COT_SYSTEM_PROMPT for tasks that require thinking
-        if subtask.task_type == "reasoning":
-            self.system_prompt = DETAILED_COT_SYSTEM_PROMPT
-        else:
-            self.system_prompt = system_prompt
-
+        self.processing_context = processing_context
+        self.system_prompt = system_prompt
         self.tools = tools
         self.model = model
         self.provider = provider
         self.workspace_dir = workspace_dir
         self.max_token_limit = max_token_limit
+        self.enable_tracing = enable_tracing
 
         # Initialize isolated message history for this subtask
         self.history = [Message(role="system", content=self.system_prompt)]
@@ -161,6 +117,42 @@ class SubTaskContext:
         )
 
         os.makedirs(os.path.dirname(self.output_file_path), exist_ok=True)
+
+        # Setup tracing directory and file
+        if self.enable_tracing:
+            self.traces_dir = os.path.join(self.workspace_dir, "traces")
+            os.makedirs(self.traces_dir, exist_ok=True)
+
+            # Create a unique trace file name based on task and subtask IDs
+            sanitized_subtask_name = "".join(
+                c if c.isalnum() else "_" for c in self.subtask.content[:40]
+            )
+            self.trace_file_path = os.path.join(
+                self.traces_dir,
+                f"trace_{sanitized_subtask_name}.jsonl",
+            )
+
+            # Initialize trace with basic metadata
+            self._log_trace_event(
+                "trace_initialized",
+                {
+                    "subtask_content": self.subtask.content,
+                    "model": self.model,
+                    "max_iterations": self.max_iterations,
+                    "max_tool_calls": self.max_tool_calls,
+                    "output_file": self.subtask.output_file,
+                },
+            )
+
+            # Log the system prompt
+            self._log_trace_event(
+                "message",
+                {
+                    "direction": "system",
+                    "content": self.system_prompt,
+                    "role": "system",
+                },
+            )
 
     def _count_tokens(self, messages: List[Message]) -> int:
         """
@@ -202,19 +194,22 @@ class SubTaskContext:
 
         return token_count
 
-    def _save_to_output_file(self, result: Any) -> None:
+    def _save_to_output_file(self, output: Any) -> None:
         """
         Save the result of a tool call to the output file.
         Includes metadata in the appropriate format based on file type.
         """
         # Extract metadata from the result if it's a dictionary
-        metadata = result.pop("metadata", {})
-
-        # Get the file extension to determine format
-        _, file_ext = os.path.splitext(self.output_file_path)
-        is_markdown = file_ext.lower() in [".md", ".markdown"]
+        if isinstance(output, dict):
+            metadata = output.pop("metadata", {})
+            result = output.get("result", output)
+        else:
+            metadata = {}
+            result = output
 
         print(f"Saving result to {self.output_file_path}")
+        is_markdown = self.output_file_path.endswith(".md")
+        is_json = self.output_file_path.endswith(".json")
 
         with open(self.output_file_path, "w") as f:
             if is_markdown:
@@ -224,26 +219,31 @@ class SubTaskContext:
                     yaml.dump(metadata, f)
                     f.write("---\n\n")
 
-                    # If result is a dict but we're writing markdown, convert to string
-                    content = result.get("content", str(result))
-                    f.write(str(content))
-                else:
-                    f.write(str(result))
+                f.write(str(result))
+            elif is_json:
+                output = {"data": result, "metadata": metadata}
+                if metadata:
+                    output["metadata"] = metadata
+                json.dump(output, f, indent=2)
             else:
-                if "content" in result:
-                    # For JSON and other formats
-                    if isinstance(result["content"], dict):
-                        if metadata:
-                            result["metadata"] = metadata
-                        json.dump(result, f, indent=2)
-                    elif isinstance(result["content"], list):
-                        output = {"data": result["content"]}
-                        if metadata:
-                            output["metadata"] = metadata
-                        json.dump(output, f, indent=2)
-                else:
-                    # For string results being written to non-markdown files
-                    f.write(str(result))
+                # For string results being written to non-markdown files
+                f.write(str(result))
+
+    def _log_trace_event(self, event_type: str, data: dict) -> None:
+        """
+        Log an event to the trace file.
+
+        Args:
+            event_type (str): Type of event (message, tool_call, etc.)
+            data (dict): Event data to log
+        """
+        if not self.enable_tracing:
+            return
+
+        trace_entry = {"timestamp": time.time(), "event": event_type, "data": data}
+
+        with open(self.trace_file_path, "a") as f:
+            f.write(json.dumps(trace_entry) + "\n")
 
     async def execute(
         self,
@@ -251,12 +251,6 @@ class SubTaskContext:
     ) -> AsyncGenerator[Union[Chunk, ToolCall], None]:
         """
         ⚙️ Task Executor - Runs a single subtask to completion using appropriate strategy
-
-        Execution strategies:
-        - reasoning: Two-phase execution - Detailed chain-of-thought reasoning with specialized
-                    system prompt, following the tool calling → conclusion stage pattern.
-        - multi_step: Two-phase execution - Multiple tool calls allowed in first phase, followed
-                    by conclusion synthesis phase with restricted tools.
 
         This execution path handles complex tasks requiring multiple steps:
         1. Tool Calling Stage: Multiple iterations of information gathering using any tools
@@ -280,6 +274,13 @@ class SubTaskContext:
 
         # Add the task prompt to this subtask's history
         self.history.append(Message(role="user", content=enhanced_prompt))
+
+        # Log the task prompt in the trace
+        if self.enable_tracing:
+            self._log_trace_event(
+                "message",
+                {"direction": "outgoing", "content": enhanced_prompt, "role": "user"},
+            )
 
         # Signal that we're executing this subtask
         print(f"Executing subtask: {self.subtask.content}")
@@ -305,13 +306,10 @@ class SubTaskContext:
             async for chunk in self._process_iteration():
                 yield chunk
 
-            # If we've reached the last iteration and haven't completed yet, generate summary
-            if self.iterations >= self.max_iterations and not self.subtask.completed:
-                yield await self._handle_max_iterations_reached()
+        # If we've reached the last iteration and haven't completed yet, generate summary
+        if self.iterations >= self.max_iterations and not self.subtask.completed:
+            await self._handle_max_iterations_reached()
 
-        # print(
-        #     f"\n[Debug: {token_count} tokens in context for subtask {self.subtask.id}]\n"
-        # )
         # print(self.provider.usage)
 
     def _create_enhanced_prompt(self, task_prompt: str) -> str:
@@ -379,6 +377,18 @@ class SubTaskContext:
         tool to save your final result.
         """
         self.history.append(Message(role="user", content=transition_message))
+
+        # Log the transition in trace
+        if self.enable_tracing:
+            self._log_trace_event(
+                "stage_transition",
+                {
+                    "from_stage": "tool_calling",
+                    "to_stage": "conclusion",
+                    "message": transition_message,
+                    "iterations_completed": self.iterations,
+                },
+            )
 
     async def _handle_token_limit_exceeded(self, token_count: int) -> None:
         """
@@ -450,9 +460,33 @@ class SubTaskContext:
         ):
             # Update existing assistant message
             self.history[-1].content += chunk.content
+
+            # Log the chunk in trace
+            if self.enable_tracing:
+                self._log_trace_event(
+                    "chunk",
+                    {
+                        "direction": "incoming",
+                        "content": chunk.content,
+                        "role": "assistant",
+                        "is_partial": True,
+                    },
+                )
         else:
             # Add new assistant message
             self.history.append(Message(role="assistant", content=chunk.content))
+
+            # Log the chunk in trace
+            if self.enable_tracing:
+                self._log_trace_event(
+                    "chunk",
+                    {
+                        "direction": "incoming",
+                        "content": chunk.content,
+                        "role": "assistant",
+                        "is_partial": False,
+                    },
+                )
 
     async def _handle_tool_call(self, chunk: ToolCall) -> None:
         """
@@ -469,16 +503,35 @@ class SubTaskContext:
             )
         )
 
+        # Log tool call in trace
+        if self.enable_tracing:
+            self._log_trace_event(
+                "tool_call",
+                {
+                    "direction": "incoming",
+                    "tool_name": chunk.name,
+                    "tool_args": chunk.args,
+                    "tool_id": chunk.id,
+                },
+            )
+
         # Increment tool call counter
         self.tool_call_count += 1
-        # print(
-        #     f"Tool call {self.tool_call_count}/{self.max_tool_calls if self.max_tool_calls != float('inf') else 'unlimited'}: {chunk.name}"
-        # )
 
-        # Execute the tool call
+        print(f"Executing tool: {chunk.name}")
         tool_result = await self._execute_tool(chunk)
 
-        # print(f"Tool result: {tool_result}")
+        # Log tool result in trace
+        if self.enable_tracing:
+            self._log_trace_event(
+                "tool_result",
+                {
+                    "direction": "outgoing",
+                    "tool_name": chunk.name,
+                    "tool_id": chunk.id,
+                    "result": tool_result.result,
+                },
+            )
 
         # Handle finish_subtask tool specially
         if chunk.name == "finish_subtask":
@@ -486,7 +539,16 @@ class SubTaskContext:
             self._save_to_output_file(tool_result.result)
             # Record the end time when the subtask is completed
             self.subtask.end_time = int(time.time())
-            # print(f"Subtask {self.subtask.id} completed.")
+
+            if self.enable_tracing:
+                self._log_trace_event(
+                    "subtask_completed",
+                    {
+                        "output_file": self.subtask.output_file,
+                        "duration_seconds": self.subtask.end_time
+                        - self.subtask.start_time,
+                    },
+                )
 
         # Add the tool result to history
         self.history.append(
@@ -532,7 +594,7 @@ class SubTaskContext:
             f"  Reached maximum tool calls ({self.max_tool_calls}). Transitioning to conclusion stage."
         )
 
-    async def _handle_max_iterations_reached(self) -> ToolCall:
+    async def _handle_max_iterations_reached(self):
         """
         Handle the case where max iterations are reached without completion.
 
@@ -542,22 +604,7 @@ class SubTaskContext:
         default_result = await self.request_summary()
         self._save_to_output_file(default_result)
         self.subtask.completed = True
-        # Record the end time even for incomplete tasks that reach max iterations
         self.subtask.end_time = int(time.time())
-
-        return ToolCall(
-            id=f"{self.subtask.id}_max_iterations_reached",
-            name="finish_subtask",
-            args={
-                "result": default_result,
-                "output_file": self.subtask.output_file,
-                "metadata": {
-                    "title": "Max Iterations Reached",
-                    "description": "The subtask reached maximum iterations without completing normally",
-                    "status": "timeout",
-                },
-            },
-        )
 
     async def _execute_tool(self, tool_call: ToolCall) -> ToolCall:
         """
@@ -572,14 +619,21 @@ class SubTaskContext:
         for tool in self.tools:
             if tool.name == tool_call.name:
 
-                context = ProcessingContext(user_id="cot_agent", auth_token="")
-                result = await tool.process(context, tool_call.args)
-                return ToolCall(
-                    id=tool_call.id,
-                    name=tool_call.name,
-                    args=tool_call.args,
-                    result=result,
-                )
+                try:
+                    result = await tool.process(self.processing_context, tool_call.args)
+                    return ToolCall(
+                        id=tool_call.id,
+                        name=tool_call.name,
+                        args=tool_call.args,
+                        result=result,
+                    )
+                except Exception as e:
+                    return ToolCall(
+                        id=tool_call.id,
+                        name=tool_call.name,
+                        args=tool_call.args,
+                        result={"error": str(e)},
+                    )
 
         # Tool not found
         return ToolCall(
@@ -589,7 +643,7 @@ class SubTaskContext:
             result={"error": f"Tool '{tool_call.name}' not found"},
         )
 
-    async def request_summary(self) -> dict:
+    async def request_summary(self) -> str:
         """
         Request a final summary from the LLM when max iterations are reached.
         This is used when the subtask has gone through both the Tool Calling Stage
@@ -598,24 +652,12 @@ class SubTaskContext:
         # Create a summary-specific system prompt
         summary_system_prompt = """
         You are tasked with providing a concise summary of work completed so far.
-        
-        The subtask has gone through both the Tool Calling Stage and the Conclusion Stage
-        but has failed to complete properly. Your job is to summarize what was accomplished
-        and what remains to be done.
         """
 
         # Create a focused user prompt
         summary_user_prompt = f"""
-        The subtask '{self.subtask.id}' has reached the maximum allowed iterations ({self.max_iterations})
-        after going through both the Tool Calling Stage and the Conclusion Stage.
-        
-        Please provide a brief summary of:
-        1. What has been accomplished during the Tool Calling Stage
-        2. What analysis was performed during the Conclusion Stage
-        3. What remains to be done
-        4. Any blockers or issues encountered
-        
-        Respond with a clear, concise summary only.
+        The subtask has reached the maximum allowed iterations ({self.max_iterations}).
+        Summarize the work completed so far, in detail.
         """
 
         # Create a minimal history with just the system prompt and summary request
@@ -637,14 +679,7 @@ class SubTaskContext:
             if isinstance(chunk, Chunk):
                 summary_content += chunk.content
 
-        # Create a structured result with the summary
-        summary_result = {
-            "status": "max_iterations_reached",
-            "message": f"Reached maximum iterations ({self.max_iterations}) for subtask {self.subtask.id}",
-            "summary": summary_content,
-        }
-
-        return summary_result
+        return summary_content
 
     async def _summarize_context(self) -> None:
         """
@@ -665,31 +700,17 @@ class SubTaskContext:
         # Create a summary-specific system prompt
         summary_system_prompt = """
         You are tasked with creating a detailed summary of the conversation so far.
-        Maintain approximately 50% of the original content length.
-        Include all important information, decisions made, and current state.
-        Your summary will replace the detailed conversation history to reduce token usage.
-        
-        IMPORTANT: Clearly indicate which stage the task is currently in (Tool Calling Stage
-        or Conclusion Stage) and preserve all key information related to the current stage.
-        
-        Do not compress too aggressively - aim for about 50% reduction, not more.
+        Do not compress too aggressively - aim for about 30% reduction, not more.
         """
 
         # Create a focused user prompt
         summary_user_prompt = f"""
-        Please summarize the conversation history for subtask '{self.subtask.id}' so far.
-        
-        IMPORTANT: Create a summary that is approximately 50% of the original length.
+        Please summarize the conversation history for the subtask so far.
         
         Include:
         1. The original task/objective in full detail
         2. All key information discovered
-        3. All actions taken and their results
-        4. Current stage: {"CONCLUSION STAGE" if self.in_conclusion_stage else "TOOL CALLING STAGE"} 
-        5. Current state and what needs to be done next
-        6. Any important context or details that would be needed to continue the task
-        
-        Do not compress too aggressively. Maintain approximately 50% of the original content.
+        3. Any important context or details that would be needed to continue the task
         """
 
         # Create a minimal history with just the system prompt and summary request
@@ -797,6 +818,11 @@ class FinishSubTaskTool(WorkspaceBaseTool):
                         "type": "string",
                         "description": "The title of the result",
                     },
+                    "tags": {
+                        "type": "array",
+                        "description": "Tags for the result",
+                        "items": {"type": "string"},
+                    },
                     "description": {
                         "type": "string",
                         "description": "The description of the result",
@@ -804,18 +830,14 @@ class FinishSubTaskTool(WorkspaceBaseTool):
                     "source": {
                         "type": "string",
                         "description": "The source of the result",
-                        "enum": ["url", "file", "calculation", "other"],
+                        "enum": ["search", "website", "file", "reasoning", "other"],
                     },
                     "url": {
                         "type": "string",
-                        "description": "The URL of the result",
-                    },
-                    "timestamp": {
-                        "type": "string",
-                        "description": "The timestamp of the result",
+                        "description": "The URL of the data source",
                     },
                 },
-                "required": ["title", "description", "source", "url", "timestamp"],
+                "required": ["title", "description", "source", "url"],
             },
         },
         "required": ["result", "metadata"],
@@ -836,6 +858,6 @@ class FinishSubTaskTool(WorkspaceBaseTool):
         metadata = params.get("metadata", {})
 
         return {
-            "content": result,
+            "result": result,
             "metadata": metadata,
         }

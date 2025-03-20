@@ -20,7 +20,6 @@ from typing import List
 from nodetool.chat.agent import Agent
 from nodetool.chat.providers import ChatProvider, Chunk, get_provider
 from nodetool.chat.task_planner import TaskPlanner
-from nodetool.chat.task_executor import TaskExecutor
 from nodetool.chat.tools.browser import BrowserTool
 from nodetool.chat.workspace_manager import WorkspaceManager
 from nodetool.common.settings import get_system_data_path

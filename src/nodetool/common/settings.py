@@ -107,9 +107,13 @@ class SecretsModel(BaseModel):
         default=None,
         description="Brightdata API key for accessing Brightdata's proxy infrastructure",
     )
-    BRIGHTDATA_ZONE: str | None = Field(
+    BRIGHTDATA_SERP_ZONE: str | None = Field(
         default=None,
-        description="Brightdata zone for accessing Brightdata's proxy infrastructure",
+        description="Brightdata SERP zone for accessing Brightdata's SERP infrastructure",
+    )
+    BRIGHTDATA_SCRAPING_BROWSER_ENDPOINT: str | None = Field(
+        default=None,
+        description="Brightdata scraping browser endpoint for accessing Brightdata's proxy infrastructure",
     )
 
 
