@@ -15,6 +15,7 @@ import time
 from typing import Any, AsyncGenerator, List, Sequence, Union
 
 from nodetool.workflows.processing_context import ProcessingContext
+from nodetool.chat.tools.workspace import ReadWorkspaceFileTool
 
 
 class SubTaskContext:
@@ -83,7 +84,8 @@ class SubTaskContext:
             FinishSubTaskTool(
                 self.workspace_dir,
                 self.subtask.output_type,
-            )
+            ),
+            ReadWorkspaceFileTool(self.workspace_dir),
         ]
 
         # Initialize isolated message history for this subtask
@@ -100,6 +102,9 @@ class SubTaskContext:
         self.tool_call_count = 0
         # Default max tool calls if not specified in subtask
         self.max_tool_calls = getattr(subtask, "max_tool_calls", float("inf"))
+
+        # Track sources for data lineage
+        self.sources = []
 
         # Track progress for this subtask
         self.progress = []
@@ -212,6 +217,14 @@ class SubTaskContext:
             metadata = {}
             result = output
 
+        # Add tracked sources to metadata
+        if self.sources:
+            # If sources already exist in metadata, extend them
+            if "sources" in metadata and isinstance(metadata["sources"], list):
+                metadata["sources"].extend(self.sources)
+            else:
+                metadata["sources"] = self.sources
+
         print(f"Saving result to {self.output_file_path}")
         is_markdown = self.output_file_path.endswith(".md")
         is_json = self.output_file_path.endswith(".json")
@@ -226,7 +239,24 @@ class SubTaskContext:
 
                 f.write(str(result))
             elif is_yaml:
-                output = {"data": result, "metadata": metadata}
+                output = {"metadata": metadata}
+
+                # Try to parse the result as YAML if it's a string
+                if isinstance(result, str):
+                    try:
+                        parsed_yaml = yaml.safe_load(result)
+                        if (
+                            parsed_yaml is not None
+                        ):  # Only use parsed YAML if successful
+                            output["data"] = parsed_yaml
+                        else:
+                            output["data"] = result
+                    except yaml.YAMLError:
+                        # If the string isn't valid YAML, treat it as a regular string
+                        output["data"] = result
+                else:
+                    output["data"] = result
+
                 yaml.dump(output, f)
             elif is_json:
                 output = {"data": result, "metadata": metadata}
@@ -487,6 +517,23 @@ class SubTaskContext:
         print(f"Executing tool: {chunk.name} with {args_json}")
         tool_result = await self._execute_tool(chunk)
 
+        # Track sources for data lineage
+        if chunk.name == "google_search" and isinstance(chunk.args, dict):
+            search_query = chunk.args.get("query", "")
+            if search_query:
+                self.sources.append(f"search://{search_query}")
+
+        elif chunk.name == "browser_control" and isinstance(chunk.args, dict):
+            action = chunk.args.get("action", "")
+            url = chunk.args.get("url", "")
+            if action == "navigate" and url:
+                self.sources.append(url)
+
+        elif chunk.name == "read_workspace_file" and isinstance(chunk.args, dict):
+            file_path = chunk.args.get("path", "")
+            if file_path:
+                self.sources.append(f"file://{file_path}")
+
         # Log tool result in trace
         if self.enable_tracing:
             self._log_trace_event(
@@ -674,17 +721,15 @@ DEFAULT_METADATA_SCHEMA = {
             "type": "string",
             "description": "The description of the result",
         },
-        "source": {
-            "type": "string",
-            "description": "The source of the result",
-            "enum": ["search", "website", "file", "reasoning", "other"],
-        },
-        "url": {
-            "type": "string",
-            "description": "The URL of the data source",
+        "sources": {
+            "type": "array",
+            "description": "The sources of the result, either http://example.com, file://path/to/file.txt or search://query",
+            "items": {
+                "type": "string",
+            },
         },
     },
-    "required": ["title", "description", "source", "url"],
+    "required": ["title", "description", "sources"],
 }
 
 
@@ -714,9 +759,13 @@ class FinishSubTaskTool(WorkspaceBaseTool):
         "metadata": {
             "title": "Market Analysis Results",
             "description": "Comprehensive analysis of market trends",
-            "source": "calculation",
-            "timestamp": "2023-06-15T10:30:00Z"
-        }
+            "timestamp": "2023-06-15T10:30:00Z",
+            "sources": [
+                "http://example.com",
+                "file://path/to/file.txt",
+                "search://market trends",
+            ],
+        },
     }
     """
 
