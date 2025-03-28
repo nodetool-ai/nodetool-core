@@ -43,7 +43,7 @@ class ExtractPDFTextTool(Tool):
 
     async def process(self, context: ProcessingContext, params: dict) -> Any:
         try:
-            path = os.path.expanduser(params["path"])
+            path = self.resolve_workspace_path(params["path"])
             doc = pymupdf.open(path)
 
             end = params.get("end_page", -1)
@@ -70,6 +70,10 @@ class ExtractPDFTablesTool(Tool):
                 "type": "string",
                 "description": "Path to the PDF file",
             },
+            "output_file": {
+                "type": "string",
+                "description": "Path to the output file",
+            },
             "start_page": {
                 "type": "integer",
                 "description": "First page to extract (0-based index)",
@@ -86,7 +90,7 @@ class ExtractPDFTablesTool(Tool):
 
     async def process(self, context: ProcessingContext, params: dict) -> Any:
         try:
-            path = os.path.expanduser(params["path"])
+            path = self.resolve_workspace_path(params["path"])
             doc = pymupdf.open(path)
 
             end = params.get("end_page", -1)
@@ -119,7 +123,11 @@ class ExtractPDFTablesTool(Tool):
                     }
                     all_tables.append(table_data)
 
-            return {"tables": all_tables}
+            output_file = self.resolve_workspace_path(params["output_file"])
+            with open(output_file, "w") as f:
+                json.dump(all_tables, f)
+
+            return {"output_file": output_file}
         except Exception as e:
             return {"error": str(e)}
 
@@ -133,6 +141,10 @@ class ConvertPDFToMarkdownTool(Tool):
             "path": {
                 "type": "string",
                 "description": "Path to the PDF file",
+            },
+            "output_file": {
+                "type": "string",
+                "description": "Path to the output file",
             },
             "start_page": {
                 "type": "integer",
@@ -148,9 +160,9 @@ class ConvertPDFToMarkdownTool(Tool):
         "required": ["path"],
     }
 
-    async def process(self, context: ProcessingContext, params: dict) -> Any:
+    async def process(self, context: ProcessingContext, params: dict):
         try:
-            path = os.path.expanduser(params["path"])
+            path = self.resolve_workspace_path(params["path"])
             doc = pymupdf.open(path)
 
             md_text = pymupdf4llm.to_markdown(doc)
@@ -163,6 +175,10 @@ class ConvertPDFToMarkdownTool(Tool):
                 end = end_page if end_page != -1 else len(pages) - 1
                 md_text = "\f".join(pages[start_page : end + 1])
 
-            return {"markdown": md_text}
+            output_file = self.resolve_workspace_path(params["output_file"])
+            with open(output_file, "w") as f:
+                f.write(md_text)
+
+            return {"output_file": output_file}
         except Exception as e:
             return {"error": str(e)}

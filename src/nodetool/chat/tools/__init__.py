@@ -46,8 +46,8 @@ System:
 - FindNodeTool: Find nodes in node library
 
 Workspace Management:
-- CreateWorkspaceFileTool: Create a new file in the agent workspace
 - ReadWorkspaceFileTool: Read contents of files in the workspace
+- WriteWorkspaceFileTool: Write content to a file in the agent workspace, creating it if it doesn't exist
 - UpdateWorkspaceFileTool: Update existing files in the workspace
 - DeleteWorkspaceFileTool: Delete files from the workspace
 - ListWorkspaceContentsTool: List contents of the workspace
@@ -93,7 +93,7 @@ from nodetool.chat.tools.browser import (
     ScreenshotTool,
     GoogleSearchTool,
     WebFetchTool,
-    DownloadFilesTool,
+    DownloadFileTool,
 )
 
 # PDF tools
@@ -104,11 +104,10 @@ from nodetool.chat.tools.pdf import (
 )
 
 # Search and database tools
-from nodetool.chat.tools.search import (
+from nodetool.chat.tools.chroma import (
     ChromaTextSearchTool,
     ChromaHybridSearchTool,
-    SemanticDocSearchTool,
-    KeywordDocSearchTool,
+    ChromaIndexTool,
 )
 
 # Email tools
@@ -128,8 +127,7 @@ from nodetool.chat.tools.apple_notes import (
 
 # Workspace tools
 from nodetool.chat.tools.workspace import (
-    WorkspaceBaseTool,
-    CreateWorkspaceFileTool,
+    WriteWorkspaceFileTool,
     ReadWorkspaceFileTool,
     UpdateWorkspaceFileTool,
     DeleteWorkspaceFileTool,
@@ -162,16 +160,15 @@ __all__ = [
     "ScreenshotTool",
     "GoogleSearchTool",
     "WebFetchTool",
-    "DownloadFilesTool",
+    "DownloadFileTool",
     # PDF
     "ExtractPDFTextTool",
     "ExtractPDFTablesTool",
     "ConvertPDFToMarkdownTool",
     # Search and database
+    "ChromaIndexTool",
     "ChromaTextSearchTool",
     "ChromaHybridSearchTool",
-    "SemanticDocSearchTool",
-    "KeywordDocSearchTool",
     # Email
     "SearchEmailTool",
     "ArchiveEmailTool",
@@ -182,8 +179,7 @@ __all__ = [
     "CreateAppleNoteTool",
     "ReadAppleNotesTool",
     # Workspace tools
-    "WorkspaceBaseTool",
-    "CreateWorkspaceFileTool",
+    "WriteWorkspaceFileTool",
     "ReadWorkspaceFileTool",
     "UpdateWorkspaceFileTool",
     "DeleteWorkspaceFileTool",

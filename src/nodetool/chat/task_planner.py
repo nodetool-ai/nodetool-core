@@ -1,264 +1,182 @@
-from nodetool.chat.agent import Agent
-from nodetool.chat.providers import ChatProvider, Chunk
-from nodetool.chat.providers.ollama import OllamaProvider
+import asyncio
+from enum import Enum
+from pydantic import BaseModel
+from nodetool.chat.providers import ChatProvider
+from nodetool.chat.sub_task_context import FinishTaskTool
 from nodetool.chat.tools import Tool
 from nodetool.metadata.types import (
     Message,
     SubTask,
     Task,
     TaskPlan,
-    ToolCall,
 )
 
-
-import tiktoken
-
-
 import json
+import yaml
 import os
 from pathlib import Path
-from typing import AsyncGenerator, List, Sequence, Union
+from typing import List, Sequence, Dict, Set
 
 from nodetool.workflows.processing_context import ProcessingContext
 import time
+import networkx as nx
 
 
-class CreateTaskPlanTool(Tool):
+class PlanUpdateEvent(str, Enum):
+    TASK_PLAN_CREATED = "task_plan_created"
+    TASK_PLAN_LOADED = "task_plan_loaded"
+    TASK_PLAN_SAVED = "task_plan_saved"
+
+
+class PlanUpdate(BaseModel):
     """
-    ✏️ Blueprint Creator - Tool for generating structured task plans
-
-    This tool allows an agent to formalize its planning process by creating
-    a structured TaskPlan with tasks, subtasks, and their dependencies.
-    It's like an architect creating a blueprint before construction begins.
-
-    The created plan becomes the foundation for all subsequent execution,
-    defining what work needs to be done and in what order.
+    A class representing an update to the task plan.
     """
 
-    name = "create_task_plan"
-    description = "Create a task plan for the given objective"
-    input_schema = TaskPlan.model_json_schema()
-
-    _task_plan: TaskPlan | None = None
-
-    async def process(self, context: ProcessingContext, params: dict) -> str:
-        """
-        Create a task plan for the given objective.
-        """
-        self._task_plan = TaskPlan(**params)
-        return "Task plan created successfully"
-
-    def get_task_plan(self) -> TaskPlan:
-        """
-        Get the task plan.
-        """
-        if self._task_plan is None:
-            raise ValueError("Task plan not created")
-        return self._task_plan
+    agent_name: str | None = None
+    task_plan: TaskPlan | None = None
+    task: Task | None = None
+    subtask: SubTask | None = None
+    retry_count: int | None = None
+    error_message: str | None = None
+    event: PlanUpdateEvent
+    content: str | None = None
 
 
-# Add ADVANCED_PLANNING_SYSTEM_PROMPT for more sophisticated planning
+# Simplify the DEFAULT_PLANNING_SYSTEM_PROMPT
 DEFAULT_PLANNING_SYSTEM_PROMPT = """
-You are a sophisticated task planning agent that creates optimized, executable plans.
+You are a task planning agent that creates optimized, executable plans.
 
-IMPORTANT: USE the create_task_plan tool to create the task plan.
+RESPOND WITH TOOL CALLS TO CREATE TASKS.
 
-STRATEGIC PLANNING APPROACH:
-1. GOAL DECOMPOSITION: Break the main objective into clear sub-goals
-2. TASK IDENTIFICATION: For each sub-goal, identify specific tasks needed
-3. DEPENDENCY MAPPING: Create a directed acyclic graph (DAG) of task dependencies
-4. PARALLEL OPTIMIZATION: Maximize concurrent execution opportunities
-5. CRITICAL PATH ANALYSIS: Identify and optimize the longest dependency chain
-6. RISK ASSESSMENT: Anticipate potential failure points and create contingencies
+KEY PLANNING PRINCIPLES:
+1. Break complex goals into clear subtasks
+2. Optimize for parallel execution
+3. Create self-contained tasks with minimal coupling
+4. Define dependencies between tasks using the input_files field
+5. Provide clear instructions and all necessary information for each subtask
+6. The LAST subtask MUST use the finish_task tool to complete the entire task
 
-TASK DESIGN PRINCIPLES:
-- ATOMIC TASKS: Each subtask should do exactly one thing well
-- MINIMAL COUPLING: Reduce dependencies between tasks where possible
-- MAP-REDUCE PATTERN: Distribute independent data gathering, then consolidate
-- APPROPRIATE GRANULARITY: Not too large (sequential) or too small (overhead)
-- SELF-CONTAINED: Each task should have everything it needs to execute, or read it from the workspace
-- VERIFIABLE OUTPUTS: Task completion should produce a concrete artifact
-
-FILE MANAGEMENT:
-- Use the output_file field to specify the path to the file where the task result will be saved
-- Use the file_dependencies field to specify the paths to the files that the task depends on
-- Use read_workspace_file tool to read the dependencies
-- The workspace directory is /workspace
-- DO NOT USE FILES FROM THE RESEARCH PLANNING PHASE IN THE TASK PLAN
-
-OUTPUT FORMAT:
-- Use the output_type field to specify the format of the output
-- Use the output_file field to specify the path to the file where the task result will be saved
-- Prefer YAML format for structured data
-- Prefer Markdown format for reports, summaries, and other text-based outputs
-
-IMPLEMENTATION DETAILS:
-- Use content to describe the subtask
-- Specify exact file paths for all dependencies and outputs
-
-TASK FORMAT:
-```json
-    {
-        "type": "task",
-        "title": "Task Title",
-        "agent_name": "Agent Name",
-        "subtasks": [
-            {
-                "type": "subtask",
-                "content": "Identify top 10 trending topics on Google",
-                "output_type": {
-                    "type": "array",
-                    "items": {
-                        "type": "string",
-                    }
-                },
-                "output_file": "/workspace/trending_topics.yaml",
-            },
-            {
-                "type": "subtask",
-                "content": "Search for the top 10 trending topics on Google",
-                "file_dependencies": ["/workspace/trending_topics.yaml"],
-                "output_type": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "title": {"type": "string"},
-                            "description": {"type": "string"},
-                            "url": {"type": "string"},
-                        },
-                    },
-                },
-                "output_file": "/workspace/google_trends.yaml",
-            },
-            {
-                "type": "subtask",
-                "content": "Summarize the findings",
-                "file_dependencies": ["/workspace/market_trends.yaml", "/workspace/google_trends.yaml"],
-                "output_type": {
-                    "type": "string",
-                    "description": "A comprehensive markdown report of the findings",
-                },
-                k"output_file": "/workspace/report.md",
-            }
-        ]
-    }
-```
+DEPENDENCY GRAPH:
+- The dependency graph is a directed graph of dependencies between subtasks
+- SUBTASKS must not have circular dependencies
+- SUBTASKS must depend on existent input files
+- SUBTASKS must not have duplicate output_files
+- SUBTASKS must depend on input files or other subtask outputs
+- The LAST subtask must collect and synthesize all results using finish_task
 """
 
 
 class CreateTaskTool(Tool):
     """
-    ✏️ Task Creator - Tool for generating a single high-level task for an agent
-
-    This tool allows the planner to create one task at a time, with each task
-    explicitly assigned to a specific agent. Previous tasks are considered when
-    creating new tasks to ensure proper dependencies.
+    Task Creator - Tool for generating a task with subtasks
     """
 
     name = "create_task"
-    description = "Create a single task for a specific agent"
-
-    # Define the input schema for a single task
-    input_schema = {
-        "type": "object",
-        "properties": {
-            "subtasks": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "type": {"type": "string", "const": "subtask"},
-                        "id": {"type": "string"},
-                        "content": {"type": "string"},
-                        "output_type": {"type": "object"},
-                        "output_file": {"type": "string"},
-                        "file_dependencies": {
-                            "type": "array",
-                            "items": {"type": "string"},
-                        },
-                    },
-                    "required": ["type", "id", "content"],
-                },
-            },
-        },
-        "required": ["subtasks"],
-    }
+    description = "Create a single task with subtasks"
 
     def __init__(self, workspace_dir: str):
-        super().__init__(workspace_dir)
-        self._tasks = []
+        super().__init__(workspace_dir=workspace_dir)
+        self.workspace_dir = workspace_dir
+        self.input_schema = {
+            "type": "object",
+            "required": ["title", "subtasks"],
+            "properties": {
+                "title": {
+                    "type": "string",
+                    "description": "The objective of the task",
+                },
+                "subtasks": {
+                    "type": "array",
+                    "description": "The subtasks of the task",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "content": {
+                                "type": "string",
+                                "description": "Instructions for the subtask to complete",
+                            },
+                            "output_file": {
+                                "type": "string",
+                                "description": "The file path where the subtask will save its output",
+                            },
+                            "input_files": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string",
+                                    "description": "The input files for the subtask, must be a list of output files of other subtasks, or input files of the task",
+                                },
+                            },
+                            "output_schema": {
+                                "type": "object",
+                                "description": "The JSON schema of the output of the subtask. REQUIRED when output_type is 'json'. Must be a valid JSON schema object.",
+                            },
+                            "output_type": {
+                                "type": "string",
+                                "description": "The file format of the output of the subtask. When using 'json', you MUST provide a valid JSON schema in output_schema.",
+                                "enum": [
+                                    "string",
+                                    "markdown",
+                                    "json",
+                                    "yaml",
+                                    "csv",
+                                    "html",
+                                    "xml",
+                                    "jsonl",
+                                    "python",
+                                    "py",
+                                    "javascript",
+                                    "js",
+                                    "typescript",
+                                    "ts",
+                                    "java",
+                                    "cpp",
+                                    "c++",
+                                    "go",
+                                    "rust",
+                                    "diff",
+                                    "shell",
+                                    "sql",
+                                    "dockerfile",
+                                    "css",
+                                    "svg",
+                                ],
+                            },
+                        },
+                        "required": [
+                            "content",
+                            "output_file",
+                            "input_files",
+                            "output_type",
+                        ],
+                    },
+                },
+            },
+        }
 
-    async def process(self, context: ProcessingContext, params: dict) -> str:
-        """
-        Create a single task for a specific agent.
-        """
-        # Add the task type
-        params["type"] = "task"
-
-        print("==" * 100)
-        print(params)
-        print("==" * 100)
-
-        # Add the task to our collection
-        self._tasks.append(params)
-
-        return f"Task '{params['title']}' created successfully for agent '{params['agent_name']}'"
-
-    def get_tasks(self) -> List[dict]:
-        """
-        Get all the tasks created so far.
-        """
-        return self._tasks
+    async def process(self, context: ProcessingContext, params: dict):
+        pass
 
 
-# Add these constants at the module level, after DEFAULT_PLANNING_SYSTEM_PROMPT
-DEFAULT_RESEARCH_SYSTEM_PROMPT = """
-You are a research assistant tasked with gathering information to help plan a complex task.
-Your goal is to use search and browsing tools to collect relevant information about the objective.
-
-RESEARCH STRATEGY:
-1. First, identify what information you need to create an effective plan
-2. Use search tools to find relevant sources and information
-3. Use browser tools to access and extract key information from websites
-4. Focus on gathering practical, actionable information
-5. Store findings in an organized format for later use
-
-Be concise, focused, and thorough in your research. Only search for information directly
-relevant to planning the task. Don't go down rabbit holes.
-"""
-
-DEFAULT_RESEARCH_PROMPT = """
-I need you to research information that will help me plan how to accomplish this objective:
-
-OBJECTIVE: {objective}
-
-What information should we gather to create an effective plan? Use the available search and browser
-tools to conduct focused research on this objective. Limit yourself to {max_research_iterations}
-search or browser actions.
-
-After each search or browsing action, summarize what you've learned and how it informs the planning.
-"""
-
+# Remove research-related prompts and simplify agent task prompt
 DEFAULT_AGENT_TASK_PROMPT = """
-Overall Objective: {objective}
-Create a list of subtasks for the agent: {agent_name}
-Agent description: {agent_description}
-Agent objective: {agent_objective}
-Current provider: {provider_name}
-{models_info}
+Objective: {objective}
 
-Previously created tasks:
-{previous_tasks}
+Subtasks will have access to the following tools:
+{tools_info}
+
+Use these files as input (input_files) BUT NOT AS output_file:
+{input_files_info}
 
 Think carefully about:
-1. What this specific agent is best suited to work on
-2. How this task relates to any previously created tasks
-3. What dependencies exist between this task and previous tasks
-4. How to structure subtasks to make them clear and executable
-5. How to structure the task to make it clear and executable
+1. How to structure subtasks to make them clear and executable
+2. How to effectively process the provided input files (batch processing when appropriate)
+3. What data to read from the input files
+4. How to organize dependencies between subtasks
+5. Ensure the LAST subtask uses the finish_task tool to complete the entire task
 
-Create subtasks that are clear and executable.
+Create subtasks that are clear, executable, and leverage the appropriate tools when needed.
+The final subtask must synthesize all previous results and use finish_task to complete the task.
 """
 
 
@@ -289,14 +207,11 @@ class TaskPlanner:
         objective: str,
         workspace_dir: str,
         tools: Sequence[Tool],
-        agents: Sequence[Agent],
-        task_models: Sequence[str] = [],
+        input_files: Sequence[str] = [],
         system_prompt: str | None = None,
-        research_system_prompt: str | None = None,
-        research_prompt: str | None = None,
         agent_task_prompt: str | None = None,
-        max_research_iterations: int = 3,
         enable_tracing: bool = True,
+        output_schema: dict | None = None,
     ):
         """
         Initialize the TaskPlanner.
@@ -304,84 +219,47 @@ class TaskPlanner:
         Args:
             provider (ChatProvider): An LLM provider instance
             model (str): The model to use with the provider
-            task_models (list[str]): The models to use for the tasks
             objective (str): The objective to solve
             workspace_dir (str): The workspace directory path
+            input_files (list[str]): The input files to use for planning
             tools (List[Tool]): Tools available for research during planning
-            agents (List[Agent]): Agents available for planning
             system_prompt (str, optional): Custom system prompt
-            research_system_prompt (str, optional): Custom research system prompt
-            research_prompt (str, optional): Custom research prompt
             agent_task_prompt (str, optional): Custom agent task prompt
-            max_research_iterations (int, optional): Maximum number of research iterations
             enable_tracing (bool, optional): Whether to enable LLM trace logging
+            output_schema (dict, optional): JSON schema for the final task output
         """
         self.provider = provider
         self.model = model
-        self.task_models = task_models
         self.objective = objective
         self.workspace_dir = workspace_dir
         self.task_plan = None
-        self.agents = agents
-
-        # Store configurable prompts
+        self.input_files = input_files
         self.system_prompt = (
             system_prompt if system_prompt else DEFAULT_PLANNING_SYSTEM_PROMPT
-        )
-        self.research_system_prompt = (
-            research_system_prompt
-            if research_system_prompt
-            else DEFAULT_RESEARCH_SYSTEM_PROMPT
-        )
-        self.research_prompt = (
-            research_prompt if research_prompt else DEFAULT_RESEARCH_PROMPT
         )
         self.agent_task_prompt = (
             agent_task_prompt if agent_task_prompt else DEFAULT_AGENT_TASK_PROMPT
         )
-
-        self.encoding = tiktoken.get_encoding("cl100k_base")  # Default encoding
-        self.enable_tracing = enable_tracing
-
-        # Check if tasks.json exists in the workspace directory
-        self.tasks_file_path = Path(workspace_dir) / "tasks.json"
-
-        # Store tools for research
         self.tools = tools or []
-        self.max_research_iterations = max_research_iterations
+        self.enable_tracing = enable_tracing
+        self.output_schema = output_schema
 
-        if not self.agents:
-            raise ValueError("No agents provided to TaskPlanner")
-
-        # Create a directory to store research findings
-        self.research_dir = os.path.join(workspace_dir, "research")
-        os.makedirs(self.research_dir, exist_ok=True)
-
-        # Setup tracing directory and file
+        # Setup tracing
         if self.enable_tracing:
             self.traces_dir = os.path.join(self.workspace_dir, "traces")
             os.makedirs(self.traces_dir, exist_ok=True)
-
-            # Create a unique trace file name for this planning session
             sanitized_objective = "".join(
                 c if c.isalnum() else "_" for c in self.objective[:40]
             )
             self.trace_file_path = os.path.join(
-                self.traces_dir,
-                f"trace_planner_{sanitized_objective}.jsonl",
+                self.traces_dir, f"trace_planner_{sanitized_objective}.jsonl"
             )
-
-            # Initialize trace with basic metadata
             self._log_trace_event(
                 "planner_initialized",
-                {
-                    "objective": self.objective,
-                    "model": self.model,
-                    "max_research_iterations": self.max_research_iterations,
-                    "num_agents": len(self.agents),
-                    "agent_names": [agent.name for agent in self.agents],
-                },
+                {"objective": self.objective, "model": self.model},
             )
+
+        self.tasks_file_path = Path(workspace_dir) / "tasks.yaml"
 
     def _log_trace_event(self, event_type: str, data: dict) -> None:
         """
@@ -409,692 +287,250 @@ class TaskPlanner:
         if self.tasks_file_path.exists():
             try:
                 with open(self.tasks_file_path, "r") as f:
-                    task_plan_data = json.load(f)
+                    task_plan_data = yaml.safe_load(f)
                     self.task_plan = TaskPlan(**task_plan_data)
                     return True
             except Exception as e:
                 return False
         return False
 
-    async def _prepare_research(self) -> tuple[str, str]:
-        """
-        Prepare the system prompt, research prompt, and initial history for research.
+    async def _build_agent_task_prompt(self) -> str:
+        if self.input_files and len(self.input_files) > 0:
+            input_files_info = "\n".join(self.input_files)
+        else:
+            input_files_info = ""
 
-        Returns:
-            tuple: (system_prompt, research_prompt, initial_history)
-        """
-        # Format the research prompt with current objective and max iterations
-        formatted_research_prompt = self.research_prompt.format(
-            objective=self.objective,
-            max_research_iterations=self.max_research_iterations,
-        )
+        if self.output_schema:
+            output_schema_info = "Output schema of the high-level task:\n"
+            output_schema_info += json.dumps(self.output_schema, indent=2)
+        else:
+            output_schema_info = ""
 
-        # Initialize research history
-        self.research_history = [
-            Message(role="system", content=self.research_system_prompt),
-            Message(role="user", content=formatted_research_prompt),
-        ]
+        if self.tools:
+            tools_info = "Available tools for task execution:\n"
+            for tool in self.tools:
+                tools_info += f"- {tool.name}: {tool.description}\n"
+        else:
+            tools_info = ""
 
-        return self.research_system_prompt, formatted_research_prompt
-
-    async def _process_tool_call(
-        self,
-        chunk: ToolCall,
-    ) -> AsyncGenerator[Chunk, None]:
-        """
-        Process a tool call during research and update research findings.
-
-        Args:
-            chunk: The tool call to process
-            research_history: The research conversation history to update
-
-        Yields:
-            Chunk: Progress updates
-        """
-        # Add tool call to history
-        self.research_history.append(
-            Message(
-                role="assistant",
-                tool_calls=[chunk],
-            )
-        )
-
-        # Log tool call in trace
-        if self.enable_tracing:
-            self._log_trace_event(
-                "tool_call",
-                {
-                    "direction": "outgoing",
-                    "tool_name": chunk.name,
-                    "tool_args": chunk.args,
-                    "tool_id": chunk.id,
-                },
-            )
-
-        # Execute the tool call
-        from nodetool.workflows.processing_context import ProcessingContext
-
-        context = ProcessingContext(user_id="planner_research", auth_token="")
-
-        # Find the tool
-        for tool in self.tools:
-            if tool.name == chunk.name:
-                tool_result = await tool.process(context, chunk.args)
-                yield Chunk(content=f"\nUsed tool: {chunk.name}\n", done=False)
-
-                # Add the tool result to history
-                self.research_history.append(
-                    Message(
-                        role="tool",
-                        tool_call_id=chunk.id,
-                        name=chunk.name,
-                        content=json.dumps(tool_result),
-                    )
-                )
-
-                # Log tool result in trace
-                if self.enable_tracing:
-                    self._log_trace_event(
-                        "tool_result",
-                        {
-                            "direction": "incoming",
-                            "tool_name": chunk.name,
-                            "tool_id": chunk.id,
-                            "result_summary": (
-                                str(tool_result)[:200] + "..."
-                                if len(str(tool_result)) > 200
-                                else str(tool_result)
-                            ),
-                        },
-                    )
-
-                # Save to file
-                ext = "json" if isinstance(tool_result, dict) else "md"
-                finding_file = os.path.join(
-                    self.research_dir,
-                    f"{chunk.name}.{ext}",
-                )
-                with open(finding_file, "w") as f:
-                    if isinstance(tool_result, dict):
-                        json.dump(tool_result, f, indent=2)
-                    else:
-                        f.write(str(tool_result))
-
-                break
-
-    async def _conduct_research_iteration(
-        self,
-        iteration: int,
-    ) -> AsyncGenerator[Union[Message, Chunk], None]:
-        """
-        Conduct a single research iteration.
-
-        Args:
-            iteration: The current iteration number
-            research_history: The research conversation history
-
-        Yields:
-            Union[Message, Chunk]: Progress updates
-        """
-        yield Chunk(
-            content=f"\nResearch iteration {iteration}/{self.max_research_iterations}...\n",
-            done=False,
-        )
-
-        # Generate research step using available tools
-        generator = self.provider.generate_messages(
-            messages=self.research_history,
-            model=self.model,
-            tools=self.tools,
-            thinking=True,
-        )
-
-        content = ""
-        accumulated_content = ""  # Track accumulated content from chunks
-
-        async for chunk in generator:  # type: ignore
-            if isinstance(chunk, Chunk):
-                yield chunk
-                content += chunk.content
-                accumulated_content += chunk.content  # Accumulate content
-
-                # Only log when the chunk is done or periodically for large responses
-                if chunk.done:
-                    # Log accumulated content in trace
-                    if self.enable_tracing and accumulated_content.strip():
-                        self._log_trace_event(
-                            "message",
-                            {
-                                "direction": "incoming",
-                                "content": accumulated_content,
-                                "role": "assistant",
-                                "is_partial": False,
-                            },
-                        )
-                        accumulated_content = ""  # Reset after logging
-
-                # Update research history with assistant message
-                if (
-                    len(self.research_history) > 0
-                    and self.research_history[-1].role == "assistant"
-                    and isinstance(self.research_history[-1].content, str)
-                ):
-                    self.research_history[-1].content += chunk.content
-                else:
-                    self.research_history.append(
-                        Message(role="assistant", content=chunk.content)
-                    )
-
-            elif isinstance(chunk, ToolCall):
-                # If we have accumulated content, log it before processing the tool call
-                if self.enable_tracing and accumulated_content.strip():
-                    self._log_trace_event(
-                        "message",
-                        {
-                            "direction": "incoming",
-                            "content": accumulated_content,
-                            "role": "assistant",
-                            "is_partial": True,  # This was cut off by a tool call
-                        },
-                    )
-                    accumulated_content = ""  # Reset after logging
-
-                tool_used = True
-                async for tool_chunk in self._process_tool_call(chunk):
-                    yield tool_chunk
-
-    async def research_objective(self) -> AsyncGenerator[Union[Message, Chunk], None]:
-        """
-        📚 Knowledge Hunter - Gathers info before creating a plan
-
-        This method can use search and browsing tools to conduct research on the objective,
-        allowing the planning process to be well-informed. It's like doing homework
-        before drawing up a project plan.
-
-        The research findings are saved to the workspace for reference and are
-        incorporated into the planning process to create a more effective task plan.
-
-        Yields:
-            Union[Message, Chunk]: Live updates during the research process
-        """
-        yield Chunk(content=f"Researching objective: {self.objective}\n", done=False)
-
-        # Prepare research prompts and history
-        await self._prepare_research()
-
-        # Conduct research iterations
-        iterations = 0
-
-        while iterations < self.max_research_iterations:
-            iterations += 1
-            async for chunk in self._conduct_research_iteration(
-                iterations,
-            ):
-                yield chunk
-
-    async def _validate_subtasks(self, subtasks):
-        """
-        Validate subtasks to ensure they have non-empty content and output_file fields.
-
-        Args:
-            subtasks: List of subtasks to validate
-
-        Returns:
-            List[str]: List of validation errors, empty if validation passes
-        """
-        validation_errors = []
-        for i, subtask in enumerate(subtasks):
-            if not subtask.get("content") or subtask.get("content").strip() == "":
-                validation_errors.append(f"Subtask {i+1} has empty content field")
-            if (
-                not subtask.get("output_file")
-                or subtask.get("output_file").strip() == ""
-            ):
-                validation_errors.append(f"Subtask {i+1} has empty output_file field")
-        return validation_errors
-
-    async def _build_agent_task_prompt(
-        self, agent: Agent, all_tasks: List[Task]
-    ) -> str:
-        """
-        Build a prompt for creating tasks for a specific agent.
-
-        Args:
-            agent: The agent to create a task for
-            all_tasks: List of all tasks created so far
-
-        Returns:
-            str: The formatted prompt
-        """
-        # Convert existing tasks to dict format for the prompt
-        tasks_created_so_far = []
-        if all_tasks:
-            tasks_created_so_far = [t.model_dump() for t in all_tasks]
-
-        # Format models info
-        models_info = (
-            f"Available models: {self.task_models}" if self.task_models else ""
-        )
-
-        # Format previous tasks info
-        previous_tasks = (
-            json.dumps(tasks_created_so_far) if all_tasks else "No tasks created yet."
-        )
-
-        # Format the agent task prompt
         return self.agent_task_prompt.format(
             objective=self.objective,
-            agent_name=agent.name,
-            agent_description=agent.description,
-            agent_objective=agent.objective,
-            provider_name=self.provider.__class__.__name__,
-            models_info=models_info,
-            previous_tasks=previous_tasks,
+            tools_info=tools_info,
+            input_files_info=input_files_info,
         )
 
-    async def _process_json_blocks(
-        self, content: str, agent: Agent, all_tasks: List[Task]
-    ) -> tuple[bool, List[str]]:
+    def _build_dependency_graph(self, subtasks: List[SubTask]) -> nx.DiGraph:
         """
-        Process JSON code blocks in the content to find task definitions.
+        Build a directed graph of dependencies between subtasks.
 
         Args:
-            content: The content to search for JSON blocks
-            agent: The agent to create a task for
-            all_tasks: List of all tasks to update if a valid task is found
+            subtasks: List of subtasks to analyze
 
         Returns:
-            tuple: (success_flag, error_messages)
+            nx.DiGraph: Directed graph representing dependencies
         """
-        import re
+        # Create mapping of output files to their subtasks
+        output_to_subtask: Dict[str, SubTask] = {
+            subtask.output_file: subtask for subtask in subtasks
+        }
 
-        # Look for ```json ... ``` patterns
-        json_blocks = re.findall(r"```json\s*([\s\S]*?)```", content)
+        # Create graph
+        G = nx.DiGraph()
 
-        if not json_blocks:
-            return False, []
+        # Add all subtasks as nodes
+        for subtask in subtasks:
+            G.add_node(subtask.output_file)
 
-        for json_str in json_blocks:
-            try:
-                # Try to parse the JSON
-                task_data = json.loads(json_str)
+        # Add edges for dependencies
+        for subtask in subtasks:
+            if subtask.input_files:
+                for input_file in subtask.input_files:
+                    if input_file in output_to_subtask:
+                        # Add edge from input to output, showing dependency
+                        G.add_edge(input_file, subtask.output_file)
 
-                # Check if it has the required structure (subtasks)
-                if "subtasks" in task_data:
-                    # Add missing fields for the task
-                    task_data["title"] = agent.objective
-                    task_data["agent_name"] = agent.name
+        return G
 
-                    # Validate subtasks
-                    validation_errors = await self._validate_subtasks(
-                        task_data.get("subtasks", [])
-                    )
-
-                    if validation_errors:
-                        # Continue to the next JSON block if this one has validation errors
-                        continue
-
-                    # If validation passes, add the task to our collection
-                    all_tasks.append(
-                        Task(
-                            title=agent.objective,
-                            agent_name=agent.name,
-                            subtasks=task_data["subtasks"],
-                        )
-                    )
-
-                    # Log successful task creation in trace
-                    if self.enable_tracing:
-                        self._log_trace_event(
-                            "task_creation_success_from_json",
-                            {
-                                "agent_name": agent.name,
-                                "subtasks_count": len(task_data["subtasks"]),
-                                "from_json_block": True,
-                            },
-                        )
-
-                    return True, []
-
-            except json.JSONDecodeError:
-                # If JSON is invalid, continue to the next block
-                continue
-            except Exception as e:
-                # Log other errors
-                if self.enable_tracing:
-                    self._log_trace_event(
-                        "json_block_error",
-                        {
-                            "agent_name": agent.name,
-                            "error": str(e),
-                            "json_block": (
-                                json_str[:200] + "..."
-                                if len(json_str) > 200
-                                else json_str
-                            ),
-                        },
-                    )
-
-        return False, []
-
-    async def _process_task_tool_call(
+    def _validate_dependencies(
         self,
-        tool_call: ToolCall,
-        agent: Agent,
-        all_tasks: List[Task],
-        retries: int,
-        max_retries: int,
-    ) -> tuple[bool, List[str]]:
+        subtasks: List[SubTask],
+    ) -> List[str]:
         """
-        Process a tool call to create a task.
+        Validate dependencies for a list of subtasks using DAG analysis.
 
         Args:
-            tool_call: The tool call to process
-            agent: The agent to create a task for
-            all_tasks: List of all tasks to update if a valid task is found
-            retries: Current retry count
-            max_retries: Maximum number of retries
+            subtasks: List of subtasks to validate dependencies for
 
         Returns:
-            tuple: (success_flag, error_messages)
+            List[str]: List of validation error messages
         """
+        validation_errors = []
+
+        # Track all available input files
+        available_files = set(self.input_files)
+
+        # Check for duplicate output files and validate output schemas
+        output_files = {}
+        for subtask in subtasks:
+            if subtask.output_file in output_files:
+                validation_errors.append(
+                    f"Multiple subtasks trying to write to '{subtask.output_file}'"
+                )
+            output_files[subtask.output_file] = subtask
+
+            # Validate that JSON output type has a schema
+            if subtask.output_type == "json":
+                if not subtask.output_schema:
+                    validation_errors.append(
+                        f"Subtask '{subtask.content}' has JSON output_type but no output_schema"
+                    )
+
+        # Build and analyze dependency graph
+        G = self._build_dependency_graph(subtasks)
+
+        # Check for cycles
         try:
-            # Validate subtasks to ensure content and output_file are not empty
-            validation_errors = await self._validate_subtasks(
-                tool_call.args.get("subtasks", [])
-            )
+            nx.find_cycle(G)
+            validation_errors.append("Circular dependency detected in subtasks")
+        except nx.NetworkXNoCycle:
+            pass  # No cycles found, which is good
 
-            if validation_errors:
-                # Return validation errors
-                error_message = "Validation errors in subtasks:\n- " + "\n- ".join(
-                    validation_errors
-                )
-                error_message += "\n\nPlease fix these issues and ensure all subtasks have non-empty content and output_file fields."
+        # Validate all input files exist
+        for subtask in subtasks:
+            if subtask.input_files:
+                for file_path in subtask.input_files:
+                    if (
+                        file_path not in available_files
+                        and file_path not in output_files
+                    ):
+                        validation_errors.append(
+                            f"Subtask '{subtask.content}' depends on missing file '{file_path}'"
+                        )
 
-                # Log validation error in trace
+        # Get execution order (topological sort)
+        if not validation_errors:
+            try:
+                execution_order = list(nx.topological_sort(G))
                 if self.enable_tracing:
                     self._log_trace_event(
-                        "task_validation_error",
+                        "dependency_analysis",
                         {
-                            "agent_name": agent.name,
-                            "errors": validation_errors,
-                            "retry_attempt": retries,
+                            "execution_order": execution_order,
+                            "node_count": G.number_of_nodes(),
+                            "edge_count": G.number_of_edges(),
                         },
                     )
-
-                return False, [error_message]
-
-            # If validation passes, add the task to our collection
-            all_tasks.append(
-                Task(
-                    title=agent.objective,
-                    agent_name=agent.name,
-                    subtasks=tool_call.args["subtasks"],
-                )
-            )
-
-            # Log successful task creation in trace
-            if self.enable_tracing:
-                self._log_trace_event(
-                    "task_creation_success",
-                    {
-                        "agent_name": agent.name,
-                        "subtasks_count": len(tool_call.args["subtasks"]),
-                        "subtask_ids": [
-                            subtask.get("id", f"subtask_{i}")
-                            for i, subtask in enumerate(tool_call.args["subtasks"])
-                        ],
-                    },
+            except nx.NetworkXUnfeasible:
+                validation_errors.append(
+                    "Cannot determine valid execution order due to dependency issues"
                 )
 
-            return True, []
+        return validation_errors
 
-        except Exception as e:
-            # Log error in trace
-            if self.enable_tracing:
-                self._log_trace_event(
-                    "task_creation_error",
-                    {
-                        "agent_name": agent.name,
-                        "error": str(e),
-                        "retry_attempt": retries,
-                    },
-                )
-
-            error_message = f"Error creating task: {str(e)}\nPlease fix the task structure and try again."
-
-            if retries >= max_retries:
-                raise ValueError(
-                    f"Failed to create valid task after {max_retries} retries: {str(e)}"
-                )
-
-            return False, [error_message]
-
-    async def _create_task_with_retries(
+    async def _create_task_for_objective(
         self,
-        agent: Agent,
-        all_tasks: List[Task],
-        task_tool: CreateTaskTool,
+        objective: str,
+        input_files: List[str],
         max_retries: int = 3,
-    ) -> AsyncGenerator[Union[Message, Chunk], None]:
+    ) -> Task:
         """
-        Create a task for a specific agent with multiple retry attempts if needed.
+        Create subtasks all at once for a specific objective using JSON format.
 
         Args:
-            agent: The agent to create a task for
-            all_tasks: List of all tasks created so far
-            task_tool: The tool to use for creating tasks
-            max_retries: Maximum number of retry attempts (default: 3)
+            objective: The objective to create subtasks for
+            input_files: List of all available files
+            max_retries: Maximum number of retry attempts per subtask
 
-        Yields:
-            Union[Message, Chunk]: Progress updates
+        Returns:
+            Task: The created task
         """
         # Build the initial prompt
-        agent_task_prompt = await self._build_agent_task_prompt(agent, all_tasks)
-
-        # Initialize conversation history
+        agent_task_prompt = await self._build_agent_task_prompt()
         history = [
             Message(role="system", content=self.system_prompt),
-            *self.research_history,
             Message(role="user", content=agent_task_prompt),
         ]
+        # Track retry attempts
+        current_retry = 0
 
-        # Log task creation start in trace
-        if self.enable_tracing:
-            self._log_trace_event(
-                "task_creation_start",
-                {
-                    "agent_name": agent.name,
-                    "agent_objective": agent.objective,
-                    "existing_tasks_count": len(all_tasks),
-                },
-            )
+        subtasks = []
 
-        retries = 0
-        while retries <= max_retries:
-            if retries > 0:
-                yield Chunk(
-                    content=f"\nRetry attempt {retries}/{max_retries} for agent '{agent.name}'...\n",
-                    done=False,
-                )
-
-                # Log retry attempt in trace
-                if self.enable_tracing:
-                    self._log_trace_event(
-                        "task_creation_retry",
-                        {
-                            "agent_name": agent.name,
-                            "retry_attempt": retries,
-                            "max_retries": max_retries,
-                        },
-                    )
-
-            # Generate the task for this agent
-            generator = self.provider.generate_messages(
+        # Main loop for creating subtasks with retries
+        while current_retry < max_retries:
+            message = await self.provider.generate_message(
                 messages=history,
                 model=self.model,
-                tools=[task_tool],
-                thinking=True,
+                tools=[
+                    CreateTaskTool(
+                        self.workspace_dir,
+                    )
+                ],
             )
 
-            content = ""
-            tool_call_received = False
+            if not message.tool_calls:
+                raise ValueError("No tool calls found in the message")
 
-            async for chunk in generator:  # type: ignore
-                if isinstance(chunk, Chunk):
-                    yield chunk
-                    content += chunk.content
+            subtasks = []
+            for tool_call in message.tool_calls:
+                for subtask_params in tool_call.args.get("subtasks", []):
+                    subtask = SubTask(**subtask_params)
+                    subtasks.append(subtask)
 
-                    # Log chunk in trace
-                    if self.enable_tracing and chunk.content.strip():
-                        self._log_trace_event(
-                            "task_creation_message",
-                            {
-                                "direction": "incoming",
-                                "content": chunk.content,
-                                "role": "assistant",
-                                "is_partial": not chunk.done,
-                                "agent_name": agent.name,
-                            },
-                        )
+            validation_errors = self._validate_dependencies(subtasks)
+            # If we have validation errors, retry with feedback
+            if validation_errors and current_retry < max_retries - 1:
+                print(f"Validation errors: {validation_errors}")
+                current_retry += 1
+                retry_prompt = f"Please fix following errors:\n"
+                for error in validation_errors:
+                    retry_prompt += f"- {error}\n"
 
-                    # Check for JSON codeblocks in the content if the chunk is done
-                    if chunk.done and not tool_call_received:
-                        success, errors = await self._process_json_blocks(
-                            content, agent, all_tasks
-                        )
-                        if success:
-                            yield Chunk(
-                                content=f"\nTask created from JSON block for agent '{agent.name}'\n",
-                                done=False,
-                            )
-                            return
+                history.append(Message(role="user", content=retry_prompt))
 
-                elif isinstance(chunk, ToolCall) and chunk.name == task_tool.name:
-                    tool_call_received = True
-                    success, errors = await self._process_task_tool_call(
-                        chunk, agent, all_tasks, retries, max_retries
-                    )
-
-                    if success:
-                        return
-
-                    if errors:
-                        for error in errors:
-                            history.append(Message(role="user", content=error))
-                            yield Chunk(
-                                content=f"\nValidation failed for agent '{agent.name}': {error}\n",
-                                done=False,
-                            )
-
-                        retries += 1
-                        break  # Break out of the generator loop to retry
-
-            # If we didn't encounter a ToolCall or valid JSON block, increment retry counter
-            if not tool_call_received:
-                if retries >= max_retries:
-                    raise ValueError(
-                        f"Failed to create valid task: No tool call or valid JSON generated after {max_retries} retries"
-                    )
-                retries += 1
-                error_msg = "You need to use the create_task tool or provide a valid JSON structure for this agent's task. Please try again."
-                history.append(
-                    Message(
-                        role="user",
-                        content=error_msg,
-                    )
-                )
-
-                # Log no tool call in trace
+                # Log retry attempt
                 if self.enable_tracing:
                     self._log_trace_event(
-                        "task_creation_no_tool_call",
+                        "subtask_creation_retry",
                         {
-                            "agent_name": agent.name,
-                            "retry_attempt": retries,
-                            "prompt": error_msg,
+                            "retry_number": current_retry,
+                            "max_retries": max_retries,
+                            "validation_errors": validation_errors,
                         },
                     )
+            else:
+                # All subtasks valid or max retries reached
+                break
 
-    async def _create_tasks_for_agents(
-        self,
-    ) -> AsyncGenerator[Union[Message, Chunk], None]:
-        """
-        Create tasks for each agent in sequence.
-
-        Yields:
-            Union[Message, Chunk]: Progress updates
-        """
-        # Create a tool instance for creating individual tasks
-        task_tool = CreateTaskTool(self.workspace_dir)
-
-        # Initialize an empty list to store the tasks
-        all_tasks = []
-
-        # For each agent, create a task
-        for i, agent in enumerate(self.agents):
-            yield Chunk(
-                content=f"\nCreating task {i+1}/{len(self.agents)} for agent '{agent.name}'...\n",
-                done=False,
+        # Create the task if we have at least one subtask
+        if subtasks:
+            return Task(
+                title=objective,
+                subtasks=subtasks,
             )
+        else:
+            raise ValueError("No subtasks created")
 
-            async for chunk in self._create_task_with_retries(
-                agent, all_tasks, task_tool
-            ):
-                yield chunk
-
-        # Now create the full task plan with all tasks
-        self.task_plan = TaskPlan(
-            title=self.objective,
-            tasks=all_tasks,
-        )
-
-        # Save the task plan to tasks.json in the workspace
-        await self.save_task_plan()
-        yield Chunk(
-            content=f"\nSaved task plan to {self.tasks_file_path}\n",
-            done=False,
-        )
-
-    async def create_plan(self) -> AsyncGenerator[Union[Message, Chunk], None]:
+    async def create_task(self, objective: str) -> Task:
         """
         🏗️ Blueprint Designer - Creates or loads a task execution plan
 
-        This method strategically creates one high-level task per agent,
-        ensuring proper task assignment and dependencies. If a plan already exists
-        in the workspace, it will load that instead of creating a new one.
+        Creates a high-level task with subtasks, ensuring proper dependencies and organization.
+        If a plan already exists in the workspace, it will load that instead of creating a new one.
 
-        The planning process considers research findings if available and focuses on
-        maximizing parallelization while respecting necessary dependencies.
+        Args:
+            objective: The objective to create a task for
 
-        Yields:
-            Union[Message, Chunk]: Live updates during the planning process
+        Returns:
+            Task: The created task with its subtasks
         """
-        # Check if tasks.json exists
-        if await self._load_existing_plan():
-            yield Chunk(
-                content=f"Loaded existing task plan from {self.tasks_file_path}\n",
-                done=False,
-            )
-            return
-
-        # Research the objective if we have tools available
-        yield Chunk(content="Researching the objective...\n", done=False)
-        async for chunk in self.research_objective():
-            yield chunk
-
-        # Prepare for creating tasks one at a time
-        yield Chunk(content="\nCreating tasks for each agent...\n", done=False)
-
-        # Create tasks for each agent
-        async for chunk in self._create_tasks_for_agents():
-            yield chunk
+        task = await self._create_task_for_objective(objective, list(self.input_files))
+        return task
 
     async def save_task_plan(self) -> None:
         """
-        Save the current task plan to tasks.json in the workspace directory.
+        Save the current task plan to tasks.yaml in the workspace directory.
         """
         if self.task_plan:
-            # Use pydantic's model_dump_json method for serialization
+            task_dict = self.task_plan.model_dump()
             with open(self.tasks_file_path, "w") as f:
-                f.write(self.task_plan.model_dump_json(indent=2))
+                yaml.dump(task_dict, f, indent=2, sort_keys=False)

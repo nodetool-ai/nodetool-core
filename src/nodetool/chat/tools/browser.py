@@ -5,10 +5,8 @@ This module provides tools for interacting with web browsers and web pages.
 """
 
 import os
-import traceback
 from typing import Any
 import aiohttp
-import json
 import urllib.parse
 import html2text
 from bs4 import BeautifulSoup
@@ -16,160 +14,219 @@ from bs4 import BeautifulSoup
 from nodetool.common.environment import Environment
 from nodetool.workflows.processing_context import ProcessingContext
 from .base import Tool
+from playwright.async_api import Page
+from .base import resolve_workspace_path
+
+
+async def extract_metadata(page: Page):
+    """
+    Extract both Open Graph and standard metadata from a webpage using Playwright.
+
+    Args:
+        page: Playwright page object
+
+    Returns:
+        dict: Dictionary containing both Open Graph and standard metadata
+    """
+    # Create a dictionary to store the metadata
+    metadata = {
+        "og": {},  # For Open Graph metadata
+        "standard": {},  # For standard metadata
+    }
+
+    # List of Open Graph properties to extract
+    og_properties = [
+        "og:locale",
+        "og:type",
+        "og:title",
+        "og:description",
+        "og:url",
+        "og:site_name",
+        "og:image",
+        "og:image:width",
+        "og:image:height",
+        "og:image:type",
+    ]
+
+    # List of standard meta properties to extract
+    standard_properties = [
+        "description",
+        "keywords",
+        "author",
+        "viewport",
+        "robots",
+        "canonical",
+        "generator",
+    ]
+
+    # Extract Open Graph metadata
+    for prop in og_properties:
+        # Use locator to find the meta tag with the specific property
+        locator = page.locator(f'meta[property="{prop}"]')
+
+        # Check if the element exists
+        if await locator.count() > 0:
+            # Extract the content attribute
+            content = await locator.first.get_attribute("content")
+            # Store in dictionary (remove 'og:' prefix for cleaner keys)
+            metadata["og"][prop.replace("og:", "")] = content
+
+    # Extract standard metadata
+    for prop in standard_properties:
+        # Use locator to find the meta tag with the specific name
+        locator = page.locator(f'meta[name="{prop}"]')
+
+        # Check if the element exists
+        if await locator.count() > 0:
+            # Extract the content attribute
+            content = await locator.first.get_attribute("content")
+            # Store in dictionary
+            metadata["standard"][prop] = content
+
+    # Also get title from the title tag
+    title_locator = page.locator("title")
+    if await title_locator.count() > 0:
+        metadata["standard"]["title"] = await title_locator.first.inner_text()
+
+    return metadata
 
 
 class BrowserTool(Tool):
     """
-    A tool that allows controlling a web browser for web interactions.
+    A tool that allows fetching web content.
 
-    This tool enables language models to interact with web pages by performing
-    actions like navigating to URLs, clicking elements, typing text, and retrieving
-    content from web pages using Playwright.
+    This tool enables language models to retrieve content from web pages by
+    navigating to URLs and extracting text and metadata.
     """
 
-    name = "browser_control"
-    description = "Control a web browser to navigate and interact with web pages"
+    name = "browser"
+    description = "Fetch content from a web page"
     input_schema = {
         "type": "object",
         "properties": {
-            "action": {
-                "type": "string",
-                "description": "Action to perform",
-                "enum": [
-                    "navigate",
-                    "click",
-                    "type",
-                    "quit",
-                ],
-            },
             "url": {
                 "type": "string",
-                "description": "URL to navigate to (for 'navigate' action)",
+                "description": "URL to navigate to",
             },
-            "selector": {
-                "type": "string",
-                "description": "CSS selector for the target element (for 'click', 'type' actions)",
+            "timeout": {
+                "type": "integer",
+                "description": "Timeout in milliseconds for page navigation",
+                "default": 20000,
             },
-            "text": {
+            "output_file": {
                 "type": "string",
-                "description": "Text to type (for 'type' action)",
+                "description": "Path to save the extracted content (relative to workspace)",
             },
         },
-        "required": ["action"],
+        "required": ["url"],
     }
+
+    def __init__(self, workspace_dir: str, use_readability: bool = True):
+        super().__init__(workspace_dir)
+        self.use_readability = use_readability
 
     async def process(self, context: ProcessingContext, params: dict) -> Any:
         """
-        Executes browser actions using Playwright.
-
-        Supports various browser actions including navigation, clicking elements,
-        typing text, retrieving text, and closing the browser.
+        Fetches content from a web page using Playwright.
 
         Args:
             context: The processing context
             params: Dictionary including:
-                action (str): The action to perform ('navigate', 'click', 'type', 'get_text', 'quit')
-                url (str, optional): URL to navigate to (for 'navigate' action)
-                selector (str, optional): CSS selector for element (for 'click', 'type', 'get_text' actions)
-                text (str, optional): Text to type (for 'type' action)
+                url (str): URL to navigate to
+                timeout (int, optional): Timeout in milliseconds for page navigation
+                output_file (str, optional): Path to save the extracted content (relative to workspace)
 
         Returns:
-            dict: Result of the browser action or error message
+            dict: Result containing page content and metadata
         """
         try:
-            # Import here to avoid requiring playwright for the entire module
-            try:
-                from playwright.async_api import async_playwright
-            except ImportError:
-                return {
-                    "error": "Playwright is not installed. Please install it with 'pip install playwright' and then run 'playwright install'"
-                }
+            from playwright.async_api import async_playwright
+        except ImportError:
+            raise Exception(
+                "Playwright is not installed. Please install it with 'pip install playwright' and then run 'playwright install'"
+            )
 
-            action = params.get("action")
+        url = params.get("url")
+        timeout = params.get("timeout", 30000)  # Default 30 seconds
+        if not url:
+            return {"error": "URL is required"}
 
-            # Handle quit action separately
-            if action == "quit":
-                playwright_instance = context.get("playwright_instance")
-                browser = context.get("playwright_browser")
+        # Initialize browser
+        playwright_instance = await async_playwright().start()
+        browser_endpoint = Environment.get("BRIGHTDATA_SCRAPING_BROWSER_ENDPOINT")
 
-                if browser:
-                    await browser.close()
-                    context.set("playwright_browser", None)
+        if browser_endpoint:
+            browser = await playwright_instance.chromium.connect_over_cdp(
+                browser_endpoint
+            )
+            # Create context with additional permissions and settings
+            browser_context = await browser.new_context(
+                bypass_csp=True,
+            )
+        else:
+            # Launch browser with similar settings for local usage
+            browser = await playwright_instance.chromium.launch(headless=True)
+            browser_context = await browser.new_context(
+                bypass_csp=True,
+            )
 
-                if playwright_instance:
-                    await playwright_instance.stop()
-                    context.set("playwright_instance", None)
+        # Create page from the context instead of directly from browser
+        page = await browser_context.new_page()
 
-                context.set("playwright_page", None)
-                return {"success": True, "action": "quit"}
+        try:
+            # Navigate to the URL with the specified timeout
+            await page.goto(url, wait_until="domcontentloaded", timeout=timeout)
 
-            # Initialize browser if not already done
-            browser = context.get("playwright_browser")
-            page = context.get("playwright_page")
+            # Extract metadata from the page
+            metadata = await extract_metadata(page)
 
-            if browser is None or page is None:
-                browser_endpoint = Environment.get(
-                    "BRIGHTDATA_SCRAPING_BROWSER_ENDPOINT"
+            result = {
+                "success": True,
+                "url": url,
+                "metadata": metadata,
+            }
+
+            # Extract content using Readability or plain HTML
+            if self.use_readability:
+                await page.add_script_tag(
+                    url="https://unpkg.com/@mozilla/readability/Readability.js"
                 )
+                readability_result = await page.evaluate(
+                    """() => {
+                    try {
+                        const documentClone = document.cloneNode(true);
+                        const reader = new Readability(documentClone);
+                        const article = reader.parse();
+                        return article || { error: 'Failed to parse article with Readability' };
+                    } catch (e) {
+                        return { error: 'Error executing Readability: ' + e.message };
+                    }
+                }"""
+                )
+                content = html2text.html2text(readability_result["content"])
+            else:
+                content = html2text.html2text(await page.content())
 
-                playwright_instance = await async_playwright().start()
-                if browser_endpoint:
-                    print(f"Connecting to browser at {browser_endpoint}")
-                    browser = await playwright_instance.chromium.connect_over_cdp(
-                        browser_endpoint
-                    )
-                else:
-                    browser = await playwright_instance.chromium.launch(headless=True)
-                page = await browser.new_page()
+            # Handle output file if specified
+            output_file = params.get("output_file")
+            if output_file:
+                full_path = resolve_workspace_path(self.workspace_dir, output_file)
+                os.makedirs(os.path.dirname(full_path), exist_ok=True)
+                with open(full_path, "w", encoding="utf-8") as f:
+                    f.write(content)
+                result["output_file"] = full_path
+            else:
+                result["content"] = content
 
-                context.set("playwright_instance", playwright_instance)
-                context.set("playwright_browser", browser)
-                context.set("playwright_page", page)
-
-            # At this point, page should never be None
-            if page is None:
-                return {"error": "Failed to initialize browser page"}
-
-            if action == "navigate":
-                url = params.get("url")
-                if not url:
-                    return {"error": "URL is required for navigate action"}
-                await page.goto(url, wait_until="domcontentloaded")
-                page_html = await page.inner_html("body")
-                page_text = html2text.html2text(page_html)
-                return {"success": True, "url": url, "body": page_text}
-
-            elif action in ["click", "type", "get_text"]:
-                selector = params.get("selector")
-                if not selector:
-                    return {"error": "Selector is required for element actions"}
-
-                try:
-                    # Wait for element to be present
-                    await page.wait_for_selector(
-                        selector, state="visible", timeout=10000
-                    )
-
-                    if action == "click":
-                        await page.click(selector)
-                        return {"success": True, "action": "click"}
-                    elif action == "type":
-                        text = params.get("text")
-                        if not text:
-                            return {"error": "Text is required for type action"}
-                        await page.fill(selector, text)
-                        return {"success": True, "action": "type"}
-                    elif action == "get_text":
-                        elements = await page.query_selector_all(selector)
-                        texts = [await element.inner_text() for element in elements]
-                        return {"text": texts, "count": len(texts)}
-                except Exception as e:
-                    return {"error": f"Error interacting with element: {str(e)}"}
-
-            return {"error": f"Invalid action specified: {action}"}
-
+            return result
         except Exception as e:
-            return {"error": str(e)}
+            print(e)
+            return {"error": f"Error fetching page: {str(e)}"}
+
+        finally:
+            # Always close the browser session
+            await browser.close()
+            await playwright_instance.stop()
 
 
 class ScreenshotTool(Tool):
@@ -270,9 +327,9 @@ async def make_api_request(search_url: str):
             async with session.post(url, headers=headers, json=payload) as response:
                 if response.status != 200:
                     error_text = await response.text()
-                    return {
-                        "error": f"API request failed with status {response.status}: {error_text}"
-                    }
+                    raise Exception(
+                        f"API request failed with status {response.status}: {error_text}"
+                    )
 
                 return await response.json()
     except Exception as e:
@@ -389,113 +446,108 @@ class GoogleSearchTool(Tool):
         Returns:
             dict: Search results or error message
         """
-        try:
-            # Get required parameters
-            query = params.get("query")
-            if not query:
-                return {"error": "Search query is required"}
+        # Get required parameters
+        query = params.get("query")
+        if not query:
+            return {"error": "Search query is required"}
 
-            # Build the search query with advanced parameters
-            search_query = query
+        # Build the search query with advanced parameters
+        search_query = query
 
-            # Add site-specific search
-            if params.get("site"):
-                search_query += f" site:{params.get('site')}"
+        # Add site-specific search
+        if params.get("site"):
+            search_query += f" site:{params.get('site')}"
 
-            # Add filetype filter
-            if params.get("filetype"):
-                search_query += f" filetype:{params.get('filetype')}"
+        # Add filetype filter
+        if params.get("filetype"):
+            search_query += f" filetype:{params.get('filetype')}"
 
-            # Add exact phrase search
-            if params.get("exact_phrase"):
-                search_query += f' "{params.get("exact_phrase")}"'
+        # Add exact phrase search
+        if params.get("exact_phrase"):
+            search_query += f' "{params.get("exact_phrase")}"'
 
-            # Add related search
-            if params.get("related"):
-                search_query += f" related:{params.get('related')}"
+        # Add related search
+        if params.get("related"):
+            search_query += f" related:{params.get('related')}"
 
-            # Add intitle search
-            if params.get("intitle"):
-                search_query += f" intitle:{params.get('intitle')}"
+        # Add intitle search
+        if params.get("intitle"):
+            search_query += f" intitle:{params.get('intitle')}"
 
-            # Add inurl search
-            if params.get("inurl"):
-                search_query += f" inurl:{params.get('inurl')}"
+        # Add inurl search
+        if params.get("inurl"):
+            search_query += f" inurl:{params.get('inurl')}"
 
-            # Add intext search
-            if params.get("intext"):
-                search_query += f" intext:{params.get('intext')}"
+        # Add intext search
+        if params.get("intext"):
+            search_query += f" intext:{params.get('intext')}"
 
-            # URL construction based on search type
-            url_encoded_query = urllib.parse.quote(search_query)
-            # Regular Google search
-            search_url = f"https://www.google.com/search?q={url_encoded_query}"
+        # URL construction based on search type
+        url_encoded_query = urllib.parse.quote(search_query)
+        # Regular Google search
+        search_url = f"https://www.google.com/search?q={url_encoded_query}"
 
-            # Add number of results parameter
-            if params.get("num_results"):
-                search_url += f"&num={params.get('num_results')}"
+        # Add number of results parameter
+        if params.get("num_results"):
+            search_url += f"&num={params.get('num_results')}"
 
-            # Add time period filter
-            if params.get("time_period"):
-                time_param = None
-                if params.get("time_period") == "past_24h":
-                    time_param = "qdr:d"
-                elif params.get("time_period") == "past_week":
-                    time_param = "qdr:w"
-                elif params.get("time_period") == "past_month":
-                    time_param = "qdr:m"
-                elif params.get("time_period") == "past_year":
-                    time_param = "qdr:y"
+        # Add time period filter
+        if params.get("time_period"):
+            time_param = None
+            if params.get("time_period") == "past_24h":
+                time_param = "qdr:d"
+            elif params.get("time_period") == "past_week":
+                time_param = "qdr:w"
+            elif params.get("time_period") == "past_month":
+                time_param = "qdr:m"
+            elif params.get("time_period") == "past_year":
+                time_param = "qdr:y"
 
-                if time_param:
-                    search_url += f"&tbs={time_param}"
+            if time_param:
+                search_url += f"&tbs={time_param}"
 
-            # Add safe search parameter
-            if "safe_search" in params:
-                safe = "active" if params.get("safe_search") else "off"
-                search_url += f"&safe={safe}"
+        # Add safe search parameter
+        if "safe_search" in params:
+            safe = "active" if params.get("safe_search") else "off"
+            search_url += f"&safe={safe}"
 
-            # Add country parameter
-            if params.get("country"):
-                search_url += f"&gl={params.get('country')}"
+        # Add country parameter
+        if params.get("country"):
+            search_url += f"&gl={params.get('country')}"
 
-            # Add language parameter
-            if params.get("language"):
-                search_url += f"&hl={params.get('language')}"
+        # Add language parameter
+        if params.get("language"):
+            search_url += f"&hl={params.get('language')}"
 
-            # Add start index for pagination
-            if params.get("start"):
-                search_url += f"&start={params.get('start')}"
+        # Add start index for pagination
+        if params.get("start"):
+            search_url += f"&start={params.get('start')}"
 
-            # Make the API request
-            result = await make_api_request(search_url)
-            if "error" in result:
-                return result
+        # Make the API request
+        result = await make_api_request(search_url)
+        if "error" in result:
+            raise Exception(result["error"])
 
-            # Google-specific response handling
-            if result["status_code"] == 200:
-                soup = BeautifulSoup(result["body"], "html.parser")
+        # Google-specific response handling
+        if result["status_code"] == 200:
+            soup = BeautifulSoup(result["body"], "html.parser")
 
-                # Extract a > h3 elements (commonly used in Google search results)
-                search_results = []
-                for a_tag in soup.select("a:has(h3)"):
-                    href = a_tag.get("href")
-                    h3_text = a_tag.h3.get_text(strip=True) if a_tag.h3 else ""
+            # Extract a > h3 elements (commonly used in Google search results)
+            search_results = []
+            for a_tag in soup.select("a:has(h3)"):
+                href = a_tag.get("href")
+                h3_text = a_tag.h3.get_text(strip=True) if a_tag.h3 else ""
 
-                    search_results.append({"href": href, "text": h3_text})
+                search_results.append({"href": href, "text": h3_text})
 
-                return {
-                    "success": True,
-                    "results": search_results,
-                    "num_results": len(search_results),
-                }
             return {
-                "error": f"Google search failed with status {result['status_code']}: {result['body']}"
+                "success": True,
+                "results": search_results,
+                "num_results": len(search_results),
             }
-
-        except Exception as e:
-            traceback.print_exc()
-            return {"error": f"Error performing Google search: {str(e)}"}
+        raise Exception(
+            f"Google search failed with status {result['status_code']}: {result['body']}"
+        )
 
 
 class WebFetchTool(Tool):
@@ -504,17 +556,21 @@ class WebFetchTool(Tool):
 
     This tool enables language models to retrieve and process web content without
     needing a full browser, using BeautifulSoup for HTML parsing and html2text for
-    conversion to plain text.
+    conversion to Markdown.
     """
 
     name = "web_fetch"
-    description = "Fetch HTML from a URL and extract text content using BeautifulSoup"
+    description = "Fetch HTML content from a URL, convert HTML to Markdown"
     input_schema = {
         "type": "object",
         "properties": {
             "url": {
                 "type": "string",
                 "description": "URL to fetch content from",
+            },
+            "output_file": {
+                "type": "string",
+                "description": "Path to save the output file",
             },
             "selector": {
                 "type": "string",
@@ -569,6 +625,14 @@ class WebFetchTool(Tool):
                             "status_code": response.status,
                         }
 
+                    # Check content type
+                    content_type = response.headers.get("Content-Type", "").lower()
+                    if not (
+                        "text/html" in content_type
+                        or "application/xhtml+xml" in content_type
+                    ):
+                        return await response.text()
+
                     html_content = await response.text()
 
             # Parse HTML with BeautifulSoup
@@ -593,18 +657,28 @@ class WebFetchTool(Tool):
                 else:
                     return {"error": "No body element found in the HTML", "url": url}
 
-            return html2text.html2text(extracted_html)
+            # Save the extracted HTML to the output file
+            output_file = params.get("output_file")
+            if output_file:
+                with open(output_file, "w") as f:
+                    f.write(extracted_html)
+                return {
+                    "success": True,
+                    "output_file": output_file,
+                }
+            else:
+                return {
+                    "success": True,
+                    "content": html2text.html2text(extracted_html),
+                }
 
         except aiohttp.ClientError as e:
-            return {"error": f"HTTP request error: {str(e)}", "url": url}
+            raise Exception(f"HTTP request error: {str(e)}")
         except Exception as e:
-            return {
-                "error": f"Error fetching and processing content: {str(e)}",
-                "url": url,
-            }
+            raise Exception(f"Error fetching and processing content: {str(e)}")
 
 
-class DownloadFilesTool(Tool):
+class DownloadFileTool(Tool):
     """
     A tool that downloads files from URLs and saves them to disk.
 
@@ -614,155 +688,284 @@ class DownloadFilesTool(Tool):
     """
 
     name = "download_file"
-    description = "Download one or more files from URLs and save them to disk"
+    description = "Download a text or binaryfile from a URL and save it to disk"
     input_schema = {
         "type": "object",
         "properties": {
-            "urls": {
-                "type": "array",
-                "description": "URL or list of URLs of the files to download",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "url": {
-                            "type": "string",
-                            "description": "UjRL of the file to download",
-                        },
-                        "path": {
-                            "type": "string",
-                            "description": "Workspace relative path where to save the file",
-                        },
-                    },
-                },
+            "url": {
+                "type": "string",
+                "description": "URL of the file to download",
             },
-            "max_concurrent": {
-                "type": "integer",
-                "description": "Maximum number of concurrent downloads",
-                "default": 5,
+            "path": {
+                "type": "string",
+                "description": "Workspace relative path where to save the file",
             },
         },
-        "required": ["urls", "paths"],
+        "required": ["url", "path"],
     }
 
     async def process(self, context: ProcessingContext, params: dict) -> Any:
         """
-        Downloads one or more files from URLs and saves them to the specified paths.
-        Downloads are performed in parallel for better efficiency.
+        Downloads a file from a URL and saves it to the specified path.
 
         Args:
             context: The processing context
             params: Dictionary including:
-                urls (str or list): URL or list of URLs of the files to download
-                paths (str or list): Path or list of paths where to save the files
-                headers (dict, optional): HTTP headers for the requests
-                timeout (int, optional): Timeout for the requests in seconds
-                max_concurrent (int, optional): Maximum number of concurrent downloads
+                url (str): URL of the file to download
+                path (str): Workspace relative path where to save the file
+                headers (dict, optional): HTTP headers for the request
+                timeout (int, optional): Timeout for the request in seconds
 
         Returns:
-            dict: Result containing download status information for each file
+            dict: Result containing download status information
         """
         try:
             # Handle both single URL and list of URLs
-            urls = params.get("urls")
-            paths = params.get("paths")
+            url = params.get("url")
+            path = params.get("path")
 
-            if not urls:
-                return {"error": "URLs are required"}
-            if not paths:
-                return {"error": "Save paths are required"}
-
-            # Convert single values to lists for uniform processing
-            if isinstance(urls, str):
-                urls = [urls]
-            if isinstance(paths, str):
-                paths = [paths]
-
-            # Validate that URLs and paths have the same length
-            if len(urls) != len(paths):
-                return {"error": "Number of URLs must match number of paths"}
+            if not url:
+                return {"error": "URL is required"}
+            if not path:
+                return {"error": "Save path is required"}
 
             headers = params.get("headers", {})
             timeout = params.get("timeout", 60)
-            max_concurrent = params.get("max_concurrent", 5)
 
             # Create a semaphore to limit concurrent downloads
             import asyncio
 
-            semaphore = asyncio.Semaphore(max_concurrent)
+            # Ensure the directory exists
+            full_path = resolve_workspace_path(self.workspace_dir, path)
+            os.makedirs(os.path.dirname(full_path), exist_ok=True)
 
-            # Define the download function for a single file
-            async def download_single_file(url, path):
-                async with semaphore:
-                    try:
-                        # Ensure the directory exists
-                        full_path = os.path.join(self.workspace_dir, path)
-                        os.makedirs(os.path.dirname(full_path), exist_ok=True)
-
-                        async with aiohttp.ClientSession() as session:
-                            async with session.get(
-                                url, headers=headers, timeout=timeout
-                            ) as response:
-                                if response.status != 200:
-                                    return {
-                                        "url": url,
-                                        "path": path,
-                                        "success": False,
-                                        "error": f"HTTP request failed with status {response.status}",
-                                        "status_code": response.status,
-                                    }
-
-                                # Get content type and size
-                                content_type = response.headers.get(
-                                    "Content-Type", "unknown"
-                                )
-                                content_length = response.headers.get("Content-Length")
-                                file_size = (
-                                    int(content_length) if content_length else None
-                                )
-
-                                # Read the file data and write to disk
-                                with open(full_path, "wb") as f:
-                                    f.write(await response.read())
-
-                                return {
-                                    "url": url,
-                                    "path": full_path,
-                                    "success": True,
-                                    "content_type": content_type,
-                                    "file_size_bytes": file_size,
-                                }
-                    except aiohttp.ClientError as e:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(
+                    url, headers=headers, timeout=timeout
+                ) as response:
+                    if response.status != 200:
                         return {
                             "url": url,
                             "path": path,
                             "success": False,
-                            "error": f"HTTP request error: {str(e)}",
-                        }
-                    except Exception as e:
-                        return {
-                            "url": url,
-                            "path": path,
-                            "success": False,
-                            "error": f"Error downloading file: {str(e)}",
+                            "error": f"HTTP request failed with status {response.status}",
+                            "status_code": response.status,
                         }
 
-            # Run downloads in parallel
-            download_tasks = [
-                download_single_file(url, path) for url, path in zip(urls, paths)
-            ]
-            results = await asyncio.gather(*download_tasks)
+                    # Get content type and size
+                    content_type = response.headers.get("Content-Type", "unknown")
+                    content_length = response.headers.get("Content-Length")
+                    file_size = int(content_length) if content_length else None
 
-            # Compile the final results
-            successful = [r for r in results if r.get("success")]
-            failed = [r for r in results if not r.get("success")]
+                    # Read the file data and write to disk
+                    with open(full_path, "wb") as f:
+                        f.write(await response.read())
 
-            return {
-                "total": len(results),
-                "successful": len(successful),
-                "failed": len(failed),
-                "results": results,
-                "message": f"Downloaded {len(successful)} of {len(results)} files successfully",
-            }
+                    return {
+                        "url": url,
+                        "path": full_path,
+                        "success": True,
+                        "content_type": content_type,
+                        "file_size_bytes": file_size,
+                    }
 
         except Exception as e:
             return {"error": f"Error in download process: {str(e)}"}
+
+
+class BrowserNavigationTool(Tool):
+    """
+    A tool that enables navigation and interaction within a browser session.
+
+    This tool allows for clicking links, navigating between pages, and performing
+    basic interactions while maintaining the browser session state.
+    """
+
+    name = "browser_navigate"
+    description = "Navigate, interact with, and extract content from web pages in an active browser session"
+    input_schema = {
+        "type": "object",
+        "properties": {
+            "action": {
+                "type": "string",
+                "description": "Navigation or extraction action to perform",
+                "enum": ["click", "goto", "back", "forward", "reload", "extract"],
+            },
+            "selector": {
+                "type": "string",
+                "description": "CSS selector for the element to interact with or extract from",
+            },
+            "url": {
+                "type": "string",
+                "description": "URL to navigate to (required for 'goto' action)",
+            },
+            "timeout": {
+                "type": "integer",
+                "description": "Timeout in milliseconds for the action",
+                "default": 30000,
+            },
+            "wait_for": {
+                "type": "string",
+                "description": "Optional selector to wait for after performing the action",
+            },
+            "extract_type": {
+                "type": "string",
+                "description": "Type of content to extract (for 'extract' action)",
+                "enum": ["text", "html", "value", "attribute"],
+                "default": "text",
+            },
+            "attribute": {
+                "type": "string",
+                "description": "Attribute name to extract (when extract_type is 'attribute')",
+            },
+        },
+        "required": ["action"],
+    }
+
+    async def process(self, context: ProcessingContext, params: dict) -> Any:
+        """
+        Performs navigation and interaction actions in the browser.
+
+        Args:
+            context: The processing context containing the browser page
+            params: Dictionary including:
+                action (str): The action to perform (click, goto, back, forward, reload)
+                selector (str): CSS selector for clicking elements
+                url (str): URL for navigation
+                timeout (int): Timeout for actions
+                wait_for (str): Selector to wait for after action
+
+        Returns:
+            dict: Result containing action status and current page information
+        """
+        try:
+            from playwright.async_api import async_playwright
+        except ImportError:
+            raise Exception(
+                "Playwright is not installed. Please install it with 'pip install playwright' and then run 'playwright install'"
+            )
+
+        timeout = params.get("timeout", 30000)
+
+        # Initialize browser
+        playwright_instance = await async_playwright().start()
+        browser_endpoint = Environment.get("BRIGHTDATA_SCRAPING_BROWSER_ENDPOINT")
+
+        try:
+            if browser_endpoint:
+                browser = await playwright_instance.chromium.connect_over_cdp(
+                    browser_endpoint
+                )
+                # Create context with additional permissions and settings
+                browser_context = await browser.new_context(
+                    bypass_csp=True,
+                )
+            else:
+                # Launch browser with similar settings for local usage
+                browser = await playwright_instance.chromium.launch(headless=True)
+                browser_context = await browser.new_context(
+                    bypass_csp=True,
+                )
+
+            # Create page from the context
+            page = await browser_context.new_page()
+
+            action = params.get("action")
+            wait_for = params.get("wait_for")
+
+            result = {
+                "success": True,
+                "action": action,
+            }
+
+            # Perform the requested action
+            if action == "click":
+                selector = params.get("selector")
+                if not selector:
+                    return {"error": "Selector is required for click action"}
+
+                # Wait for the element to be visible and clickable
+                element = await page.wait_for_selector(selector, timeout=timeout)
+                if element:
+                    await element.click()
+                    result["clicked_selector"] = selector
+                else:
+                    return {"error": f"Element not found: {selector}"}
+
+            elif action == "goto":
+                url = params.get("url")
+                if not url:
+                    return {"error": "URL is required for goto action"}
+
+                await page.goto(url, timeout=timeout, wait_until="domcontentloaded")
+                result["navigated_to"] = url
+
+            elif action == "back":
+                await page.go_back(timeout=timeout, wait_until="domcontentloaded")
+
+            elif action == "forward":
+                await page.go_forward(timeout=timeout, wait_until="domcontentloaded")
+
+            elif action == "reload":
+                await page.reload(timeout=timeout, wait_until="domcontentloaded")
+
+            # Add new extract action
+            elif action == "extract":
+                selector = params.get("selector")
+                extract_type = params.get("extract_type", "text")
+
+                if selector:
+                    # Wait for the element if specified
+                    element = await page.wait_for_selector(selector, timeout=timeout)
+                    if not element:
+                        return {"error": f"Element not found: {selector}"}
+
+                    if extract_type == "text":
+                        content = await element.text_content()
+                    elif extract_type == "html":
+                        content = await element.inner_html()
+                    elif extract_type == "value":
+                        content = await element.input_value()
+                    elif extract_type == "attribute":
+                        attribute = params.get("attribute")
+                        if not attribute:
+                            return {
+                                "error": "Attribute name is required for attribute extraction"
+                            }
+                        content = await element.get_attribute(attribute)
+                else:
+                    # Extract from entire page if no selector
+                    if extract_type == "text":
+                        content = await page.text_content("body")
+                    elif extract_type == "html":
+                        content = await page.content()
+                    else:
+                        return {
+                            "error": f"Invalid extract_type '{extract_type}' for full page extraction"
+                        }
+
+                result["content"] = content
+                result["extract_type"] = extract_type
+                if selector:
+                    result["selector"] = selector
+
+            # Wait for additional element if specified
+            if wait_for:
+                await page.wait_for_selector(wait_for, timeout=timeout)
+                result["waited_for"] = wait_for
+
+            # Add current page information to result
+            result.update({"current_url": page.url, "title": await page.title()})
+
+            return result
+
+        except Exception as e:
+            return {
+                "error": f"Navigation/extraction action failed: {str(e)}",
+                "action": params.get("action"),
+            }
+
+        finally:
+            # Always close the browser session
+            await browser.close()
+            await playwright_instance.stop()

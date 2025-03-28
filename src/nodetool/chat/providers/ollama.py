@@ -170,28 +170,39 @@ class OllamaProvider(ChatProvider):
         """Convert tools to Ollama's format."""
         return [tool.tool_param() for tool in tools]
 
-    async def generate_messages(
+    def _prepare_request_params(
         self,
         messages: Sequence[Message],
         model: str,
         tools: Sequence[Any] = [],
         **kwargs,
-    ) -> AsyncGenerator[Chunk | ToolCall, Any]:
-        """Generate streaming completions from Ollama."""
+    ) -> Dict[str, Any]:
+        """
+        Prepare common parameters for Ollama API requests.
+
+        Args:
+            messages: The conversation history
+            model: The model to use
+            tools: Optional tools to make available to the model
+            **kwargs: Additional parameters to pass to the Ollama API
+
+        Returns:
+            Dict[str, Any]: Parameters ready for Ollama API request
+        """
         ollama_messages = [self.convert_message(m) for m in messages]
 
-        if len(tools) > 0:
-            kwargs["tools"] = self.format_tools(tools)
+        params = kwargs.copy()
+        params["model"] = model
+        params["messages"] = ollama_messages
 
-        if "thinking" in kwargs:
-            kwargs.pop("thinking")
+        if len(tools) > 0:
+            params["tools"] = self.format_tools(tools)
 
         if model.startswith("granite") or model.startswith("qwen"):
-            if "options" not in kwargs:
-                kwargs["options"] = {}
+            if "options" not in params:
+                params["options"] = {}
 
             # Calculate appropriate context size based on token count
-            # Round up to nearest power of 2
             min_ctx = 8192  # Keep current minimum
             max_ctx = 128000  # Maximum context of 128k
             suggested_ctx = self._count_tokens(messages)
@@ -203,23 +214,45 @@ class OllamaProvider(ChatProvider):
                 power += 1
 
             ctx_size = min(max_ctx, max((1 << power), min_ctx))
+            params["options"]["num_ctx"] = ctx_size
 
-            kwargs["options"]["num_ctx"] = ctx_size
+        if "response_format" in params:
+            params["format"] = params.pop("response_format")
+            if params.get("format", {}).get(
+                "type"
+            ) == "json_schema" and "json_schema" in params.get("format", {}):
+                schema = params.get("format", {})["json_schema"]
 
-        completion = await self.client.chat(
-            model=model, messages=ollama_messages, stream=True, **kwargs
-        )
+            params["format"] = schema.get("schema", {})
+
+        return params
+
+    def _update_usage_stats(self, response):
+        """Update token usage statistics from response."""
+        prompt_tokens = getattr(response, "prompt_eval_count", 0)
+        completion_tokens = getattr(response, "eval_count", 0)
+
+        self.usage["prompt_tokens"] += prompt_tokens
+        self.usage["completion_tokens"] += completion_tokens
+        self.usage["total_tokens"] += prompt_tokens + completion_tokens
+
+    async def generate_messages(
+        self,
+        messages: Sequence[Message],
+        model: str,
+        tools: Sequence[Any] = [],
+        **kwargs,
+    ) -> AsyncGenerator[Chunk | ToolCall, Any]:
+        """Generate streaming completions from Ollama."""
+        params = self._prepare_request_params(messages, model, tools, **kwargs)
+        params["stream"] = True
+
+        completion = await self.client.chat(**params)
 
         async for response in completion:
             # Track usage metrics when we receive the final response
             if response.done:
-                # Accumulate token counts in self.usage
-                prompt_tokens = getattr(response, "prompt_eval_count", 0)
-                completion_tokens = getattr(response, "eval_count", 0)
-
-                self.usage["prompt_tokens"] += prompt_tokens
-                self.usage["completion_tokens"] += completion_tokens
-                self.usage["total_tokens"] += prompt_tokens + completion_tokens
+                self._update_usage_stats(response)
 
             if response.message.tool_calls is not None:
                 for tool_call in response.message.tool_calls:
@@ -231,3 +264,47 @@ class OllamaProvider(ChatProvider):
                 content=response.message.content or "",
                 done=response.done or False,
             )
+
+    async def generate_message(
+        self,
+        messages: Sequence[Message],
+        model: str,
+        tools: Sequence[Any] = [],
+        **kwargs,
+    ) -> Message:
+        """
+        Generate a complete message from Ollama without streaming.
+
+        Args:
+            messages: The conversation history
+            model: The model to use
+            tools: Optional tools to make available to the model
+            **kwargs: Additional parameters to pass to the Ollama API
+
+        Returns:
+            Message: The complete response message
+        """
+        params = self._prepare_request_params(messages, model, tools, **kwargs)
+        params["stream"] = False
+
+        # Call API without streaming
+        response = await self.client.chat(**params)
+
+        # Update token usage
+        self._update_usage_stats(response)
+
+        tool_calls = None
+        if response.message.tool_calls:
+            tool_calls = [
+                ToolCall(
+                    name=tool_call.function.name,
+                    args=dict(tool_call.function.arguments),
+                )
+                for tool_call in response.message.tool_calls
+            ]
+
+        return Message(
+            role="assistant",
+            content=response.message.content or "",
+            tool_calls=tool_calls,
+        )

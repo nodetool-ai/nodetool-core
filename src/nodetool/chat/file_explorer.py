@@ -16,6 +16,7 @@ class FileExplorer:
         self.current_file_idx = 0
         self.top_file_idx = 0
         self.active_panel = 0  # 0: files, 1: preview
+        self.preview_scroll = 0  # Add this line to track preview scroll position
 
     def load_directory(self, dir_path=None):
         """Load all files and directories from the current path."""
@@ -63,6 +64,7 @@ class FileExplorer:
         curses.init_pair(6, curses.COLOR_BLACK, curses.COLOR_GREEN)  # Active panel
         curses.init_pair(7, curses.COLOR_RED, curses.COLOR_BLACK)  # Markdown emphasis
         curses.init_pair(8, curses.COLOR_WHITE, curses.COLOR_BLACK)  # Normal text
+        curses.init_pair(9, curses.COLOR_MAGENTA, curses.COLOR_BLACK)  # JSON keys
 
         # Main loop
         while True:
@@ -91,20 +93,31 @@ class FileExplorer:
                 break
             elif key == ord("\t") or key == 9:  # Tab key
                 self.active_panel = (self.active_panel + 1) % 2
-            elif key == curses.KEY_UP and self.active_panel == 0:
-                if self.current_file_idx > 0:
-                    self.current_file_idx -= 1
-                    if self.current_file_idx < self.top_file_idx:
-                        self.top_file_idx -= 1
-            elif key == curses.KEY_DOWN and self.active_panel == 0:
-                if self.current_file_idx < len(self.files) - 1:
-                    self.current_file_idx += 1
-                    if self.current_file_idx >= self.top_file_idx + height - 4:
-                        self.top_file_idx += 1
+            elif key == curses.KEY_UP:
+                if self.active_panel == 0:
+                    if self.current_file_idx > 0:
+                        self.current_file_idx -= 1
+                        if self.current_file_idx < self.top_file_idx:
+                            self.top_file_idx -= 1
+                else:  # Preview panel
+                    self.preview_scroll = max(0, self.preview_scroll - 1)
+            elif key == curses.KEY_DOWN:
+                if self.active_panel == 0:
+                    if self.current_file_idx < len(self.files) - 1:
+                        self.current_file_idx += 1
+                        if self.current_file_idx >= self.top_file_idx + height - 4:
+                            self.top_file_idx += 1
+                else:  # Preview panel
+                    self.preview_scroll += (
+                        1  # We'll handle max scroll in the render methods
+                    )
             elif key == curses.KEY_RIGHT or key == 10 or key == 13:  # Enter key
                 if self.files and self.current_file_idx < len(self.files):
                     selected = self.files[self.current_file_idx]
                     if selected["type"] == "dir":
+                        self.preview_scroll = (
+                            0  # Reset scroll position when changing directories
+                        )
                         self.load_directory(selected["path"])
             elif key == curses.KEY_LEFT:
                 # Go to parent directory
@@ -222,9 +235,71 @@ class FileExplorer:
                             panel, file_path, 3, 2, width - 4, height - 5
                         )
                     elif file_path.suffix.lower() == ".json":
-                        with open(file_path, "r", encoding="utf-8") as f:
-                            data = json.load(f)
-                        self._render_json(panel, data, 3, 2, width - 4, height - 5)
+                        try:
+                            with open(file_path, "r", encoding="utf-8") as f:
+                                data = json.load(f)
+                            # Format JSON with indentation
+                            formatted_json = json.dumps(data, indent=2)
+                            lines = formatted_json.splitlines()
+
+                            # Apply scroll offset
+                            lines = lines[self.preview_scroll :]
+
+                            for i, line in enumerate(lines):
+                                if i + 3 >= height:
+                                    panel.addstr(i + 3, 2, "... more lines")
+                                    break
+
+                                # Truncate long lines
+                                if len(line) > width - 6:
+                                    line = line[: width - 9] + "..."
+
+                                # Syntax highlighting
+                                stripped = line.lstrip()
+                                indent = len(line) - len(stripped)
+
+                                if stripped.startswith('"') and stripped.endswith(
+                                    '":'
+                                ):  # Key
+                                    panel.addstr(
+                                        i + 3,
+                                        2 + indent,
+                                        stripped,
+                                        curses.color_pair(9),
+                                    )
+                                elif stripped.startswith('"'):  # String value
+                                    panel.addstr(
+                                        i + 3,
+                                        2 + indent,
+                                        stripped,
+                                        curses.color_pair(4),
+                                    )
+                                elif stripped in ["true", "false", "null"]:  # Keywords
+                                    panel.addstr(
+                                        i + 3,
+                                        2 + indent,
+                                        stripped,
+                                        curses.color_pair(7),
+                                    )
+                                elif (
+                                    stripped[0].isdigit() or stripped[0] in ".-"
+                                ):  # Numbers
+                                    panel.addstr(
+                                        i + 3,
+                                        2 + indent,
+                                        stripped,
+                                        curses.color_pair(4),
+                                    )
+                                else:  # Brackets, braces, etc
+                                    panel.addstr(
+                                        i + 3,
+                                        2 + indent,
+                                        stripped,
+                                        curses.color_pair(8),
+                                    )
+
+                        except Exception as e:
+                            panel.addstr(3, 2, f"Error: {str(e)}")
                     else:
                         # Generic text preview
                         try:
@@ -249,6 +324,8 @@ class FileExplorer:
             with open(file_path, "r", encoding="utf-8") as f:
                 lines = f.readlines()
 
+            # Apply scroll offset
+            lines = lines[self.preview_scroll :]
             line_num = 0
             for i, line in enumerate(lines):
                 if line_num >= max_height:
@@ -347,134 +424,6 @@ class FileExplorer:
 
         except Exception as e:
             panel.addstr(y, x, f"Error rendering markdown: {str(e)}")
-
-    def _render_json(self, panel, data, y, x, max_width, max_height, depth=0):
-        """Recursively render JSON data with proper indentation and colors."""
-        indent = "  " * depth
-        line = 0
-
-        if isinstance(data, dict):
-            for key, value in data.items():
-                if line >= max_height:
-                    panel.addstr(y + line, x, f"{indent}...")
-                    break
-
-                key_str = f"{indent}{key}: "
-                panel.addstr(y + line, x, key_str, curses.color_pair(3))
-
-                if isinstance(value, (dict, list)) and value:
-                    panel.addstr(y + line, x + len(key_str), "")
-                    line += 1
-                    line += self._render_json(
-                        panel,
-                        value,
-                        y + line,
-                        x,
-                        max_width,
-                        max_height - line,
-                        depth + 1,
-                    )
-                else:
-                    value_str = self._format_value(value)
-                    # Wrap long values
-                    if len(key_str) + len(value_str) > max_width:
-                        panel.addstr(
-                            y + line,
-                            x + len(key_str),
-                            value_str[: max_width - len(key_str)],
-                            curses.color_pair(4),
-                        )
-                        wrapped = textwrap.wrap(
-                            value_str[max_width - len(key_str) :],
-                            max_width - len(indent) - 2,
-                        )
-                        line += 1
-                        for wrap_line in wrapped:
-                            if line >= max_height:
-                                break
-                            panel.addstr(
-                                y + line,
-                                x + len(indent) + 2,
-                                wrap_line,
-                                curses.color_pair(4),
-                            )
-                            line += 1
-                    else:
-                        panel.addstr(
-                            y + line, x + len(key_str), value_str, curses.color_pair(4)
-                        )
-                        line += 1
-        elif isinstance(data, list):
-            for i, item in enumerate(data):
-                if line >= max_height:
-                    panel.addstr(y + line, x, f"{indent}...")
-                    line += 1
-                    break
-
-                item_prefix = f"{indent}[{i}] "
-                panel.addstr(y + line, x, item_prefix, curses.color_pair(3))
-
-                if isinstance(item, (dict, list)) and item:
-                    panel.addstr(y + line, x + len(item_prefix), "")
-                    line += 1
-                    line += self._render_json(
-                        panel,
-                        item,
-                        y + line,
-                        x,
-                        max_width,
-                        max_height - line,
-                        depth + 1,
-                    )
-                else:
-                    value_str = self._format_value(item)
-                    if len(item_prefix) + len(value_str) > max_width:
-                        panel.addstr(
-                            y + line,
-                            x + len(item_prefix),
-                            value_str[: max_width - len(item_prefix)],
-                            curses.color_pair(4),
-                        )
-                        wrapped = textwrap.wrap(
-                            value_str[max_width - len(item_prefix) :],
-                            max_width - len(indent) - 2,
-                        )
-                        line += 1
-                        for wrap_line in wrapped:
-                            if line >= max_height:
-                                break
-                            panel.addstr(
-                                y + line,
-                                x + len(indent) + 2,
-                                wrap_line,
-                                curses.color_pair(4),
-                            )
-                            line += 1
-                    else:
-                        panel.addstr(
-                            y + line,
-                            x + len(item_prefix),
-                            value_str,
-                            curses.color_pair(4),
-                        )
-                        line += 1
-        else:
-            value_str = self._format_value(data)
-            panel.addstr(y + line, x, f"{indent}{value_str}", curses.color_pair(4))
-            line += 1
-
-        return line
-
-    def _format_value(self, value):
-        """Format a value for display."""
-        if isinstance(value, str):
-            if len(value) > 1000:  # Truncate very long strings
-                return f'"{value[:997]}..."'
-            return f'"{value}"'
-        elif value is None:
-            return "null"
-        else:
-            return str(value)
 
 
 def main():

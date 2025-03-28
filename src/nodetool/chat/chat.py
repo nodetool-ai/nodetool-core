@@ -27,6 +27,7 @@ import openai
 from pydantic import BaseModel
 
 from nodetool.chat.providers import get_provider, Chunk
+from nodetool.metadata.types import Provider
 from nodetool.chat.tools.base import Tool
 from nodetool.common.environment import Environment
 from nodetool.metadata.types import (
@@ -88,37 +89,6 @@ def default_serializer(obj: Any) -> dict:
     if isinstance(obj, BaseModel):
         return obj.model_dump()
     raise TypeError("Type not serializable")
-
-
-async def generate_messages(
-    messages: Sequence[Message],
-    model: str,
-    provider: Provider,
-    tools: Sequence[Tool] = [],
-    **kwargs,
-) -> AsyncGenerator[Chunk | ToolCall, Any]:
-    """
-    Generate messages using the appropriate provider for the model.
-
-    This function dispatches to the correct provider based on the model's provider field
-    and yields streamed chunks and tool calls.
-
-    Args:
-        messages: Sequence of Message objects representing the conversation
-        model: Function model containing name and provider
-        tools: Available tools for the model to use
-        **kwargs: Additional provider-specific parameters
-
-    Yields:
-        Chunk objects with content or ToolCall objects
-    """
-    async for chunk in ChatProvider.get_provider(provider).generate_messages(
-        messages=messages,
-        model=model,
-        tools=tools,
-        **kwargs,
-    ):  # type: ignore
-        yield chunk
 
 
 async def process_messages(

@@ -16,6 +16,45 @@ from nodetool.workflows.base_node import (
 from nodetool.workflows.processing_context import ProcessingContext
 
 
+def resolve_workspace_path(workspace_dir: str, path: str) -> str:
+    """
+    Resolve a path relative to the workspace directory.
+    Handles paths with /workspace prefix by stripping it and resolving against the actual workspace directory.
+
+    Args:
+        path (str): The path, can be:
+            - absolute with /workspace prefix
+            - absolute within the actual workspace directory
+            - relative to the workspace directory
+
+    Returns:
+        str: The absolute path in the actual filesystem
+    """
+    # Handle paths with /workspace prefix
+    if path.startswith("/workspace/"):
+        # Strip the /workspace prefix and treat as relative path
+        relative_path = path[len("/workspace/") :]
+        return os.path.normpath(os.path.join(workspace_dir, relative_path))
+
+    elif path.startswith("workspace"):
+        # Strip the /workspace prefix and treat as relative path
+        relative_path = path[len("workspace") :]
+        return os.path.normpath(os.path.join(workspace_dir, relative_path))
+
+    # Handle absolute paths
+    elif os.path.isabs(path):
+        # Security check to ensure the path is inside the workspace
+        abs_path = os.path.normpath(path)
+        if not abs_path.startswith(workspace_dir):
+            return os.path.normpath(os.path.join(workspace_dir, abs_path))
+        return abs_path
+
+    # Handle relative paths
+    else:
+        # Relative path within the workspace
+        return os.path.normpath(os.path.join(workspace_dir, path))
+
+
 def sanitize_node_name(node_name: str) -> str:
     """
     Sanitize a node name.
@@ -91,3 +130,19 @@ class Tool:
         """
         super().__init_subclass__(**kwargs)
         _tool_registry[cls.name] = cls
+
+    def resolve_workspace_path(self, path: str) -> str:
+        """
+        Resolve a path relative to the workspace directory.
+        Handles paths with /workspace prefix by stripping it and resolving against the actual workspace directory.
+
+        Args:
+            path (str): The path, can be:
+                - absolute with /workspace prefix
+                - absolute within the actual workspace directory
+                - relative to the workspace directory
+
+        Returns:
+            str: The absolute path in the actual filesystem
+        """
+        return resolve_workspace_path(self.workspace_dir, path)

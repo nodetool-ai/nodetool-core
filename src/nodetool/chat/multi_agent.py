@@ -1,6 +1,7 @@
 from nodetool.chat.agent import Agent
 from nodetool.chat.providers import ChatProvider, Chunk
-from nodetool.chat.task_planner import TaskPlanner
+from nodetool.chat.sub_task_context import TaskUpdate, TaskUpdateEvent
+from nodetool.chat.task_planner import PlanUpdate, TaskPlanner
 from nodetool.chat.tools import Tool
 from nodetool.metadata.types import Message, Task, TaskPlan, ToolCall
 
@@ -30,7 +31,6 @@ class MultiAgentCoordinator:
     Features:
     - Planning with specialized research capabilities
     - Agent specialization based on task types
-    - Task dependency management
     - Progress reporting and persistence
     """
 
@@ -50,12 +50,12 @@ class MultiAgentCoordinator:
         self.workspace_dir = workspace_dir
         self.max_steps = max_steps
         self.agents = agents
-        self.tasks_file_path = Path(workspace_dir) / "tasks.json"
+        self.tasks_file_path = Path(workspace_dir) / "tasks.yaml"
 
     async def solve_problem(
         self,
         processing_context: ProcessingContext,
-    ) -> AsyncGenerator[Union[Message, Chunk, ToolCall], None]:
+    ) -> AsyncGenerator[Union[TaskUpdate, Chunk, ToolCall, PlanUpdate], None]:
         """
         🧩 The Grand Solution - Solves the entire objective using specialized agents
 
@@ -63,12 +63,10 @@ class MultiAgentCoordinator:
         orchestrating the entire process from planning to execution:
 
         1. Creates or loads a task plan
-        2. Displays the plan for transparency
-        3. Identifies executable tasks based on dependencies
-        4. Assigns each task to the appropriate specialized agent
-        5. Tracks progress and updates the saved plan
-        6. Continues until completion or maximum steps reached
-        7. Provides a detailed summary of results
+        2. Assigns each task to the appropriate specialized agent
+        3. Tracks progress and updates the saved plan
+        4. Continues until completion or maximum steps reached
+        5. Provides a detailed summary of results
 
         It's like conducting a symphony where each musician plays their part
         at exactly the right time, creating a harmonious solution.
@@ -79,47 +77,43 @@ class MultiAgentCoordinator:
         Yields:
             Union[Message, Chunk, ToolCall]: Live updates during problem solving
         """
-        # Phase 1: Planning or loading existing plan
-        if self.tasks_file_path.exists():
-            yield Chunk(
-                content=f"Existing task plan found at {self.tasks_file_path}. Loading...\n",
-                done=False,
-            )
-        else:
-            yield Chunk(content="Phase 1: Planning the approach...\n", done=False)
-
+        # Phase 1: Planning
         async for item in self.planner.create_plan():
             yield item
+            if isinstance(item, PlanUpdate):
+                print(
+                    f"{item.event} - "
+                    + (f"{item.subtask.content}" if item.subtask else "")
+                    + (f" - {item.retry_count}" if item.retry_count else "")
+                    + (f" - {item.error_message}" if item.error_message else "")
+                )
+            if isinstance(item, Chunk):
+                print(item.content, end="")
 
-        # Get the task plan
         task_plan = self.planner.task_plan
         if not task_plan:
             raise ValueError("Failed to create or load a valid task plan")
 
-        # Display the plan
-        yield Chunk(content="\nTask Plan:\n", done=False)
-        yield Chunk(content=task_plan.to_markdown(), done=False)
+        print(task_plan.to_markdown())
 
-        # Phase 2: Execution with specialized agents
-        yield Chunk(
-            content="\nPhase 2: Executing with specialized agents...\n", done=False
-        )
+        # Phase 2: Execution
+        accumulated_results = []  # Track all results across agents
 
         for task in task_plan.tasks:
-            yield Chunk(
-                content=f"\nExecuting task: {task.title}\n",
-                done=False,
-            )
             agent = self._get_agent_for_task(task)
+
+            # Pass accumulated results as input files to the next agent
+            if accumulated_results:
+                agent.input_files = accumulated_results
 
             assert task is not None, f"Task not found for agent: {agent.name}"
             async for item in agent.execute_task(task, processing_context):
                 yield item
-                if isinstance(item, ToolCall) and item.name == "finish_subtask":
-                    yield Chunk(
-                        content="\n" + task_plan.to_markdown() + "\n",
-                        done=False,
-                    )
+
+            # Collect results from this agent for the next agent
+            agent_results = agent.get_results()
+            if agent_results:
+                accumulated_results.extend(agent_results)
 
     def _get_agent_for_task(self, task: Task) -> Agent:
         """

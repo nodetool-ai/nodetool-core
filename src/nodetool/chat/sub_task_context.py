@@ -1,12 +1,14 @@
+import asyncio
+import datetime
 from nodetool.chat.providers import ChatProvider, Chunk
-from nodetool.chat.providers.ollama import OllamaProvider
 from nodetool.chat.tools import Tool
-from nodetool.chat.tools.workspace import WorkspaceBaseTool
-from nodetool.metadata.types import FunctionModel, Message, SubTask, Task, ToolCall
+from nodetool.chat.tools.base import resolve_workspace_path
+from nodetool.metadata.types import Message, SubTask, Task, ToolCall
 from nodetool.workflows.processing_context import ProcessingContext
 
 import tiktoken
 import yaml
+from pydantic import BaseModel
 
 
 import json
@@ -16,6 +18,357 @@ from typing import Any, AsyncGenerator, List, Sequence, Union
 
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.chat.tools.workspace import ReadWorkspaceFileTool
+from enum import Enum
+
+DEFAULT_EXECUTION_SYSTEM_PROMPT = """
+You are a executing a single subtask from a larger task plan.
+PROVIDE THE RESULT IN THE FINISH_SUBTASK CALL TO SAVE THE RESULT TO THE OUTPUT FILE.
+YOU CAN ONLY USE TOOLS TO PRODUCE THE OUTPUT FILE.
+
+EXECUTION PROTOCOL:
+1. Focus exclusively on the current subtask
+2. ALWAYS call finish_subtask with the result
+3. Results MUST be a JSON object
+4. Pick the output type defined in the subtask
+5. Include metadata with these fields: title, description, source, images, videos, audio, documents
+6. Call `finish_subtask` with a result object, output_file, and metadata
+7. When downloading files, use the output_file parameter to save the file to the workspace
+"""
+
+DEFAULT_FINISH_TASK_SYSTEM_PROMPT = """
+You are a completing a task and aggregating the results.
+Accept the results of input files and aggregate them into a single result.
+PROVIDE THE RESULT IN THE FINISH_TASK CALL.
+
+FINISH_TASK PROTOCOL:
+1. ALWAYS call finish_task with the result
+2. Results MUST be a JSON object
+3. Results should be in the format defined in the output_schema
+4. Pick the output type defined in the subtask
+5. Include metadata with these fields: title, description, source, images, videos, audio, documents
+6. Provide the final task result in the result field
+7. Use the ReadWorkspaceFileTool to read the contents
+"""
+
+
+class TaskUpdateEvent(str, Enum):
+    """Enum for different task update event types."""
+
+    SUBTASK_STARTED = "subtask_started"
+    ENTERED_CONCLUSION_STAGE = "entered_conclusion_stage"
+    MAX_ITERATIONS_REACHED = "max_iterations_reached"
+    SUBTASK_COMPLETED = "subtask_completed"
+
+
+class TaskUpdate(BaseModel):
+    """A task update from a provider."""
+
+    task: Task
+    subtask: SubTask
+    event: TaskUpdateEvent
+
+
+METADATA_SCHEMA = {
+    "type": "object",
+    "description": "Metadata for the result",
+    "properties": {
+        "title": {
+            "type": "string",
+            "description": "The title of the result",
+        },
+        "locale": {
+            "type": "string",
+            "description": "The locale of the result",
+        },
+        "url": {
+            "type": "string",
+            "description": "The URL of the result",
+        },
+        "site_name": {
+            "type": "string",
+            "description": "The site name of the result",
+        },
+        "tags": {
+            "type": "array",
+            "description": "Tags for the result",
+            "items": {"type": "string"},
+        },
+        "description": {
+            "type": "string",
+            "description": "The description of the result",
+        },
+        "images": {
+            "type": "array",
+            "description": "The URLs of the images in the result",
+            "items": {
+                "type": "string",
+            },
+        },
+        "videos": {
+            "type": "array",
+            "description": "The URLs of the videos in the result",
+            "items": {
+                "type": "string",
+            },
+        },
+        "audio": {
+            "type": "array",
+            "description": "The URLs of the audio in the result",
+            "items": {
+                "type": "string",
+            },
+        },
+        "documents": {
+            "type": "array",
+            "description": "The URLs of the documents in the result",
+            "items": {
+                "type": "string",
+            },
+        },
+        "sources": {
+            "type": "array",
+            "description": "The sources of the result, either http://example.com, file://path/to/file.txt or search://query",
+            "items": {
+                "type": "string",
+            },
+        },
+    },
+    "required": ["title", "description", "sources"],
+}
+
+
+def json_schema_for_output_type(output_type: str) -> dict:
+    if output_type == "string":
+        return {"type": "string"}
+    elif output_type == "html":
+        return {
+            "type": "string",
+        }
+    elif output_type == "markdown":
+        return {
+            "type": "string",
+        }
+    elif output_type == "json":
+        return {"type": "object"}
+    elif output_type == "yaml":
+        return {"type": "object"}
+    elif output_type == "csv":
+        return {"type": "array", "items": {"type": "string"}}
+    elif output_type == "html":
+        return {"type": "string"}
+    elif output_type == "xml":
+        return {"type": "string"}
+    elif output_type == "jsonl":
+        return {"type": "array", "items": {"type": "string"}}
+    elif output_type in ["python", "py"]:
+        return {
+            "type": "string",
+            "description": "Python source code",
+            "contentMediaType": "text/x-python",
+        }
+    elif output_type in ["javascript", "js", "typescript", "ts"]:
+        return {
+            "type": "string",
+            "description": "JavaScript/TypeScript source code",
+            "contentMediaType": "application/javascript",
+        }
+    elif output_type == "java":
+        return {
+            "type": "string",
+            "description": "Java source code",
+            "contentMediaType": "text/x-java",
+        }
+    elif output_type in ["cpp", "c++"]:
+        return {
+            "type": "string",
+            "description": "C++ source code",
+            "contentMediaType": "text/x-c++src",
+        }
+    elif output_type == "go":
+        return {
+            "type": "string",
+            "description": "Go source code",
+            "contentMediaType": "text/x-go",
+        }
+    elif output_type == "rust":
+        return {
+            "type": "string",
+            "description": "Rust source code",
+            "contentMediaType": "text/x-rust",
+        }
+    # Add common development formats
+    elif output_type == "diff":
+        return {
+            "type": "string",
+            "description": "Unified diff format",
+            "contentMediaType": "text/x-diff",
+        }
+    elif output_type == "shell":
+        return {
+            "type": "string",
+            "description": "Shell script",
+            "contentMediaType": "text/x-shellscript",
+        }
+    elif output_type == "sql":
+        return {
+            "type": "string",
+            "description": "SQL query or script",
+            "contentMediaType": "text/x-sql",
+        }
+    elif output_type == "dockerfile":
+        return {
+            "type": "string",
+            "description": "Dockerfile",
+            "contentMediaType": "text/x-dockerfile",
+        }
+    elif output_type == "css":
+        return {
+            "type": "string",
+            "description": "CSS stylesheet",
+            "contentMediaType": "text/css",
+        }
+    elif output_type == "svg":
+        return {
+            "type": "string",
+            "description": "SVG image markup",
+            "contentMediaType": "image/svg+xml",
+        }
+    else:
+        return {"type": "string"}
+
+
+class FinishTaskTool(Tool):
+    """
+    🏁 Task Completion Tool - Marks a task as done and saves its results
+    """
+
+    name = "finish_task"
+    description = """
+    Finish a task by saving its final result to a file in the workspace.
+    This will hold the final result of all subtasks.
+    """
+
+    def __init__(
+        self,
+        workspace_dir: str,
+        output_type: str,
+        output_schema: Any,
+    ):
+        self.workspace_dir = workspace_dir
+        if output_schema is None:
+            self.input_schema = {
+                "type": "object",
+                "properties": {
+                    "result": json_schema_for_output_type(output_type),
+                    "metadata": METADATA_SCHEMA,
+                },
+                "required": ["result", "metadata"],
+            }
+        else:
+            try:
+                self.input_schema = {
+                    "type": "object",
+                    "properties": {
+                        "result": output_schema,
+                        "metadata": METADATA_SCHEMA,
+                    },
+                    "required": ["result", "metadata"],
+                }
+            except Exception as e:
+                print(f"Error parsing output schema: {e}")
+                self.input_schema = json_schema_for_output_type(output_type)
+
+
+class FinishSubTaskTool(Tool):
+    """
+    🏁 Task Completion Tool - Marks a subtask as done and saves its results
+
+    This tool serves as the formal completion mechanism for subtasks by:
+    1. Saving the final output to the designated workspace location
+    2. Preserving structured metadata about the results
+    3. Marking the subtask as completed
+
+    This tool is EXCLUSIVELY AVAILABLE during the Conclusion Stage of complex subtasks,
+    forcing the agent to synthesize findings before completion. For simple 'tool_call'
+    subtasks, it is called immediately after the information-gathering tool.
+
+    Usage pattern:
+    - First call information tools to gather data (Tool Calling Stage)
+    - Then call finish_subtask to formalize and save results (Conclusion Stage)
+
+    Example result format:
+    {
+        "content": {
+            "analysis": "The data shows a clear trend of...",
+            "recommendations": ["First, consider...", "Second, implement..."]
+        },
+        "metadata": {
+            "title": "Market Analysis Results",
+            "description": "Comprehensive analysis of market trends",
+            "timestamp": "2023-06-15T10:30:00Z",
+            "sources": [
+                "http://example.com",
+                "file://path/to/file.txt",
+                "search://market trends",
+            ],
+            "images": [
+                "https://example.com/image1.jpg",
+                "https://example.com/image2.jpg",
+            ],
+            "videos": [
+                "https://example.com/video1.mp4",
+                "https://example.com/video2.mp4",
+            ],
+            "audio": [
+                "https://example.com/audio1.mp3",
+                "https://example.com/audio2.mp3",
+            ],
+            "documents": [
+                "https://example.com/document1.pdf",
+                "https://example.com/document2.pdf",
+            ],
+        },
+    }
+    """
+
+    name = "finish_subtask"
+    description = """
+    Finish a subtask by saving its final result to a file in the workspace.
+    The result will be saved to the output_file path, defined in the subtask.
+    """
+
+    def __init__(
+        self,
+        workspace_dir: str,
+        output_type: str,
+        output_schema: Any,
+    ):
+        self.workspace_dir = workspace_dir
+        if output_schema is None:
+            self.input_schema = {
+                "type": "object",
+                "properties": {
+                    "result": json_schema_for_output_type(output_type),
+                    "metadata": METADATA_SCHEMA,
+                },
+                "required": ["result", "metadata"],
+            }
+        else:
+            try:
+                self.input_schema = {
+                    "type": "object",
+                    "properties": {
+                        "result": output_schema,
+                        "metadata": METADATA_SCHEMA,
+                    },
+                    "required": ["result", "metadata"],
+                }
+            except Exception as e:
+                print(f"Error parsing output schema: {e}")
+                self.input_schema = json_schema_for_output_type(output_type)
+
+    async def process(self, context: ProcessingContext, params: dict):
+        return params
 
 
 class SubTaskContext:
@@ -44,12 +397,11 @@ class SubTaskContext:
         task: Task,
         subtask: SubTask,
         processing_context: ProcessingContext,
-        system_prompt: str,
         tools: Sequence[Tool],
         model: str,
         provider: ChatProvider,
-        workspace_dir: str,
-        print_usage: bool = True,
+        system_prompt: str | None = None,
+        use_finish_task: bool = False,
         max_token_limit: int = -1,
         max_iterations: int = 5,
         enable_tracing: bool = True,
@@ -65,8 +417,7 @@ class SubTaskContext:
             tools (List[Tool]): Tools available to this subtask
             model (str): The model to use for this subtask
             provider (ChatProvider): The provider to use for this subtask
-            workspace_dir (str): The workspace directory
-            print_usage (bool): Whether to print token usage
+            use_finish_task (bool): Whether to use the finish_task tool
             max_token_limit (int): Maximum token limit before summarization
             max_iterations (int): Maximum iterations for the subtask
             enable_tracing (bool): Whether to enable LLM message tracing
@@ -74,19 +425,37 @@ class SubTaskContext:
         self.task = task
         self.subtask = subtask
         self.processing_context = processing_context
-        self.system_prompt = system_prompt
         self.model = model
         self.provider = provider
-        self.workspace_dir = workspace_dir
+        self.workspace_dir = processing_context.workspace_dir
         self.max_token_limit = max_token_limit
         self.enable_tracing = enable_tracing
-        self.tools = list(tools) + [
-            FinishSubTaskTool(
-                self.workspace_dir,
-                self.subtask.output_type,
-            ),
-            ReadWorkspaceFileTool(self.workspace_dir),
-        ]
+        if use_finish_task:
+            self.system_prompt = system_prompt or DEFAULT_FINISH_TASK_SYSTEM_PROMPT
+            self.tools: Sequence[Tool] = [
+                FinishTaskTool(
+                    self.workspace_dir,
+                    self.subtask.output_type,
+                    self.subtask.output_schema,
+                ),
+                ReadWorkspaceFileTool(self.workspace_dir),
+            ]
+        else:
+            self.system_prompt = system_prompt or DEFAULT_EXECUTION_SYSTEM_PROMPT
+            self.tools: Sequence[Tool] = list(tools) + [
+                FinishSubTaskTool(
+                    self.workspace_dir,
+                    self.subtask.output_type,
+                    self.subtask.output_schema,
+                ),
+                ReadWorkspaceFileTool(self.workspace_dir),
+            ]
+
+        self.system_prompt = (
+            self.system_prompt
+            + "\n\nToday's date is "
+            + datetime.datetime.now().strftime("%Y-%m-%d")
+        )
 
         # Initialize isolated message history for this subtask
         self.history = [Message(role="system", content=self.system_prompt)]
@@ -96,12 +465,9 @@ class SubTaskContext:
         if max_iterations < 3:
             raise ValueError("max_iterations must be at least 3")
         self.max_iterations = max_iterations
-        self.max_tool_calling_iterations = max_iterations - 2
 
         # Track tool calls for this subtask
         self.tool_call_count = 0
-        # Default max tool calls if not specified in subtask
-        self.max_tool_calls = getattr(subtask, "max_tool_calls", float("inf"))
 
         # Track sources for data lineage
         self.sources = []
@@ -112,21 +478,10 @@ class SubTaskContext:
         # Flag to track which stage we're in - normal execution flow for all tasks
         self.in_conclusion_stage = False
 
-        self.print_usage = print_usage
         self.encoding = tiktoken.get_encoding("cl100k_base")
 
-        # Ensure the output file path is already in the /workspace format
-        if not self.subtask.output_file.startswith("/workspace/"):
-            self.subtask.output_file = os.path.join(
-                "/workspace", self.subtask.output_file.lstrip("/")
-            )
-
-        # For the actual file system operations, strip the /workspace prefix
-        self.output_file_path = os.path.join(
-            self.workspace_dir, os.path.relpath(self.subtask.output_file, "/workspace")
-        )
-
-        os.makedirs(os.path.dirname(self.output_file_path), exist_ok=True)
+        # Add a list to track yielded events to avoid duplicates
+        self.yielded_events = []
 
         # Setup tracing directory and file
         if self.enable_tracing:
@@ -149,7 +504,6 @@ class SubTaskContext:
                     "subtask_content": self.subtask.content,
                     "model": self.model,
                     "max_iterations": self.max_iterations,
-                    "max_tool_calls": self.max_tool_calls,
                     "output_file": self.subtask.output_file,
                 },
             )
@@ -163,6 +517,10 @@ class SubTaskContext:
                     "role": "system",
                 },
             )
+
+        # Add a buffer for aggregating chunks for trace logging
+        self._chunk_buffer = ""
+        self._is_buffering_chunks = False
 
     def _count_tokens(self, messages: List[Message]) -> int:
         """
@@ -207,63 +565,91 @@ class SubTaskContext:
     def _save_to_output_file(self, output: Any) -> None:
         """
         Save the result of a tool call to the output file.
-        Includes metadata in the appropriate format based on file type.
+        Includes metadata in appropriate formats based on file type.
         """
         # Extract metadata from the result if it's a dictionary
-        if isinstance(output, dict):
+        if isinstance(output, dict) and "result" in output:
             metadata = output.pop("metadata", {})
-            result = output.get("result", output)
+            output = output.get("result", output)
         else:
             metadata = {}
-            result = output
 
         # Add tracked sources to metadata
-        if self.sources:
+        if self.sources and isinstance(output, dict):
             # If sources already exist in metadata, extend them
             if "sources" in metadata and isinstance(metadata["sources"], list):
                 metadata["sources"].extend(self.sources)
             else:
                 metadata["sources"] = self.sources
 
-        print(f"Saving result to {self.output_file_path}")
-        is_markdown = self.output_file_path.endswith(".md")
-        is_json = self.output_file_path.endswith(".json")
-        is_yaml = self.output_file_path.endswith(".yaml")
-        with open(self.output_file_path, "w") as f:
-            if is_markdown:
+        # Get file extension
+        file_ext = os.path.splitext(self.subtask.output_file)[1].lower()
+
+        output_file = resolve_workspace_path(
+            self.workspace_dir, self.subtask.output_file
+        )
+
+        # If file already exists, assume it was created by a tool and skip saving
+        if os.path.exists(output_file):
+            print(f"Output file {output_file} already exists, skipping save")
+            return
+
+        print(f"Saving result to {output_file}")
+
+        # Create parent directory for output file if it doesn't exist
+        output_dir = os.path.dirname(output_file)
+        if output_dir and not os.path.exists(output_dir):
+            os.makedirs(output_dir, exist_ok=True)
+
+        with open(output_file, "w") as f:
+            if file_ext == ".md":
                 # For Markdown files, add metadata as YAML frontmatter
                 if metadata:
                     f.write("---\n")
                     yaml.dump(metadata, f)
                     f.write("---\n\n")
+                f.write(str(output))
 
-                f.write(str(result))
-            elif is_yaml:
-                output = {"metadata": metadata}
-
-                # Try to parse the result as YAML if it's a string
-                if isinstance(result, str):
-                    try:
-                        parsed_yaml = yaml.safe_load(result)
-                        if (
-                            parsed_yaml is not None
-                        ):  # Only use parsed YAML if successful
-                            output["data"] = parsed_yaml
-                        else:
-                            output["data"] = result
-                    except yaml.YAMLError:
-                        # If the string isn't valid YAML, treat it as a regular string
-                        output["data"] = result
+            elif file_ext == ".yaml" or file_ext == ".yml":
+                if isinstance(output, str):
+                    f.write(output)
                 else:
-                    output["data"] = result
+                    if isinstance(output, dict):
+                        output["metadata"] = metadata
+                    yaml.dump(output, f)
 
-                yaml.dump(output, f)
-            elif is_json:
-                output = {"data": result, "metadata": metadata}
-                json.dump(output, f, indent=2)
+            elif file_ext == ".json":
+                if isinstance(output, str):
+                    f.write(output)
+                else:
+                    if isinstance(output, dict):
+                        output["metadata"] = metadata
+                    json.dump(output, f, indent=2)
+
+            elif file_ext == ".jsonl":
+                # For JSONL, write each line as a separate JSON object
+                if isinstance(output, (list, tuple)):
+                    for item in output:
+                        json.dump(item, f)
+                        f.write("\n")
+                else:
+                    json.dump(output, f)
+                    f.write("\n")
+
+            elif file_ext == ".csv":
+                import csv
+
+                # Handle CSV output based on data type
+                if isinstance(output, (list, tuple)):
+                    writer = csv.writer(f)
+                    for row in output:
+                        writer.writerow(row)  # Write multiple rows
+                else:
+                    f.write(str(output))
+
             else:
-                # For string results being written to non-markdown files
-                f.write(str(result))
+                # For all other formats, just write the result as a string
+                f.write(str(output))
 
     def _log_trace_event(self, event_type: str, data: dict) -> None:
         """
@@ -283,43 +669,51 @@ class SubTaskContext:
 
     async def execute(
         self,
-        task_prompt: str,
-    ) -> AsyncGenerator[Union[Chunk, ToolCall], None]:
+    ) -> AsyncGenerator[Union[Chunk, ToolCall, TaskUpdate], None]:
         """
         ⚙️ Task Executor - Runs a single subtask to completion using appropriate strategy
 
-        This execution path handles complex tasks requiring multiple steps:
-        1. Tool Calling Stage: Multiple iterations of information gathering using any tools
-        2. Conclusion Stage: Final synthesis with restricted access (only finish_subtask tool)
+        This execution path handles:
+        1. Single tool execution tasks: Direct tool execution and result storage
+        2. Complex tasks requiring multiple steps:
+           a. Tool Calling Stage: Multiple iterations of information gathering using any tools
+           b. Conclusion Stage: Final synthesis with restricted access (only finish_subtask tool)
 
         The method automatically tracks iterations, manages token limits, and enforces
         transitions between stages based on limits or progress.
 
-        Args:
-            task_prompt (str): The task prompt with specific instructions
-
         Yields:
-            Union[Chunk, ToolCall]: Live updates during task execution
+            Union[Chunk, ToolCall, TaskUpdate]: Live updates during task execution
         """
         # Record the start time of the subtask
         current_time = int(time.time())
         self.subtask.start_time = current_time
 
-        # Create the enhanced prompt with two-stage explanation
-        enhanced_prompt = self._create_enhanced_prompt(task_prompt)
+        # For tasks with both tool_name and input_files, or regular tasks
+        task_prompt = (
+            self.task.title
+            + "\n\n"
+            + self.task.description
+            + "\n\n"
+            + self.subtask.content
+        )
 
         # Add the task prompt to this subtask's history
-        self.history.append(Message(role="user", content=enhanced_prompt))
+        self.history.append(Message(role="user", content=task_prompt))
 
         # Log the task prompt in the trace
         if self.enable_tracing:
             self._log_trace_event(
                 "message",
-                {"direction": "outgoing", "content": enhanced_prompt, "role": "user"},
+                {"direction": "outgoing", "content": task_prompt, "role": "user"},
             )
 
-        # Signal that we're executing this subtask
-        print(f"Executing subtask: {self.subtask.content}")
+        # Yield task update for subtask start
+        yield TaskUpdate(
+            task=self.task,
+            subtask=self.subtask,
+            event=TaskUpdateEvent.SUBTASK_STARTED,
+        )
 
         # Continue executing until the task is completed or max iterations reached
         while not self.subtask.completed and self.iterations < self.max_iterations:
@@ -327,53 +721,42 @@ class SubTaskContext:
             token_count = self._count_tokens(self.history)
 
             # Check if we need to transition to conclusion stage
-            if (
-                self.iterations > self.max_tool_calling_iterations
-                or token_count > self.max_token_limit
-            ) and not self.in_conclusion_stage:
+            if (token_count > self.max_token_limit) and not self.in_conclusion_stage:
                 await self._transition_to_conclusion_stage()
+                # Yield task update for transition to conclusion stage
+                yield TaskUpdate(
+                    task=self.task,
+                    subtask=self.subtask,
+                    event=TaskUpdateEvent.ENTERED_CONCLUSION_STAGE,
+                )
 
             # Process current iteration
-            async for chunk in self._process_iteration():
-                yield chunk
+            message = await self._process_iteration()
+            if message.tool_calls:
+                if message.content:
+                    yield Chunk(content=str(message.content))
+                for tool_call in message.tool_calls:
+                    yield ToolCall(
+                        id=tool_call.id,
+                        name=tool_call.name,
+                        args=tool_call.args,
+                    )
+                    if tool_call.name == "finish_subtask":
+                        yield TaskUpdate(
+                            task=self.task,
+                            subtask=self.subtask,
+                            event=TaskUpdateEvent.SUBTASK_COMPLETED,
+                        )
 
         # If we've reached the last iteration and haven't completed yet, generate summary
         if self.iterations >= self.max_iterations and not self.subtask.completed:
             await self._handle_max_iterations_reached()
-
-        # print(self.provider.usage)
-
-    def _create_enhanced_prompt(self, task_prompt: str) -> str:
-        """
-        Create an enhanced prompt with two-stage execution explanation.
-
-        Appends instructions about the two-stage execution model to the original task prompt,
-        helping the LLM understand the constraints and expectations of each stage.
-
-        Args:
-            task_prompt (str): The original task prompt
-
-        Returns:
-            str: The enhanced prompt with two-stage execution instructions
-        """
-        return (
-            task_prompt
-            + """
-        
-        IMPORTANT: This task will be executed in TWO STAGES:
-        
-        STAGE 1: TOOL CALLING STAGE
-        - You may use any available tools to gather information and make progress
-        - After """
-            + str(self.max_tool_calling_iterations)
-            + """ iterations, you will automatically transition to Stage 2
-        
-        STAGE 2: CONCLUSION STAGE
-        - You will ONLY have access to the finish_subtask tool
-        - You must synthesize your findings and complete the task
-        - No further information gathering will be possible
-        """
-        )
+            # Yield task update for max iterations reached
+            yield TaskUpdate(
+                task=self.task,
+                subtask=self.subtask,
+                event=TaskUpdateEvent.MAX_ITERATIONS_REACHED,
+            )
 
     async def _transition_to_conclusion_stage(self) -> None:
         """
@@ -388,16 +771,7 @@ class SubTaskContext:
         self.in_conclusion_stage = True
 
         transition_message = f"""
-        STAGE 1 (TOOL CALLING) COMPLETE ⚠️
-        
-        You have reached the maximum number of iterations for the tool calling stage.
-        
-        ENTERING STAGE 2: CONCLUSION STAGE
-        
-        In this stage, you ONLY have access to the finish_subtask tool.
-        You must now synthesize all the information you've gathered and complete the task.
-        Please summarize what you've learned, draw conclusions, and use the finish_subtask
-        tool to save your final result.
+        ENTER CONCLUSION STAGE NOW: Synthesize all the information gathered and finish the this subtask.
         """
         self.history.append(Message(role="user", content=transition_message))
 
@@ -413,124 +787,100 @@ class SubTaskContext:
                 },
             )
 
-    async def _process_iteration(self) -> AsyncGenerator[Union[Chunk, ToolCall], None]:
+    async def _process_iteration(
+        self,
+    ) -> Message:
         """
         Process a single iteration of the task.
-
-        An iteration consists of:
-        1. Selecting appropriate tools based on current stage
-        2. Generating a response from the LLM
-        3. Processing each chunk or tool call from the response
-        4. Updating conversation history with results
-
-        Yields:
-            Union[Chunk, ToolCall]: Live updates during iteration processing
         """
-        generator = self.provider.generate_messages(
+
+        tools = (
+            self.tools
+            if not self.in_conclusion_stage
+            else [
+                t
+                for t in self.tools
+                if t.name == "finish_subtask" or t.name == "finish_task"
+            ]
+        )
+        # Only read files in the workspace directory
+        tools = list(tools) + [ReadWorkspaceFileTool(self.workspace_dir)]
+
+        # Create a dictionary to track unique tools by name
+        unique_tools = {tool.name: tool for tool in tools}
+        tools = list(unique_tools.values())
+
+        message = await self.provider.generate_message(
             messages=self.history,
             model=self.model,
-            tools=self.tools,
+            tools=tools,
         )
 
-        async for chunk in generator:  # type: ignore
-            yield chunk
+        # Add the message to history
+        self.history.append(message)
 
-            if isinstance(chunk, Chunk):
-                await self._handle_chunk(chunk)
-            elif isinstance(chunk, ToolCall):
-                await self._handle_tool_call(chunk)
+        # Log the message in trace
+        if self.enable_tracing and isinstance(message.content, str):
+            self._log_trace_event(
+                "message",
+                {
+                    "direction": "incoming",
+                    "content": message.content,
+                    "role": "assistant",
+                },
+            )
 
-    async def _handle_chunk(self, chunk: Chunk) -> None:
-        """
-        Handle a response chunk.
+        if message.tool_calls:
+            messages = await asyncio.gather(
+                *[self._handle_tool_call(tool_call) for tool_call in message.tool_calls]
+            )
+            self.history.extend(messages)
 
-        Args:
-            chunk (Chunk): The chunk to handle
-        """
-        # Update history with assistant message
-        if (
-            len(self.history) > 0
-            and self.history[-1].role == "assistant"
-            and isinstance(self.history[-1].content, str)
-        ):
-            # Update existing assistant message
-            self.history[-1].content += chunk.content
+        return message
 
-            # Log the chunk in trace
-            if self.enable_tracing:
-                self._log_trace_event(
-                    "chunk",
-                    {
-                        "direction": "incoming",
-                        "content": chunk.content,
-                        "role": "assistant",
-                        "is_partial": True,
-                    },
-                )
-        else:
-            # Add new assistant message
-            self.history.append(Message(role="assistant", content=chunk.content))
-
-            # Log the chunk in trace
-            if self.enable_tracing:
-                self._log_trace_event(
-                    "chunk",
-                    {
-                        "direction": "incoming",
-                        "content": chunk.content,
-                        "role": "assistant",
-                        "is_partial": False,
-                    },
-                )
-
-    async def _handle_tool_call(self, chunk: ToolCall) -> None:
+    async def _handle_tool_call(self, tool_call: ToolCall) -> Message:
         """
         Handle a tool call.
 
         Args:
             chunk (ToolCall): The tool call to handle
         """
-        # Add tool call to history
-        self.history.append(
-            Message(
-                role="assistant",
-                tool_calls=[chunk],
-            )
-        )
-
         # Log tool call in trace
         if self.enable_tracing:
             self._log_trace_event(
                 "tool_call",
                 {
                     "direction": "incoming",
-                    "tool_name": chunk.name,
-                    "tool_args": chunk.args,
-                    "tool_id": chunk.id,
+                    "tool_name": tool_call.name,
+                    "tool_args": tool_call.args,
+                    "tool_id": tool_call.id,
                 },
             )
 
         # Increment tool call counter
         self.tool_call_count += 1
 
-        args_json = json.dumps(chunk.args)[:100]
-        print(f"Executing tool: {chunk.name} with {args_json}")
-        tool_result = await self._execute_tool(chunk)
+        args_json = json.dumps(tool_call.args)[:100]
+        print(f"Executing tool: {tool_call.name} with {args_json}")
+
+        tool_result = await self._execute_tool(tool_call)
 
         # Track sources for data lineage
-        if chunk.name == "google_search" and isinstance(chunk.args, dict):
-            search_query = chunk.args.get("query", "")
+        if tool_call.name == "google_search" and isinstance(tool_call.args, dict):
+            search_query = tool_call.args.get("query", "")
             if search_query:
                 self.sources.append(f"search://{search_query}")
 
-        elif chunk.name == "browser_control" and isinstance(chunk.args, dict):
-            action = chunk.args.get("action", "")
-            url = chunk.args.get("url", "")
+        elif tool_call.name == "browser" and isinstance(tool_call.args, dict):
+            action = tool_call.args.get("action", "")
+            url = tool_call.args.get("url", "")
             if action == "navigate" and url:
                 self.sources.append(url)
 
-        elif chunk.name == "read_workspace_file" and isinstance(chunk.args, dict):
-            file_path = chunk.args.get("path", "")
+        elif tool_call.name == "read_workspace_file" and isinstance(
+            tool_call.args, dict
+        ):
+            file_path = tool_call.args.get("path", "")
             if file_path:
                 self.sources.append(f"file://{file_path}")
 
@@ -540,14 +890,26 @@ class SubTaskContext:
                 "tool_result",
                 {
                     "direction": "outgoing",
-                    "tool_name": chunk.name,
-                    "tool_id": chunk.id,
+                    "tool_name": tool_call.name,
+                    "tool_id": tool_call.id,
                     "result": tool_result.result,
                 },
             )
 
         # Handle finish_subtask tool specially
-        if chunk.name == "finish_subtask":
+        if tool_call.name == "finish_task":
+            self.subtask.completed = True
+            self._save_to_output_file(tool_result.result)
+            self.subtask.end_time = int(time.time())
+            if self.enable_tracing:
+                self._log_trace_event(
+                    "task_completed",
+                    {
+                        "output_file": self.subtask.output_file,
+                    },
+                )
+
+        if tool_call.name == "finish_subtask":
             self.subtask.completed = True
             self._save_to_output_file(tool_result.result)
             # Record the end time when the subtask is completed
@@ -564,46 +926,11 @@ class SubTaskContext:
                 )
 
         # Add the tool result to history
-        self.history.append(
-            Message(
-                role="tool",
-                tool_call_id=tool_result.id,
-                name=chunk.name,
-                content=json.dumps(tool_result.result),
-            )
-        )
-
-        # Check if we've reached the tool call limit and force conclusion stage if needed
-        if (
-            not self.in_conclusion_stage
-            and self.tool_call_count >= self.max_tool_calls
-            and chunk.name != "finish_subtask"
-        ):
-            await self._force_conclusion_stage_tool_limit()
-
-    async def _force_conclusion_stage_tool_limit(self) -> None:
-        """
-        Force transition to conclusion stage due to reaching max tool calls.
-        """
-        self.in_conclusion_stage = True
-
-        # Add transition message to history
-        transition_message = f"""
-        MAXIMUM TOOL CALLS REACHED ⚠️
-        
-        You have reached the maximum number of allowed tool calls ({self.max_tool_calls}).
-        
-        ENTERING STAGE 2: CONCLUSION STAGE
-        
-        In this stage, you ONLY have access to the finish_subtask tool.
-        You must now synthesize all the information you've gathered and complete the task.
-        Please summarize what you've learned, draw conclusions, and use the finish_subtask
-        tool to save your final result.
-        """
-        self.history.append(Message(role="user", content=transition_message))
-
-        print(
-            f"  Reached maximum tool calls ({self.max_tool_calls}). Transitioning to conclusion stage."
+        return Message(
+            role="tool",
+            tool_call_id=tool_result.id,
+            name=tool_call.name,
+            content=json.dumps(tool_result.result),
         )
 
     async def _handle_max_iterations_reached(self):
@@ -613,7 +940,7 @@ class SubTaskContext:
         Returns:
             ToolCall: A tool call representing the summary result
         """
-        default_result = await self.request_summary()
+        default_result = await self.request_final_output()
         self._save_to_output_file(default_result)
         self.subtask.completed = True
         self.subtask.end_time = int(time.time())
@@ -632,16 +959,6 @@ class SubTaskContext:
             if tool.name == tool_call.name:
                 try:
                     result = await tool.process(self.processing_context, tool_call.args)
-
-                    # Validate output against schema if finish_subtask and output_type exists
-                    if (
-                        tool_call.name == "finish_subtask"
-                        and hasattr(self.subtask, "output_type")
-                        and self.subtask.output_type
-                    ):
-                        # In a more complete implementation, you might want to add proper JSON schema validation here
-                        # For now, we just note that validation should happen
-                        pass
 
                     return ToolCall(
                         id=tool_call.id,
@@ -665,7 +982,7 @@ class SubTaskContext:
             result={"error": f"Tool '{tool_call.name}' not found"},
         )
 
-    async def request_summary(self) -> str:
+    async def request_final_output(self) -> str:
         """
         Request a final summary from the LLM when max iterations are reached.
         This is used when the subtask has gone through both the Tool Calling Stage
@@ -673,13 +990,14 @@ class SubTaskContext:
         """
         # Create a summary-specific system prompt
         summary_system_prompt = """
-        You are tasked with providing a concise summary of work completed so far.
+        You are tasked with provide the final output for the subtask.
         """
 
         # Create a focused user prompt
         summary_user_prompt = f"""
         The subtask has reached the maximum allowed iterations ({self.max_iterations}).
-        Summarize the work completed so far, in detail.
+        Provide the final output for the subtask.
+        The output should be in the in the format: {self.subtask.output_type}
         """
 
         # Create a minimal history with just the system prompt and summary request
@@ -690,127 +1008,10 @@ class SubTaskContext:
         ]
 
         # Get response without tools
-        generator = self.provider.generate_messages(
+        message = await self.provider.generate_message(
             messages=summary_history,
             model=self.model,
-            tools=[],  # No tools allowed for summary
+            tools=[],
         )
 
-        summary_content = ""
-        async for chunk in generator:  # type: ignore
-            if isinstance(chunk, Chunk):
-                summary_content += chunk.content
-
-        return summary_content
-
-
-DEFAULT_METADATA_SCHEMA = {
-    "type": "object",
-    "description": "Metadata for the result",
-    "properties": {
-        "title": {
-            "type": "string",
-            "description": "The title of the result",
-        },
-        "tags": {
-            "type": "array",
-            "description": "Tags for the result",
-            "items": {"type": "string"},
-        },
-        "description": {
-            "type": "string",
-            "description": "The description of the result",
-        },
-        "sources": {
-            "type": "array",
-            "description": "The sources of the result, either http://example.com, file://path/to/file.txt or search://query",
-            "items": {
-                "type": "string",
-            },
-        },
-    },
-    "required": ["title", "description", "sources"],
-}
-
-
-class FinishSubTaskTool(WorkspaceBaseTool):
-    """
-    🏁 Task Completion Tool - Marks a subtask as done and saves its results
-
-    This tool serves as the formal completion mechanism for subtasks by:
-    1. Saving the final output to the designated workspace location
-    2. Preserving structured metadata about the results
-    3. Marking the subtask as completed
-
-    This tool is EXCLUSIVELY AVAILABLE during the Conclusion Stage of complex subtasks,
-    forcing the agent to synthesize findings before completion. For simple 'tool_call'
-    subtasks, it is called immediately after the information-gathering tool.
-
-    Usage pattern:
-    - First call information tools to gather data (Tool Calling Stage)
-    - Then call finish_subtask to formalize and save results (Conclusion Stage)
-
-    Example result format:
-    {
-        "content": {
-            "analysis": "The data shows a clear trend of...",
-            "recommendations": ["First, consider...", "Second, implement..."]
-        },
-        "metadata": {
-            "title": "Market Analysis Results",
-            "description": "Comprehensive analysis of market trends",
-            "timestamp": "2023-06-15T10:30:00Z",
-            "sources": [
-                "http://example.com",
-                "file://path/to/file.txt",
-                "search://market trends",
-            ],
-        },
-    }
-    """
-
-    name = "finish_subtask"
-    description = """
-    Finish a subtask by saving its final result to a file in the workspace.
-    This tool is the ONLY tool available during the Conclusion Stage.
-    
-    Use this when you have gathered sufficient information in the Tool Calling Stage
-    and are ready to synthesize your findings into a final result.
-    
-    The result will be saved to the output_file path, defined in the subtask.
-    """
-
-    def __init__(
-        self,
-        workspace_dir: str,
-        result_schema: dict,
-        metadata_schema: dict | None = None,
-    ):
-        self.workspace_dir = workspace_dir
-        self.input_schema = {
-            "type": "object",
-            "properties": {
-                "result": result_schema,
-                "metadata": metadata_schema or DEFAULT_METADATA_SCHEMA,
-            },
-            "required": ["result", "metadata"],
-        }
-
-    async def process(self, context: ProcessingContext, params: dict):
-        """
-        Save the subtask result to a file and mark the subtask as finished.
-
-        Args:
-            context (ProcessingContext): The processing context
-            params (dict): Parameters containing the resultand metadata
-
-        Returns:
-            dict: Response containing the file path where the result was stored
-        """
-        result = params.get("result", {})
-        metadata = params.get("metadata", {})
-
-        return {
-            "result": result,
-            "metadata": metadata,
-        }
+        return str(message.content)

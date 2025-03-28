@@ -39,6 +39,28 @@ class ChatProvider(ABC):
         }
 
     @abstractmethod
+    async def generate_message(
+        self,
+        messages: Sequence[Message],
+        model: str,
+        tools: Sequence[Any] = [],
+        **kwargs
+    ) -> Message:
+        """
+        Generate a single message completion from the provider.
+
+        Args:
+            messages: Sequence of Message objects representing the conversation
+            model: str containing model information
+            tools: Available tools for the model to use
+            **kwargs: Additional provider-specific parameters
+
+        Returns:
+            A message returned by the provider.
+        """
+        pass
+
+    @abstractmethod
     async def generate_messages(
         self,
         messages: Sequence[Message],

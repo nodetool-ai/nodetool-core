@@ -14,7 +14,7 @@ import json
 import os
 from pathlib import Path
 
-from nodetool.chat.agent import Agent, RETRIEVAL_SYSTEM_PROMPT
+from nodetool.chat.agent import Agent
 from nodetool.chat.providers import get_provider, Chunk
 from nodetool.chat.tools.browser import BrowserTool, GoogleSearchTool
 from nodetool.metadata.types import Provider, Task
@@ -87,46 +87,14 @@ async def main():
     )
 
     # 5. Get user input for the search topic
-    search_topic = input("Enter topic to search for on Reddit: ")
-
-    # 6. Create and use the TaskPlanner to generate a plan
-    objective = f"Research and extract valuable content from Reddit posts about '{search_topic}'"
-
-    task_planner = TaskPlanner(
-        provider=provider,
-        model=model,
-        objective=objective,
-        workspace_dir=str(workspace_dir),
-        tools=tools,
-        agents=[agent],
-        max_research_iterations=2,
-    )
-
-    print(f"\nCreating task plan for objective: {objective}")
-
-    # Generate the task plan
-    async for item in task_planner.create_plan():
-        if isinstance(item, Chunk):
-            print(item.content, end="", flush=True)
-
-    # Get the generated task plan
-    task_plan = task_planner.task_plan
-    if not task_plan:
-        print("\nFailed to create task plan")
-        return
-
-    print(f"\n\nGenerated task plan: {task_plan.title}")
+    search_topic = "Marketing automation tools"
 
     processing_context = ProcessingContext()
 
     # 7. Execute each task in the plan
-    for i, task in enumerate(task_plan.tasks):
-        print(f"\nExecuting task {i+1}/{len(task_plan.tasks)}: {task.title}")
-
-        # Execute the task
-        async for item in agent.execute_task(task, processing_context):
-            if isinstance(item, Chunk):
-                print(item.content, end="", flush=True)
+    async for item in agent.execute(processing_context):
+        if isinstance(item, Chunk):
+            print(item.content, end="", flush=True)
 
     # 8. Print result summary
     print("\n\nTask execution completed.")

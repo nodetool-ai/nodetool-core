@@ -222,10 +222,10 @@ class OpenAIProvider(ChatProvider):
 
         openai_messages = [self.convert_message(m) for m in messages]
 
-        if "thinking" in kwargs:
-            kwargs.pop("thinking")
-            if model.startswith("o1") or model.startswith("o3"):
-                kwargs["reasoning_effort"] = "high"
+        # if "thinking" in kwargs:
+        #     kwargs.pop("thinking")
+        #     if model.startswith("o1") or model.startswith("o3"):
+        #         kwargs["reasoning_effort"] = "high"
 
         completion = await self.client.chat.completions.create(
             model=model,
@@ -294,6 +294,83 @@ class OpenAIProvider(ChatProvider):
                     assert (
                         current_tool_call is not None
                     ), "Current tool call must not be None"
+
+    async def generate_message(
+        self,
+        messages: Sequence[Message],
+        model: str,
+        tools: Sequence[Any] = [],
+        **kwargs,
+    ) -> Message:
+        """Generate a non-streaming completion from OpenAI.
+
+        Args:
+            messages: The message history
+            model: The model to use
+            tools: Optional tools to provide to the model
+            **kwargs: Additional arguments to pass to the OpenAI API
+
+        Returns:
+            A Message object containing the model's response
+        """
+        # Convert system messages to user messages for O1/O3 models
+        if model.startswith("o1") or model.startswith("o3"):
+            kwargs["max_completion_tokens"] = kwargs.pop("max_tokens", 4096)
+            kwargs.pop("temperature", None)
+            converted_messages = []
+            for msg in messages:
+                if msg.role == "system":
+                    converted_messages.append(
+                        Message(
+                            role="user",
+                            content=f"Instructions: {msg.content}",
+                            thread_id=msg.thread_id,
+                        )
+                    )
+                else:
+                    converted_messages.append(msg)
+            messages = converted_messages
+
+        if len(tools) > 0:
+            kwargs["tools"] = self.format_tools(tools)
+
+        openai_messages = [self.convert_message(m) for m in messages]
+
+        # Make non-streaming call to OpenAI
+        completion = await self.client.chat.completions.create(
+            model=model,
+            messages=openai_messages,
+            stream=False,
+            **kwargs,
+        )
+
+        # Update usage stats
+        if completion.usage:
+            self.usage["prompt_tokens"] += completion.usage.prompt_tokens
+            self.usage["completion_tokens"] += completion.usage.completion_tokens
+            self.usage["total_tokens"] += completion.usage.total_tokens
+
+        choice = completion.choices[0]
+        response_message = choice.message
+
+        # Create tool calls if present
+        tool_calls = None
+        if response_message.tool_calls:
+            tool_calls = [
+                ToolCall(
+                    id=tool_call.id,
+                    name=tool_call.function.name,
+                    args=json.loads(tool_call.function.arguments),
+                )
+                for tool_call in response_message.tool_calls
+            ]
+
+        # Return a Message object
+        return Message(
+            role="assistant",
+            content=response_message.content,
+            tool_calls=tool_calls,
+        )
 
     def get_usage(self) -> dict:
         """Return the current accumulated token usage statistics."""

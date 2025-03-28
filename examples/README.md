@@ -19,119 +19,90 @@ Before running these examples, you'll need to:
 
 ## Available Examples
 
-### 1. Simple Chat (`simple_chat.py`)
+### 1. Web Research and Analysis
 
-A basic example showing how to use NodeTool Core to create a simple chat workflow with OpenAI's ChatGPT.
+#### Wikipedia-Style Research Agent (`wikipedia_agent_example.py`)
 
-**Usage:**
+- Creates Wikipedia-style documentation through web research
+- Structures content into well-organized markdown files
+- Uses web search and browsing capabilities
 
-```bash
-python simple_chat.py
-```
+#### ChromaDB Research Agent (`chromadb_research_agent.py`)
 
-### 2. Agent-Based Research (`agent_based_research.py`)
+- Processes and indexes documents using ChromaDB
+- Enables semantic search across indexed content
+- Performs research using stored documents
 
-Demonstrates how to use NodeTool Core's agent system to perform web research on quantum computing and produce a detailed summary.
+#### HackerNews Agent (`test_hackernews_agent.py`)
 
-**Usage:**
+- Analyzes HackerNews content and discussions
+- Gathers insights from tech community discussions
 
-```bash
-python agent_based_research.py
-```
+### 2. Social Media Analysis Agents
 
-### 3. PDF Processing for RAG Applications (`pdf_rag.py`)
+#### Twitter/X Scraper (`twitter_scraper_agent.py`)
 
-Shows how to extract text from PDF documents, split it into chunks, and index it in a vector database for retrieval-augmented generation (RAG) applications.
+- Collects trending topics and viral content
+- Analyzes social media patterns
 
-**Usage:**
+#### Instagram Scraper (`instagram_scraper_agent.py`)
 
-```bash
-python pdf_rag.py
-```
+- Tracks trending content and hashtags
+- Analyzes platform-specific trends
 
-### 4. Email Summarization (`email_summarization.py`)
+#### Reddit Scraper (`reddit_scraper_agent.py`)
 
-Demonstrates how to use NodeTool Core to retrieve emails from Gmail and generate summaries.
+- Gathers information from Reddit discussions
+- Analyzes community trends and opinions
 
-**Usage:**
+### 3. Professional Research Tools
 
-```bash
-python email_summarization.py
-```
+#### LinkedIn Job Market Agent (`linkedin_job_market_agent.py`)
 
-## Overview of Examples
+- Researches current job market trends
+- Analyzes hiring patterns and industry demands
 
-### 1. Retrieval Agent (`test_retrieval_agent.py`)
+#### Google Search Agent (`test_google_agent.py`)
 
-A simple example demonstrating how to create and use a retrieval agent with browser tools. This script:
+- Demonstrates advanced Google search capabilities
+- Collects and organizes search results
 
-- Creates a research agent with Google search and browser capabilities
-- Executes a hard-coded task plan without using the task planner
-- Performs web searches and fetches specific web content
-- Saves the retrieved information to markdown files
+### 4. Utility Agents
 
-This is a good starting point to understand how agents interact with tools and execute tasks.
+#### Email Processing (`test_email_agent.py`)
 
-### 2. Task Planning and Execution (`test_planner.py`)
+- Demonstrates email retrieval and processing
+- Shows email content analysis capabilities
 
-This example demonstrates the separation of planning and execution phases, allowing for:
+#### OpenAI Web Search (`test_openai_web_search.py`)
 
-- Creating task plans using TaskPlanner
-- Saving and loading plans between sessions
-- Inspecting or modifying plans before execution
-- Executing plans using TaskExecutor
-
-This approach provides greater flexibility for workflows where you might want to review or adjust plans before execution.
-
-### 3. Multi-Agent Coordination (`test_multi_agent.py`)
-
-An advanced example showing how multiple specialized agents can work together. This script:
-
-- Sets up a Research Agent for retrieving information from the web
-- Creates a Summary Agent for processing and condensing the collected information
-- Uses MultiAgentCoordinator to manage task dependencies and workflow
-- Demonstrates a complete research workflow from information retrieval to summarization
-
-This example is ideal for understanding complex, multi-stage workflows that require different specialized capabilities.
+- Integrates OpenAI's capabilities with web search
+- Shows combined AI and search functionality
 
 ## Running the Examples
 
 To run any of these examples:
 
 1. Ensure you have NodeTool installed and configured
-2. Set up the required API keys for the chosen providers (Anthropic or OpenAI)
+2. Set up the required API keys for the chosen providers
 3. Run the script using Python:
 
 ```bash
-python nodetool-core/src/nodetool/chat/examples/test_retrieval_agent.py
+python examples/wikipedia_agent_example.py
 ```
 
 Each example will:
 
 - Create a workspace directory for storing outputs
-- Connect to the specified provider (Anthropic Claude or OpenAI GPT models)
+- Connect to the specified AI provider
 - Execute the tasks and display progress
 - Save results to the workspace directory
 
 ## Key Concepts
 
-- **Agent**: An AI assistant configured with specific tools, objectives, and capabilities
-- **Tools**: Components that enable agents to interact with external systems (web browsers, search engines, etc.)
+- **Agent**: An AI assistant configured with specific tools and capabilities
+- **Tools**: Components that enable agents to interact with external systems
 - **Tasks & Subtasks**: Units of work defining what an agent needs to accomplish
-- **TaskPlanner**: Creates structured plans for solving complex problems
-- **TaskExecutor**: Carries out the planned tasks using the appropriate agents
-- **MultiAgentCoordinator**: Orchestrates multiple specialized agents to solve complex problems
-
-## Customizing Examples
-
-You can modify these examples to experiment with:
-
-- Different AI models (Claude, GPT-4, etc.)
-- Custom system prompts for specialized behavior
-- Additional tools and capabilities
-- More complex task structures and dependencies
-
-Each example is well-commented to help you understand the components and how they work together.
 
 ## Next Steps
 
@@ -139,7 +110,7 @@ After exploring these examples, you can:
 
 1. Create custom agents for your specific use cases
 2. Develop new tools to expand agent capabilities
-3. Build more complex multi-agent systems with specialized roles
+3. Build more complex multi-agent systems
 4. Integrate these capabilities into your applications
 
 For more information, refer to the main NodeTool documentation.

@@ -31,6 +31,7 @@ from nodetool.types.prediction import (
     PredictionResult,
 )
 from nodetool.types.workflow import Workflow
+from nodetool.chat.workspace_manager import WorkspaceManager
 from nodetool.common.nodetool_api_client import NodetoolAPIClient
 from nodetool.metadata.types import ComfyModel, Message, Provider
 from nodetool.workflows.graph import Graph
@@ -130,6 +131,7 @@ class ProcessingContext:
         encode_assets_as_base64: bool = False,
         upload_assets_to_s3: bool = False,
         chroma_client: ClientAPI | None = None,
+        workspace_dir: str | None = None,
     ):
         self.user_id = user_id or "1"
         self.auth_token = auth_token or "local_token"
@@ -153,6 +155,7 @@ class ProcessingContext:
         self.encode_assets_as_base64 = encode_assets_as_base64
         self.upload_assets_to_s3 = upload_assets_to_s3
         self.chroma_client = chroma_client
+        self.workspace_dir = workspace_dir or WorkspaceManager().get_current_directory()
         env = Environment.get_environment()
         self.environment.update(env)
 
@@ -1884,3 +1887,31 @@ class ProcessingContext:
         raise FileNotFoundError(
             f"Could not find font '{font_name}' in system locations"
         )
+
+    def get_output_connected_nodes(self, node: Union[str, BaseNode]) -> list[BaseNode]:
+        """
+        Returns all nodes connected to the outputs of the given node.
+
+        Args:
+            node (Union[str, BaseNode]): The node or node ID to find connections for.
+
+        Returns:
+            list[BaseNode]: List of nodes connected to the outputs of the given node.
+        """
+        node_id = node if isinstance(node, str) else node.id
+
+        # Get unique target node IDs to avoid duplicates
+        connected_node_ids = set(
+            edge.target for edge in self.graph.edges if edge.source == node_id
+        )
+
+        # Find each node, skipping any that don't exist
+        connected_nodes = []
+        for target_id in connected_node_ids:
+            try:
+                connected_nodes.append(self.find_node(target_id))
+            except ValueError:
+                # Skip nodes that don't exist in the graph
+                pass
+
+        return connected_nodes

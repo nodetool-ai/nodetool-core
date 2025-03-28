@@ -2,7 +2,6 @@
 Workspace management tools module.
 
 This module provides tools for managing an agent's workspace:
-- CreateWorkspaceFileTool: Create a new file in the workspace
 - ReadWorkspaceFileTool: Read contents of files in the workspace
 - UpdateWorkspaceFileTool: Update existing files in the workspace
 - DeleteWorkspaceFileTool: Delete files from the workspace
@@ -13,123 +12,102 @@ This module provides tools for managing an agent's workspace:
 import os
 import subprocess
 import shutil
-from pathlib import Path
-from typing import Any, Dict, List
 
 from nodetool.workflows.processing_context import ProcessingContext
 from .base import Tool
 
 
-class WorkspaceBaseTool(Tool):
-    """Base class for workspace tools that contains common functionality."""
-
-    name = "workspace_base_tool"
-    description = "Base class for workspace tools that contains common functionality."
-
-    def resolve_workspace_path(self, path: str) -> str:
-        """
-        Resolve a path relative to the workspace directory.
-        Handles paths with /workspace prefix by stripping it and resolving against the actual workspace directory.
-
-        Args:
-            path (str): The path, can be:
-                - absolute with /workspace prefix
-                - absolute within the actual workspace directory
-                - relative to the workspace directory
-
-        Returns:
-            str: The absolute path in the actual filesystem
-        """
-        # Handle paths with /workspace prefix
-        if path.startswith("/workspace/"):
-            # Strip the /workspace prefix and treat as relative path
-            relative_path = path[len("/workspace/") :]
-            return os.path.normpath(os.path.join(self.workspace_dir, relative_path))
-
-        # Handle absolute paths
-        elif os.path.isabs(path):
-            # Security check to ensure the path is inside the workspace
-            abs_path = os.path.normpath(path)
-            if not abs_path.startswith(self.workspace_dir):
-                raise ValueError(f"Path '{path}' is outside the workspace directory")
-            return abs_path
-
-        # Handle relative paths
-        else:
-            # Relative path within the workspace
-            return os.path.normpath(os.path.join(self.workspace_dir, path))
-
-
-class CreateWorkspaceFileTool(WorkspaceBaseTool):
-    name = "create_workspace_file"
-    description = "Create a new file in the agent workspace"
+class WriteWorkspaceFileTool(Tool):
+    name = "write_workspace_file"
+    description = "Write content to a file in the agent workspace, creating it if it doesn't exist"
     input_schema = {
         "type": "object",
         "properties": {
             "path": {
                 "type": "string",
-                "description": "Path to the file to create, relative to the workspace directory",
+                "description": "Path to the file to write, relative to the workspace directory",
             },
             "content": {
                 "type": "string",
                 "description": "Content to write to the file",
             },
-            "overwrite": {
+            "append": {
                 "type": "boolean",
-                "description": "Whether to overwrite the file if it already exists",
+                "description": "Whether to append to the file instead of overwriting",
                 "default": False,
             },
         },
         "required": ["path", "content"],
     }
 
-    async def process(self, context: ProcessingContext, params: dict) -> Any:
+    async def process(self, context: ProcessingContext, params: dict):
         try:
             path = params["path"]
             content = params["content"]
-            overwrite = params.get("overwrite", False)
+            append = params.get("append", False)
 
             full_path = self.resolve_workspace_path(path)
 
             # Create parent directories if they don't exist
             os.makedirs(os.path.dirname(full_path), exist_ok=True)
 
-            # Check if file exists and handle overwrite parameter
-            if os.path.exists(full_path) and not overwrite:
-                return {
-                    "success": False,
-                    "error": f"File {path} already exists and overwrite is set to False",
-                }
-
-            with open(full_path, "w", encoding="utf-8") as f:
+            mode = "a" if append else "w"
+            with open(full_path, mode, encoding="utf-8") as f:
                 f.write(content)
 
-            return {"success": True, "path": path, "full_path": full_path}
+            file_existed = os.path.exists(full_path)
+            return {
+                "success": True,
+                "path": path,
+                "full_path": full_path,
+                "append": append,
+                "created": not file_existed,
+            }
 
         except Exception as e:
             return {"success": False, "error": str(e)}
 
 
-class ReadWorkspaceFileTool(WorkspaceBaseTool):
+class ReadWorkspaceFileTool(Tool):
     name = "read_workspace_file"
     description = "Read the contents of a file in the agent workspace"
-    input_schema = {
-        "type": "object",
-        "properties": {
-            "path": {
-                "type": "string",
-                "description": "Path to the file to read, relative to the workspace directory",
-            },
-            "max_length": {
-                "type": "integer",
-                "description": "Maximum number of characters to read (optional)",
-                "default": 100000,
-            },
-        },
-        "required": ["path"],
-    }
 
-    async def process(self, context: ProcessingContext, params: dict) -> Any:
+    def __init__(self, workspace_dir: str):
+        super().__init__(workspace_dir)
+        files = self.list_workspace_contents(self.workspace_dir)
+        self.input_schema = {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Path to the file to read, relative to the workspace directory",
+                    "enum": files,
+                },
+                "max_length": {
+                    "type": "integer",
+                    "description": "Maximum number of characters to read (optional)",
+                    "default": 100000,
+                },
+            },
+            "required": ["path"],
+        }
+
+    def list_workspace_contents(self, workspace_dir: str):
+        files = []
+        for root, dirs, filenames in os.walk(workspace_dir):
+            # Exclude the traces directory
+            if "traces" in dirs:
+                dirs.remove("traces")
+
+            # Add all files with their relative paths
+            for filename in filenames:
+                file_path = os.path.join(root, filename)
+                rel_path = os.path.relpath(file_path, self.workspace_dir)
+                files.append(rel_path)
+
+        return files
+
+    async def process(self, context: ProcessingContext, params: dict):
         try:
             path = params["path"]
             max_length = params.get("max_length", 100000)
@@ -163,7 +141,7 @@ class ReadWorkspaceFileTool(WorkspaceBaseTool):
             return {"success": False, "error": str(e)}
 
 
-class UpdateWorkspaceFileTool(WorkspaceBaseTool):
+class UpdateWorkspaceFileTool(Tool):
     name = "update_workspace_file"
     description = "Update an existing file in the agent workspace"
     input_schema = {
@@ -186,7 +164,7 @@ class UpdateWorkspaceFileTool(WorkspaceBaseTool):
         "required": ["path", "content"],
     }
 
-    async def process(self, context: ProcessingContext, params: dict) -> Any:
+    async def process(self, context: ProcessingContext, params: dict):
         try:
             path = params["path"]
             content = params["content"]
@@ -221,7 +199,7 @@ class UpdateWorkspaceFileTool(WorkspaceBaseTool):
             return {"success": False, "error": str(e)}
 
 
-class DeleteWorkspaceFileTool(WorkspaceBaseTool):
+class DeleteWorkspaceFileTool(Tool):
     name = "delete_workspace_file"
     description = "Delete a file or directory from the agent workspace"
     input_schema = {
@@ -240,7 +218,7 @@ class DeleteWorkspaceFileTool(WorkspaceBaseTool):
         "required": ["path"],
     }
 
-    async def process(self, context: ProcessingContext, params: dict) -> Any:
+    async def process(self, context: ProcessingContext, params: dict):
         try:
             path = params["path"]
             recursive = params.get("recursive", False)
@@ -291,7 +269,7 @@ class DeleteWorkspaceFileTool(WorkspaceBaseTool):
             return {"success": False, "error": str(e)}
 
 
-class ListWorkspaceContentsTool(WorkspaceBaseTool):
+class ListWorkspaceContentsTool(Tool):
     name = "list_workspace_contents"
     description = "List contents of the agent workspace directory"
     input_schema = {
@@ -316,7 +294,7 @@ class ListWorkspaceContentsTool(WorkspaceBaseTool):
         "required": [],
     }
 
-    async def process(self, context: ProcessingContext, params: dict) -> Any:
+    async def process(self, context: ProcessingContext, params: dict):
         try:
             path = params.get("path", ".")
             recursive = params.get("recursive", False)
@@ -405,7 +383,7 @@ class ListWorkspaceContentsTool(WorkspaceBaseTool):
             return {"success": False, "error": str(e)}
 
 
-class ExecuteWorkspaceCommandTool(WorkspaceBaseTool):
+class ExecuteWorkspaceCommandTool(Tool):
     name = "execute_workspace_command"
     description = "Execute a shell command in the agent workspace directory"
     input_schema = {
@@ -424,7 +402,7 @@ class ExecuteWorkspaceCommandTool(WorkspaceBaseTool):
         "required": ["command"],
     }
 
-    async def process(self, context: ProcessingContext, params: dict) -> Any:
+    async def process(self, context: ProcessingContext, params: dict):
         try:
             command = params["command"]
             timeout = params.get("timeout", 60)

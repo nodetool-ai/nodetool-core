@@ -228,7 +228,9 @@ def show_settings(secrets: bool, mask: bool):
 @click.option("--secrets", is_flag=True, help="Edit secrets instead of settings.")
 @click.option("--key", help="Specific setting/secret key to edit.")
 @click.option("--value", help="New value for the specified key.")
-def edit_settings(secrets: bool, key: str = None, value: str = None):
+def edit_settings(
+    secrets: bool = False, key: str | None = None, value: str | None = None
+):
     """Edit settings or secrets."""
     from nodetool.common.settings import (
         load_settings,

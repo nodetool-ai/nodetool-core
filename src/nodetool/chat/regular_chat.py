@@ -11,7 +11,7 @@ from typing import List, Optional
 from nodetool.chat.providers import Chunk
 from nodetool.chat.providers.base import ChatProvider
 from nodetool.chat.tools import Tool
-from nodetool.chat.chat import generate_messages, run_tool, default_serializer
+from nodetool.chat.chat import run_tool, default_serializer
 from nodetool.metadata.types import Message, FunctionModel, ToolCall
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.chat.tools import (
@@ -31,8 +31,6 @@ from nodetool.chat.tools import (
     ConvertPDFToMarkdownTool,
     CreateAppleNoteTool,
     ReadAppleNotesTool,
-    SemanticDocSearchTool,
-    KeywordDocSearchTool,
 )
 
 
@@ -76,24 +74,20 @@ async def process_regular_chat(
         BrowserTool(workspace_dir),
         ScreenshotTool(workspace_dir),
         SearchFileTool(workspace_dir),
-        ChromaTextSearchTool(workspace_dir),
-        ChromaHybridSearchTool(workspace_dir),
         ExtractPDFTablesTool(workspace_dir),
         ExtractPDFTextTool(workspace_dir),
         ConvertPDFToMarkdownTool(workspace_dir),
         CreateAppleNoteTool(workspace_dir),
         ReadAppleNotesTool(workspace_dir),
-        SemanticDocSearchTool(workspace_dir),
-        KeywordDocSearchTool(workspace_dir),
     ]
 
     while True:
-        async for chunk in generate_messages(
+        async for chunk in provider.generate_messages(
             messages=messages_to_send,
             model=model,
             tools=tools,
             provider=provider,
-        ):
+        ):  # type: ignore
             if isinstance(chunk, Chunk):
                 current_chunk = str(chunk.content)
                 print(chunk.content, end="", flush=True)

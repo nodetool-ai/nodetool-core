@@ -8,15 +8,6 @@ to interact with various LLM APIs including OpenAI, Anthropic, and Ollama.
 # Base provider class
 from nodetool.chat.providers.base import ChatProvider, Chunk
 
-# OpenAI provider
-from nodetool.chat.providers.openai import OpenAIProvider
-
-# Anthropic provider
-from nodetool.chat.providers.anthropic import AnthropicProvider
-
-# Ollama provider
-from nodetool.chat.providers.ollama import OllamaProvider
-
 # Provider factory
 from nodetool.metadata.types import Provider as ProviderEnum
 
@@ -38,6 +29,11 @@ def get_provider(provider_type: ProviderEnum) -> ChatProvider:
     Raises:
         ValueError: If the provider type is not supported
     """
+
+    from nodetool.chat.providers.openai import OpenAIProvider
+    from nodetool.chat.providers.anthropic import AnthropicProvider
+    from nodetool.chat.providers.ollama import OllamaProvider
+
     if provider_type in _provider_cache:
         return _provider_cache[provider_type]
 

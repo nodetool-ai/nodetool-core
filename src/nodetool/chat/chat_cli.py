@@ -29,6 +29,8 @@ from nodetool.chat.agent import Agent
 from nodetool.chat.providers import get_provider, Chunk
 from nodetool.chat.regular_chat import process_regular_chat
 from nodetool.chat.task_planner import TaskPlanner
+from nodetool.chat.tools.browser import DownloadFileTool
+from nodetool.chat.workspace_manager import WorkspaceManager
 from nodetool.metadata.types import Provider, Message, ToolCall
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.chat.ollama_service import get_ollama_models
@@ -36,7 +38,7 @@ from nodetool.chat.chat import get_openai_models
 from nodetool.chat.tools import (
     GoogleSearchTool,
     BrowserTool,
-    DownloadFilesTool,
+    DownloadFileTool,
     WebFetchTool,
     ScreenshotTool,
     ChromaTextSearchTool,
@@ -148,12 +150,6 @@ class ChatCLI:
         }
         self.provider = Provider.Anthropic
         self.model = self.default_models[self.provider]
-        # Initialize specialized models
-        self.planner_model = self.model
-        self.summarization_model = self.model
-        self.retrieval_model = self.model
-
-        # Settings file path
         self.settings_file = os.path.join(os.path.expanduser("~"), ".nodetool_settings")
 
         # Load settings if they exist
@@ -183,37 +179,21 @@ class ChatCLI:
         self.providers = [p.value.lower() for p in Provider]
 
         # Set up workspace in user's home directory
-        self.workspace_root = Path(os.path.expanduser("~")) / ".nodetool-workspaces"
-        self.workspace_root.mkdir(exist_ok=True)
-        self.workspace_name = f"workspace-{int(asyncio.get_event_loop().time())}"
-        self.workspace_dir = self.workspace_root / self.workspace_name
-        self.workspace_dir.mkdir(exist_ok=True)
-        self.current_dir = self.workspace_dir
-        workspace_dir = str(self.workspace_dir)
+        self.workspace_manager = WorkspaceManager()
+        self.workspace_dir = Path(self.workspace_manager.get_current_directory())
 
         print(f"Created new workspace at: {self.workspace_dir}")
+        workspace_dir = self.workspace_manager.get_current_directory()
 
-        self.retrieval_tools = [
-            ChromaTextSearchTool(workspace_dir),
-            ChromaHybridSearchTool(workspace_dir),
+        self.tools = [
             ExtractPDFTablesTool(workspace_dir),
             ExtractPDFTextTool(workspace_dir),
             ConvertPDFToMarkdownTool(workspace_dir),
             GoogleSearchTool(workspace_dir),
             WebFetchTool(workspace_dir),
-            DownloadFilesTool(workspace_dir),
+            DownloadFileTool(workspace_dir),
             BrowserTool(workspace_dir),
             ScreenshotTool(workspace_dir),
-            ReadWorkspaceFileTool(workspace_dir),
-            ListWorkspaceContentsTool(workspace_dir),
-            ExecuteWorkspaceCommandTool(workspace_dir),
-        ]
-
-        self.summarization_tools = [
-            ChromaTextSearchTool(workspace_dir),
-            ChromaHybridSearchTool(workspace_dir),
-            ReadWorkspaceFileTool(workspace_dir),
-            ListWorkspaceContentsTool(workspace_dir),
             ExecuteWorkspaceCommandTool(workspace_dir),
         ]
 
@@ -329,55 +309,13 @@ class ChatCLI:
             MultiAgentCoordinator: A new MultiAgentCoordinator instance
         """
         provider_instance = get_provider(self.provider)
-        agents = [
-            Agent(
-                name="Research Agent",
-                objective="Research information from the web.",
-                description="A research agent that uses the research tools to research information from the web.",
-                provider=provider_instance,
-                model=self.retrieval_model,
-                workspace_dir=str(self.workspace_dir),
-                tools=self.retrieval_tools,
-            ),
-            Agent(
-                name="Summarization Agent",
-                objective="Summarize information from the workspace.",
-                description="A summarization agent that uses the summarization tools to summarize information from the workspace.",
-                provider=provider_instance,
-                model=self.summarization_model,
-                workspace_dir=str(self.workspace_dir),
-                tools=self.summarization_tools,
-            ),
-        ]
-
-        if self.provider == Provider.OpenAI:
-            task_models = ["gpt-4o-mini", "gpt-4o", "o3-mini", "o1"]
-        elif self.provider == Provider.Anthropic:
-            task_models = ["claude-3-5-haiku-20240307", "claude-3-7-sonnet-20250219"]
-        elif self.provider == Provider.Ollama:
-            task_models = ["llama3.1:8b", "llama3.1"]
-        else:
-            raise ValueError(f"Unsupported provider: {self.provider}")
-
-        planner = TaskPlanner(
-            provider=provider_instance,
-            model=self.planner_model,
-            task_models=task_models,
+        agent = Agent(
+            name="Agent",
             objective=objective,
-            workspace_dir=str(self.workspace_dir),
-            tools=self.retrieval_tools,
-            agents=agents,
-        )
-
-        # Create a MultiAgentCoordinator instance
-        agent = MultiAgentCoordinator(
             provider=provider_instance,
-            planner=planner,
-            agents=agents,
-            workspace_dir=str(self.workspace_dir),
-            max_steps=30,
+            model=self.model,
+            tools=self.tools,
         )
-
         return agent
 
     async def process_agent_response(self, problem: str):
@@ -402,9 +340,11 @@ class ChatCLI:
             This is only used when agent_mode is True.
         """
         self.agent = self.initialize_agent(problem)
-        processing_context = ProcessingContext()
+        processing_context = ProcessingContext(
+            workspace_dir=self.workspace_manager.get_current_directory()
+        )
         try:
-            async for item in self.agent.solve_problem(processing_context):
+            async for item in self.agent.execute(processing_context):
                 if isinstance(item, Chunk):
                     print(item.content, end="", flush=True)
                 elif isinstance(item, ToolCall):
@@ -443,11 +383,11 @@ class ChatCLI:
         """
         try:
             if cmd == "pwd":
-                print(self.current_dir)
+                print(self.workspace_dir)
             elif cmd == "ls":
-                target = self.current_dir
+                target = self.workspace_dir
                 if args:
-                    path = (self.current_dir / args[0]).resolve()
+                    path = (self.workspace_dir / args[0]).resolve()
                     if not str(path).startswith(str(self.workspace_dir)):
                         print("Error: Cannot access paths outside workspace")
                         return
@@ -459,21 +399,21 @@ class ChatCLI:
                     print(f"Error: {e}")
             elif cmd == "cd":
                 if not args:
-                    self.current_dir = self.workspace_dir
+                    self.workspace_dir = self.workspace_manager.get_current_directory()
                 else:
-                    new_dir = (self.current_dir / args[0]).resolve()
+                    new_dir = (self.workspace_dir / args[0]).resolve()
                     if not str(new_dir).startswith(str(self.workspace_dir)):
                         print("Error: Cannot access paths outside workspace")
                         return
                     if not new_dir.is_dir():
                         print(f"Error: {args[0]} is not a directory")
                         return
-                    self.current_dir = new_dir
+                    self.workspace_dir = new_dir
             elif cmd == "mkdir":
                 if not args:
                     print("Error: Directory name required")
                     return
-                new_dir = (self.current_dir / args[0]).resolve()
+                new_dir = (self.workspace_dir / args[0]).resolve()
                 if not str(new_dir).startswith(str(self.workspace_dir)):
                     print("Error: Cannot create directory outside workspace")
                     return
@@ -482,7 +422,7 @@ class ChatCLI:
                 if not args:
                     print("Error: Path required")
                     return
-                target = (self.current_dir / args[0]).resolve()
+                target = (self.workspace_dir / args[0]).resolve()
                 if not str(target).startswith(str(self.workspace_dir)):
                     print("Error: Cannot remove paths outside workspace")
                     return
@@ -493,7 +433,7 @@ class ChatCLI:
                 else:
                     target.unlink()
             elif cmd == "open":
-                target = str(self.current_dir)
+                target = str(self.workspace_dir)
                 if not str(target).startswith(str(self.workspace_dir)):
                     print("Error: Cannot open files outside workspace")
                     return
@@ -806,8 +746,9 @@ class ChatCLI:
 
         while True:
             try:
+                current_dir = os.getcwd()
                 # Show current directory in prompt
-                rel_path = os.path.relpath(self.current_dir, self.workspace_dir)
+                rel_path = os.path.relpath(current_dir, self.workspace_dir)
                 prompt = f"[{rel_path}]> " if rel_path != "." else "> "
                 user_input = input(prompt).strip()
                 readline.write_history_file(self.histfile)

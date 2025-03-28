@@ -23,6 +23,7 @@ fastapi = "0.115.5"
 openapi-pydantic = "*"
 uvicorn = "0.32.0"
 msgpack = "1.1.0"
+networkx = "3.4.2"
 
 # Utils dependencies
 black = "24.10.0"

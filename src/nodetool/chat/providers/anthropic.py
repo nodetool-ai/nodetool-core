@@ -5,6 +5,8 @@ This module implements the ChatProvider interface for Anthropic Claude models,
 handling message conversion, streaming, and tool integration.
 """
 
+import asyncio
+import json
 from typing import Any, AsyncGenerator, Sequence
 import random
 import anthropic
@@ -188,16 +190,23 @@ class AnthropicProvider(ChatProvider):
             else "You are a helpful assistant."
         )
 
-        # If JSON format is requested, modify the system prompt
-        if response_format == "json_schema":
-            system_message = f"{system_message}\nYou must respond with JSON only, without any explanations or conversation."
-            # Add anthropic-specific response_format parameter
-            kwargs["response_format"] = {"type": "json_object"}
+        # If JSON format is requested via schema (OpenAI compatibility)
+        if isinstance(response_format, dict) and "schema" in response_format:
+            # Create a JSON output tool based on the schema
+            json_tool = {
+                "name": "json_output",
+                "description": "Use this tool to output JSON according to the specified schema.",
+                "input_schema": response_format["schema"],
+            }
+            # Add the JSON tool to the list of tools
+            tools = list(tools) + [json_tool]
+            # Add instruction to use the JSON output tool in system message
+            system_message = f"{system_message}\nWhen you need to provide a JSON response, use the json_output tool."
 
-        if "thinking" in kwargs:
-            kwargs["thinking"] = {"type": "enabled", "budget_tokens": 4096}
-            if "haiku" in model:
-                kwargs.pop("thinking")
+        # if "thinking" in kwargs:
+        #     kwargs["thinking"] = {"type": "enabled", "budget_tokens": 4096}
+        #     if "haiku" in model:
+        #         kwargs.pop("thinking")
 
         # Convert messages and tools to Anthropic format
         anthropic_messages = [
@@ -210,81 +219,161 @@ class AnthropicProvider(ChatProvider):
 
         anthropic_tools = self.format_tools(tools)
 
-        # Add retry logic with exponential backoff
-        import asyncio
-        from anthropic import APIStatusError
+        async with self.client.messages.stream(
+            model=model,
+            messages=anthropic_messages,
+            system=system_message,
+            tools=anthropic_tools,
+            **kwargs,
+        ) as stream:
+            async for event in stream:
+                if event.type == "content_block_delta":
+                    if event.delta.type == "text_delta":
+                        yield Chunk(content=event.delta.text, done=False)
+                    elif event.delta.type == "thinking_delta":
+                        yield Chunk(content=event.delta.thinking, done=False)
+                elif event.type == "content_block_start":
+                    if (
+                        hasattr(event, "content_block")
+                        and event.content_block.type == "thinking"
+                    ):
+                        # Handle start of a thinking block if needed
+                        pass
+                elif event.type == "content_block_stop":
+                    if event.content_block.type == "tool_use":
+                        tool_call = ToolCall(
+                            id=str(event.content_block.id),
+                            name=event.content_block.name,
+                            args=event.content_block.input,  # type: ignore
+                        )
+                        # If this is the json_output tool, convert it to a normal text chunk
+                        if tool_call.name == "json_output":
+                            json_str = json.dumps(tool_call.args)
+                            yield Chunk(content=json_str, done=False)
+                        else:
+                            yield tool_call
+                    elif event.content_block.type == "thinking":
+                        # Handle complete thinking blocks if needed
+                        pass
+                elif event.type == "message_stop":
+                    # Update usage statistics when the message is complete
+                    if hasattr(event, "message") and hasattr(event.message, "usage"):
+                        usage = event.message.usage
+                        self.usage["input_tokens"] += usage.input_tokens
+                        self.usage["output_tokens"] += usage.output_tokens
+                        if usage.cache_creation_input_tokens:
+                            self.usage[
+                                "cache_creation_input_tokens"
+                            ] += usage.cache_creation_input_tokens
+                        if usage.cache_read_input_tokens:
+                            self.usage[
+                                "cache_read_input_tokens"
+                            ] += usage.cache_read_input_tokens
 
-        max_retries = 5
-        base_delay = 1  # Start with 1 second delay
+                    yield Chunk(content="", done=True)
 
-        for retry in range(max_retries):
-            try:
-                async with self.client.messages.stream(
-                    model=model,
-                    messages=anthropic_messages,
-                    system=system_message,
-                    tools=anthropic_tools,
-                    **kwargs,
-                ) as stream:
-                    async for event in stream:
-                        if event.type == "content_block_delta":
-                            if event.delta.type == "text_delta":
-                                yield Chunk(content=event.delta.text, done=False)
-                            elif event.delta.type == "thinking_delta":
-                                yield Chunk(content=event.delta.thinking, done=False)
-                        elif event.type == "content_block_start":
-                            if (
-                                hasattr(event, "content_block")
-                                and event.content_block.type == "thinking"
-                            ):
-                                # Handle start of a thinking block if needed
-                                pass
-                        elif event.type == "content_block_stop":
-                            if event.content_block.type == "tool_use":
-                                yield ToolCall(
-                                    id=str(event.content_block.id),
-                                    name=event.content_block.name,
-                                    args=event.content_block.input,  # type: ignore
-                                )
-                            elif event.content_block.type == "thinking":
-                                # Handle complete thinking blocks if needed
-                                pass
-                        elif event.type == "message_stop":
-                            # Update usage statistics when the message is complete
-                            if hasattr(event, "message") and hasattr(
-                                event.message, "usage"
-                            ):
-                                usage = event.message.usage
-                                self.usage["input_tokens"] += usage.input_tokens
-                                self.usage["output_tokens"] += usage.output_tokens
-                                if usage.cache_creation_input_tokens:
-                                    self.usage[
-                                        "cache_creation_input_tokens"
-                                    ] += usage.cache_creation_input_tokens
-                                if usage.cache_read_input_tokens:
-                                    self.usage[
-                                        "cache_read_input_tokens"
-                                    ] += usage.cache_read_input_tokens
+    async def generate_message(
+        self,
+        messages: Sequence[Message],
+        model: str,
+        tools: Sequence[Any] = [],
+        **kwargs,
+    ) -> Message:
+        """Generate a complete non-streaming message from Anthropic.
 
-                            yield Chunk(content="", done=True)
-                # If we get here, the API call was successful, so break out of the retry loop
-                break
+        Similar to generate_messages but returns a complete response rather than streaming.
 
-            except APIStatusError as e:
-                # Only retry on 429 (rate limit), 500, 502, 503, 504 (server errors)
-                if (
-                    e.status_code == 429
-                    or e.status_code >= 500
-                    and retry < max_retries - 1
-                ):
-                    # Calculate exponential backoff with jitter
-                    delay = base_delay * (2**retry) + (random.random() * 0.5)
-                    # Log the error and retry attempt
-                    print(
-                        f"Anthropic API error: {e}. Retrying in {delay:.2f} seconds (attempt {retry+1}/{max_retries})"
+        Args:
+            messages: The messages to send to the model
+            model: The model to use
+            tools: Tools the model can use
+            **kwargs: Additional parameters to pass to the Anthropic API
+
+        Returns:
+            A complete Message object
+        """
+        if "max_tokens" not in kwargs:
+            if "haiku" in model:
+                kwargs["max_tokens"] = 4096
+            else:
+                kwargs["max_tokens"] = 8192
+
+        # Handle response_format parameter
+        response_format = kwargs.pop("response_format", None)
+
+        system_messages = [message for message in messages if message.role == "system"]
+        system_message = (
+            str(system_messages[0].content)
+            if len(system_messages) > 0
+            else "You are a helpful assistant."
+        )
+
+        if isinstance(response_format, dict) and "schema" in response_format:
+            # Create a JSON output tool based on the schema
+            json_tool = {
+                "name": "json_output",
+                "description": "Use this tool to output JSON according to the specified schema.",
+                "input_schema": response_format["schema"],
+            }
+            tools = list(tools) + [json_tool]
+            system_message = f"{system_message}\nYou must call the json_output tool to output JSON according to the specified schema."
+
+        # Convert messages and tools to Anthropic format
+        anthropic_messages = [
+            msg
+            for msg in [
+                self.convert_message(msg) for msg in messages if msg.role != "system"
+            ]
+            if msg is not None
+        ]
+
+        anthropic_tools = self.format_tools(tools)
+
+        response: anthropic.types.message.Message = await self.client.messages.create(
+            model=model,
+            messages=anthropic_messages,
+            system=system_message,
+            tools=anthropic_tools,
+            **kwargs,
+        )
+
+        # Update usage statistics
+        if hasattr(response, "usage"):
+            usage = response.usage
+            self.usage["input_tokens"] += usage.input_tokens
+            self.usage["output_tokens"] += usage.output_tokens
+            if usage.cache_creation_input_tokens:
+                self.usage[
+                    "cache_creation_input_tokens"
+                ] += usage.cache_creation_input_tokens
+            if usage.cache_read_input_tokens:
+                self.usage["cache_read_input_tokens"] += usage.cache_read_input_tokens
+
+        content = []
+        tool_calls = []
+        for block in response.content:
+            if block.type == "tool_use":
+                tool_calls.append(
+                    ToolCall(
+                        id=str(block.id),
+                        name=block.name,
+                        args=block.input,  # type: ignore
                     )
-                    await asyncio.sleep(delay)
-                    continue
-                else:
-                    # If we've exhausted retries or it's not a retryable error, re-raise
-                    raise
+                )
+            elif block.type == "text":
+                content.append(block.text)
+
+        # Check if the json_output tool was used and return its content directly
+        for tool_call in tool_calls:
+            if tool_call.name == "json_output":
+                return Message(
+                    role="assistant",
+                    content=json.dumps(tool_call.args),
+                    tool_calls=[],
+                )
+
+        return Message(
+            role="assistant",
+            content="\n".join(content),
+            tool_calls=tool_calls,
+        )

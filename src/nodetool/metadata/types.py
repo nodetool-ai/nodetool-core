@@ -316,6 +316,7 @@ class OpenAIEmbeddingModel(str, enum.Enum):
 class AgentModel(str, enum.Enum):
     claude_3_5_sonnet = "claude-3-5-sonnet-2024102"
     claude_3_7_sonnet = "claude-3-7-sonnet-20250219"
+    gpt_4o = "gpt-4o"
 
 
 class FunctionModel(BaseType):
@@ -969,36 +970,34 @@ class SubTask(BaseType):
 
     type: Literal["subtask"] = "subtask"
 
-    content: str = Field(default="", description="The content of the subtask")
-    model: str = Field(default="", description="The model to use for the subtask")
+    content: str = Field(description="The content of the subtask")
     output_file: str = Field(
-        default="", description="The file path where the subtask will save its output"
-    )
-    max_tool_calls: int = Field(
-        default=5, description="The maximum number of tool calls for the subtask"
+        description="The file path where the subtask will save its output"
     )
     completed: bool = Field(
         default=False, description="Whether the subtask is completed"
     )
     start_time: int = Field(default=0, description="The start time of the subtask")
     end_time: int = Field(default=0, description="The end time of the subtask")
-    file_dependencies: list[str] = Field(
-        default=[], description="The dependencies of the subtask, a list of file paths"
+    input_files: list[str] = Field(
+        default=[], description="The input files for the subtask"
     )
-    output_type: dict[str, Any] = Field(
-        default={},
-        description="json schema for the output of the subtask",
+    output_type: str = Field(
+        default="string",
+        description="The type of the output of the subtask",
+    )
+    output_schema: Any = Field(
+        default=None,
+        description="The JSON schema of the output of the subtask",
     )
 
     def to_markdown(self) -> str:
         """Convert the subtask to markdown format."""
         checkbox = "[x]" if self.completed else "[*]" if self.is_running() else "[ ]"
         deps_str = (
-            f" (depends on {', '.join(self.file_dependencies)})"
-            if self.file_dependencies
-            else ""
+            f" (depends on {', '.join(self.input_files)})" if self.input_files else ""
         )
-        return f"- {checkbox} {self.content}{deps_str} {self.model}"
+        return f"- {checkbox} {self.content} => '{self.output_file}'{deps_str}"
 
     def is_running(self) -> bool:
         """
@@ -1012,7 +1011,7 @@ class SubTask(BaseType):
         Returns:
             bool: True if the subtask is currently running, False otherwise
         """
-        return self.start_time > 0 and self.end_time == 0 and not self.completed
+        return self.start_time > 0 and not self.completed
 
 
 class Task(BaseModel):
@@ -1037,7 +1036,9 @@ class Task(BaseModel):
 
     def to_markdown(self) -> str:
         """Converts task and subtasks to markdown format with headings and checkboxes."""
-        lines = f"# {self.title}\n"
+        lines = f"# Task for {self.agent_name}: {self.title}\n"
+        if self.description:
+            lines += f"{self.description}\n"
         if self.subtasks:
             for subtask in self.subtasks:
                 lines += f"{subtask.to_markdown()}\n"
@@ -1046,12 +1047,12 @@ class Task(BaseModel):
     def add_subtask(
         self,
         content: str,
-        file_dependencies: list[str] = [],
+        input_files: list[str] = [],
     ) -> SubTask:
         """Creates and adds a new subtask to the task."""
         subtask = SubTask(
             content=content,
-            file_dependencies=file_dependencies,
+            input_files=input_files,
         )
         self.subtasks.append(subtask)
         return subtask
@@ -1079,7 +1080,7 @@ class TaskPlan(BaseType):
 
     def to_markdown(self) -> str:
         """Convert all tasks to a markdown string."""
-        lines = f"# {self.title}\n"
+        lines = f"# Task Plan - {self.title}\n"
         for task in self.tasks:
             lines += f"{task.to_markdown()}\n"
         return lines
@@ -1126,7 +1127,7 @@ class TaskPlan(BaseType):
         self,
         task_title: str,
         content: str,
-        file_dependencies: list[str] = [],
+        input_files: list[str] = [],
     ) -> dict[str, Any]:
         """Adds a subtask to an existing task, with optional completion status and dependencies."""
         task = self.find_task_by_title(task_title)
@@ -1144,13 +1145,13 @@ class TaskPlan(BaseType):
             }
 
         # Create the subtask
-        subtask = task.add_subtask(content, file_dependencies=file_dependencies)
+        subtask = task.add_subtask(content, input_files=input_files)
 
         return {
             "success": True,
             "task_title": task.title,
             "subtask_content": subtask.content,
-            "file_dependencies": subtask.file_dependencies,
+            "input_files": subtask.input_files,
         }
 
     def finish_subtask(self, task_title: str, content: str) -> dict[str, Any]:
