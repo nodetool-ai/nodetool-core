@@ -25,8 +25,6 @@ from rich.panel import Panel
 
 from nodetool.chat.sub_task_context import (
     TaskUpdate,
-    TaskUpdateEvent,
-    FinishTaskTool,
 )
 from nodetool.chat.task_executor import TaskExecutor
 from nodetool.chat.providers import ChatProvider, Chunk
@@ -106,7 +104,6 @@ class Agent:
         self.tools = tools
         self.input_files = input_files
         self.max_subtasks = max_subtasks
-        self.task_plan = None
         self.system_prompt = system_prompt or ""
         self.results: Any = None
         self.console = Console()

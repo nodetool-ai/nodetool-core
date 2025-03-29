@@ -61,8 +61,8 @@ async def main():
         objective="""
         1. Fetch the following file: https://raw.githubusercontent.com/AGI-Edgerunners/LLM-Agents-Papers/refs/heads/main/README.md
         2. Identify top 5 papers from the file.
-        3. Fetch the websites of the papers.
-        4. Download the papers from the websites.
+        3. Infer the download links for the arxiv papers.
+        4. Download the papers.
         """,
         provider=provider,
         model=model,
@@ -85,7 +85,6 @@ async def main():
         """,
         provider=provider,
         model=model,
-        input_files=download_agent.get_results(),
         tools=[
             ConvertPDFToMarkdownTool(
                 workspace_dir=str(context.workspace_dir),
@@ -107,25 +106,27 @@ async def main():
         model=model,
         tools=[
             ChromaHybridSearchTool(
-                workspace_dir=str(workspace_dir),
+                workspace_dir=str(context.workspace_dir),
                 collection=collection,
             ),
         ],
     )
 
-    processing_context = ProcessingContext()
-
-    async for item in download_agent.execute(processing_context):
+    async for item in download_agent.execute(context):
         if isinstance(item, Chunk):
             print(item.content, end="", flush=True)
 
-    # async for item in ingestion_agent.execute(processing_context):
-    #     if isinstance(item, Chunk):
-    #         print(item.content, end="", flush=True)
+    print("Ingesting documents...")
+    ingestion_agent.input_files = download_agent.get_results()
 
-    # async for item in research_agent.execute(processing_context):
-    #     if isinstance(item, Chunk):
-    #         print(item.content, end="", flush=True)
+    async for item in ingestion_agent.execute(context):
+        if isinstance(item, Chunk):
+            print(item.content, end="", flush=True)
+
+    print("Researching...")
+    async for item in research_agent.execute(context):
+        if isinstance(item, Chunk):
+            print(item.content, end="", flush=True)
 
     print(f"\nWorkspace: {context.workspace_dir}")
 
