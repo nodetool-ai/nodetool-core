@@ -22,27 +22,6 @@ import time
 import networkx as nx
 
 
-class PlanUpdateEvent(str, Enum):
-    TASK_PLAN_CREATED = "task_plan_created"
-    TASK_PLAN_LOADED = "task_plan_loaded"
-    TASK_PLAN_SAVED = "task_plan_saved"
-
-
-class PlanUpdate(BaseModel):
-    """
-    A class representing an update to the task plan.
-    """
-
-    agent_name: str | None = None
-    task_plan: TaskPlan | None = None
-    task: Task | None = None
-    subtask: SubTask | None = None
-    retry_count: int | None = None
-    error_message: str | None = None
-    event: PlanUpdateEvent
-    content: str | None = None
-
-
 # Simplify the DEFAULT_PLANNING_SYSTEM_PROMPT
 DEFAULT_PLANNING_SYSTEM_PROMPT = """
 You are a task planning agent that creates optimized, executable plans.

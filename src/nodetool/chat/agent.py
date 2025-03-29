@@ -23,9 +23,7 @@ from rich.table import Table
 from rich.live import Live
 from rich.panel import Panel
 
-from nodetool.chat.sub_task_context import (
-    TaskUpdate,
-)
+from nodetool.workflows.types import TaskUpdate, TaskUpdateEvent
 from nodetool.chat.task_executor import TaskExecutor
 from nodetool.chat.providers import ChatProvider, Chunk
 from nodetool.chat.task_planner import TaskPlanner
@@ -165,6 +163,11 @@ class Agent:
         )
 
         task = await task_planner.create_task(self.objective)
+
+        yield TaskUpdate(
+            task=task,
+            event=TaskUpdateEvent.TASK_CREATED,
+        )
 
         if self.output_type:
             task.subtasks[-1].output_type = self.output_type

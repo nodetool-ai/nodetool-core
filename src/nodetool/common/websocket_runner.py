@@ -10,7 +10,6 @@ from fastapi import WebSocket, WebSocketDisconnect
 from nodetool.common.environment import Environment
 from nodetool.common.model_manager import ModelManager
 from nodetool.common.wrap_primitive_types import wrap_primitive_types
-from nodetool.types.graph import Node, Graph
 from nodetool.types.job import JobUpdate
 from nodetool.workflows.base_node import BaseNode
 from nodetool.workflows.processing_context import ProcessingContext

@@ -4,6 +4,7 @@ from nodetool.chat.providers import ChatProvider, Chunk
 from nodetool.chat.tools import Tool
 from nodetool.chat.tools.base import resolve_workspace_path
 from nodetool.metadata.types import Message, SubTask, Task, ToolCall
+from nodetool.workflows.types import TaskUpdate, TaskUpdateEvent
 from nodetool.workflows.processing_context import ProcessingContext
 
 import tiktoken
@@ -49,23 +50,6 @@ FINISH_TASK PROTOCOL:
 6. Provide the final task result in the result field
 7. Use the ReadWorkspaceFileTool to read the contents
 """
-
-
-class TaskUpdateEvent(str, Enum):
-    """Enum for different task update event types."""
-
-    SUBTASK_STARTED = "subtask_started"
-    ENTERED_CONCLUSION_STAGE = "entered_conclusion_stage"
-    MAX_ITERATIONS_REACHED = "max_iterations_reached"
-    SUBTASK_COMPLETED = "subtask_completed"
-
-
-class TaskUpdate(BaseModel):
-    """A task update from a provider."""
-
-    task: Task
-    subtask: SubTask
-    event: TaskUpdateEvent
 
 
 METADATA_SCHEMA = {

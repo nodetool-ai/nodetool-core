@@ -1,10 +1,30 @@
 from pydantic import BaseModel
-
+from enum import Enum
 
 from typing import Any, Callable, Literal
-
+from nodetool.metadata.types import Task, SubTask
 from nodetool.types.job import JobUpdate
 from nodetool.types.prediction import Prediction
+
+
+class TaskUpdateEvent(str, Enum):
+    """Enum for different task update event types."""
+
+    TASK_CREATED = "task_created"
+    SUBTASK_STARTED = "subtask_started"
+    ENTERED_CONCLUSION_STAGE = "entered_conclusion_stage"
+    MAX_ITERATIONS_REACHED = "max_iterations_reached"
+    SUBTASK_COMPLETED = "subtask_completed"
+
+
+class TaskUpdate(BaseModel):
+    """A task update from a provider."""
+
+    type: Literal["task_update"] = "task_update"
+    node_id: str | None = None
+    task: Task
+    subtask: SubTask | None = None
+    event: TaskUpdateEvent
 
 
 class NodeUpdate(BaseModel):
@@ -63,5 +83,11 @@ class RunFunction(BaseModel):
 
 
 ProcessingMessage = (
-    NodeUpdate | NodeProgress | JobUpdate | Error | Prediction | RunFunction
+    NodeUpdate
+    | NodeProgress
+    | JobUpdate
+    | Error
+    | Prediction
+    | RunFunction
+    | TaskUpdate
 )

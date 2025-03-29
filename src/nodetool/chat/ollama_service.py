@@ -27,23 +27,27 @@ async def get_ollama_models() -> list[LlamaModel]:
     if Environment.is_production() and _cached_ollama_models is not None:
         return _cached_ollama_models
 
-    ollama = get_ollama_client()
-    models = await ollama.list()
-    result = [
-        LlamaModel(
-            name=model.model or "",
-            repo_id=model.model or "",
-            modified_at=model.modified_at.isoformat() if model.modified_at else "",
-            size=model.size or 0,
-            digest=model.digest or "",
-            details=model.details.model_dump() if model.details else {},
-        )
-        for model in models.models
-    ]
+    try:
+        ollama = get_ollama_client()
+        models = await ollama.list()
+        result = [
+            LlamaModel(
+                name=model.model or "",
+                repo_id=model.model or "",
+                modified_at=model.modified_at.isoformat() if model.modified_at else "",
+                size=model.size or 0,
+                digest=model.digest or "",
+                details=model.details.model_dump() if model.details else {},
+            )
+            for model in models.models
+        ]
 
-    if Environment.is_production():
-        _cached_ollama_models = result
-    return result
+        if Environment.is_production():
+            _cached_ollama_models = result
+        return result
+    except Exception as e:
+        print(f"Error getting ollama models: {e}")
+        return []
 
 
 async def get_ollama_model_info(model_name: str) -> dict | None:

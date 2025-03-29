@@ -95,7 +95,7 @@
             "uri": "",
             "asset_id": null,
             "data": null
-          },
+          }
         },
         "ui_properties": {
           "selected": false,
@@ -116,7 +116,7 @@
         "type": "nodetool.output.ImageOutput",
         "data": {
           "name": "image",
-          "description": "The upscaled image with enhanced resolution and details",
+          "description": "The upscaled image with enhanced resolution and details"
         },
         "ui_properties": {
           "position": {

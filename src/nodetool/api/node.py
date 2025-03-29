@@ -73,7 +73,7 @@ from nodetool.metadata.types import (
 )
 from nodetool.workflows.base_node import get_node_class, get_registered_node_classes
 from nodetool.common.environment import Environment
-from nodetool.workflows.types import NodeProgress, NodeUpdate
+from nodetool.workflows.types import NodeProgress, NodeUpdate, TaskUpdate
 from nodetool.packages.registry import Registry
 
 log = Environment.get_logger()
@@ -100,6 +100,7 @@ UnionType = (
     | JobUpdate
     | NodeUpdate
     | NodeProgress
+    | TaskUpdate
     | HuggingFaceModel
     | HFImageTextToText
     | HFVisualQuestionAnswering
