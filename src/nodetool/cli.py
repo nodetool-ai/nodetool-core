@@ -5,6 +5,15 @@ from nodetool.common.environment import Environment
 # silence warnings on the command line
 import warnings
 
+# Add Rich for better tables and terminal output
+from rich.console import Console
+from rich.table import Table
+from rich.panel import Panel
+from rich.text import Text
+
+# Create console instance
+console = Console()
+
 warnings.filterwarnings("ignore")
 log = Environment.get_logger()
 
@@ -120,17 +129,18 @@ def run(workflow_id: str):
     )
 
     async def run_workflow_async():
-        print("Running workflow...")
+        console.print(Panel.fit("Running workflow...", style="blue"))
         try:
             async for message in run_workflow(request):
                 # Print message type and content
                 if hasattr(message, "type"):
-                    print(f"{message.type}: {message.model_dump_json()}")
+                    msg_type = Text(message.type, style="bold cyan")
+                    console.print(f"{msg_type}: {message.model_dump_json()}")
                 else:
-                    print(message)
-            print("Workflow finished")
+                    console.print(message)
+            console.print(Panel.fit("Workflow finished successfully", style="green"))
         except Exception as e:
-            print(f"Error running workflow: {e}")
+            console.print(Panel.fit(f"Error running workflow: {e}", style="bold red"))
             traceback.print_exc()
             exit(1)
 
@@ -185,8 +195,6 @@ def settings():
 def show_settings(secrets: bool, mask: bool):
     """Show current settings or secrets."""
     from nodetool.common.settings import load_settings
-    from tabulate import tabulate
-    import yaml
 
     # Load settings and secrets
     settings_obj, secrets_obj = load_settings()
@@ -204,10 +212,16 @@ def show_settings(secrets: bool, mask: bool):
                 masked_data[key] = value
         data = masked_data
 
-    # Format the data for display
-    headers = ["Setting", "Value", "Description"]
+    # Create a rich table
     settings_class = secrets_obj.__class__ if secrets else settings_obj.__class__
-    table_data = []
+    table = Table(
+        title=f"{'Secrets' if secrets else 'Settings'} from {settings_class.__name__}"
+    )
+
+    # Add columns
+    table.add_column("Setting", style="cyan")
+    table.add_column("Value", style="green")
+    table.add_column("Description", style="yellow")
 
     for key, value in data.items():
         # Get field description from the model
@@ -215,13 +229,10 @@ def show_settings(secrets: bool, mask: bool):
         description = (
             field_info.description if field_info and field_info.description else ""
         )
-        table_data.append([key, value, description])
+        table.add_row(key, str(value), description)
 
-    # Display the data
-    click.echo(
-        f"{'Secrets' if secrets else 'Settings'} from {settings_class.__name__}:"
-    )
-    click.echo(tabulate(table_data, headers=headers, tablefmt="grid"))
+    # Display the table
+    console.print(table)
 
 
 @settings.command("edit")
@@ -318,7 +329,6 @@ def package():
 )
 def list_packages(available):
     """List installed or available packages."""
-    from tabulate import tabulate
     from nodetool.packages.registry import Registry
 
     registry = Registry()
@@ -326,26 +336,37 @@ def list_packages(available):
     if available:
         packages = registry.list_available_packages()
         if not packages:
-            click.echo(
-                "No packages available in the registry or unable to fetch package list."
+            console.print(
+                "[bold red]No packages available in the registry or unable to fetch package list.[/]"
             )
             return
 
-        headers = ["Name", "Repository ID"]
-        table_data = [[pkg.name, pkg.repo_id] for pkg in packages]
-        click.echo(tabulate(table_data, headers=headers, tablefmt="grid"))
+        table = Table(title="Available Packages")
+        table.add_column("Name", style="cyan")
+        table.add_column("Repository ID", style="green")
+
+        for pkg in packages:
+            table.add_row(pkg.name, pkg.repo_id)
+
+        console.print(table)
     else:
         packages = registry.list_installed_packages()
         if not packages:
-            click.echo("No packages installed.")
+            console.print("[bold yellow]No packages installed.[/]")
             return
 
-        headers = ["Name", "Version", "Description", "Nodes"]
-        table_data = [
-            [pkg.name, pkg.version, pkg.description, len(pkg.nodes or [])]
-            for pkg in packages
-        ]
-        click.echo(tabulate(table_data, headers=headers, tablefmt="grid"))
+        table = Table(title="Installed Packages")
+        table.add_column("Name", style="cyan")
+        table.add_column("Version", style="green")
+        table.add_column("Description", style="yellow")
+        table.add_column("Nodes", style="magenta")
+
+        for pkg in packages:
+            table.add_row(
+                pkg.name, pkg.version, pkg.description, str(len(pkg.nodes or []))
+            )
+
+        console.print(table)
 
 
 @package.command()

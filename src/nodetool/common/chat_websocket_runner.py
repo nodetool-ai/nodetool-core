@@ -34,7 +34,8 @@ from enum import Enum
 from fastapi import WebSocket
 
 from nodetool.chat import tools
-from nodetool.chat.chat import Chunk, generate_messages, run_tool
+from nodetool.chat.chat import Chunk, run_tool
+from nodetool.chat.providers import get_provider
 from nodetool.chat.tools.base import Tool, get_tool_by_name
 from nodetool.metadata.types import (
     AudioRef,
@@ -141,12 +142,11 @@ class ChatWebSocketRunner:
 
         content = ""
         unprocessed_messages = []
-        workspace_dir = "/tmp/agent-workspace"
 
         def init_tool(name: str) -> Tool:
             tool_class = get_tool_by_name(name)
             if tool_class:
-                return tool_class(workspace_dir)
+                return tool_class(processing_context.workspace_dir)
             else:
                 raise ValueError(f"Tool {name} not found")
 
@@ -155,20 +155,18 @@ class ChatWebSocketRunner:
         else:
             selected_tools = []
 
+        provider = get_provider(Provider.Ollama)
+
         # Stream the response chunks
         while True:
             messages_to_send = self.chat_history + unprocessed_messages
             unprocessed_messages = []
 
-            async for chunk in generate_messages(
+            async for chunk in provider.generate_messages(
                 messages=messages_to_send,
-                model=FunctionModel(
-                    provider=Provider.Ollama,
-                    name="llama3.2:3b",
-                    repo_id="llama3.2:3b",
-                ),
+                model="llama32.:3b",
                 tools=selected_tools,
-            ):
+            ):  # type: ignore
                 if isinstance(chunk, Chunk):
                     content += chunk.content
                     # Send intermediate chunks to client
