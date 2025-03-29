@@ -15,15 +15,15 @@ package-mode = true
 python = "^3.10"
 
 # Core dependencies
-pydantic = "2.9.2"
-python-multipart = "0.0.17"
-aiohttp = "3.11.2"
-websockets = "14.1"
-fastapi = "0.115.5"
+pydantic = "2.10.4"
+python-multipart = ">=0.0.17"
+aiohttp = ">=3.11.2"
+websockets = ">=14.1"
+fastapi = ">=0.115.5"
 openapi-pydantic = "*"
-uvicorn = "0.32.0"
-msgpack = "1.1.0"
-networkx = "3.4.2"
+uvicorn = ">=0.32.0"
+msgpack = ">=1.1.0"
+networkx = ">=3.4.2"
 
 # Utils dependencies
 black = "24.10.0"
