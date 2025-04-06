@@ -1,8 +1,8 @@
 {
-  "id": "07f4d172124d11f0af0700000eea5e45",
+  "id": "343ded70132611f09ba7000022fe790f",
   "access": "public",
-  "created_at": "2025-04-05T21:34:06.762383",
-  "updated_at": "2025-04-05T21:34:06.762396",
+  "created_at": "2025-04-06T22:37:35.603805",
+  "updated_at": "2025-04-06T22:37:35.603818",
   "name": "Chat with Docs",
   "description": "An intelligent document retrieval and question-answering system that leverages vector search and local LLMs to provide accurate, context-aware responses based on your document collection.",
   "tags": [
@@ -37,10 +37,9 @@
           }
         },
         "ui_properties": {
-          "selected": false,
           "position": {
             "x": 50,
-            "y": 216
+            "y": 215
           },
           "zIndex": 0,
           "width": 197,
@@ -58,10 +57,9 @@
           "name": "answer"
         },
         "ui_properties": {
-          "selected": false,
           "position": {
             "x": 1046,
-            "y": 90
+            "y": 244
           },
           "zIndex": 0,
           "width": 395,
@@ -78,7 +76,6 @@
           "template": "You are an expert assistant answering a user question based on retrieved documents. \nYour response must be accurate, well-structured, and grounded in the provided sources.\n\n### User Question:\n{{ text }}\n\n### Relevant Information from Retrieved Documents\nThese snippets can be incomplete or out of context. Ignore information that is not relevant.\n{% for doc in documents %}\n=====================\n**Document {{ loop.index }}\n** {{ doc }}\n{% endfor %}\n\n### **Instructions for Answering:**\n1. Analyze the user question carefully.\n2. Extract key insights from the retrieved documents.\n3. If multiple documents provide different perspectives, synthesize the most relevant and accurate information.\n4. If the documents lack sufficient information, state what is missing instead of guessing.\n5. Present the answer in a clear, concise, and structured manner."
         },
         "ui_properties": {
-          "selected": false,
           "position": {
             "x": 490,
             "y": 50
@@ -107,10 +104,9 @@
           "min_keyword_length": 3
         },
         "ui_properties": {
-          "selected": false,
           "position": {
             "x": 307,
-            "y": 59
+            "y": 61
           },
           "zIndex": 0,
           "width": 153,
@@ -147,7 +143,7 @@
               "type": "paragraph",
               "children": [
                 {
-                  "text": "This workflow implements a sophisticated RAG (Retrieval-Augmented Generation) system that enables natural language conversations with your document collection. It combines semantic search with local LLM inference to provide accurate, contextually relevant answers."
+                  "text": "This workflow implements a RAG (Retrieval-Augmented Generation) system that enables natural language conversations with your document collection. It combines semantic search with  LLM inference to provide accurate, contextually relevant answers."
                 }
               ]
             },
@@ -261,13 +257,95 @@
           "max_tokens": 4096
         },
         "ui_properties": {
-          "selected": false,
           "position": {
             "x": 856,
             "y": 204
           },
           "zIndex": 0,
           "width": 160,
+          "selectable": true
+        },
+        "dynamic_properties": {}
+      },
+      {
+        "id": "15c9f129-9cd7-410e-8098-a825cc6c7f7d",
+        "parent_id": null,
+        "type": "nodetool.workflows.base_node.Comment",
+        "data": {
+          "comment_color": "#fdf6e3",
+          "comment": [
+            {
+              "type": "paragraph",
+              "children": [
+                {
+                  "text": "Use the Chat Window in the bottom right Corner!",
+                  "size": "+",
+                  "bold": true
+                }
+              ]
+            }
+          ]
+        },
+        "ui_properties": {
+          "selected": false,
+          "position": {
+            "x": 890,
+            "y": 470
+          },
+          "zIndex": 0,
+          "width": 527,
+          "height": 64,
+          "selectable": true
+        },
+        "dynamic_properties": {}
+      },
+      {
+        "id": "892ccab0-398c-4370-8d23-5a3f36746a91",
+        "parent_id": null,
+        "type": "nodetool.workflows.base_node.Comment",
+        "data": {
+          "comment": [
+            {
+              "type": "paragraph",
+              "children": [
+                {
+                  "text": "- Open the collections menu in the sidebar",
+                  "bold": true,
+                  "size": "+"
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "children": [
+                {
+                  "bold": true,
+                  "text": "- Create a collection",
+                  "size": "+"
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "children": [
+                {
+                  "bold": true,
+                  "text": "- Drop pdfs onto the collection",
+                  "size": "+"
+                }
+              ]
+            }
+          ]
+        },
+        "ui_properties": {
+          "selected": false,
+          "position": {
+            "x": -184,
+            "y": -6
+          },
+          "zIndex": 0,
+          "width": 464,
+          "height": 119,
           "selectable": true
         },
         "dynamic_properties": {}

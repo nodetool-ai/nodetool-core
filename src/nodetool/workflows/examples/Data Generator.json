@@ -1,8 +1,8 @@
 {
-  "id": "7d2b216faff911ef8e4d000021f9958f",
+  "id": "f1a11024132411f0b12f000053c522ea",
   "access": "public",
-  "created_at": "2025-01-03T16:08:09.251098",
-  "updated_at": "2025-01-03T16:08:09.251114",
+  "created_at": "2025-04-06T22:27:22.502895",
+  "updated_at": "2025-04-06T22:27:22.502909",
   "name": "Data Generator",
   "description": "Generate structured data using AI agents",
   "tags": [
@@ -13,50 +13,6 @@
   "graph": {
     "nodes": [
       {
-        "id": "1",
-        "parent_id": null,
-        "type": "ollama.agents.DataGenerator",
-        "data": {
-          "model": {
-            "type": "llama_model",
-            "repo_id": "llama3.2:3b"
-          },
-          "context_window": 4096,
-          "prompt": "Create 10 female characters",
-          "temperature": 1,
-          "top_k": 50,
-          "top_p": 0.95,
-          "keep_alive": 600,
-          "columns": {
-            "type": "record_type",
-            "columns": [
-              {
-                "name": "First Name",
-                "data_type": "string"
-              },
-              {
-                "name": "Last Name",
-                "data_type": "string"
-              },
-              {
-                "name": "Description",
-                "data_type": "string"
-              }
-            ]
-          }
-        },
-        "ui_properties": {
-          "selected": false,
-          "position": {
-            "x": 50,
-            "y": 50
-          },
-          "zIndex": 0,
-          "width": 250,
-          "selectable": true
-        }
-      },
-      {
         "id": "2",
         "parent_id": null,
         "type": "nodetool.workflows.base_node.Preview",
@@ -64,30 +20,131 @@
           "name": "dataframe_output_2024-12-01"
         },
         "ui_properties": {
+          "selected": false,
           "position": {
             "x": 330,
             "y": 55
           },
           "zIndex": 0,
-          "width": 493,
-          "height": 414,
+          "width": 256,
+          "height": 349,
           "selectable": true
-        }
+        },
+        "dynamic_properties": {}
+      },
+      {
+        "id": "2ed27bde-9299-4088-a169-156b1ea5552f",
+        "parent_id": null,
+        "type": "nodetool.generators.DataGenerator",
+        "data": {
+          "model": "gemma3:1b",
+          "prompt": "Generate a table of veggies",
+          "input_text": "",
+          "max_tokens": 4096,
+          "columns": {
+            "type": "record_type",
+            "columns": [
+              {
+                "name": "name",
+                "data_type": "string",
+                "description": ""
+              },
+              {
+                "name": "color",
+                "data_type": "string",
+                "description": ""
+              }
+            ]
+          }
+        },
+        "ui_properties": {
+          "selected": false,
+          "position": {
+            "x": 54,
+            "y": 71
+          },
+          "zIndex": 0,
+          "width": 200,
+          "selectable": true
+        },
+        "dynamic_properties": {}
+      },
+      {
+        "id": "b313851f-3dc9-4372-92ba-acd96654dfd5",
+        "parent_id": null,
+        "type": "nodetool.workflows.base_node.Comment",
+        "data": {
+          "comment": [
+            {
+              "type": "paragraph",
+              "children": [
+                {
+                  "text": "Data Generator",
+                  "bold": true,
+                  "size": "+"
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "children": [
+                {
+                  "text": ""
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "children": [
+                {
+                  "text": "- Generate synthetic data"
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "children": [
+                {
+                  "text": "- Use prompt to describe the data"
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "children": [
+                {
+                  "text": "- Add columns to specify the shape of data"
+                }
+              ]
+            }
+          ]
+        },
+        "ui_properties": {
+          "selected": false,
+          "position": {
+            "x": 45,
+            "y": -164
+          },
+          "zIndex": 0,
+          "width": 337,
+          "height": 135,
+          "selectable": true
+        },
+        "dynamic_properties": {}
       }
     ],
     "edges": [
       {
-        "id": "1",
-        "source": "1",
+        "id": "6046a17f-2fe2-4884-bedc-b995b6e8ffbe",
+        "source": "2ed27bde-9299-4088-a169-156b1ea5552f",
         "sourceHandle": "output",
         "target": "2",
         "targetHandle": "value",
-        "ui_properties": {
-          "className": "dataframe"
-        }
+        "ui_properties": null
       }
     ]
   },
   "input_schema": null,
-  "output_schema": null
+  "output_schema": null,
+  "settings": null
 }

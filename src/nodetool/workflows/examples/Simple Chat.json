@@ -4,7 +4,7 @@
   "created_at": "2025-04-06T17:26:28.033977",
   "updated_at": "2025-04-06T17:26:28.033991",
   "name": "Simple Chat",
-  "description": "Basic chat interface using Deepseek R1 7B model",
+  "description": "Basic chat interface with tools",
   "tags": [
     "chat",
     "start"
