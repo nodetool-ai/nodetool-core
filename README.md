@@ -198,20 +198,10 @@ We welcome contributions from the community! Please see our [Contributing Guidel
 
 [AGPL License](./LICENSE)
 
-## 🌟 Showcase
-
-Here are some projects built with NodeTool Core:
-
-- [Project 1](https://example.com) - Description of project 1
-- [Project 2](https://example.com) - Description of project 2
-- [Project 3](https://example.com) - Description of project 3
-
 ## 📚 Learn More
 
 - [NodeTool Website](https://nodetool.ai)
 - [Discord Community](https://discord.gg/nodetool)
-- [Twitter](https://twitter.com/nodetool)
-- [Blog](https://blog.nodetool.ai)
 
 #### Example 2: PDF Indexing for RAG Applications
 
@@ -305,35 +295,6 @@ When you run a workflow, the following steps occur:
 - **GPU Management**: The runner intelligently manages GPU resources, with retry logic for out-of-memory situations.
 - **Subgraph Support**: Group nodes can contain entire subgraphs, enabling hierarchical workflows.
 - **Progress Tracking**: The runner provides real-time progress updates during execution.
-
-### Code Example: Creating a Custom WorkflowRunner
-
-For advanced use cases, you can create and use a WorkflowRunner directly:
-
-```python
-from nodetool.workflows.workflow_runner import WorkflowRunner
-from nodetool.workflows.run_job_request import RunJobRequest
-from nodetool.workflows.processing_context import ProcessingContext
-
-# Create a runner with a unique job ID
-runner = WorkflowRunner(job_id="my-custom-job-123")
-
-# Create a request with your graph and parameters
-request = RunJobRequest(graph=my_graph, params=my_params)
-
-# Create a processing context
-context = ProcessingContext()
-
-# Run the workflow
-await runner.run(request, context)
-
-# Access results from the context
-results = context.get_results()
-```
-
-1. **🖥️ Frontend**: The NodeTool Editor for managing workflows and assets, built with ReactJS and TypeScript.
-2. **🌐 API Server**: Manages connections from the frontend and handles user sessions and workflow storage.
-3. **🔌 WebSocket Runner**: Runs workflows in real-time and keeps track of their state.
 
 ## Using the Workflow API 🔌
 
