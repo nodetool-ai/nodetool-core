@@ -615,7 +615,10 @@ class BaseNode(BaseModel):
         Returns:
             bool: True if the value can be assigned to the property, False otherwise.
         """
-        return is_assignable(self.find_property(name).type, value)
+        prop = self.find_property(name)
+        if prop is None:
+            return False
+        return is_assignable(prop.type, value)
 
     @classmethod
     def is_cacheable(cls):

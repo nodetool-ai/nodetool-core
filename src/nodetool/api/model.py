@@ -165,8 +165,13 @@ if not Environment.is_production():
         model_type: str, user: User = Depends(current_user)
     ) -> list[ModelFile]:
         folder = comfy_model_to_folder(model_type)
-        import folder_paths
+        try:
+            # needs comfyui installed
+            import folder_paths  # type: ignore
 
-        files = folder_paths.get_filename_list(folder)
+            files = folder_paths.get_filename_list(folder)
+        except Exception as e:
+            log.error(f"Error getting files for {folder}: {e}")
+            files = []
 
         return [ModelFile(type=folder, name=file) for file in files]
