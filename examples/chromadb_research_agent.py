@@ -14,7 +14,7 @@ import chromadb
 from nodetool.chat.agent import Agent
 from nodetool.chat.multi_agent import MultiAgentCoordinator
 from nodetool.chat.providers import get_provider
-from nodetool.chat.providers.base import Chunk
+from nodetool.workflows.types import Chunk
 from nodetool.metadata.types import Provider
 from nodetool.chat.workspace_manager import WorkspaceManager
 from nodetool.chat.task_planner import TaskPlanner

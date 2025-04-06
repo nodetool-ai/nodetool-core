@@ -314,9 +314,18 @@ class OpenAIEmbeddingModel(str, enum.Enum):
 
 
 class AgentModel(str, enum.Enum):
-    claude_3_5_sonnet = "claude-3-5-sonnet-2024102"
+    claude_3_5_sonnet = "claude-3-5-sonnet-20241022"
     claude_3_7_sonnet = "claude-3-7-sonnet-20250219"
     gpt_4o = "gpt-4o"
+    o3_mini = "o3-mini"
+    o1 = "o1"
+    gemini_2_5_pro_exp_03_25 = "gemini-2.5-pro-exp-03-25"
+    gemini_2_0_flash = "gemini-2.0-flash"
+    gemini_2_0_flash_lite = "gemini-2.0-flash-lite"
+    gemma3_1b = "gemma3:1b"
+    gemma3_4b = "gemma3:4b"
+    gemma3_12b = "gemma3:12b"
+    llama3_2_vision_11b = "llama3.2-vision:11b"
 
 
 class FunctionModel(BaseType):
@@ -986,9 +995,13 @@ class SubTask(BaseType):
         default="string",
         description="The type of the output of the subtask",
     )
-    output_schema: Any = Field(
+    output_schema: dict[str, Any] | None = Field(
         default=None,
-        description="The JSON schema of the output of the subtask",
+        description="The JSON schema of the output of the subtask, must be an object with properties of the output type",
+    )
+    use_code_interpreter: bool = Field(
+        default=False,
+        description="Whether to use a code interpreter for the subtask",
     )
 
     def to_markdown(self) -> str:
@@ -1044,27 +1057,6 @@ class Task(BaseModel):
                 lines += f"{subtask.to_markdown()}\n"
         return lines
 
-    def add_subtask(
-        self,
-        content: str,
-        input_files: list[str] = [],
-    ) -> SubTask:
-        """Creates and adds a new subtask to the task."""
-        subtask = SubTask(
-            content=content,
-            input_files=input_files,
-        )
-        self.subtasks.append(subtask)
-        return subtask
-
-    def find_subtask_by_content(self, content: str) -> Optional[SubTask]:
-        """Searches for a subtask by its content text, case-insensitive."""
-        content = content.strip()
-        for subtask in self.subtasks:
-            if subtask.content.lower() == content.lower():
-                return subtask
-        return None
-
 
 class TaskPlan(BaseType):
     """
@@ -1084,100 +1076,6 @@ class TaskPlan(BaseType):
         for task in self.tasks:
             lines += f"{task.to_markdown()}\n"
         return lines
-
-    def find_task_by_title(self, title: str) -> Optional[Task]:
-        """Find a task by its title."""
-        title = title.strip()
-        for task in self.tasks:
-            if task.title.lower() == title.lower():
-                return task
-        return None
-
-    def find_subtask(
-        self, task_title: str, subtask_content: str
-    ) -> tuple[Optional[Task], Optional[SubTask]]:
-        """Find a subtask by its task title and content."""
-        task = self.find_task_by_title(task_title)
-        if not task:
-            return None, None
-
-        subtask = task.find_subtask_by_content(subtask_content)
-        return task, subtask
-
-    def add_task(self, title: str, description: str = "") -> dict[str, Any]:
-        """Creates a new task with the given title if it doesn't already exist."""
-        # Check if task with this title already exists
-        existing_task = self.find_task_by_title(title)
-        if existing_task:
-            return {
-                "success": False,
-                "error": f"Task with title '{title}' already exists",
-            }
-
-        # Create the task
-        task = Task(title=title, description=description)
-        self.tasks.append(task)
-
-        return {
-            "success": True,
-            "title": task.title,
-        }
-
-    def add_subtask(
-        self,
-        task_title: str,
-        content: str,
-        input_files: list[str] = [],
-    ) -> dict[str, Any]:
-        """Adds a subtask to an existing task, with optional completion status and dependencies."""
-        task = self.find_task_by_title(task_title)
-        if not task:
-            return {
-                "success": False,
-                "error": f"Task with title '{task_title}' not found",
-            }
-
-        # Check if subtask with this content already exists
-        if task.find_subtask_by_content(content):
-            return {
-                "success": False,
-                "error": f"Subtask with content '{content}' already exists in task '{task_title}'",
-            }
-
-        # Create the subtask
-        subtask = task.add_subtask(content, input_files=input_files)
-
-        return {
-            "success": True,
-            "task_title": task.title,
-            "subtask_content": subtask.content,
-            "input_files": subtask.input_files,
-        }
-
-    def finish_subtask(self, task_title: str, content: str) -> dict[str, Any]:
-        """Marks a specific subtask as complete within its parent task."""
-        task, subtask = self.find_subtask(task_title, content)
-
-        if not task:
-            return {
-                "success": False,
-                "error": f"Task with title '{task_title}' not found",
-            }
-
-        if not subtask:
-            return {
-                "success": False,
-                "error": f"Subtask with content '{content}' not found in task '{task_title}'",
-            }
-
-        subtask.completed = True
-
-        return {
-            "success": True,
-            "task_title": task.title,
-            "content": subtask.content,
-            "completed": subtask.completed,
-        }
 
 
 class NPArray(BaseType):
@@ -1393,6 +1291,12 @@ MessageContent = (
 )
 
 
+class MessageFile(BaseModel):
+    type: Literal["file"] = "file"
+    content: bytes
+    mime_type: str
+
+
 class Message(BaseType):
     """
     Abstract representation for a chat message.
@@ -1463,6 +1367,16 @@ class Message(BaseType):
     tool_calls: list[ToolCall] | None = None
     """
     The list of tool calls returned by the model.
+    """
+
+    input_files: list[MessageFile] | None = None
+    """
+    The list of input files for the message.
+    """
+
+    output_files: list[MessageFile] | None = None
+    """
+    The list of output files for the message.
     """
 
     created_at: str | None = None
@@ -1646,6 +1560,45 @@ class DataSeries(BaseType):
     marker: str = Field(default=".")
     alpha: float = Field(default=1.0)
     orient: Literal["v", "h"] | None = None
+
+
+class PlotlySeries(BaseType):
+    """
+    Configuration for a single Plotly Express data series.
+    """
+
+    type: Literal["plotly_series"] = "plotly_series"
+
+    name: str = Field(description="Name of the data series")
+    x: str = Field(description="Column name for x-axis")
+    y: str | None = Field(
+        default=None,
+        description="Column name for y-axis (optional for some charts like histogram)",
+    )
+    color: str | None = Field(
+        default=None, description="Column name for color encoding"
+    )
+    size: str | None = Field(default=None, description="Column name for size encoding")
+    symbol: str | None = Field(
+        default=None, description="Column name for symbol encoding"
+    )
+    line_dash: str | None = Field(
+        default=None, description="Column name for line dash pattern encoding"
+    )
+    chart_type: str = Field(
+        description="The type of chart to create (scatter, line, bar, histogram, box, violin)"
+    )
+
+
+class PlotlyConfig(BaseType):
+    """
+    Configuration for Plotly Express charts.
+    Captures essential visualization parameters while maintaining simplicity.
+    """
+
+    type: Literal["plotly_config"] = "plotly_config"
+
+    config: dict[str, Any] = {}
 
 
 class ChartData(BaseType):

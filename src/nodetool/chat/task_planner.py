@@ -22,27 +22,42 @@ import time
 import networkx as nx
 
 
-# Simplify the DEFAULT_PLANNING_SYSTEM_PROMPT
+# Simplified and phase-agnostic system prompt
 DEFAULT_PLANNING_SYSTEM_PROMPT = """
-You are a task planning agent that creates optimized, executable plans.
+You are an expert task planning agent that creates highly optimized, executable plans.
+You excel at breaking down complex tasks into logical subtasks with clear dependencies.
+
+CRITICAL CAPABILITIES:
+- Breaking complex tasks into optimal components
+- Identifying parallel execution opportunities
+- Defining clear data contracts between components
+- Creating efficient, executable subtask sequences
+- Ensuring type safety throughout the workflow
+
+SUBTASK REQUIREMENTS:
+- Self-contained with clear instructions
+- Properly sequenced with minimal dependencies
+- Correctly specified input and output formats
+- Type-safe data handling
+
+FINAL SUBTASK MUST:
+- Use finish_task tool
+- Match the task's output schema
+- Include comprehensive metadata
+- Validate the complete result
 
 RESPOND WITH TOOL CALLS TO CREATE TASKS.
+"""
 
-KEY PLANNING PRINCIPLES:
-1. Break complex goals into clear subtasks
-2. Optimize for parallel execution
-3. Create self-contained tasks with minimal coupling
-4. Define dependencies between tasks using the input_files field
-5. Provide clear instructions and all necessary information for each subtask
-6. The LAST subtask MUST use the finish_task tool to complete the entire task
+# Agent task prompt used in the final planning stage
+DEFAULT_AGENT_TASK_PROMPT = """
+OBJECTIVE: {objective}
 
-DEPENDENCY GRAPH:
-- The dependency graph is a directed graph of dependencies between subtasks
-- SUBTASKS must not have circular dependencies
-- SUBTASKS must depend on existent input files
-- SUBTASKS must not have duplicate output_files
-- SUBTASKS must depend on input files or other subtask outputs
-- The LAST subtask must collect and synthesize all results using finish_task
+AVAILABLE TOOLS:
+{tools_info}
+
+INPUT FILES:
+{input_files_info}
 """
 
 
@@ -57,6 +72,52 @@ class CreateTaskTool(Tool):
     def __init__(self, workspace_dir: str):
         super().__init__(workspace_dir=workspace_dir)
         self.workspace_dir = workspace_dir
+        self.example = """
+        Example:
+        create_task(
+            title="Analyze customer feedback and create a summary report",
+            subtasks=[
+                {
+                    "content": "Extract key themes and sentiment from customer feedback data",
+                    "output_file": "feedback_analysis.json",
+                    "input_files": ["customer_feedback.csv"],
+                    "output_type": "json",
+                    "output_schema": {
+                        "type": "object",
+                        "properties": {
+                            "themes": {
+                                "type": "array",
+                                "items": {"type": "string"}
+                            },
+                            "sentiment": {
+                                "type": "object",
+                                "properties": {
+                                    "positive": {"type": "number"},
+                                    "neutral": {"type": "number"},
+                                    "negative": {"type": "number"}
+                                }
+                            }
+                        }
+                    },
+                    "use_code_interpreter": True
+                },
+                {
+                    "content": "Generate data visualizations based on the feedback analysis",
+                    "output_file": "feedback_charts.md",
+                    "input_files": ["feedback_analysis.json"],
+                    "output_type": "markdown",
+                    "use_code_interpreter": True
+                },
+                {
+                    "content": "Write a comprehensive summary report with insights and recommendations",
+                    "output_file": "feedback_report.md",
+                    "input_files": ["feedback_analysis.json", "feedback_charts.md"],
+                    "output_type": "markdown",
+                    "use_code_interpreter": False
+                }
+            ],
+        )
+        """
         self.input_schema = {
             "type": "object",
             "required": ["title", "subtasks"],
@@ -121,6 +182,11 @@ class CreateTaskTool(Tool):
                                     "svg",
                                 ],
                             },
+                            "use_code_interpreter": {
+                                "type": "boolean",
+                                "description": "Whether the subtask should use code interpreter for execution. Set to true if the subtask involves data analysis, calculations, or code execution.",
+                                "default": False,
+                            },
                         },
                         "required": [
                             "content",
@@ -137,25 +203,69 @@ class CreateTaskTool(Tool):
         pass
 
 
-# Remove research-related prompts and simplify agent task prompt
-DEFAULT_AGENT_TASK_PROMPT = """
-Objective: {objective}
+# Make sure the phase prompts are concrete and focused
+ANALYSIS_PROMPT = """
+ANALYSIS PHASE
 
-Subtasks will have access to the following tools:
+First, assess if this is a simple task that could be completed in 1-2 steps.
+If so, you can create a streamlined plan immediately using the create_task tool.
+
+COMPLEXITY ASSESSMENT:
+1. Is this a straightforward, single-purpose task?
+2. Can it be completed in 1-2 steps?
+3. Are there minimal dependencies?
+4. Is the data flow simple and linear?
+
+If YES to most of these questions, create a simplified plan immediately.
+If NO, proceed with detailed analysis:
+
+1. Core components and their relationships
+2. Opportunities for parallel execution
+3. Potential bottlenecks or dependencies
+4. Patterns that can be consolidated
+
+Current Objective: {objective}
+
+Available Resources:
 {tools_info}
-
-Use these files as input (input_files) BUT NOT AS output_file:
 {input_files_info}
 
-Think carefully about:
-1. How to structure subtasks to make them clear and executable
-2. How to effectively process the provided input files (batch processing when appropriate)
-3. What data to read from the input files
-4. How to organize dependencies between subtasks
-5. Ensure the LAST subtask uses the finish_task tool to complete the entire task
+If this is a simple task, USE THE create_task TOOL NOW.
+Otherwise, provide detailed analysis for complex planning.
+"""
 
-Create subtasks that are clear, executable, and leverage the appropriate tools when needed.
-The final subtask must synthesize all previous results and use finish_task to complete the task.
+DATA_CONTRACTS_PROMPT = """
+DATA CONTRACTS PHASE
+
+Analyze the data requirements:
+1. Input/output schemas for each identified component
+2. Data validation requirements
+3. Type safety and consistency
+4. Minimizing data transformations
+
+If you determine the data contracts are simple enough,
+you may create a streamlined plan now using the create_task tool.
+
+Otherwise, define specific data contracts covering:
+1. Schema definitions
+2. Data validation rules
+3. Type requirements
+4. Format standardization
+
+If complexity is low, USE THE create_task TOOL NOW.
+Otherwise, continue with detailed contract design.
+"""
+
+PLAN_CREATION_PROMPT = """
+PLAN CREATION PHASE
+
+Create an optimized task plan that:
+1. Implements the identified components as concrete subtasks
+2. Follows the defined data contracts
+3. Maximizes parallel execution
+4. Ensures proper dependency management
+
+USE THE create_task TOOL to implement the plan.
 """
 
 
@@ -188,9 +298,10 @@ class TaskPlanner:
         tools: Sequence[Tool],
         input_files: Sequence[str] = [],
         system_prompt: str | None = None,
-        agent_task_prompt: str | None = None,
         enable_tracing: bool = True,
         output_schema: dict | None = None,
+        enable_analysis_phase: bool = True,
+        enable_data_contracts_phase: bool = True,
     ):
         """
         Initialize the TaskPlanner.
@@ -203,9 +314,10 @@ class TaskPlanner:
             input_files (list[str]): The input files to use for planning
             tools (List[Tool]): Tools available for research during planning
             system_prompt (str, optional): Custom system prompt
-            agent_task_prompt (str, optional): Custom agent task prompt
             enable_tracing (bool, optional): Whether to enable LLM trace logging
             output_schema (dict, optional): JSON schema for the final task output
+            enable_analysis_phase (bool, optional): Whether to run the analysis phase (PHASE 1)
+            enable_data_contracts_phase (bool, optional): Whether to run the data contracts phase (PHASE 2)
         """
         self.provider = provider
         self.model = model
@@ -213,15 +325,20 @@ class TaskPlanner:
         self.workspace_dir = workspace_dir
         self.task_plan = None
         self.input_files = input_files
-        self.system_prompt = (
-            system_prompt if system_prompt else DEFAULT_PLANNING_SYSTEM_PROMPT
+
+        # Check if the provider has code interpreter capabilities
+        self.has_code_interpreter = (
+            hasattr(provider, "has_code_interpreter") and provider.has_code_interpreter
         )
-        self.agent_task_prompt = (
-            agent_task_prompt if agent_task_prompt else DEFAULT_AGENT_TASK_PROMPT
-        )
+
+        # Customize system prompt based on provider capabilities
+        self.system_prompt = self._customize_system_prompt(system_prompt)
+
         self.tools = tools or []
         self.enable_tracing = enable_tracing
         self.output_schema = output_schema
+        self.enable_analysis_phase = enable_analysis_phase
+        self.enable_data_contracts_phase = enable_data_contracts_phase
 
         # Setup tracing
         if self.enable_tracing:
@@ -239,6 +356,33 @@ class TaskPlanner:
             )
 
         self.tasks_file_path = Path(workspace_dir) / "tasks.yaml"
+
+    def _customize_system_prompt(self, system_prompt: str | None) -> str:
+        """
+        Customize the system prompt based on provider capabilities.
+
+        Args:
+            system_prompt: Optional custom system prompt
+
+        Returns:
+            str: The customized system prompt
+        """
+        if system_prompt:
+            base_prompt = system_prompt
+        else:
+            base_prompt = DEFAULT_PLANNING_SYSTEM_PROMPT
+
+        # If code interpreter is not available, remove the related rule
+        if self.has_code_interpreter:
+            base_prompt += """
+            SET use_code_interpreter TO TRUE when:
+            - Subtask involves data analysis or calculations
+            - Subtask requires executing code
+            - Subtask processes or transforms data programmatically
+            - Mathematical operations or statistical analysis is needed
+            """
+
+        return base_prompt
 
     def _log_trace_event(self, event_type: str, data: dict) -> None:
         """
@@ -292,7 +436,7 @@ class TaskPlanner:
         else:
             tools_info = ""
 
-        return self.agent_task_prompt.format(
+        return DEFAULT_AGENT_TASK_PROMPT.format(
             objective=self.objective,
             tools_info=tools_info,
             input_files_info=input_files_info,
@@ -409,85 +553,124 @@ class TaskPlanner:
     async def _create_task_for_objective(
         self,
         objective: str,
-        input_files: List[str],
         max_retries: int = 3,
     ) -> Task:
         """
-        Create subtasks all at once for a specific objective using JSON format.
-
-        Args:
-            objective: The objective to create subtasks for
-            input_files: List of all available files
-            max_retries: Maximum number of retry attempts per subtask
-
-        Returns:
-            Task: The created task
+        Create subtasks using the configured planning process, allowing for early shortcuts.
         """
-        # Build the initial prompt
-        agent_task_prompt = await self._build_agent_task_prompt()
         history = [
             Message(role="system", content=self.system_prompt),
-            Message(role="user", content=agent_task_prompt),
         ]
-        # Track retry attempts
-        current_retry = 0
+
+        # Phase 1: Analysis with potential shortcut (if enabled)
+        if self.enable_analysis_phase:
+            analysis_prompt = ANALYSIS_PROMPT.format(
+                objective=self.objective,
+                tools_info=self._get_tools_info(),
+                input_files_info=self._get_input_files_info(),
+            )
+            history.append(Message(role="user", content=analysis_prompt))
+            task = await self._generate_with_retry(history)
+
+            # Check if a plan was created in Phase 1
+            if task:
+                return task
+
+        # Phase 2: Data Contracts with potential shortcut (if enabled)
+        if self.enable_data_contracts_phase:
+            history.append(Message(role="user", content=DATA_CONTRACTS_PROMPT))
+            task = await self._generate_with_retry(history)
+
+            # Check if a plan was created in Phase 2
+            if task:
+                return task
+
+        # Phase 3: Final Plan Creation (always enabled)
+        history.append(
+            Message(
+                role="user",
+                content=PLAN_CREATION_PROMPT + await self._build_agent_task_prompt(),
+            )
+        )
+        task = await self._generate_with_retry(history, max_retries)
+        if task:
+            return task
+        raise ValueError("Failed to create valid task after maximum retries")
+
+    async def _process_tool_calls(
+        self, message: Message, history: List[Message]
+    ) -> Task:
+        """Helper method to process tool calls and create task"""
+        if not message.tool_calls:
+            raise ValueError(f"No tool calls found in the message: {message.content}")
+
+        # Add tool response messages
+        for tool_call in message.tool_calls:
+            history.append(
+                Message(
+                    role="tool",
+                    content="Task created successfully",
+                    tool_call_id=tool_call.id,
+                )
+            )
 
         subtasks = []
+        validation_errors = []
+        for tool_call in message.tool_calls:
+            for subtask_params in tool_call.args.get("subtasks", []):
+                try:
+                    # Set default value for use_code_interpreter if not present,
+                    # or force it to False if provider doesn't support it
+                    if "use_code_interpreter" not in subtask_params:
+                        subtask_params["use_code_interpreter"] = False
+                    elif not self.has_code_interpreter:
+                        # Force to False if provider doesn't have code interpreter
+                        subtask_params["use_code_interpreter"] = False
 
-        # Main loop for creating subtasks with retries
+                    subtask = SubTask(**subtask_params)
+                    subtasks.append(subtask)
+                except Exception as e:
+                    validation_errors.append(
+                        f"Error creating subtask: {subtask_params} with error: {e}"
+                    )
+
+        validation_errors.extend(self._validate_dependencies(subtasks))
+        if validation_errors:
+            raise ValueError(f"Validation errors in created task: {validation_errors}")
+
+        return Task(
+            title=self.objective,
+            subtasks=subtasks,
+        )
+
+    async def _generate_with_retry(
+        self, history: List[Message], max_retries: int = 3
+    ) -> Task | None:
+        """Helper method to process tool calls with retry logic"""
+        current_retry = 0
         while current_retry < max_retries:
             message = await self.provider.generate_message(
                 messages=history,
                 model=self.model,
-                tools=[
-                    CreateTaskTool(
-                        self.workspace_dir,
-                    )
-                ],
+                tools=[CreateTaskTool(self.workspace_dir)],
             )
+            history.append(message)
 
             if not message.tool_calls:
-                raise ValueError("No tool calls found in the message")
+                return None
 
-            subtasks = []
-            for tool_call in message.tool_calls:
-                for subtask_params in tool_call.args.get("subtasks", []):
-                    subtask = SubTask(**subtask_params)
-                    subtasks.append(subtask)
+            try:
+                return await self._process_tool_calls(message, history)
+            except ValueError as e:
+                if current_retry < max_retries - 1:
+                    current_retry += 1
+                    retry_prompt = f"Please fix the following errors:\n{str(e)}"
+                    print(retry_prompt)
+                    history.append(Message(role="user", content=retry_prompt))
+                else:
+                    raise
 
-            validation_errors = self._validate_dependencies(subtasks)
-            # If we have validation errors, retry with feedback
-            if validation_errors and current_retry < max_retries - 1:
-                print(f"Validation errors: {validation_errors}")
-                current_retry += 1
-                retry_prompt = f"Please fix following errors:\n"
-                for error in validation_errors:
-                    retry_prompt += f"- {error}\n"
-
-                history.append(Message(role="user", content=retry_prompt))
-
-                # Log retry attempt
-                if self.enable_tracing:
-                    self._log_trace_event(
-                        "subtask_creation_retry",
-                        {
-                            "retry_number": current_retry,
-                            "max_retries": max_retries,
-                            "validation_errors": validation_errors,
-                        },
-                    )
-            else:
-                # All subtasks valid or max retries reached
-                break
-
-        # Create the task if we have at least one subtask
-        if subtasks:
-            return Task(
-                title=objective,
-                subtasks=subtasks,
-            )
-        else:
-            raise ValueError("No subtasks created")
+        raise ValueError("Failed to create valid task after maximum retries")
 
     async def create_task(self, objective: str) -> Task:
         """
@@ -502,7 +685,7 @@ class TaskPlanner:
         Returns:
             Task: The created task with its subtasks
         """
-        task = await self._create_task_for_objective(objective, list(self.input_files))
+        task = await self._create_task_for_objective(objective)
         return task
 
     async def save_task_plan(self) -> None:
@@ -513,3 +696,33 @@ class TaskPlanner:
             task_dict = self.task_plan.model_dump()
             with open(self.tasks_file_path, "w") as f:
                 yaml.dump(task_dict, f, indent=2, sort_keys=False)
+
+    def _get_tools_info(self) -> str:
+        """
+        Get formatted information about available tools.
+
+        Returns:
+            str: Formatted string containing tool information
+        """
+        if not self.tools:
+            return "No tools available"
+
+        tools_info = "Available tools for task execution:\n"
+        for tool in self.tools:
+            tools_info += f"- {tool.name}: {tool.description}\n"
+        return tools_info
+
+    def _get_input_files_info(self) -> str:
+        """
+        Get formatted information about input files.
+
+        Returns:
+            str: Formatted string containing input files information
+        """
+        if not self.input_files:
+            return "No input files available"
+
+        input_files_info = "Input files:\n"
+        for file_path in self.input_files:
+            input_files_info += f"- {file_path}\n"
+        return input_files_info

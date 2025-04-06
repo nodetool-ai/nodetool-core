@@ -1,4 +1,4 @@
-from nodetool.metadata.types import ColumnDef
+from nodetool.metadata.types import ColumnDef, RecordType
 
 
 def json_schema_for_column(column: ColumnDef) -> dict:
@@ -31,6 +31,22 @@ def json_schema_for_column(column: ColumnDef) -> dict:
     if data_type == "datetime":
         return {"type": "string", "format": "date-time", "description": description}
     raise ValueError(f"Unknown data type {data_type}")
+
+
+def json_schema_for_dictionary(fields: RecordType) -> dict:
+    """Create a JSON schema for a dictionary.
+
+    Converts a RecordType object to a JSON schema representation that can be used in JSON schema
+    validation.
+    """
+    return {
+        "type": "object",
+        "properties": {
+            field.name: json_schema_for_column(field) for field in fields.columns
+        },
+        "required": [field.name for field in fields.columns],
+        "additionalProperties": False,
+    }
 
 
 def json_schema_for_dataframe(columns: list[ColumnDef]) -> dict:

@@ -7,12 +7,6 @@ and utility functions used by multiple tools.
 
 from typing import Any
 import os
-from datetime import datetime, timedelta
-from nodetool.workflows.base_node import (
-    BaseNode,
-    get_node_class,
-    get_registered_node_classes,
-)
 from nodetool.workflows.processing_context import ProcessingContext
 
 
@@ -104,8 +98,9 @@ class Tool:
 
     name: str
     description: str
-    input_schema: Any
+    input_schema: dict[str, Any]
     workspace_dir: str
+    example: str = ""
 
     def __init__(self, workspace_dir: str):
         self.workspace_dir = workspace_dir

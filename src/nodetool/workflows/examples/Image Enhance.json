@@ -1,8 +1,8 @@
 {
-  "id": "image_enhance",
+  "id": "8977fd6012fb11f09c400000236298c1",
   "access": "public",
-  "created_at": "2025-01-18T09:07:36.570348",
-  "updated_at": "2025-01-18T09:07:36.570366",
+  "created_at": "2025-04-06T17:28:27.953190",
+  "updated_at": "2025-04-06T17:28:27.953197",
   "name": "Image Enhance",
   "description": "Improve image quality with basic enhancement tools like sharpening, contrast and color adjustment",
   "tags": [
@@ -14,24 +14,6 @@
   "graph": {
     "nodes": [
       {
-        "id": "6",
-        "parent_id": null,
-        "type": "nodetool.image.enhance.Color",
-        "data": {
-          "factor": 1.4
-        },
-        "ui_properties": {
-          "position": {
-            "x": 499,
-            "y": 225
-          },
-          "zIndex": 0,
-          "width": 200,
-          "selectable": true
-        },
-        "dynamic_properties": {}
-      },
-      {
         "id": "8",
         "parent_id": null,
         "type": "nodetool.workflows.base_node.Comment",
@@ -41,23 +23,7 @@
               "type": "paragraph",
               "children": [
                 {
-                  "text": "Select one of the nodes above and then click on"
-                }
-              ]
-            },
-            {
-              "type": "paragraph",
-              "children": [
-                {
-                  "text": "NODETOOL.IMAGE.ENHANCE to open the NodeMenu"
-                }
-              ]
-            },
-            {
-              "type": "paragraph",
-              "children": [
-                {
-                  "text": "in this category."
+                  "text": "Click on the node footer to open the NodeMenu for this category."
                 }
               ]
             }
@@ -65,47 +31,14 @@
           "headline": "More Image.Enhance nodes"
         },
         "ui_properties": {
+          "selected": false,
           "position": {
-            "x": 311,
-            "y": 368
+            "x": 143,
+            "y": 359
           },
           "zIndex": 0,
-          "width": 405,
-          "height": 105,
-          "selectable": true
-        },
-        "dynamic_properties": {}
-      },
-      {
-        "id": "11",
-        "parent_id": null,
-        "type": "nodetool.image.enhance.AutoContrast",
-        "data": {
-          "cutoff": 2
-        },
-        "ui_properties": {
-          "position": {
-            "x": 269,
-            "y": 225
-          },
-          "zIndex": 0,
-          "width": 200,
-          "selectable": true
-        },
-        "dynamic_properties": {}
-      },
-      {
-        "id": "5b962592-953e-411e-9c8f-4d188607b1ad",
-        "parent_id": null,
-        "type": "nodetool.image.enhance.Sharpen",
-        "data": {},
-        "ui_properties": {
-          "position": {
-            "x": 269,
-            "y": 74
-          },
-          "zIndex": 0,
-          "width": 200,
+          "width": 501,
+          "height": 59,
           "selectable": true
         },
         "dynamic_properties": {}
@@ -144,6 +77,7 @@
           ]
         },
         "ui_properties": {
+          "selected": false,
           "position": {
             "x": 4,
             "y": -138
@@ -164,8 +98,9 @@
           "description": ""
         },
         "ui_properties": {
+          "selected": false,
           "position": {
-            "x": 499,
+            "x": 470,
             "y": 50
           },
           "zIndex": 0,
@@ -183,9 +118,10 @@
           "description": ""
         },
         "ui_properties": {
+          "selected": false,
           "position": {
-            "x": 729,
-            "y": 215
+            "x": 470,
+            "y": 221
           },
           "zIndex": 0,
           "width": 159,
@@ -208,12 +144,49 @@
           }
         },
         "ui_properties": {
+          "selected": false,
           "position": {
             "x": 50,
-            "y": 213
+            "y": 73
           },
           "zIndex": 0,
           "width": 159,
+          "selectable": true
+        },
+        "dynamic_properties": {}
+      },
+      {
+        "id": "9d8850a4-c20f-4698-9cb4-e315c956aee6",
+        "parent_id": null,
+        "type": "lib.image.pillow.enhance.Sharpen",
+        "data": {},
+        "ui_properties": {
+          "selected": false,
+          "position": {
+            "x": 269,
+            "y": 74
+          },
+          "zIndex": 0,
+          "width": 171,
+          "selectable": true
+        },
+        "dynamic_properties": {}
+      },
+      {
+        "id": "4c9c6b63-646a-4da9-8794-abd180c59041",
+        "parent_id": null,
+        "type": "lib.image.pillow.enhance.AutoContrast",
+        "data": {
+          "cutoff": 0
+        },
+        "ui_properties": {
+          "selected": false,
+          "position": {
+            "x": 269,
+            "y": 234
+          },
+          "zIndex": 0,
+          "width": 171,
           "selectable": true
         },
         "dynamic_properties": {}
@@ -221,57 +194,40 @@
     ],
     "edges": [
       {
-        "id": "5b1aa42a-bdb8-461b-bebc-58386e28fd44",
-        "source": "11",
-        "sourceHandle": "output",
-        "target": "6",
-        "targetHandle": "image",
-        "ui_properties": {
-          "className": "image"
-        }
-      },
-      {
-        "id": "6",
-        "source": "5b962592-953e-411e-9c8f-4d188607b1ad",
+        "id": "aa5315cd-6ff5-4314-92b1-6e819a309ccb",
+        "source": "9d8850a4-c20f-4698-9cb4-e315c956aee6",
         "sourceHandle": "output",
         "target": "97877",
         "targetHandle": "value",
-        "ui_properties": {
-          "className": "image"
-        }
+        "ui_properties": null
       },
       {
-        "id": "7",
-        "source": "6",
+        "id": "f1509e03-19ac-4795-8083-8903020ba58e",
+        "source": "97879",
+        "sourceHandle": "output",
+        "target": "9d8850a4-c20f-4698-9cb4-e315c956aee6",
+        "targetHandle": "image",
+        "ui_properties": null
+      },
+      {
+        "id": "b2247412-d88e-4c79-95aa-95ff9120575f",
+        "source": "97879",
+        "sourceHandle": "output",
+        "target": "4c9c6b63-646a-4da9-8794-abd180c59041",
+        "targetHandle": "image",
+        "ui_properties": null
+      },
+      {
+        "id": "82f3bfe6-17b1-4685-b4ef-bb84e4d6f1d1",
+        "source": "4c9c6b63-646a-4da9-8794-abd180c59041",
         "sourceHandle": "output",
         "target": "97878",
         "targetHandle": "value",
-        "ui_properties": {
-          "className": "image"
-        }
-      },
-      {
-        "id": "8",
-        "source": "97879",
-        "sourceHandle": "output",
-        "target": "5b962592-953e-411e-9c8f-4d188607b1ad",
-        "targetHandle": "image",
-        "ui_properties": {
-          "className": "image"
-        }
-      },
-      {
-        "id": "495c69f4-2060-4109-b8f6-e64ab5e18ca8",
-        "source": "97879",
-        "sourceHandle": "output",
-        "target": "11",
-        "targetHandle": "image",
-        "ui_properties": {
-          "className": "image"
-        }
+        "ui_properties": null
       }
     ]
   },
   "input_schema": null,
-  "output_schema": null
+  "output_schema": null,
+  "settings": null
 }

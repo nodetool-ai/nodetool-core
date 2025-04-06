@@ -39,9 +39,9 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.live import Live
 
 # Existing imports
-from nodetool.chat.multi_agent import MultiAgentCoordinator
 from nodetool.chat.agent import Agent
-from nodetool.chat.providers import get_provider, Chunk
+from nodetool.chat.providers import get_provider
+from nodetool.chat.providers.base import ChatProvider
 from nodetool.chat.regular_chat import process_regular_chat
 from nodetool.chat.task_planner import TaskPlanner
 from nodetool.chat.tools.browser import DownloadFileTool
@@ -65,6 +65,18 @@ from nodetool.chat.tools import (
     ListWorkspaceContentsTool,
     ExecuteWorkspaceCommandTool,
 )
+from nodetool.workflows.types import Chunk
+
+
+def provider_from_model(model: str) -> ChatProvider:
+    if model.startswith("claude"):
+        return get_provider(Provider.Anthropic)
+    elif model.startswith("gpt"):
+        return get_provider(Provider.OpenAI)
+    elif model.startswith("gemini"):
+        return get_provider(Provider.Gemini)
+    else:
+        raise ValueError(f"Unsupported model: {model}")
 
 
 class Command:
@@ -131,50 +143,6 @@ class ExitCommand(Command):
         return True
 
 
-class ProviderCommand(Command):
-    def __init__(self):
-        super().__init__(
-            "provider", "Set the AI provider (openai, anthropic, ollama)", ["p"]
-        )
-
-    async def execute(self, cli: "ChatCLI", args: List[str]) -> bool:
-        if not args:
-            cli.console.print(
-                f"Current provider: [bold green]{cli.provider.value}[/bold green]"
-            )
-            cli.console.print(f"Available providers: {[p.value for p in Provider]}")
-            return False
-
-        provider_name = args[0]
-        try:
-            if provider_name == "openai":
-                cli.provider = Provider.OpenAI
-            elif provider_name == "anthropic":
-                cli.provider = Provider.Anthropic
-            elif provider_name == "ollama":
-                cli.provider = Provider.Ollama
-            else:
-                cli.console.print(
-                    f"[bold red]Invalid provider.[/bold red] Choose from: {[p.value for p in Provider]}"
-                )
-                return False
-
-            cli.model = cli.default_models[cli.provider]
-
-            cli.console.print(
-                f"Provider set to [bold green]{cli.provider.value}[/bold green] "
-                f"with default model [bold blue]{cli.model}[/bold blue]"
-            )
-            # Save settings after changing provider
-            cli.save_settings()
-        except KeyError:
-            cli.console.print(
-                f"[bold red]Invalid provider.[/bold red] Choose from: {[p.value for p in Provider]}"
-            )
-
-        return False
-
-
 class ModelCommand(Command):
     def __init__(self):
         super().__init__("model", "Set the model for all agents", ["m"])
@@ -203,26 +171,28 @@ class ModelsCommand(Command):
 
     async def execute(self, cli: "ChatCLI", args: List[str]) -> bool:
         try:
-            table = Table(
-                title=f"Available {cli.provider.value} Models", show_header=True
-            )
+            table = Table(title=f"Available Models", show_header=True)
             table.add_column("Model Name", style="cyan")
 
-            if cli.provider == Provider.Ollama:
-                for model_info in cli.ollama_models:
-                    table.add_row(model_info.name)
-            elif cli.provider == Provider.OpenAI:
-                for model_info in cli.openai_models[:10]:  # Show first 10 models
-                    table.add_row(model_info.id)
-            elif cli.provider == Provider.Anthropic:
-                for model in [
-                    "claude-3-opus-20240229",
-                    "claude-3-sonnet-20240229",
-                    "claude-3-haiku-20240307",
-                    "claude-3-5-sonnet-20241022",
-                    "claude-3-7-sonnet-20250219",
-                ]:
-                    table.add_row(model)
+            for model_info in cli.ollama_models:
+                table.add_row(model_info.name)
+            for model_info in cli.openai_models[:10]:
+                table.add_row(model_info.id)
+            for model in [
+                "gemini-2.5-pro-exp-03-25",
+                "gemini-2.0-flash",
+                "gemini-2.0-flash-lite",
+                "gemini-1.5-flash-8b",
+                "gemini-1.5-flash",
+                "gemini-1.5-pro",
+            ]:
+                table.add_row(model)
+            for model in [
+                "claude-3-haiku-20240307",
+                "claude-3-5-sonnet-20241022",
+                "claude-3-7-sonnet-20250219",
+            ]:
+                table.add_row(model)
 
             cli.console.print(table)
         except Exception as e:
@@ -392,15 +362,7 @@ class ChatCLI:
         self.agent_mode = False
         self.debug_mode = False
         self.agent = None
-
-        # Set up default models and provider
-        self.default_models = {
-            Provider.OpenAI: "gpt-4o",
-            Provider.Anthropic: "claude-3-7-sonnet-20250219",
-            Provider.Ollama: "llama3.2:3b",
-        }
-        self.provider = Provider.Anthropic
-        self.model = self.default_models[self.provider]
+        self.model = "gpt-4o"
         self.planner_model = self.model
         self.summarization_model = self.model
         self.retrieval_model = self.model
@@ -420,7 +382,6 @@ class ChatCLI:
         commands = [
             HelpCommand(),
             ExitCommand(),
-            ProviderCommand(),
             ModelCommand(),
             ModelsCommand(),
             ClearCommand(),
@@ -456,7 +417,6 @@ class ChatCLI:
             progress.update(task2, completed=1)
 
             task3 = progress.add_task("[cyan]Setting up workspace...", total=1)
-            self.providers = [p.value.lower() for p in Provider]
 
             progress.update(task3, completed=1)
             workspace_dir = self.context.workspace_dir
@@ -483,7 +443,6 @@ class ChatCLI:
         }
 
         # Add special completers for commands with arguments
-        command_completer["provider"] = WordCompleter(self.providers)
         command_completer["agent"] = WordCompleter(["on", "off"])
         command_completer["debug"] = WordCompleter(["on", "off"])
 
@@ -500,6 +459,12 @@ class ChatCLI:
                 "claude-3-haiku-20240307",
                 "claude-3-5-sonnet-20241022",
                 "claude-3-7-sonnet-20250219",
+                "gemini-2.5-pro-exp-03-25",
+                "gemini-2.0-flash",
+                "gemini-2.0-flash-lite",
+                "gemini-1.5-flash-8b",
+                "gemini-1.5-flash",
+                "gemini-1.5-pro",
             ]
         )
         command_completer["model"] = WordCompleter(model_names)
@@ -535,7 +500,8 @@ class ChatCLI:
 
     def initialize_agent(self, objective: str):
         """Initialize or reinitialize the agent with current settings."""
-        provider_instance = get_provider(self.provider)
+        # Use provider_from_model to dynamically select the provider based on model name
+        provider_instance = provider_from_model(self.model)
         agent = Agent(
             name="Agent",
             objective=objective,
@@ -814,7 +780,7 @@ class ChatCLI:
                             user_input=user_input,
                             messages=self.messages,
                             model=self.model,
-                            provider=get_provider(self.provider),
+                            provider=provider_from_model(self.model),
                             workspace_dir=str(self.context.workspace_dir),
                             context=self.context,
                             debug_mode=self.debug_mode,

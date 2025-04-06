@@ -104,6 +104,7 @@ class OpenAIProvider(ChatProvider):
         if isinstance(content, MessageTextContent):
             return {"type": "text", "text": content.text}
         elif isinstance(content, MessageImageContent):
+            print(content.image)
             return {"type": "image_url", "image_url": {"url": content.image.uri}}
         else:
             raise ValueError(f"Unknown content type {content}")
@@ -233,7 +234,8 @@ class OpenAIProvider(ChatProvider):
         if len(tools) > 0:
             kwargs["tools"] = self.format_tools(tools)
 
-        print(kwargs["tools"])
+        for msg in messages:
+            print(msg.model_dump_json())
 
         openai_messages = [self.convert_message(m) for m in messages]
 
@@ -249,7 +251,7 @@ class OpenAIProvider(ChatProvider):
             stream_options={"include_usage": True},
             **kwargs,
         )
-        current_tool_call = None
+        delta_tool_calls = {}
 
         async for chunk in completion:
             # Track usage information (only available in the final chunk)
@@ -283,38 +285,46 @@ class OpenAIProvider(ChatProvider):
                 )
 
             if chunk.choices[0].finish_reason == "tool_calls":
-                if current_tool_call:
-                    yield ToolCall(
-                        id=current_tool_call["id"],
-                        name=current_tool_call["name"],
-                        args=json.loads(current_tool_call["args"]),
-                    )
+                if delta_tool_calls:
+                    for tc in delta_tool_calls.values():
+                        assert tc is not None, "Tool call must not be None"
+                        yield ToolCall(
+                            id=tc["id"],
+                            name=tc["name"],
+                            args=json.loads(tc["function"]["arguments"]),
+                        )
                 else:
                     raise ValueError("No tool call found")
 
             if delta.tool_calls:
                 for tool_call in delta.tool_calls:
-                    if tool_call.id:
-                        current_tool_call = {
+                    tc: dict[str, Any] | None = None
+                    if tool_call.index in delta_tool_calls:
+                        tc = delta_tool_calls[tool_call.index]
+                    else:
+                        tc = {
                             "id": tool_call.id,
-                            "name": (
-                                tool_call.function.name if tool_call.function else ""
-                            ),
-                            "args": "",
                         }
-                    if tool_call.function and current_tool_call:
-                        if tool_call.function.arguments:
-                            current_tool_call["args"] += tool_call.function.arguments
+                        delta_tool_calls[tool_call.index] = tc
+                    assert tc is not None, "Tool call must not be None"
 
-                    assert (
-                        current_tool_call is not None
-                    ), "Current tool call must not be None"
+                    if tool_call.id:
+                        tc["id"] = tool_call.id
+                    if tool_call.function and tool_call.function.name:
+                        tc["name"] = tool_call.function.name
+                    if tool_call.function and tool_call.function.arguments:
+                        if "function" not in tc:
+                            tc["function"] = {}
+                        if "arguments" not in tc["function"]:
+                            tc["function"]["arguments"] = ""
+                        tc["function"]["arguments"] += tool_call.function.arguments
 
     async def generate_message(
         self,
         messages: Sequence[Message],
         model: str,
         tools: Sequence[Any] = [],
+        use_code_interpreter: bool = False,
         **kwargs,
     ) -> Message:
         """Generate a non-streaming completion from OpenAI.
@@ -330,8 +340,6 @@ class OpenAIProvider(ChatProvider):
         """
         # Convert system messages to user messages for O1/O3 models
         if model.startswith("o1") or model.startswith("o3"):
-            kwargs["max_completion_tokens"] = kwargs.pop("max_tokens", 4096)
-            kwargs.pop("temperature", None)
             converted_messages = []
             for msg in messages:
                 if msg.role == "system":
@@ -345,6 +353,7 @@ class OpenAIProvider(ChatProvider):
                 else:
                     converted_messages.append(msg)
             messages = converted_messages
+            kwargs["max_completion_tokens"] = kwargs.pop("max_tokens", 4096)
 
         if len(tools) > 0:
             kwargs["tools"] = self.format_tools(tools)

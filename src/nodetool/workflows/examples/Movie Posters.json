@@ -1,8 +1,8 @@
 {
-  "id": "movie_posters",
+  "id": "87855cca124511f0b9a00000339d202b",
   "access": "public",
-  "created_at": "2025-01-15T00:49:54.863816",
-  "updated_at": "2025-01-15T00:49:54.863827",
+  "created_at": "2025-04-05T19:48:55.466396",
+  "updated_at": "2025-04-05T19:48:55.466408",
   "name": "Movie Posters",
   "description": "Create cinematic movie posters using AI image generation",
   "tags": [
@@ -19,35 +19,36 @@
         "type": "nodetool.group.Loop",
         "data": {},
         "ui_properties": {
-          "selected": false,
           "position": {
-            "x": 760,
+            "x": 627,
             "y": 50
           },
           "zIndex": -10,
           "width": 849,
-          "height": 377,
+          "height": 330,
           "selectable": false
-        }
+        },
+        "dynamic_properties": {}
       },
       {
         "id": "7",
         "parent_id": "2",
         "type": "nodetool.text.Template",
         "data": {
-          "string": "shot from the motion picture {Title}, {Main Character}: {Character Description}, detailed, sharp focus, clear composition, dramatic, award winning, perfect lighting, film grain, bokeh, depth of field"
+          "string": "shot from the motion picture {title}, {character}: {description}, detailed, sharp focus, clear composition, dramatic, award winning, perfect lighting, film grain, bokeh, depth of field"
         },
         "ui_properties": {
           "selected": false,
           "position": {
             "x": 180,
-            "y": 126
+            "y": 70
           },
           "zIndex": 0,
           "width": 200,
           "color": "#cb4b16",
           "selectable": true
-        }
+        },
+        "dynamic_properties": {}
       },
       {
         "id": "8",
@@ -84,7 +85,6 @@
           "preserve_composition": 0.61
         },
         "ui_properties": {
-          "selected": false,
           "position": {
             "x": 410,
             "y": 50
@@ -92,7 +92,8 @@
           "zIndex": 0,
           "width": 200,
           "selectable": true
-        }
+        },
+        "dynamic_properties": {}
       },
       {
         "id": "9",
@@ -100,15 +101,15 @@
         "type": "nodetool.input.GroupInput",
         "data": {},
         "ui_properties": {
-          "selected": false,
           "position": {
             "x": 50,
-            "y": 171
+            "y": 144
           },
           "zIndex": 0,
           "width": 100,
           "selectable": true
-        }
+        },
+        "dynamic_properties": {}
       },
       {
         "id": "12",
@@ -120,7 +121,9 @@
               "type": "paragraph",
               "children": [
                 {
-                  "text": "- Ollama generates 3 movie and character descriptions"
+                  "text": "Movie Scene Generator Workflow",
+                  "bold": true,
+                  "size": "+"
                 }
               ]
             },
@@ -128,7 +131,7 @@
               "type": "paragraph",
               "children": [
                 {
-                  "text": "- The Loop will run for each row in the data frame"
+                  "text": "- DataGenerator to create 3 movie elements per row: title, character, and description"
                 }
               ]
             },
@@ -136,7 +139,7 @@
               "type": "paragraph",
               "children": [
                 {
-                  "text": "- Outputs will be streamed to the mini app"
+                  "text": "- The Loop iterates through each data frame row to process individual movie scenes"
                 }
               ]
             },
@@ -144,7 +147,31 @@
               "type": "paragraph",
               "children": [
                 {
-                  "text": "- Use RUN APP to test it"
+                  "text": "- Each generated image uses a stable diffusion model (512x768)"
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "children": [
+                {
+                  "text": "- Image outputs are streamed directly to the mini app interface"
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "children": [
+                {
+                  "text": "- Use RUN APP button to execute the pipeline and view results"
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "children": [
+                {
+                  "text": "- Template format: \"shot from the motion picture {title}, {character}, {description}, detailed, sharp focus, clear composition, dramatic, award winning, perfect lighting, film grain, bokeh, depth of field\""
                 }
               ]
             }
@@ -157,56 +184,11 @@
             "y": -120
           },
           "zIndex": 0,
-          "width": 440,
-          "height": 129,
+          "width": 674,
+          "height": 160,
           "selectable": true
-        }
-      },
-      {
-        "id": "13",
-        "parent_id": null,
-        "type": "ollama.agents.DataGenerator",
-        "data": {
-          "model": {
-            "type": "llama_model",
-            "repo_id": "llama3.2:3b"
-          },
-          "context_window": 4096,
-          "temperature": 1,
-          "top_k": 50,
-          "top_p": 0.95,
-          "keep_alive": 300,
-          "columns": {
-            "type": "record_type",
-            "columns": [
-              {
-                "name": "Title",
-                "data_type": "string",
-                "description": "title of the movie"
-              },
-              {
-                "name": "Main Character",
-                "data_type": "string",
-                "description": "main character of the movie"
-              },
-              {
-                "name": "Character Description",
-                "data_type": "string",
-                "description": "visual description of the main character"
-              }
-            ]
-          }
         },
-        "ui_properties": {
-          "selected": false,
-          "position": {
-            "x": 428,
-            "y": 82
-          },
-          "zIndex": 0,
-          "width": 302,
-          "selectable": true
-        }
+        "dynamic_properties": {}
       },
       {
         "id": "15",
@@ -218,15 +200,15 @@
           "value": ""
         },
         "ui_properties": {
-          "selected": false,
           "position": {
             "x": 50,
-            "y": 177
+            "y": 135
           },
           "zIndex": 0,
           "width": 159,
           "selectable": true
-        }
+        },
+        "dynamic_properties": {}
       },
       {
         "id": "16",
@@ -236,15 +218,15 @@
           "b": ": list 3 iconic movies with their main characters"
         },
         "ui_properties": {
-          "selected": false,
           "position": {
             "x": 239,
-            "y": 166
+            "y": 154
           },
           "zIndex": 0,
           "width": 159,
           "selectable": true
-        }
+        },
+        "dynamic_properties": {}
       },
       {
         "id": "17",
@@ -258,12 +240,54 @@
           "selected": false,
           "position": {
             "x": 640,
-            "y": 114
+            "y": 101
           },
           "zIndex": 0,
           "width": 159,
           "selectable": true
-        }
+        },
+        "dynamic_properties": {}
+      },
+      {
+        "id": "5debb16b-129c-4351-9acc-85a8aecedc0e",
+        "parent_id": null,
+        "type": "nodetool.generators.DataGenerator",
+        "data": {
+          "model": "gemma3:1b",
+          "input_text": "",
+          "max_tokens": 4096,
+          "columns": {
+            "type": "record_type",
+            "columns": [
+              {
+                "name": "title",
+                "data_type": "string",
+                "description": ""
+              },
+              {
+                "name": "character",
+                "data_type": "string",
+                "description": ""
+              },
+              {
+                "name": "description",
+                "data_type": "string",
+                "description": ""
+              }
+            ]
+          }
+        },
+        "ui_properties": {
+          "selected": false,
+          "position": {
+            "x": 428,
+            "y": 97
+          },
+          "zIndex": 0,
+          "width": 169,
+          "selectable": true
+        },
+        "dynamic_properties": {}
       }
     ],
     "edges": [
@@ -278,31 +302,11 @@
         }
       },
       {
-        "id": "7258f765-8dcb-4f00-95d7-609833c8b54c",
-        "source": "13",
-        "sourceHandle": "output",
-        "target": "2",
-        "targetHandle": "input",
-        "ui_properties": {
-          "className": "dataframe"
-        }
-      },
-      {
         "id": "b84719fd-c2aa-4fff-8fd2-c682f5280d7b",
         "source": "15",
         "sourceHandle": "output",
         "target": "16",
         "targetHandle": "a",
-        "ui_properties": {
-          "className": "str"
-        }
-      },
-      {
-        "id": "422bbe80-a4fd-4010-b8df-42da587395f1",
-        "source": "16",
-        "sourceHandle": "output",
-        "target": "13",
-        "targetHandle": "prompt",
         "ui_properties": {
           "className": "str"
         }
@@ -326,9 +330,26 @@
         "ui_properties": {
           "className": "image"
         }
+      },
+      {
+        "id": "6e150953-c9f1-4c97-b0f2-93787ddadfb7",
+        "source": "16",
+        "sourceHandle": "output",
+        "target": "5debb16b-129c-4351-9acc-85a8aecedc0e",
+        "targetHandle": "prompt",
+        "ui_properties": null
+      },
+      {
+        "id": "bd3a3224-883b-48b0-841c-781a060b8c10",
+        "source": "5debb16b-129c-4351-9acc-85a8aecedc0e",
+        "sourceHandle": "output",
+        "target": "2",
+        "targetHandle": "input",
+        "ui_properties": null
       }
     ]
   },
   "input_schema": null,
-  "output_schema": null
+  "output_schema": null,
+  "settings": null
 }

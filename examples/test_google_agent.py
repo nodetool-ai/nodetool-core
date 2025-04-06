@@ -15,14 +15,11 @@ This example shows how to:
 
 import asyncio
 from nodetool.chat.agent import Agent
-from nodetool.chat.multi_agent import MultiAgentCoordinator
-from nodetool.chat.providers import get_provider, Chunk
-from nodetool.chat.task_planner import TaskPlanner
+from nodetool.chat.providers import get_provider
 from nodetool.chat.tools.browser import GoogleSearchTool, BrowserTool
-from nodetool.chat.tools.workspace import ReadWorkspaceFileTool
-from nodetool.chat.workspace_manager import WorkspaceManager
 from nodetool.metadata.types import Provider
 from nodetool.workflows.processing_context import ProcessingContext
+from nodetool.workflows.types import Chunk
 
 SUMMARIZER_SYSTEM_PROMPT = """You are a specialized Summarization Agent for AI industry intelligence. Your role is to:
 """
@@ -31,27 +28,25 @@ SUMMARIZER_SYSTEM_PROMPT = """You are a specialized Summarization Agent for AI i
 async def main():
     context = ProcessingContext()
 
-    # provider = get_provider(Provider.Anthropic)
-    # model = "claude-3-5-sonnet-20241022"
-    provider = get_provider(Provider.OpenAI)
-    model = "gpt-4o"
-    # provider = get_provider(Provider.Ollama)
-    # model = "qwen2.5:0.5b"
-    # model = "MFDoom/deepseek-r1-tool-calling:1.5b"
+    # provider = get_provider(Provider.OpenAI)
+    # model = "gpt-4o"
 
-    # provider = get_provider(Provider.Ollama)
-    # model = "driaforall/tiny-agent-a:3b"
-    # model = "qwen2.5:14b"
+    # provider = get_provider(Provider.Gemini)
+    # model = "gemini-2.5-pro-exp-03-25"
+    # model = "gemini-2.0-flash"
 
-    # 3. Set up tools for retrieval
+    provider = get_provider(Provider.Ollama, use_textual_tools=True)
+    model = "gemma3:12b"
+
     retrieval_tools = [
         GoogleSearchTool(context.workspace_dir),
         BrowserTool(context.workspace_dir),
     ]
 
-    # 5. Create a retrieval agent for gathering information
     agent = Agent(
         name="Research Agent",
+        enable_analysis_phase=False,
+        enable_data_contracts_phase=False,
         objective="""
         Research the competitive landscape of AI code assistant tools.
         1. Use google search and browser to identify a list of AI code assistant tools

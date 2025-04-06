@@ -13,7 +13,7 @@ from nodetool.workflows.base_node import InputNode, OutputNode
 from nodetool.workflows.graph import Graph
 from typing import Any, Type
 
-from nodetool.workflows.types import Error, NodeProgress, NodeUpdate
+from nodetool.workflows.types import Chunk, Error, NodeProgress, NodeUpdate
 
 
 class WorkflowNode(BaseNode):
@@ -66,9 +66,10 @@ class WorkflowNode(BaseNode):
                         node_id=self._id,
                         progress=msg["progress"],
                         total=msg["total"],
-                        chunk=msg["chunk"],
                     )
                 )
+            if msg["type"] == "chunk":
+                context.post_message(Chunk(content=msg["content"]))
             if msg["type"] == "node_update":
                 if msg["status"] == "completed":
                     context.post_message(

@@ -15,79 +15,91 @@ import os
 from pathlib import Path
 
 from nodetool.chat.agent import Agent
-from nodetool.chat.providers import get_provider, Chunk
+from nodetool.chat.dataframes import json_schema_for_dataframe
+from nodetool.chat.providers import get_provider
 from nodetool.chat.tools.browser import BrowserTool, GoogleSearchTool
-from nodetool.metadata.types import Provider, Task
+from nodetool.metadata.types import ColumnDef, Provider, Task
 from nodetool.chat.workspace_manager import WorkspaceManager
 from nodetool.chat.task_planner import TaskPlanner
 from nodetool.workflows.processing_context import ProcessingContext
+from nodetool.workflows.types import Chunk
 
 # Reddit-specific system prompt to guide the agent
-REDDIT_SCRAPER_SYSTEM_PROMPT = """
-You are a Reddit Scraping Agent designed to extract valuable content from Reddit posts.
+INSTRUCTIONS = """
+Extract awesome images from the r/StableDiffusion subreddit
 
 Your capabilities:
-1. Search for Reddit posts using Google Search with specific queries
-2. Visit Reddit URLs to extract post content, comments, and metadata
-3. Organize and summarize the collected information
+1. Search for Reddit posts in the r/StableDiffusion subreddit using Google Search
+2. Visit Reddit URLs to extract images, post content, and metadata
+3. Organize and collect the most impressive AI-generated images
 
 When performing searches:
-- Format queries to target Reddit content (include "site:reddit.com" when needed)
-- Look for posts relevant to the user's objective
-- Extract all Reddit post URLs from search results
+- Format queries to target r/StableDiffusion content (include "site:reddit.com/r/StableDiffusion" when needed)
+- Look for posts showcasing high-quality AI-generated artwork and images
+- Extract all Reddit post URLs from search results that contain images
 
 When scraping Reddit posts:
-- Extract the post title, content, author, timestamp, and vote information
-- Identify and capture high-value comments and discussions
-- Extract links to related posts or external resources mentioned in discussions
-- Organize information in a structured format for analysis
+- Extract the post title and direct image URLs
+- Focus on posts with high upvotes and positive community reception
+- Identify images with interesting prompts or techniques mentioned
+- Look for images that demonstrate artistic quality or technical achievement
 
-Present your findings clearly with:
-- Summary of key insights from each post
-- Common themes or perspectives across posts
-- Links to the most valuable content discovered
+Present your findings as a collection of:
+- Image URLs with their corresponding post titles
+- Direct links to the original posts
+- Brief descriptions of what makes each image impressive or unique
 
-Always respect Reddit's structure when parsing content and prioritize extracting meaningful information.
+Always respect Reddit's structure when parsing content and prioritize finding the most visually impressive stable diffusion images.
 """
 
 
 async def main():
-    # 1. Set up workspace directory
-    workspace_manager = WorkspaceManager()
-    workspace_dir = workspace_manager.get_current_directory()
-    print(f"Created workspace at: {workspace_dir}")
+    context = ProcessingContext()
 
-    # 2. Initialize provider and model
-    # provider = get_provider(Provider.OpenAI)
-    # model = "gpt-4o"
+    provider = get_provider(Provider.OpenAI)
+    model = "gpt-4o"
     # Alternative model options:
     # provider = get_provider(Provider.Anthropic)
     # model = "claude-3-7-sonnet-20250219"
-    provider = get_provider(Provider.Ollama)
-    model = "qwen2.5:14b"
+    # provider = get_provider(Provider.Ollama)
+    # model = "qwen2.5:14b"
 
-    # 3. Set up the required tools
     tools = [
-        GoogleSearchTool(workspace_dir=str(workspace_dir)),
-        BrowserTool(workspace_dir=str(workspace_dir)),
+        GoogleSearchTool(workspace_dir=str(context.workspace_dir)),
+        BrowserTool(workspace_dir=str(context.workspace_dir)),
     ]
 
-    # 4. Create the Reddit scraping agent
     agent = Agent(
         name="Reddit Scraper",
-        objective="Extract valuable content from Reddit posts on specific topics",
-        description="An agent that discovers and scrapes Reddit posts to extract and organize content.",
+        objective=INSTRUCTIONS,
         provider=provider,
         model=model,
-        workspace_dir=str(workspace_dir),
         tools=tools,
-        system_prompt=REDDIT_SCRAPER_SYSTEM_PROMPT,
-        max_steps=15,
-        max_subtask_iterations=3,
+        output_schema=json_schema_for_dataframe(
+            columns=[
+                ColumnDef(
+                    name="title",
+                    data_type="string",
+                ),
+                ColumnDef(
+                    name="upvotes",
+                    data_type="int",
+                ),
+                ColumnDef(
+                    name="post_url",
+                    data_type="string",
+                ),
+                ColumnDef(
+                    name="description",
+                    data_type="string",
+                ),
+                ColumnDef(
+                    name="image_url",
+                    data_type="string",
+                ),
+            ]
+        ),
     )
-
-    # 5. Get user input for the search topic
-    search_topic = "Marketing automation tools"
 
     processing_context = ProcessingContext()
 

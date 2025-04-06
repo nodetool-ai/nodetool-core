@@ -2,7 +2,7 @@ from nodetool.chat.tools.base import resolve_workspace_path
 from nodetool.chat.wrap_generators_parallel import (
     wrap_generators_parallel,
 )
-from nodetool.chat.providers import ChatProvider, Chunk
+from nodetool.chat.providers import ChatProvider
 from nodetool.chat.sub_task_context import (
     SubTaskContext,
     TaskUpdate,
@@ -17,6 +17,7 @@ import os
 from typing import AsyncGenerator, List, Sequence, Union
 
 from nodetool.workflows.processing_context import ProcessingContext
+from nodetool.workflows.types import Chunk
 
 
 class TaskExecutor:

@@ -8,18 +8,26 @@ This module provides tools for system operations:
 - FindNodeTool: Find nodes in node library
 """
 
-import os
 from datetime import datetime
 import asyncio
 from typing import Any
 
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.base_node import (
-    BaseNode,
-    get_node_class,
     get_registered_node_classes,
 )
-from .base import Tool, sanitize_node_name
+from .base import Tool
+
+
+class CodeInterpreterTool(Tool):
+    """
+    Execute a code block and return its output
+    This tool must be used in conjunction with the use_code_interpreter flag in the subtask
+    """
+
+    name = "code_interpreter"
+    description = "Execute a code block and return its output"
+    input_schema = {}
 
 
 class ExecuteShellTool(Tool):

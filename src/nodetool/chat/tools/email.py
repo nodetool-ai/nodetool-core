@@ -7,15 +7,13 @@ This module provides tools for working with email (Gmail):
 - AddLabelTool: Add labels to Gmail messages
 """
 
+import asyncio
 import imaplib
-import html2text
-import email
-from email.header import decode_header
 from datetime import datetime, timedelta
 from typing import Any, Dict, Tuple
 
+from nodetool.chat.tools.base import Tool
 from nodetool.workflows.processing_context import ProcessingContext
-from .base import Tool
 
 
 def create_gmail_connection(
@@ -94,10 +92,13 @@ def decode_bytes(byte_data: bytes, charset: str = "utf-8") -> str:
 
 def parse_email_message(msg_data: tuple) -> Dict[str, Any]:
     """Helper function to parse email message data"""
+    import email
+    import email.header
+
     email_body = email.message_from_bytes(msg_data[0][1])
 
     # Decode subject
-    subject = decode_header(email_body["subject"])[0]
+    subject = email.header.decode_header(email_body["subject"])[0]
     if isinstance(subject[0], bytes):
         # Try to decode with the specified charset, fall back to alternatives if that fails
         charset = subject[1] or "utf-8"
@@ -133,9 +134,14 @@ def parse_email_message(msg_data: tuple) -> Dict[str, Any]:
 
 class SearchEmailTool(Tool):
     name = "search_email"
-    description = (
-        "Search Gmail using various criteria and return subject, sender and message IDs"
-    )
+    description = """
+        Search Gmail by subject, text, and date.
+        Returns a list of emails as dictionaries with the following keys:
+        - messageid: Message ID
+        - subject: Subject of the email
+        - sender: Sender's email address
+        - body: Body of the email
+        """
     input_schema = {
         "type": "object",
         "properties": {
@@ -161,6 +167,9 @@ class SearchEmailTool(Tool):
     }
 
     async def process(self, context: ProcessingContext, params: dict) -> Any:
+        import email
+        import email.header
+
         try:
             imap, _, _ = create_gmail_connection(context)
 
@@ -213,31 +222,37 @@ class SearchEmailTool(Tool):
                     if msg_data and msg_data[0] is not None:
                         # Parse the header data
                         header_data = email.message_from_bytes(msg_data[0][1])
-                        subject = decode_header(header_data["subject"])[0]
+                        subject = email.header.decode_header(header_data["subject"])[0]
                         if isinstance(subject[0], bytes):
                             charset = subject[1] or "utf-8"
                             subject_text = decode_bytes(subject[0], charset)
                         else:
                             subject_text = str(subject[0]) if subject[0] else ""
 
-                        body = ""
-                        is_html = False
+                        content_text = None
+                        content_html = None
                         if header_data.is_multipart():
                             for part in header_data.walk():
-                                body = part.get_payload(decode=True)
-                                if part.get_content_type() == "text/html":
-                                    is_html = True
-                                break
+                                # Check if part.get_payload() returns a list
+                                payload = part.get_payload()
+                                if part.get_content_type() == "text/plain":
+                                    content_text = part.get_payload(decode=True)
+                                elif part.get_content_type() == "text/html":
+                                    content_html = part.get_payload(decode=True)
+
+                        def to_str(content: Any) -> str:
+                            if isinstance(content, list):
+                                return "\n".join([to_str(item) for item in content])
+                            if isinstance(content, bytes):
+                                return decode_bytes(content)
+                            return str(content)
+
+                        if content_text:
+                            body = to_str(content_text)
+                        elif content_html:
+                            body = to_str(content_html)
                         else:
-                            body = header_data.get_payload(decode=True)
-
-                        if isinstance(body, bytes):
-                            body = decode_bytes(body)  # type: ignore
-                        elif isinstance(body, list):
-                            body = "\n".join(decode_bytes(item) for item in body)
-
-                        if is_html:
-                            body = html2text.html2text(body)  # type: ignore
+                            body = ""
 
                         detailed_results.append(
                             {
@@ -248,9 +263,7 @@ class SearchEmailTool(Tool):
                             }
                         )
 
-                print(f"Found {len(detailed_results)} emails")
-                print(f"Detailed results: {detailed_results}")
-                return {"results": detailed_results, "count": len(detailed_results)}
+                return detailed_results
 
             finally:
                 imap.logout()

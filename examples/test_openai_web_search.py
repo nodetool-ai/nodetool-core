@@ -15,11 +15,12 @@ This example shows how to:
 
 import asyncio
 from nodetool.chat.agent import Agent
-from nodetool.chat.providers import get_provider, Chunk
+from nodetool.chat.providers import get_provider
 from nodetool.chat.tools.openai_web_search import OpenAIWebSearchTool
 from nodetool.chat.workspace_manager import WorkspaceManager
 from nodetool.metadata.types import Provider
 from nodetool.workflows.processing_context import ProcessingContext
+from nodetool.workflows.types import Chunk
 
 
 async def main():

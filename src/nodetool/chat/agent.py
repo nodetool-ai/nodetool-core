@@ -15,20 +15,16 @@ The implementation provides:
 """
 
 import os
-import json
-import yaml
 from typing import AsyncGenerator, List, Sequence, Union, Any
 from rich.console import Console
 from rich.table import Table
 from rich.live import Live
-from rich.panel import Panel
 
-from nodetool.workflows.types import TaskUpdate, TaskUpdateEvent
+from nodetool.workflows.types import Chunk, TaskUpdate, TaskUpdateEvent
 from nodetool.chat.task_executor import TaskExecutor
-from nodetool.chat.providers import ChatProvider, Chunk
+from nodetool.chat.providers import ChatProvider
 from nodetool.chat.task_planner import TaskPlanner
 from nodetool.chat.tools import Tool
-from nodetool.chat.tools.base import resolve_workspace_path
 from nodetool.metadata.types import (
     Message,
     ToolCall,
@@ -71,6 +67,8 @@ class Agent:
         max_token_limit: int = 20000,
         output_schema: dict | None = None,
         output_type: str | None = None,
+        enable_analysis_phase: bool = True,
+        enable_data_contracts_phase: bool = True,
     ):
         """
         Initialize the base agent.
@@ -90,6 +88,8 @@ class Agent:
             max_subtasks (int, optional): Maximum number of subtasks to be created
             output_schema (dict, optional): JSON schema for the final task output
             output_type (str, optional): Type of the final task output
+            enable_analysis_phase (bool, optional): Whether to run the analysis phase (PHASE 1)
+            enable_data_contracts_phase (bool, optional): Whether to run the data contracts phase (PHASE 2)
         """
         self.name = name
         self.objective = objective
@@ -107,6 +107,8 @@ class Agent:
         self.console = Console()
         self.output_schema = output_schema
         self.output_type = output_type
+        self.enable_analysis_phase = enable_analysis_phase
+        self.enable_data_contracts_phase = enable_data_contracts_phase
 
     def _create_subtasks_table(self, task: Task) -> Table:
         """Create a rich table for displaying subtasks."""
@@ -143,9 +145,7 @@ class Agent:
         Execute the agent using the task plan.
 
         Args:
-            task (Task): The task to execute
             processing_context (ProcessingContext): The processing context
-            input_files (List[str]): List of input files to use for the task
 
         Yields:
             Union[Message, Chunk, ToolCall]: Execution progress
@@ -160,6 +160,8 @@ class Agent:
             tools=tools,
             input_files=self.input_files,
             output_schema=self.output_schema,
+            enable_analysis_phase=self.enable_analysis_phase,
+            enable_data_contracts_phase=self.enable_data_contracts_phase,
         )
 
         task = await task_planner.create_task(self.objective)
@@ -169,10 +171,10 @@ class Agent:
             event=TaskUpdateEvent.TASK_CREATED,
         )
 
-        if self.output_type:
+        if self.output_type and len(task.subtasks) > 0:
             task.subtasks[-1].output_type = self.output_type
 
-        if self.output_schema:
+        if self.output_schema and len(task.subtasks) > 0:
             task.subtasks[-1].output_schema = self.output_schema
 
         with Live(self._create_subtasks_table(task), refresh_per_second=4) as live:
@@ -192,7 +194,7 @@ class Agent:
             # Execute all subtasks within this task and yield results
             async for item in executor.execute_tasks(processing_context):
                 yield item
-                self._save_task(task, processing_context.workspace_dir)
+                # self._save_task(task, processing_context.workspace_dir)
                 live.update(self._create_subtasks_table(task))
                 if isinstance(item, ToolCall):
                     if item.name == "finish_task":

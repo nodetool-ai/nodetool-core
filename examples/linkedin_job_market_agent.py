@@ -16,10 +16,11 @@ from pathlib import Path
 from langchain_openai import ChatOpenAI
 
 from nodetool.chat.agent import Agent
-from nodetool.chat.providers import get_provider, Chunk
+from nodetool.chat.providers import get_provider
 from nodetool.chat.tools.browser_agent import BrowserAgentTool
 from nodetool.metadata.types import Provider
 from nodetool.workflows.processing_context import ProcessingContext
+from nodetool.workflows.types import Chunk
 
 
 async def main():

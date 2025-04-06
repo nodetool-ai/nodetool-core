@@ -428,6 +428,9 @@ class BaseNode(BaseModel):
             This method handles type conversion for enums, lists, and objects with 'model_validate' method.
         """
         prop = self.find_property(name)
+        if prop is None:
+            print(f"[{self.__class__.__name__}] Property {name} does not exist")
+            return
         python_type = prop.type.get_python_type()
         type_args = prop.type.type_args
 
@@ -657,9 +660,7 @@ class BaseNode(BaseModel):
         elif name in self._dynamic_properties:
             return Property(name=name, type=TypeMetadata(type="any"))
         else:
-            raise ValueError(
-                f"Property {name} does not exist in {self.__class__.__name__}"
-            )
+            return None
 
     @classmethod
     def find_output(cls, name: str) -> OutputSlot:
@@ -942,7 +943,6 @@ class InputNode(BaseNode):
     """
 
     name: str = Field("", description="The parameter name for the workflow.")
-    description: str = Field("", description="The description for this input node.")
 
     @classmethod
     def get_basic_fields(cls):
@@ -968,7 +968,6 @@ class OutputNode(BaseNode):
     """
 
     name: str = Field("", description="The parameter name for the workflow.")
-    description: str = Field("", description="The description for this output node.")
 
     @classmethod
     def is_visible(cls):

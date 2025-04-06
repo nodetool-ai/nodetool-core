@@ -38,6 +38,14 @@ class NodeUpdate(BaseModel):
     properties: dict[str, Any] | None = None
 
 
+class ToolCallUpdate(BaseModel):
+    """A tool call from a provider."""
+
+    type: Literal["tool_call_update"] = "tool_call_update"
+    name: str
+    args: dict[str, Any]
+
+
 class BinaryUpdate(BaseModel):
     type: Literal["binary_update"] = "binary_update"
     node_id: str
@@ -66,6 +74,15 @@ class NodeProgress(BaseModel):
     chunk: str = ""
 
 
+class Chunk(BaseModel):
+    """A chunk of streamed content from a provider."""
+
+    type: Literal["chunk"] = "chunk"
+    node_id: str | None = None
+    content: str
+    done: bool = False
+
+
 class Error(BaseModel):
     type: Literal["error"] = "error"
     error: str
@@ -87,7 +104,9 @@ ProcessingMessage = (
     | NodeProgress
     | JobUpdate
     | Error
+    | Chunk
     | Prediction
     | RunFunction
     | TaskUpdate
+    | ToolCallUpdate
 )

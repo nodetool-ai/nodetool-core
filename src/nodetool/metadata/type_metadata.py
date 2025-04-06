@@ -14,7 +14,40 @@ class TypeMetadata(BaseModel):
     type_name: Optional[str] = None
 
     def __repr__(self):
-        return f"TypeMetadata(type={self.type}, optional={self.optional}, values={self.values}, type_args={self.type_args})"
+        result = ""
+
+        if self.type == "list":
+            item_type = self.type_args[0].__repr__() if self.type_args else "Any"
+            result = f"List[{item_type}]"
+        elif self.type == "dict":
+            if len(self.type_args) >= 2:
+                key_type = self.type_args[0].__repr__()
+                val_type = self.type_args[1].__repr__()
+                result = f"Dict[{key_type}, {val_type}]"
+            else:
+                result = "Dict[Any, Any]"
+        elif self.type == "tuple":
+            types = ", ".join(arg.__repr__() for arg in self.type_args)
+            result = f"Tuple[{types}]"
+        elif self.type == "union":
+            types = " | ".join(arg.__repr__() for arg in self.type_args)
+            result = f"({types})"
+        elif self.type == "enum":
+            values = str(self.values) if self.values else "[]"
+            result = f"Enum{values}"
+        else:
+            # For primitive and other types
+            result = self.type
+
+            if self.type_args:
+                args = ", ".join(arg.__repr__() for arg in self.type_args)
+                result += f"[{args}]"
+
+        # Handle optional types
+        if self.optional:
+            result = f"Optional[{result}]"
+
+        return result
 
     def is_asset_type(self, recursive: bool = False):
         from nodetool.metadata.types import asset_types

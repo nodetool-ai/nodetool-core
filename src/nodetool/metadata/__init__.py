@@ -42,7 +42,7 @@ def is_assignable(type_meta: TypeMetadata, value: Any) -> bool:
 
     if type_meta.type == "list":
         if python_type == list:
-            t = type_meta.type_args[0]
+            t = type_meta.type_args[0] if len(type_meta.type_args) > 0 else Any
             return all(is_assignable(t, v) for v in value)
         if python_type == ImageRef:
             assert isinstance(value, ImageRef)
@@ -50,8 +50,8 @@ def is_assignable(type_meta: TypeMetadata, value: Any) -> bool:
     if type_meta.type == "dict" and python_type == dict:
         if len(type_meta.type_args) != 2:
             return True
-        t = type_meta.type_args[0]
-        u = type_meta.type_args[1]
+        t = type_meta.type_args[0] if len(type_meta.type_args) > 0 else Any
+        u = type_meta.type_args[1] if len(type_meta.type_args) > 1 else Any
         return all(
             is_assignable(t, k) and is_assignable(u, v) for k, v in value.items()
         )
@@ -67,7 +67,7 @@ def is_assignable(type_meta: TypeMetadata, value: Any) -> bool:
         else:
             return isinstance(value, python_class)
     if type_meta.type == "tensor" and python_type == NPArray:
-        t = type_meta.type_args[0]
+        t = type_meta.type_args[0] if len(type_meta.type_args) > 0 else Any
         return all(is_assignable(t, v) for v in value)
     if type_meta.type == "union":
         return any(is_assignable(t, value) for t in type_meta.type_args)

@@ -1,8 +1,8 @@
 {
-  "id": "a3b1d004e14e11ef80f1000035b07413",
+  "id": "e447b43412f511f087a9000044baf0a7",
   "access": "public",
-  "created_at": "2025-02-05T18:13:15.317865",
-  "updated_at": "2025-02-05T18:13:15.317876",
+  "created_at": "2025-04-06T16:53:47.760956",
+  "updated_at": "2025-04-06T16:53:47.760969",
   "name": "Image Analysis Chat",
   "description": "Analyze images and extract information using a chat interface",
   "tags": [
@@ -39,7 +39,6 @@
           }
         },
         "ui_properties": {
-          "selected": false,
           "position": {
             "x": 50,
             "y": 50
@@ -61,9 +60,8 @@
           "description": ""
         },
         "ui_properties": {
-          "selected": false,
           "position": {
-            "x": 486,
+            "x": 506,
             "y": 120
           },
           "zIndex": 0,
@@ -146,7 +144,6 @@
           ]
         },
         "ui_properties": {
-          "selected": false,
           "position": {
             "x": 44,
             "y": -212
@@ -159,31 +156,22 @@
         "dynamic_properties": {}
       },
       {
-        "id": "5",
+        "id": "f6bf5c90-8941-4690-817a-30d66d32d456",
         "parent_id": null,
-        "type": "ollama.text.Ollama",
+        "type": "nodetool.llms.LLM",
         "data": {
-          "model": {
-            "type": "llama_model",
-            "repo_id": "llama3.2-vision:11b"
-          },
-          "system_prompt": "You are an assistant.",
-          "context_window": 4096,
-          "temperature": 0.7,
-          "top_k": 50,
-          "top_p": 0.95,
-          "keep_alive": 300,
-          "num_predict": 10000
+          "model": "llama3.2-vision:11b",
+          "system": "You are a friendly assistant.",
+          "tools": [],
+          "max_tokens": 4096
         },
         "ui_properties": {
-          "selected": false,
           "position": {
             "x": 297,
-            "y": 75
+            "y": 67
           },
           "zIndex": 0,
-          "width": 159,
-          "title": "Reads messages, including image, and generates an answer.",
+          "width": 179,
           "selectable": true
         },
         "dynamic_properties": {}
@@ -191,45 +179,40 @@
     ],
     "edges": [
       {
-        "id": "6455bc39-8451-47de-af1a-84840124deee",
-        "source": "1",
-        "sourceHandle": "text",
-        "target": "5",
-        "targetHandle": "prompt",
-        "ui_properties": {
-          "className": "str"
-        }
-      },
-      {
-        "id": "a617f28c-ba10-4493-bacf-4911fe9e1621",
-        "source": "1",
-        "sourceHandle": "history",
-        "target": "5",
-        "targetHandle": "messages",
-        "ui_properties": {
-          "className": "list"
-        }
-      },
-      {
-        "id": "e4a8cddc-c09c-4007-a74a-99a340cfb428",
-        "source": "5",
+        "id": "9dc90c81-a325-4353-a68b-8c571d524042",
+        "source": "f6bf5c90-8941-4690-817a-30d66d32d456",
         "sourceHandle": "output",
         "target": "3",
         "targetHandle": "value",
-        "ui_properties": {
-          "className": "str"
-        }
+        "ui_properties": null
       },
       {
-        "id": "6456",
+        "id": "41966a63-adc8-4b02-b040-40e7fe2997cc",
+        "source": "1",
+        "sourceHandle": "text",
+        "target": "f6bf5c90-8941-4690-817a-30d66d32d456",
+        "targetHandle": "prompt",
+        "ui_properties": null
+      },
+      {
+        "id": "c11b9096-3ac3-4459-8569-ea71d7dfb31a",
         "source": "1",
         "sourceHandle": "image",
-        "target": "5",
+        "target": "f6bf5c90-8941-4690-817a-30d66d32d456",
         "targetHandle": "image",
+        "ui_properties": null
+      },
+      {
+        "id": "e28b0002-6164-4ba0-abda-b6fe0ca88877",
+        "source": "1",
+        "sourceHandle": "history",
+        "target": "f6bf5c90-8941-4690-817a-30d66d32d456",
+        "targetHandle": "messages",
         "ui_properties": null
       }
     ]
   },
   "input_schema": null,
-  "output_schema": null
+  "output_schema": null,
+  "settings": null
 }

@@ -13,7 +13,7 @@ import anthropic
 from anthropic.types.message_param import MessageParam
 from anthropic.types.image_block_param import ImageBlockParam
 from anthropic.types.tool_param import ToolParam
-from nodetool.chat.providers.base import ChatProvider, Chunk
+from nodetool.chat.providers.base import ChatProvider
 from nodetool.metadata.types import (
     Message,
     ToolCall,
@@ -22,6 +22,7 @@ from nodetool.metadata.types import (
     MessageTextContent,
 )
 from nodetool.common.environment import Environment
+from nodetool.workflows.types import Chunk
 
 
 class AnthropicProvider(ChatProvider):
@@ -277,6 +278,7 @@ class AnthropicProvider(ChatProvider):
         messages: Sequence[Message],
         model: str,
         tools: Sequence[Any] = [],
+        use_code_interpreter: bool = False,
         **kwargs,
     ) -> Message:
         """Generate a complete non-streaming message from Anthropic.

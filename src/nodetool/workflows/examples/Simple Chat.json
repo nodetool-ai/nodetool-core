@@ -1,8 +1,8 @@
 {
-  "id": "simple-chat",
+  "id": "f905ed2212f611f0b622000001bffa9d",
   "access": "public",
-  "created_at": "2025-01-26T00:18:27.954303",
-  "updated_at": "2025-01-26T00:18:27.954328",
+  "created_at": "2025-04-06T17:26:28.033977",
+  "updated_at": "2025-04-06T17:26:28.033991",
   "name": "Simple Chat",
   "description": "Basic chat interface using Deepseek R1 7B model",
   "tags": [
@@ -59,11 +59,11 @@
         },
         "ui_properties": {
           "position": {
-            "x": 486,
-            "y": 110
+            "x": 534,
+            "y": 130
           },
           "zIndex": 0,
-          "width": 185,
+          "width": 235,
           "selectable": true
         },
         "dynamic_properties": {}
@@ -79,7 +79,9 @@
               "type": "paragraph",
               "children": [
                 {
-                  "text": "Use the workflow chat at the bottom right of the screen to interact with the workflow."
+                  "text": "Simple Chat App",
+                  "bold": true,
+                  "size": "+"
                 }
               ]
             },
@@ -87,6 +89,8 @@
               "type": "paragraph",
               "children": [
                 {
+                  "bold": true,
+                  "size": "+",
                   "text": ""
                 }
               ]
@@ -95,7 +99,39 @@
               "type": "paragraph",
               "children": [
                 {
-                  "text": "You can also test the chat app by clicking \"RUN APP\" in the toolbar."
+                  "text": "\u2022\tUser Input (Chat Input node): The user types a message into the chat interface (e.g. \u201cfind emails about nodetool\u201d)."
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "children": [
+                {
+                  "text": "\u2022\tLLM Processing (Llm node): The message is passed to an LLM with tools (in this case, search_email) enabled for use."
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "children": [
+                {
+                  "text": "\u2022\tTool Execution (search_email tool): If the model decides to use the tool, it sends a query (e.g. search term) to the search_email function to retrieve relevant email data."
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "children": [
+                {
+                  "text": "\u2022\tLLM Response Construction: The LLM receives the tool output and constructs a human-readable summary of the result."
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "children": [
+                {
+                  "text": "\u2022\tOutput (String Output node): The formatted response is sent to the UI and displayed in the chat interface as a reply to the user\u2019s query."
                 }
               ]
             }
@@ -104,44 +140,38 @@
         "ui_properties": {
           "position": {
             "x": 52,
-            "y": -130
+            "y": -213
           },
           "zIndex": 0,
-          "width": 508,
-          "height": 137,
+          "width": 869,
+          "height": 198,
           "selectable": true
         },
         "dynamic_properties": {}
       },
       {
-        "id": "5",
+        "id": "0705f90d-2c37-44e3-9e2d-2151bbf445a7",
         "parent_id": null,
-        "type": "ollama.text.Ollama",
+        "type": "nodetool.llms.LLM",
         "data": {
-          "model": {
-            "type": "llama_model",
-            "repo_id": "deepseek-r1:7b"
-          },
-          "system_prompt": "You are an assistant.",
-          "image": {
-            "type": "image",
-            "uri": "",
-            "asset_id": null,
-            "data": null
-          },
-          "context_window": 4096,
-          "temperature": 0.7,
-          "top_k": 50,
-          "top_p": 0.95,
-          "keep_alive": 300
+          "model": "gpt-4o",
+          "system": "You are a friendly assistant.",
+          "image": {},
+          "max_tokens": 4096,
+          "tools": [
+            {
+              "type": "tool_name",
+              "name": "search_email"
+            }
+          ]
         },
         "ui_properties": {
           "position": {
             "x": 297,
-            "y": 65
+            "y": 90
           },
           "zIndex": 0,
-          "width": 159,
+          "width": 207,
           "selectable": true
         },
         "dynamic_properties": {}
@@ -149,37 +179,32 @@
     ],
     "edges": [
       {
-        "id": "6455bc39-8451-47de-af1a-84840124deee",
-        "source": "1",
-        "sourceHandle": "text",
-        "target": "5",
-        "targetHandle": "prompt",
-        "ui_properties": {
-          "className": "str"
-        }
-      },
-      {
-        "id": "a617f28c-ba10-4493-bacf-4911fe9e1621",
+        "id": "b175b10c-a39f-42db-990a-9b0692052d13",
         "source": "1",
         "sourceHandle": "history",
-        "target": "5",
+        "target": "0705f90d-2c37-44e3-9e2d-2151bbf445a7",
         "targetHandle": "messages",
-        "ui_properties": {
-          "className": "list"
-        }
+        "ui_properties": null
       },
       {
-        "id": "e4a8cddc-c09c-4007-a74a-99a340cfb428",
-        "source": "5",
+        "id": "7b4eff36-a9c7-476c-bb33-717862f49b50",
+        "source": "0705f90d-2c37-44e3-9e2d-2151bbf445a7",
         "sourceHandle": "output",
         "target": "3",
         "targetHandle": "value",
-        "ui_properties": {
-          "className": "str"
-        }
+        "ui_properties": null
+      },
+      {
+        "id": "eb734405-776d-4af8-8484-120c6153e2fe",
+        "source": "1",
+        "sourceHandle": "text",
+        "target": "0705f90d-2c37-44e3-9e2d-2151bbf445a7",
+        "targetHandle": "prompt",
+        "ui_properties": null
       }
     ]
   },
   "input_schema": null,
-  "output_schema": null
+  "output_schema": null,
+  "settings": null
 }

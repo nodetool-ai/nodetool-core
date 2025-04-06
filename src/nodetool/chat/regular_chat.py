@@ -8,7 +8,7 @@ It processes user input, generates responses, and handles tool calls and their r
 import json
 from typing import List, Optional
 
-from nodetool.chat.providers import Chunk
+from nodetool.workflows.types import Chunk
 from nodetool.chat.providers.base import ChatProvider
 from nodetool.chat.tools import Tool
 from nodetool.chat.chat import run_tool, default_serializer
@@ -24,8 +24,6 @@ from nodetool.chat.tools import (
     BrowserTool,
     ScreenshotTool,
     SearchFileTool,
-    ChromaTextSearchTool,
-    ChromaHybridSearchTool,
     ExtractPDFTablesTool,
     ExtractPDFTextTool,
     ConvertPDFToMarkdownTool,
@@ -86,18 +84,15 @@ async def process_regular_chat(
             messages=messages_to_send,
             model=model,
             tools=tools,
-            provider=provider,
         ):  # type: ignore
             if isinstance(chunk, Chunk):
                 current_chunk = str(chunk.content)
-                print(chunk.content, end="", flush=True)
+                print(chunk.content, end="")
                 if messages[-1].role == "assistant":
                     assert isinstance(messages[-1].content, str)
                     messages[-1].content += current_chunk
                 else:
                     messages.append(Message(role="assistant", content=current_chunk))
-                if chunk.done:
-                    print("")
 
             if isinstance(chunk, ToolCall):
                 # Display tool call in debug mode

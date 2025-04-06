@@ -1,10 +1,11 @@
 import asyncio
 import datetime
-from nodetool.chat.providers import ChatProvider, Chunk
+import mimetypes
+from nodetool.chat.providers import ChatProvider
 from nodetool.chat.tools import Tool
 from nodetool.chat.tools.base import resolve_workspace_path
-from nodetool.metadata.types import Message, SubTask, Task, ToolCall
-from nodetool.workflows.types import TaskUpdate, TaskUpdateEvent
+from nodetool.metadata.types import Message, MessageFile, SubTask, Task, ToolCall
+from nodetool.workflows.types import Chunk, TaskUpdate, TaskUpdateEvent
 from nodetool.workflows.processing_context import ProcessingContext
 
 import tiktoken
@@ -50,6 +51,10 @@ FINISH_TASK PROTOCOL:
 6. Provide the final task result in the result field
 7. Use the ReadWorkspaceFileTool to read the contents
 """
+
+
+def mime_type_from_path(path: str) -> str:
+    return mimetypes.guess_type(path)[0] or "application/octet-stream"
 
 
 METADATA_SCHEMA = {
@@ -682,8 +687,23 @@ class SubTaskContext:
             + self.subtask.content
         )
 
+        input_files = []
+        if self.subtask.input_files and self.provider.has_code_interpreter:
+            for input_file in self.subtask.input_files:
+                path = resolve_workspace_path(self.workspace_dir, input_file)
+                with open(path, "rb") as f:
+                    content = f.read()
+                input_files.append(
+                    MessageFile(
+                        content=content,
+                        mime_type=mime_type_from_path(path),
+                    )
+                )
+
         # Add the task prompt to this subtask's history
-        self.history.append(Message(role="user", content=task_prompt))
+        self.history.append(
+            Message(role="user", content=task_prompt, input_files=input_files)
+        )
 
         # Log the task prompt in the trace
         if self.enable_tracing:
@@ -798,7 +818,36 @@ class SubTaskContext:
             messages=self.history,
             model=self.model,
             tools=tools,
+            use_code_interpreter=self.subtask.use_code_interpreter,
         )
+
+        # Check if the message contains output files and use them as subtask output
+        if hasattr(message, "output_files") and message.output_files:
+            # Log that we're using output files from message response
+            if self.enable_tracing:
+                self._log_trace_event(
+                    "using_message_output_files",
+                    {
+                        "num_files": len(message.output_files),
+                        "mime_types": [file.mime_type for file in message.output_files],
+                    },
+                )
+
+            # Use the first output file as the subtask output
+            output_file = resolve_workspace_path(
+                self.workspace_dir, self.subtask.output_file
+            )
+            output_dir = os.path.dirname(output_file)
+            if output_dir and not os.path.exists(output_dir):
+                os.makedirs(output_dir, exist_ok=True)
+
+            # Write the file content to the output file
+            with open(output_file, "wb") as f:
+                f.write(message.output_files[0].content)
+
+            # Mark subtask as completed
+            self.subtask.completed = True
+            self.subtask.end_time = int(time.time())
 
         # Add the message to history
         self.history.append(message)

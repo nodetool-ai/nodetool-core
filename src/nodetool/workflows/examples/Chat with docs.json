@@ -1,8 +1,8 @@
 {
-  "id": "8567b56cf3c511efa735000044b725cd",
+  "id": "07f4d172124d11f0af0700000eea5e45",
   "access": "public",
-  "created_at": "2025-02-25T23:12:46.570073",
-  "updated_at": "2025-02-25T23:12:46.570077",
+  "created_at": "2025-04-05T21:34:06.762383",
+  "updated_at": "2025-04-05T21:34:06.762396",
   "name": "Chat with Docs",
   "description": "An intelligent document retrieval and question-answering system that leverages vector search and local LLMs to provide accurate, context-aware responses based on your document collection.",
   "tags": [
@@ -37,9 +37,10 @@
           }
         },
         "ui_properties": {
+          "selected": false,
           "position": {
             "x": 50,
-            "y": 215
+            "y": 216
           },
           "zIndex": 0,
           "width": 197,
@@ -57,49 +58,14 @@
           "name": "answer"
         },
         "ui_properties": {
+          "selected": false,
           "position": {
-            "x": 1181,
-            "y": 244
+            "x": 1046,
+            "y": 90
           },
           "zIndex": 0,
-          "width": 275,
+          "width": 395,
           "title": "Return comprehensive answer to user's query",
-          "selectable": true
-        },
-        "dynamic_properties": {}
-      },
-      {
-        "id": "8",
-        "parent_id": null,
-        "type": "ollama.text.Ollama",
-        "data": {
-          "model": {
-            "type": "llama_model",
-            "repo_id": "deepseek-r1:7b"
-          },
-          "image": {
-            "type": "image",
-            "uri": "",
-            "asset_id": null,
-            "data": null
-          },
-          "system_prompt": "You are an assistant.",
-          "messages": [],
-          "context_window": 50000,
-          "num_predict": 4096,
-          "temperature": 0.7,
-          "top_k": 50,
-          "top_p": 0.95,
-          "keep_alive": 300
-        },
-        "ui_properties": {
-          "position": {
-            "x": 856,
-            "y": 210
-          },
-          "zIndex": 0,
-          "width": 295,
-          "title": "Generate contextual response using local LLM with retrieved information",
           "selectable": true
         },
         "dynamic_properties": {}
@@ -112,6 +78,7 @@
           "template": "You are an expert assistant answering a user question based on retrieved documents. \nYour response must be accurate, well-structured, and grounded in the provided sources.\n\n### User Question:\n{{ text }}\n\n### Relevant Information from Retrieved Documents\nThese snippets can be incomplete or out of context. Ignore information that is not relevant.\n{% for doc in documents %}\n=====================\n**Document {{ loop.index }}\n** {{ doc }}\n{% endfor %}\n\n### **Instructions for Answering:**\n1. Analyze the user question carefully.\n2. Extract key insights from the retrieved documents.\n3. If multiple documents provide different perspectives, synthesize the most relevant and accurate information.\n4. If the documents lack sufficient information, state what is missing instead of guessing.\n5. Present the answer in a clear, concise, and structured manner."
         },
         "ui_properties": {
+          "selected": false,
           "position": {
             "x": 490,
             "y": 50
@@ -133,16 +100,17 @@
         "data": {
           "collection": {
             "type": "collection",
-            "name": "deepseek"
+            "name": "papers"
           },
-          "n_results": 3,
+          "n_results": 5,
           "k_constant": 60,
           "min_keyword_length": 3
         },
         "ui_properties": {
+          "selected": false,
           "position": {
             "x": 307,
-            "y": 61
+            "y": 59
           },
           "zIndex": 0,
           "width": 153,
@@ -243,11 +211,11 @@
                   "text": "\t4.\t"
                 },
                 {
-                  "text": "Ollama: ",
+                  "text": "LLM: ",
                   "bold": true
                 },
                 {
-                  "text": "A local AI model processes the prompt, synthesizing information to generate an accurate and well-structured response."
+                  "text": "A language model processes the prompt, synthesizing information to generate an accurate and well-structured response."
                 }
               ]
             },
@@ -269,6 +237,7 @@
           ]
         },
         "ui_properties": {
+          "selected": false,
           "position": {
             "x": 30,
             "y": -236
@@ -276,6 +245,29 @@
           "zIndex": 0,
           "width": 930,
           "height": 212,
+          "selectable": true
+        },
+        "dynamic_properties": {}
+      },
+      {
+        "id": "67c3231e-d2ef-465b-bf8d-cbc1f8a8f11d",
+        "parent_id": null,
+        "type": "nodetool.llms.LLM",
+        "data": {
+          "model": "gemini-2.0-flash",
+          "system": "You are a friendly assistant.",
+          "image": {},
+          "messages": [],
+          "max_tokens": 4096
+        },
+        "ui_properties": {
+          "selected": false,
+          "position": {
+            "x": 856,
+            "y": 204
+          },
+          "zIndex": 0,
+          "width": 160,
           "selectable": true
         },
         "dynamic_properties": {}
@@ -288,22 +280,6 @@
         "sourceHandle": "text",
         "target": "9",
         "targetHandle": "text",
-        "ui_properties": null
-      },
-      {
-        "id": "770949",
-        "source": "9",
-        "sourceHandle": "output",
-        "target": "8",
-        "targetHandle": "prompt",
-        "ui_properties": null
-      },
-      {
-        "id": "770950",
-        "source": "8",
-        "sourceHandle": "output",
-        "target": "6",
-        "targetHandle": "value",
         "ui_properties": null
       },
       {
@@ -320,6 +296,22 @@
         "sourceHandle": "documents",
         "target": "9",
         "targetHandle": "documents",
+        "ui_properties": null
+      },
+      {
+        "id": "5e096543-995d-4ac2-946a-4d0373fd60f8",
+        "source": "9",
+        "sourceHandle": "output",
+        "target": "67c3231e-d2ef-465b-bf8d-cbc1f8a8f11d",
+        "targetHandle": "prompt",
+        "ui_properties": null
+      },
+      {
+        "id": "abbb5e9f-52f9-43cf-b035-2637b04d4bae",
+        "source": "67c3231e-d2ef-465b-bf8d-cbc1f8a8f11d",
+        "sourceHandle": "output",
+        "target": "6",
+        "targetHandle": "value",
         "ui_properties": null
       }
     ]

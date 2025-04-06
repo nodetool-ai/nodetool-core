@@ -34,7 +34,7 @@ from enum import Enum
 from fastapi import WebSocket
 
 from nodetool.chat import tools
-from nodetool.chat.chat import Chunk, run_tool
+from nodetool.chat.chat import run_tool
 from nodetool.chat.providers import get_provider
 from nodetool.chat.tools.base import Tool, get_tool_by_name
 from nodetool.metadata.types import (
@@ -52,6 +52,7 @@ from nodetool.metadata.types import (
 from nodetool.metadata.types import MessageImageContent, MessageTextContent
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.run_workflow import run_workflow
+from nodetool.workflows.types import Chunk
 from nodetool.workflows.workflow_runner import WorkflowRunner
 from nodetool.workflows.processing_context import ProcessingContext
 

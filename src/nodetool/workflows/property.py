@@ -33,6 +33,37 @@ class Property(BaseModel):
     min: Optional[float] = None
     max: Optional[float] = None
 
+    def __repr__(self) -> str:
+        """
+        Returns a string representation of the Property.
+
+        The representation is formatted as valid Python code that could theoretically
+        recreate the object if evaluated.
+
+        Returns:
+            str: A string representation of the Property
+        """
+        attrs = []
+        attrs.append(f"name={repr(self.name)}")
+        attrs.append(f"type={repr(self.type)}")
+
+        if self.default is not None:
+            attrs.append(f"default={repr(self.default)}")
+        if self.title:
+            attrs.append(f"title={repr(self.title)}")
+        if self.description:
+            # Trim long descriptions for readability
+            desc = self.description
+            if len(desc) > 50:
+                desc = desc[:47] + "..."
+            attrs.append(f"description={repr(desc)}")
+        if self.min is not None:
+            attrs.append(f"min={repr(self.min)}")
+        if self.max is not None:
+            attrs.append(f"max={repr(self.max)}")
+
+        return f"Property({', '.join(attrs)})"
+
     def get_json_schema(self):
         """
         Returns a JSON schema for the property.

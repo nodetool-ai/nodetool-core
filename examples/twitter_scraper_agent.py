@@ -13,12 +13,13 @@ import json
 from pathlib import Path
 
 from nodetool.chat.agent import Agent
-from nodetool.chat.providers import get_provider, Chunk
+from nodetool.chat.providers import get_provider
 from nodetool.chat.tools.browser import BrowserTool, GoogleSearchTool
 from nodetool.metadata.types import Provider, Task
 from nodetool.chat.workspace_manager import WorkspaceManager
 from nodetool.chat.task_planner import TaskPlanner
 from nodetool.workflows.processing_context import ProcessingContext
+from nodetool.workflows.types import Chunk
 
 
 async def main():

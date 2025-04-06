@@ -2,10 +2,11 @@
 
 from datetime import datetime
 import time
+import uuid
 from fastapi import APIRouter, Depends, HTTPException, Body, BackgroundTasks, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
-from nodetool.types.graph import remove_connected_slots
+from nodetool.types.graph import Edge, Node, remove_connected_slots
 from nodetool.types.workflow import WorkflowList, Workflow, WorkflowRequest
 from nodetool.api.utils import current_user, User
 from nodetool.common.environment import Environment
@@ -18,6 +19,12 @@ from nodetool.workflows.http_stream_runner import HTTPStreamRunner
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.run_workflow import run_workflow
 from nodetool.types.graph import Graph, get_input_schema, get_output_schema
+from nodetool.packages.registry import Registry
+from nodetool.chat.providers import get_provider
+from nodetool.metadata.types import Provider
+from nodetool.chat.workflow_planner import WorkflowPlanner
+from nodetool.chat.workspace_manager import WorkspaceManager
+import asyncio
 
 log = Environment.get_logger()
 router = APIRouter(prefix="/api/workflows", tags=["workflows"])
@@ -229,7 +236,7 @@ async def save_example_workflow(
 
     examples = load_examples()
     for example in examples:
-        if example.id == id:
+        if example.name == workflow_request.name:
             workflow_request.thumbnail_url = example.thumbnail_url
             break
 
@@ -313,3 +320,62 @@ async def run_workflow_by_id(
                 elif msg.get("status") == "failed":
                     raise HTTPException(status_code=500, detail=msg.get("error"))
         return result
+
+
+class SmartWorkflowCreateRequest(BaseModel):
+    prompt: str
+
+
+class SmartWorkflowResponse(BaseModel):
+    nodes: list[Node]
+    edges: list[Edge]
+
+
+@router.post("/create-smart")
+async def create_smart_workflow(
+    workflow_request: SmartWorkflowCreateRequest,
+    user: User = Depends(current_user),
+) -> SmartWorkflowResponse:
+    """
+    Create a workflow automatically using AI based on a description.
+
+    This endpoint uses WorkflowPlanner to generate a workflow structure based on
+    natural language description provided in the request.
+    """
+    # Initialize registry and get available node types
+    registry = Registry()
+    installed_packages = registry.list_installed_packages()
+    node_types = []
+    for package in installed_packages:
+        if package.nodes:
+            node_types.extend(package.nodes)
+
+    # Get the chat provider
+    provider_type = Provider.OpenAI
+    provider = get_provider(provider_type)
+
+    # Create a WorkflowPlanner instance
+    workspace_manager = WorkspaceManager()
+    workspace_dir = workspace_manager.get_current_directory()
+    planner = WorkflowPlanner(
+        provider=provider,
+        model="gpt-4o",
+        objective=workflow_request.prompt,
+        workspace_dir=workspace_dir,
+        node_types=node_types,
+        enable_tracing=True,
+    )
+
+    try:
+        # Generate workflow
+        workflow_graph = await planner.create_workflow()
+
+        return SmartWorkflowResponse(
+            nodes=workflow_graph["nodes"], edges=workflow_graph["edges"]
+        )
+
+    except Exception as e:
+        log.error(f"Error creating smart workflow: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to create workflow: {str(e)}"
+        )

@@ -8,16 +8,8 @@ a common interface that all providers must implement for streaming completions a
 from abc import ABC, abstractmethod
 from typing import Any, AsyncGenerator, Sequence
 
-from nodetool.metadata.types import FunctionModel, Message, ToolCall
-from nodetool.workflows.processing_context import ProcessingContext
-
-
-class Chunk:
-    """A chunk of streamed content from a provider."""
-
-    def __init__(self, content: str, done: bool = False):
-        self.content = content
-        self.done = done
+from nodetool.metadata.types import Message, ToolCall
+from nodetool.workflows.types import Chunk
 
 
 class ChatProvider(ABC):
@@ -28,6 +20,8 @@ class ChatProvider(ABC):
     to work with any supported provider interchangeably. Subclasses must implement
     the generate_messages method to define provider-specific behavior.
     """
+
+    has_code_interpreter: bool = False
 
     def __init__(self):
         self.usage = {
@@ -44,6 +38,7 @@ class ChatProvider(ABC):
         messages: Sequence[Message],
         model: str,
         tools: Sequence[Any] = [],
+        use_code_interpreter: bool = False,
         **kwargs
     ) -> Message:
         """
@@ -79,31 +74,5 @@ class ChatProvider(ABC):
 
         Yields:
             Chunk objects with content and completion status or ToolCall objects
-        """
-        pass
-
-    @abstractmethod
-    def convert_message(self, message: Message) -> Any:
-        """
-        Convert an internal message to the provider-specific format.
-
-        Args:
-            message: The Message object to convert
-
-        Returns:
-            The message in the provider's expected format
-        """
-        pass
-
-    @abstractmethod
-    def format_tools(self, tools: Sequence[Any]) -> list:
-        """
-        Convert tool definitions to the provider-specific format.
-
-        Args:
-            tools: List of Tool instances
-
-        Returns:
-            List of tools in the provider's expected format
         """
         pass

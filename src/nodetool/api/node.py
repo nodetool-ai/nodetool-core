@@ -15,6 +15,7 @@ from nodetool.metadata.types import (
     NodeRef,
     Email,
     FilePath,
+    PlotlyConfig,
     SVGElement,
     TaskPlan,
     WorkflowRef,
@@ -73,7 +74,13 @@ from nodetool.metadata.types import (
 )
 from nodetool.workflows.base_node import get_node_class, get_registered_node_classes
 from nodetool.common.environment import Environment
-from nodetool.workflows.types import NodeProgress, NodeUpdate, TaskUpdate
+from nodetool.workflows.types import (
+    NodeProgress,
+    NodeUpdate,
+    TaskUpdate,
+    ToolCallUpdate,
+    Chunk,
+)
 from nodetool.packages.registry import Registry
 
 log = Environment.get_logger()
@@ -101,6 +108,7 @@ UnionType = (
     | NodeUpdate
     | NodeProgress
     | TaskUpdate
+    | Chunk
     | HuggingFaceModel
     | HFImageTextToText
     | HFVisualQuestionAnswering
@@ -149,6 +157,8 @@ UnionType = (
     | SVGElement
     | SystemStats
     | TaskPlan
+    | ToolCallUpdate
+    | PlotlyConfig
     | dict
 )
 

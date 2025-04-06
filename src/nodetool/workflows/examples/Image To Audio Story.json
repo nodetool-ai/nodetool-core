@@ -1,11 +1,14 @@
 {
-  "id": "image_to_audio_story",
+  "id": "43a125a6124611f0b49100005eb1b543",
   "access": "public",
-  "created_at": "2025-01-03T16:11:32.724826",
-  "updated_at": "2025-01-03T16:11:32.724853",
+  "created_at": "2025-04-05T19:56:53.475079",
+  "updated_at": "2025-04-05T19:56:53.475093",
   "name": "Image To Audio Story",
   "description": "Generate and narrate creative stories from images using AI",
-  "tags": ["start", "multimodal"],
+  "tags": [
+    "start",
+    "multimodal"
+  ],
   "thumbnail": null,
   "thumbnail_url": "https://app.nodetool.ai/examples/porcelain_sculpture.jpg",
   "graph": {
@@ -21,43 +24,16 @@
           }
         },
         "ui_properties": {
-          "position": {
-            "x": 50,
-            "y": 118
-          },
-          "zIndex": 0,
-          "width": 200,
-          "selectable": true
-        }
-      },
-      {
-        "id": "2",
-        "parent_id": null,
-        "type": "ollama.text.Ollama",
-        "data": {
-          "model": {
-            "type": "llama_model",
-            "repo_id": "llava:latest"
-          },
-          "system": "You are a friendly assistant.",
-          "prompt": "write a fictional short story about this image. the story should follow classical principles, short and witty, with a surprise at the end. written in the wild style of the 60s.",
-          "max_tokens": 100,
-          "temperature": 1,
-          "top_k": 40,
-          "top_p": 1,
-          "context_window": 4096,
-          "keep_alive": 300
-        },
-        "ui_properties": {
           "selected": false,
           "position": {
-            "x": 280,
-            "y": 50
+            "x": 50,
+            "y": 79
           },
           "zIndex": 0,
           "width": 200,
           "selectable": true
-        }
+        },
+        "dynamic_properties": {}
       },
       {
         "id": "3",
@@ -67,15 +43,17 @@
           "name": ""
         },
         "ui_properties": {
+          "selected": false,
           "position": {
-            "x": 540,
-            "y": 99
+            "x": 522,
+            "y": 64
           },
           "zIndex": 0,
           "width": 306,
           "height": 155,
           "selectable": true
-        }
+        },
+        "dynamic_properties": {}
       },
       {
         "id": "4",
@@ -91,13 +69,14 @@
         "ui_properties": {
           "selected": false,
           "position": {
-            "x": 593,
-            "y": 304
+            "x": 575,
+            "y": 269
           },
           "zIndex": 0,
           "width": 200,
           "selectable": true
-        }
+        },
+        "dynamic_properties": {}
       },
       {
         "id": "5",
@@ -107,15 +86,17 @@
           "name": "audio_output_2024-07-06"
         },
         "ui_properties": {
+          "selected": false,
           "position": {
-            "x": 876,
-            "y": 316
+            "x": 858,
+            "y": 274
           },
           "zIndex": 0,
           "width": 150,
           "height": 150,
           "selectable": true
-        }
+        },
+        "dynamic_properties": {}
       },
       {
         "id": "6",
@@ -128,22 +109,105 @@
               "type": "paragraph",
               "children": [
                 {
-                  "text": "Try with different images, prompts and voices"
+                  "text": "Image-to-Story-to-Speech Pipeline",
+                  "bold": true,
+                  "size": "+"
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "children": [
+                {
+                  "text": "- Input: Emotional sculpture image (Fear)"
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "children": [
+                {
+                  "text": "- Processing: GPT-4o generates a creative short story based on image analysis"
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "children": [
+                {
+                  "text": "- Output 1: Literary description of the emotional sculpture (text)"
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "children": [
+                {
+                  "text": "- Output 2: Narrated audio via Facebook/MMS-TTS-ENG "
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "children": [
+                {
+                  "text": "- Purpose: Transforms visual art into narrative storytelling and spoken word"
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "children": [
+                {
+                  "text": "- Application: Can be used for museum exhibits, art interpretation, accessibility features, or creative multimedia projects"
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "children": [
+                {
+                  "text": "- Note: Adjust system prompt to influence storytelling style"
                 }
               ]
             }
           ]
         },
         "ui_properties": {
+          "selected": false,
           "position": {
-            "x": 2,
-            "y": -90
+            "x": 12,
+            "y": -171
           },
           "zIndex": 0,
-          "width": 242,
-          "height": 79,
+          "width": 866,
+          "height": 169,
           "selectable": true
-        }
+        },
+        "dynamic_properties": {}
+      },
+      {
+        "id": "77a9cf98-c4c6-4585-930b-badbe641a662",
+        "parent_id": null,
+        "type": "nodetool.llms.LLM",
+        "data": {
+          "model": "gpt-4o",
+          "system": "You are a friendly assistant.",
+          "prompt": "Write a short story about the image.",
+          "messages": [],
+          "max_tokens": 4096
+        },
+        "ui_properties": {
+          "selected": false,
+          "position": {
+            "x": 280,
+            "y": 50
+          },
+          "zIndex": 0,
+          "width": 182,
+          "selectable": true
+        },
+        "dynamic_properties": {}
       }
     ],
     "edges": [
@@ -158,37 +222,32 @@
         }
       },
       {
-        "id": "67117e75-7172-4df7-b796-78efcd3d9d85",
+        "id": "15db2a09-693e-4931-8273-fa64a60b6d52",
         "source": "1",
         "sourceHandle": "output",
-        "target": "2",
+        "target": "77a9cf98-c4c6-4585-930b-badbe641a662",
         "targetHandle": "image",
-        "ui_properties": {
-          "className": "image"
-        }
+        "ui_properties": null
       },
       {
-        "id": "67118",
-        "source": "2",
+        "id": "db746e40-c839-44dd-8b0e-00474653c134",
+        "source": "77a9cf98-c4c6-4585-930b-badbe641a662",
         "sourceHandle": "output",
         "target": "3",
         "targetHandle": "value",
-        "ui_properties": {
-          "className": "str"
-        }
+        "ui_properties": null
       },
       {
-        "id": "e6a8f8b2-8f21-4b6d-8628-0dbee4cc36ad",
-        "source": "2",
+        "id": "36a6bbd4-0a04-48c4-abe2-361b476bf97b",
+        "source": "77a9cf98-c4c6-4585-930b-badbe641a662",
         "sourceHandle": "output",
         "target": "4",
         "targetHandle": "text",
-        "ui_properties": {
-          "className": "str"
-        }
+        "ui_properties": null
       }
     ]
   },
   "input_schema": null,
-  "output_schema": null
+  "output_schema": null,
+  "settings": null
 }

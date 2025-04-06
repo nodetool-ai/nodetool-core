@@ -26,7 +26,7 @@ from typing import Any, AsyncGenerator, Sequence
 import openai
 from pydantic import BaseModel
 
-from nodetool.chat.providers import get_provider, Chunk
+from nodetool.chat.providers import get_provider
 from nodetool.metadata.types import Provider
 from nodetool.chat.tools.base import Tool
 from nodetool.common.environment import Environment
@@ -37,6 +37,7 @@ from nodetool.metadata.types import (
 )
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.chat.providers import ChatProvider
+from nodetool.workflows.types import Chunk
 
 
 async def get_openai_models():
