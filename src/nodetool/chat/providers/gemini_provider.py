@@ -1,8 +1,6 @@
 import asyncio
 import json
-from typing import Any, AsyncGenerator, AsyncIterator, List, Union, Dict, cast, Sequence
-from proto.marshal.collections.maps import MapComposite
-from proto.marshal.collections.repeated import Repeated
+from typing import Any, AsyncGenerator, List, Sequence
 from google.genai import Client
 from google.genai.client import AsyncClient
 from google.genai.types import (
@@ -10,7 +8,6 @@ from google.genai.types import (
     Blob,
     Type,
     FunctionDeclaration,
-    GenerationConfig,
     GenerateContentConfig,
     Schema,
     Part,
