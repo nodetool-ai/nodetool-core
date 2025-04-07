@@ -20,6 +20,10 @@ class PackageInstallRequest(BaseModel):
     repo_id: str = Field(description="Repository ID in the format <owner>/<project>")
 
 
+class PackageUninstallRequest(BaseModel):
+    repo_id: str = Field(description="Repository ID in the format <owner>/<project>")
+
+
 class PackageResponse(BaseModel):
     success: bool
     message: str
@@ -122,24 +126,24 @@ async def install_package(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.delete("/{repo_id}", response_model=PackageResponse)
+@router.delete("/uninstall", response_model=PackageResponse)
 async def uninstall_package(
-    repo_id: str, user: User = Depends(current_user)
+    request: PackageUninstallRequest, user: User = Depends(current_user)
 ) -> PackageResponse:
     """Uninstall a package."""
-    is_valid, error_msg = validate_repo_id(repo_id)
+    is_valid, error_msg = validate_repo_id(request.repo_id)
     if not is_valid:
         raise HTTPException(status_code=400, detail=error_msg)
 
-    success = registry.uninstall_package(repo_id)
+    success = registry.uninstall_package(request.repo_id)
     if success:
         return PackageResponse(
-            success=True, message=f"Package {repo_id} uninstalled successfully"
+            success=True, message=f"Package {request.repo_id} uninstalled successfully"
         )
     else:
         raise HTTPException(
             status_code=404,
-            detail=f"Package {repo_id} not found or could not be uninstalled",
+            detail=f"Package {request.repo_id} not found or could not be uninstalled",
         )
 
 

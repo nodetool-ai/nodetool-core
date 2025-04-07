@@ -230,7 +230,8 @@ class Registry:
         """
         Call the pip uninstall command.
         """
-        subprocess.check_call([*self.pkg_mgr, "uninstall", package_name, "--yes"])
+        # Always use standard pip for uninstall operations, not uv
+        subprocess.check_call(["pip", "uninstall", package_name, "--yes"])
 
     def list_installed_packages(self) -> List[PackageModel]:
         """List all installed node packages."""

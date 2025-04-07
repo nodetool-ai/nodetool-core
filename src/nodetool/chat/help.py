@@ -593,7 +593,21 @@ async def create_help_answer(
         stream=True,
     )
 
+    # Check for "does not support tools" error message
     async for part in res:
+        content = part.message.content or ""
+        # Check if the response contains indicators of tool support issues
+        if any(
+            phrase in content.lower()
+            for phrase in [
+                "does not support tools",
+                "doesn't support tools",
+                "tool calls are not supported",
+            ]
+        ):
+            yield "This model does not support tools. Please select a model that supports tools, such as 'llama3'."
+            return
+
         if part.message.tool_calls:
             # Create tasks for all tool calls
             tasks = []
@@ -616,6 +630,8 @@ async def create_help_answer(
                         "name": name,
                     }
                 )
+        else:
+            yield part.message.content or ""
 
     # Get final response with tool results
     final_res = await client.chat(
@@ -626,8 +642,6 @@ async def create_help_answer(
     )
     async for chunk in final_res:
         yield chunk.message.content or ""
-    else:
-        yield part.message.content or ""
 
 
 async def test_chat():
