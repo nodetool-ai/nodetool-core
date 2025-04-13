@@ -96,6 +96,7 @@ class Agent:
         max_token_limit: int = 20000,
         output_schema: dict | None = None,
         output_type: str | None = None,
+        enable_retrieval_phase: bool = True,
         enable_analysis_phase: bool = True,
         enable_data_contracts_phase: bool = True,
     ):
@@ -117,8 +118,9 @@ class Agent:
             max_subtasks (int, optional): Maximum number of subtasks to be created
             output_schema (dict, optional): JSON schema for the final task output
             output_type (str, optional): Type of the final task output
-            enable_analysis_phase (bool, optional): Whether to run the analysis phase (PHASE 1)
-            enable_data_contracts_phase (bool, optional): Whether to run the data contracts phase (PHASE 2)
+            enable_retrieval_phase (bool, optional): Whether to run the retrieval phase (PHASE 1)
+            enable_analysis_phase (bool, optional): Whether to run the analysis phase (PHASE 2)
+            enable_data_contracts_phase (bool, optional): Whether to run the data contracts phase (PHASE 3)
         """
         self.name = name
         self.objective = objective
@@ -136,6 +138,7 @@ class Agent:
         self.console = Console()
         self.output_schema = output_schema
         self.output_type = output_type
+        self.enable_retrieval_phase = enable_retrieval_phase
         self.enable_analysis_phase = enable_analysis_phase
         self.enable_data_contracts_phase = enable_data_contracts_phase
 
@@ -237,6 +240,7 @@ class Agent:
             retrieval_tools=retrieval_tools,
             input_files=input_files,
             output_schema=self.output_schema,
+            enable_retrieval_phase=self.enable_retrieval_phase,
             enable_analysis_phase=self.enable_analysis_phase,
             enable_data_contracts_phase=self.enable_data_contracts_phase,
             # use_structured_output=isinstance(self.provider, OllamaProvider),
