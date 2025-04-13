@@ -70,17 +70,17 @@ Tools are used by AI agents to perform operations and integrate with various ser
 """
 
 # Base tools
-from nodetool.chat.tools.base import Tool, sanitize_node_name, get_tool_by_name
+from nodetool.agents.tools.base import Tool, sanitize_node_name, get_tool_by_name
 
 # System tools
-from nodetool.chat.tools.system import (
+from nodetool.agents.tools.system import (
     ExecuteShellTool,
     TestTool,
     FindNodeTool,
 )
 
 # Web and browser tools
-from nodetool.chat.tools.browser import (
+from nodetool.agents.tools.browser import (
     BrowserTool,
     ScreenshotTool,
     GoogleSearchTool,
@@ -89,21 +89,21 @@ from nodetool.chat.tools.browser import (
 )
 
 # PDF tools
-from nodetool.chat.tools.pdf import (
+from nodetool.agents.tools.pdf import (
     ExtractPDFTextTool,
     ExtractPDFTablesTool,
     ConvertPDFToMarkdownTool,
 )
 
 # Search and database tools
-from nodetool.chat.tools.chroma import (
+from nodetool.agents.tools.chroma import (
     ChromaTextSearchTool,
     ChromaHybridSearchTool,
     ChromaIndexTool,
 )
 
 # Email tools
-from nodetool.chat.tools.email import (
+from nodetool.agents.tools.email import (
     SearchEmailTool,
     ArchiveEmailTool,
     AddLabelTool,
@@ -112,13 +112,13 @@ from nodetool.chat.tools.email import (
 )
 
 # Apple Notes tools
-from nodetool.chat.tools.apple_notes import (
+from nodetool.agents.tools.apple_notes import (
     CreateAppleNoteTool,
     ReadAppleNotesTool,
 )
 
 # Workspace tools
-from nodetool.chat.tools.workspace import (
+from nodetool.agents.tools.workspace import (
     WriteWorkspaceFileTool,
     ReadWorkspaceFileTool,
     UpdateWorkspaceFileTool,
@@ -127,7 +127,7 @@ from nodetool.chat.tools.workspace import (
 )
 
 # Asset tools
-from nodetool.chat.tools.assets import (
+from nodetool.agents.tools.assets import (
     ListAssetsDirectoryTool,
     ReadAssetTool,
     SaveAssetTool,

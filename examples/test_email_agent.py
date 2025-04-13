@@ -10,14 +10,12 @@ It demonstrates how to set up an agent for email processing and summarization.
 import asyncio
 import os
 from pathlib import Path
-from nodetool.chat.agent import Agent
+from nodetool.agents.agent import Agent
 from nodetool.chat.dataframes import json_schema_for_dataframe
 from nodetool.chat.providers import get_provider
 from nodetool.metadata.types import Provider, ColumnDef
-from nodetool.chat.workspace_manager import WorkspaceManager
-from nodetool.chat.task_planner import TaskPlanner
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.chat.tools.email import SearchEmailTool
+from nodetool.agents.tools.email import SearchEmailTool
 from nodetool.workflows.types import Chunk
 
 

@@ -15,6 +15,8 @@ class TaskUpdateEvent(str, Enum):
     ENTERED_CONCLUSION_STAGE = "entered_conclusion_stage"
     MAX_ITERATIONS_REACHED = "max_iterations_reached"
     SUBTASK_COMPLETED = "subtask_completed"
+    SUBTASK_FAILED = "subtask_failed"
+    TASK_COMPLETED = "task_completed"
 
 
 class TaskUpdate(BaseModel):

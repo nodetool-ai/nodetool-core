@@ -1,5 +1,6 @@
 import asyncio
 import json
+import traceback
 from typing import Any, AsyncGenerator, List, Sequence
 from google.genai import Client
 from google.genai.client import AsyncClient
@@ -16,12 +17,11 @@ from google.genai.types import (
     ToolListUnion,
     ContentListUnion,
     FunctionResponse,
-    ToolCodeExecution,
 )
 from pydantic import BaseModel
 
 from nodetool.chat.providers.base import ChatProvider
-from nodetool.chat.tools import Tool as NodeTool
+from nodetool.agents.tools.base import Tool as NodeTool
 from nodetool.common.environment import Environment
 from nodetool.metadata.types import (
     Message,
@@ -115,24 +115,25 @@ def convert_json_schema_to_genai_schema(schema: dict, path: str = "") -> Schema:
 
         # Handle oneOf
         if "oneOf" in schema:
-            schema_args["one_of"] = [
+            schema_args["any_of"] = [
                 convert_json_schema_to_genai_schema(s, f"{path}.oneOf[{i}]")
                 for i, s in enumerate(schema["oneOf"])
             ]
 
         # Handle allOf if needed
         if "allOf" in schema:
-            schema_args["all_of"] = [
-                convert_json_schema_to_genai_schema(s, f"{path}.allOf[{i}]")
-                for i, s in enumerate(schema["allOf"])
-            ]
+            raise ValueError("allOf is not supported")
 
         # Handle property ordering if present
         if "propertyOrdering" in schema:
             schema_args["property_ordering"] = schema["propertyOrdering"]
 
-        return Schema(**schema_args)
+        result = Schema(**schema_args)
+        return result
     except Exception as e:
+        traceback.print_exc()
+        print(f"ERROR converting schema at path '{path}': {str(e)}")
+        print(f"Problematic schema: {json.dumps(schema, indent=2)}")
         raise ValueError(
             f"Error converting schema at path '{path}': {str(e)}\nSchema: {json.dumps(schema, indent=2)[:200]}..."
         )
@@ -194,7 +195,7 @@ class GeminiProvider(ChatProvider):
                                 name=tool_call.name, args=tool_call.args
                             )
                         )
-                    # result.append(part)
+                    result.append(part)
             elif isinstance(content, str):
                 result.append(Part(text=content))
             elif isinstance(content, MessageTextContent):
@@ -215,13 +216,15 @@ class GeminiProvider(ChatProvider):
 
         for message in messages:
             parts = await self._prepare_message_content(message)
-            if parts:
-                if message.role == "user":
-                    role = "user"
-                else:
-                    role = "model"
-                content = Content(parts=parts, role=role)
-                history.append(content)
+            if not parts or parts[0].text == "":
+                continue
+
+            if message.role == "user":
+                role = "user"
+            else:
+                role = "model"
+            content = Content(parts=parts, role=role)
+            history.append(content)
 
         return history
 
@@ -307,7 +310,6 @@ class GeminiProvider(ChatProvider):
         tools: Sequence[Any] = [],
         max_tokens: int = 16384,
         response_format: dict | None = None,
-        use_code_interpreter: bool = False,
     ) -> Message:
         """Generate response from Gemini for the given messages with code execution support."""
 
@@ -317,10 +319,7 @@ class GeminiProvider(ChatProvider):
         else:
             system_instruction = None
 
-        if use_code_interpreter:
-            gemini_tools = [Tool(code_execution=ToolCodeExecution())]
-        else:
-            gemini_tools: ToolListUnion | None = self._format_tools(tools)
+        gemini_tools: ToolListUnion | None = self._format_tools(tools)
 
         client = get_genai_client()
 
@@ -368,7 +367,6 @@ class GeminiProvider(ChatProvider):
         model: str,
         tools: Sequence[NodeTool] = [],
         max_tokens: int = 16384,
-        use_code_interpreter: bool = False,
     ) -> AsyncGenerator[Chunk | ToolCall | MessageFile, Any]:
         """Stream response from Gemini for the given messages with code execution support."""
         if messages[0].role == "system":
@@ -425,53 +423,3 @@ class GeminiProvider(ChatProvider):
     def reset_usage(self) -> None:
         """Reset the usage counters to zero."""
         self.usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
-
-
-async def main():
-    provider = GeminiProvider()
-
-    messages = [
-        Message(
-            role="user",
-            content="""
-            Create the US GDP for 1950-2000
-            """,
-        ),
-    ]
-
-    # Get final response using the provider
-    response = await provider.generate_message(
-        messages=messages,
-        model="gemini-2.0-flash",
-        response_format={
-            "type": "json_schema",
-            "json_schema": {
-                "name": "GDP",
-                "strict": True,
-                "schema": {
-                    "type": "object",
-                    "properties": {
-                        "data": {
-                            "type": "array",
-                            "items": {
-                                "type": "object",
-                                "properties": {
-                                    "year": {"type": "integer"},
-                                    "gdp": {"type": "number"},
-                                },
-                                "required": ["year", "gdp"],
-                            },
-                        }
-                    },
-                    "required": ["data"],
-                },
-            },
-        },
-    )
-    assert response.content
-    print(json.loads(str(response.content)))  # type: ignore
-
-
-if __name__ == "__main__":
-    # Run the async function
-    asyncio.run(main())

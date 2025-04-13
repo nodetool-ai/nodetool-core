@@ -21,14 +21,12 @@ Key components:
 """
 
 import asyncio
-from typing import Any, AsyncGenerator, Sequence
+from typing import Any, Sequence
 
 import openai
 from pydantic import BaseModel
 
-from nodetool.chat.providers import get_provider
-from nodetool.metadata.types import Provider
-from nodetool.chat.tools.base import Tool
+from nodetool.agents.tools.base import Tool
 from nodetool.common.environment import Environment
 from nodetool.metadata.types import (
     Message,
@@ -36,7 +34,6 @@ from nodetool.metadata.types import (
     ToolCall,
 )
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.chat.providers import ChatProvider
 from nodetool.workflows.types import Chunk
 
 
@@ -90,40 +87,6 @@ def default_serializer(obj: Any) -> dict:
     if isinstance(obj, BaseModel):
         return obj.model_dump()
     raise TypeError("Type not serializable")
-
-
-async def process_messages(
-    messages: Sequence[Message],
-    model: str,
-    tools: Sequence[Tool] = [],
-    **kwargs,
-) -> Message:
-    """
-    Process messages and return a single accumulated response message.
-
-    Args:
-        messages: The messages to process
-        model: The model to use
-        tools: Available tools
-        **kwargs: Additional arguments passed to the model
-
-    Returns:
-        Message: The complete response message with content and tool calls
-    """
-    content = ""
-    tool_calls: list[ToolCall] = []
-
-    async for chunk in generate_messages(messages, model, tools, **kwargs):
-        if isinstance(chunk, Chunk):
-            content += chunk.content
-        elif isinstance(chunk, ToolCall):
-            tool_calls.append(chunk)
-
-    return Message(
-        role="tool" if tool_calls else "assistant",
-        content=content if content else None,
-        tool_calls=tool_calls if tool_calls else None,
-    )
 
 
 async def run_tool(

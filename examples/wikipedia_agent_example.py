@@ -9,9 +9,9 @@ This script demonstrates how to create a single agent that:
 """
 
 import asyncio
-from nodetool.chat.agent import Agent
+from nodetool.agents.agent import Agent
 from nodetool.chat.providers import get_provider
-from nodetool.chat.tools.browser import GoogleSearchTool, BrowserTool
+from nodetool.agents.tools.browser import GoogleSearchTool, BrowserTool
 from nodetool.metadata.types import Provider
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import Chunk

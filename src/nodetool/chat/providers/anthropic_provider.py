@@ -24,6 +24,42 @@ from nodetool.metadata.types import (
 from nodetool.common.environment import Environment
 from nodetool.workflows.types import Chunk
 
+"""
+Tool definition for forcing JSON output via Anthropic's tool mechanism.
+"""
+
+from typing import Any
+from nodetool.agents.tools.base import Tool
+from nodetool.workflows.processing_context import ProcessingContext
+
+
+class JsonOutputTool(Tool):
+    """
+    A special tool used to instruct Anthropic models to output JSON
+    matching a specific schema. This tool is typically intercepted by the
+    provider rather than being executed normally.
+    """
+
+    name = "json_output"
+    description = "Use this tool to output JSON according to the specified schema."
+    # input_schema is provided during instantiation
+
+    def __init__(self, workspace_dir: str, input_schema: dict[str, Any]):
+        # This tool doesn't interact with the workspace, so workspace_dir is nominal.
+        # Pass the required schema during initialization.
+        super().__init__(workspace_dir=workspace_dir)
+        self.input_schema = input_schema
+
+    async def process(self, context: ProcessingContext, params: dict) -> Any:
+        """
+        This tool is typically intercepted by the LLM provider.
+        If somehow processed, it just returns the parameters it received.
+        """
+        return params
+
+
+# Note: This tool will be automatically registered due to __init_subclass__ in the base Tool class.
+
 
 class AnthropicProvider(ChatProvider):
     """
@@ -183,6 +219,7 @@ class AnthropicProvider(ChatProvider):
 
         # Handle response_format parameter
         response_format = kwargs.pop("response_format", None)
+        local_tools = list(tools)  # Make a mutable copy
 
         system_messages = [message for message in messages if message.role == "system"]
         system_message = (
@@ -191,18 +228,14 @@ class AnthropicProvider(ChatProvider):
             else "You are a helpful assistant."
         )
 
-        # If JSON format is requested via schema (OpenAI compatibility)
-        if isinstance(response_format, dict) and "schema" in response_format:
-            # Create a JSON output tool based on the schema
-            json_tool = {
-                "name": "json_output",
-                "description": "Use this tool to output JSON according to the specified schema.",
-                "input_schema": response_format["schema"],
-            }
-            # Add the JSON tool to the list of tools
-            tools = list(tools) + [json_tool]
-            # Add instruction to use the JSON output tool in system message
-            system_message = f"{system_message}\nWhen you need to provide a JSON response, use the json_output tool."
+        if isinstance(response_format, dict) and "json_schema" in response_format:
+            if "schema" not in response_format["json_schema"]:
+                raise ValueError("schema is required in json_schema response format")
+            json_tool = JsonOutputTool(
+                "/tmp/", response_format["json_schema"]["schema"]
+            )
+            local_tools.append(json_tool)
+            system_message = f"{system_message}\nYou must use the '{json_tool.name}' tool to provide a JSON response conforming to the provided schema."
 
         # if "thinking" in kwargs:
         #     kwargs["thinking"] = {"type": "enabled", "budget_tokens": 4096}
@@ -218,7 +251,8 @@ class AnthropicProvider(ChatProvider):
             if msg is not None
         ]
 
-        anthropic_tools = self.format_tools(tools)
+        # Use the potentially modified local_tools list
+        anthropic_tools = self.format_tools(local_tools)
 
         async with self.client.messages.stream(
             model=model,
@@ -278,7 +312,6 @@ class AnthropicProvider(ChatProvider):
         messages: Sequence[Message],
         model: str,
         tools: Sequence[Any] = [],
-        use_code_interpreter: bool = False,
         **kwargs,
     ) -> Message:
         """Generate a complete non-streaming message from Anthropic.
@@ -302,6 +335,7 @@ class AnthropicProvider(ChatProvider):
 
         # Handle response_format parameter
         response_format = kwargs.pop("response_format", None)
+        local_tools = list(tools)  # Make a mutable copy
 
         system_messages = [message for message in messages if message.role == "system"]
         system_message = (
@@ -310,15 +344,14 @@ class AnthropicProvider(ChatProvider):
             else "You are a helpful assistant."
         )
 
-        if isinstance(response_format, dict) and "schema" in response_format:
-            # Create a JSON output tool based on the schema
-            json_tool = {
-                "name": "json_output",
-                "description": "Use this tool to output JSON according to the specified schema.",
-                "input_schema": response_format["schema"],
-            }
-            tools = list(tools) + [json_tool]
-            system_message = f"{system_message}\nYou must call the json_output tool to output JSON according to the specified schema."
+        if isinstance(response_format, dict) and "json_schema" in response_format:
+            if "schema" not in response_format["json_schema"]:
+                raise ValueError("schema is required in json_schema response format")
+            json_tool = JsonOutputTool(
+                "/tmp/", response_format["json_schema"]["schema"]
+            )
+            local_tools.append(json_tool)
+            system_message = f"{system_message}\nYou must call the '{json_tool.name}' tool to output JSON according to the specified schema."
 
         # Convert messages and tools to Anthropic format
         anthropic_messages = [
@@ -329,7 +362,8 @@ class AnthropicProvider(ChatProvider):
             if msg is not None
         ]
 
-        anthropic_tools = self.format_tools(tools)
+        # Use the potentially modified local_tools list
+        anthropic_tools = self.format_tools(local_tools)
 
         response: anthropic.types.message.Message = await self.client.messages.create(
             model=model,

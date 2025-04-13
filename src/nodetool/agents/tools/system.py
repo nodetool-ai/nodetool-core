@@ -9,7 +9,6 @@ This module provides tools for system operations:
 """
 
 from datetime import datetime
-import asyncio
 from typing import Any
 
 from nodetool.workflows.processing_context import ProcessingContext
@@ -22,7 +21,6 @@ from .base import Tool
 class CodeInterpreterTool(Tool):
     """
     Execute a code block and return its output
-    This tool must be used in conjunction with the use_code_interpreter flag in the subtask
     """
 
     name = "code_interpreter"

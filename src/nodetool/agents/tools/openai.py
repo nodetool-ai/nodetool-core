@@ -1,6 +1,6 @@
 from typing import Dict, Any
 import openai
-from nodetool.chat.tools import Tool
+from nodetool.agents.tools.base import Tool
 from nodetool.common.environment import Environment
 from nodetool.workflows.processing_context import ProcessingContext
 

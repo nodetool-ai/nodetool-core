@@ -20,9 +20,8 @@ import os
 import subprocess
 import traceback
 import sys
-from typing import List, Optional, Dict, Any, Callable, Awaitable
+from typing import List, Optional, Dict
 from pathlib import Path
-from functools import wraps
 
 # New imports
 from prompt_toolkit import PromptSession
@@ -33,36 +32,28 @@ from prompt_toolkit.styles import Style
 from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
-from rich.markdown import Markdown
 from rich.syntax import Syntax
 from rich.progress import Progress, SpinnerColumn, TextColumn
-from rich.live import Live
 
 # Existing imports
-from nodetool.chat.agent import Agent
+from nodetool.agents.agent import Agent
 from nodetool.chat.providers import get_provider
 from nodetool.chat.providers.base import ChatProvider
 from nodetool.chat.regular_chat import process_regular_chat
-from nodetool.chat.task_planner import TaskPlanner
-from nodetool.chat.tools.browser import DownloadFileTool
-from nodetool.chat.workspace_manager import WorkspaceManager
+from nodetool.agents.tools.browser import DownloadFileTool
 from nodetool.metadata.types import Provider, Message, ToolCall
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.chat.ollama_service import get_ollama_models
 from nodetool.chat.chat import get_openai_models
-from nodetool.chat.tools import (
+from nodetool.agents.tools import (
     GoogleSearchTool,
     BrowserTool,
     DownloadFileTool,
     WebFetchTool,
     ScreenshotTool,
-    ChromaTextSearchTool,
-    ChromaHybridSearchTool,
     ExtractPDFTablesTool,
     ExtractPDFTextTool,
     ConvertPDFToMarkdownTool,
-    ReadWorkspaceFileTool,
-    ListWorkspaceContentsTool,
     ExecuteWorkspaceCommandTool,
 )
 from nodetool.workflows.types import Chunk

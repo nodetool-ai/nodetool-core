@@ -10,109 +10,98 @@ This script creates a Reddit agent that:
 """
 
 import asyncio
-import json
-import os
-from pathlib import Path
 
-from nodetool.chat.agent import Agent
+from nodetool.agents.agent import Agent
 from nodetool.chat.dataframes import json_schema_for_dataframe
 from nodetool.chat.providers import get_provider
-from nodetool.chat.tools.browser import BrowserTool, GoogleSearchTool
-from nodetool.metadata.types import ColumnDef, Provider, Task
-from nodetool.chat.workspace_manager import WorkspaceManager
-from nodetool.chat.task_planner import TaskPlanner
+from nodetool.agents.tools.browser import BrowserTool, GoogleSearchTool
+from nodetool.chat.providers.base import ChatProvider
+from nodetool.metadata.types import ColumnDef, Provider
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import Chunk
 
-# Reddit-specific system prompt to guide the agent
-INSTRUCTIONS = """
-Extract awesome images from the r/StableDiffusion subreddit
 
-Your capabilities:
-1. Search for Reddit posts in the r/StableDiffusion subreddit using Google Search
-2. Visit Reddit URLs to extract images, post content, and metadata
-3. Organize and collect the most impressive AI-generated images
-
-When performing searches:
-- Format queries to target r/StableDiffusion content (include "site:reddit.com/r/StableDiffusion" when needed)
-- Look for posts showcasing high-quality AI-generated artwork and images
-- Extract all Reddit post URLs from search results that contain images
-
-When scraping Reddit posts:
-- Extract the post title and direct image URLs
-- Focus on posts with high upvotes and positive community reception
-- Identify images with interesting prompts or techniques mentioned
-- Look for images that demonstrate artistic quality or technical achievement
-
-Present your findings as a collection of:
-- Image URLs with their corresponding post titles
-- Direct links to the original posts
-- Brief descriptions of what makes each image impressive or unique
-
-Always respect Reddit's structure when parsing content and prioritize finding the most visually impressive stable diffusion images.
-"""
-
-
-async def main():
+async def test_reddit_scraper_agent(provider: ChatProvider, model: str):
     context = ProcessingContext()
-
-    provider = get_provider(Provider.OpenAI)
-    model = "gpt-4o"
-    # Alternative model options:
-    # provider = get_provider(Provider.Anthropic)
-    # model = "claude-3-7-sonnet-20250219"
-    # provider = get_provider(Provider.Ollama)
-    # model = "qwen2.5:14b"
-
-    tools = [
-        GoogleSearchTool(workspace_dir=str(context.workspace_dir)),
-        BrowserTool(workspace_dir=str(context.workspace_dir)),
-    ]
-
-    agent = Agent(
-        name="Reddit Scraper",
-        objective=INSTRUCTIONS,
+    search_agent = Agent(
+        name="Reddit Search Agent",
+        objective="""
+        Search for Reddit posts in the r/StableDiffusion subreddit using Google Search
+        Return a list of URLs to the Reddit posts
+        """,
         provider=provider,
         model=model,
-        tools=tools,
-        output_schema=json_schema_for_dataframe(
-            columns=[
-                ColumnDef(
-                    name="title",
-                    data_type="string",
-                ),
-                ColumnDef(
-                    name="upvotes",
-                    data_type="int",
-                ),
-                ColumnDef(
-                    name="post_url",
-                    data_type="string",
-                ),
-                ColumnDef(
-                    name="description",
-                    data_type="string",
-                ),
-                ColumnDef(
-                    name="image_url",
-                    data_type="string",
-                ),
-            ]
-        ),
+        enable_analysis_phase=False,
+        enable_data_contracts_phase=False,
+        tools=[
+            GoogleSearchTool(workspace_dir=str(context.workspace_dir)),
+        ],
+        output_schema={
+            "type": "array",
+            "items": {
+                "type": "string",
+            },
+        },
     )
-
-    processing_context = ProcessingContext()
-
     # 7. Execute each task in the plan
-    async for item in agent.execute(processing_context):
+    async for item in search_agent.execute(context):
         if isinstance(item, Chunk):
             print(item.content, end="", flush=True)
 
-    # 8. Print result summary
-    print("\n\nTask execution completed.")
-    for file in agent.get_results():
-        print(file)
+    image_urls = search_agent.get_results()
+    print("Image URLs:")
+    print(image_urls)
+
+    image_scraper_agent = Agent(
+        name="Image Scraper Agent",
+        objective=f"""
+        Visit each URL and extract the image tags using CSS img selector.
+        Return a list of image URLs.
+        Use the remote browser to visit the URLs.
+        The URLs are:
+        {image_urls}
+        """,
+        provider=provider,
+        model=model,
+        enable_analysis_phase=False,
+        enable_data_contracts_phase=True,
+        tools=[
+            BrowserTool(workspace_dir=str(context.workspace_dir)),
+        ],
+        output_schema={
+            "type": "array",
+            "items": {
+                "type": "string",
+            },
+        },
+    )
+
+    # 7. Execute each task in the plan
+    async for item in image_scraper_agent.execute(context):
+        if isinstance(item, Chunk):
+            print(item.content, end="", flush=True)
+
+    image_urls = image_scraper_agent.get_results()
+    print("Image URLs:")
+    print(image_urls)
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+
+    asyncio.run(
+        test_reddit_scraper_agent(
+            provider=get_provider(Provider.OpenAI), model="gpt-4o-mini"
+        )
+    )
+    asyncio.run(
+        test_reddit_scraper_agent(
+            provider=get_provider(Provider.Gemini), model="gemini-2.0-flash"
+        )
+    )
+
+    asyncio.run(
+        test_reddit_scraper_agent(
+            provider=get_provider(Provider.Anthropic),
+            model="claude-3-5-sonnet-20241022",
+        )
+    )

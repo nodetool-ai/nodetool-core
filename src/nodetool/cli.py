@@ -11,6 +11,8 @@ from rich.table import Table
 from rich.panel import Panel
 from rich.text import Text
 
+from nodetool.common.settings import get_log_path
+
 # Create console instance
 console = Console()
 
@@ -156,24 +158,11 @@ def chat():
     asyncio.run(chat_cli())
 
 
-@cli.command("traces")
-@click.option(
-    "--dir", "-d", default="./traces", help="Directory containing trace files."
-)
-def traces(dir: str):
-    """Explore trace log files in an interactive text UI."""
-    from nodetool.chat.trace_explorer import TraceExplorer
-    import curses
-
-    explorer = TraceExplorer(dir)
-    curses.wrapper(explorer.run)
-
-
 @cli.command("explorer")
 @click.option("--dir", "-d", default=".", help="Directory to start exploring from.")
 def explorer(dir: str):
     """Explore files in an interactive text UI."""
-    from nodetool.chat.file_explorer import FileExplorer
+    from nodetool.file_explorer import FileExplorer
     import curses
 
     explorer = FileExplorer(dir)

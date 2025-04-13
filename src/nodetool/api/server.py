@@ -19,6 +19,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from uvicorn import run as uvicorn
 
+from nodetool.packages.registry import get_nodetool_package_source_folders
+
 from . import asset, job, auth, message, node, storage, workflow, model, settings
 import mimetypes
 
@@ -207,11 +209,16 @@ def run_uvicorn_server(app: Any, host: str, port: int, reload: bool) -> None:
     """
     current_dir = os.path.dirname(os.path.realpath(__file__))
     parent_dir = os.path.dirname(current_dir)
+    editable_dirs = get_nodetool_package_source_folders()
+    if reload:
+        reload_dirs = [parent_dir] + [str(dir) for dir in editable_dirs]
+    else:
+        reload_dirs = None
     uvicorn(
         app=app,
         host=host,
         port=port,
         reload=reload,
-        reload_dirs=[parent_dir] if reload else None,
+        reload_dirs=reload_dirs,
         reload_includes=["*.py"] if reload else None,
     )

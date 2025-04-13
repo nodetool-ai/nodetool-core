@@ -1,13 +1,13 @@
-from nodetool.chat.tools.base import resolve_workspace_path
-from nodetool.chat.wrap_generators_parallel import (
+from nodetool.agents.tools.base import resolve_workspace_path
+from nodetool.agents.wrap_generators_parallel import (
     wrap_generators_parallel,
 )
 from nodetool.chat.providers import ChatProvider
-from nodetool.chat.sub_task_context import (
+from nodetool.agents.sub_task_context import (
     SubTaskContext,
     TaskUpdate,
 )
-from nodetool.chat.tools import Tool
+from nodetool.agents.tools.base import Tool
 from nodetool.metadata.types import (
     SubTask,
     Task,
@@ -133,7 +133,7 @@ class TaskExecutor:
                     subtask=subtask,
                     processing_context=context,
                     system_prompt=self.system_prompt,
-                    tools=self.tools,
+                    tools=list(self.tools).copy(),
                     model=self.model,
                     provider=self.provider,
                     max_token_limit=self.max_token_limit,

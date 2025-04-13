@@ -70,7 +70,7 @@ class WriteWorkspaceFileTool(Tool):
 
 class ReadWorkspaceFileTool(Tool):
     name = "read_workspace_file"
-    description = "Read the contents of a file in the agent workspace"
+    description = "Read the contents of a text file in the agent workspace (cannot read binary files)"
 
     def __init__(self, workspace_dir: str):
         super().__init__(workspace_dir)
@@ -126,16 +126,31 @@ class ReadWorkspaceFileTool(Tool):
                     "error": f"{path} is not a file",
                 }
 
-            with open(full_path, "r", encoding="utf-8") as f:
-                content = f.read(max_length)
+            # Check if the file is binary
+            try:
+                # Try to open and read a small part of the file as text
+                with open(full_path, "r", encoding="utf-8") as f:
+                    f.read(1024)  # Just read a small chunk to test
 
-            return {
-                "success": True,
-                "content": content,
-                "path": path,
-                "full_path": full_path,
-                "truncated": len(content) >= max_length,
-            }
+                # If we're here, the file is text, so read it normally
+                with open(full_path, "r", encoding="utf-8") as f:
+                    content = f.read(max_length)
+
+                return {
+                    "success": True,
+                    "content": content,
+                    "path": path,
+                    "full_path": full_path,
+                    "truncated": len(content) >= max_length,
+                    "is_binary": False,
+                }
+            except UnicodeDecodeError:
+                # File is binary
+                return {
+                    "success": False,
+                    "error": f"The file {path} contains binary data that cannot be processed",
+                    "is_binary": True,
+                }
 
         except Exception as e:
             return {"success": False, "error": str(e)}

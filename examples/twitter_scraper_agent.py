@@ -12,12 +12,10 @@ import os
 import json
 from pathlib import Path
 
-from nodetool.chat.agent import Agent
+from nodetool.agents.agent import Agent
 from nodetool.chat.providers import get_provider
-from nodetool.chat.tools.browser import BrowserTool, GoogleSearchTool
+from nodetool.agents.tools.browser import BrowserTool, GoogleSearchTool
 from nodetool.metadata.types import Provider, Task
-from nodetool.chat.workspace_manager import WorkspaceManager
-from nodetool.chat.task_planner import TaskPlanner
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import Chunk
 
@@ -42,8 +40,8 @@ async def main():
     trends_agent = Agent(
         name="Twitter/X Trends Collector",
         objective="""
-        Collect current trends, hashtags, and viral content from Twitter/X.",
-        Popular hashtags across different categories (news, politics, entertainment, technology, etc.)
+        Identify viral accounts by browsing https://x.com/explore/tabs/trending.
+        Collect the top 10 trending topics and analyze tweets.
         """,
         provider=provider,
         model=model,
@@ -52,9 +50,15 @@ async def main():
         output_schema={
             "type": "object",
             "properties": {
-                "hashtags": {
+                "trends": {
                     "type": "array",
-                    "items": {"type": "string"},
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "title": {"type": "string"},
+                            "url": {"type": "string"},
+                        },
+                    },
                 },
             },
         },
@@ -68,7 +72,7 @@ async def main():
     print("\n\nTask execution completed.")
     trends_results = trends_agent.get_results()
 
-    print(f"\nHashtags: {json.dumps(trends_results, indent=2)}")
+    print(f"\nTrends: {json.dumps(trends_results, indent=2)}")
     print(f"\nWorkspace: {context.workspace_dir}")
 
 

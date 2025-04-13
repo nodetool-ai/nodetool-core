@@ -25,7 +25,7 @@ from openai.types.chat.chat_completion_tool_param import ChatCompletionToolParam
 from pydantic import BaseModel
 
 from nodetool.chat.providers.base import ChatProvider
-from nodetool.chat.tools import Tool
+from nodetool.agents.tools.base import Tool
 from nodetool.metadata.types import (
     Message,
     ToolCall,
@@ -209,7 +209,6 @@ class OpenAIProvider(ChatProvider):
         messages: Sequence[Message],
         model: str,
         tools: Sequence[Any] = [],
-        use_code_interpreter: bool = False,
         **kwargs,
     ) -> AsyncGenerator[Chunk | ToolCall, Any]:
         """Generate streaming completions from OpenAI."""
@@ -231,11 +230,10 @@ class OpenAIProvider(ChatProvider):
                     converted_messages.append(msg)
             messages = converted_messages
 
+        self._log_api_request("chat_stream", messages, model, tools, **kwargs)
+
         if len(tools) > 0:
             kwargs["tools"] = self.format_tools(tools)
-
-        for msg in messages:
-            print(msg.model_dump_json())
 
         openai_messages = [self.convert_message(m) for m in messages]
 
@@ -252,6 +250,7 @@ class OpenAIProvider(ChatProvider):
             **kwargs,
         )
         delta_tool_calls = {}
+        current_chunk = ""
 
         async for chunk in completion:
             # Track usage information (only available in the final chunk)
@@ -279,6 +278,15 @@ class OpenAIProvider(ChatProvider):
 
             delta = chunk.choices[0].delta
             if delta.content or chunk.choices[0].finish_reason == "stop":
+                current_chunk += delta.content or ""
+                if chunk.choices[0].finish_reason == "stop":
+                    self._log_api_response(
+                        "chat_stream",
+                        Message(
+                            role="assistant",
+                            content=current_chunk,
+                        ),
+                    )
                 yield Chunk(
                     content=delta.content or "",
                     done=chunk.choices[0].finish_reason == "stop",
@@ -288,11 +296,13 @@ class OpenAIProvider(ChatProvider):
                 if delta_tool_calls:
                     for tc in delta_tool_calls.values():
                         assert tc is not None, "Tool call must not be None"
-                        yield ToolCall(
+                        tool_call = ToolCall(
                             id=tc["id"],
                             name=tc["name"],
                             args=json.loads(tc["function"]["arguments"]),
                         )
+                        self._log_tool_call(tool_call)
+                        yield tool_call
                 else:
                     raise ValueError("No tool call found")
 
@@ -324,7 +334,6 @@ class OpenAIProvider(ChatProvider):
         messages: Sequence[Message],
         model: str,
         tools: Sequence[Any] = [],
-        use_code_interpreter: bool = False,
         **kwargs,
     ) -> Message:
         """Generate a non-streaming completion from OpenAI.
@@ -355,6 +364,8 @@ class OpenAIProvider(ChatProvider):
             messages = converted_messages
             kwargs["max_completion_tokens"] = kwargs.pop("max_tokens", 4096)
 
+        self._log_api_request("chat", messages, model, tools, **kwargs)
+
         if len(tools) > 0:
             kwargs["tools"] = self.format_tools(tools)
 
@@ -377,6 +388,13 @@ class OpenAIProvider(ChatProvider):
         choice = completion.choices[0]
         response_message = choice.message
 
+        def try_parse_args(args: Any) -> Any:
+            try:
+                return json.loads(args)
+            except Exception:
+                print(f"Warning: Error parsing tool call arguments: {args}")
+                return {}
+
         # Create tool calls if present
         tool_calls = None
         if response_message.tool_calls:
@@ -384,17 +402,20 @@ class OpenAIProvider(ChatProvider):
                 ToolCall(
                     id=tool_call.id,
                     name=tool_call.function.name,
-                    args=json.loads(tool_call.function.arguments),
+                    args=try_parse_args(tool_call.function.arguments),
                 )
                 for tool_call in response_message.tool_calls
             ]
 
-        # Return a Message object
-        return Message(
+        message = Message(
             role="assistant",
             content=response_message.content,
             tool_calls=tool_calls,
         )
+
+        self._log_api_response("chat", message)
+
+        return message
 
     def get_usage(self) -> dict:
         """Return the current accumulated token usage statistics."""

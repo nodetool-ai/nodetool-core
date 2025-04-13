@@ -979,9 +979,13 @@ class SubTask(BaseType):
 
     type: Literal["subtask"] = "subtask"
 
-    content: str = Field(description="The content of the subtask")
+    content: str = Field(description="Instructions for the subtask")
     output_file: str = Field(
         description="The file path where the subtask will save its output"
+    )
+    artifacts: list[str] = Field(
+        default=[],
+        description="A list of files that the subtask will save as artifacts",
     )
     completed: bool = Field(
         default=False, description="Whether the subtask is completed"
@@ -995,13 +999,9 @@ class SubTask(BaseType):
         default="string",
         description="The type of the output of the subtask",
     )
-    output_schema: dict[str, Any] | None = Field(
-        default=None,
-        description="The JSON schema of the output of the subtask, must be an object with properties of the output type",
-    )
-    use_code_interpreter: bool = Field(
-        default=False,
-        description="Whether to use a code interpreter for the subtask",
+    output_schema: str = Field(
+        default="",
+        description="The JSON schema of the output of the subtask",
     )
 
     def to_markdown(self) -> str:
@@ -1010,7 +1010,10 @@ class SubTask(BaseType):
         deps_str = (
             f" (depends on {', '.join(self.input_files)})" if self.input_files else ""
         )
-        return f"- {checkbox} {self.content} => '{self.output_file}'{deps_str}"
+        output_schema_str = (
+            f" (output schema: {self.output_schema})" if self.output_schema else ""
+        )
+        return f"- {checkbox} {self.content} => '{self.output_file}'{deps_str}{output_schema_str}"
 
     def is_running(self) -> bool:
         """
@@ -1255,6 +1258,7 @@ class ToolCall(BaseModel):
     name: str = ""
     args: dict[str, Any] = {}
     result: Any = None
+    subtask_id: str | None = None
 
 
 class MessageTextContent(BaseModel):
@@ -1383,6 +1387,11 @@ class Message(BaseType):
     """
     The timestamp when the message was created.
     It is represented as a string in ISO 8601 format.
+    """
+
+    model: str | None = None
+    """
+    The model that was used to generate the message.
     """
 
     @staticmethod

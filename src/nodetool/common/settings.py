@@ -155,6 +155,30 @@ def get_system_data_path(filename: str) -> Path:
         return Path("data") / filename
 
 
+def get_log_path(filename: str) -> Path:
+    """
+    Returns the path to the log file for the current OS.
+
+    Logs are stored in:
+    - Linux/Mac: ~/.local/share/nodetool/logs/
+    - Windows: %LOCALAPPDATA%/nodetool/logs/
+    - Other: ./data/logs/
+
+    Args:
+        filename: Name of the log file
+
+    Returns:
+        Path object representing the full path to the log file
+    """
+    base_data_path = get_system_data_path("")
+    log_dir = base_data_path / "logs"
+
+    # Ensure the logs directory exists
+    os.makedirs(log_dir, exist_ok=True)
+
+    return log_dir / filename
+
+
 def load_settings() -> Tuple[SettingsModel, SecretsModel]:
     """
     Load the settings from the settings file and the secrets from the secrets file.

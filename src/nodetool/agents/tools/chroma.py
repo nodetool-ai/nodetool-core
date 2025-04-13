@@ -12,7 +12,7 @@ from typing import Any
 import chromadb
 from chromadb.api.types import IncludeEnum
 from nodetool.workflows.processing_context import ProcessingContext
-from .base import Tool
+from .base import Tool, resolve_workspace_path
 from pydantic import Field
 from nodetool.metadata.types import TextChunk
 from typing import Literal
@@ -38,6 +38,12 @@ class ChromaTextSearchTool(Tool):
         },
         "required": ["text"],
     }
+    example = """
+    chroma_text_search(
+        text="What is the capital of France?",
+        n_results=5
+    )
+    """
 
     def __init__(self, workspace_dir: str, collection: chromadb.Collection):
         super().__init__(workspace_dir)
@@ -438,56 +444,22 @@ class ChromaMarkdownSplitAndIndexTool(Tool):
     input_schema = {
         "type": "object",
         "properties": {
-            "text": {
+            "file_path": {
                 "type": "string",
-                "description": "The markdown text content to split and index",
-            },
-            "document_id": {
-                "type": "string",
-                "description": "Base identifier for the source document",
-            },
-            "headers_to_split_on": {
-                "type": "array",
-                "items": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "minItems": 2,
-                    "maxItems": 2,
-                },
-                "description": "List of header patterns and their names",
-                "default": [
-                    ["#", "Header 1"],
-                    ["##", "Header 2"],
-                    ["###", "Header 3"],
-                ],
-            },
-            "strip_headers": {
-                "type": "boolean",
-                "description": "Whether to strip headers from text chunks",
-                "default": True,
-            },
-            "return_each_line": {
-                "type": "boolean",
-                "description": "Whether to return each line as a separate document",
-                "default": False,
+                "description": "The path to the markdown file to split and index",
             },
             "chunk_size": {
                 "type": "integer",
-                "description": "Maximum size of each chunk in characters (for further splitting)",
-                "default": None,
+                "description": "Maximum size of each chunk in characters",
+                "default": 1000,
             },
             "chunk_overlap": {
                 "type": "integer",
                 "description": "Number of characters to overlap between chunks",
                 "default": 200,
             },
-            "metadata": {
-                "type": "object",
-                "description": "Additional metadata to associate with all chunks",
-                "default": {},
-            },
         },
-        "required": ["text", "document_id"],
+        "required": ["file_path"],
     }
 
     def __init__(self, workspace_dir: str, collection: chromadb.Collection):
@@ -502,100 +474,60 @@ class ChromaMarkdownSplitAndIndexTool(Tool):
             RecursiveCharacterTextSplitter,
         )
 
-        headers_to_split_on = params.get(
-            "headers_to_split_on",
-            [
-                ("#", "Header 1"),
-                ("##", "Header 2"),
-                ("###", "Header 3"),
-            ],
-        )
-
-        strip_headers = params.get("strip_headers", True)
-        return_each_line = params.get("return_each_line", False)
+        headers_to_split_on = [
+            ("#", "Header 1"),
+            ("##", "Header 2"),
+            ("###", "Header 3"),
+        ]
 
         # Initialize markdown splitter
         markdown_splitter = MarkdownHeaderTextSplitter(
             headers_to_split_on=headers_to_split_on,
-            strip_headers=strip_headers,
-            return_each_line=return_each_line,
         )
 
         # Split by headers
         splits = markdown_splitter.split_text(text)
 
         # Further split by chunk size if specified
-        chunk_size = params.get("chunk_size")
-        if chunk_size:
-            text_splitter = RecursiveCharacterTextSplitter(
-                chunk_size=chunk_size, chunk_overlap=params.get("chunk_overlap", 200)
-            )
-            splits = text_splitter.split_documents(splits)
+        chunk_size = params.get("chunk_size", 1000)
+        chunk_overlap = params.get("chunk_overlap", 200)
+        text_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=chunk_size, chunk_overlap=chunk_overlap
+        )
+        splits = text_splitter.split_documents(splits)
 
         return [
-            TextChunk(
-                text=doc.page_content,
-                source_id=f"{document_id}:{i}",
-                start_index=doc.metadata.get("start_index", 0),
-            )
+            TextChunk(text=doc.page_content, source_id=document_id, start_index=i)
             for i, doc in enumerate(splits)
         ]
 
-    def _generate_document_id(self, source_id: str) -> str:
-        """Generate a unique document ID from the source ID."""
-        import hashlib
-
-        return f"{source_id}-{hashlib.md5(source_id.encode()).hexdigest()[:8]}"
-
     async def process(self, context: ProcessingContext, params: dict) -> dict[str, Any]:
-        text = params["text"]
-        document_id = params["document_id"]
-        base_metadata = params.get("metadata", {})
-
-        if not text.strip():
-            return {"error": "The text cannot be empty"}
-
-        if not document_id.strip():
-            return {"error": "The document ID cannot be empty"}
-
+        file_path = params["file_path"]
         # Split the text
-        try:
-            chunks = await self._split_text_markdown(text, document_id, params)
-        except Exception as e:
-            return {"error": f"Text splitting failed: {str(e)}"}
+        resolved_file_path = self.resolve_workspace_path(file_path)
+
+        with open(resolved_file_path, "r") as f:
+            text = f.read()
+        chunks = await self._split_text_markdown(text, file_path, params)
 
         # Index each chunk
         indexed_ids = []
-        try:
-            for i, chunk in enumerate(chunks):
-                # Generate a unique ID for this chunk
-                unique_id = self._generate_document_id(f"{chunk.source_id}:{i}")
+        for i, chunk in enumerate(chunks):
+            # Generate a unique ID for this chunk
+            unique_id = f"{file_path}:{chunk.start_index}"
 
-                # Combine base metadata with chunk-specific metadata
-                metadata = {**base_metadata}
-                if hasattr(chunk, "start_index"):
-                    metadata["start_index"] = chunk.start_index
-
-                # Index the chunk
-                self.collection.add(
-                    ids=[unique_id],
-                    documents=[chunk.text],
-                    metadatas=[metadata],
-                )
-                indexed_ids.append(unique_id)
-
-        except Exception as e:
-            return {
-                "error": f"Indexing failed: {str(e)}",
-                "indexed_count": len(indexed_ids),
-                "total_chunks": len(chunks),
-            }
+            # Index the chunk
+            self.collection.add(
+                ids=[unique_id],
+                documents=[chunk.text],
+            )
+            indexed_ids.append(unique_id)
 
         return {
             "status": "success",
-            "indexed_count": len(indexed_ids),
-            "document_id": document_id,
-            "message": f"Successfully indexed {len(indexed_ids)} chunks from document {document_id}",
+            "indexed_ids": indexed_ids,
+            "file_path": file_path,
+            "message": f"Successfully indexed {len(indexed_ids)} chunks from document {file_path}",
         }
 
 

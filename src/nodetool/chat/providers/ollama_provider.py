@@ -15,7 +15,7 @@ from pydantic import BaseModel
 import tiktoken
 
 from nodetool.chat.providers.base import ChatProvider
-from nodetool.chat.tools.base import Tool
+from nodetool.agents.tools.base import Tool
 from nodetool.common.environment import Environment
 from nodetool.metadata.types import (
     Message,
@@ -81,8 +81,13 @@ class OllamaProvider(ChatProvider):
 
     """
 
-    def __init__(self, use_textual_tools: bool = False):
-        """Initialize the Ollama provider."""
+    def __init__(self, log_file=None):
+        """Initialize the Ollama provider.
+
+        Args:
+            log_file (str, optional): Path to a file where API calls and responses will be logged.
+                If None, no logging will be performed.
+        """
         super().__init__()
         self.client = get_ollama_client()
         self.usage = {
@@ -91,7 +96,7 @@ class OllamaProvider(ChatProvider):
             "total_tokens": 0,
         }
         self.encoding = tiktoken.get_encoding("cl100k_base")
-        self.use_textual_tools = use_textual_tools
+        self.log_file = log_file
 
     def _count_tokens(self, messages: Sequence[Message]) -> int:
         """
@@ -133,7 +138,9 @@ class OllamaProvider(ChatProvider):
 
         return token_count
 
-    def convert_message(self, message: Message) -> Dict[str, Any]:
+    def convert_message(
+        self, message: Message, use_textual_tools: bool
+    ) -> Dict[str, Any]:
         """
         Convert an internal message to Ollama's format.
 
@@ -141,7 +148,7 @@ class OllamaProvider(ChatProvider):
             message: The message to convert
         """
         if message.role == "tool":
-            if self.use_textual_tools:
+            if use_textual_tools:
                 # For textual tool calling, format tool responses as user messages with tool_output syntax
                 if isinstance(message.content, BaseModel):
                     content = message.content.model_dump_json()
@@ -152,9 +159,7 @@ class OllamaProvider(ChatProvider):
                         else str(message.content)
                     )
 
-                # Format as tool_output block
-                formatted_content = f"```tool_output\n{content}\n```"
-                return {"role": "user", "content": formatted_content}
+                return {"role": "user", "content": content}
             else:
                 # Standard tool message format
                 if isinstance(message.content, BaseModel):
@@ -221,6 +226,7 @@ class OllamaProvider(ChatProvider):
         tools: Sequence[Any] = [],
         response_format: dict | None = None,
         max_tokens: int = 4096,
+        use_textual_tools: bool = True,
     ) -> Dict[str, Any]:
         """
         Prepare common parameters for Ollama API requests.
@@ -235,30 +241,26 @@ class OllamaProvider(ChatProvider):
             Dict[str, Any]: Parameters ready for Ollama API request
         """
         # Use textual tool calling if configured
-        if self.use_textual_tools and tools:
+        if use_textual_tools and tools:
             # Modify the first system or user message to include tool instructions
             tool_instructions = self._create_textual_tools_prompt(tools)
             messages_list = list(messages)
 
-            # Try to find system message first
-            system_idx = next(
-                (i for i, m in enumerate(messages_list) if m.role == "system"), None
-            )
-
-            if system_idx is not None:
-                # Append to system message
-                original_content = messages_list[system_idx].content
-                messages_list[system_idx].content = (
-                    f"{original_content}\n\n{tool_instructions}"
+            if isinstance(messages_list[-1].content, str):
+                messages_list[-1].content += tool_instructions
+            elif isinstance(messages_list[-1].content, list):
+                messages_list[-1].content.append(
+                    MessageTextContent(text=tool_instructions)
                 )
             else:
-                # Prepend to first user message
-                messages_list.insert(
-                    0, Message(role="system", content=tool_instructions)
+                raise ValueError(
+                    f"Unexpected message content type: {type(messages_list[-1].content)}"
                 )
 
             # Use the modified messages and don't pass tools parameter
-            ollama_messages = [self.convert_message(m) for m in messages_list]
+            ollama_messages = [
+                self.convert_message(m, use_textual_tools) for m in messages_list
+            ]
 
             params = {
                 "model": model,
@@ -272,7 +274,9 @@ class OllamaProvider(ChatProvider):
             tools = []
         else:
             # Regular message conversion
-            ollama_messages = [self.convert_message(m) for m in messages]
+            ollama_messages = [
+                self.convert_message(m, use_textual_tools) for m in messages
+            ]
 
             params = {
                 "model": model,
@@ -304,14 +308,16 @@ class OllamaProvider(ChatProvider):
             params["options"]["num_ctx"] = ctx_size
 
         if response_format:
-            params["format"] = response_format
             if (
                 response_format.get("type") == "json_schema"
                 and "json_schema" in response_format
             ):
                 schema = response_format["json_schema"]
-
-            params["format"] = schema.get("schema", {})
+                if not "schema" in schema:
+                    raise ValueError(
+                        "schema is required in json_schema response format"
+                    )
+                params["format"] = schema["schema"]
 
         return params
 
@@ -344,12 +350,22 @@ class OllamaProvider(ChatProvider):
             Chunk | ToolCall: Content chunks or tool calls
         """
 
-        if self.use_textual_tools and tools:
-            params = self._prepare_request_params(messages, model, tools)
+        self._log_api_request("chat_stream", messages, model, tools)
+
+        use_textual_tools = (
+            len(tools) > 0
+            and model.startswith("gemma")
+            and not kwargs.get("response_format", None)
+        )
+        if use_textual_tools and tools:
+            params = self._prepare_request_params(
+                messages, model, tools, use_textual_tools=use_textual_tools
+            )
             params["stream"] = True
 
             completion = await self.client.chat(**params)
             buffer = ""
+
             async for response in completion:
                 # Track usage metrics when we receive the final response
                 if response.done:
@@ -363,15 +379,13 @@ class OllamaProvider(ChatProvider):
                 if tool_calls:
                     for tool_call in tool_calls:
                         yield tool_call
-                    # Clear buffer after extracting tool calls
-                    buffer = re.sub(
-                        r"```tool_code\s*(.*?)\s*```", "", buffer, flags=re.DOTALL
-                    )
 
                 yield Chunk(content=new_content, done=response.done or False)
         else:
             # Standard tool calling handling
-            params = self._prepare_request_params(messages, model, tools, **kwargs)
+            params = self._prepare_request_params(
+                messages, model, tools, use_textual_tools=use_textual_tools, **kwargs
+            )
             params["stream"] = True
 
             completion = await self.client.chat(**params)
@@ -398,7 +412,6 @@ class OllamaProvider(ChatProvider):
         tools: Sequence[Tool] = [],
         max_tokens: int = 8192,
         response_format: dict | None = None,
-        use_code_interpreter: bool = False,
     ) -> Message:
         """
         Generate a complete message from Ollama without streaming.
@@ -407,19 +420,25 @@ class OllamaProvider(ChatProvider):
             messages: The conversation history
             model: The model to use
             tools: Optional tools to make available to the model
-            use_code_interpreter: Whether to use code interpreter
             **kwargs: Additional parameters to pass to the Ollama API
+
 
         Returns:
             Message: The complete response message
         """
-        if self.use_textual_tools and tools:
+        self._log_api_request("chat", messages, model, tools)
+
+        use_textual_tools = (
+            len(tools) > 0 and model.startswith("gemma") and not response_format
+        )
+        if use_textual_tools and tools:
             params = self._prepare_request_params(
                 messages,
                 model,
                 tools,
                 response_format=response_format,
                 max_tokens=max_tokens,
+                use_textual_tools=use_textual_tools,
             )
             params["stream"] = False
 
@@ -435,16 +454,16 @@ class OllamaProvider(ChatProvider):
             tool_calls = self._extract_tool_calls(content)
 
             if tool_calls:
-                return Message(
+                res = Message(
                     role="assistant",
                     content=content,
                     tool_calls=tool_calls,
                 )
-
-            return Message(
-                role="assistant",
-                content=content,
-            )
+            else:
+                res = Message(
+                    role="assistant",
+                    content=content,
+                )
         else:
             # Standard tool calling handling
             params = self._prepare_request_params(
@@ -453,6 +472,7 @@ class OllamaProvider(ChatProvider):
                 tools,
                 response_format=response_format,
                 max_tokens=max_tokens,
+                use_textual_tools=use_textual_tools,
             )
             params["stream"] = False
 
@@ -471,101 +491,80 @@ class OllamaProvider(ChatProvider):
                     for tool_call in response.message.tool_calls
                 ]
 
-            return Message(
+            res = Message(
                 role="assistant",
                 content=response.message.content or "",
                 tool_calls=tool_calls,
             )
 
+        self._log_api_response("chat", res)
+
+        return res
+
     def _create_textual_tools_prompt(self, tools: Sequence[Tool]) -> str:
         """Create a textual prompt with tool instructions and function signatures."""
-        examples = ""
-        for tool in tools:
-            examples += f"""
-            Example:
-            {tool.example}
-            """
-        prompt = f"""
-1. At each turn, if you decide to invoke any of the function(s), it should be wrapped with ```tool_code```. 
-2. The python methods described below are imported and available, you can only use defined methods. 
-3. The generated code should be readable and efficient. 
-4. The response to a method will be wrapped in ```tool_output``` use it to call more tools or generate a helpful, friendly response. 
-5. When using a ```tool_call``` think step by step why and how it should be used.
-6. Only call a single function at a time. 
-7. Always use keyword arguments when calling a function. 
+        prompt = """
+You have access to functions. If you decide to invoke any of the function(s),
+you MUST put it in the format of
+{"name": function name, "parameters": dictionary of argument name and its value}
 
-NOTE: Some function parameters may be nested data structures.
-The JSON schema for the function parameters is provided for each function parameter.
-Follow the schema when calling the function.
+You SHOULD NOT include any other text in the response if you call a function
 
-Examples:
-{examples}
-
-The following Python methods are available:
-
-```python
+Following functions are available:
 """
-        for tool in tools:
-            param_str = []
-            for param_name, param in tool.input_schema["properties"].items():
-                param_str.append(f"{param_name}: {param['type']}")
-
-            prompt += f"def {tool.name}({', '.join(param_str)}):\n"
-            prompt += f"    " ""
-            prompt += f"    {tool.description}\n"
-            for param_name, param in tool.input_schema["properties"].items():
-                prompt += f"    {param_name}: {param}"
-            prompt += f'    """\n\n'
-
-        prompt += "```\n\n"
-        return prompt
+        tool_schemas = [
+            {
+                "name": tool.name,
+                "description": tool.description,
+                "parameters": tool.input_schema,
+            }
+            for tool in tools
+        ]
+        return prompt + json.dumps(tool_schemas, indent=2)
 
     def _extract_tool_calls(self, text: str) -> list[ToolCall]:
         """
-        Extract all tool calls from the model response text.
+        Extract all tool calls from the model response text using JSON parsing.
+        Always searches for matching braces to find JSON objects in the text.
 
         Returns:
             list[ToolCall]: A list of tool calls extracted from the response.
         """
-        pattern = r"```tool_code\s*(.*?)\s*```"
-        matches = re.finditer(pattern, text, re.DOTALL)
-
         tool_calls = []
 
-        for match in matches:
-            code = match.group(1).strip()
+        # Always search for JSON objects by looking for matching braces
+        start_idx = text.find("{")
+        while start_idx != -1:
+            # Find potential JSON objects
+            brace_count = 1
+            end_idx = start_idx + 1
 
-            try:
-                tree = ast.parse(code)
+            while end_idx < len(text) and brace_count > 0:
+                if text[end_idx] == "{":
+                    brace_count += 1
+                elif text[end_idx] == "}":
+                    brace_count -= 1
+                end_idx += 1
 
-                # Process each statement in the parsed code
-                for node in tree.body:
-                    if isinstance(node, ast.Expr) and isinstance(node.value, ast.Call):
-                        call_node = node.value
-                        func_name = (
-                            call_node.func.id
-                            if isinstance(call_node.func, ast.Name)
-                            else None
-                        )
-                        if func_name is None:
-                            continue
-
-                        # Create a dict of args
-                        args_dict = {}
-                        for keyword in call_node.keywords:
-                            args_dict[keyword.arg] = self._extract_ast_value(
-                                keyword.value
-                            )
-
+            if brace_count == 0:  # Found a complete JSON object
+                potential_json = text[start_idx:end_idx]
+                try:
+                    data = json.loads(potential_json)
+                    if (
+                        isinstance(data, dict)
+                        and "name" in data
+                        and "parameters" in data
+                    ):
                         tool_calls.append(
                             ToolCall(
-                                name=func_name,
-                                args=args_dict,
+                                name=data["name"],
+                                args=data["parameters"],
                             )
                         )
-            except SyntaxError:
-                # Skip invalid syntax
-                continue
+                except json.JSONDecodeError as e:
+                    pass
+            # Look for the next potential JSON object
+            start_idx = text.find("{", end_idx)
 
         return tool_calls
 
@@ -786,14 +785,11 @@ async def run_smoke_test():
     print("Running smoke test for multiple textual tool calls in a single message...")
 
     try:
-        # Test with textual tool calling
-        provider.use_textual_tools = True
-
         # Non-streaming test
         print("\n=== Testing non-streaming API with multiple tool calls ===")
         response = await provider.generate_message(
             messages=messages,
-            model="gemma3:12b",  # Replace with an available model
+            model="gemma3:4b",
             tools=tools,
         )
 

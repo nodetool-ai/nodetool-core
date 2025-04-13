@@ -22,8 +22,8 @@ from nodetool.types.graph import Graph, get_input_schema, get_output_schema
 from nodetool.packages.registry import Registry
 from nodetool.chat.providers import get_provider
 from nodetool.metadata.types import Provider
-from nodetool.chat.workflow_planner import WorkflowPlanner
 from nodetool.chat.workspace_manager import WorkspaceManager
+from nodetool.agents.workflow_planner import WorkflowPlanner
 import asyncio
 
 log = Environment.get_logger()

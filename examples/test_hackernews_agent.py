@@ -4,10 +4,10 @@ Test script for Multi-Agent Coordination focused on Hacker News content.
 """
 
 import asyncio
-from nodetool.chat.agent import Agent
+import datetime
+from nodetool.agents.agent import Agent
 from nodetool.chat.providers import get_provider
-from nodetool.chat.tools.browser import BrowserTool
-from nodetool.chat.workspace_manager import WorkspaceManager
+from nodetool.agents.tools.browser import BrowserTool
 from nodetool.metadata.types import Provider
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import Chunk
@@ -23,6 +23,13 @@ async def main():
     # model = "claude-3-5-sonnet-20241022"
     provider = get_provider(Provider.OpenAI)
     model = "gpt-4o"
+    # provider = get_provider(
+    #     Provider.Ollama,
+    #     log_file=get_log_path(
+    #         datetime.datetime.now().strftime("traces/%Y-%m-%d_%H-%M-%S") + ".jsonl"
+    #     ),
+    # )
+    # model = "gemma3:12b"
 
     # 3. Set up browser tool for accessing websites
     browser_tool = BrowserTool(context.workspace_dir)

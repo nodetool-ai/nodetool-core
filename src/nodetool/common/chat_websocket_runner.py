@@ -28,19 +28,17 @@ import traceback
 import uuid
 import json
 import msgpack
-from typing import Any, List
+from typing import List
 from enum import Enum
 
 from fastapi import WebSocket
 
-from nodetool.chat import tools
 from nodetool.chat.chat import run_tool
 from nodetool.chat.providers import get_provider
-from nodetool.chat.tools.base import Tool, get_tool_by_name
+from nodetool.agents.tools.base import Tool, get_tool_by_name
+from nodetool.chat.providers.base import ChatProvider
 from nodetool.metadata.types import (
     AudioRef,
-    DataframeRef,
-    FunctionModel,
     ImageRef,
     Message,
     MessageAudioContent,
@@ -57,6 +55,17 @@ from nodetool.workflows.workflow_runner import WorkflowRunner
 from nodetool.workflows.processing_context import ProcessingContext
 
 log = logging.getLogger(__name__)
+
+
+def provider_from_model(model: str) -> ChatProvider:
+    if model.startswith("claude"):
+        return get_provider(Provider.Anthropic)
+    elif model.startswith("gpt"):
+        return get_provider(Provider.OpenAI)
+    elif model.startswith("gemini"):
+        return get_provider(Provider.Gemini)
+    else:
+        raise ValueError(f"Unsupported model: {model}")
 
 
 class WebSocketMode(str, Enum):
@@ -134,6 +143,10 @@ class ChatWebSocketRunner:
                 # break
 
     async def process_messages(self) -> Message:
+        """
+        Process messages without a workflow.
+        Used for global chat.
+        """
         last_message = self.chat_history[-1]
 
         processing_context = ProcessingContext(
@@ -156,7 +169,9 @@ class ChatWebSocketRunner:
         else:
             selected_tools = []
 
-        provider = get_provider(Provider.Ollama)
+        assert last_message.model, "Model is required"
+
+        provider = provider_from_model(last_message.model)
 
         # Stream the response chunks
         while True:
@@ -165,7 +180,7 @@ class ChatWebSocketRunner:
 
             async for chunk in provider.generate_messages(
                 messages=messages_to_send,
-                model="llama32.:3b",
+                model=last_message.model,
                 tools=selected_tools,
             ):  # type: ignore
                 if isinstance(chunk, Chunk):
@@ -184,9 +199,6 @@ class ChatWebSocketRunner:
                     tool_result = await run_tool(
                         processing_context, chunk, selected_tools
                     )
-
-                    print(f"Tool result: {tool_result}")
-
                     # Add tool messages to unprocessed messages
                     unprocessed_messages.append(
                         Message(role="assistant", tool_calls=[chunk])

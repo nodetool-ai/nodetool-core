@@ -14,60 +14,105 @@ This example shows how to:
 """
 
 import asyncio
-from nodetool.chat.agent import Agent
-from nodetool.chat.providers import get_provider
-from nodetool.chat.tools.openai_web_search import OpenAIWebSearchTool
-from nodetool.chat.workspace_manager import WorkspaceManager
-from nodetool.metadata.types import Provider
+import json
+from pathlib import Path
+from rich.console import Console
+
+from nodetool.agents.tools.openai import OpenAIWebSearchTool
+from nodetool.metadata.types import SubTask, Task
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.workflows.types import Chunk
+from nodetool.workflows.types import Chunk, TaskUpdate
+from nodetool.chat.providers.openai_provider import OpenAIProvider
+from nodetool.agents.sub_task_context import SubTaskContext
+
+# Create a console for rich output
+console = Console()
 
 
 async def main():
-    # 1. Set up workspace directory
-    workspace_manager = WorkspaceManager()
-    workspace_dir = workspace_manager.get_current_directory()
+    # Configure test parameters
+    context = ProcessingContext()
+    workspace_dir = context.workspace_dir
 
-    # 2. Initialize provider and model
-    # provider = get_provider(Provider.Anthropic)
-    # model = "claude-3-5-sonnet-20241022"
-    provider = get_provider(Provider.OpenAI)
+    # Initialize chat provider
+    provider = OpenAIProvider()
     model = "gpt-4o"
-    # provider = get_provider(Provider.Ollama)
-    # model = "qwen2.5:0.5b"
-    # model = "MFDoom/deepseek-r1-tool-calling:1.5b"
 
-    # provider = get_provider(Provider.Ollama)
-    # model = "driaforall/tiny-agent-a:3b"
-    # model = "qwen2.5:14b"
-
-    # 3. Set up tools for retrieval
-    retrieval_tools = [
-        OpenAIWebSearchTool(str(workspace_dir)),
+    # Create test tools
+    tools = [
+        OpenAIWebSearchTool(workspace_dir),
     ]
 
-    # 5. Create a retrieval agent for gathering information
-    agent = Agent(
-        name="Research Agent",
-        objective="""
-        Research the competitive landscape of AI code tools in 2025.
-        Such as Cursor, Windsurf, Copilot, asn open source alternatives.
-        1. Use multiple openai web searches to identify a list of AI code assistant tools
-        2. Summarize the findings in comprehensive markdown document.
-        """,
-        provider=provider,
-        model=model,
-        tools=retrieval_tools,
-        output_type="markdown",
-    )
-    # 8. Solve the problem using the multi-agent coordinator
-    processing_context = ProcessingContext()
-    async for item in agent.execute(processing_context):
-        if isinstance(item, Chunk):
-            print(item.content, end="", flush=True)
+    # Create a processing context
+    processing_context = ProcessingContext(workspace_dir=workspace_dir)
 
-    print(agent.results)
-    print(f"\nWorkspace: {workspace_dir}")
+    # Create a sample task
+    task = Task(
+        title="Research AI Code Tools",
+        description="Research and summarize the competitive landscape of AI code tools in 2025",
+        subtasks=[],
+    )
+
+    # Create a sample subtask
+    subtask = SubTask(
+        content="Use web search to identify AI code assistant tools and summarize findings",
+        output_file="ai_code_tools_summary.json",
+        input_files=[],
+        output_type="json",
+        output_schema=json.dumps(
+            {
+                "type": "object",
+                "properties": {
+                    "tools": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "name": {"type": "string"},
+                                "description": {"type": "string"},
+                                "features": {
+                                    "type": "array",
+                                    "items": {"type": "string"},
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+        ),
+    )
+
+    # Add the subtask to the task
+    task.subtasks = [subtask]
+
+    # Create the SubTaskContext
+    subtask_context = SubTaskContext(
+        task=task,
+        subtask=subtask,
+        processing_context=processing_context,
+        tools=tools,
+        model=model,
+        provider=provider,
+        max_iterations=10,
+    )
+
+    # Execute the subtask
+    async for event in subtask_context.execute():
+        if isinstance(event, Chunk):
+            print(event.content, end="")
+        elif isinstance(event, TaskUpdate):
+            console.print(f"[green]Task Update:[/green] {event.event}")
+
+    # Check if output file was created
+    output_path = Path(workspace_dir) / subtask.output_file
+    if output_path.exists():
+        with open(output_path, "r") as f:
+            result = json.load(f)
+        console.print("\n[bold green]SubTask Execution Successful![/bold green]")
+        console.print("\n[bold]Output File Content:[/bold]")
+        console.print(json.dumps(result, indent=2))
+    else:
+        console.print("\n[bold red]Output file was not created![/bold red]")
 
 
 if __name__ == "__main__":

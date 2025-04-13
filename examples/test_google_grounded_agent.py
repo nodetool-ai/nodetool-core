@@ -14,21 +14,33 @@ This example shows how to:
 """
 
 import asyncio
-import datetime
 from nodetool.agents.agent import Agent
 from nodetool.chat.providers import get_provider
-from nodetool.agents.tools.browser import GoogleSearchTool, BrowserTool
-from nodetool.chat.providers.base import ChatProvider
+from nodetool.agents.tools.browser import BrowserTool
+from nodetool.agents.tools.google import GoogleGroundedSearchTool
 from nodetool.metadata.types import Provider
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import Chunk
 
+SUMMARIZER_SYSTEM_PROMPT = """You are a specialized Summarization Agent for AI industry intelligence. Your role is to:
+"""
 
-async def test_google_agent(provider: ChatProvider, model: str):
+
+async def main():
     context = ProcessingContext()
 
+    # provider = get_provider(Provider.OpenAI)
+    # model = "gpt-4o"
+
+    provider = get_provider(Provider.Gemini)
+    # model = "gemini-2.5-pro-exp-03-25"
+    model = "gemini-2.0-flash"
+
+    # provider = get_provider(Provider.Ollama)
+    # model = "gemma3:12b"
+
     retrieval_tools = [
-        GoogleSearchTool(context.workspace_dir),
+        GoogleGroundedSearchTool(context.workspace_dir),
         BrowserTool(context.workspace_dir),
     ]
 
@@ -37,10 +49,8 @@ async def test_google_agent(provider: ChatProvider, model: str):
         enable_analysis_phase=True,
         enable_data_contracts_phase=True,
         objective="""
-        1. Identify a list of chicken wing recipe websites during planning phase
-        2. Crawl one website per subtask
-        3. Extract the ingredients and instructions for each recipe
-        4. Return the results in the format specified by the output_schema
+        1. Use google to identify a list of recipes for chicken wings
+        2. Browse to the recipe websites and extract the ingredients and instructions for each recipe
         Do not use remote browser.
         """,
         provider=provider,
@@ -86,23 +96,4 @@ async def test_google_agent(provider: ChatProvider, model: str):
 
 
 if __name__ == "__main__":
-    asyncio.run(
-        test_google_agent(
-            provider=get_provider(Provider.Gemini), model="gemini-2.0-flash"
-        )
-    )
-    asyncio.run(
-        test_google_agent(
-            provider=get_provider(Provider.Anthropic),
-            model="claude-3-5-sonnet-20241022",
-        )
-    )
-    asyncio.run(
-        test_google_agent(provider=get_provider(Provider.OpenAI), model="gpt-4o-mini")
-    )
-    # asyncio.run(
-    #     test_google_agent(
-    #         provider=get_provider(Provider.Ollama),
-    #         model="gemma3:12b",
-    #     )
-    # )
+    asyncio.run(main())

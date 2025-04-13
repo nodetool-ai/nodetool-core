@@ -1,6 +1,6 @@
 import asyncio
 from nodetool.chat.providers import ChatProvider, get_provider
-from nodetool.chat.tools import Tool
+from nodetool.agents.tools.base import Tool
 from nodetool.metadata.type_metadata import TypeMetadata
 from nodetool.metadata.types import (
     Message,
@@ -16,7 +16,6 @@ from nodetool.packages.registry import Registry
 from nodetool.metadata.node_metadata import NodeMetadata
 from nodetool.types.graph import Graph
 from nodetool.workflows.run_workflow import run_workflow
-from nodetool.workflows.base_node import BaseNode
 from nodetool.workflows.processing_context import ProcessingContext
 import time
 import networkx as nx
@@ -28,10 +27,7 @@ from rich.progress import (
     Progress,
     SpinnerColumn,
     TextColumn,
-    BarColumn,
-    TimeElapsedColumn,
 )
-from rich.tree import Tree
 
 from nodetool.workflows.property import Property
 from nodetool.workflows.run_job_request import RunJobRequest

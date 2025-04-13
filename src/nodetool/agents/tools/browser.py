@@ -108,6 +108,20 @@ class BrowserTool(Tool):
                 "type": "string",
                 "description": "URL to navigate to",
             },
+            "selector": {
+                "type": "string",
+                "description": "Optional CSS selector to extract specific elements. If provided, only matching elements will be returned.",
+            },
+            "headless": {
+                "type": "boolean",
+                "description": "Run the browser in headless mode",
+                "default": True,
+            },
+            "use_remote_browser": {
+                "type": "boolean",
+                "description": "Use a remote browser instead of a local one",
+                "default": False,
+            },
             "timeout": {
                 "type": "integer",
                 "description": "Timeout in milliseconds for page navigation",
@@ -120,6 +134,12 @@ class BrowserTool(Tool):
         },
         "required": ["url"],
     }
+    example = """
+    browser(
+        url="https://www.google.com",
+        output_file="google.txt"
+    )
+    """
 
     def __init__(self, workspace_dir: str, use_readability: bool = True):
         super().__init__(workspace_dir)
@@ -151,11 +171,13 @@ class BrowserTool(Tool):
         if not url:
             return {"error": "URL is required"}
 
+        selector = params.get("selector")
+
         # Initialize browser
         playwright_instance = await async_playwright().start()
-        browser_endpoint = Environment.get("BRIGHTDATA_SCRAPING_BROWSER_ENDPOINT")
 
-        if browser_endpoint:
+        if params.get("use_remote_browser"):
+            browser_endpoint = Environment.get("BRIGHTDATA_SCRAPING_BROWSER_ENDPOINT")
             browser = await playwright_instance.chromium.connect_over_cdp(
                 browser_endpoint
             )
@@ -165,7 +187,9 @@ class BrowserTool(Tool):
             )
         else:
             # Launch browser with similar settings for local usage
-            browser = await playwright_instance.chromium.launch(headless=True)
+            browser = await playwright_instance.chromium.launch(
+                headless=params.get("headless", True)
+            )
             browser_context = await browser.new_context(
                 bypass_csp=True,
             )
@@ -186,8 +210,24 @@ class BrowserTool(Tool):
                 "metadata": metadata,
             }
 
-            # Extract content using Readability or plain HTML
-            if self.use_readability:
+            content = None
+            extracted_elements = []
+
+            if selector:
+                elements = await page.query_selector_all(selector)
+                if not elements:
+                    return {
+                        "error": f"No elements found matching selector: {selector}",
+                        "url": url,
+                        "metadata": metadata,
+                    }
+
+                for element in elements:
+                    extracted_elements.append(await element.text_content() or "")
+
+                content = extracted_elements
+
+            elif self.use_readability:
                 await page.add_script_tag(
                     url="https://unpkg.com/@mozilla/readability/Readability.js"
                 )
@@ -203,7 +243,22 @@ class BrowserTool(Tool):
                     }
                 }"""
                 )
-                content = html2text.html2text(readability_result["content"])
+                if (
+                    isinstance(readability_result, dict)
+                    and "content" in readability_result
+                ):
+                    content = html2text.html2text(readability_result["content"])
+                elif (
+                    isinstance(readability_result, dict)
+                    and "error" in readability_result
+                ):
+                    print(
+                        f"Readability error: {readability_result['error']}. Falling back to full page content."
+                    )
+                    content = html2text.html2text(await page.content())
+                else:
+                    content = html2text.html2text(await page.content())
+
             else:
                 content = html2text.html2text(await page.content())
 
@@ -213,7 +268,10 @@ class BrowserTool(Tool):
                 full_path = resolve_workspace_path(self.workspace_dir, output_file)
                 os.makedirs(os.path.dirname(full_path), exist_ok=True)
                 with open(full_path, "w", encoding="utf-8") as f:
-                    f.write(content)
+                    if isinstance(content, list):
+                        f.write("\n".join(content))
+                    else:
+                        f.write(content or "")
                 result["output_file"] = full_path
             else:
                 result["content"] = content
@@ -255,6 +313,12 @@ class ScreenshotTool(Tool):
             },
         },
     }
+    example = """
+    take_screenshot(
+        selector=".title",
+        path="title.png"
+    )
+    """
 
     async def process(self, context: ProcessingContext, params: dict) -> Any:
         try:
@@ -369,7 +433,7 @@ class GoogleSearchTool(Tool):
             "num_results": {
                 "type": "integer",
                 "description": "Number of results to return (optional)",
-                "default": 10,
+                "default": 20,
             },
             "site": {
                 "type": "string",
@@ -420,6 +484,12 @@ class GoogleSearchTool(Tool):
         },
         "required": ["query"],
     }
+    example = """
+    google_search(
+        query="What is the capital of France?",
+        num_results=10
+    )
+    """
 
     async def process(self, context: ProcessingContext, params: dict) -> Any:
         """
@@ -572,11 +642,6 @@ class WebFetchTool(Tool):
                 "type": "string",
                 "description": "Path to save the output file",
             },
-            "selector": {
-                "type": "string",
-                "description": "Optional CSS selector to extract specific elements (defaults to 'body')",
-                "default": "body",
-            },
             "headers": {
                 "type": "object",
                 "description": "Optional HTTP headers for the request",
@@ -587,8 +652,14 @@ class WebFetchTool(Tool):
                 "default": 30,
             },
         },
-        "required": ["url"],
+        "required": ["url", "output_file"],
     }
+    example = """
+    web_fetch(
+        url="https://www.google.com",
+        output_file="google.txt"
+    )
+    """
 
     async def process(self, context: ProcessingContext, params: dict) -> Any:
         """
@@ -598,7 +669,6 @@ class WebFetchTool(Tool):
             context: The processing context
             params: Dictionary including:
                 url (str): The URL to fetch content from
-                selector (str, optional): CSS selector for extracting specific elements (defaults to 'body')
                 headers (dict, optional): HTTP headers for the request
                 timeout (int, optional): Timeout for the request in seconds
 
@@ -610,9 +680,13 @@ class WebFetchTool(Tool):
             if not url:
                 return {"error": "URL is required"}
 
-            selector = params.get("selector", "body")
             headers = params.get("headers", {})
             timeout = params.get("timeout", 30)
+            output_file = params.get("output_file")
+            if output_file:
+                output_file = self.resolve_workspace_path(output_file)
+            else:
+                raise Exception("Output file is required")
 
             # Make HTTP request
             async with aiohttp.ClientSession() as session:
@@ -639,38 +713,19 @@ class WebFetchTool(Tool):
             soup = BeautifulSoup(html_content, "html.parser")
 
             # Extract content based on selector
-            if selector:
-                elements = soup.select(selector)
-                if not elements:
-                    return {
-                        "error": f"No elements found matching selector: {selector}",
-                        "url": url,
-                    }
-
-                # Get HTML content of all matching elements
-                extracted_html = "".join(str(element) for element in elements)
+            body = soup.body
+            if body:
+                extracted_html = str(body)
             else:
-                # Default to body if no selector provided
-                body = soup.body
-                if body:
-                    extracted_html = str(body)
-                else:
-                    return {"error": "No body element found in the HTML", "url": url}
+                return {"error": "No body element found in the HTML", "url": url}
 
-            # Save the extracted HTML to the output file
-            output_file = params.get("output_file")
-            if output_file:
-                with open(output_file, "w") as f:
-                    f.write(extracted_html)
-                return {
-                    "success": True,
-                    "output_file": output_file,
-                }
-            else:
-                return {
-                    "success": True,
-                    "content": html2text.html2text(extracted_html),
-                }
+            with open(output_file, "w") as f:
+                f.write(extracted_html)
+
+            return {
+                "success": True,
+                "output_file": output_file,
+            }
 
         except aiohttp.ClientError as e:
             raise Exception(f"HTTP request error: {str(e)}")
@@ -696,12 +751,12 @@ class DownloadFileTool(Tool):
                 "type": "string",
                 "description": "URL of the file to download",
             },
-            "path": {
+            "output_file": {
                 "type": "string",
                 "description": "Workspace relative path where to save the file",
             },
         },
-        "required": ["url", "path"],
+        "required": ["url", "output_file"],
     }
 
     async def process(self, context: ProcessingContext, params: dict) -> Any:
@@ -712,7 +767,7 @@ class DownloadFileTool(Tool):
             context: The processing context
             params: Dictionary including:
                 url (str): URL of the file to download
-                path (str): Workspace relative path where to save the file
+                output_file (str): Workspace relative path where to save the file
                 headers (dict, optional): HTTP headers for the request
                 timeout (int, optional): Timeout for the request in seconds
 
@@ -722,12 +777,12 @@ class DownloadFileTool(Tool):
         try:
             # Handle both single URL and list of URLs
             url = params.get("url")
-            path = params.get("path")
+            output_file = params.get("output_file")
 
             if not url:
                 return {"error": "URL is required"}
-            if not path:
-                return {"error": "Save path is required"}
+            if not output_file:
+                return {"error": "Output file is required"}
 
             headers = params.get("headers", {})
             timeout = params.get("timeout", 60)
@@ -736,7 +791,7 @@ class DownloadFileTool(Tool):
             import asyncio
 
             # Ensure the directory exists
-            full_path = resolve_workspace_path(self.workspace_dir, path)
+            full_path = self.resolve_workspace_path(output_file)
             os.makedirs(os.path.dirname(full_path), exist_ok=True)
 
             async with aiohttp.ClientSession() as session:
@@ -746,7 +801,7 @@ class DownloadFileTool(Tool):
                     if response.status != 200:
                         return {
                             "url": url,
-                            "path": path,
+                            "output_file": output_file,
                             "success": False,
                             "error": f"HTTP request failed with status {response.status}",
                             "status_code": response.status,
@@ -763,7 +818,7 @@ class DownloadFileTool(Tool):
 
                     return {
                         "url": url,
-                        "path": full_path,
+                        "output_file": output_file,
                         "success": True,
                         "content_type": content_type,
                         "file_size_bytes": file_size,
@@ -786,6 +841,16 @@ class BrowserNavigationTool(Tool):
     input_schema = {
         "type": "object",
         "properties": {
+            "use_remote_browser": {
+                "type": "boolean",
+                "description": "Use a remote browser instead of a local one",
+                "default": False,
+            },
+            "headless": {
+                "type": "boolean",
+                "description": "Run the browser in headless mode",
+                "default": True,
+            },
             "action": {
                 "type": "string",
                 "description": "Navigation or extraction action to perform",
@@ -846,13 +911,18 @@ class BrowserNavigationTool(Tool):
             )
 
         timeout = params.get("timeout", 30000)
+        headless = params.get("headless", True)
 
         # Initialize browser
         playwright_instance = await async_playwright().start()
-        browser_endpoint = Environment.get("BRIGHTDATA_SCRAPING_BROWSER_ENDPOINT")
 
         try:
-            if browser_endpoint:
+            if params.get("use_remote_browser"):
+                browser_endpoint = Environment.get(
+                    "BRIGHTDATA_SCRAPING_BROWSER_ENDPOINT"
+                )
+                if not browser_endpoint:
+                    raise Exception("BRIGHTDATA_SCRAPING_BROWSER_ENDPOINT is not set")
                 browser = await playwright_instance.chromium.connect_over_cdp(
                     browser_endpoint
                 )
@@ -862,7 +932,7 @@ class BrowserNavigationTool(Tool):
                 )
             else:
                 # Launch browser with similar settings for local usage
-                browser = await playwright_instance.chromium.launch(headless=True)
+                browser = await playwright_instance.chromium.launch(headless=headless)
                 browser_context = await browser.new_context(
                     bypass_csp=True,
                 )

@@ -9,15 +9,13 @@ and industry growth areas on LinkedIn.
 """
 
 import asyncio
-import os
-import json
-from pathlib import Path
 
 from langchain_openai import ChatOpenAI
 
-from nodetool.chat.agent import Agent
+from nodetool.agents.agent import Agent
 from nodetool.chat.providers import get_provider
-from nodetool.chat.tools.browser_agent import BrowserAgentTool
+from nodetool.agents.tools.browser_agent import BrowserAgentTool
+from nodetool.common.environment import Environment
 from nodetool.metadata.types import Provider
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import Chunk
@@ -31,13 +29,17 @@ async def main():
     # Alternatively, you can use Anthropic:
     # provider = get_provider(Provider.Anthropic)
     # model = "claude-3-7-sonnet-20250219"
+    api_key = Environment.get("OPENAI_API_KEY")
+    if not api_key:
+        raise ValueError("OPENAI_API_KEY is not set")
 
-    browser_agent_model = ChatOpenAI(model="gpt-4o", temperature=0.7)
+    browser_agent_model = ChatOpenAI(model="gpt-4o", api_key=api_key)
 
     # 3. Set up browser and search tools
     tools = [
         BrowserAgentTool(
-            workspace_dir=context.workspace_dir, model=browser_agent_model
+            workspace_dir=context.workspace_dir,
+            model=browser_agent_model,
         ),
     ]
 
@@ -49,6 +51,8 @@ async def main():
         https://www.linkedin.com/jobs/search/?currentJobId=4185926087&f_C=11130470&geoId=92000000&origin=COMPANY_PAGE_JOBS_CLUSTER_EXPANSION
         2. Extract all the job postings on the page.
         """,
+        enable_analysis_phase=False,
+        enable_data_contracts_phase=False,
         provider=provider,
         model=model,
         tools=tools,

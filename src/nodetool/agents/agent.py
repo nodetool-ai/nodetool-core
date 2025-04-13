@@ -14,41 +14,70 @@ The implementation provides:
 5. Support for streaming results during reasoning
 """
 
+import datetime
+import json
 import os
+import shutil
 from typing import AsyncGenerator, List, Sequence, Union, Any
 from rich.console import Console
 from rich.table import Table
 from rich.live import Live
 
+from nodetool.agents.tools.browser import GoogleSearchTool
+from nodetool.agents.tools.google import GoogleGroundedSearchTool
+from nodetool.agents.tools.openai import OpenAIWebSearchTool
+from nodetool.chat.providers.ollama_provider import OllamaProvider
+from nodetool.common.environment import Environment
+from nodetool.common.settings import get_log_path
 from nodetool.workflows.types import Chunk, TaskUpdate, TaskUpdateEvent
-from nodetool.chat.task_executor import TaskExecutor
+from nodetool.agents.task_executor import TaskExecutor
 from nodetool.chat.providers import ChatProvider
-from nodetool.chat.task_planner import TaskPlanner
-from nodetool.chat.tools import Tool
+from nodetool.agents.task_planner import TaskPlanner
+from nodetool.agents.tools.base import Tool
 from nodetool.metadata.types import (
-    Message,
-    ToolCall,
     Task,
+    ToolCall,
 )
 from nodetool.workflows.processing_context import ProcessingContext
 
 
+def sanitize_file_path(file_path: str) -> str:
+    """
+    Sanitize a file path by replacing spaces and slashes with underscores.
+
+    Args:
+        file_path (str): The file path to sanitize.
+
+    Returns:
+        str: The sanitized file path.
+    """
+    return file_path.replace(" ", "_").replace("/", "_").replace("\\", "_")
+
+
 class Agent:
     """
-    🤖 Agent Base Class - Foundation for specialized agents
+    🤖 Orchestrates AI-driven task execution using Language Models and Tools.
 
-    This class provides the core functionality for all specialized agents,
-    establishing a common interface and execution flow that can be customized
-    by specific agent types (retrieval, summarization, etc.).
+    The Agent class acts as a high-level controller that takes a complex objective,
+    breaks it down into a step-by-step plan, and then executes that plan using
+    a specified Language Model (LLM) and a set of available tools.
 
-    Think of it as a base employee template that defines standard duties,
-    while specialized roles add their unique skills and responsibilities.
+    Think of it as an intelligent assistant that can understand your goal, figure out
+    the necessary actions (like searching the web, reading files, performing calculations,
+    or running code), and carry them out autonomously to achieve the objective.
 
-    Features:
-    - Task execution capabilities
-    - Tool integration
-    - Result tracking
-    - System prompt customization
+    Key Capabilities:
+    - **Planning:** Decomposes complex objectives into manageable subtasks.
+    - **Execution:** Runs the subtasks in the correct order, handling dependencies.
+    - **Tool Integration:** Leverages specialized tools to interact with external
+      systems or perform specific actions (e.g., file operations, web browsing,
+      code execution).
+    - **LLM Agnostic:** Works with different LLM providers (OpenAI, Anthropic, Ollama).
+    - **Progress Tracking:** Can stream updates as the task progresses.
+    - **Input/Output Management:** Handles input files and collects final results.
+
+    Use this class to automate workflows that require reasoning, planning, and
+    interaction with various data sources or tools.
     """
 
     def __init__(
@@ -110,11 +139,12 @@ class Agent:
         self.enable_analysis_phase = enable_analysis_phase
         self.enable_data_contracts_phase = enable_data_contracts_phase
 
-    def _create_subtasks_table(self, task: Task) -> Table:
-        """Create a rich table for displaying subtasks."""
+    def _create_subtasks_table(self, task: Task, tool_calls: List[ToolCall]) -> Table:
+        """Create a rich table for displaying subtasks and their tool calls."""
         table = Table(title=f"Task:\n{self.objective}", title_justify="left")
         table.add_column("Status", style="cyan", no_wrap=True, ratio=1)
-        table.add_column("Content", style="green", ratio=10)  # 50% of remaining space
+        table.add_column("Content", style="green", ratio=6)
+        table.add_column("Tools", style="magenta", ratio=3)
         table.add_column("Output", style="yellow", ratio=3)
         table.add_column("Dependencies", style="blue", ratio=2)
 
@@ -125,12 +155,17 @@ class Agent:
                 if subtask.completed
                 else "yellow" if subtask.is_running() else "white"
             )
+            subtask_tool_calls = [
+                call for call in tool_calls if call.subtask_id == subtask.content
+            ]
+            tool_calls_str = ", ".join([call.name for call in subtask_tool_calls])
 
             deps = ", ".join(subtask.input_files) if subtask.input_files else "none"
 
             table.add_row(
                 f"[{status_style}]{status}[/]",
                 subtask.content,
+                tool_calls_str,
                 subtask.output_file,
                 deps,
             )
@@ -150,21 +185,65 @@ class Agent:
         Yields:
             Union[Message, Chunk, ToolCall]: Execution progress
         """
+        # Copy input files to the workspace directory if they are not already there
+        input_files = []
+        os.makedirs(
+            os.path.join(processing_context.workspace_dir, "input_files"), exist_ok=True
+        )
+        for file_path in self.input_files:
+            destination_path = os.path.join(
+                processing_context.workspace_dir,
+                "input_files",
+                os.path.basename(file_path),
+            )
+            shutil.copy(file_path, destination_path)
+            input_files.append(os.path.join("input_files", os.path.basename(file_path)))
+
         tools = list(self.tools)
+
+        self.provider.log_file = str(
+            get_log_path(
+                sanitize_file_path(
+                    f"{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}__{self.name}__planner.jsonl"
+                )
+            )
+        )
+
+        retrieval_tools = []
+
+        if Environment.get("GEMINI_API_KEY"):
+            retrieval_tools.append(
+                GoogleGroundedSearchTool(
+                    workspace_dir=processing_context.workspace_dir
+                ),
+            )
+
+        if Environment.get("BRIGHTDATA_API_KEY"):
+            retrieval_tools.append(
+                GoogleSearchTool(workspace_dir=processing_context.workspace_dir),
+            )
+
+        if Environment.get("OPENAI_API_KEY"):
+            retrieval_tools.append(
+                OpenAIWebSearchTool(workspace_dir=processing_context.workspace_dir),
+            )
 
         task_planner = TaskPlanner(
             provider=self.provider,
             model=self.model,
             objective=self.objective,
             workspace_dir=processing_context.workspace_dir,
-            tools=tools,
-            input_files=self.input_files,
+            execution_tools=tools,
+            retrieval_tools=retrieval_tools,
+            input_files=input_files,
             output_schema=self.output_schema,
             enable_analysis_phase=self.enable_analysis_phase,
             enable_data_contracts_phase=self.enable_data_contracts_phase,
+            # use_structured_output=isinstance(self.provider, OllamaProvider),
+            use_structured_output=True,
         )
 
-        task = await task_planner.create_task(self.objective)
+        task = await task_planner.create_task(processing_context, self.objective)
 
         yield TaskUpdate(
             task=task,
@@ -175,9 +254,13 @@ class Agent:
             task.subtasks[-1].output_type = self.output_type
 
         if self.output_schema and len(task.subtasks) > 0:
-            task.subtasks[-1].output_schema = self.output_schema
+            task.subtasks[-1].output_schema = json.dumps(self.output_schema)
 
-        with Live(self._create_subtasks_table(task), refresh_per_second=4) as live:
+        tool_calls = []
+
+        with Live(
+            self._create_subtasks_table(task, tool_calls), refresh_per_second=4
+        ) as live:
             executor = TaskExecutor(
                 provider=self.provider,
                 model=self.model,
@@ -185,7 +268,7 @@ class Agent:
                 tools=tools,
                 task=task,
                 system_prompt=self.system_prompt,
-                input_files=self.input_files,
+                input_files=input_files,
                 max_steps=self.max_steps,
                 max_subtask_iterations=self.max_subtask_iterations,
                 max_token_limit=self.max_token_limit,
@@ -193,12 +276,44 @@ class Agent:
 
             # Execute all subtasks within this task and yield results
             async for item in executor.execute_tasks(processing_context):
-                yield item
                 # self._save_task(task, processing_context.workspace_dir)
-                live.update(self._create_subtasks_table(task))
+                live.update(self._create_subtasks_table(task, tool_calls))
                 if isinstance(item, ToolCall):
+                    tool_calls.append(item)
                     if item.name == "finish_task":
                         self.results = item.args["result"]
+                        yield TaskUpdate(
+                            task=task,
+                            event=TaskUpdateEvent.TASK_COMPLETED,
+                        )
+                if isinstance(item, TaskUpdate):
+                    timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+                    subtask_title = item.subtask.content if item.subtask else ""
+                    subtask_title = subtask_title[:20].translate(
+                        str.maketrans(
+                            {
+                                " ": "_",
+                                "\n": "_",
+                                ".": "_",
+                                "/": "_",
+                                "\\": "_",
+                                ":": "_",
+                                "-": "_",
+                                "=": "_",
+                                "+": "_",
+                                "*": "_",
+                                "?": "_",
+                                "!": "_",
+                            }
+                        )
+                    )
+                    self.provider.log_file = str(
+                        get_log_path(
+                            sanitize_file_path(
+                                f"{timestamp}__{self.name}__{item.task.title}__{subtask_title}.jsonl"
+                            )
+                        )
+                    )
 
         if not self.output_schema and not self.output_type:
             self.results = executor.get_output_files()
@@ -222,9 +337,6 @@ class Agent:
         """
         task_dict = task.model_dump()
         import yaml
-
-        def sanitize_file_path(file_path: str) -> str:
-            return file_path.replace(" ", "_").replace("/", "_").replace("\\", "_")
 
         with open(
             os.path.join(workspace_dir, sanitize_file_path(self.name) + "_tasks.yaml"),

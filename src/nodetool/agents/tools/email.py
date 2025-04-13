@@ -12,7 +12,7 @@ import imaplib
 from datetime import datetime, timedelta
 from typing import Any, Dict, Tuple
 
-from nodetool.chat.tools.base import Tool
+from nodetool.agents.tools.base import Tool
 from nodetool.workflows.processing_context import ProcessingContext
 
 
@@ -165,6 +165,13 @@ class SearchEmailTool(Tool):
             },
         },
     }
+    example = """
+    search_email(
+        subject="Hello",
+        since_hours_ago=6,
+        text="Hello"
+    )
+    """
 
     async def process(self, context: ProcessingContext, params: dict) -> Any:
         import email

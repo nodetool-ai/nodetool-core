@@ -10,7 +10,9 @@ from nodetool.chat.providers.base import ChatProvider
 
 # Provider factory
 from nodetool.chat.providers.gemini_provider import GeminiProvider
+from nodetool.chat.providers.anthropic_provider import AnthropicProvider
 from nodetool.chat.providers.ollama_provider import OllamaProvider
+from nodetool.chat.providers.openai_provider import OpenAIProvider
 from nodetool.metadata.types import Provider as ProviderEnum
 from nodetool.workflows.types import Chunk
 
@@ -32,10 +34,6 @@ def get_provider(provider_type: ProviderEnum, **kwargs) -> ChatProvider:
     Raises:
         ValueError: If the provider type is not supported
     """
-
-    from nodetool.chat.providers.openai_provider import OpenAIProvider
-    from nodetool.chat.providers.anthropic_provider import AnthropicProvider
-    from nodetool.chat.providers.ollama_provider import OllamaProvider
 
     if provider_type in _provider_cache:
         return _provider_cache[provider_type]
