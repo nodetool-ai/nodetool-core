@@ -69,6 +69,82 @@ SUBTASK DESIGN PRINCIPLES (Phases 1-3):
 """
 
 
+def clean_and_validate_path(workspace_dir: str, path: Any, context: str) -> str:
+    """
+    Cleans workspace prefix and validates a path is relative and safe.
+    """
+    # Stricter initial type check
+    if not isinstance(path, str):
+        raise ValueError(
+            f"Path must be a string, but got type {type(path)} ('{path}') in {context}."
+        )
+    if not path.strip():
+        raise ValueError(f"Path must be a non-empty string in {context}.")
+
+    # Ensure the path is not absolute
+    if Path(path).is_absolute():  # Use pathlib for robustness
+        raise ValueError(
+            f"Path must be relative, but got absolute path '{path}' in {context}."
+        )
+
+    cleaned_path: str = path
+
+    # Remove leading workspace prefixes more robustly
+    # Convert potential backslashes for consistency before prefix check
+    normalized_prefix_path = cleaned_path.replace("\\", "/")
+    if normalized_prefix_path.startswith("workspace/"):
+        cleaned_path = cleaned_path[len("workspace/") :]
+    # Check for absolute /workspace/ only if it wasn't caught by is_absolute earlier (edge case)
+    elif normalized_prefix_path.startswith("/workspace/"):
+        cleaned_path = cleaned_path[len("/workspace/") :]
+
+    # After cleaning, double-check it didn't somehow become absolute or empty
+    if not cleaned_path:
+        raise ValueError(
+            f"Path became empty after cleaning prefix: '{path}' in {context}."
+        )
+    # Re-check absoluteness after potential prefix stripping
+    if Path(cleaned_path).is_absolute():
+        raise ValueError(
+            f"Path became absolute after cleaning prefix: '{path}' -> '{cleaned_path}' in {context}."
+        )
+
+    # --- Path Traversal Check ---
+    try:
+        workspace_root = Path(workspace_dir).resolve(
+            strict=True
+        )  # Ensure workspace exists
+        # Create the full path by joining workspace root and the relative path
+        full_path = (workspace_root / cleaned_path).resolve()
+
+        # Check if the resolved path is within the workspace directory
+        # Using Path.is_relative_to (Python 3.9+) or common path check
+        is_within = False
+        try:
+            # Preferred method if available
+            is_within = full_path.is_relative_to(workspace_root)
+        except AttributeError:  # Fallback for Python < 3.9
+            is_within = (
+                workspace_root == full_path or workspace_root in full_path.parents
+            )
+
+        if not is_within:
+            raise ValueError(
+                f"Path validation failed: Resolved path '{full_path}' is outside the workspace root '{workspace_root}' for input '{path}' in {context}."
+            )
+
+    except FileNotFoundError:
+        # This occurs if self.workspace_dir doesn't exist during validation
+        raise ValueError(
+            f"Workspace directory '{workspace_dir}' not found during path validation for '{path}' in {context}."
+        )
+    except Exception as e:  # Catch other potential resolution or validation errors
+        raise ValueError(f"Error validating path safety for '{path}' in {context}: {e}")
+
+    # Return the cleaned, validated relative path
+    return cleaned_path
+
+
 class CreateTaskTool(Tool):
     """
     Task Creator - Tool for generating a task with subtasks
@@ -77,72 +153,66 @@ class CreateTaskTool(Tool):
     name = "create_task"
     description = "Create a single task with subtasks"
 
-    def __init__(self, workspace_dir: str):
-        super().__init__(workspace_dir=workspace_dir)
-        self.workspace_dir = workspace_dir
-        # Store available tools for validation later
-        self.input_schema = {
-            "type": "object",
-            "required": ["title", "subtasks"],
-            "additionalProperties": False,
-            "properties": {
-                "title": {
-                    "type": "string",
-                    "description": "The objective of the task",
-                },
-                "subtasks": {
-                    "type": "array",
-                    "description": "The subtasks of the task",
-                    "items": {
-                        "type": "object",
-                        "additionalProperties": False,
-                        "properties": {
-                            "content": {
+    input_schema = {
+        "type": "object",
+        "required": ["title", "subtasks"],
+        "additionalProperties": False,
+        "properties": {
+            "title": {
+                "type": "string",
+                "description": "The objective of the task",
+            },
+            "subtasks": {
+                "type": "array",
+                "description": "The subtasks of the task",
+                "items": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {
+                        "content": {
+                            "type": "string",
+                            "description": "High-level natural language instructions for the agent executing this subtask.",
+                        },
+                        "output_file": {
+                            "type": "string",
+                            "description": "The file path where the subtask will save its output. MUST be relative to the workspace root (e.g., 'results/data.json'). Do NOT use absolute paths or '/workspace/' prefix.",
+                        },
+                        "artifacts": {
+                            "type": "array",
+                            "items": {
                                 "type": "string",
-                                # Description updated: No longer mentions JSON args
-                                "description": "High-level natural language instructions for the agent executing this subtask.",
-                            },
-                            "output_file": {
-                                "type": "string",
-                                "description": "The file path where the subtask will save its output. MUST be relative to the workspace root (e.g., 'results/data.json'). Do NOT use absolute paths or '/workspace/' prefix.",
-                            },
-                            # tool_name removed
-                            "artifacts": {
-                                "type": "array",
-                                "items": {
-                                    "type": "string",
-                                    "description": "An artifact file generated by the subtask. MUST be a relative path (e.g., 'figures/plot.png'). These can be used as inputs for other subtasks.",
-                                },
-                            },
-                            "input_files": {
-                                "type": "array",
-                                "items": {
-                                    "type": "string",
-                                    "description": "An input file for the subtask. MUST be a relative path (e.g., 'inputs/source.txt') corresponding to an initial input file, the output_file of another subtask, or an artifact from another subtask.",
-                                },
-                            },
-                            "output_schema": {
-                                "type": "string",
-                                "description": 'Output schema for the subtask as a JSON string. Use \'{"type": "string"}\' for unstructured output types.',
-                            },
-                            "output_type": {
-                                "type": "string",
-                                "description": "The file format of the output of the subtask, e.g. 'json', 'markdown', 'csv', 'html'",
+                                "description": "An artifact file generated by the subtask. MUST be a relative path (e.g., 'figures/plot.png'). These can be used as inputs for other subtasks.",
                             },
                         },
-                        "required": [
-                            "content",
-                            "output_file",
-                            "output_type",
-                            "output_schema",
-                            "input_files",
-                            # tool_name removed from required
-                            "artifacts",
-                        ],
+                        "input_files": {
+                            "type": "array",
+                            "items": {
+                                "type": "string",
+                                "description": "An input file for the subtask. MUST be a relative path (e.g., 'inputs/source.txt') corresponding to an initial input file, the output_file of another subtask, or an artifact from another subtask.",
+                            },
+                        },
+                        "output_schema": {
+                            "type": "string",
+                            "description": 'Output schema for the subtask as a JSON string. Use \'{"type": "string"}\' for unstructured output types.',
+                        },
+                        "output_type": {
+                            "type": "string",
+                            "description": "The file format of the output of the subtask, e.g. 'json', 'markdown', 'csv', 'html'",
+                        },
                     },
+                    "required": [
+                        "content",
+                        "output_file",
+                        "output_type",
+                        "output_schema",
+                        "input_files",
+                        # tool_name removed from required
+                        "artifacts",
+                    ],
                 },
             },
-        }
+        },
+    }
 
     async def process(self, context: ProcessingContext, params: dict):
         # Validation is handled by the TaskPlanner when processing the LLM's response
@@ -207,8 +277,12 @@ Refine the plan, focusing on data flow and contracts, using the conceptual subta
 - Ensure dependencies are clear and acyclic.
 - Plan relative file paths and naming conventions.
 - **Instruction Refinement:** Refine the natural language `content` (instructions) for each agent subtask based on the conceptual list from Phase 1.
+- **Consider the overall task output requirements:** The final subtask(s) should produce output matching the overall task's expected output type: `{{ overall_output_type }}` and schema: `{{ overall_output_schema }}`.
 
 User's Objective: {{ objective }}
+
+Overall Task Output Type: {{ overall_output_type }}
+Overall Task Output Schema: {{ overall_output_schema }}
 
 Conceptual Subtasks from Phase 1 (Refer to history): [LLM should recall the list from Phase 1]
 
@@ -218,7 +292,7 @@ Execution Tools Available (for the Agent to potentially use):
 Input Files:
 {{ input_files_info }}
 
-DO NOT USE TOOL CALLS DURING THIS PHASE. Finalize the data contracts and instructions for the subtasks identified previously.
+DO NOT USE TOOL CALLS DURING THIS PHASE. Finalize the data contracts and instructions for the subtasks identified previously, ensuring the final output aligns with the overall task requirements.
 """
 
 PLAN_CREATION_TEMPLATE = """
@@ -235,6 +309,7 @@ Transform your analysis and data flow design into a concrete, executable task pl
 6. Maximize parallel execution based on the dependency analysis.
 7. **Minimize Context:** Ensure subtasks remain focused, as designed earlier.
 8. **Agent Task `content`:** High-level objective only. No code, implementation details, or large data.
+9. **Final Output:** The overall plan MUST produce a final result that conforms to the overall task output type `{{ overall_output_type }}` and schema `{{ overall_output_schema }}`. Ensure the final subtask(s) are designed accordingly.
 
 ## Finishing Subtasks
 - Each subtask calls `finish_subtask`.
@@ -244,11 +319,14 @@ Transform your analysis and data flow design into a concrete, executable task pl
 - No circular dependencies.
 - All inputs available when needed.
 - `content` is a natural language instruction for the agent.
-- Final output matches requirements.
+- Final output matches overall task requirements (Type: `{{ overall_output_type }}`, Schema: `{{ overall_output_schema }}`).
 - Schemas (`output_schema`) are correctly defined JSON strings.
 - File paths are relative.
 
 User's Objective: {{ objective }}
+
+Overall Task Output Type: {{ overall_output_type }}
+Overall Task Output Schema: {{ overall_output_schema }}
 
 Conceptual Subtasks & Data Flow (Refer to history): [LLM should recall details from Phase 1 & 2]
 
@@ -258,8 +336,7 @@ Execution Tools Available (for the Agent to potentially use):
 Input Files:
 {{ input_files_info }}
 
-CREATE YOUR PLAN NOW using the `create_task` tool. Ensure your plan implements the subtasks and data flow established in the previous phases. Ensure `content` contains clear agent instructions.
-CREATE YOUR PLAN NOW using the `create_task` tool. Ensure your plan implements the subtasks and data flow established in the previous phases. Ensure `tool_name` and `content` are used correctly for each subtask type.
+CREATE YOUR PLAN NOW using the `create_task` tool. Ensure your plan implements the subtasks and data flow established in the previous phases. Ensure `content` contains clear agent instructions and the final output meets the specified overall requirements.
 """
 
 # Agent task prompt used in the final planning stage
@@ -385,6 +462,7 @@ class TaskPlanner:
         input_files: Sequence[str] = [],
         system_prompt: str | None = None,
         output_schema: dict | None = None,
+        output_type: str | None = None,
         enable_retrieval_phase: bool = True,
         enable_analysis_phase: bool = True,
         enable_data_contracts_phase: bool = True,
@@ -404,6 +482,7 @@ class TaskPlanner:
             input_files (list[str]): The input files to use for planning
             system_prompt (str, optional): Custom system prompt
             output_schema (dict, optional): JSON schema for the final task output
+            output_type (str, optional): The type of the final task output
             enable_retrieval_phase (bool, optional): Whether to run the retrieval phase (PHASE 0)
             enable_analysis_phase (bool, optional): Whether to run the analysis phase (PHASE 1)
             enable_data_contracts_phase (bool, optional): Whether to run the data contracts phase (PHASE 2)
@@ -424,6 +503,7 @@ class TaskPlanner:
         self.retrieval_tools: Sequence[Tool] = retrieval_tools or []
         self.execution_tools: Sequence[Tool] = execution_tools or []
         self.output_schema: Optional[dict] = output_schema
+        self.output_type: Optional[str] = output_type
         self.enable_retrieval_phase: bool = enable_retrieval_phase
         self.enable_analysis_phase: bool = enable_analysis_phase
         self.enable_data_contracts_phase: bool = enable_data_contracts_phase
@@ -449,6 +529,12 @@ class TaskPlanner:
         )
         # Initialize Jinja2 environment
         self.jinja_env: Environment = Environment(loader=BaseLoader())
+
+    def _clean_and_validate_path(self, path: Any, context: str) -> str:
+        """
+        Clean and validate a path relative to the workspace directory.
+        """
+        return clean_and_validate_path(self.workspace_dir, path, context)
 
     def _customize_system_prompt(self, system_prompt: str | None) -> str:
         """
@@ -486,11 +572,23 @@ class TaskPlanner:
 
     def _get_prompt_context(self) -> Dict[str, str]:
         """Helper to build the context for Jinja2 rendering."""
+        # Provide default string representation if schema/type are None or not set
+        overall_output_schema_str = (
+            json.dumps(self.output_schema)
+            if self.output_schema
+            else "Not specified (default: string)"
+        )
+        overall_output_type_str = (
+            self.output_type if self.output_type else "Not specified (default: string)"
+        )
+
         return {
             "objective": self.objective,
             "retrieval_tools_info": self._get_retrieval_tools_info(),
             "execution_tools_info": self._get_execution_tools_info(),
             "input_files_info": self._get_input_files_info(),
+            "overall_output_type": overall_output_type_str,
+            "overall_output_schema": overall_output_schema_str,
         }
 
     def _render_prompt(
@@ -909,7 +1007,7 @@ class TaskPlanner:
             try:
                 task, final_message = await self._generate_with_retry(
                     history,
-                    tools=[CreateTaskTool(self.workspace_dir)],
+                    tools=[CreateTaskTool()],
                     max_retries=max_retries,
                 )
 
@@ -1485,7 +1583,7 @@ class TaskPlanner:
         """
         Create a task plan using structured output, with validation and retry logic.
         """
-        create_task_tool = CreateTaskTool(self.workspace_dir)
+        create_task_tool = CreateTaskTool()
         response_schema: dict = create_task_tool.input_schema
         base_prompt: str = self._render_prompt(
             f"{PLAN_CREATION_TEMPLATE}\n{DEFAULT_AGENT_TASK_TEMPLATE}"
@@ -1905,83 +2003,6 @@ class TaskPlanner:
         for file_path in self.input_files:
             input_files_info += f"- {file_path}\n"
         return input_files_info.strip()  # Remove trailing newline
-
-    def _clean_and_validate_path(self, path: Any, context: str) -> str:
-        """
-        Cleans workspace prefix and validates a path is relative and safe.
-        """
-        # Stricter initial type check
-        if not isinstance(path, str):
-            raise ValueError(
-                f"Path must be a string, but got type {type(path)} ('{path}') in {context}."
-            )
-        if not path.strip():
-            raise ValueError(f"Path must be a non-empty string in {context}.")
-
-        # Ensure the path is not absolute
-        if Path(path).is_absolute():  # Use pathlib for robustness
-            raise ValueError(
-                f"Path must be relative, but got absolute path '{path}' in {context}."
-            )
-
-        cleaned_path: str = path
-
-        # Remove leading workspace prefixes more robustly
-        # Convert potential backslashes for consistency before prefix check
-        normalized_prefix_path = cleaned_path.replace("\\", "/")
-        if normalized_prefix_path.startswith("workspace/"):
-            cleaned_path = cleaned_path[len("workspace/") :]
-        # Check for absolute /workspace/ only if it wasn't caught by is_absolute earlier (edge case)
-        elif normalized_prefix_path.startswith("/workspace/"):
-            cleaned_path = cleaned_path[len("/workspace/") :]
-
-        # After cleaning, double-check it didn't somehow become absolute or empty
-        if not cleaned_path:
-            raise ValueError(
-                f"Path became empty after cleaning prefix: '{path}' in {context}."
-            )
-        # Re-check absoluteness after potential prefix stripping
-        if Path(cleaned_path).is_absolute():
-            raise ValueError(
-                f"Path became absolute after cleaning prefix: '{path}' -> '{cleaned_path}' in {context}."
-            )
-
-        # --- Path Traversal Check ---
-        try:
-            workspace_root = Path(self.workspace_dir).resolve(
-                strict=True
-            )  # Ensure workspace exists
-            # Create the full path by joining workspace root and the relative path
-            full_path = (workspace_root / cleaned_path).resolve()
-
-            # Check if the resolved path is within the workspace directory
-            # Using Path.is_relative_to (Python 3.9+) or common path check
-            is_within = False
-            try:
-                # Preferred method if available
-                is_within = full_path.is_relative_to(workspace_root)
-            except AttributeError:  # Fallback for Python < 3.9
-                is_within = (
-                    workspace_root == full_path or workspace_root in full_path.parents
-                )
-
-            if not is_within:
-                raise ValueError(
-                    f"Path validation failed: Resolved path '{full_path}' is outside the workspace root '{workspace_root}' for input '{path}' in {context}."
-                )
-
-        except FileNotFoundError:
-            # This occurs if self.workspace_dir doesn't exist during validation
-            raise ValueError(
-                f"Workspace directory '{self.workspace_dir}' not found during path validation for '{path}' in {context}."
-            )
-        except Exception as e:  # Catch other potential resolution or validation errors
-            raise ValueError(
-                f"Error validating path safety for '{path}' in {context}: {e}"
-            )
-
-        # Return the cleaned, validated relative path
-        return cleaned_path
 
     def _ensure_additional_properties_false(self, schema: dict) -> dict:
         """

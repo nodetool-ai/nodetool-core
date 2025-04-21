@@ -104,5 +104,11 @@ itsdangerous = "*"
 jwt = "*"
 jinja2 = "3.1.5"
 
+# LLM dependencies
+langchain-openai = "*"
+langchain-anthropic = "*"
+langchain-google = "*"
+langchain-ollama = "*"
+
 [tool.poetry.scripts]
 nodetool = "nodetool.cli:cli"

@@ -128,7 +128,6 @@ import datetime
 import mimetypes
 from nodetool.chat.providers import ChatProvider
 from nodetool.agents.tools.base import Tool
-from nodetool.agents.tools.base import resolve_workspace_path
 from nodetool.metadata.types import Message, MessageFile, SubTask, Task, ToolCall
 from nodetool.workflows.types import Chunk, TaskUpdate, TaskUpdateEvent
 from nodetool.workflows.processing_context import ProcessingContext
@@ -153,7 +152,7 @@ from typing import (
 )
 import logging
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.agents.tools.workspace import ReadWorkspaceFileTool
+from nodetool.agents.tools.workspace import ReadFileTool
 import shutil
 
 from jinja2 import Environment, BaseLoader
@@ -191,7 +190,7 @@ The goal is to combine the information from the input files (outputs of previous
 
 FINISH_TASK PROTOCOL:
 1. Analyze the provided input files (likely outputs from previous subtasks).
-2. Use the `ReadWorkspaceFileTool` to read the content of necessary input files. Read efficiently - extract only the key information needed for aggregation if files are large.
+2. Use the `read_file` to read the content of necessary input files. Read efficiently - extract only the key information needed for aggregation if files are large.
 3. Synthesize and aggregate the information to create the final task result.
 4. Ensure the final result conforms to the required output schema: {{ output_schema }}.
 5. Call `finish_task` ONCE with the complete, aggregated `result` and relevant `metadata` (title, description, sources - citing original sources where possible).
@@ -486,11 +485,10 @@ class FinishTaskTool(Tool):
 
     def __init__(
         self,
-        workspace_dir: str,
         output_type: str,
         output_schema: Any,
     ):
-        super().__init__(workspace_dir)  # Call parent constructor
+        super().__init__()  # Call parent constructor
         self.output_type: str = output_type  # Store output_type
 
         # Determine the schema for the actual content result
@@ -596,11 +594,10 @@ class FinishSubTaskTool(Tool):
 
     def __init__(
         self,
-        workspace_dir: str,
         output_type: str,
         output_schema: Any,
     ):
-        super().__init__(workspace_dir)  # Call parent constructor
+        super().__init__()  # Call parent constructor
         self.output_type: str = output_type  # Store output_type
 
         # Determine the schema for the actual content result
@@ -709,8 +706,8 @@ class SubTaskContext:
     iterations: int
     max_iterations: int
     tool_call_count: int
-    sources: List[str]  # Assuming sources are strings (URLs, file paths, etc.)
-    progress: List[Any]  # Type of progress items is unclear, using Any
+    sources: List[str]
+    progress: List[Any]
     in_conclusion_stage: bool
     encoding: tiktoken.Encoding
     _chunk_buffer: str
@@ -728,6 +725,7 @@ class SubTaskContext:
         use_finish_task: bool = False,
         max_token_limit: int = DEFAULT_MAX_TOKEN_LIMIT,
         max_iterations: int = DEFAULT_MAX_ITERATIONS,
+        save_output_to_file: bool = True,
     ):
         """
         Initialize a subtask execution context.
@@ -743,6 +741,7 @@ class SubTaskContext:
             use_finish_task (bool): Whether to use the finish_task tool
             max_token_limit (int): Maximum token limit before summarization
             max_iterations (int): Maximum iterations for the subtask
+            save_output_to_file (bool): Whether to save the output to a file
         """
         self.task = task
         self.subtask = subtask
@@ -752,7 +751,7 @@ class SubTaskContext:
         self.workspace_dir = processing_context.workspace_dir
         self.max_token_limit = max_token_limit
         self.use_finish_task = use_finish_task
-
+        self.save_output_to_file = save_output_to_file
         # --- Prepare prompt templates ---
         self.jinja_env = Environment(loader=BaseLoader())
 
@@ -777,7 +776,6 @@ class SubTaskContext:
         # Initialize finish tool based on context
         finish_tool_class = FinishTaskTool if use_finish_task else FinishSubTaskTool
         self.finish_tool = finish_tool_class(
-            self.workspace_dir,
             self.subtask.output_type,
             finish_tool_output_schema,  # Use the determined schema
         )
@@ -785,7 +783,7 @@ class SubTaskContext:
         # Original tool setup logic...
         self.tools: Sequence[Tool] = list(tools) + [
             self.finish_tool,
-            ReadWorkspaceFileTool(self.workspace_dir),
+            ReadFileTool(),
         ]
         self.system_prompt = (
             self.system_prompt
@@ -893,7 +891,9 @@ class SubTaskContext:
                 metadata["sources"] = list(self.sources)
 
         output_file_rel = self.subtask.output_file
-        output_file_abs = resolve_workspace_path(self.workspace_dir, output_file_rel)
+        output_file_abs = self.processing_context.resolve_workspace_path(
+            output_file_rel
+        )
 
         print(f"Saving result for subtask to {output_file_abs}")
 
@@ -906,8 +906,8 @@ class SubTaskContext:
         if self._is_file_pointer(result_value):
             assert isinstance(result_value, dict)
             result_file_path = result_value["path"]  # Extract path from the object
-            source_file_abs = resolve_workspace_path(
-                self.workspace_dir, result_file_path
+            source_file_abs = self.processing_context.resolve_workspace_path(
+                result_file_path
             )
             print(
                 f"Result is a file pointer. Copying from {source_file_abs} to {output_file_abs}"
@@ -1202,13 +1202,14 @@ class SubTaskContext:
 
         # If we've reached the last iteration and haven't completed yet, generate summary
         if self.iterations >= self.max_iterations and not self.subtask.completed:
-            await self._handle_max_iterations_reached()
-            # Yield task update for max iterations reached
+            tool_call = await self._handle_max_iterations_reached()
+            yield tool_call
             yield TaskUpdate(
                 task=self.task,
                 subtask=self.subtask,
                 event=TaskUpdateEvent.MAX_ITERATIONS_REACHED,
             )
+            yield tool_call
 
     async def _transition_to_conclusion_stage(self) -> None:
         """
@@ -1247,7 +1248,7 @@ class SubTaskContext:
             ]
         )
         # Only read files in the workspace directory
-        tools = list(tools) + [ReadWorkspaceFileTool(self.workspace_dir)]
+        tools = list(tools) + [ReadFileTool()]
 
         # Create a dictionary to track unique tools by name
         unique_tools = {tool.name: tool for tool in tools}
@@ -1262,8 +1263,8 @@ class SubTaskContext:
         # Check if the message contains output files and use them as subtask output
         if hasattr(message, "output_files") and message.output_files:
             # Use the first output file as the subtask output
-            output_file = resolve_workspace_path(
-                self.workspace_dir, self.subtask.output_file
+            output_file = self.processing_context.resolve_workspace_path(
+                self.subtask.output_file
             )
             output_dir = os.path.dirname(output_file)
             if output_dir and not os.path.exists(output_dir):
@@ -1299,7 +1300,7 @@ class SubTaskContext:
         self.tool_call_count += 1
 
         args_json = json.dumps(tool_call.args)[:100]
-        print(f"Executing tool: {tool_call.name} with {args_json}")
+        # print(f"Executing tool: {tool_call.name} with {args_json}")
 
         tool_result_container = await self._execute_tool(tool_call)
         tool_result_content = (
@@ -1315,13 +1316,15 @@ class SubTaskContext:
         # Handle finish_subtask tool specially
         if tool_call.name == "finish_task":
             self.subtask.completed = True
-            self._save_to_output_file(tool_result_content)
             self.subtask.end_time = int(time.time())
+            if self.save_output_to_file:
+                self._save_to_output_file(tool_result_content)
 
         if tool_call.name == "finish_subtask":
             self.subtask.completed = True
-            self._save_to_output_file(tool_result_content)
             self.subtask.end_time = int(time.time())
+            if self.save_output_to_file:
+                self._save_to_output_file(tool_result_content)
 
         # Add the tool result to history
         return Message(
@@ -1349,7 +1352,8 @@ class SubTaskContext:
 
         # Save the structured result (which includes result and metadata keys)
         # _save_to_output_file expects the dict passed to finish_subtask/finish_task
-        self._save_to_output_file(default_result)
+        if self.save_output_to_file:
+            self._save_to_output_file(default_result)
         self.subtask.completed = True
         self.subtask.end_time = int(time.time())
 
@@ -1358,16 +1362,13 @@ class SubTaskContext:
         tool_call = ToolCall(
             id=f"max_iterations_{tool_name}",
             name=tool_name,
-            args=default_result,  # Pass the whole structured dict as args
-            result=default_result.get(
-                "result"
-            ),  # Pass the inner result as the 'result' of the call itself for logging? Or keep it default_result? Let's keep args.
+            args=default_result,
         )
 
         # Add the tool call to history for completeness
         self.history.append(Message(role="assistant", tool_calls=[tool_call]))
 
-        return tool_call  # Return the ToolCall object
+        return tool_call
 
     async def request_structured_output(self, schema: dict, schema_name: str) -> dict:
         """

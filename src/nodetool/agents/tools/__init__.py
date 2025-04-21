@@ -46,12 +46,8 @@ System:
 - FindNodeTool: Find nodes in node library
 
 Workspace Management:
-- ReadWorkspaceFileTool: Read contents of files in the workspace
-- WriteWorkspaceFileTool: Write content to a file in the agent workspace, creating it if it doesn't exist
-- UpdateWorkspaceFileTool: Update existing files in the workspace
-- DeleteWorkspaceFileTool: Delete files from the workspace
-- ListWorkspaceContentsTool: List contents of the workspace
-- ExecuteWorkspaceCommandTool: Execute commands in the workspace
+- ReadFileTool: Read contents of files in the workspace
+- WriteFileTool: Write content to a file in the workspace
 
 Task Management:
 - ListTasksTool: List tasks from a markdown file
@@ -119,11 +115,8 @@ from nodetool.agents.tools.apple_notes import (
 
 # Workspace tools
 from nodetool.agents.tools.workspace import (
-    WriteWorkspaceFileTool,
-    ReadWorkspaceFileTool,
-    UpdateWorkspaceFileTool,
-    ListWorkspaceContentsTool,
-    ExecuteWorkspaceCommandTool,
+    WriteFileTool,
+    ReadFileTool,
 )
 
 # Asset tools
@@ -165,11 +158,8 @@ __all__ = [
     "CreateAppleNoteTool",
     "ReadAppleNotesTool",
     # Workspace tools
-    "WriteWorkspaceFileTool",
-    "ReadWorkspaceFileTool",
-    "UpdateWorkspaceFileTool",
-    "ListWorkspaceContentsTool",
-    "ExecuteWorkspaceCommandTool",
+    "WriteFileTool",
+    "ReadFileTool",
     # Asset tools
     "ListAssetsDirectoryTool",
     "ReadAssetTool",

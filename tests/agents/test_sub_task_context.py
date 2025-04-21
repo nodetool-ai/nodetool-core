@@ -415,7 +415,7 @@ def mock_tool_instance(mock_processing_context):
     Returns:
         MockSimpleTool: An instance of the mock tool.
     """
-    return MockSimpleTool(mock_processing_context.workspace_dir)
+    return MockSimpleTool()
 
 
 @pytest.fixture
@@ -807,9 +807,7 @@ async def test_conclusion_stage_transition(
         task=basic_task,
         subtask=execution_subtask,
         processing_context=mock_processing_context,
-        tools=[
-            MockSimpleTool(mock_processing_context.workspace_dir)
-        ],  # Include a dummy tool
+        tools=[MockSimpleTool()],  # Include a dummy tool
         model="test-model",
         provider=provider,
         max_token_limit=50,  # Low limit
@@ -837,12 +835,12 @@ async def test_conclusion_stage_transition(
             {
                 "method": "generate_message",
                 "num_tools": 2,
-                "tool_names": ["finish_subtask", "read_workspace_file"],
+                "tool_names": ["finish_subtask", "read_file"],
             },
             {
                 "method": "generate_message",
                 "num_tools": 2,
-                "tool_names": ["finish_subtask", "read_workspace_file"],
+                "tool_names": ["finish_subtask", "read_file"],
             },
         ],
     )
@@ -889,8 +887,8 @@ async def test_finish_task_execution(
         json.dump(input2_content, f)
 
     # --- Mock LLM interactions ---
-    # 1. Call ReadWorkspaceFileTool for input1.txt
-    # 2. Call ReadWorkspaceFileTool for input2.json
+    # 1. Call read_file for input1.txt
+    # 2. Call read_file for input2.json
     # 3. Call finish_task with aggregated result
     final_aggregated_content = (
         f"Aggregated report:\n{input1_content}\nData: {input2_content['key']}"
@@ -907,7 +905,7 @@ async def test_finish_task_execution(
             tool_calls=[
                 ToolCall(
                     id="read1",
-                    name="read_workspace_file",
+                    name="read_file",
                     args={"path": input1_path_rel},
                 )
             ],
@@ -917,7 +915,7 @@ async def test_finish_task_execution(
             tool_calls=[
                 ToolCall(
                     id="read2",
-                    name="read_workspace_file",
+                    name="read_file",
                     args={"path": input2_path_rel},
                 )
             ],
@@ -939,7 +937,7 @@ async def test_finish_task_execution(
         task=basic_task,
         subtask=finish_subtask,  # The subtask configured for finish_task
         processing_context=mock_processing_context,
-        tools=[],  # ReadWorkspaceFileTool is added automatically
+        tools=[],  # ReadFileTool is added automatically
         model="test-model",
         provider=provider,
         use_finish_task=True,  # Explicitly set for finish task
@@ -949,9 +947,7 @@ async def test_finish_task_execution(
 
     # --- Assertions ---
     assert finish_subtask.completed
-    assert any(
-        isinstance(u, ToolCall) and u.name == "read_workspace_file" for u in updates
-    )
+    assert any(isinstance(u, ToolCall) and u.name == "read_file" for u in updates)
     assert any(
         isinstance(u, ToolCall) and u.name == "finish_task" for u in updates
     )  # finish_task called
@@ -969,21 +965,21 @@ async def test_finish_task_execution(
         {
             "role": "assistant",
             "has_tool_calls": True,
-            "tool_name": "read_workspace_file",
+            "tool_name": "read_file",
         },  # Call read1
         {
             "role": "tool",
-            "tool_name": "read_workspace_file",
+            "tool_name": "read_file",
             "content_exists": True,
         },  # Result read1
         {
             "role": "assistant",
             "has_tool_calls": True,
-            "tool_name": "read_workspace_file",
+            "tool_name": "read_file",
         },  # Call read2
         {
             "role": "tool",
-            "tool_name": "read_workspace_file",
+            "tool_name": "read_file",
             "content_exists": True,
         },  # Result read2
         {

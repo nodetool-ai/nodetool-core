@@ -1,4 +1,3 @@
-from nodetool.agents.tools.base import resolve_workspace_path
 from nodetool.agents.wrap_generators_parallel import (
     wrap_generators_parallel,
 )
@@ -193,7 +192,7 @@ class TaskExecutor:
             bool: True if all dependencies exist, False otherwise
         """
         for file_path in input_files:
-            full_path = resolve_workspace_path(workspace_dir, file_path)
+            full_path = self.processing_context.resolve_workspace_path(file_path)
 
             if not os.path.exists(full_path):
                 return False

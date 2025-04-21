@@ -29,8 +29,7 @@ class GoogleGroundedSearchTool(Tool):
     name = "google_grounded_search"
     description = "Search the web using Google's Gemini API with grounding capabilities"
 
-    def __init__(self, workspace_dir: str):
-        super().__init__(workspace_dir)
+    def __init__(self):
         self.client = get_genai_client()
         self.input_schema = {
             "type": "object",

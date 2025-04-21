@@ -48,7 +48,7 @@ class ValidateJavaScriptTool(Tool):
 
             # Create a temporary file for the code if not saving to a specific path
             if save_path:
-                file_path = self.resolve_workspace_path(save_path)
+                file_path = context.resolve_workspace_path(save_path)
                 os.makedirs(os.path.dirname(file_path), exist_ok=True)
             else:
                 temp_file = tempfile.NamedTemporaryFile(suffix=".js", delete=False)
@@ -74,7 +74,7 @@ class ValidateJavaScriptTool(Tool):
                 cmd.extend(["--config", config_path])
 
             process = subprocess.run(
-                cmd, capture_output=True, text=True, cwd=self.workspace_dir
+                cmd, capture_output=True, text=True, cwd=context.workspace_dir
             )
 
             if not save_path:
@@ -145,7 +145,7 @@ class ValidateCSSStyleTool(Tool):
 
             # Create a temporary file for the code if not saving to a specific path
             if save_path:
-                file_path = self.resolve_workspace_path(save_path)
+                file_path = context.resolve_workspace_path(save_path)
                 os.makedirs(os.path.dirname(file_path), exist_ok=True)
             else:
                 temp_file = tempfile.NamedTemporaryFile(suffix=".css", delete=False)
@@ -171,7 +171,7 @@ class ValidateCSSStyleTool(Tool):
                 cmd.extend(["--config", config_path])
 
             process = subprocess.run(
-                cmd, capture_output=True, text=True, cwd=self.workspace_dir
+                cmd, capture_output=True, text=True, cwd=context.workspace_dir
             )
 
             if not save_path:
@@ -241,7 +241,7 @@ class ValidateHTMLTool(Tool):
 
             # Create a temporary file for the code if not saving to a specific path
             if save_path:
-                file_path = self.resolve_workspace_path(save_path)
+                file_path = context.resolve_workspace_path(save_path)
                 os.makedirs(os.path.dirname(file_path), exist_ok=True)
             else:
                 temp_file = tempfile.NamedTemporaryFile(suffix=".html", delete=False)
@@ -267,7 +267,7 @@ class ValidateHTMLTool(Tool):
                 cmd.extend(["--config", config_path])
 
             process = subprocess.run(
-                cmd, capture_output=True, text=True, cwd=self.workspace_dir
+                cmd, capture_output=True, text=True, cwd=context.workspace_dir
             )
 
             if not save_path:
@@ -368,7 +368,7 @@ class FormatCodeTool(Tool):
                 cmd.extend(["--config", config_path])
 
             process = subprocess.run(
-                cmd, capture_output=True, text=True, cwd=self.workspace_dir
+                cmd, capture_output=True, text=True, cwd=context.workspace_dir
             )
 
             formatted_code = ""
@@ -432,7 +432,7 @@ class InstallNpmPackageTool(Tool):
             cmd.extend(packages)
 
             process = subprocess.run(
-                cmd, capture_output=True, text=True, cwd=self.workspace_dir
+                cmd, capture_output=True, text=True, cwd=context.workspace_dir
             )
 
             if process.returncode == 0:
@@ -485,7 +485,7 @@ class InitializeReactAppTool(Tool):
             ]
 
             process = subprocess.run(
-                cmd, capture_output=True, text=True, cwd=self.workspace_dir
+                cmd, capture_output=True, text=True, cwd=context.workspace_dir
             )
 
             if process.returncode == 0:

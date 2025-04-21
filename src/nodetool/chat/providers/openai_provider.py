@@ -209,12 +209,17 @@ class OpenAIProvider(ChatProvider):
         messages: Sequence[Message],
         model: str,
         tools: Sequence[Any] = [],
-        **kwargs,
+        max_tokens: int = 16384,
+        context_window: int = 128000,
+        response_format: dict | None = None,
     ) -> AsyncGenerator[Chunk | ToolCall, Any]:
         """Generate streaming completions from OpenAI."""
         # Convert system messages to user messages for O1/O3 models
+        kwargs = {
+            "max_completion_tokens": max_tokens,
+            "response_format": response_format,
+        }
         if model.startswith("o1") or model.startswith("o3"):
-            kwargs["max_completion_tokens"] = kwargs.pop("max_tokens", 4096)
             kwargs.pop("temperature", None)
             converted_messages = []
             for msg in messages:
@@ -334,7 +339,9 @@ class OpenAIProvider(ChatProvider):
         messages: Sequence[Message],
         model: str,
         tools: Sequence[Any] = [],
-        **kwargs,
+        max_tokens: int = 16384,
+        context_window: int = 128000,
+        response_format: dict | None = None,
     ) -> Message:
         """Generate a non-streaming completion from OpenAI.
 
@@ -342,11 +349,19 @@ class OpenAIProvider(ChatProvider):
             messages: The message history
             model: The model to use
             tools: Optional tools to provide to the model
+            max_tokens: The maximum number of tokens to generate
+            context_window: The maximum number of tokens to consider for the context
+            response_format: The format of the response
             **kwargs: Additional arguments to pass to the OpenAI API
 
         Returns:
             A Message object containing the model's response
         """
+        kwargs = {
+            "max_completion_tokens": max_tokens,
+            "response_format": response_format,
+        }
+
         # Convert system messages to user messages for O1/O3 models
         if model.startswith("o1") or model.startswith("o3"):
             converted_messages = []
@@ -362,7 +377,6 @@ class OpenAIProvider(ChatProvider):
                 else:
                     converted_messages.append(msg)
             messages = converted_messages
-            kwargs["max_completion_tokens"] = kwargs.pop("max_tokens", 4096)
 
         self._log_api_request("chat", messages, model, tools, **kwargs)
 

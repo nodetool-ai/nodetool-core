@@ -227,6 +227,7 @@ class OllamaProvider(ChatProvider):
         response_format: dict | None = None,
         max_tokens: int = 4096,
         use_textual_tools: bool = True,
+        context_window: int = 4096,
     ) -> Dict[str, Any]:
         """
         Prepare common parameters for Ollama API requests.
@@ -267,6 +268,7 @@ class OllamaProvider(ChatProvider):
                 "messages": ollama_messages,
                 "options": {
                     "num_predict": max_tokens,
+                    "num_ctx": context_window,
                 },
             }
 
@@ -283,6 +285,7 @@ class OllamaProvider(ChatProvider):
                 "messages": ollama_messages,
                 "options": {
                     "num_predict": max_tokens,
+                    "num_ctx": context_window,
                 },
             }
 
@@ -335,7 +338,9 @@ class OllamaProvider(ChatProvider):
         messages: Sequence[Message],
         model: str,
         tools: Sequence[Any] = [],
-        **kwargs,
+        max_tokens: int = 8192,
+        context_window: int = 4096,
+        response_format: dict | None = None,
     ) -> AsyncGenerator[Chunk | ToolCall, Any]:
         """
         Generate streaming completions from Ollama.
@@ -353,13 +358,16 @@ class OllamaProvider(ChatProvider):
         self._log_api_request("chat_stream", messages, model, tools)
 
         use_textual_tools = (
-            len(tools) > 0
-            and model.startswith("gemma")
-            and not kwargs.get("response_format", None)
+            len(tools) > 0 and model.startswith("gemma") and not response_format
         )
         if use_textual_tools and tools:
             params = self._prepare_request_params(
-                messages, model, tools, use_textual_tools=use_textual_tools
+                messages,
+                model,
+                tools,
+                max_tokens=max_tokens,
+                use_textual_tools=use_textual_tools,
+                context_window=context_window,
             )
             params["stream"] = True
 
@@ -384,7 +392,12 @@ class OllamaProvider(ChatProvider):
         else:
             # Standard tool calling handling
             params = self._prepare_request_params(
-                messages, model, tools, use_textual_tools=use_textual_tools, **kwargs
+                messages,
+                model,
+                tools,
+                use_textual_tools=use_textual_tools,
+                max_tokens=max_tokens,
+                context_window=context_window,
             )
             params["stream"] = True
 
@@ -411,6 +424,7 @@ class OllamaProvider(ChatProvider):
         model: str,
         tools: Sequence[Tool] = [],
         max_tokens: int = 8192,
+        context_window: int = 4096,
         response_format: dict | None = None,
     ) -> Message:
         """
@@ -439,6 +453,7 @@ class OllamaProvider(ChatProvider):
                 response_format=response_format,
                 max_tokens=max_tokens,
                 use_textual_tools=use_textual_tools,
+                context_window=context_window,
             )
             params["stream"] = False
 

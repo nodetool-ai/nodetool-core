@@ -14,7 +14,7 @@ from langchain_openai import ChatOpenAI
 
 from nodetool.agents.agent import Agent
 from nodetool.chat.providers import get_provider
-from nodetool.agents.tools.browser_agent import BrowserAgentTool
+from nodetool.agents.tools.browser_use import BrowserUseTool
 from nodetool.common.environment import Environment
 from nodetool.metadata.types import Provider
 from nodetool.workflows.processing_context import ProcessingContext
@@ -33,12 +33,9 @@ async def main():
     if not api_key:
         raise ValueError("OPENAI_API_KEY is not set")
 
-    browser_agent_model = ChatOpenAI(model="gpt-4o", api_key=api_key)
-
     # 3. Set up browser and search tools
     tools = [
-        BrowserAgentTool(
-            workspace_dir=context.workspace_dir,
+        BrowserUseTool(
             model=browser_agent_model,
         ),
     ]

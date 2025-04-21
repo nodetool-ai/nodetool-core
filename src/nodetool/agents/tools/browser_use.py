@@ -10,7 +10,7 @@ import os
 from typing import Any
 import asyncio
 from langchain_openai import ChatOpenAI
-from langchain_core.language_models import BaseChatModel
+from langchain_anthropic import ChatAnthropic
 from browser_use import Agent, Browser, BrowserConfig
 from dotenv import load_dotenv
 
@@ -22,7 +22,7 @@ from .base import Tool
 load_dotenv()
 
 
-class BrowserAgentTool(Tool):
+class BrowserUseTool(Tool):
     """
     A tool that uses browser_use Agent to perform browser-based tasks.
 
@@ -37,7 +37,7 @@ class BrowserAgentTool(Tool):
     - File downloads and uploads
     """
 
-    name = "browser_agent"
+    name = "browser_use"
     description = "Use browser_use Agent to automate browser-based tasks with natural language instructions"
     input_schema = {
         "type": "object",
@@ -51,6 +51,16 @@ class BrowserAgentTool(Tool):
                     "Write a document in Google Docs and save as PDF",
                 ],
             },
+            "use_remote_browser": {
+                "type": "boolean",
+                "description": "Whether to use a remote browser instead of a local one.",
+                "default": False,
+            },
+            "model": {
+                "type": "string",
+                "description": "The model to use for the browser agent.",
+                "enum": ["gpt-4o", "claude-3-5-sonnet"],
+            },
             "timeout": {
                 "type": "integer",
                 "description": "Maximum time in seconds to allow for task completion. Complex tasks may require longer timeouts.",
@@ -62,11 +72,6 @@ class BrowserAgentTool(Tool):
         "required": ["task"],
     }
 
-    def __init__(self, workspace_dir: str, model: BaseChatModel):
-        """Initialize the BrowserAgentTool."""
-        super().__init__(workspace_dir)
-        self.llm = model
-
     async def process(self, context: ProcessingContext, params: dict) -> Any:
         """
         Execute a browser agent task.
@@ -76,9 +81,16 @@ class BrowserAgentTool(Tool):
             if not task:
                 return {"error": "Task description is required"}
 
-            browser_endpoint = Environment.get("BRIGHTDATA_SCRAPING_BROWSER_ENDPOINT")
+            use_remote_browser = params.get("use_remote_browser", False)
 
-            if browser_endpoint:
+            if use_remote_browser:
+                browser_endpoint = Environment.get(
+                    "BRIGHTDATA_SCRAPING_BROWSER_ENDPOINT"
+                )
+                if not browser_endpoint:
+                    raise ValueError(
+                        "BrightData scraping browser endpoint not found in environment variables (BRIGHTDATA_SCRAPING_BROWSER_ENDPOINT)."
+                    )
                 browser = Browser(
                     config=BrowserConfig(
                         headless=True,
@@ -91,13 +103,43 @@ class BrowserAgentTool(Tool):
                         headless=True,
                     )
                 )
-            # Create and run the agent
+
+            if params.get("model") == "gpt-4o":
+                api_key = Environment.get("OPENAI_API_KEY")
+                if not api_key:
+                    raise ValueError(
+                        "OpenAI API key not found in environment variables (OPENAI_API_KEY)."
+                    )
+                llm = ChatOpenAI(
+                    model="gpt-4o",
+                    api_key=api_key,
+                    temperature=0,
+                    timeout=params.get("timeout", 300),
+                )
+            elif params.get("model") == "claude-3-5-sonnet":
+                api_key = Environment.get("ANTHROPIC_API_KEY")
+                if not api_key:
+                    raise ValueError(
+                        "Anthropic API key not found in environment variables (ANTHROPIC_API_KEY)."
+                    )
+                llm = ChatAnthropic(
+                    model_name="claude-3-5-sonnet",
+                    api_key=api_key,
+                    temperature=0,
+                    timeout=params.get("timeout", 300),
+                    stop=["\n\n"],
+                )
+            else:
+                raise ValueError(
+                    f"Invalid model: {params.get('model')}. Must be one of: gpt-4o, claude-3-5-sonnet."
+                )
+
             agent = Agent(
                 task=task,
-                llm=self.llm,
+                llm=llm,
                 browser=browser,
-                save_conversation_path=os.path.join(
-                    self.workspace_dir, "browser_agent.log"
+                save_conversation_path=context.resolve_workspace_path(
+                    "browser_use.log"
                 ),
             )
 

@@ -15,7 +15,6 @@ from nodetool.common.environment import Environment
 from nodetool.workflows.processing_context import ProcessingContext
 from .base import Tool
 from playwright.async_api import Page
-from .base import resolve_workspace_path
 
 
 async def extract_metadata(page: Page):
@@ -141,8 +140,7 @@ class BrowserTool(Tool):
     )
     """
 
-    def __init__(self, workspace_dir: str, use_readability: bool = True):
-        super().__init__(workspace_dir)
+    def __init__(self, use_readability: bool = True):
         self.use_readability = use_readability
 
     async def process(self, context: ProcessingContext, params: dict) -> Any:
@@ -265,7 +263,7 @@ class BrowserTool(Tool):
             # Handle output file if specified
             output_file = params.get("output_file")
             if output_file:
-                full_path = resolve_workspace_path(self.workspace_dir, output_file)
+                full_path = context.resolve_workspace_path(output_file)
                 os.makedirs(os.path.dirname(full_path), exist_ok=True)
                 with open(full_path, "w", encoding="utf-8") as f:
                     if isinstance(content, list):
@@ -327,7 +325,7 @@ class ScreenshotTool(Tool):
                 return {"error": "No browser session available"}
 
             path = params.get("path", "screenshot.png")
-            full_path = os.path.join(self.workspace_dir, path)
+            full_path = context.resolve_workspace_path(path)
             if "selector" in params:
                 element = await page.query_selector(params["selector"])
                 if element:
@@ -684,7 +682,7 @@ class WebFetchTool(Tool):
             timeout = params.get("timeout", 30)
             output_file = params.get("output_file")
             if output_file:
-                output_file = self.resolve_workspace_path(output_file)
+                output_file = context.resolve_workspace_path(output_file)
             else:
                 raise Exception("Output file is required")
 
@@ -791,7 +789,7 @@ class DownloadFileTool(Tool):
             import asyncio
 
             # Ensure the directory exists
-            full_path = self.resolve_workspace_path(output_file)
+            full_path = context.resolve_workspace_path(output_file)
             os.makedirs(os.path.dirname(full_path), exist_ok=True)
 
             async with aiohttp.ClientSession() as session:

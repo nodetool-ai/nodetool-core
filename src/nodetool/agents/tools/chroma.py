@@ -12,7 +12,7 @@ from typing import Any
 import chromadb
 from chromadb.api.types import IncludeEnum
 from nodetool.workflows.processing_context import ProcessingContext
-from .base import Tool, resolve_workspace_path
+from .base import Tool
 from pydantic import Field
 from nodetool.metadata.types import TextChunk
 from typing import Literal
@@ -45,8 +45,7 @@ class ChromaTextSearchTool(Tool):
     )
     """
 
-    def __init__(self, workspace_dir: str, collection: chromadb.Collection):
-        super().__init__(workspace_dir)
+    def __init__(self, collection: chromadb.Collection):
         self.collection = collection
 
     async def process(self, context: ProcessingContext, params: dict) -> dict[str, str]:
@@ -90,8 +89,7 @@ class ChromaIndexTool(Tool):
         "required": ["text", "source_id"],
     }
 
-    def __init__(self, workspace_dir: str, collection: chromadb.Collection):
-        super().__init__(workspace_dir)
+    def __init__(self, collection: chromadb.Collection):
         self.collection = collection
 
     def _generate_document_id(self, source_id: str) -> str:
@@ -154,8 +152,7 @@ class ChromaHybridSearchTool(Tool):
         "required": ["text"],
     }
 
-    def __init__(self, workspace_dir: str, collection: chromadb.Collection):
-        super().__init__(workspace_dir)
+    def __init__(self, collection: chromadb.Collection):
         self.collection = collection
 
     def _get_keyword_query(self, text: str, min_length: int) -> dict:
@@ -350,8 +347,7 @@ class ChromaRecursiveSplitAndIndexTool(Tool):
         "required": ["text", "document_id"],
     }
 
-    def __init__(self, workspace_dir: str, collection: chromadb.Collection):
-        super().__init__(workspace_dir)
+    def __init__(self, collection: chromadb.Collection):
         self.collection = collection
 
     async def _split_text_recursive(
@@ -462,8 +458,7 @@ class ChromaMarkdownSplitAndIndexTool(Tool):
         "required": ["file_path"],
     }
 
-    def __init__(self, workspace_dir: str, collection: chromadb.Collection):
-        super().__init__(workspace_dir)
+    def __init__(self, collection: chromadb.Collection):
         self.collection = collection
 
     async def _split_text_markdown(
@@ -504,7 +499,7 @@ class ChromaMarkdownSplitAndIndexTool(Tool):
     async def process(self, context: ProcessingContext, params: dict) -> dict[str, Any]:
         file_path = params["file_path"]
         # Split the text
-        resolved_file_path = self.resolve_workspace_path(file_path)
+        resolved_file_path = context.resolve_workspace_path(file_path)
 
         with open(resolved_file_path, "r") as f:
             text = f.read()
@@ -559,8 +554,7 @@ class ChromaBatchIndexTool(Tool):
         "required": ["chunks"],
     }
 
-    def __init__(self, workspace_dir: str, collection: chromadb.Collection):
-        super().__init__(workspace_dir)
+    def __init__(self, collection: chromadb.Collection):
         self.collection = collection
 
     def _generate_document_id(self, source_id: str) -> str:

@@ -146,7 +146,9 @@ class ChatProvider(ABC):
         messages: Sequence[Message],
         model: str,
         tools: Sequence[Any] = [],
-        **kwargs,
+        max_tokens: int = 8192,
+        context_window: int = 4096,
+        response_format: dict | None = None,
     ) -> Message:
         """
         Generate a single message completion from the provider.
@@ -168,7 +170,9 @@ class ChatProvider(ABC):
         messages: Sequence[Message],
         model: str,
         tools: Sequence[Any] = [],
-        **kwargs,
+        max_tokens: int = 8192,
+        context_window: int = 4096,
+        response_format: dict | None = None,
     ) -> AsyncGenerator[Chunk | ToolCall, Any]:
         """
         Generate message completions from the provider, yielding chunks or tool calls.

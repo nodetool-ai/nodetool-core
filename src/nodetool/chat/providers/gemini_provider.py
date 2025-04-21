@@ -310,6 +310,7 @@ class GeminiProvider(ChatProvider):
         tools: Sequence[Any] = [],
         max_tokens: int = 16384,
         response_format: dict | None = None,
+        context_window: int = 4096,
     ) -> Message:
         """Generate response from Gemini for the given messages with code execution support."""
 
@@ -367,6 +368,8 @@ class GeminiProvider(ChatProvider):
         model: str,
         tools: Sequence[NodeTool] = [],
         max_tokens: int = 16384,
+        context_window: int = 4096,
+        response_format: dict | None = None,
     ) -> AsyncGenerator[Chunk | ToolCall | MessageFile, Any]:
         """Stream response from Gemini for the given messages with code execution support."""
         if messages[0].role == "system":

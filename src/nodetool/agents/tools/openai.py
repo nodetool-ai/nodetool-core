@@ -16,8 +16,7 @@ class OpenAIWebSearchTool(Tool):
     name = "openai_web_search"
     description = "Search the web using OpenAI's web search API"
 
-    def __init__(self, workspace_dir: str):
-        super().__init__(workspace_dir)
+    def __init__(self):
         self.client = openai.AsyncClient(api_key=Environment.get("OPENAI_API_KEY"))
         self.input_schema = {
             "type": "object",

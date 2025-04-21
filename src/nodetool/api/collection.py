@@ -2,6 +2,11 @@
 
 from typing import Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException
+from langchain_text_splitters import (
+    ExperimentalMarkdownSyntaxTextSplitter,
+    RecursiveCharacterTextSplitter,
+    SentenceTransformersTokenTextSplitter,
+)
 from pydantic import BaseModel
 from nodetool.api.utils import current_user, User
 from nodetool.common.chroma_client import (
@@ -213,6 +218,61 @@ def chunk_documents_recursive(
     return ids_docs, metadatas
 
 
+def chunk_documents_markdown(
+    documents: List[Document],
+    chunk_size: int = 1000,
+    chunk_overlap: int = 200,
+) -> tuple[dict[str, str], list[dict]]:
+    """Split markdown documents based on headers and then recursively.
+
+    Args:
+        documents: List of documents to split
+        chunk_size: Maximum size of each chunk in characters after header splitting
+        chunk_overlap: Number of characters to overlap between recursive chunks
+
+    Returns:
+        Tuple of (id_to_text_mapping, metadata_list)
+    """
+    headers_to_split_on = [
+        ("#", "Header 1"),
+        ("##", "Header 2"),
+        ("###", "Header 3"),
+    ]
+
+    # Initialize markdown splitter
+    markdown_splitter = ExperimentalMarkdownSyntaxTextSplitter(
+        headers_to_split_on=headers_to_split_on,
+    )
+
+    # Initialize recursive splitter for further chunking
+    recursive_splitter = RecursiveCharacterTextSplitter(
+        chunk_size=chunk_size, chunk_overlap=chunk_overlap
+    )
+
+    ids_docs = {}
+    metadatas = []
+    chunk_index = 0
+
+    for doc in documents:
+        # Split by headers first
+        md_splits = markdown_splitter.split_text(doc.text)
+
+        # Further split the header-based chunks recursively
+        final_splits = recursive_splitter.split_documents(md_splits)
+
+        # Create document IDs and collect metadata for final chunks
+        for split_doc in final_splits:
+            # Use a running index to ensure unique IDs across header splits
+            doc_id = f"{doc.doc_id}:{chunk_index}"
+            ids_docs[doc_id] = split_doc.page_content
+            # Carry over original document metadata, potentially add header metadata later
+            metadatas.append(doc.metadata.copy())
+            chunk_index += 1
+        chunk_index = 0  # Reset chunk index for the next document
+
+    return ids_docs, metadatas
+
+
 def default_ingestion_workflow(
     collection: chromadb.Collection, file_path: str, mime_type: str
 ) -> None:
@@ -237,7 +297,7 @@ def default_ingestion_workflow(
         ]
 
     # Chunk documents and upsert to collection
-    ids_docs, _ = chunk_documents_recursive(
+    ids_docs, _ = chunk_documents_markdown(
         documents,
         chunk_size=4096,
         chunk_overlap=256,

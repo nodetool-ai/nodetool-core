@@ -208,17 +208,12 @@ class AnthropicProvider(ChatProvider):
         messages: Sequence[Message],
         model: str,
         tools: Sequence[Any] = [],
-        **kwargs,
+        max_tokens: int = 8192,
+        context_window: int = 4096,
+        response_format: dict | None = None,
     ) -> AsyncGenerator[Chunk | ToolCall, Any]:
         """Generate streaming completions from Anthropic."""
-        if "max_tokens" not in kwargs:
-            if "haiku" in model:
-                kwargs["max_tokens"] = 4096
-            else:
-                kwargs["max_tokens"] = 8192
-
         # Handle response_format parameter
-        response_format = kwargs.pop("response_format", None)
         local_tools = list(tools)  # Make a mutable copy
 
         system_messages = [message for message in messages if message.role == "system"]
@@ -259,7 +254,7 @@ class AnthropicProvider(ChatProvider):
             messages=anthropic_messages,
             system=system_message,
             tools=anthropic_tools,
-            **kwargs,
+            max_tokens=max_tokens,
         ) as stream:
             async for event in stream:
                 if event.type == "content_block_delta":
@@ -312,7 +307,9 @@ class AnthropicProvider(ChatProvider):
         messages: Sequence[Message],
         model: str,
         tools: Sequence[Any] = [],
-        **kwargs,
+        max_tokens: int = 8192,
+        context_window: int = 4096,
+        response_format: dict | None = None,
     ) -> Message:
         """Generate a complete non-streaming message from Anthropic.
 
@@ -327,14 +324,7 @@ class AnthropicProvider(ChatProvider):
         Returns:
             A complete Message object
         """
-        if "max_tokens" not in kwargs:
-            if "haiku" in model:
-                kwargs["max_tokens"] = 4096
-            else:
-                kwargs["max_tokens"] = 8192
-
         # Handle response_format parameter
-        response_format = kwargs.pop("response_format", None)
         local_tools = list(tools)  # Make a mutable copy
 
         system_messages = [message for message in messages if message.role == "system"]
@@ -370,7 +360,7 @@ class AnthropicProvider(ChatProvider):
             messages=anthropic_messages,
             system=system_message,
             tools=anthropic_tools,
-            **kwargs,
+            max_tokens=max_tokens,
         )
 
         # Update usage statistics

@@ -79,9 +79,7 @@ class GetNodeMetadataTool(Tool):
         "required": ["node_type"],
     }
 
-    def __init__(self, workspace_dir: str, node_types: list[NodeMetadata]):
-        super().__init__(workspace_dir=workspace_dir)
-        self.workspace_dir = workspace_dir
+    def __init__(self, node_types: list[NodeMetadata]):
         self.node_types = node_types
 
     async def process(self, context: ProcessingContext, params: dict) -> dict:
@@ -136,9 +134,7 @@ class CreateWorkflowTool(Tool):
     name = "create_workflow"
     description = "Create a workflow with nodes"
 
-    def __init__(self, workspace_dir: str, input_schema: dict):
-        super().__init__(workspace_dir=workspace_dir)
-        self.workspace_dir = workspace_dir
+    def __init__(self, input_schema: dict):
         self.input_schema = input_schema
 
     async def process(self, context: ProcessingContext, params: dict):
@@ -170,10 +166,6 @@ class SelectNodesTool(Tool):
         },
         "required": ["selected_nodes", "justification"],
     }
-
-    def __init__(self, workspace_dir: str):
-        super().__init__(workspace_dir=workspace_dir)
-        self.workspace_dir = workspace_dir
 
     async def process(self, context: ProcessingContext, params: dict) -> dict:
         # Simply return the parameters
@@ -728,19 +720,13 @@ class WorkflowPlanner:
         Returns:
             The tool call with the result attached
         """
-        tools = [
-            GetNodeMetadataTool(
-                workspace_dir=self.workspace_dir, node_types=self.node_types
-            )
-        ] + self.tools
+        tools = [GetNodeMetadataTool(node_types=self.node_types)] + self.tools
 
         for tool in tools:
             if tool.name == tool_call.name:
                 try:
                     # Create a processing context if it doesn't exist
-                    processing_context = ProcessingContext(
-                        workspace_dir=self.workspace_dir
-                    )
+                    processing_context = ProcessingContext()
                     result = await tool.process(processing_context, tool_call.args)
 
                     self._log_trace_event(
@@ -843,12 +829,9 @@ class WorkflowPlanner:
         ]
 
         # Create tools
-        select_nodes_tool = SelectNodesTool(workspace_dir=self.workspace_dir)
+        select_nodes_tool = SelectNodesTool()
 
-        get_node_metadata_tool = GetNodeMetadataTool(
-            workspace_dir=self.workspace_dir,
-            node_types=self.node_types,
-        )
+        get_node_metadata_tool = GetNodeMetadataTool(node_types=self.node_types)
 
         tools = [select_nodes_tool, get_node_metadata_tool]
 
@@ -1189,9 +1172,7 @@ class WorkflowPlanner:
         )
 
         # Create create_workflow tool with custom schema
-        create_workflow_tool = CreateWorkflowTool(
-            workspace_dir=self.workspace_dir, input_schema=custom_schema
-        )
+        create_workflow_tool = CreateWorkflowTool(input_schema=custom_schema)
 
         # Setup conversation for second stage
         second_stage_system_prompt = """
