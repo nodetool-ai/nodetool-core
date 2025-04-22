@@ -1,3 +1,13 @@
+"""
+Manages ML model instances in non-production environments.
+
+This module provides the ModelManager class, a central repository for storing,
+retrieving, and managing machine learning models during development or testing.
+It associates models with specific nodes and handles their lifecycle, preventing
+resource leaks by clearing unused models. This functionality is disabled in
+production environments.
+"""
+
 from typing import Dict, Any
 
 from nodetool.common.environment import Environment

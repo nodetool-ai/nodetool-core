@@ -1,3 +1,8 @@
+"""
+Provides functionality for managing WebSocket connections and broadcasting updates,
+primarily system statistics, to connected clients.
+"""
+
 from fastapi import WebSocket
 import asyncio
 from typing import Literal, Set
@@ -19,7 +24,17 @@ WebSocketUpdate = SystemStatsUpdate
 
 
 class WebSocketUpdates:
+    """
+    Manages WebSocket connections and broadcasts updates to connected clients.
+
+    This class handles accepting new connections, managing disconnections,
+    and broadcasting system statistics updates periodically to all active clients.
+    It ensures that the stats broadcasting task runs only when there are active
+    connections.
+    """
+
     def __init__(self):
+        """Initializes the WebSocketUpdates manager."""
         self.active_connections: Set[WebSocket] = set()
         self._lock = asyncio.Lock()
         self.log = Environment.get_logger()
@@ -27,6 +42,14 @@ class WebSocketUpdates:
         self._stats_task = None
 
     async def connect(self, websocket: WebSocket):
+        """
+        Accepts a new WebSocket connection and adds it to the active set.
+
+        Starts the system stats broadcasting task if this is the first connection.
+
+        Args:
+            websocket: The WebSocket connection object.
+        """
         await websocket.accept()
         async with self._lock:
             self.active_connections.add(websocket)
@@ -38,6 +61,14 @@ class WebSocketUpdates:
                 await self._start_stats_broadcast()
 
     async def disconnect(self, websocket: WebSocket):
+        """
+        Removes a WebSocket connection from the active set upon disconnection.
+
+        Stops the system stats broadcasting task if no connections remain.
+
+        Args:
+            websocket: The WebSocket connection object.
+        """
         async with self._lock:
             self.active_connections.remove(websocket)
             self.log.info(
@@ -48,17 +79,25 @@ class WebSocketUpdates:
                 await self._stop_stats_broadcast()
 
     async def _start_stats_broadcast(self):
+        """Starts the background task that periodically broadcasts system stats."""
         if self._stats_task is None:
             self._stats_task = asyncio.create_task(self._broadcast_stats())
             self.log.info("WebSocketUpdates: Started system stats broadcasting")
 
     async def _stop_stats_broadcast(self):
+        """Stops the background task that broadcasts system stats."""
         if self._stats_task:
             self._stats_task.cancel()
             self._stats_task = None
             self.log.info("WebSocketUpdates: Stopped system stats broadcasting")
 
     async def _broadcast_stats(self):
+        """
+        Periodically fetches system stats and broadcasts them to all clients.
+
+        Runs in a loop until cancelled. Handles potential exceptions during
+        stats fetching or broadcasting.
+        """
         while True:
             try:
                 stats = get_system_stats()
@@ -72,6 +111,12 @@ class WebSocketUpdates:
 
     async def broadcast_update(self, update: WebSocketUpdate):
         """Broadcast any update to all connected clients"""
+        """
+        Broadcasts a given update message to all connected WebSocket clients.
+
+        Args:
+            update: The update object (e.g., SystemStatsUpdate) to broadcast.
+        """
         json_message = update.model_dump_json()
 
         async with self._lock:
@@ -80,6 +125,15 @@ class WebSocketUpdates:
                 self.log.debug(f"WebSocketUpdates: Successfully sent message to client")
 
     async def handle_client(self, websocket: WebSocket):
+        """
+        Manages a single client connection lifecycle.
+
+        Connects the client, listens for messages (currently logs them),
+        and handles disconnection on error.
+
+        Args:
+            websocket: The WebSocket connection object for the client.
+        """
         client_id = id(websocket)  # Use websocket id for tracking
         self.log.info(
             f"WebSocketUpdates: New client connection handler started (ID: {client_id})"
