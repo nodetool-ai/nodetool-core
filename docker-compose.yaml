@@ -37,6 +37,7 @@ services:
       OLLAMA_API_KEY: ${OLLAMA_API_KEY}
       SUPABASE_URL: ${SUPABASE_URL}
       SUPABASE_KEY: ${SUPABASE_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
       HF_HOME: /app/huggingface
       SENTRY_DSN: ${SENTRY_DSN}
     deploy:
