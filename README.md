@@ -18,7 +18,7 @@
 
 ## 📚 Overview
 
-NodeTool Core is a powerful Python library for building and running AI workflows using a modular, node-based approach. It provides the foundation for the NodeTool ecosystem, enabling developers to create sophisticated AI applications with minimal code.
+NodeTool Core is a powerful Python library for building and running AI workflows using a modular, node-based approach. It provides the foundation for the [NodeTool Platform](https://github.com/nodetool-ai/nodetool), enabling developers to create sophisticated AI applications with minimal code.
 
 ### ✨ Key Features
 
@@ -169,6 +169,8 @@ D -->|Optional API Calls| F[OpenAI<br>Replicate<br>Anthropic<br>Others]
 We welcome contributions from the community! Please see our [Contributing Guidelines](./CONTRIBUTING.md) for more information on how to get involved.
 
 ### Development Setup
+
+This setup is for developing the `nodetool-core` library itself using Poetry. If you want to set up the full NodeTool application (UI, backend, etc.), please refer to the development setup instructions in the main [NodeTool repository](https://github.com/nodetool-ai/nodetool).
 
 1. Clone the repository
 

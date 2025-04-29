@@ -83,3 +83,5 @@ RUN pip install git+https://github.com/nodetool-ai/nodetool-lib-image
 RUN pip install git+https://github.com/nodetool-ai/nodetool-lib-ml
 RUN pip install git+https://github.com/nodetool-ai/nodetool-lib-network
 RUN pip install git+https://github.com/nodetool-ai/nodetool-openai
+
+RUN pip install git+https://github.com/nodetool-ai/nodetool-huggingface --extra-index-url https://download.pytorch.org/whl/cu121
