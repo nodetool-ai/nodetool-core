@@ -10,7 +10,7 @@ from nodetool.types.prediction import (
     Prediction,
     PredictionList,
 )
-from nodetool.api.utils import current_user, User
+from nodetool.api.utils import current_user
 from nodetool.common.environment import Environment
 from typing import Optional
 from nodetool.models.prediction import (
@@ -50,7 +50,7 @@ def from_model(prediction: PredictionModel):
 async def index(
     cursor: Optional[str] = None,
     page_size: Optional[int] = None,
-    user: User = Depends(current_user),
+    user: str = Depends(current_user),
 ) -> PredictionList:
     """
     Returns all assets for a given user or workflow.
@@ -59,7 +59,7 @@ async def index(
         page_size = 100
 
     predictions, next_cursor = PredictionModel.paginate(
-        user_id=user.id,
+        user_id=user,
         limit=page_size,
         start_key=cursor,
     )
@@ -70,19 +70,19 @@ async def index(
 
 
 @router.get("/{id}")
-async def get(id: str, user: User = Depends(current_user)) -> Prediction:
-    pred = PredictionModel.find(user.id, id)
+async def get(id: str, user: str = Depends(current_user)) -> Prediction:
+    pred = PredictionModel.find(user, id)
     if pred is None:
         raise HTTPException(status_code=404, detail="Prediction not found")
     return from_model(pred)
 
 
 @router.post("/")
-async def create(req: PredictionCreateRequest, user: User = Depends(current_user)):
+async def create(req: PredictionCreateRequest, user: str = Depends(current_user)):
     prediction = PredictionModel.create(
         model=req.model,
         node_id=req.node_id,
-        user_id=user.id,
+        user_id=user,
         workflow_id=req.workflow_id,
         provider=req.provider.value,
         started_at=datetime.now(),

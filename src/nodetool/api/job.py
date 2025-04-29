@@ -3,7 +3,7 @@
 import base64
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
-from nodetool.api.utils import current_user, User
+from nodetool.api.utils import current_user
 
 from nodetool.metadata.types import AssetRef
 from nodetool.types.job import (
@@ -41,15 +41,15 @@ def from_model(job: JobModel):
 
 
 @router.get("/{id}")
-async def get(id: str, user: User = Depends(current_user)) -> Job:
+async def get(id: str, user: str = Depends(current_user)) -> Job:
     """
     Returns the status of a job.
     """
-    job = JobModel.find(user.id, id)
+    job = JobModel.find(user, id)
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
     else:
-        if job.user_id != user.id:
+        if job.user_id != user:
             raise HTTPException(status_code=403, detail="Forbidden")
         else:
             return from_model(job)
@@ -60,7 +60,7 @@ async def index(
     workflow_id: str | None = None,
     cursor: str | None = None,
     page_size: int | None = None,
-    user: User = Depends(current_user),
+    user: str = Depends(current_user),
 ) -> JobList:
     """
     Returns all assets for a given user or workflow.
@@ -69,22 +69,22 @@ async def index(
         page_size = 10
 
     jobs, next_cursor = JobModel.paginate(
-        user_id=user.id, workflow_id=workflow_id, limit=page_size, start_key=cursor
+        user_id=user, workflow_id=workflow_id, limit=page_size, start_key=cursor
     )
 
     return JobList(next=next_cursor, jobs=[from_model(job) for job in jobs])
 
 
 @router.put("/{id}")
-async def update(id: str, req: JobUpdate, user: User = Depends(current_user)) -> Job:
+async def update(id: str, req: JobUpdate, user: str = Depends(current_user)) -> Job:
     """
     Update a job.
     """
-    job = JobModel.find(user.id, id)
+    job = JobModel.find(user, id)
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
     else:
-        if job.user_id != user.id:
+        if job.user_id != user:
             raise HTTPException(status_code=403, detail="Forbidden")
         else:
             job.status = req.status
@@ -96,14 +96,14 @@ async def update(id: str, req: JobUpdate, user: User = Depends(current_user)) ->
 @router.post("/")
 async def create(
     job_request: RunJobRequest,
-    user: User = Depends(current_user),
+    user: str = Depends(current_user),
 ):
     from nodetool.workflows.workflow_runner import WorkflowRunner
 
     job = JobModel.create(
         job_type=job_request.job_type,
         workflow_id=job_request.workflow_id,
-        user_id=user.id,
+        user_id=user,
         graph=job_request.graph.model_dump() if job_request.graph else None,
         status="running",
     )

@@ -197,6 +197,25 @@ def translate_condition_to_sql(condition: str) -> str:
 
 
 class SQLiteAdapter(DatabaseAdapter):
+    """
+    Provides an adapter (`SQLiteAdapter`) to interface Pydantic-based models
+    (specifically those using `DBModel` structure, although not directly imported here)
+    with an SQLite database.
+
+    Key functionalities include:
+    - Automatic table creation and schema migration based on model fields.
+    - Type conversion between Python types (including lists, dicts, enums, datetime)
+      and SQLite-compatible storage formats (TEXT, INTEGER, REAL, BLOB).
+    - Handling of database connections and transactions.
+    - CRUD operations (save, get, delete).
+    - A query interface that uses the `ConditionBuilder` system for constructing
+      complex WHERE clauses.
+    - Index creation, deletion, and listing.
+
+    Helper functions (`convert_to_sqlite_format`, `convert_from_sqlite_format`, etc.)
+    manage the data type conversions.
+    """
+
     db_path: str
     table_name: str
     table_schema: Dict[str, Any]
@@ -209,6 +228,17 @@ class SQLiteAdapter(DatabaseAdapter):
         table_schema: Dict[str, Any],
         indexes: List[Dict[str, Any]],
     ):
+        """Initializes the SQLite adapter.
+
+        Establishes connection, checks if the table exists, performs migrations
+        or creates the table and indexes as necessary.
+
+        Args:
+            db_path: Path to the SQLite database file.
+            fields: Dictionary mapping field names to Pydantic FieldInfo objects.
+            table_schema: Schema definition for the table.
+            indexes: List of index definitions for the table.
+        """
         self.db_path = db_path
         self.table_name = table_schema["table_name"]
         self.table_schema = table_schema
@@ -223,6 +253,11 @@ class SQLiteAdapter(DatabaseAdapter):
 
     @property
     def connection(self):
+        """Provides a lazy-loaded SQLite database connection.
+
+        Ensures the connection is established only when first accessed.
+        Configures the connection with a row factory and trace callback (in debug mode).
+        """
         if not hasattr(self, "_connection"):
             self._connection = sqlite3.connect(
                 self.db_path, timeout=30, check_same_thread=False
@@ -234,6 +269,7 @@ class SQLiteAdapter(DatabaseAdapter):
         return self._connection
 
     def table_exists(self) -> bool:
+        """Checks if the table associated with this adapter exists in the database."""
         cursor = self.connection.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
             (self.table_name,),
@@ -256,6 +292,14 @@ class SQLiteAdapter(DatabaseAdapter):
         return desired_schema
 
     def create_table(self, suffix="") -> None:
+        """Creates the database table based on the model's schema.
+
+        Constructs and executes a CREATE TABLE SQL statement using the defined fields
+        and their corresponding SQLite types.
+
+        Args:
+            suffix: Optional suffix to append to the table name (used for migrations).
+        """
         table_name = self.table_name + suffix
         fields = self.fields
         primary_key = self.get_primary_key()
@@ -273,13 +317,18 @@ class SQLiteAdapter(DatabaseAdapter):
             raise e
 
     def drop_table(self) -> None:
+        """Drops the database table associated with this adapter."""
         sql = f"DROP TABLE IF EXISTS {self.table_name}"
         self.connection.execute(sql)
         self.connection.commit()
 
     def migrate_table(self) -> None:
-        """
-        Inspects the current schema and indexes of the database and migrates them to the desired state.
+        """Performs schema migration for the table.
+
+        Compares the current schema in the database with the model's defined schema.
+        Adds new columns if they exist in the model but not in the database table.
+        Handles adding columns by creating a new table, copying data, and replacing the old table.
+        Drops columns that are no longer in the model schema (potential data loss).
         """
         current_schema = self.get_current_schema()
         desired_schema = self.get_desired_schema()
@@ -355,6 +404,13 @@ class SQLiteAdapter(DatabaseAdapter):
         self.connection.commit()
 
     def save(self, item: Dict[str, Any]) -> None:
+        """Saves (inserts or replaces) an item into the database table.
+
+        Converts the item's attributes to SQLite-compatible formats before saving.
+
+        Args:
+            item: A dictionary representing the model instance to save.
+        """
         valid_keys = [key for key in item if key in self.fields]
         columns = ", ".join(valid_keys)
         placeholders = ", ".join(["?" for _ in valid_keys])
@@ -367,6 +423,15 @@ class SQLiteAdapter(DatabaseAdapter):
         self.connection.commit()
 
     def get(self, key: Any) -> Dict[str, Any] | None:
+        """Retrieves an item from the database table by its primary key.
+
+        Args:
+            key: The primary key value of the item to retrieve.
+
+        Returns:
+            A dictionary representing the retrieved item, or None if not found.
+            Attributes are converted back to their Python types.
+        """
         primary_key = self.get_primary_key()
         cols = ", ".join(self.fields.keys())
         query = f"SELECT {cols} FROM {self.table_name} WHERE {primary_key} = ?"
@@ -377,6 +442,11 @@ class SQLiteAdapter(DatabaseAdapter):
         return convert_from_sqlite_attributes(dict(item), self.fields)
 
     def delete(self, primary_key: Any) -> None:
+        """Deletes an item from the database table by its primary key.
+
+        Args:
+            primary_key: The primary key value of the item to delete.
+        """
         pk_column = self.get_primary_key()
         query = f"DELETE FROM {self.table_name} WHERE {pk_column} = ?"
         self.connection.execute(query, (primary_key,))
@@ -385,6 +455,14 @@ class SQLiteAdapter(DatabaseAdapter):
     def _build_condition(
         self, condition: Union[Condition, ConditionGroup]
     ) -> tuple[str, list[Any]]:
+        """Recursively builds an SQL WHERE clause and parameters from a Condition or ConditionGroup.
+
+        Args:
+            condition: The Condition or ConditionGroup object.
+
+        Returns:
+            A tuple containing the SQL WHERE clause string and a list of parameters.
+        """
         if isinstance(condition, Condition):
             if condition.operator == Operator.IN:
                 placeholders = ", ".join(["?" for _ in condition.value])
@@ -410,41 +488,37 @@ class SQLiteAdapter(DatabaseAdapter):
                     params,
                 )
 
-    def _build_join(self, join_tables: List[Dict[str, str]]) -> tuple[str, List[str]]:
-        join_clauses = []
-        join_columns = []
-        for join in join_tables:
-            join_type = join.get("type", "INNER").upper()
-            join_table = join["table"]
-            on_condition = join["on"]
-            join_clauses.append(f"{join_type} JOIN {join_table} ON {on_condition}")
-            if "columns" in join:
-                join_columns.extend(join["columns"].split(","))
-        return " ".join(join_clauses), join_columns
-
     def query(
         self,
-        condition: ConditionBuilder,
+        condition: ConditionBuilder | None = None,
+        order_by: str | None = None,
         limit: int = 100,
         reverse: bool = False,
-        join_tables: List[Dict[str, str]] | None = None,
+        columns: List[str] | None = None,
     ) -> tuple[list[dict[str, Any]], str]:
         pk = self.get_primary_key()
-        order_by = (
-            f"{self.table_name}.{pk} DESC" if reverse else f"{self.table_name}.{pk} ASC"
-        )
 
-        where_clause, params = self._build_condition(condition.build())
+        if order_by is None:
+            order_by = f"{self.table_name}.{pk}"
 
-        cols = ", ".join([f"{self.table_name}.{col}" for col in self.fields.keys()])
-
-        if join_tables:
-            join_clause, join_columns = self._build_join(join_tables)
-            if join_columns:
-                cols += ", " + ", ".join(join_columns)
-            query = f"SELECT {cols} FROM {self.table_name} {join_clause} WHERE {where_clause} ORDER BY {order_by} LIMIT {limit}"
+        if reverse:
+            order_by = f"{order_by} DESC"
         else:
-            query = f"SELECT {cols} FROM {self.table_name} WHERE {where_clause} ORDER BY {order_by} LIMIT {limit}"
+            order_by = f"{order_by} ASC"
+
+        if columns:
+            cols = ", ".join([f"{self.table_name}.{col}" for col in columns])
+        else:
+            cols = ", ".join([f"{self.table_name}.{col}" for col in self.fields.keys()])
+
+        params = []
+        where_clause = "1=1"  # Default to select all if no condition
+        if condition:  # Check if a condition was provided
+            where_clause, params = self._build_condition(
+                condition.root
+            )  # Pass the root group
+
+        query = f"SELECT {cols} FROM {self.table_name} WHERE {where_clause} ORDER BY {order_by} LIMIT {limit}"
 
         cursor = self.connection.execute(query, params)
         res = [
@@ -461,6 +535,16 @@ class SQLiteAdapter(DatabaseAdapter):
     def execute_sql(
         self, sql: str, params: dict[str, Any] = {}
     ) -> List[Dict[str, Any]]:
+        """Executes a given SQL query with parameters and returns the results.
+
+        Args:
+            sql: The SQL query string to execute.
+            params: A dictionary of parameters to bind to the query.
+
+        Returns:
+            A list of dictionaries, where each dictionary represents a row
+            returned by the query.
+        """
         cursor = self.connection.cursor()
         cursor.execute(sql, params)
         if cursor.description:

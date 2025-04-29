@@ -3,12 +3,12 @@
 from datetime import datetime
 import time
 import uuid
-from fastapi import APIRouter, Depends, HTTPException, Body, BackgroundTasks, Request
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Header, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from nodetool.types.graph import Edge, Node, remove_connected_slots
 from nodetool.types.workflow import WorkflowList, Workflow, WorkflowRequest
-from nodetool.api.utils import current_user, User
+from nodetool.api.utils import current_user
 from nodetool.common.environment import Environment
 from typing import Any, Optional
 from nodetool.workflows.examples import load_examples, save_example
@@ -60,8 +60,7 @@ def from_model(workflow: WorkflowModel):
 @router.post("/")
 async def create(
     workflow_request: WorkflowRequest,
-    background_tasks: BackgroundTasks,
-    user: User = Depends(current_user),
+    user: str = Depends(current_user),
 ) -> Workflow:
     if workflow_request.graph:
         workflow = from_model(
@@ -73,7 +72,7 @@ async def create(
                 tags=workflow_request.tags,
                 access=workflow_request.access,
                 graph=remove_connected_slots(workflow_request.graph).model_dump(),
-                user_id=user.id,
+                user_id=user,
             )
         )
     elif workflow_request.comfy_workflow:
@@ -89,7 +88,7 @@ async def create(
                 thumbnail_url=workflow_request.thumbnail_url,
                 tags=workflow_request.tags,
                 access=workflow_request.access,
-                user_id=user.id,
+                user_id=user,
                 graph={
                     "nodes": [node.model_dump() for node in nodes],
                     "edges": [edge.model_dump() for edge in edges],
@@ -104,7 +103,7 @@ async def create(
 
 @router.get("/")
 async def index(
-    user: User = Depends(current_user),
+    user: str = Depends(current_user),
     cursor: Optional[str] = None,
     limit: int = 100,
     columns: Optional[str] = None,
@@ -112,7 +111,7 @@ async def index(
     column_list = columns.split(",") if columns else None
 
     workflows, cursor = WorkflowModel.paginate(
-        user_id=user.id, limit=limit, start_key=cursor, columns=column_list
+        user_id=user, limit=limit, start_key=cursor, columns=column_list
     )
     return WorkflowList(
         workflows=[from_model(workflow) for workflow in workflows], next=cursor
@@ -145,33 +144,17 @@ async def get_public_workflow(id: str) -> Workflow:
     return from_model(workflow)
 
 
-@router.get("/user/{user_id}")
-async def user_workflows(
-    user_id: str,
-    limit: int = 100,
-    cursor: Optional[str] = None,
-    columns: Optional[str] = None,
-) -> WorkflowList:
-    column_list = columns.split(",") if columns else None
-
-    workflows, cursor = WorkflowModel.paginate(
-        user_id=user_id, limit=limit, start_key=cursor, columns=column_list
-    )
-    workflows = [from_model(workflow) for workflow in workflows]
-    return WorkflowList(workflows=workflows, next=cursor)
-
-
 @router.get("/examples")
 async def examples() -> WorkflowList:
     return WorkflowList(workflows=load_examples(), next=None)
 
 
 @router.get("/{id}")
-async def get_workflow(id: str, user: User = Depends(current_user)) -> Workflow:
+async def get_workflow(id: str, user: str = Depends(current_user)) -> Workflow:
     workflow = WorkflowModel.get(id)
     if not workflow:
         raise HTTPException(status_code=404, detail="Workflow not found")
-    if workflow.access != "public" and workflow.user_id != user.id:
+    if workflow.access != "public" and workflow.user_id != user:
         raise HTTPException(status_code=404, detail="Workflow not found")
     return from_model(workflow)
 
@@ -181,12 +164,12 @@ async def update_workflow(
     id: str,
     workflow_request: WorkflowRequest,
     background_tasks: BackgroundTasks,
-    user: User = Depends(current_user),
+    user: str = Depends(current_user),
 ) -> Workflow:
     workflow = WorkflowModel.get(id)
     if not workflow:
-        workflow = WorkflowModel(id=id, user_id=user.id)
-    if workflow.user_id != user.id:
+        workflow = WorkflowModel(id=id, user_id=user)
+    if workflow.user_id != user:
         raise HTTPException(status_code=404, detail="Workflow not found")
     if workflow_request.graph is None:
         raise HTTPException(status_code=400, detail="Invalid workflow")
@@ -209,13 +192,12 @@ async def update_workflow(
 @router.delete("/{id}")
 async def delete_workflow(
     id: str,
-    background_tasks: BackgroundTasks,
-    user: User = Depends(current_user),
+    user: str = Depends(current_user),
 ) -> None:
     workflow = WorkflowModel.get(id)
     if not workflow:
         raise HTTPException(status_code=404, detail="Workflow not found")
-    if workflow.user_id != user.id:
+    if workflow.user_id != user:
         raise HTTPException(status_code=404, detail="Workflow not found")
     workflow.delete()
 
@@ -272,7 +254,8 @@ async def run_workflow_by_id(
     run_workflow_request: RunWorkflowRequest,
     request: Request,
     stream: bool = False,
-    user: User = Depends(current_user),
+    user: str = Depends(current_user),
+    authentication: Optional[str] = Header(None),
 ):
     """
     Run a specific workflow by ID.
@@ -281,17 +264,17 @@ async def run_workflow_by_id(
     server_host_name = request.headers.get("host", "localhost")
     server_port = request.headers.get("x-server-port", "8000")
 
+    token = authentication.split(" ")[1] if authentication else "local_token"
+
     job_request = RunJobRequest(
         workflow_id=id,
-        user_id=user.id,
+        user_id=user,
         params=run_workflow_request.params,
+        auth_token=token,
     )
 
     if job_request.api_url == "" or job_request.api_url is None:
         job_request.api_url = f"{server_protocol}://{server_host_name}:{server_port}"
-
-    if job_request.auth_token == "":
-        job_request.auth_token = user.auth_token or ""
 
     if stream:
         runner = HTTPStreamRunner()
@@ -334,7 +317,7 @@ class SmartWorkflowResponse(BaseModel):
 @router.post("/create-smart")
 async def create_smart_workflow(
     workflow_request: SmartWorkflowCreateRequest,
-    user: User = Depends(current_user),
+    user: str = Depends(current_user),
 ) -> SmartWorkflowResponse:
     """
     Create a workflow automatically using AI based on a description.

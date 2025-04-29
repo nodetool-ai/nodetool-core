@@ -7,9 +7,21 @@ from typing import Any
 from nodetool.models.condition_builder import Field
 
 
+"""
+Defines the Prediction database model.
+
+Represents a prediction or job execution within the nodetool system.
+Stores details about the execution, including the user, workflow (optional),
+node involved, provider, model used, status, timing, cost, and any logs or errors.
+"""
+
+
 class Prediction(DBModel):
+    """Database model representing a prediction or job execution."""
+
     @classmethod
     def get_table_schema(cls):
+        """Returns the database table schema for predictions."""
         return {
             "table_name": "nodetool_predictions",
         }
@@ -43,6 +55,22 @@ class Prediction(DBModel):
         hardware: str | None = None,
         started_at: datetime | None = None,
     ):
+        """Creates a new prediction record in the database.
+
+        Args:
+            user_id: The ID of the user initiating the prediction.
+            node_id: The ID of the node performing the prediction.
+            provider: The name of the prediction provider (e.g., 'replicate').
+            model: The specific model used for the prediction.
+            workflow_id: Optional ID of the workflow this prediction belongs to.
+            status: Initial status of the prediction (default: 'starting').
+            cost: Optional estimated or actual cost of the prediction.
+            hardware: Optional identifier for the hardware used.
+            started_at: Optional timestamp when the prediction started.
+
+        Returns:
+            The newly created and saved Prediction instance.
+        """
         prediction = cls(
             id=create_time_ordered_uuid(),
             user_id=user_id,
@@ -60,6 +88,15 @@ class Prediction(DBModel):
 
     @classmethod
     def find(cls, user_id: str, id: str):
+        """Finds a prediction by its ID, ensuring it belongs to the specified user.
+
+        Args:
+            user_id: The ID of the user who should own the prediction.
+            id: The ID of the prediction to find.
+
+        Returns:
+            The Prediction object if found and owned by the user, otherwise None.
+        """
         prediction = cls.get(id)
         if prediction is None or prediction.user_id != user_id:
             return None
@@ -73,6 +110,18 @@ class Prediction(DBModel):
         limit: int = 100,
         start_key: str | None = None,
     ):
+        """Paginates through predictions for a user, optionally filtering by workflow.
+
+        Args:
+            user_id: The ID of the user whose predictions to fetch.
+            workflow_id: Optional workflow ID to filter predictions by.
+            limit: Maximum number of predictions to return.
+            start_key: The ID of the prediction to start pagination after (exclusive).
+
+        Returns:
+            A tuple containing a list of Prediction objects and the ID of the
+            last evaluated prediction (or an empty string if it's the last page).
+        """
         if workflow_id is None:
             return cls.query(
                 condition=Field("user_id")

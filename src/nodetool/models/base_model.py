@@ -5,7 +5,7 @@ from nodetool.common.environment import Environment
 from uuid import uuid1
 from random import randint
 
-from nodetool.models.condition_builder import ConditionBuilder
+from nodetool.models.condition_builder import ConditionBuilder, ConditionGroup
 from nodetool.models.database_adapter import DatabaseAdapter
 
 """
@@ -150,10 +150,9 @@ class DBModel(BaseModel):
     @classmethod
     def query(
         cls,
-        condition: ConditionBuilder,
+        condition: ConditionBuilder | None = None,
         limit: int = 100,
         reverse: bool = False,
-        join_tables: list[dict[str, str]] | None = None,
     ):
         """
         Query the DB table for the model to retrieve a list of items.
@@ -164,7 +163,6 @@ class DBModel(BaseModel):
             condition: The condition for the query.
             limit: The maximum number of items to retrieve.
             reverse: Whether to reverse the order of the results.
-            join_tables: A list of tables to join with.
 
         Returns:
             A tuple containing a list of items that match the query conditions and the last evaluated key.
@@ -173,7 +171,6 @@ class DBModel(BaseModel):
             condition=condition,
             limit=limit,
             reverse=reverse,
-            join_tables=join_tables,
         )
         return [cls(**item) for item in items], key
 
@@ -185,6 +182,10 @@ class DBModel(BaseModel):
         return cls(**kwargs).save()
 
     def before_save(self):
+        """
+        Hook method called before saving the model instance.
+        Subclasses can override this method to perform actions before saving.
+        """
         pass
 
     def save(self):
@@ -234,6 +235,9 @@ class DBModel(BaseModel):
         return getattr(self, self.adapter().get_primary_key())
 
     def delete(self):
+        """
+        Delete the model instance from the database.
+        """
         self.adapter().delete(self.partition_value())
 
     def update(self, **kwargs):

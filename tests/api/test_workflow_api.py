@@ -4,11 +4,10 @@ from nodetool.types.graph import Edge, Graph as APIGraph, Node
 from nodetool.types.workflow import (
     WorkflowList,
 )
-from nodetool.models.user import User
 from nodetool.models.workflow import Workflow
 
 
-def test_create_workflow(client: TestClient, headers: dict[str, str], user: User):
+def test_create_workflow(client: TestClient, headers: dict[str, str], user_id: str):
     params = {
         "name": "Test Workflow",
         "graph": {
@@ -28,7 +27,7 @@ def test_create_workflow(client: TestClient, headers: dict[str, str], user: User
     w = Workflow.get(response.json()["id"])
     assert w is not None
     assert w.name == "Test Workflow"
-    assert w.user_id == user.id
+    assert w.user_id == user_id
     assert w.graph == {
         "nodes": [],
         "edges": [],

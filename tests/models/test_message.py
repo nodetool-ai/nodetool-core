@@ -1,11 +1,10 @@
 import pytest
 from nodetool.models.message import Message
-from nodetool.models.user import User
 
 
-def test_find_message(user: User):
+def test_find_message(user_id: str):
     message = Message.create(
-        user_id=user.id,
+        user_id=user_id,
         thread_id="th1",
     )
 
@@ -21,26 +20,26 @@ def test_find_message(user: User):
     assert not_found_message is None
 
 
-def test_paginate_messages(user: User):
-    Message.create(user_id=user.id, thread_id="th1")
+def test_paginate_messages(user_id: str):
+    Message.create(user_id=user_id, thread_id="th1")
 
     messages, last_key = Message.paginate(thread_id="th1", limit=10)
     assert len(messages) > 0
     assert last_key == ""
 
 
-def test_create_message(user: User):
+def test_create_message(user_id: str):
     message = Message.create(
-        user_id=user.id,
+        user_id=user_id,
         thread_id="th1",
     )
 
     assert Message.get(message.id) is not None
 
 
-def test_create_message_image_content(user: User):
+def test_create_message_image_content(user_id: str):
     message = Message.create(
-        user_id=user.id,
+        user_id=user_id,
         thread_id="th1",
         content=[
             {
@@ -58,9 +57,9 @@ def test_create_message_image_content(user: User):
     assert message.content[0].image.uri == "https://example.com/image.jpg"
 
 
-def test_create_message_mixed_content(user: User):
+def test_create_message_mixed_content(user_id: str):
     message = Message.create(
-        user_id=user.id,
+        user_id=user_id,
         thread_id="th1",
         content=[
             {"type": "text", "text": "Hello"},

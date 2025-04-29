@@ -206,6 +206,8 @@ def translate_postgres_params(
 
 
 class PostgresAdapter(DatabaseAdapter):
+    """Adapts DBModel operations to a PostgreSQL database."""
+
     db_params: Dict[str, str]
     table_name: str
     table_schema: Dict[str, Any]
@@ -219,6 +221,17 @@ class PostgresAdapter(DatabaseAdapter):
         table_schema: Dict[str, Any],
         indexes: List[Dict[str, Any]],
     ):
+        """Initializes the PostgreSQL adapter.
+
+        Establishes connection parameters, checks if the table exists, performs migrations
+        or creates the table and indexes as necessary.
+
+        Args:
+            db_params: Dictionary containing PostgreSQL connection parameters (database, user, password, host, port).
+            fields: Dictionary mapping field names to Pydantic FieldInfo objects.
+            table_schema: Schema definition for the table.
+            indexes: List of index definitions for the table.
+        """
         self.db_params = db_params
         self.table_name = table_schema["table_name"]
         self.table_schema = table_schema
@@ -235,6 +248,7 @@ class PostgresAdapter(DatabaseAdapter):
 
     @property
     def connection(self):
+        """Provides a lazy-loaded PostgreSQL database connection using psycopg2."""
         if not hasattr(self, "_connection"):
             self._connection = psycopg2.connect(
                 database=self.db_params["database"],
@@ -246,6 +260,7 @@ class PostgresAdapter(DatabaseAdapter):
         return self._connection
 
     def table_exists(self) -> bool:
+        """Checks if the table associated with this adapter exists in the database."""
         with self.connection.cursor() as cursor:
             cursor.execute(
                 "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = %s)",
@@ -257,9 +272,7 @@ class PostgresAdapter(DatabaseAdapter):
             return res[0]
 
     def get_current_schema(self) -> set[str]:
-        """
-        Retrieves the current schema of the table from the database.
-        """
+        """Retrieves the current schema (column names) of the table from the database."""
         with self.connection.cursor() as cursor:
             cursor.execute(
                 f"SELECT column_name FROM information_schema.columns WHERE table_name = %s",
@@ -269,13 +282,19 @@ class PostgresAdapter(DatabaseAdapter):
         return current_schema
 
     def get_desired_schema(self) -> set[str]:
-        """
-        Retrieves the desired schema based on the defined fields.
-        """
+        """Gets the desired schema (column names) based on the model's fields."""
         desired_schema = set(self.fields.keys())
         return desired_schema
 
     def create_table(self, suffix: str = "") -> None:
+        """Creates the database table based on the model's schema.
+
+        Constructs and executes a CREATE TABLE SQL statement using the defined fields
+        and their corresponding PostgreSQL types.
+
+        Args:
+            suffix: Optional suffix to append to the table name (used for migrations).
+        """
         table_name = f"{self.table_name}{suffix}"
         fields = self.fields
         primary_key = self.get_primary_key()
@@ -294,14 +313,19 @@ class PostgresAdapter(DatabaseAdapter):
             raise e
 
     def drop_table(self) -> None:
+        """Drops the database table associated with this adapter."""
         sql = f"DROP TABLE IF EXISTS {self.table_name}"
         with self.connection.cursor() as cursor:
             cursor.execute(sql)
         self.connection.commit()
 
     def migrate_table(self) -> None:
-        """
-        Inspects the current schema of the database and migrates the table to the desired schema.
+        """Performs schema migration for the table.
+
+        Compares the current schema in the database with the model's defined schema.
+        Adds new columns (using ALTER TABLE ADD COLUMN) if they exist in the model
+        but not in the database table.
+        Note: Does not currently handle column type changes or removals.
         """
         current_schema = self.get_current_schema()
         desired_schema = self.get_desired_schema()
@@ -336,6 +360,14 @@ class PostgresAdapter(DatabaseAdapter):
                     self.create_index(index["name"], index["columns"], index["unique"])
 
     def save(self, item: Dict[str, Any]) -> None:
+        """Saves (inserts or updates) an item into the database table.
+
+        Uses an INSERT ... ON CONFLICT (primary_key) DO UPDATE statement.
+        Converts the item's attributes to PostgreSQL-compatible formats before saving.
+
+        Args:
+            item: A dictionary representing the model instance to save.
+        """
         valid_keys = [key for key in item if key in self.fields]
         columns = ", ".join(valid_keys)
         placeholders = ", ".join([f"%({key})s" for key in valid_keys])
@@ -352,6 +384,15 @@ class PostgresAdapter(DatabaseAdapter):
         self.connection.commit()
 
     def get(self, key: Any) -> Dict[str, Any] | None:
+        """Retrieves an item from the database table by its primary key.
+
+        Args:
+            key: The primary key value of the item to retrieve.
+
+        Returns:
+            A dictionary representing the retrieved item, or None if not found.
+            Attributes are converted back to their Python types.
+        """
         primary_key = self.get_primary_key()
         cols = ", ".join(self.fields.keys())
         query = f"SELECT {cols} FROM {self.table_name} WHERE {primary_key} = %s"
@@ -363,6 +404,11 @@ class PostgresAdapter(DatabaseAdapter):
         return convert_from_postgres_attributes(dict(item), self.fields)
 
     def delete(self, primary_key: Any) -> None:
+        """Deletes an item from the database table by its primary key.
+
+        Args:
+            primary_key: The primary key value of the item to delete.
+        """
         pk_column = self.get_primary_key()
         query = f"DELETE FROM {self.table_name} WHERE {pk_column} = %s"
         with self.connection.cursor() as cursor:
@@ -372,6 +418,14 @@ class PostgresAdapter(DatabaseAdapter):
     def _build_condition(
         self, condition: Union[Condition, ConditionGroup]
     ) -> tuple[Composed, list[Any]]:
+        """Recursively builds a psycopg2 SQL Composed object and parameters for a WHERE clause.
+
+        Args:
+            condition: The Condition or ConditionGroup object.
+
+        Returns:
+            A tuple containing the SQL Composed object for the WHERE clause and a list of parameters.
+        """
         if isinstance(condition, Condition):
             if condition.operator == Operator.IN:
                 placeholders = SQL(", ").join([Placeholder()] * len(condition.value))
@@ -404,28 +458,12 @@ class PostgresAdapter(DatabaseAdapter):
                     params,
                 )
 
-    def _build_join(
-        self, join_tables: List[Dict[str, str]]
-    ) -> tuple[Composed, List[SQL]]:
-        join_clauses = []
-        join_columns = []
-        for join in join_tables:
-            join_type = SQL(join.get("type", "INNER").upper() + " JOIN")
-            join_table = Identifier(join["table"])
-            on_condition = SQL(join["on"])
-            join_clauses.append(
-                SQL("{} {} ON {}").format(join_type, join_table, on_condition)
-            )
-            if "columns" in join:
-                join_columns.extend([SQL(col) for col in join["columns"].split(",")])
-        return SQL(" ").join(join_clauses), join_columns
-
     def query(
         self,
         condition: ConditionBuilder,
         limit: int = 100,
         reverse: bool = False,
-        join_tables: List[Dict[str, str]] | None = None,
+        columns: List[str] | None = None,
     ) -> tuple[List[Dict[str, Any]], str]:
         pk = self.get_primary_key()
         order_by = SQL("{}.{} DESC" if reverse else "{}.{} ASC").format(
@@ -434,32 +472,28 @@ class PostgresAdapter(DatabaseAdapter):
 
         where_clause, params = self._build_condition(condition.build())
 
-        cols = SQL(", ").join(
-            [
-                SQL("{}.{}").format(Identifier(self.table_name), Identifier(col))
-                for col in self.fields.keys()
-            ]
-        )
-
-        if join_tables:
-            join_clause, join_columns = self._build_join(join_tables)
-            cols = SQL("{}, {}").format(cols, SQL(", ").join(join_columns))
-            query = SQL("SELECT {} FROM {} {} WHERE {} ORDER BY {} LIMIT {}").format(
-                cols,
-                Identifier(self.table_name),
-                join_clause,
-                where_clause,
-                order_by,
-                SQL(str(limit)),
+        if columns:
+            cols = SQL(", ").join(
+                [
+                    SQL("{}.{}").format(Identifier(self.table_name), Identifier(col))
+                    for col in columns
+                ]
             )
         else:
-            query = SQL("SELECT {} FROM {} WHERE {} ORDER BY {} LIMIT {}").format(
-                cols,
-                Identifier(self.table_name),
-                where_clause,
-                order_by,
-                SQL(str(limit)),
+            cols = SQL(", ").join(
+                [
+                    SQL("{}.{}").format(Identifier(self.table_name), Identifier(col))
+                    for col in self.fields.keys()
+                ]
             )
+
+        query = SQL("SELECT {} FROM {} WHERE {} ORDER BY {} LIMIT {}").format(
+            cols,
+            Identifier(self.table_name),
+            where_clause,
+            order_by,
+            SQL(str(limit)),
+        )
 
         with self.connection.cursor(cursor_factory=RealDictCursor) as cursor:
             cursor.execute(query, params)
@@ -476,12 +510,25 @@ class PostgresAdapter(DatabaseAdapter):
 
     @contextmanager
     def get_cursor(self):
+        """Provides a database cursor within a context manager, handling commit/rollback."""
         with self.connection.cursor(cursor_factory=RealDictCursor) as cursor:
             yield cursor
 
     def execute_sql(
         self, sql: str, params: Dict[str, Any] = {}
     ) -> List[Dict[str, Any]]:
+        """Executes a given SQL query with parameters and returns the results.
+
+        Uses a RealDictCursor to return rows as dictionaries.
+
+        Args:
+            sql: The SQL query string to execute (can be Composed SQL).
+            params: A dictionary of parameters to bind to the query.
+
+        Returns:
+            A list of dictionaries, where each dictionary represents a row
+            returned by the query.
+        """
         translated_sql, translated_params = translate_postgres_params(sql, params)
         with self.connection.cursor(cursor_factory=RealDictCursor) as cursor:
             cursor.execute(translated_sql, translated_params)
@@ -561,5 +608,6 @@ class PostgresAdapter(DatabaseAdapter):
             raise e
 
     def __del__(self):
+        """Closes the database connection when the adapter object is garbage collected."""
         if hasattr(self, "_connection") and self._connection:
             self._connection.close()

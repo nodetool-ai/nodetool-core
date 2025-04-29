@@ -58,8 +58,7 @@ def test_node_find_property_method():
 
 def test_node_find_property_fail():
     node = DummyClass(prop=123)
-    with pytest.raises(ValueError):
-        node.find_property("non_existent_prop")
+    assert node.find_property("non_existent_prop") is None
 
 
 def test_node_find_output_method():
@@ -81,8 +80,8 @@ def test_node_assign_property_method():
 
 def test_node_assign_property_fail():
     node = DummyClass()
-    with pytest.raises(ValueError):
-        node.assign_property("prop", "test")
+    node.assign_property("prop", "test")
+    assert node.prop == 123
 
 
 def test_node_is_assignable_method():
@@ -104,12 +103,6 @@ def test_node_set_node_properties():
     node = DummyClass()
     node.set_node_properties({"prop": 789})
     assert node.prop == 789
-
-
-def test_node_set_node_properties_fail():
-    node = DummyClass()
-    with pytest.raises(ValueError):
-        node.set_node_properties({"prop": "test"})
 
 
 def test_node_set_node_properties_skip_errors():

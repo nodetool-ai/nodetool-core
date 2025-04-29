@@ -561,6 +561,20 @@ Generate a JSON object conforming EXACTLY to the 'SingleSubtaskDefinition' schem
                     )
 
                 # --- Create Task and Subtask Objects ---
+                # Generate a unique output filename
+                output_filename = f"output_{uuid.uuid4()}.txt"  # Default extension
+                # Determine extension based on output_type if possible
+                ext_map = {
+                    "json": ".json",
+                    "csv": ".csv",
+                    "markdown": ".md",
+                    "text": ".txt",
+                }
+                output_filename = (
+                    f"output_{uuid.uuid4()}{ext_map.get(self.output_type, '.txt')}"
+                )
+                full_output_path = os.path.join(context.workspace_dir, output_filename)
+
                 # Ensure all fields expected by SubTask are present or defaulted
                 subtask_args = {
                     "content": subtask_data["content"],
@@ -568,7 +582,7 @@ Generate a JSON object conforming EXACTLY to the 'SingleSubtaskDefinition' schem
                     "input_files": self.input_files,
                     "output_type": self.output_type,
                     "output_schema": json.dumps(self.output_schema),
-                    "output_file": "",
+                    "output_file": full_output_path,  # Use generated path
                 }
                 self.subtask = SubTask(**subtask_args)
                 self.task = Task(title=self.objective, subtasks=[self.subtask])

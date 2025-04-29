@@ -1,14 +1,14 @@
 #!/usr/bin/env python
 
 from typing import Dict, List, Optional
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Header
 from langchain_text_splitters import (
     ExperimentalMarkdownSyntaxTextSplitter,
     RecursiveCharacterTextSplitter,
     SentenceTransformersTokenTextSplitter,
 )
 from pydantic import BaseModel
-from nodetool.api.utils import current_user, User
+from nodetool.api.utils import current_user
 from nodetool.common.chroma_client import (
     get_chroma_client,
     get_collection,
@@ -64,7 +64,7 @@ class CollectionModify(BaseModel):
 
 @router.post("/", response_model=CollectionResponse)
 async def create_collection(
-    req: CollectionCreate, user: User = Depends(current_user)
+    req: CollectionCreate,
 ) -> CollectionResponse:
     """Create a new collection"""
     client = get_chroma_client()
@@ -83,7 +83,6 @@ async def create_collection(
 async def list_collections(
     offset: Optional[int] = None,
     limit: Optional[int] = None,
-    user: User = Depends(current_user),
 ) -> CollectionList:
     """List all collections"""
     client = get_chroma_client()
@@ -113,7 +112,7 @@ async def list_collections(
 
 
 @router.get("/{name}", response_model=CollectionResponse)
-async def get(name: str, user: User = Depends(current_user)) -> CollectionResponse:
+async def get(name: str) -> CollectionResponse:
     """Get a specific collection by name"""
     client = get_chroma_client()
     collection = client.get_collection(name=name)
@@ -126,9 +125,7 @@ async def get(name: str, user: User = Depends(current_user)) -> CollectionRespon
 
 
 @router.put("/{name}")
-async def update_collection(
-    name: str, req: CollectionModify, user: User = Depends(current_user)
-):
+async def update_collection(name: str, req: CollectionModify):
     """Update a collection"""
     client = get_chroma_client()
     collection = client.get_collection(name=name)
@@ -162,7 +159,7 @@ async def update_collection(
 
 
 @router.delete("/{name}")
-async def delete_collection(name: str, user: User = Depends(current_user)):
+async def delete_collection(name: str):
     """Delete a collection"""
     client = get_chroma_client()
     client.delete_collection(name=name)
@@ -334,19 +331,23 @@ def find_input_nodes(graph: dict) -> tuple[str | None, str | None]:
 
 @router.post("/{name}/index", response_model=IndexResponse)
 async def index(
-    name: str, file: IndexFile, user: User = Depends(current_user)
+    name: str,
+    file: IndexFile,
+    authorization: Optional[str] = Header(None),
 ) -> IndexResponse:
     collection = get_collection(name)
+    token = "local_token"
+
     if workflow_id := collection.metadata.get("workflow"):
         processing_context = ProcessingContext(
-            user_id=user.id,
-            auth_token=user.auth_token or "",
+            user_id="1",
+            auth_token=token,
             workflow_id=workflow_id,
         )
         req = RunJobRequest(
             workflow_id=workflow_id,
-            user_id=user.id,
-            auth_token=user.auth_token or "",
+            user_id="1",
+            auth_token=token,
         )
         workflow = await processing_context.get_workflow(workflow_id)
         req.graph = workflow.graph

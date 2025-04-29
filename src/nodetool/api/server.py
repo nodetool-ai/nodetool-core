@@ -21,7 +21,7 @@ from uvicorn import run as uvicorn
 
 from nodetool.packages.registry import get_nodetool_package_source_folders
 
-from . import asset, job, auth, message, node, storage, workflow, model, settings
+from . import asset, job, message, node, storage, workflow, model, settings
 import mimetypes
 
 from nodetool.common.websocket_updates import websocket_updates
@@ -83,7 +83,6 @@ class ExtensionRouterRegistry:
 DEFAULT_ROUTERS = [
     asset.router,
     job.router,
-    auth.router,
     message.router,
     model.router,
     node.router,

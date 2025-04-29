@@ -1,3 +1,11 @@
+"""
+Defines the Asset database model.
+
+Represents a digital asset within the nodetool system, such as images, videos, or folders.
+Includes metadata like name, content type, user association, parent folder (for hierarchy),
+and optional workflow association.
+"""
+
 from typing import Dict, List, Optional, Literal, Sequence
 from datetime import datetime
 from nodetool.common.content_types import CONTENT_TYPE_TO_EXTENSION
@@ -16,8 +24,11 @@ log = Environment.get_logger()
 
 @DBIndex(["user_id", "parent_id"])
 class Asset(DBModel):
+    """Database model representing a digital asset (file, folder, etc.)."""
+
     @classmethod
     def get_table_schema(cls):
+        """Returns the database table schema for assets."""
         return {"table_name": "nodetool_assets"}
 
     type: Literal["asset"] = "asset"
@@ -80,6 +91,24 @@ class Asset(DBModel):
         duration: float | None = None,
         **kwargs,
     ):
+        """Creates a new asset record in the database.
+
+        Generates a time-ordered UUID for the asset ID.
+        Sets the parent_id to the user_id if not otherwise specified.
+
+        Args:
+            user_id: The ID of the owner user.
+            name: The name of the asset.
+            content_type: The MIME type of the asset content.
+            metadata: Optional dictionary for additional metadata.
+            parent_id: Optional ID of the parent asset (e.g., folder).
+            workflow_id: Optional ID of an associated workflow.
+            duration: Optional duration (e.g., for video/audio assets).
+            **kwargs: Additional fields to set on the model.
+
+        Returns:
+            The newly created and saved Asset instance.
+        """
         return super().create(
             id=create_time_ordered_uuid(),
             name=name,
@@ -155,8 +184,16 @@ class Asset(DBModel):
 
     @classmethod
     def get_assets_recursive(cls, user_id: str, folder_id: str) -> Dict:
-        """
-        Fetch all assets recursively for a given folder_id.
+        """Recursively fetches all assets within a given folder for a user.
+
+        Args:
+            user_id: The ID of the user whose assets are being fetched.
+            folder_id: The ID of the starting folder.
+
+        Returns:
+            A dictionary containing a list of assets, structured hierarchically
+            with 'children' keys for subfolders. Returns an empty list if the
+            initial folder is not found or not owned by the user.
         """
 
         def recursive_fetch(current_folder_id):

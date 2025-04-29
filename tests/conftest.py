@@ -13,7 +13,6 @@ from nodetool.types.graph import Node, Edge
 from nodetool.common.environment import Environment
 from nodetool.models.message import Message
 from nodetool.models.thread import Thread
-from nodetool.models.user import User
 from nodetool.models.workflow import Workflow
 from nodetool.models.job import Job
 from nodetool.models.asset import Asset
@@ -30,13 +29,14 @@ from nodetool.common.environment import DEFAULT_ENV
 
 @pytest.fixture(autouse=True, scope="function")
 def setup_and_teardown():
-    Environment.set_remote_auth(True)
+    Environment.set_remote_auth(False)
 
     create_all_tables()
 
     yield
 
     drop_all_tables()
+    Environment.set_remote_auth(True)
 
 
 def pil_to_bytes(image: PIL.Image.Image, format="PNG") -> bytes:
@@ -55,31 +55,6 @@ def pil_to_bytes(image: PIL.Image.Image, format="PNG") -> bytes:
         return buffer.getvalue()
 
 
-def make_user(verified: bool = False) -> User:
-    """
-    Create and save a test user.
-
-    Args:
-        verified (bool, optional): Whether the user should be marked as verified. Defaults to False.
-
-    Returns:
-        User: The created user instance.
-    """
-    user = User(
-        id="1",
-        email=uuid.uuid4().hex + "@a.de",
-        auth_token=uuid.uuid4().hex,
-        token_valid=datetime.now() + timedelta(days=1),
-        passcode="123",
-        passcode_valid=datetime.now() + timedelta(days=1),
-        created_at=datetime.now(),
-        updated_at=datetime.now(),
-        verified_at=datetime.now() if verified else None,
-    )
-    user.save()
-    return user
-
-
 def upload_test_image(image: Asset, width: int = 512, height: int = 512):
     """
     Upload a test image to the memory storage.
@@ -96,7 +71,7 @@ def upload_test_image(image: Asset, width: int = 512, height: int = 512):
 
 
 def make_image(
-    user: User,
+    user_id: str,
     workflow_id: str | None = None,
     parent_id: str | None = None,
     width: int = 512,
@@ -106,7 +81,7 @@ def make_image(
     Create and upload a test image asset.
 
     Args:
-        user (User): The user who owns the image.
+        user_id (str): The user ID who owns the image.
         workflow_id (str | None, optional): Associated workflow ID. Defaults to None.
         parent_id (str | None, optional): Parent asset ID. Defaults to None.
         width (int, optional): Width of the test image. Defaults to 512.
@@ -116,7 +91,7 @@ def make_image(
         Asset: The created image asset.
     """
     image = Asset.create(
-        user_id=user.id,
+        user_id=user_id,
         name="test_image",
         parent_id=parent_id,
         content_type="image/jpeg",
@@ -127,7 +102,7 @@ def make_image(
 
 
 def make_text(
-    user: User,
+    user_id: str,
     content: str,
     workflow_id: str | None = None,
     parent_id: str | None = None,
@@ -136,7 +111,7 @@ def make_text(
     Create and upload a test text asset.
 
     Args:
-        user (User): The user who owns the text asset.
+        user_id (str): The user ID who owns the text asset.
         content (str): The text content to upload.
         workflow_id (str | None, optional): Associated workflow ID. Defaults to None.
         parent_id (str | None, optional): Parent asset ID. Defaults to None.
@@ -145,7 +120,7 @@ def make_text(
         Asset: The created text asset.
     """
     asset = Asset.create(
-        user_id=user.id,
+        user_id=user_id,
         name="test_text",
         parent_id=parent_id,
         content_type="text/plain",
@@ -156,12 +131,12 @@ def make_text(
     return asset
 
 
-def make_job(user: User, **kwargs):
+def make_job(user_id: str, **kwargs):
     """
     Create a test job.
 
     Args:
-        user (User): The user who owns the job.
+        user_id (str): The user ID who owns the job.
         **kwargs: Additional job attributes.
 
     Returns:
@@ -169,34 +144,24 @@ def make_job(user: User, **kwargs):
     """
     return Job.create(
         workflow_id=str(uuid.uuid4()),
-        user_id=user.id,
+        user_id=user_id,
         **kwargs,
     )
 
 
 @pytest.fixture()
-def image(user: User):
-    return make_image(user)
+def image(user_id: str):
+    return make_image(user_id)
 
 
 @pytest.fixture()
-def text_asset(user: User):
-    return make_text(user, "test content")
+def text_asset(user_id: str):
+    return make_text(user_id, "test content")
 
 
 @pytest.fixture()
-def user():
-    return User(
-        id="1",
-        email="test@a.de",
-        auth_token="token",
-        token_valid=datetime.now() + timedelta(days=1),
-        passcode="123",
-        passcode_valid=datetime.now() + timedelta(days=1),
-        created_at=datetime.now(),
-        updated_at=datetime.now(),
-        verified_at=datetime.now(),
-    ).save()
+def user_id() -> str:
+    return "1"
 
 
 @pytest.fixture
@@ -205,12 +170,12 @@ def http_client():
 
 
 @pytest.fixture()
-def context(user: User, http_client):
-    assert user.auth_token != None and user.auth_token != ""
+def context(user_id: str, http_client):
+    test_auth_token = "test_token"
     return ProcessingContext(
-        user_id=user.id,
+        user_id=user_id,
         workflow_id="1",
-        auth_token=user.auth_token,
+        auth_token=test_auth_token,
         http_client=http_client,
     )
 
@@ -222,18 +187,18 @@ def client():
 
     This fixture is scoped to the module, so it will only be created once for the entire test run.
     """
-
     return TestClient(create_app())
 
 
 @pytest.fixture()
-def headers(user: User):
+def headers(user_id: str):
     """
     Create headers for a http request that requires authentication.
 
     This fixture is scoped to the function, so it will be created once for each test function.
     """
-    return {"Authorization": f"Bearer {user.auth_token}"}
+    test_auth_token = "test_token"
+    return {"Authorization": f"Bearer {test_auth_token}"}
 
 
 def make_node(id, type: str, data: dict[str, Any]):
@@ -252,20 +217,17 @@ def make_node(id, type: str, data: dict[str, Any]):
 
 
 @pytest.fixture()
-def thread(user: User):
-    yield Thread.create(
-        user_id=user.id,
-    )
+def thread(user_id: str):
+    th = Thread.create(user_id=user_id)
+    return th
 
 
 @pytest.fixture()
-def message(user: User, thread: Thread):
-    yield Message.create(
-        user_id=user.id,
-        thread_id=thread.id,
-        role="user",
-        content="content",
+def message(user_id: str, thread: Thread):
+    msg = Message.create(
+        user_id=user_id, thread_id=thread.id, role="user", content="Hello"
     )
+    return msg
 
 
 class FloatInput(InputNode):
@@ -288,7 +250,8 @@ class Add(BaseNode):
 
 
 @pytest.fixture()
-def workflow(user: User):
+def workflow(user_id: str):
+    # Restore graph definition from previous version
     nodes = [
         make_node("1", FloatInput.get_node_type(), {"name": "in1", "value": 10}),
         make_node("2", Add.get_node_type(), {"b": 1, "a": 1}),
@@ -301,12 +264,12 @@ def workflow(user: User):
             targetHandle="a",
         ),
     ]
-
-    yield Workflow.create(
-        user_id=user.id,
-        name="Test Workflow",
+    wf = Workflow.create(
+        user_id=user_id,  # Use the string user_id
+        name="test_workflow",
         graph={
             "nodes": [node.model_dump() for node in nodes],
             "edges": [edge.model_dump() for edge in edges],
         },
     )
+    return wf

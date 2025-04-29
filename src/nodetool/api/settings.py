@@ -1,5 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
-from nodetool.api.utils import current_user, User
+from fastapi import APIRouter, HTTPException
 from nodetool.common.environment import Environment
 from nodetool.common.settings import (
     load_settings,
@@ -24,7 +23,7 @@ class SettingsUpdateRequest(BaseModel):
 
 
 @router.get("/")
-async def get_settings(user: User = Depends(current_user)) -> SettingsResponse:
+async def get_settings() -> SettingsResponse:
     if Environment.is_production():
         raise HTTPException(
             status_code=403, detail="Settings cannot be read in production"
@@ -37,7 +36,7 @@ async def get_settings(user: User = Depends(current_user)) -> SettingsResponse:
 
 @router.put("/")
 async def update_settings(
-    req: SettingsUpdateRequest, user: User = Depends(current_user)
+    req: SettingsUpdateRequest,
 ) -> SettingsResponse:
     if Environment.is_production():
         raise HTTPException(

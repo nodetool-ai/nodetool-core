@@ -23,22 +23,17 @@ from nodetool.common.huggingface_models import (
 from nodetool.workflows.base_node import get_recommended_models
 from nodetool.metadata.node_metadata import NodeMetadata
 from nodetool.metadata.types import HuggingFaceModel
-import nodetool.nodes.aime
-import nodetool.nodes.anthropic
-import nodetool.nodes.chroma
-import nodetool.nodes.comfy
-import nodetool.nodes.huggingface
-import nodetool.nodes.nodetool
-import nodetool.nodes.openai
-import nodetool.nodes.replicate
-import nodetool.nodes.ollama
 from nodetool.workflows.base_node import get_registered_node_classes
-from nodes import init_extra_nodes
-import comfy.cli_args
 
-comfy.cli_args.args.force_fp16 = True
+try:
+    from nodes import init_extra_nodes  # type: ignore
+    import comfy.cli_args  # type: ignore
 
-init_extra_nodes()
+    comfy.cli_args.args.force_fp16 = True
+
+    init_extra_nodes()
+except ImportError:
+    pass
 
 
 env_file = dotenv.find_dotenv(usecwd=True)
@@ -60,11 +55,6 @@ app.add_middleware(
     allow_headers=["*"],  # Allows all headers
 )
 
-env_file = dotenv.find_dotenv(usecwd=True)
-
-if env_file != "":
-    print(f"Loading environment from {env_file}")
-    dotenv.load_dotenv(env_file)
 
 app = FastAPI()
 

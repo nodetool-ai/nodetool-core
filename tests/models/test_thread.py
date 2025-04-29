@@ -1,11 +1,10 @@
 import pytest
 from nodetool.models.thread import Thread
-from nodetool.models.user import User
 
 
-def test_find_thread(user: User):
+def test_find_thread(user_id: str):
     thread = Thread.create(
-        user_id=user.id,
+        user_id=user_id,
     )
 
     found_thread = Thread.get(thread.id)
@@ -20,17 +19,17 @@ def test_find_thread(user: User):
     assert not_found_thread is None
 
 
-def test_paginate_threads(user: User):
-    Thread.create(user_id=user.id)
+def test_paginate_threads(user_id: str):
+    Thread.create(user_id=user_id)
 
-    threads, last_key = Thread.paginate(user_id=user.id, limit=10)
+    threads, last_key = Thread.paginate(user_id=user_id, limit=10)
     assert len(threads) > 0
     assert last_key == ""
 
 
-def test_create_thread(user: User):
+def test_create_thread(user_id: str):
     thread = Thread.create(
-        user_id=user.id,
+        user_id=user_id,
     )
 
     assert Thread.get(thread.id) is not None

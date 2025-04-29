@@ -3,54 +3,59 @@ from fastapi import (
     Header,
     status,
 )
-from pydantic import BaseModel
 from typing import Optional
 from fastapi import Cookie
 from nodetool.common.environment import Environment
 
-from nodetool.models.user import User
-
-local_user: User | None = None
-
 log = Environment.get_logger()
-
-
-def get_local_user():
-    """
-    In local mode, we only need to create a single user.
-    This single user has the ID 1.
-    """
-    global local_user
-    if local_user is None:
-        local_user = User.get("1")
-        if local_user is None:
-            local_user, _ = User.create(user_id="1", auth_token="local")
-    return local_user
 
 
 async def current_user(
     authorization: Optional[str] = Header(None),
     auth_cookie: Optional[str] = Cookie(None),
-) -> User:
+) -> str:
     if not Environment.use_remote_auth():
-        return get_local_user()
+        return "1"
 
+    jwt_token = None
     if authorization:
-        token_split = authorization.split(" ")
-        if len(token_split) != 2 or token_split[0].lower() != "bearer":
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
-
-        user = User.find_by_auth_token(token_split[1])
+        parts = authorization.split()
+        if len(parts) == 2 and parts[0].lower() == "bearer":
+            jwt_token = parts[1]
     elif auth_cookie:
-        user = User.find_by_auth_token(auth_cookie)
-    else:
-        user = None
+        jwt_token = auth_cookie
 
-    if not user:
-        raise HTTPException(status_code=401, detail="User not authenticated")
-    if user.verified_at is None:
-        raise HTTPException(status_code=401, detail="User not verified")
-    return user
+    if not jwt_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication credentials were not provided.",
+        )
+
+    try:
+        supabase = await Environment.get_supabase_client()
+        user_response = await supabase.auth.get_user(jwt=jwt_token)
+
+        if not user_response or not hasattr(user_response, "user"):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication response.",
+            )
+
+        supabase_user = user_response.user
+        if not supabase_user or not supabase_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token or user session.",
+            )
+
+        return str(supabase_user.id)
+
+    except Exception as e:
+        log.error(f"Supabase auth error during token validation: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Failed to validate authentication token.",
+        )
 
 
 async def abort(status_code: int, detail: Optional[str] = None) -> None:

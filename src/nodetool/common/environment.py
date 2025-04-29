@@ -1,6 +1,5 @@
 import os
-from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 from nodetool.common.nodetool_api_client import (
     NodetoolAPIClient,
@@ -37,6 +36,8 @@ DEFAULT_ENV = {
     "AWS_REGION": "us-east-1",
     "NODETOOL_API_URL": None,
     "SENTRY_DSN": None,
+    "SUPABASE_URL": None,
+    "SUPABASE_KEY": None,
 }
 
 NOT_GIVEN = object()
@@ -133,15 +134,6 @@ class Environment(object):
     @classmethod
     def has_secrets(cls):
         return get_system_file_path(SECRETS_FILE).exists()
-
-    @classmethod
-    def initialize_database(cls):
-        """
-        Initialize the database.
-        """
-        from nodetool.models.schema import create_all_tables  # type: ignore
-
-        create_all_tables()
 
     @classmethod
     def get_aws_region(cls):
@@ -288,6 +280,21 @@ class Environment(object):
         }
 
     @classmethod
+    def get_supabase_client(cls):
+        """
+        Get the supabase client.
+        """
+        from supabase import create_async_client
+
+        supabase_url = cls.get_supabase_url()
+        supabase_key = cls.get_supabase_key()
+
+        if supabase_url is None or supabase_key is None:
+            raise Exception("Supabase URL or key is not set")
+
+        return create_async_client(supabase_url, supabase_key)
+
+    @classmethod
     def get_database_adapter(
         cls,
         fields: dict[str, Any],
@@ -305,6 +312,15 @@ class Environment(object):
                 fields=fields,
                 table_schema=table_schema,
                 indexes=indexes,
+            )
+        elif cls.get("SUPABASE_URL", None) is not None:
+            from nodetool.models.supabase_adapter import SupabaseAdapter  # type: ignore
+
+            return SupabaseAdapter(
+                supabase_url=cls.get_supabase_url(),
+                supabase_key=cls.get_supabase_key(),
+                fields=fields,
+                table_schema=table_schema,
             )
         elif cls.get_db_path() is not None:
             from nodetool.models.sqlite_adapter import SQLiteAdapter  # type: ignore
@@ -476,20 +492,6 @@ class Environment(object):
         return str(get_system_file_path("assets"))
 
     @classmethod
-    def get_google_client_id(cls):
-        """
-        The google client id is the id of the google client.
-        """
-        return cls.get("GOOGLE_CLIENT_ID")
-
-    @classmethod
-    def get_google_client_secret(cls):
-        """
-        The google client secret is the secret of the google client.
-        """
-        return cls.get("GOOGLE_CLIENT_SECRET")
-
-    @classmethod
     def get_s3_storage(cls, bucket: str, domain: str):
         """
         Get the S3 service.
@@ -573,25 +575,6 @@ class Environment(object):
             cls.logger.propagate = False
 
         return cls.logger
-
-    @classmethod
-    def get_google_oauth2_session(cls, state: str | None = None):
-        """
-        The google oauth2 session is a wrapper around the google SDK.
-        """
-        from authlib.integrations.requests_client import OAuth2Session
-
-        client_id = cls.get_google_client_id()
-        client_secret = cls.get_google_client_secret()
-        if client_id is None or client_secret is None:
-            raise Exception("Google client ID or secret is not set")
-
-        return OAuth2Session(
-            client_id=cls.get_google_client_id(),
-            client_secret=cls.get_google_client_secret(),
-            state=state,
-            scope="openid email",
-        )
 
     @classmethod
     def get_torch_device(cls):
@@ -685,3 +668,17 @@ class Environment(object):
 
         assert cls.asset_temp_storage is not None
         return cls.asset_temp_storage
+
+    @classmethod
+    def get_supabase_url(cls):
+        """
+        The Supabase URL.
+        """
+        return cls.get("SUPABASE_URL")
+
+    @classmethod
+    def get_supabase_key(cls):
+        """
+        The Supabase service key.
+        """
+        return cls.get("SUPABASE_KEY")

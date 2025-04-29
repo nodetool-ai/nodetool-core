@@ -7,7 +7,6 @@ from nodetool.api.server import create_app
 from nodetool.common.nodetool_api_client import NodetoolAPIClient
 from nodetool.metadata.types import ImageRef
 from nodetool.models.asset import Asset
-from nodetool.models.user import User
 
 
 @pytest.fixture
@@ -17,11 +16,10 @@ def async_client():
 
 
 @pytest.fixture
-def nodetool_client(async_client: httpx.AsyncClient, user: User):
-    assert user.auth_token
+def nodetool_client(async_client: httpx.AsyncClient):
     return NodetoolAPIClient(
-        user_id=user.id,
-        auth_token=user.auth_token,
+        user_id="1",
+        auth_token="local_token",
         base_url="http://127.0.0.1:9000",
         client=async_client,
     )

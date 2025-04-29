@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Optional
 from pydantic import BaseModel
 from fastapi import APIRouter, Depends, HTTPException
-from nodetool.api.utils import current_user, User
+from nodetool.api.utils import current_user
 from nodetool.chat.help import create_help_answer
 from nodetool.metadata.types import Message
 from nodetool.models.message import Message as MessageModel
@@ -23,15 +23,15 @@ router = APIRouter(prefix="/api/messages", tags=["messages"])
 
 @router.post("/")
 async def create(
-    req: MessageCreateRequest, user: User = Depends(current_user)
+    req: MessageCreateRequest, user: str = Depends(current_user)
 ) -> Message:
     if req.thread_id is None:
-        thread_id = Thread.create(user_id=user.id).id
+        thread_id = Thread.create(user_id=user).id
     else:
         thread_id = req.thread_id
     return Message.from_model(
         MessageModel.create(
-            user_id=user.id,
+            user_id=user,
             thread_id=thread_id,
             tool_call_id=req.tool_call_id,
             role=req.role,
@@ -69,11 +69,11 @@ async def help(req: HelpRequest) -> StreamingResponse:
 
 
 @router.get("/{message_id}")
-async def get(message_id: str, user: User = Depends(current_user)) -> Message:
+async def get(message_id: str, user: str = Depends(current_user)) -> Message:
     message = MessageModel.get(message_id)
     if message is None:
         raise HTTPException(status_code=404, detail="Message not found")
-    if message.user_id != user.id:
+    if message.user_id != user:
         raise HTTPException(status_code=404, detail="Message not found")
     return Message.from_model(message)
 
@@ -82,7 +82,7 @@ async def get(message_id: str, user: User = Depends(current_user)) -> Message:
 async def index(
     thread_id: str,
     reverse: bool = False,
-    user: User = Depends(current_user),
+    user: str = Depends(current_user),
     cursor: Optional[str] = None,
     limit: int = 100,
 ) -> MessageList:
@@ -90,7 +90,7 @@ async def index(
         thread_id=thread_id, reverse=reverse, limit=limit, start_key=cursor
     )
     for message in messages:
-        if message.user_id != user.id:
+        if message.user_id != user:
             raise HTTPException(status_code=404, detail="Message not found")
 
     return MessageList(

@@ -10,7 +10,6 @@ from nodetool.packages.registry import (
 )
 
 from nodetool.api.utils import current_user
-from nodetool.models.user import User
 
 router = APIRouter(prefix="/api/packages", tags=["packages"])
 
@@ -56,7 +55,7 @@ registry = Registry()
 
 @router.get("/available", response_model=PackageListResponse)
 async def list_available_packages(
-    user: User = Depends(current_user),
+    user: str = Depends(current_user),
 ) -> PackageListResponse:
     """List all available packages from the registry."""
     packages = registry.list_available_packages()
@@ -65,7 +64,7 @@ async def list_available_packages(
 
 @router.get("/nodes/search", response_model=NodeSearchResponse)
 async def search_nodes(
-    query: str = "", user: User = Depends(current_user)
+    query: str = "", user: str = Depends(current_user)
 ) -> NodeSearchResponse:
     """
     Search for nodes across all available packages.
@@ -82,7 +81,7 @@ async def search_nodes(
 
 @router.get("/nodes/package", response_model=PackageForNodeResponse)
 async def get_package_for_node(
-    node_type: str, user: User = Depends(current_user)
+    node_type: str, user: str = Depends(current_user)
 ) -> PackageForNodeResponse:
     """
     Get the package that provides a specific node type.
@@ -101,7 +100,7 @@ async def get_package_for_node(
 
 @router.get("/installed", response_model=InstalledPackageListResponse)
 async def list_installed_packages(
-    user: User = Depends(current_user),
+    user: str = Depends(current_user),
 ) -> InstalledPackageListResponse:
     """List all installed packages."""
     packages = registry.list_installed_packages()
@@ -110,7 +109,7 @@ async def list_installed_packages(
 
 @router.post("/install", response_model=PackageResponse)
 async def install_package(
-    request: PackageInstallRequest, user: User = Depends(current_user)
+    request: PackageInstallRequest, user: str = Depends(current_user)
 ) -> PackageResponse:
     """Install a package from the registry."""
     is_valid, error_msg = validate_repo_id(request.repo_id)
@@ -128,7 +127,7 @@ async def install_package(
 
 @router.delete("/uninstall", response_model=PackageResponse)
 async def uninstall_package(
-    request: PackageUninstallRequest, user: User = Depends(current_user)
+    request: PackageUninstallRequest, user: str = Depends(current_user)
 ) -> PackageResponse:
     """Uninstall a package."""
     is_valid, error_msg = validate_repo_id(request.repo_id)
@@ -149,7 +148,7 @@ async def uninstall_package(
 
 @router.post("/update", response_model=PackageResponse)
 async def update_package(
-    repo_id: str, user: User = Depends(current_user)
+    repo_id: str, user: str = Depends(current_user)
 ) -> PackageResponse:
     """Update an installed package."""
     is_valid, error_msg = validate_repo_id(repo_id)
@@ -169,7 +168,7 @@ async def update_package(
 
 
 @router.get("/nodes/all", response_model=NodeSearchResponse)
-async def get_all_nodes(user: User = Depends(current_user)) -> NodeSearchResponse:
+async def get_all_nodes(user: str = Depends(current_user)) -> NodeSearchResponse:
     """
     Get all available nodes from all packages.
 

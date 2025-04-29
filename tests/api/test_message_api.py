@@ -5,11 +5,10 @@ from nodetool.types.chat import MessageList
 from nodetool.metadata.types import Message as APIMessage
 from nodetool.models.message import Message
 from nodetool.models.thread import Thread
-from nodetool.models.user import User
 
 
 def test_create_message(
-    client: TestClient, thread: Thread, headers: dict[str, str], user: User
+    client: TestClient, thread: Thread, headers: dict[str, str], user_id: str
 ):
     message = APIMessage(thread_id=thread.id, role="user", content="Hello")
     json = message.model_dump()
@@ -22,7 +21,7 @@ def test_create_message(
 
 
 def test_create_message_no_thread(
-    client: TestClient, headers: dict[str, str], user: User
+    client: TestClient, headers: dict[str, str], user_id: str
 ):
     message = APIMessage(role="user", content="Hello")
     json = message.model_dump()

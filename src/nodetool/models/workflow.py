@@ -2,7 +2,12 @@ from datetime import datetime
 from typing import Any, Optional
 from nodetool.common.content_types import CONTENT_TYPE_TO_EXTENSION
 from nodetool.models.asset import Asset
-from nodetool.models.condition_builder import Field
+from nodetool.models.condition_builder import (
+    ConditionBuilder,
+    ConditionGroup,
+    Field,
+    LogicalOperator,
+)
 from nodetool.types.graph import Graph as APIGraph
 from nodetool.workflows.graph import Graph
 from nodetool.workflows.base_node import BaseNode
@@ -15,10 +20,21 @@ from nodetool.models.base_model import (
 )
 
 
+"""
+Defines the Workflow database model.
+
+Represents a workflow in the nodetool system, including its structure (graph),
+metadata (name, description, tags), user association, access control, and settings.
+"""
+
+
 @DBIndex(columns=["user_id"])
 class Workflow(DBModel):
+    """Database model representing a nodetool workflow."""
+
     @classmethod
     def get_table_schema(cls):
+        """Returns the database table schema for workflows."""
         return {
             "table_name": "nodetool_workflows",
         }
@@ -37,6 +53,7 @@ class Workflow(DBModel):
     receive_clipboard: bool | None = DBField(default=False)
 
     def before_save(self):
+        """Updates the `updated_at` timestamp before saving."""
         self.updated_at = datetime.now()
 
     @classmethod
@@ -66,6 +83,15 @@ class Workflow(DBModel):
 
     @classmethod
     def find(cls, user_id: str, workflow_id: str):
+        """Find a workflow by ID, respecting user ownership and access level.
+
+        Args:
+            user_id: The ID of the user attempting to find the workflow.
+            workflow_id: The ID of the workflow to find.
+
+        Returns:
+            The Workflow object if found and accessible, otherwise None.
+        """
         workflow = cls.get(workflow_id)
         return (
             workflow
@@ -95,6 +121,22 @@ class Workflow(DBModel):
         start_key: Optional[str] = None,
         columns: list[str] | None = None,
     ) -> tuple[list["Workflow"], str]:
+        """Paginate through workflows, optionally filtering by user.
+
+        Args:
+            user_id: If provided, only workflows owned by this user are returned.
+                     If None, only public workflows are returned.
+            limit: Maximum number of workflows to return.
+            start_key: The ID of the workflow to start pagination after (exclusive).
+            columns: Specific columns to select. If None, all columns are selected.
+
+        Returns:
+            A tuple containing a list of Workflow objects and the ID of the
+            last evaluated workflow (or an empty string if it's the last page).
+
+        Raises:
+            ValueError: If invalid column names are provided.
+        """
         allowed_columns = {
             "id",
             "name",
@@ -114,40 +156,30 @@ class Workflow(DBModel):
             if invalid_columns:
                 raise ValueError(f"Invalid columns requested: {invalid_columns}")
             sanitized_columns = [col for col in columns if col in allowed_columns]
-            select_clause = ", ".join(f"w.{col}" for col in sanitized_columns)
         else:
-            select_clause = "*"
+            sanitized_columns = list(allowed_columns)
 
-        query = f"""
-    SELECT {select_clause} FROM {cls.get_table_schema()['table_name']} w
-    WHERE """
-        params = {}
+        conditions = []
 
         if user_id is None:
-            query += "w.access = :access AND "
-            params["access"] = "public"
+            conditions.append(Field("access").equals("public"))
         else:
-            query += "w.user_id = :user_id AND "
-            params["user_id"] = user_id
+            conditions.append(Field("user_id").equals(user_id))
 
         if start_key:
-            query += "w.id > :start_key "
-            params["start_key"] = start_key
-        else:
-            query += "1=1 "
+            conditions.append(Field("id").greater_than(start_key))
 
-        query += f"ORDER BY w.updated_at DESC LIMIT {limit + 1}"
-
-        results = cls.adapter().execute_sql(query, params)
+        results, last_evaluated_key = cls.adapter().query(
+            columns=sanitized_columns,
+            condition=ConditionBuilder(ConditionGroup(conditions, LogicalOperator.AND)),
+            order_by="updated_at",
+            reverse=True,
+            limit=limit + 1,
+        )
 
         workflows = [Workflow.from_dict(row) for row in results[:limit]]
 
-        if len(results) > limit:
-            last_evaluated_key = results[-1]["id"]
-        else:
-            last_evaluated_key = ""
-
-        return workflows, last_evaluated_key
+        return workflows, last_evaluated_key if len(results) > limit else ""
 
     def get_api_graph(self) -> APIGraph:
         """

@@ -17,7 +17,7 @@ from nodetool.types.asset import (
     AssetUpdateRequest,
     TempAsset,
 )
-from nodetool.api.utils import current_user, User
+from nodetool.api.utils import current_user
 from nodetool.common.environment import Environment
 from typing import Dict, List, Optional, Tuple, Union
 from nodetool.models.asset import Asset as AssetModel
@@ -69,7 +69,7 @@ async def index(
     content_type: Optional[str] = None,
     cursor: Optional[str] = None,
     page_size: Optional[int] = None,
-    user: User = Depends(current_user),
+    user: str = Depends(current_user),
     duration: Optional[int] = None,
 ) -> AssetList:
     """
@@ -79,10 +79,10 @@ async def index(
         page_size = 10000
 
     if content_type is None and parent_id is None:
-        parent_id = user.id
+        parent_id = user
 
     assets, next_cursor = AssetModel.paginate(
-        user_id=user.id,
+        user_id=user,
         parent_id=parent_id,
         content_type=content_type,
         limit=page_size,
@@ -95,23 +95,23 @@ async def index(
 
 
 @router.get("/{id}")
-async def get(id: str, user: User = Depends(current_user)) -> Asset:
+async def get(id: str, user: str = Depends(current_user)) -> Asset:
     """
     Returns the asset for the given id.
     """
-    if id == user.id:
+    if id == user:
         return Asset(
-            user_id=user.id,
-            id=user.id,
+            user_id=user,
+            id=user,
             name="Home",
             content_type="folder",
             parent_id="",
             workflow_id=None,
             get_url=None,
             thumb_url=None,
-            created_at=user.created_at.isoformat(),
+            created_at="",
         )
-    asset = AssetModel.find(user.id, id)
+    asset = AssetModel.find(user, id)
     if asset is None:
         log.info("Asset not found: %s", id)
         raise HTTPException(status_code=404, detail="Asset not found")
@@ -122,12 +122,12 @@ async def get(id: str, user: User = Depends(current_user)) -> Asset:
 async def update(
     id: str,
     req: AssetUpdateRequest,
-    user: User = Depends(current_user),
+    user: str = Depends(current_user),
 ) -> Asset:
     """
     Updates the asset for the given id.
     """
-    asset = AssetModel.find(user.id, id)
+    asset = AssetModel.find(user, id)
 
     if asset is None:
         raise HTTPException(status_code=404, detail="Asset not found")
@@ -148,18 +148,18 @@ async def update(
 
 
 @router.delete("/{id}")
-async def delete(id: str, user: User = Depends(current_user)):
+async def delete(id: str, user: str = Depends(current_user)):
     """
     Deletes the asset for the given id. If the asset is a folder, it deletes all contents recursively.
     """
     try:
-        asset = AssetModel.find(user.id, id)
+        asset = AssetModel.find(user, id)
         if asset is None:
             log.info(f"Asset not found: {id}")
             raise HTTPException(status_code=404, detail="Asset not found")
         deleted_asset_ids = []
         if asset.content_type == "folder":
-            deleted_asset_ids = await delete_folder(user.id, id)
+            deleted_asset_ids = await delete_folder(user, id)
         else:
             await delete_single_asset(asset)
             deleted_asset_ids = [id]
@@ -223,7 +223,7 @@ async def delete_single_asset(asset: AssetModel):
 async def create(
     file: UploadFile | None = None,
     json: str | None = Form(None),
-    user: User = Depends(current_user),
+    user: str = Depends(current_user),
 ) -> Asset:
     """
     Create a new asset.
@@ -239,7 +239,7 @@ async def create(
 
     if req.workflow_id:
         workflow = Workflow.get(req.workflow_id)
-        if workflow and workflow.user_id != user.id:
+        if workflow and workflow.user_id != user:
             raise HTTPException(status_code=404, detail="Workflow not found")
 
     try:
@@ -257,7 +257,7 @@ async def create(
 
         asset = AssetModel.create(
             workflow_id=req.workflow_id,
-            user_id=user.id,
+            user_id=user,
             parent_id=req.parent_id,
             name=req.name,
             content_type=req.content_type,
@@ -283,7 +283,7 @@ async def create(
 @router.post("/download")
 async def download_assets(
     req: AssetDownloadRequest,
-    current_user: User = Depends(current_user),
+    user: str = Depends(current_user),
 ):
     """
     Create a ZIP file containing the requested assets and return it for download.
@@ -330,7 +330,7 @@ async def download_assets(
         asset: AssetModel,
     ) -> Tuple[str, Union[BytesIO, None]]:
         try:
-            if asset.user_id != current_user.id:
+            if asset.user_id != user:
                 raise HTTPException(
                     status_code=403,
                     detail=f"You don't have permission to download asset: {asset.id}",
@@ -377,16 +377,16 @@ async def download_assets(
 
 
 @router.get("/{folder_id}/recursive")
-async def get_assets_recursive(folder_id: str, user: User = Depends(current_user)):
+async def get_assets_recursive(folder_id: str, user: str = Depends(current_user)):
     """
     Get all assets in a folder recursively, including the folder structure.
     """
-    assets = AssetModel.get_assets_recursive(user.id, folder_id)
+    assets = AssetModel.get_assets_recursive(user, folder_id)
     return assets
 
 
 @router.get("/by-filename/{filename}")
-async def get_by_filename(filename: str, user: User = Depends(current_user)) -> Asset:
+async def get_by_filename(filename: str, user: str = Depends(current_user)) -> Asset:
     """
     Returns the asset for the given filename.
     """

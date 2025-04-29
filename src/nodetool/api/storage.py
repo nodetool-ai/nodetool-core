@@ -10,7 +10,6 @@ from fastapi import HTTPException
 from email.utils import parsedate_to_datetime
 from fastapi.responses import StreamingResponse
 from nodetool.api.utils import current_user
-from nodetool.models.user import User
 from nodetool.storage.abstract_storage import AbstractStorage
 from nodetool.common.content_types import EXTENSION_TO_CONTENT_TYPE
 from nodetool.common.environment import Environment
@@ -107,7 +106,7 @@ async def get(key: str, request: Request):
 
 
 @router.put("/{key}")
-async def update(key: str, request: Request, user: User = Depends(current_user)):
+async def update(key: str, request: Request, user: str = Depends(current_user)):
     """
     Updates or creates the file for the given key.
     """
@@ -121,7 +120,7 @@ async def update(key: str, request: Request, user: User = Depends(current_user))
 
 
 @router.delete("/{key}")
-async def delete(key: str, user: User = Depends(current_user)):
+async def delete(key: str, user: str = Depends(current_user)):
     """
     Deletes the asset for the given key.
     """

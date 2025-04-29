@@ -7,7 +7,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from nodetool.api.utils import current_user, User
+from nodetool.api.utils import current_user
 from nodetool.common.environment import Environment
 
 log = Environment.get_logger()
@@ -42,7 +42,7 @@ async def get_file_info(path: str) -> FileInfo:
 
 @router.get("/list")
 async def list_files(
-    path: str = ".", user: User = Depends(current_user)
+    path: str = ".", user: str = Depends(current_user)
 ) -> List[FileInfo]:
     """
     List files and directories in the specified path, excluding hidden files (starting with dot)
@@ -75,7 +75,7 @@ async def list_files(
 
 
 @router.get("/info")
-async def get_file(path: str, user: User = Depends(current_user)) -> FileInfo:
+async def get_file(path: str, user: str = Depends(current_user)) -> FileInfo:
     """
     Get information about a specific file or directory
     """
@@ -90,7 +90,7 @@ async def get_file(path: str, user: User = Depends(current_user)) -> FileInfo:
 
 
 @router.get("/download/{path:path}")
-async def download_file(path: str, user: User = Depends(current_user)):
+async def download_file(path: str, user: str = Depends(current_user)):
     """
     Download a file from the specified path
     """
@@ -118,7 +118,7 @@ async def download_file(path: str, user: User = Depends(current_user)):
 
 
 @router.post("/upload/{path:path}")
-async def upload_file(path: str, file: UploadFile, user: User = Depends(current_user)):
+async def upload_file(path: str, file: UploadFile, user: str = Depends(current_user)):
     """
     Upload a file to the specified path
     """
