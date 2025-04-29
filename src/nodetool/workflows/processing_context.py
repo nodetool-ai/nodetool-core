@@ -143,7 +143,8 @@ class ProcessingContext:
         self.variables: dict[str, Any] = variables if variables else {}
         self.nodes: dict[str, BaseNode] = {}
         self.environment: dict[str, str] = dict(os.environ)
-        self.environment.update(environment)
+        if environment:
+            self.environment.update(environment)
         env = Environment.get_environment()
         self.environment.update(env)
         self.endpoint_url = endpoint_url
