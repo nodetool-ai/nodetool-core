@@ -142,9 +142,10 @@ class ProcessingContext:
         self.device = device
         self.variables: dict[str, Any] = variables if variables else {}
         self.nodes: dict[str, BaseNode] = {}
-        self.environment: dict[str, str] = (
-            environment if environment else dict(os.environ)
-        )
+        self.environment: dict[str, str] = dict(os.environ)
+        self.environment.update(environment)
+        env = Environment.get_environment()
+        self.environment.update(env)
         self.endpoint_url = endpoint_url
         self.http_client = (
             httpx.AsyncClient(follow_redirects=True, timeout=600, verify=False)
@@ -156,8 +157,6 @@ class ProcessingContext:
         self.upload_assets_to_s3 = upload_assets_to_s3
         self.chroma_client = chroma_client
         self.workspace_dir = workspace_dir or WorkspaceManager().get_current_directory()
-        env = Environment.get_environment()
-        self.environment.update(env)
 
     def copy(self):
         """
