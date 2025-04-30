@@ -75,13 +75,17 @@ RUN ln -s /usr/bin/python3 /usr/bin/python
 RUN python -m venv $VIRTUAL_ENV
 ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 
-RUN pip install git+https://github.com/nodetool-ai/nodetool-core
-RUN pip install git+https://github.com/nodetool-ai/nodetool-base
-RUN pip install git+https://github.com/nodetool-ai/nodetool-lib-audio
-RUN pip install git+https://github.com/nodetool-ai/nodetool-lib-data
-RUN pip install git+https://github.com/nodetool-ai/nodetool-lib-image
-RUN pip install git+https://github.com/nodetool-ai/nodetool-lib-ml
-RUN pip install git+https://github.com/nodetool-ai/nodetool-lib-network
-RUN pip install git+https://github.com/nodetool-ai/nodetool-openai
+# Copy and install the local nodetool-core package
+COPY . /app/nodetool-core
+RUN pip install /app/nodetool-core
 
-RUN pip install git+https://github.com/nodetool-ai/nodetool-huggingface --extra-index-url https://download.pytorch.org/whl/cu121
+# RUN pip install git+https://github.com/nodetool-ai/nodetool-core
+# RUN pip install git+https://github.com/nodetool-ai/nodetool-base
+# RUN pip install git+https://github.com/nodetool-ai/nodetool-lib-audio
+# RUN pip install git+https://github.com/nodetool-ai/nodetool-lib-data
+# RUN pip install git+https://github.com/nodetool-ai/nodetool-lib-image
+# RUN pip install git+https://github.com/nodetool-ai/nodetool-lib-ml
+# RUN pip install git+https://github.com/nodetool-ai/nodetool-lib-network
+# RUN pip install git+https://github.com/nodetool-ai/nodetool-openai
+
+# RUN pip install git+https://github.com/nodetool-ai/nodetool-huggingface --extra-index-url https://download.pytorch.org/whl/cu121
