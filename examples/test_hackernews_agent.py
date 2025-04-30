@@ -4,13 +4,15 @@ Test script for Multi-Agent Coordination focused on Hacker News content.
 """
 
 import asyncio
-import datetime
 from nodetool.agents.agent import Agent
 from nodetool.chat.providers import get_provider
 from nodetool.agents.tools.browser import BrowserTool
 from nodetool.metadata.types import Provider
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import Chunk
+import dotenv
+
+dotenv.load_dotenv()
 
 
 async def main():
@@ -32,7 +34,7 @@ async def main():
     # model = "gemma3:12b"
 
     # 3. Set up browser tool for accessing websites
-    browser_tool = BrowserTool(context.workspace_dir)
+    browser_tool = BrowserTool(use_readability=True)
 
     # 5. Create a Hacker News agent for collecting posts
     agent = Agent(

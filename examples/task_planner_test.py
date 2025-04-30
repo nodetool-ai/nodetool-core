@@ -7,21 +7,22 @@ from rich.console import Console
 from nodetool.chat.providers.anthropic_provider import AnthropicProvider
 from nodetool.chat.providers.base import ChatProvider
 from nodetool.chat.providers.gemini_provider import GeminiProvider
+from nodetool.chat.providers.ollama_provider import OllamaProvider
 from nodetool.chat.providers.openai_provider import OpenAIProvider
 from nodetool.agents.task_planner import TaskPlanner
 from nodetool.agents.tools.base import Tool
-from nodetool.agents.tools.browser import BrowserTool
+from nodetool.agents.tools.browser import BrowserTool, GoogleSearchTool
 from nodetool.agents.tools.google import GoogleGroundedSearchTool
+from nodetool.workflows.processing_context import ProcessingContext
+import dotenv
+
+dotenv.load_dotenv()
 
 # Create a console for rich output
 console = Console()
 
 
 async def test_task_planner(provider: ChatProvider, model: str):
-    # Configure test parameters
-    workspace_dir = "/tmp/nodetool-test"  # Create a test workspace directory
-    os.makedirs(workspace_dir, exist_ok=True)
-
     # Sample objective
     objective = "Search for the best recipes for chicken wings and extract the ingredients and instructions for each recipe"
 
@@ -30,25 +31,25 @@ async def test_task_planner(provider: ChatProvider, model: str):
 
     # Optional: Create test tools if needed
     tools = [
-        GoogleGroundedSearchTool(workspace_dir),
-        BrowserTool(workspace_dir),
+        GoogleSearchTool(),
+        BrowserTool(use_readability=True),
     ]
 
     console.print(
         f"[bold green]Testing TaskPlanner with objective:[/bold green] {objective}"
     )
     console.print("[bold]Configuration:[/bold]")
-    console.print(f"  - Workspace: {workspace_dir}")
     console.print(f"  - Model: {model}")
     console.print(f"  - Input files: {input_files}")
 
+    context = ProcessingContext()
     # Create TaskPlanner instance with different configurations for testing
     planner = TaskPlanner(
         provider=provider,
         model=model,
         objective=objective,
-        workspace_dir=workspace_dir,
-        tools=tools,
+        workspace_dir=context.workspace_dir,
+        execution_tools=tools,
         input_files=input_files,
         enable_analysis_phase=False,
         enable_data_contracts_phase=True,
@@ -90,7 +91,7 @@ async def test_task_planner(provider: ChatProvider, model: str):
 
     try:
         # Generate the task plan
-        task = await planner.create_task(objective)
+        task = await planner.create_task(context, objective)
 
         # Display the generated plan
         console.print("[bold green]Plan generated successfully![/bold green]")
@@ -122,10 +123,11 @@ async def test_task_planner(provider: ChatProvider, model: str):
 
 # Run the test
 if __name__ == "__main__":
-    asyncio.run(
-        test_task_planner(
-            provider=AnthropicProvider(), model="claude-3-5-sonnet-20241022"
-        )
-    )
-    asyncio.run(test_task_planner(provider=OpenAIProvider(), model="gpt-4o"))
-    asyncio.run(test_task_planner(provider=GeminiProvider(), model="gemini-2.0-flash"))
+    asyncio.run(test_task_planner(provider=OllamaProvider(), model="qwen3:8b"))
+    # asyncio.run(test_task_planner(provider=OpenAIProvider(), model="gpt-4.1"))
+    # asyncio.run(
+    #     test_task_planner(
+    #         provider=AnthropicProvider(), model="claude-3-5-sonnet-20241022"
+    #     )
+    # )
+    # asyncio.run(test_task_planner(provider=GeminiProvider(), model="gemini-2.0-flash"))

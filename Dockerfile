@@ -85,3 +85,5 @@ RUN pip install --no-cache-dir git+https://github.com/nodetool-ai/nodetool-lib-n
 RUN pip install --no-cache-dir git+https://github.com/nodetool-ai/nodetool-openai
 
 RUN pip install --no-cache-dir git+https://github.com/nodetool-ai/nodetool-huggingface --extra-index-url https://download.pytorch.org/whl/cu121
+
+RUN playwright install

@@ -1,6 +1,8 @@
 import os
+import sys
 import click
 from nodetool.common.environment import Environment
+from nodetool.dsl.codegen import create_dsl_modules
 
 # silence warnings on the command line
 import warnings
@@ -170,6 +172,53 @@ def explorer(dir: str):
 
 
 # Add this after the other @cli commands but before the package group
+
+
+@cli.command("codegen")
+@click.option(
+    "--source",
+    "-s",
+    default="nodetool.nodes",
+    help="Source root module containing node definitions (default: nodetool.nodes)",
+)
+def codegen_cmd(source: str):
+    """Generate DSL modules from node definitions."""
+    # Add the src directory to the Python path to allow relative imports
+    src_dir = os.path.abspath("src")
+    if src_dir not in sys.path:
+        sys.path.append(src_dir)
+
+    # Validate that source is within nodetool.nodes
+    if not source.startswith("nodetool.nodes"):
+        raise ValueError(
+            f"Source module must be within nodetool.nodes namespace. Got: {source}"
+        )
+
+    # Infer output path and module name from source
+    source_parts = source.split(".")
+
+    # Extract namespace from source module (everything after nodetool.nodes)
+    if len(source_parts) > 2:
+        namespace = ".".join(source_parts[2:])
+    else:
+        namespace = ""
+
+    # Construct output path
+    output_path = os.path.join("src", "nodetool", "dsl")
+    if namespace:
+        output_path = os.path.join(output_path, namespace.replace(".", os.sep))
+
+    # Construct module name
+    module_name = "nodetool.dsl"
+    if namespace:
+        module_name = f"{module_name}.{namespace}"
+
+    click.echo(f"Generating DSL modules from {source} to {output_path}...")
+    click.echo(f"Using module name: {module_name}")
+
+    create_dsl_modules(source, output_path, module_name)
+
+    click.echo("✅ DSL module generation complete!")
 
 
 @cli.group()

@@ -1,8 +1,6 @@
 import asyncio
-from logging import Logger
 from typing import IO, Any, AsyncIterator
 
-import boto3
 from botocore.exceptions import ClientError
 
 from .abstract_storage import AbstractStorage
