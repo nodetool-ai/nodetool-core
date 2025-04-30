@@ -115,8 +115,13 @@ class Environment(object):
 
         env = DEFAULT_ENV.copy()
         env.update(os.environ)
-        env.update(settings.model_dump())
-        env.update(secrets.model_dump())
+
+        for k, v in settings.model_dump().items():
+            if v is not None:
+                env[k] = v
+        for k, v in secrets.model_dump().items():
+            if v is not None:
+                env[k] = v
 
         return env
 

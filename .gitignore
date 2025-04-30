@@ -123,3 +123,9 @@ poetry.lock
 # OS specific files
 .DS_Store
 Thumbs.db 
+*.pem
+*.key
+*.crt
+*.csr
+*.csr.pem
+*.csr.pem.crt

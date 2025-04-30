@@ -142,11 +142,9 @@ class ProcessingContext:
         self.device = device
         self.variables: dict[str, Any] = variables if variables else {}
         self.nodes: dict[str, BaseNode] = {}
-        self.environment: dict[str, str] = dict(os.environ)
+        self.environment: dict[str, str] = Environment.get_environment()
         if environment:
             self.environment.update(environment)
-        env = Environment.get_environment()
-        self.environment.update(env)
         self.endpoint_url = endpoint_url
         self.http_client = (
             httpx.AsyncClient(follow_redirects=True, timeout=600, verify=False)

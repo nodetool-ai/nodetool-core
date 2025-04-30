@@ -7,7 +7,7 @@ services:
     volumes:
       - "./key.pem:/app/key.pem"
       - "./cert.pem:/app/cert.pem"
-      - ${HF_HOME:-./huggingface}:/app/huggingface
+      - ${HF_HOME}:/app/huggingface
     command:
       [
         "uvicorn",
@@ -40,6 +40,11 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       HF_HOME: /app/huggingface
       SENTRY_DSN: ${SENTRY_DSN}
+      MEMCACHE_HOST: ${MEMCACHE_HOST}
+      MEMCACHE_PORT: ${MEMCACHE_PORT}
+      NODETOOL_API_URL: ${NODETOOL_API_URL}
+      CHROMA_URL: ${CHROMA_URL}
+      CHROMA_TOKEN: ${CHROMA_TOKEN}
     deploy:
       resources:
         reservations:
@@ -50,45 +55,36 @@ services:
   memcached:
     image: memcached:bookworm
     restart: unless-stopped
-  # chroma:
-  #   restart: unless-stopped
-  #   build:
-  #     context: .
-  #     dockerfile: Dockerfile
-  #   volumes:
-  #     - ${CHROMA_PATH:-./chroma-data}:/chroma-data
-  #   command:
-  #     [
-  #       "chroma",
-  #       "run",
-  #       "--host",
-  #       "0.0.0.0",
-  #       "--port",
-  #       "9000",
-  #       "--path",
-  #       "/chroma-data",
-  #     ]
-  #   environment:
-  #     CHROMA_SERVER_AUTHN_CREDENTIALS: ${CHROMA_TOKEN}
-  #     CHROMA_SERVER_AUTHN_PROVIDER: chromadb.auth.token_authn.TokenAuthenticationServerProvider
-  #   expose:
-  #     - "9000"
-  #   ports:
-  #     - "9000:9000"
-  # postgres:
-  #   image: postgres:16.3
-  #   restart: unless-stopped
-  #   environment:
-  #     POSTGRES_USER: ${POSTGRES_USER}
-  #     POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-  #     POSTGRES_DB: ${POSTGRES_DB}
-  #   volumes:
-  #     - ${POSTGRES_DATA_DIR:-./postgres-data}:/var/lib/postgresql/data
+  chroma:
+    restart: unless-stopped
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - ${CHROMA_PATH}:/chroma-data
+    command:
+      [
+        "chroma",
+        "run",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "9000",
+        "--path",
+        "/chroma-data",
+      ]
+    environment:
+      CHROMA_SERVER_AUTHN_CREDENTIALS: ${CHROMA_TOKEN}
+      CHROMA_SERVER_AUTHN_PROVIDER: chromadb.auth.token_authn.TokenAuthenticationServerProvider
+    expose:
+      - "9000"
+    ports:
+      - "9000:9000"
   ollama:
     image: georgi/ollama-bearer-auth
     restart: unless-stopped
     volumes:
-      - ${OLLAMA_PATH:-./ollama-data}:/root/.ollama
+      - ${OLLAMA_PATH}:/root/.ollama
     expose:
       - "8081"
     ports:
@@ -102,19 +98,3 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
-
-  # minio:
-  #   container_name: minio
-  #   image: minio/minio
-  #   ports:
-  #     - "9000:9000"
-  #     - "9001:9001"
-  #   volumes:
-  #     - type: bind
-  #       source: minio
-  #       target: /data
-  #   environment:
-  #     MINIO_ROOT_USER: minio
-  #     MINIO_ROOT_PASSWORD: minio123
-  #     MINIO_VOLUMES: /data
-  #   command: server --console-address ":9001"
