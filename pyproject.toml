@@ -107,8 +107,6 @@ PyJWT = "*"
 
 # LLM dependencies
 langchain-openai = "*"
-langchain-anthropic = "*"
-langchain-google-genai = "*"
 langchain-ollama = "*"
 
 [tool.poetry.scripts]
