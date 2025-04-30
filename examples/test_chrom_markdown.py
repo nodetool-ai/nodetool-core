@@ -30,9 +30,7 @@ async def run_test():
     # 2. Initialize the Tool
     # Use a dummy workspace directory for the test
     workspace_dir = "/tmp/nodetool_test_workspace"
-    tool = ChromaMarkdownSplitAndIndexTool(
-        workspace_dir=workspace_dir, collection=collection
-    )
+    tool = ChromaMarkdownSplitAndIndexTool(collection=collection)
     print("Initialized ChromaMarkdownSplitAndIndexTool.")
 
     # 3. Define Test Markdown Content

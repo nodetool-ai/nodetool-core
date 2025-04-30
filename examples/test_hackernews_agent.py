@@ -23,15 +23,10 @@ async def main():
     # model = "qwen2.5:14b"
     # provider = get_provider(Provider.Anthropic)
     # model = "claude-3-5-sonnet-20241022"
-    provider = get_provider(Provider.OpenAI)
-    model = "gpt-4o"
-    # provider = get_provider(
-    #     Provider.Ollama,
-    #     log_file=get_log_path(
-    #         datetime.datetime.now().strftime("traces/%Y-%m-%d_%H-%M-%S") + ".jsonl"
-    #     ),
-    # )
-    # model = "gemma3:12b"
+    # provider = get_provider(Provider.OpenAI)
+    # model = "gpt-4o"
+    provider = get_provider(Provider.Ollama)
+    model = "qwen3:14b"
 
     # 3. Set up browser tool for accessing websites
     browser_tool = BrowserTool(use_readability=True)

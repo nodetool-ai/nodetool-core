@@ -123,7 +123,7 @@ async def test_task_planner(provider: ChatProvider, model: str):
 
 # Run the test
 if __name__ == "__main__":
-    asyncio.run(test_task_planner(provider=OllamaProvider(), model="qwen3:8b"))
+    asyncio.run(test_task_planner(provider=OllamaProvider(), model="qwen3:14b"))
     # asyncio.run(test_task_planner(provider=OpenAIProvider(), model="gpt-4.1"))
     # asyncio.run(
     #     test_task_planner(

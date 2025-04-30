@@ -40,8 +40,8 @@ async def main():
     # model = "gemma3:12b"
 
     retrieval_tools = [
-        GoogleGroundedSearchTool(context.workspace_dir),
-        BrowserTool(context.workspace_dir),
+        GoogleGroundedSearchTool(),
+        BrowserTool(use_readability=True),
     ]
 
     agent = Agent(

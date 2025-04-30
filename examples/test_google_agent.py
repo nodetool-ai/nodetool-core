@@ -23,13 +23,17 @@ from nodetool.metadata.types import Provider
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import Chunk
 
+import dotenv
+
+dotenv.load_dotenv()
+
 
 async def test_google_agent(provider: ChatProvider, model: str):
     context = ProcessingContext()
 
     retrieval_tools = [
-        GoogleSearchTool(context.workspace_dir),
-        BrowserTool(context.workspace_dir),
+        GoogleSearchTool(),
+        BrowserTool(use_readability=True),
     ]
 
     agent = Agent(
@@ -87,19 +91,22 @@ async def test_google_agent(provider: ChatProvider, model: str):
 
 if __name__ == "__main__":
     asyncio.run(
-        test_google_agent(
-            provider=get_provider(Provider.Gemini), model="gemini-2.0-flash"
-        )
+        test_google_agent(provider=get_provider(Provider.Ollama), model="qwen3:14b")
     )
-    asyncio.run(
-        test_google_agent(
-            provider=get_provider(Provider.Anthropic),
-            model="claude-3-5-sonnet-20241022",
-        )
-    )
-    asyncio.run(
-        test_google_agent(provider=get_provider(Provider.OpenAI), model="gpt-4o-mini")
-    )
+    # asyncio.run(
+    #     test_google_agent(
+    #         provider=get_provider(Provider.Gemini), model="gemini-2.0-flash"
+    #     )
+    # )
+    # asyncio.run(
+    #     test_google_agent(
+    #         provider=get_provider(Provider.Anthropic),
+    #         model="claude-3-5-sonnet-20241022",
+    #     )
+    # )
+    # asyncio.run(
+    #     test_google_agent(provider=get_provider(Provider.OpenAI), model="gpt-4o-mini")
+    # )
     # asyncio.run(
     #     test_google_agent(
     #         provider=get_provider(Provider.Ollama),
