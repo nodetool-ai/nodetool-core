@@ -319,27 +319,15 @@ class AgentModel(str, enum.Enum):
     gpt_4o = "gpt-4o"
     gpt_4_1 = "gpt-4.1"
     o3 = "o3"
-    o4_mini = "o3-mini"
+    o4_mini = "o4-mini"
     gemini_2_5_pro_exp_03_25 = "gemini-2.5-pro-exp-03-25"
     gemini_2_5_flash = "gemini-2.5-flash"
-    gemini_2_0_flash = "gemini-2.0-flash"
-    gemini_2_0_flash_lite = "gemini-2.0-flash-lite"
-    gemma3_1b = "gemma3:1b"
-    gemma3_4b = "gemma3:4b"
-    gemma3_12b = "gemma3:12b"
-    qwen3_4b = "qwen3:4b"
-    qwen3_8b = "qwen3:8b"
-    qwen3_14b = "qwen3:14b"
-    llama3_2_vision_11b = "llama3.2-vision:11b"
 
 
-class FunctionModel(BaseType):
-    type: Literal["function_model"] = "function_model"
-    provider: Provider = Provider.Empty
-    name: str = ""
-    repo_id: str = ""
-    filename: str = ""
-    local_path: Path | None = None
+class LanguageModel(BaseType):
+    type: Literal["language_model"] = "language_model"
+    provider: Provider = Provider.OpenAI
+    model: str = ""
 
 
 class LlamaModel(BaseType):

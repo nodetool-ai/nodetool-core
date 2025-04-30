@@ -10,11 +10,11 @@ from typing import List, Optional
 
 from nodetool.workflows.types import Chunk
 from nodetool.chat.providers.base import ChatProvider
-from nodetool.chat.tools import Tool
 from nodetool.chat.chat import run_tool, default_serializer
-from nodetool.metadata.types import Message, FunctionModel, ToolCall
+from nodetool.metadata.types import Message, ToolCall
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.chat.tools import (
+from nodetool.agents.tools import (
+    Tool,
     SearchEmailTool,
     GoogleSearchTool,
     AddLabelTool,
@@ -59,16 +59,16 @@ async def process_regular_chat(
     messages_to_send = messages
 
     tools: List[Tool] = [
-        SearchEmailTool(workspace_dir),
-        GoogleSearchTool(workspace_dir),
-        AddLabelTool(workspace_dir),
-        BrowserTool(workspace_dir),
-        ScreenshotTool(workspace_dir),
-        ExtractPDFTablesTool(workspace_dir),
-        ExtractPDFTextTool(workspace_dir),
-        ConvertPDFToMarkdownTool(workspace_dir),
-        CreateAppleNoteTool(workspace_dir),
-        ReadAppleNotesTool(workspace_dir),
+        SearchEmailTool(),
+        GoogleSearchTool(),
+        AddLabelTool(),
+        BrowserTool(use_readability=True),
+        ScreenshotTool(),
+        ExtractPDFTablesTool(),
+        ExtractPDFTextTool(),
+        ConvertPDFToMarkdownTool(),
+        CreateAppleNoteTool(),
+        ReadAppleNotesTool(),
     ]
 
     while True:

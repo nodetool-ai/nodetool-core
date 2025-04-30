@@ -55,7 +55,7 @@ class TaskExecutor:
 
         Args:
             provider (ChatProvider): An LLM provider instance
-            model (FunctionModel): The model to use with the provider
+            model (str): The model to use with the provider
             processing_context (ProcessingContext): The processing context
             tools (List[Tool]): List of tools available for task execution
             task (Task): The task to execute
