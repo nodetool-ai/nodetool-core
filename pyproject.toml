@@ -25,6 +25,7 @@ uvicorn = ">=0.32.0"
 msgpack = ">=1.1.0"
 networkx = ">=3.4.2"
 supabase = ">=2.15.0"
+psycopg2 = ">=2.9.10"
 
 # Utils dependencies
 black = "24.10.0"
