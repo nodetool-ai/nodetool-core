@@ -73,7 +73,7 @@ def get_collection(name) -> chromadb.Collection:
         name: The name of the collection to get or create.
     """
     from chromadb.utils.embedding_functions import SentenceTransformerEmbeddingFunction  # type: ignore
-    from chromadb.config import DEFAULT_DATABASE, DEFAULT_TENANT
+    from chromadb.config import DEFAULT_DATABASE, DEFAULT_TENANT, Settings
 
     chroma_path = get_system_data_path("chroma-docs")
 
@@ -83,6 +83,7 @@ def get_collection(name) -> chromadb.Collection:
         path=Environment.get_chroma_path(),
         tenant=DEFAULT_TENANT,
         database=DEFAULT_DATABASE,
+        settings=Settings(anonymized_telemetry=False),
     )
 
     embedding_function = SentenceTransformerEmbeddingFunction()

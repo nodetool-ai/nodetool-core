@@ -81,6 +81,7 @@ class Chunk(BaseModel):
 
     type: Literal["chunk"] = "chunk"
     node_id: str | None = None
+    content_type: Literal["text", "audio", "image", "video", "document"] = "text"
     content: str
     done: bool = False
 

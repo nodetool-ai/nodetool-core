@@ -6,8 +6,9 @@ handling message conversion, streaming, and tool integration.
 
 """
 
+import base64
 import json
-import os
+import io
 from typing import Any, AsyncGenerator, Sequence
 
 import openai
@@ -19,19 +20,25 @@ from openai.types.chat import (
     ChatCompletionAssistantMessageParam,
     ChatCompletionMessageToolCallParam,
     ChatCompletionContentPartParam,
+    ChatCompletionChunk,
 )
 from openai.types.chat.chat_completion_message_tool_call_param import Function
 from openai.types.chat.chat_completion_tool_param import ChatCompletionToolParam
 from pydantic import BaseModel
+import requests
+from pydub import AudioSegment
 
 from nodetool.chat.providers.base import ChatProvider
 from nodetool.agents.tools.base import Tool
+from nodetool.chat.providers.openai_prediction import calculate_chat_cost
 from nodetool.metadata.types import (
     Message,
     ToolCall,
     MessageContent,
     MessageImageContent,
     MessageTextContent,
+    MessageAudioContent,
+    AudioRef,
 )
 from nodetool.common.environment import Environment
 from nodetool.workflows.types import Chunk
@@ -88,6 +95,7 @@ class OpenAIProvider(ChatProvider):
         env = Environment.get_environment()
         api_key = env.get("OPENAI_API_KEY")
         assert api_key, "OPENAI_API_KEY is not set"
+        self.cost = 0.0
         self.client = openai.AsyncClient(api_key=api_key)
         self.usage = {
             "prompt_tokens": 0,
@@ -97,15 +105,89 @@ class OpenAIProvider(ChatProvider):
             "reasoning_tokens": 0,
         }
 
+    def uri_to_base64(self, uri: str) -> str:
+        """Convert a URI to a base64 encoded data: URI string.
+        If the URI points to an audio file, it converts it to MP3 first.
+        """
+        response = requests.get(uri)
+        response.raise_for_status()  # Raise an exception for bad status codes
+        mime_type = response.headers.get("content-type", "application/octet-stream")
+
+        if mime_type.startswith("audio/") and mime_type != "audio/mpeg":
+            try:
+                audio = AudioSegment.from_file(io.BytesIO(response.content))
+                with io.BytesIO() as buffer:
+                    audio.export(buffer, format="mp3")
+                    mp3_data = buffer.getvalue()
+                mime_type = "audio/mpeg"  # Update mime type to mp3
+                content_b64 = base64.b64encode(mp3_data).decode("utf-8")
+            except Exception as e:
+                print(
+                    f"Warning: Failed to convert audio URI {uri} to MP3: {e}. Using original content."
+                )
+                content_b64 = base64.b64encode(response.content).decode("utf-8")
+        else:
+            content_b64 = base64.b64encode(response.content).decode("utf-8")
+
+        return f"data:{mime_type};base64,{content_b64}"
+
     def message_content_to_openai_content_part(
         self, content: MessageContent
     ) -> ChatCompletionContentPartParam:
         """Convert a message content to an OpenAI content part."""
         if isinstance(content, MessageTextContent):
             return {"type": "text", "text": content.text}
+        elif isinstance(content, MessageAudioContent):
+            print(f"Audio content: {content.audio}")
+            if content.audio.uri:
+                # uri_to_base64 now handles conversion and returns MP3 data URI
+                data_uri = self.uri_to_base64(content.audio.uri)
+                # Extract base64 data part for OpenAI API
+                base64_data = data_uri.split(",", 1)[1]
+                return {
+                    "type": "input_audio",
+                    "input_audio": {
+                        "format": "mp3",
+                        "data": base64_data,
+                    },
+                }
+            else:
+                # Convert raw bytes data to MP3 using pydub
+                try:
+                    audio = AudioSegment.from_file(io.BytesIO(content.audio.data))
+                    with io.BytesIO() as buffer:
+                        audio.export(buffer, format="mp3")
+                        mp3_data = buffer.getvalue()
+                    data = base64.b64encode(mp3_data).decode("utf-8")
+                except Exception as e:
+                    print(
+                        f"Warning: Failed to convert raw audio data to MP3: {e}. Sending original data."
+                    )
+                    # Fallback to sending original data if conversion fails
+                    data = base64.b64encode(content.audio.data).decode("utf-8")
+
+                return {
+                    "type": "input_audio",
+                    "input_audio": {
+                        "format": "mp3",
+                        "data": data,
+                    },
+                }
         elif isinstance(content, MessageImageContent):
-            print(content.image)
-            return {"type": "image_url", "image_url": {"url": content.image.uri}}
+            if content.image.uri:
+                # For images, use the original uri_to_base64 logic (implicitly called)
+                return {
+                    "type": "image_url",
+                    "image_url": {"url": self.uri_to_base64(content.image.uri)},
+                }
+            else:
+                # Base64 encode raw image data
+                data = base64.b64encode(content.image.data).decode("utf-8")
+                # Assuming PNG for raw data, adjust if needed
+                return {
+                    "type": "image_url",
+                    "image_url": {"url": f"data:image/png;base64,{data}"},
+                }
         else:
             raise ValueError(f"Unknown content type {content}")
 
@@ -212,14 +294,27 @@ class OpenAIProvider(ChatProvider):
         max_tokens: int = 16384,
         context_window: int = 128000,
         response_format: dict | None = None,
+        audio: dict | None = None,
     ) -> AsyncGenerator[Chunk | ToolCall, Any]:
         """Generate streaming completions from OpenAI."""
+
+        modalities = ["text"]
+        if audio:
+            modalities.append("audio")
         # Convert system messages to user messages for O1/O3 models
         kwargs = {
+            "model": model,
             "max_completion_tokens": max_tokens,
             "response_format": response_format,
+            "audio": audio,
+            "stream": True,
+            "modalities": modalities,
+            "stream_options": {"include_usage": True},
         }
-        if model.startswith("o1") or model.startswith("o3"):
+        if len(tools) > 0:
+            kwargs["tools"] = self.format_tools(tools)
+
+        if model.startswith("o"):
             kwargs.pop("temperature", None)
             converted_messages = []
             for msg in messages:
@@ -235,10 +330,17 @@ class OpenAIProvider(ChatProvider):
                     converted_messages.append(msg)
             messages = converted_messages
 
-        self._log_api_request("chat_stream", messages, model, tools, **kwargs)
-
-        if len(tools) > 0:
-            kwargs["tools"] = self.format_tools(tools)
+        self._log_api_request(
+            "chat_stream",
+            messages,
+            model,
+            tools,
+            stream=True,
+            modalities=modalities,
+            max_completion_tokens=max_tokens,
+            response_format=response_format,
+            stream_options={"include_usage": True},
+        )
 
         openai_messages = [self.convert_message(m) for m in messages]
 
@@ -248,21 +350,22 @@ class OpenAIProvider(ChatProvider):
         #         kwargs["reasoning_effort"] = "high"
 
         completion = await self.client.chat.completions.create(
-            model=model,
             messages=openai_messages,
-            stream=True,
-            stream_options={"include_usage": True},
             **kwargs,
         )
         delta_tool_calls = {}
         current_chunk = ""
 
         async for chunk in completion:
+            chunk: ChatCompletionChunk = chunk
             # Track usage information (only available in the final chunk)
-            if hasattr(chunk, "usage") and chunk.usage:
+            if chunk.usage:
                 self.usage["prompt_tokens"] += chunk.usage.prompt_tokens
                 self.usage["completion_tokens"] += chunk.usage.completion_tokens
                 self.usage["total_tokens"] += chunk.usage.total_tokens
+                self.cost += await calculate_chat_cost(
+                    model, chunk.usage.prompt_tokens, chunk.usage.completion_tokens
+                )
                 if (
                     chunk.usage.prompt_tokens_details
                     and chunk.usage.prompt_tokens_details.cached_tokens
@@ -282,6 +385,13 @@ class OpenAIProvider(ChatProvider):
                 continue
 
             delta = chunk.choices[0].delta
+
+            if hasattr(delta, "audio") and "data" in delta.audio:  # type: ignore
+                yield Chunk(
+                    content=delta.audio["data"],  # type: ignore
+                    content_type="audio",
+                )
+
             if delta.content or chunk.choices[0].finish_reason == "stop":
                 current_chunk += delta.content or ""
                 if chunk.choices[0].finish_reason == "stop":
@@ -398,6 +508,11 @@ class OpenAIProvider(ChatProvider):
             self.usage["prompt_tokens"] += completion.usage.prompt_tokens
             self.usage["completion_tokens"] += completion.usage.completion_tokens
             self.usage["total_tokens"] += completion.usage.total_tokens
+            self.cost += await calculate_chat_cost(
+                model,
+                completion.usage.prompt_tokens,
+                completion.usage.completion_tokens,
+            )
 
         choice = completion.choices[0]
         response_message = choice.message

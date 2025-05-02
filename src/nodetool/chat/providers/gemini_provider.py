@@ -1,6 +1,8 @@
 import asyncio
 import json
 import traceback
+import mimetypes
+import aiohttp
 from typing import Any, AsyncGenerator, List, Sequence
 from google.genai import Client
 from google.genai.client import AsyncClient
@@ -152,6 +154,29 @@ class GeminiProvider(ChatProvider):
     def __init__(self):
         super().__init__()
         self.usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+        self.cost = 0.0
+
+    async def _uri_to_blob(self, uri: str) -> Blob:
+        """Fetch data from URI and return a Gemini Blob."""
+        async with aiohttp.ClientSession() as session:
+            async with session.get(uri) as response:
+                response.raise_for_status()  # Raise exception for bad status codes
+                data = await response.read()
+                content_type = response.headers.get("Content-Type")
+                mime_type: str | None = None
+                if content_type:
+                    # Extract the main part (e.g., 'image/png' from 'image/png; charset=utf-8')
+                    mime_type = content_type.split(";")[0]
+
+                if not mime_type:
+                    # Try to guess mime type from URI extension if Content-Type is missing
+                    mime_type, _ = mimetypes.guess_type(uri)
+
+                if not mime_type:
+                    # Consider adding more robust type detection if needed (e.g., python-magic)
+                    raise ValueError(f"Could not determine mime type for URI: {uri}")
+
+                return Blob(mime_type=mime_type, data=data)
 
     async def _prepare_message_content(self, message: Message) -> list[Part]:
         """Convert Message content to a format compatible with Gemini API."""
@@ -201,7 +226,24 @@ class GeminiProvider(ChatProvider):
             elif isinstance(content, MessageTextContent):
                 result.append(Part(text=content.text))
             elif isinstance(content, MessageImageContent):
-                raise NotImplementedError("Image content is not supported")
+                # Handle MessageImageContent
+                blob: Blob | None = None
+                image_input = content.image
+                if image_input.data:
+                    blob = Blob(
+                        mime_type="image/png",
+                        data=image_input.data,
+                    )
+                elif image_input.uri:
+                    try:
+                        blob = await self._uri_to_blob(image_input.uri)
+                    except Exception as e:
+                        print(
+                            f"Error fetching image from URI {image_input.uri}: {e}. Skipping image."
+                        )
+
+                if blob:
+                    result.append(Part(inline_data=blob))
             elif isinstance(content, MessageAudioContent):
                 raise NotImplementedError("Audio content is not supported")
             else:
@@ -311,6 +353,7 @@ class GeminiProvider(ChatProvider):
         max_tokens: int = 16384,
         response_format: dict | None = None,
         context_window: int = 4096,
+        audio: dict | None = None,
     ) -> Message:
         """Generate response from Gemini for the given messages with code execution support."""
 
@@ -370,6 +413,7 @@ class GeminiProvider(ChatProvider):
         max_tokens: int = 16384,
         context_window: int = 4096,
         response_format: dict | None = None,
+        audio: dict | None = None,
     ) -> AsyncGenerator[Chunk | ToolCall | MessageFile, Any]:
         """Stream response from Gemini for the given messages with code execution support."""
         if messages[0].role == "system":

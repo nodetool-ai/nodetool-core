@@ -39,7 +39,6 @@ CONTENT_TYPE_TO_EXTENSION = {
     "audio/x-m4a": "m4a",
     "video/mpeg": "mpeg",
     "video/mp4": "mp4",
-    "video/webm": "webm",
     "video/ogg": "ogg",
     "video/quicktime": "mov",
     "video/x-msvideo": "avi",

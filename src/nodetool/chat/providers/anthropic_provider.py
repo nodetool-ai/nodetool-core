@@ -14,6 +14,7 @@ from anthropic.types.message_param import MessageParam
 from anthropic.types.image_block_param import ImageBlockParam
 from anthropic.types.tool_param import ToolParam
 from nodetool.chat.providers.base import ChatProvider
+from nodetool.chat.providers.openai_prediction import calculate_chat_cost
 from nodetool.metadata.types import (
     Message,
     ToolCall,
@@ -115,6 +116,7 @@ class AnthropicProvider(ChatProvider):
             "cache_creation_input_tokens": 0,
             "cache_read_input_tokens": 0,
         }
+        self.cost = 0.0
 
     def convert_message(self, message: Message) -> MessageParam | None:
         """Convert an internal message to Anthropic's format."""
@@ -299,6 +301,11 @@ class AnthropicProvider(ChatProvider):
                             self.usage[
                                 "cache_read_input_tokens"
                             ] += usage.cache_read_input_tokens
+                        self.cost += await calculate_chat_cost(
+                            model,
+                            usage.input_tokens,
+                            usage.output_tokens,
+                        )
 
                     yield Chunk(content="", done=True)
 
@@ -374,6 +381,11 @@ class AnthropicProvider(ChatProvider):
                 ] += usage.cache_creation_input_tokens
             if usage.cache_read_input_tokens:
                 self.usage["cache_read_input_tokens"] += usage.cache_read_input_tokens
+            self.cost += await calculate_chat_cost(
+                model,
+                usage.input_tokens,
+                usage.output_tokens,
+            )
 
         content = []
         tool_calls = []

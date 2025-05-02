@@ -12,6 +12,7 @@ from nodetool.metadata.types import (
     AssetRef,
     DocumentRef,
     HuggingFaceModel,
+    LanguageModel,
     NodeRef,
     Email,
     FilePath,

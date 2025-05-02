@@ -460,7 +460,7 @@ class WorkflowRunner:
                 edge.targetHandle for edge in graph.edges if edge.target == node.id
             }
             all_inputs_ready = all(
-                inputs.get(input_name) is not None for input_name in required_inputs
+                input_name in inputs for input_name in required_inputs
             )
 
             if all_inputs_ready:
