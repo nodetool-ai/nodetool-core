@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 from typing import Dict, List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Header
+from fastapi import APIRouter, Depends, HTTPException, Header, UploadFile, File
 from langchain_text_splitters import (
     ExperimentalMarkdownSyntaxTextSplitter,
     RecursiveCharacterTextSplitter,
@@ -17,6 +17,9 @@ import chromadb
 from markitdown import MarkItDown
 import pymupdf
 import pymupdf4llm
+import os
+import shutil
+import tempfile
 
 from nodetool.metadata.types import Collection, FilePath
 from nodetool.models.workflow import Workflow
@@ -33,11 +36,6 @@ class Document(BaseModel):
     text: str
     doc_id: str
     metadata: dict[str, str] = {}
-
-
-class IndexFile(BaseModel):
-    path: str
-    mime_type: str
 
 
 class CollectionCreate(BaseModel):
@@ -332,40 +330,61 @@ def find_input_nodes(graph: dict) -> tuple[str | None, str | None]:
 @router.post("/{name}/index", response_model=IndexResponse)
 async def index(
     name: str,
-    file: IndexFile,
+    file: UploadFile = File(...),
     authorization: Optional[str] = Header(None),
 ) -> IndexResponse:
     collection = get_collection(name)
     token = "local_token"
 
-    if workflow_id := collection.metadata.get("workflow"):
-        processing_context = ProcessingContext(
-            user_id="1",
-            auth_token=token,
-            workflow_id=workflow_id,
-        )
-        req = RunJobRequest(
-            workflow_id=workflow_id,
-            user_id="1",
-            auth_token=token,
-        )
-        workflow = await processing_context.get_workflow(workflow_id)
-        req.graph = workflow.graph
-        req.params = {}
+    # Save uploaded file temporarily
+    tmp_dir = tempfile.mkdtemp()
+    tmp_path = os.path.join(tmp_dir, file.filename or "uploaded_file")
+    try:
+        with open(tmp_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
 
-        collection_input, file_input = find_input_nodes(req.graph.model_dump())
-        if collection_input:
-            req.params[collection_input] = Collection(name=name)
-        if file_input:
-            req.params[file_input] = FilePath(path=file.path)
+        file_path = tmp_path
+        mime_type = file.content_type or "application/octet-stream"
 
-        async for msg in run_workflow(req):
-            if msg.get("type") == "job_update":
-                if msg.get("status") == "completed":
-                    break
-                elif msg.get("status") == "failed":
-                    return IndexResponse(path=file.path, error=msg.get("error"))
-    else:
-        default_ingestion_workflow(collection, file.path, file.mime_type)
+        if workflow_id := collection.metadata.get("workflow"):
+            processing_context = ProcessingContext(
+                user_id="1",
+                auth_token=token,
+                workflow_id=workflow_id,
+            )
+            req = RunJobRequest(
+                workflow_id=workflow_id,
+                user_id="1",
+                auth_token=token,
+            )
+            workflow = await processing_context.get_workflow(workflow_id)
+            req.graph = workflow.graph
+            req.params = {}
 
-    return IndexResponse(path=file.path, error=None)
+            collection_input, file_input = find_input_nodes(req.graph.model_dump())
+            if collection_input:
+                req.params[collection_input] = Collection(name=name)
+            if file_input:
+                # Use the temporary file path
+                req.params[file_input] = FilePath(path=file_path)
+
+            async for msg in run_workflow(req):
+                if msg.get("type") == "job_update":
+                    if msg.get("status") == "completed":
+                        break
+                    elif msg.get("status") == "failed":
+                        return IndexResponse(
+                            path=file.filename or "unknown", error=msg.get("error")
+                        )
+        else:
+            # Use the temporary file path and determined mime type
+            default_ingestion_workflow(collection, file_path, mime_type)
+
+        return IndexResponse(path=file.filename or "unknown", error=None)
+    except Exception as e:
+        # Catch potential errors during file processing or workflow execution
+        return IndexResponse(path=file.filename or "unknown", error=str(e))
+    finally:
+        # Ensure temporary directory is cleaned up
+        shutil.rmtree(tmp_dir)
+        await file.close()  # Close the uploaded file handle
