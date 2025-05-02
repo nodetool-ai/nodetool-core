@@ -25,7 +25,7 @@ async def main():
     provider = get_provider(Provider.OpenAI)
     model = "gpt-4o"
     email_tools = [
-        SearchEmailTool(context.workspace_dir),
+        SearchEmailTool(),
     ]
 
     retrieval_agent = Agent(

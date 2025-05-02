@@ -40,7 +40,7 @@ async def main():
 
     # Create test tools
     tools = [
-        OpenAIWebSearchTool(workspace_dir),
+        OpenAIWebSearchTool(),
     ]
 
     # Create a processing context
