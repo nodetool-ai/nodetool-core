@@ -313,21 +313,11 @@ class OpenAIEmbeddingModel(str, enum.Enum):
     LARGE = "text-embedding-3-large"
 
 
-class AgentModel(str, enum.Enum):
-    claude_3_5_sonnet = "claude-3-5-sonnet-20241022"
-    claude_3_7_sonnet = "claude-3-7-sonnet-20250219"
-    gpt_4o = "gpt-4o"
-    gpt_4_1 = "gpt-4.1"
-    o3 = "o3"
-    o4_mini = "o4-mini"
-    gemini_2_5_pro_exp_03_25 = "gemini-2.5-pro-exp-03-25"
-    gemini_2_5_flash = "gemini-2.5-flash"
-
-
 class LanguageModel(BaseType):
     type: Literal["language_model"] = "language_model"
-    provider: Provider = Provider.OpenAI
-    model: str = ""
+    provider: Provider = Provider.Empty
+    id: str = ""
+    name: str = ""
 
 
 class LlamaModel(BaseType):
