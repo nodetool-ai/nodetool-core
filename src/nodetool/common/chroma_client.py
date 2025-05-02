@@ -70,6 +70,7 @@ def get_chroma_client(
                     chroma_client_auth_credentials=token,
                     chroma_server_host=parsed_url.hostname,
                     chroma_server_http_port=parsed_url.port,
+                    anonymized_telemetry=False,
                 ),
             )
             tenant = f"tenant_{user_id}"
@@ -87,6 +88,7 @@ def get_chroma_client(
             settings=Settings(
                 chroma_client_auth_provider="chromadb.auth.token_authn.TokenAuthClientProvider",
                 chroma_client_auth_credentials=token,
+                anonymized_telemetry=False,
             ),
             tenant=f"tenant_{user_id}" if user_id else DEFAULT_TENANT,
             database=DEFAULT_DATABASE,
@@ -96,6 +98,7 @@ def get_chroma_client(
             path=Environment.get_chroma_path(),
             tenant=DEFAULT_TENANT,
             database=DEFAULT_DATABASE,
+            settings=Settings(anonymized_telemetry=False),
         )
 
 
@@ -115,18 +118,32 @@ def get_collection(name: str) -> chromadb.Collection:
         raise ValueError("Collection name cannot be empty")
 
     client = get_chroma_client()
+    log = Environment.get_logger()
     collection = client.get_collection(name=name)
     ollama_url = Environment.get("OLLAMA_API_URL")
 
-    if collection.metadata and collection.metadata["embedding_model"]:
+    if collection.metadata and collection.metadata.get("embedding_model"):
+        model_name = collection.metadata["embedding_model"]
+        log.debug(f"Using Ollama model '{model_name}' for collection '{name}'")
         embedding_function = OllamaEmbeddingFunction(
             url=f"{ollama_url}/api/embeddings",
-            model_name=collection.metadata["embedding_model"],
+            model_name=model_name,
         )
         embedding_function._session = httpx.Client(
             timeout=httpx.Timeout(300),
         )
+        try:
+            # Test the embedding function
+            log.debug(f"Testing Ollama model '{model_name}' availability...")
+            embedding_function(["test"])
+            log.debug(f"Ollama model '{model_name}' confirmed available.")
+        except Exception as e:
+            log.error(f"Failed to connect or use Ollama model '{model_name}': {e}")
+            raise ValueError(
+                f"Ollama model '{model_name}' not available at {ollama_url}. Please ensure Ollama is running and the model is downloaded. Error: {e}"
+            )
     else:
+        log.debug(f"Using default SentenceTransformer model for collection '{name}'")
         embedding_function = SentenceTransformerEmbeddingFunction(
             model_name="all-MiniLM-L6-v2",
         )
@@ -197,21 +214,40 @@ def get_all_collections() -> List[chromadb.Collection]:
     """
     client = get_chroma_client()
     collections = client.list_collections()
+    log = Environment.get_logger()
 
     ollama_url = Environment.get("OLLAMA_API_URL")
     result = []
 
     for name in collections:
         collection = client.get_collection(name)
-        if collection.metadata and collection.metadata.get("embedding_model"):
+        model = collection.metadata.get("embedding_model")
+        print(model)
+        if model:
+            log.debug(f"Using Ollama model '{model}' for collection '{name.name}'")
             embedding_function = OllamaEmbeddingFunction(
                 url=f"{ollama_url}/api/embeddings",
-                model_name=collection.metadata["embedding_model"],
+                model_name=model,
             )
             embedding_function._session = httpx.Client(
                 timeout=httpx.Timeout(300),
             )
+            try:
+                # Test the embedding function
+                log.debug(f"Testing Ollama model '{model}' availability...")
+                embedding_function(["test"])
+                log.debug(f"Ollama model '{model}' confirmed available.")
+            except Exception as e:
+                log.error(
+                    f"Failed to connect or use Ollama model '{model}' for collection '{name.name}': {e}"
+                )
+                raise ValueError(
+                    f"Ollama model '{model}' for collection '{name.name}' not available at {ollama_url}. Error: {e}"
+                )
         else:
+            log.debug(
+                f"Using default SentenceTransformer model for collection '{name.name}'"
+            )
             embedding_function = SentenceTransformerEmbeddingFunction(
                 model_name="all-MiniLM-L6-v2",
             )
