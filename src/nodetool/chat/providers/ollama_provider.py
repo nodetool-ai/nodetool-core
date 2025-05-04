@@ -341,6 +341,7 @@ class OllamaProvider(ChatProvider):
         max_tokens: int = 8192,
         context_window: int = 4096,
         response_format: dict | None = None,
+        audio: dict | None = None,
     ) -> AsyncGenerator[Chunk | ToolCall, Any]:
         """
         Generate streaming completions from Ollama.
@@ -349,11 +350,14 @@ class OllamaProvider(ChatProvider):
             messages: The conversation history
             model: The model to use
             tools: Optional tools to make available to the model
+            audio: Optional audio
             **kwargs: Additional parameters to pass to the Ollama API
 
         Yields:
             Chunk | ToolCall: Content chunks or tool calls
         """
+        if audio:
+            raise NotImplementedError("Audio is not supported for Ollama")
 
         self._log_api_request("chat_stream", messages, model, tools)
 
@@ -768,7 +772,6 @@ async def run_smoke_test():
 
     # Initialize the provider
     provider = OllamaProvider()
-    context = ProcessingContext()
 
     # Create test messages with prompts that will trigger multiple tool calls
     messages = [
@@ -793,8 +796,8 @@ async def run_smoke_test():
     ]
 
     tools = [
-        ComplexDataTool(context.workspace_dir),
-        SimpleDataTool(context.workspace_dir),
+        ComplexDataTool(),
+        SimpleDataTool(),
     ]
 
     print("Running smoke test for multiple textual tool calls in a single message...")

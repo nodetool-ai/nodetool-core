@@ -1,6 +1,6 @@
 import os
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.agents.tools.google import GoogleGroundedSearchTool
+from nodetool.agents.tools.google_tools import GoogleGroundedSearchTool
 
 
 async def test_google_search():
@@ -13,7 +13,7 @@ async def test_google_search():
     os.makedirs(workspace_dir, exist_ok=True)
 
     # Initialize the tool
-    search_tool = GoogleGroundedSearchTool(workspace_dir)
+    search_tool = GoogleGroundedSearchTool()
 
     # Create a simple processing context
     context = ProcessingContext()

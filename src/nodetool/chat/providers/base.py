@@ -150,6 +150,7 @@ class ChatProvider(ABC):
         max_tokens: int = 8192,
         context_window: int = 4096,
         response_format: dict | None = None,
+        **kwargs,
     ) -> Message:
         """
         Generate a single message completion from the provider.
@@ -174,7 +175,7 @@ class ChatProvider(ABC):
         max_tokens: int = 8192,
         context_window: int = 4096,
         response_format: dict | None = None,
-        audio: dict | None = None,
+        **kwargs,
     ) -> AsyncGenerator[Chunk | ToolCall, Any]:
         """
         Generate message completions from the provider, yielding chunks or tool calls.
@@ -186,7 +187,6 @@ class ChatProvider(ABC):
             max_tokens: Maximum number of tokens to generate
             context_window: Maximum number of tokens to keep in context
             response_format: Format of the response
-            audio: Audio output format
             **kwargs: Additional provider-specific parameters
 
         Yields:

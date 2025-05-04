@@ -294,19 +294,20 @@ class OpenAIProvider(ChatProvider):
         max_tokens: int = 16384,
         context_window: int = 128000,
         response_format: dict | None = None,
-        audio: dict | None = None,
+        **kwargs,
     ) -> AsyncGenerator[Chunk | ToolCall, Any]:
         """Generate streaming completions from OpenAI."""
 
         modalities = ["text"]
-        if audio:
+        if kwargs.get("audio", None):
             modalities.append("audio")
+
         # Convert system messages to user messages for O1/O3 models
         kwargs = {
             "model": model,
             "max_completion_tokens": max_tokens,
             "response_format": response_format,
-            "audio": audio,
+            "audio": kwargs.get("audio", None),
             "stream": True,
             "modalities": modalities,
             "stream_options": {"include_usage": True},

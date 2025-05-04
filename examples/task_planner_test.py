@@ -11,8 +11,8 @@ from nodetool.chat.providers.ollama_provider import OllamaProvider
 from nodetool.chat.providers.openai_provider import OpenAIProvider
 from nodetool.agents.task_planner import TaskPlanner
 from nodetool.agents.tools.base import Tool
-from nodetool.agents.tools.browser import BrowserTool, GoogleSearchTool
-from nodetool.agents.tools.google import GoogleGroundedSearchTool
+from nodetool.agents.tools.browser_tools import BrowserTool, GoogleSearchTool
+from nodetool.agents.tools.google_tools import GoogleGroundedSearchTool
 from nodetool.workflows.processing_context import ProcessingContext
 import dotenv
 

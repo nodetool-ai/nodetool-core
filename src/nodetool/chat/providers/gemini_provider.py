@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import json
 import traceback
 import mimetypes
@@ -353,7 +354,7 @@ class GeminiProvider(ChatProvider):
         max_tokens: int = 16384,
         response_format: dict | None = None,
         context_window: int = 4096,
-        audio: dict | None = None,
+        **kwargs,
     ) -> Message:
         """Generate response from Gemini for the given messages with code execution support."""
 
@@ -414,6 +415,7 @@ class GeminiProvider(ChatProvider):
         context_window: int = 4096,
         response_format: dict | None = None,
         audio: dict | None = None,
+        **kwargs,
     ) -> AsyncGenerator[Chunk | ToolCall | MessageFile, Any]:
         """Stream response from Gemini for the given messages with code execution support."""
         if messages[0].role == "system":
@@ -429,6 +431,7 @@ class GeminiProvider(ChatProvider):
             tools=gemini_tools,
             system_instruction=system_instruction,
             max_output_tokens=max_tokens,
+            response_modalities=["text"],
         )
 
         contents = await self._prepare_messages(messages)
@@ -444,6 +447,7 @@ class GeminiProvider(ChatProvider):
                 candidate = chunk.candidates[0]
                 if candidate.content:
                     for part in candidate.content.parts:
+                        part: Part = part
                         if part.text:
                             yield Chunk(content=part.text, done=False)
                         elif part.function_call:

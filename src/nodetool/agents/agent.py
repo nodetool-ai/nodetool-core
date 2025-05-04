@@ -27,10 +27,9 @@ from rich.live import Live
 import asyncio
 import traceback
 
-from nodetool.agents.tools.browser import GoogleSearchTool
-from nodetool.agents.tools.google import GoogleGroundedSearchTool
-from nodetool.agents.tools.openai import OpenAIWebSearchTool
-from nodetool.chat.providers.ollama_provider import OllamaProvider
+from nodetool.agents.tools.browser_tools import GoogleSearchTool
+from nodetool.agents.tools.google_tools import GoogleGroundedSearchTool
+from nodetool.agents.tools.openai_tools import OpenAIWebSearchTool
 from nodetool.common.environment import Environment
 from nodetool.common.settings import get_log_path
 from nodetool.workflows.types import Chunk, TaskUpdate, TaskUpdateEvent
@@ -97,7 +96,9 @@ class Agent:
         objective: str,
         provider: ChatProvider,
         model: str,
-        tools: Sequence[Tool],
+        planning_model: str | None = None,
+        reasoning_model: str | None = None,
+        tools: Sequence[Tool] = [],
         description: str = "",
         input_files: List[str] = [],
         system_prompt: str | None = None,
@@ -107,9 +108,10 @@ class Agent:
         max_token_limit: int = 20000,
         output_schema: dict | None = None,
         output_type: str | None = None,
-        enable_retrieval_phase: bool = True,
+        enable_retrieval_phase: bool = False,
         enable_analysis_phase: bool = True,
         enable_data_contracts_phase: bool = True,
+        task: Task | None = None,  # Add optional task parameter
     ):
         """
         Initialize the base agent.
@@ -120,6 +122,8 @@ class Agent:
             description (str): The description of the agent
             provider (ChatProvider): An LLM provider instance
             model (str): The model to use with the provider
+            reasoning_model (str, optional): The model to use for reasoning, defaults to the same as the provider model
+            planning_model (str, optional): The model to use for planning, defaults to the same as the provider model
             tools (List[Tool]): List of tools available for this agent
             input_files (List[str]): List of input files to use for the agent
             system_prompt (str, optional): Custom system prompt
@@ -132,12 +136,15 @@ class Agent:
             enable_retrieval_phase (bool, optional): Whether to run the retrieval phase (PHASE 1)
             enable_analysis_phase (bool, optional): Whether to run the analysis phase (PHASE 2)
             enable_data_contracts_phase (bool, optional): Whether to run the data contracts phase (PHASE 3)
+            task (Task, optional): Pre-defined task to execute, skipping planning
         """
         self.name = name
         self.objective = objective
         self.description = description
         self.provider = provider
         self.model = model
+        self.planning_model = planning_model or model
+        self.reasoning_model = reasoning_model or model
         self.max_steps = max_steps
         self.max_subtask_iterations = max_subtask_iterations
         self.max_token_limit = max_token_limit
@@ -152,6 +159,7 @@ class Agent:
         self.enable_retrieval_phase = enable_retrieval_phase
         self.enable_analysis_phase = enable_analysis_phase
         self.enable_data_contracts_phase = enable_data_contracts_phase
+        self.initial_task = task  # Store the initial task
 
     def _create_subtasks_table(self, task: Task, tool_calls: List[ToolCall]) -> Table:
         """Create a rich table for displaying subtasks and their tool calls."""
@@ -215,53 +223,71 @@ class Agent:
 
         tools = list(self.tools)
 
-        self.provider.log_file = str(
-            get_log_path(
-                sanitize_file_path(
-                    f"{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}__{self.name}__planner.jsonl"
+        if self.initial_task:
+            task = self.initial_task
+            for subtask in task.subtasks:
+                if subtask.output_file and not os.path.isabs(subtask.output_file):
+                    subtask.output_file = os.path.join(
+                        processing_context.workspace_dir, subtask.output_file
+                    )
+                if subtask.artifacts:
+                    subtask.artifacts = [
+                        (
+                            os.path.join(processing_context.workspace_dir, art)
+                            if not os.path.isabs(art)
+                            else art
+                        )
+                        for art in subtask.artifacts
+                    ]
+
+        else:
+            print(f"Agent '{self.name}' planning task for objective: {self.objective}")
+            self.provider.log_file = str(
+                get_log_path(
+                    sanitize_file_path(
+                        f"{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}__{self.name}__planner.jsonl"
+                    )
                 )
             )
-        )
 
-        retrieval_tools = []
+            retrieval_tools = []
 
-        if Environment.get("GEMINI_API_KEY"):
-            retrieval_tools.append(
-                GoogleGroundedSearchTool(),
+            if Environment.get("GEMINI_API_KEY"):
+                retrieval_tools.append(
+                    GoogleGroundedSearchTool(),
+                )
+
+            if Environment.get("BRIGHTDATA_API_KEY"):
+                retrieval_tools.append(
+                    GoogleSearchTool(),
+                )
+
+            if Environment.get("OPENAI_API_KEY"):
+                retrieval_tools.append(
+                    OpenAIWebSearchTool(),
+                )
+
+            task_planner = TaskPlanner(
+                provider=self.provider,
+                model=self.planning_model,
+                objective=self.objective,
+                workspace_dir=processing_context.workspace_dir,
+                execution_tools=tools,
+                retrieval_tools=retrieval_tools,
+                input_files=input_files,
+                output_schema=self.output_schema,
+                enable_retrieval_phase=self.enable_retrieval_phase,
+                enable_analysis_phase=self.enable_analysis_phase,
+                enable_data_contracts_phase=self.enable_data_contracts_phase,
+                use_structured_output=True,
             )
 
-        if Environment.get("BRIGHTDATA_API_KEY"):
-            retrieval_tools.append(
-                GoogleSearchTool(),
+            task = await task_planner.create_task(processing_context, self.objective)
+
+            yield TaskUpdate(
+                task=task,
+                event=TaskUpdateEvent.TASK_CREATED,
             )
-
-        if Environment.get("OPENAI_API_KEY"):
-            retrieval_tools.append(
-                OpenAIWebSearchTool(),
-            )
-
-        task_planner = TaskPlanner(
-            provider=self.provider,
-            model=self.model,
-            objective=self.objective,
-            workspace_dir=processing_context.workspace_dir,
-            execution_tools=tools,
-            retrieval_tools=retrieval_tools,
-            input_files=input_files,
-            output_schema=self.output_schema,
-            enable_retrieval_phase=self.enable_retrieval_phase,
-            enable_analysis_phase=self.enable_analysis_phase,
-            enable_data_contracts_phase=self.enable_data_contracts_phase,
-            # use_structured_output=isinstance(self.provider, OllamaProvider),
-            use_structured_output=True,
-        )
-
-        task = await task_planner.create_task(processing_context, self.objective)
-
-        yield TaskUpdate(
-            task=task,
-            event=TaskUpdateEvent.TASK_CREATED,
-        )
 
         if self.output_type and len(task.subtasks) > 0:
             task.subtasks[-1].output_type = self.output_type

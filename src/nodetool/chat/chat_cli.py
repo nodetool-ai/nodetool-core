@@ -40,7 +40,7 @@ from nodetool.agents.agent import Agent
 from nodetool.chat.providers import get_provider
 from nodetool.chat.providers.base import ChatProvider
 from nodetool.chat.regular_chat import process_regular_chat
-from nodetool.agents.tools.browser import DownloadFileTool
+from nodetool.agents.tools.browser_tools import DownloadFileTool
 from nodetool.metadata.types import Provider, Message, ToolCall
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.chat.ollama_service import get_ollama_models

@@ -1,6 +1,6 @@
 import asyncio
 from nodetool.chat.providers import get_provider
-from nodetool.agents.tools.browser import BrowserTool, GoogleSearchTool
+from nodetool.agents.tools.browser_tools import BrowserTool, GoogleSearchTool
 from nodetool.chat.providers.base import ChatProvider
 from nodetool.metadata.types import Provider, Task, SubTask
 from nodetool.agents.sub_task_context import SubTaskContext
@@ -10,15 +10,18 @@ import json
 from pathlib import Path
 
 
-async def test_instagram_scraper_task(provider: ChatProvider, model: str):
+async def test_instagram_scraper_task(
+    provider: ChatProvider,
+    model: str,
+):
     # 1. Set up workspace directory
     context = ProcessingContext()
     workspace_dir = context.workspace_dir
 
     # 3. Set up browser and search tools
     tools = [
-        BrowserTool(workspace_dir=str(workspace_dir)),
-        GoogleSearchTool(workspace_dir=str(workspace_dir)),
+        BrowserTool(),
+        GoogleSearchTool(),
     ]
 
     # 4. Create a sample task
@@ -93,15 +96,15 @@ if __name__ == "__main__":
             provider=get_provider(Provider.OpenAI), model="gpt-4o-mini"
         )
     )
-    asyncio.run(
-        test_instagram_scraper_task(
-            provider=get_provider(Provider.Gemini), model="gemini-2.0-flash"
-        )
-    )
+    # asyncio.run(
+    #     test_instagram_scraper_task(
+    #         provider=get_provider(Provider.Gemini), model="gemini-2.0-flash"
+    #     )
+    # )
 
-    asyncio.run(
-        test_instagram_scraper_task(
-            provider=get_provider(Provider.Anthropic),
-            model="claude-3-5-sonnet-20241022",
-        )
-    )
+    # asyncio.run(
+    #     test_instagram_scraper_task(
+    #         provider=get_provider(Provider.Anthropic),
+    #         model="claude-3-5-sonnet-20241022",
+    #     )
+    # )

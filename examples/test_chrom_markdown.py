@@ -1,7 +1,7 @@
 # test_chroma_markdown_split_index.py
 import asyncio
 import chromadb
-from nodetool.agents.tools.chroma import ChromaMarkdownSplitAndIndexTool
+from nodetool.agents.tools.chroma_tools import ChromaMarkdownSplitAndIndexTool
 from chromadb.api.types import IncludeEnum
 from nodetool.workflows.processing_context import (
     ProcessingContext,

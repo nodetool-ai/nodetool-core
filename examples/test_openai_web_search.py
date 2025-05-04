@@ -18,7 +18,7 @@ import json
 from pathlib import Path
 from rich.console import Console
 
-from nodetool.agents.tools.openai import OpenAIWebSearchTool
+from nodetool.agents.tools.openai_tools import OpenAIWebSearchTool
 from nodetool.metadata.types import SubTask, Task
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import Chunk, TaskUpdate

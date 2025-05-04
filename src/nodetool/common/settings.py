@@ -115,6 +115,14 @@ class SecretsModel(BaseModel):
         default=None,
         description="Brightdata scraping browser endpoint for accessing Brightdata's proxy infrastructure",
     )
+    DATA_FOR_SEO_LOGIN: str | None = Field(
+        default=None,
+        description="DataForSEO login for accessing DataForSEO's API",
+    )
+    DATA_FOR_SEO_PASSWORD: str | None = Field(
+        default=None,
+        description="DataForSEO password for accessing DataForSEO's API",
+    )
 
 
 def get_system_file_path(filename: str) -> Path:

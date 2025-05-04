@@ -1,3 +1,4 @@
+import base64
 from typing import Dict, Any, List
 from google.genai import Client
 from google.genai.client import AsyncClient
@@ -5,6 +6,8 @@ from google.genai.types import (
     Tool as GenAITool,
     GenerateContentConfig,
     GoogleSearch,
+    Modality,
+    GenerateImagesConfig,
 )
 from nodetool.agents.tools.base import Tool
 from nodetool.common.environment import Environment
@@ -78,23 +81,11 @@ class GoogleGroundedSearchTool(Tool):
 
         # Check if we have a valid response with candidates
         if not response or not response.candidates:
-            return {
-                "query": query,
-                "results": "No results found",
-                "sources": [],
-                "status": "error",
-                "error": "No response received from Gemini API",
-            }
+            raise ValueError("No response received from Gemini API")
 
         candidate = response.candidates[0]
         if not candidate or not candidate.content:
-            return {
-                "query": query,
-                "results": "No results found",
-                "sources": [],
-                "status": "error",
-                "error": "Invalid response format from Gemini API",
-            }
+            raise ValueError("Invalid response format from Gemini API")
 
         # Get the main response text
         if candidate.content.parts:
@@ -150,3 +141,114 @@ class GoogleGroundedSearchTool(Tool):
         }
 
         return formatted_results
+
+
+class GoogleImageGenerationTool(Tool):
+    """
+    🎨 Google Image Generation Tool - Generates images using Gemini API
+
+    This tool uses Google's Gemini API (gemini-2.0-flash-exp-image-generation)
+    to generate images based on a text prompt.
+
+    Returns a base64 encoded image data.
+    """
+
+    name = "google_image_generation"
+    description = "Generate images based on a text prompt using Google's Gemini API"
+
+    def __init__(self):
+        self.client = get_genai_client()
+        self.input_schema = {
+            "type": "object",
+            "properties": {
+                "prompt": {
+                    "type": "string",
+                    "description": "The text prompt describing the image to generate",
+                },
+            },
+            "required": ["prompt"],
+        }
+
+    async def process(
+        self, context: ProcessingContext, params: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Generate an image using the Gemini API based on the provided prompt.
+
+        Args:
+            context: The processing context
+            params: The parameters including the text prompt
+
+        Returns:
+            Dict containing generated text and base64 encoded image data
+        """
+        prompt = params.get("prompt")
+        if not prompt:
+            raise ValueError("Image generation prompt is required")
+
+        response = await self.client.models.generate_images(
+            model="imagen-3.0-generate-002",
+            prompt=prompt,
+            config=GenerateImagesConfig(
+                number_of_images=1,
+            ),
+        )
+        assert response.generated_images, "No images generated"
+
+        base64_image = None
+        for generated_image in response.generated_images:
+            assert generated_image.image, "No image"
+            assert generated_image.image.image_bytes, "No image bytes"
+            base64_image = base64.b64encode(generated_image.image.image_bytes).decode(
+                "utf-8"
+            )
+
+        return {
+            "prompt": prompt,
+            "image": base64_image,
+            "status": "success",
+        }
+
+
+if __name__ == "__main__":
+    import asyncio
+    import os
+    from nodetool.workflows.processing_context import ProcessingContext
+
+    async def main():
+        # Workspace dir will default based on WorkspaceManager
+        context = ProcessingContext()
+        print(f"Using workspace directory: {context.workspace_dir}")
+
+        # --- Test Google Grounded Search Tool ---
+        print("\n--- Testing Google Grounded Search Tool ---")
+        search_tool = GoogleGroundedSearchTool()
+        search_params = {"query": "What are the latest advancements in AI?"}
+        search_result = await search_tool.process(context, search_params)
+        print("Search Result:")
+        # Pretty print the dictionary
+        import json
+
+        print(json.dumps(search_result, indent=2))
+
+        # --- Test Google Image Generation Tool ---
+        print("\n--- Testing Google Image Generation Tool ---")
+        image_tool = GoogleImageGenerationTool()
+        # Output path relative to the workspace directory
+        output_image_path = "workspace/generated_test_image.png"
+        image_params = {
+            "prompt": "Abase64istic cityscape at sunset, digital art",
+            "output_file": output_image_path,
+        }
+        image_result = await image_tool.process(context, image_params)
+        print("Image Generation Result:")
+        import json
+
+        print(json.dumps(image_result, indent=2))
+        if image_result.get("status") == "success":
+            # Resolve the path using context to get the absolute path
+            abs_path = context.resolve_workspace_path(output_image_path)
+            print(f"Image saved to: {abs_path}")
+
+    # Run the async main function
+    asyncio.run(main())

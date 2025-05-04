@@ -45,10 +45,10 @@ class JsonOutputTool(Tool):
     description = "Use this tool to output JSON according to the specified schema."
     # input_schema is provided during instantiation
 
-    def __init__(self, workspace_dir: str, input_schema: dict[str, Any]):
+    def __init__(self, input_schema: dict[str, Any]):
         # This tool doesn't interact with the workspace, so workspace_dir is nominal.
         # Pass the required schema during initialization.
-        super().__init__(workspace_dir=workspace_dir)
+        super().__init__()
         self.input_schema = input_schema
 
     async def process(self, context: ProcessingContext, params: dict) -> Any:
@@ -228,9 +228,7 @@ class AnthropicProvider(ChatProvider):
         if isinstance(response_format, dict) and "json_schema" in response_format:
             if "schema" not in response_format["json_schema"]:
                 raise ValueError("schema is required in json_schema response format")
-            json_tool = JsonOutputTool(
-                "/tmp/", response_format["json_schema"]["schema"]
-            )
+            json_tool = JsonOutputTool(response_format["json_schema"]["schema"])
             local_tools.append(json_tool)
             system_message = f"{system_message}\nYou must use the '{json_tool.name}' tool to provide a JSON response conforming to the provided schema."
 
@@ -344,9 +342,7 @@ class AnthropicProvider(ChatProvider):
         if isinstance(response_format, dict) and "json_schema" in response_format:
             if "schema" not in response_format["json_schema"]:
                 raise ValueError("schema is required in json_schema response format")
-            json_tool = JsonOutputTool(
-                "/tmp/", response_format["json_schema"]["schema"]
-            )
+            json_tool = JsonOutputTool(response_format["json_schema"]["schema"])
             local_tools.append(json_tool)
             system_message = f"{system_message}\nYou must call the '{json_tool.name}' tool to output JSON according to the specified schema."
 

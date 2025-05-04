@@ -14,7 +14,7 @@ from pathlib import Path
 
 from nodetool.agents.agent import Agent
 from nodetool.chat.providers import get_provider
-from nodetool.agents.tools.browser import BrowserTool, GoogleSearchTool
+from nodetool.agents.tools.browser_tools import BrowserTool, GoogleSearchTool
 from nodetool.metadata.types import Provider, Task
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import Chunk

@@ -14,94 +14,69 @@ import asyncio
 from nodetool.agents.agent import Agent
 from nodetool.chat.dataframes import json_schema_for_dataframe
 from nodetool.chat.providers import get_provider
-from nodetool.agents.tools.browser import BrowserTool, GoogleSearchTool
+from nodetool.agents.tools.browser_tools import BrowserTool, GoogleSearchTool
 from nodetool.chat.providers.base import ChatProvider
 from nodetool.metadata.types import ColumnDef, Provider
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import Chunk
 
 
-async def test_reddit_scraper_agent(provider: ChatProvider, model: str):
+async def test_reddit_scraper_agent(
+    provider: ChatProvider,
+    model: str,
+    reasoning_model: str,
+    planning_model: str,
+):
     context = ProcessingContext()
     search_agent = Agent(
         name="Reddit Search Agent",
         objective="""
-        Search for Reddit posts in the r/StableDiffusion subreddit using Google Search
-        Return a list of URLs to the Reddit posts
+        Search for Reddit posts in the r/n8n subreddit using Google Search
+        Identify the customer painpoints.
+        Group painpoints into themes.
         """,
         provider=provider,
         model=model,
-        enable_analysis_phase=False,
-        enable_data_contracts_phase=False,
+        reasoning_model=reasoning_model,
+        planning_model=planning_model,
         tools=[
-            GoogleSearchTool(workspace_dir=str(context.workspace_dir)),
+            GoogleSearchTool(),
+            BrowserTool(),
         ],
+        output_type="markdown",
         output_schema={
-            "type": "array",
-            "items": {
-                "type": "string",
-            },
+            "type": "string",
         },
     )
+
     # 7. Execute each task in the plan
     async for item in search_agent.execute(context):
         if isinstance(item, Chunk):
             print(item.content, end="", flush=True)
 
-    image_urls = search_agent.get_results()
-    print("Image URLs:")
-    print(image_urls)
-
-    image_scraper_agent = Agent(
-        name="Image Scraper Agent",
-        objective=f"""
-        Visit each URL and extract the image tags using CSS img selector.
-        Return a list of image URLs.
-        Use the remote browser to visit the URLs.
-        The URLs are:
-        {image_urls}
-        """,
-        provider=provider,
-        model=model,
-        enable_analysis_phase=False,
-        enable_data_contracts_phase=True,
-        tools=[
-            BrowserTool(workspace_dir=str(context.workspace_dir)),
-        ],
-        output_schema={
-            "type": "array",
-            "items": {
-                "type": "string",
-            },
-        },
-    )
-
-    # 7. Execute each task in the plan
-    async for item in image_scraper_agent.execute(context):
-        if isinstance(item, Chunk):
-            print(item.content, end="", flush=True)
-
-    image_urls = image_scraper_agent.get_results()
-    print("Image URLs:")
-    print(image_urls)
+    report = search_agent.get_results()
+    print(report)
 
 
 if __name__ == "__main__":
 
     asyncio.run(
         test_reddit_scraper_agent(
-            provider=get_provider(Provider.OpenAI), model="gpt-4o-mini"
+            provider=get_provider(Provider.OpenAI),
+            model="gpt-4o-mini",
+            planning_model="gpt-4o-mini",
+            reasoning_model="gpt-4o-mini",
         )
     )
-    asyncio.run(
-        test_reddit_scraper_agent(
-            provider=get_provider(Provider.Gemini), model="gemini-2.0-flash"
-        )
-    )
+    # asyncio.run(
+    #     test_reddit_scraper_agent(
+    #         provider=get_provider(Provider.Gemini), model="gemini-2.0-flash"
+    #     )
+    # )
 
-    asyncio.run(
-        test_reddit_scraper_agent(
-            provider=get_provider(Provider.Anthropic),
-            model="claude-3-5-sonnet-20241022",
-        )
-    )
+    # asyncio.run(
+    #     test_reddit_scraper_agent(
+    #         provider=get_provider(Provider.Anthropic),
+    #         model="claude-3-5-sonnet-20241022",
+    #     )
+    # )

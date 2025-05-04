@@ -80,8 +80,8 @@ High-Level Execution Flow Diagram:
 |    Start LLM Loop       |<--------------------------------+
 |(Max Iterations Limit?)  | Yes                             |
 +-----------+-------------+-------+                         |
-            |                     |                         |
-            V                     |                         V
+            |                     |                         V
+            V                     |                         |
 +-----------+-------------+       |             +-----------+-----------+
 |   Check Limits (Tokens) |       |             | Force Finish          |
 +-----------+-------------+       |             | (Request Structured   |
@@ -124,6 +124,8 @@ High-Level Execution Flow Diagram:
 """
 
 import asyncio
+import base64
+import binascii
 import datetime
 import mimetypes
 from nodetool.chat.providers import ChatProvider
@@ -139,6 +141,7 @@ import yaml
 import json
 import os
 import time
+import uuid
 from typing import (
     Any,
     AsyncGenerator,
@@ -152,7 +155,7 @@ from typing import (
 )
 import logging
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.agents.tools.workspace import ReadFileTool
+from nodetool.agents.tools.workspace_tools import ReadFileTool
 import shutil
 
 from jinja2 import Environment, BaseLoader
@@ -164,6 +167,21 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_MAX_TOKEN_LIMIT: int = 10000
 DEFAULT_MAX_ITERATIONS: int = 10
+
+DEFAULT_REASONING_SYSTEM_PROMPT: str = """
+You are performing a reasoning subtask within a larger plan.
+YOUR GOAL IS TO ANALYZE AND SYNTHESIZE INFORMATION.
+
+REASONING PROTOCOL:
+1. Focus on understanding the core question or objective of this reasoning step: {{ subtask_content }}.
+2. Carefully analyze the provided input files/artifacts. Use `read_file` efficiently if needed to understand their contents.
+3. Synthesize the information, draw connections, identify patterns, or perform the specific reasoning required.
+4. Structure your thoughts and conclusions clearly in your response.
+5. **Crucially**: Call `finish_subtask` ONCE at the end with your final reasoning output or analysis as the `result`.
+    - The `result` should be the text of your analysis/conclusion.
+    - Include relevant `metadata` (title, description, sources - citing inputs).
+6. Minimize the use of other tools unless absolutely necessary for understanding the inputs. The focus is on cognitive work, not external actions.
+"""
 
 DEFAULT_EXECUTION_SYSTEM_PROMPT: str = """
 You are a executing a single subtask from a larger task plan.
@@ -385,7 +403,16 @@ METADATA_SCHEMA: Dict[str, Any] = {
             },
         },
     },
-    "required": ["title", "description", "sources"],
+    "additionalProperties": False,
+    "required": [
+        "title",
+        "description",
+        "sources",
+        "locale",
+        "url",
+        "site_name",
+        "tags",
+    ],
 }
 
 
@@ -467,6 +494,7 @@ FILE_POINTER_SCHEMA: Dict[str, Any] = {
         },
     },
     "required": ["path"],
+    "additionalProperties": False,
 }
 
 
@@ -501,45 +529,70 @@ class FinishTaskTool(Tool):
             # For binary types, the only valid "content" is a file pointer.
             content_schema = FILE_POINTER_SCHEMA
         else:
-            # Original logic for non-binary types
+            # --- Start Refined Schema Logic ---
+            is_valid_schema = False
             if output_schema:
-                try:
-                    if isinstance(output_schema, str):
+                loaded_schema_dict: Optional[Dict[str, Any]] = None
+                if isinstance(output_schema, str):
+                    try:
                         # Attempt to load if it's a JSON string
                         loaded_schema = json.loads(output_schema)
                         if isinstance(loaded_schema, dict):
-                            content_schema = loaded_schema
+                            loaded_schema_dict = loaded_schema
                         else:
                             logger.warning(
-                                f"Provided output schema string did not parse to a dictionary: {output_schema}. Falling back."
+                                f"Provided output schema string for FinishTaskTool did not parse to a dictionary: {output_schema}"
                             )
-                            content_schema = json_schema_for_output_type(
-                                self.output_type
-                            )
-                    elif isinstance(output_schema, dict):
-                        content_schema = (
-                            output_schema  # Assume it's already a dict/schema
+                    except json.JSONDecodeError as e:
+                        logger.warning(
+                            f"Error parsing provided output schema string for FinishTaskTool: {e}"
                         )
+                    except (
+                        Exception
+                    ) as e:  # Catch other potential errors during loading
+                        logger.warning(
+                            f"Unexpected error loading output schema string for FinishTaskTool: {e}"
+                        )
+                elif isinstance(output_schema, dict):
+                    loaded_schema_dict = (
+                        output_schema  # Assume it's already a dict/schema
+                    )
+                else:
+                    logger.warning(
+                        f"Provided output schema for FinishTaskTool is not a string or dict: {type(output_schema)}"
+                    )
+
+                # Validate the loaded/provided dictionary schema
+                if loaded_schema_dict is not None:
+                    # Basic validation: Check if it's a dict and has a 'type' key which is a string
+                    if isinstance(loaded_schema_dict, dict) and isinstance(
+                        loaded_schema_dict.get("type"), str
+                    ):
+                        content_schema = loaded_schema_dict
+                        is_valid_schema = True
                     else:
                         logger.warning(
-                            f"Provided output schema is not a string or dict: {type(output_schema)}. Falling back."
+                            f"Provided/loaded output schema for FinishTaskTool is not a valid schema dictionary (missing/invalid 'type'?): {loaded_schema_dict}"
                         )
-                        content_schema = json_schema_for_output_type(self.output_type)
-                except json.JSONDecodeError as e:
-                    logger.warning(
-                        f"Error parsing provided output schema string for FinishTaskTool: {e}. Falling back."
-                    )
-                    content_schema = json_schema_for_output_type(self.output_type)
-                except Exception as e:
-                    logger.warning(
-                        f"Unexpected error processing provided output schema for FinishTaskTool: {e}. Falling back."
-                    )
-                    content_schema = json_schema_for_output_type(self.output_type)
-            else:
-                content_schema = json_schema_for_output_type(self.output_type)
 
-        if content_schema is None:  # Ensure content_schema is assigned
-            content_schema = json_schema_for_output_type(self.output_type)
+            # Fallback if schema wasn't valid, provided, or properly loaded
+            if not is_valid_schema:
+                logger.warning(
+                    f"Output schema for FinishTaskTool was invalid or unusable. Falling back based on output_type '{self.output_type}'."
+                )
+                content_schema = json_schema_for_output_type(self.output_type)
+            # --- End Refined Schema Logic ---
+
+            # Ensure strictness before using
+            content_schema = SubTaskContext._enforce_strict_object_schema(
+                content_schema
+            )
+
+        if content_schema is None:  # Ensure content_schema is assigned (safety net)
+            logger.error(
+                f"Content schema for FinishTaskTool ended up as None for output_type '{self.output_type}'. Defaulting."
+            )
+            content_schema = {"type": "string"}
 
         # Final input schema for the tool
         self.input_schema = {
@@ -549,6 +602,7 @@ class FinishTaskTool(Tool):
                 "metadata": METADATA_SCHEMA,
             },
             "required": ["result", "metadata"],
+            "additionalProperties": False,
         }
 
     async def process(
@@ -610,46 +664,70 @@ class FinishSubTaskTool(Tool):
             # For binary types, the only valid "content" is a file pointer.
             content_schema = FILE_POINTER_SCHEMA
         else:
-            # Original logic for non-binary types
+            # --- Start Refined Schema Logic ---
+            is_valid_schema = False
             if output_schema:
-                try:
-                    if isinstance(output_schema, str):
+                loaded_schema_dict: Optional[Dict[str, Any]] = None
+                if isinstance(output_schema, str):
+                    try:
                         # Attempt to load if it's a JSON string
                         loaded_schema = json.loads(output_schema)
                         if isinstance(loaded_schema, dict):
-                            content_schema = loaded_schema
+                            loaded_schema_dict = loaded_schema
                         else:
                             logger.warning(
-                                f"Provided output schema string did not parse to a dictionary: {output_schema}. Falling back."
+                                f"Provided output schema string for FinishSubTaskTool did not parse to a dictionary: {output_schema}"
                             )
-                            content_schema = json_schema_for_output_type(
-                                self.output_type
-                            )
-                    elif isinstance(output_schema, dict):
-                        content_schema = (
-                            output_schema  # Assume it's already a dict/schema
+                    except json.JSONDecodeError as e:
+                        logger.warning(
+                            f"Error parsing provided output schema string for FinishSubTaskTool: {e}"
                         )
+                    except (
+                        Exception
+                    ) as e:  # Catch other potential errors during loading
+                        logger.warning(
+                            f"Unexpected error loading output schema string for FinishSubTaskTool: {e}"
+                        )
+                elif isinstance(output_schema, dict):
+                    loaded_schema_dict = (
+                        output_schema  # Assume it's already a dict/schema
+                    )
+                else:
+                    logger.warning(
+                        f"Provided output schema for FinishSubTaskTool is not a string or dict: {type(output_schema)}"
+                    )
+
+                # Validate the loaded/provided dictionary schema
+                if loaded_schema_dict is not None:
+                    # Basic validation: Check if it's a dict and has a 'type' key which is a string
+                    if isinstance(loaded_schema_dict, dict) and isinstance(
+                        loaded_schema_dict.get("type"), str
+                    ):
+                        content_schema = loaded_schema_dict
+                        is_valid_schema = True
                     else:
                         logger.warning(
-                            f"Provided output schema is not a string or dict: {type(output_schema)}. Falling back."
+                            f"Provided/loaded output schema for FinishSubTaskTool is not a valid schema dictionary (missing/invalid 'type'?): {loaded_schema_dict}"
                         )
-                        content_schema = json_schema_for_output_type(self.output_type)
 
-                except json.JSONDecodeError as e:
-                    logger.warning(
-                        f"Error parsing provided output schema string for FinishSubTaskTool: {e}. Falling back."
-                    )
-                    content_schema = json_schema_for_output_type(self.output_type)
-                except Exception as e:
-                    logger.warning(
-                        f"Unexpected error processing provided output schema for FinishSubTaskTool: {e}. Falling back."
-                    )
-                    content_schema = json_schema_for_output_type(self.output_type)
-            else:
+            # Fallback if schema wasn't valid, provided, or properly loaded
+            if not is_valid_schema:
+                logger.warning(
+                    f"Output schema for FinishSubTaskTool was invalid or unusable. Falling back based on output_type '{self.output_type}'."
+                )
                 content_schema = json_schema_for_output_type(self.output_type)
+            # --- End Refined Schema Logic ---
 
-        if content_schema is None:  # Ensure content_schema is assigned
-            content_schema = json_schema_for_output_type(self.output_type)
+            # Ensure strictness before using
+            content_schema = SubTaskContext._enforce_strict_object_schema(
+                content_schema
+            )
+
+        if content_schema is None:  # Ensure content_schema is assigned (safety net)
+            logger.error(
+                f"Content schema for FinishSubTaskTool ended up as None for output_type '{self.output_type}'. Defaulting."
+            )
+            content_schema = {"type": "string"}
 
         # Final input schema for the tool
         self.input_schema = {
@@ -659,6 +737,7 @@ class FinishSubTaskTool(Tool):
                 "metadata": METADATA_SCHEMA,
             },
             "required": ["result", "metadata"],
+            "additionalProperties": False,
         }
 
     async def process(
@@ -708,10 +787,10 @@ class SubTaskContext:
     tool_call_count: int
     sources: List[str]
     progress: List[Any]
-    in_conclusion_stage: bool
     encoding: tiktoken.Encoding
     _chunk_buffer: str
     _is_buffering_chunks: bool
+    in_conclusion_stage: bool
 
     def __init__(
         self,
@@ -755,8 +834,22 @@ class SubTaskContext:
         # --- Prepare prompt templates ---
         self.jinja_env = Environment(loader=BaseLoader())
 
-        # Select and render the appropriate system prompt template
-        if use_finish_task:
+        # Select the appropriate system prompt template and context
+        if subtask.is_reasoning:
+            base_system_prompt = system_prompt or DEFAULT_REASONING_SYSTEM_PROMPT
+            prompt_context = {
+                "subtask_content": self.subtask.content,
+                # Reasoning tasks might still refer to an expected output format/schema
+                "output_schema": json.dumps(
+                    self.subtask.output_schema or {"type": "string"}, indent=2
+                ),
+            }
+            # Reasoning subtasks always use finish_subtask and typically output text/analysis
+            finish_tool_output_schema = self.subtask.output_schema or {"type": "string"}
+            self.use_finish_task = False  # Reasoning tasks are intermediate steps
+            finish_tool_class = FinishSubTaskTool
+
+        elif use_finish_task:
             base_system_prompt = system_prompt or DEFAULT_FINISH_TASK_SYSTEM_PROMPT
             prompt_context = {
                 "output_schema": json.dumps(
@@ -764,17 +857,22 @@ class SubTaskContext:
                 )  # Provide schema context
             }
             finish_tool_output_schema = self.subtask.output_schema
-        else:
+            finish_tool_class = FinishTaskTool
+        else:  # Standard execution subtask
             base_system_prompt = system_prompt or DEFAULT_EXECUTION_SYSTEM_PROMPT
             prompt_context = {
-                "subtask_content": self.subtask.content
+                "subtask_content": self.subtask.content,
+                # Execution tasks might still refer to an expected output format/schema
+                "output_schema": json.dumps(
+                    self.subtask.output_schema or {"type": "string"}, indent=2
+                ),
             }  # Provide subtask content context
             finish_tool_output_schema = self.subtask.output_schema
+            finish_tool_class = FinishSubTaskTool
 
         self.system_prompt = self._render_prompt(base_system_prompt, prompt_context)
 
-        # Initialize finish tool based on context
-        finish_tool_class = FinishTaskTool if use_finish_task else FinishSubTaskTool
+        # Initialize finish tool based on context (class determined above)
         self.finish_tool = finish_tool_class(
             self.subtask.output_type,
             finish_tool_output_schema,  # Use the determined schema
@@ -809,14 +907,14 @@ class SubTaskContext:
         # Track progress for this subtask
         self.progress = []
 
-        # Flag to track which stage we're in - normal execution flow for all tasks
-        self.in_conclusion_stage = False
-
         self.encoding = tiktoken.get_encoding("cl100k_base")
 
         # Add a buffer for aggregating chunks
         self._chunk_buffer = ""
         self._is_buffering_chunks = False
+
+        # Flag to track which stage we're in - normal execution flow for all tasks
+        self.in_conclusion_stage = False
 
     def _render_prompt(self, template_string: str, context: dict) -> str:
         """Renders a prompt template using Jinja2."""
@@ -922,6 +1020,7 @@ class SubTaskContext:
                 print(f"Successfully copied {source_file_abs} to {output_file_abs}")
             except FileNotFoundError as e:
                 print(f"Error saving subtask output: {e}")
+                # Write error to output file if copy fails
                 with open(output_file_abs, "w", encoding="utf-8") as f:
                     json.dump({"error": str(e), "metadata": metadata}, f, indent=2)
             except Exception as e:
@@ -938,43 +1037,66 @@ class SubTaskContext:
 
         # --- Handle Direct Content Case ---
         elif result_value is not None:
-            result_content = result_value  # Treat result_value as the actual content
-            print(f"Result is content. Writing to {output_file_abs}")
-            file_ext = os.path.splitext(output_file_rel)[1].lower()
-            try:
-                # [EXISTING CONTENT WRITING LOGIC - REMAINS THE SAME]
-                # This block handles writing result_content based on file_ext
-                # (including embedding metadata in YAML/JSON etc.)
-                with open(output_file_abs, "w", encoding="utf-8") as f:
-                    if file_ext == ".md":
-                        if metadata:
-                            f.write("---\n")
-                            try:
-                                yaml.dump(
-                                    metadata,
-                                    f,
-                                    default_flow_style=False,
-                                    allow_unicode=True,
-                                )
-                            except yaml.YAMLError as ye:
-                                print(f"Warning: YAML dump failed: {ye}")
-                                metadata = {}
+            # ---> CHECK IF OUTPUT FILE ALREADY EXISTS <---
+            if os.path.exists(output_file_abs):
+                logger.warning(
+                    f"Output file '{output_file_abs}' already exists, potentially created by a prior tool. Skipping content write from finish_... tool."
+                )
+                # Optionally, you could try to update metadata here if feasible,
+                # but skipping is safer to avoid corrupting the file.
+            else:
+                # ---> PROCEED WITH WRITING CONTENT ONLY IF FILE DOES NOT EXIST <---
+                result_content = (
+                    result_value  # Treat result_value as the actual content
+                )
+                print(f"Result is content. Writing to {output_file_abs}")
+                file_ext = os.path.splitext(output_file_rel)[1].lower()
+                try:
+                    # [EXISTING CONTENT WRITING LOGIC - REMAINS THE SAME]
+                    # This block handles writing result_content based on file_ext
+                    # (including embedding metadata in YAML/JSON etc.)
+                    with open(output_file_abs, "w", encoding="utf-8") as f:
+                        if file_ext == ".md":
                             if metadata:
-                                f.write("---\n\n")
-                        f.write(str(result_content))
-                    elif file_ext in (".yaml", ".yml"):
-                        if isinstance(result_content, str):
-                            try:
-                                parsed = yaml.safe_load(result_content)
-                                if isinstance(parsed, dict):
-                                    parsed["metadata"] = metadata
+                                f.write("---\n")
+                                try:
                                     yaml.dump(
-                                        parsed,
+                                        metadata,
                                         f,
                                         default_flow_style=False,
                                         allow_unicode=True,
                                     )
-                                else:
+                                except yaml.YAMLError as ye:
+                                    print(f"Warning: YAML dump failed: {ye}")
+                                    metadata = {}
+                                if metadata:
+                                    f.write("---\n\n")
+                            f.write(str(result_content))
+                        elif file_ext in (".yaml", ".yml"):
+                            if isinstance(result_content, str):
+                                try:
+                                    parsed = yaml.safe_load(result_content)
+                                    if isinstance(parsed, dict):
+                                        parsed["metadata"] = metadata
+                                        yaml.dump(
+                                            parsed,
+                                            f,
+                                            default_flow_style=False,
+                                            allow_unicode=True,
+                                        )
+                                    else:
+                                        if metadata:
+                                            f.write("# -- Metadata --\n")
+                                            yaml.dump(
+                                                metadata,
+                                                f,
+                                                default_flow_style=False,
+                                                allow_unicode=True,
+                                                explicit_start=False,
+                                            )
+                                            f.write("# -- End Metadata --\n\n")
+                                        f.write(result_content)
+                                except yaml.YAMLError:
                                     if metadata:
                                         f.write("# -- Metadata --\n")
                                         yaml.dump(
@@ -986,125 +1108,117 @@ class SubTaskContext:
                                         )
                                         f.write("# -- End Metadata --\n\n")
                                     f.write(result_content)
-                            except yaml.YAMLError:
-                                if metadata:
-                                    f.write("# -- Metadata --\n")
-                                    yaml.dump(
-                                        metadata,
-                                        f,
-                                        default_flow_style=False,
-                                        allow_unicode=True,
-                                        explicit_start=False,
-                                    )
-                                    f.write("# -- End Metadata --\n\n")
-                                f.write(result_content)
-                        elif isinstance(result_content, dict):
-                            result_content["metadata"] = metadata
-                            yaml.dump(
-                                result_content,
-                                f,
-                                default_flow_style=False,
-                                allow_unicode=True,
-                            )
-                        else:
-                            yaml.dump(
-                                {"result": result_content, "metadata": metadata},
-                                f,
-                                default_flow_style=False,
-                                allow_unicode=True,
-                            )
-                    elif file_ext == ".json":
-                        output_data = result_content
-                        if isinstance(result_content, str):
-                            try:
-                                parsed = json.loads(result_content)
-                                if isinstance(parsed, dict):
-                                    parsed["metadata"] = metadata
-                                    output_data = parsed
-                                else:
+                            elif isinstance(result_content, dict):
+                                result_content["metadata"] = metadata
+                                yaml.dump(
+                                    result_content,
+                                    f,
+                                    default_flow_style=False,
+                                    allow_unicode=True,
+                                )
+                            else:
+                                yaml.dump(
+                                    {"result": result_content, "metadata": metadata},
+                                    f,
+                                    default_flow_style=False,
+                                    allow_unicode=True,
+                                )
+                        elif file_ext == ".json":
+                            output_data = result_content
+                            if isinstance(result_content, str):
+                                try:
+                                    parsed = json.loads(result_content)
+                                    if isinstance(parsed, dict):
+                                        parsed["metadata"] = metadata
+                                        output_data = parsed
+                                    else:
+                                        output_data = {
+                                            "result": parsed,
+                                            "metadata": metadata,
+                                        }
+                                except json.JSONDecodeError:
                                     output_data = {
-                                        "result": parsed,
+                                        "result": result_content,
                                         "metadata": metadata,
                                     }
-                            except json.JSONDecodeError:
+                            elif isinstance(result_content, dict):
+                                result_content["metadata"] = metadata
+                                output_data = result_content
+                            else:
                                 output_data = {
                                     "result": result_content,
                                     "metadata": metadata,
                                 }
-                        elif isinstance(result_content, dict):
-                            result_content["metadata"] = metadata
-                            output_data = result_content
-                        else:
-                            output_data = {
-                                "result": result_content,
-                                "metadata": metadata,
-                            }
-                        json.dump(output_data, f, indent=2, ensure_ascii=False)
-                    elif file_ext == ".jsonl":
-                        if isinstance(result_content, (list, tuple)):
-                            for item in result_content:
-                                json.dump(item, f, ensure_ascii=False)
+                            json.dump(output_data, f, indent=2, ensure_ascii=False)
+                        elif file_ext == ".jsonl":
+                            if isinstance(result_content, (list, tuple)):
+                                for item in result_content:
+                                    json.dump(item, f, ensure_ascii=False)
+                                    f.write("\n")
+                            elif isinstance(result_content, dict):
+                                result_content["metadata"] = metadata
+                                json.dump(result_content, f, ensure_ascii=False)
                                 f.write("\n")
-                        elif isinstance(result_content, dict):
-                            result_content["metadata"] = metadata
-                            json.dump(result_content, f, ensure_ascii=False)
-                            f.write("\n")
-                        else:
-                            json.dump(
-                                {"result": result_content, "metadata": metadata},
-                                f,
-                                ensure_ascii=False,
-                            )
-                            f.write("\n")
-                    elif file_ext == ".csv":
-                        import csv
-
-                        if metadata:
-                            f.write("# -- Metadata --\n")
-                            [f.write(f"# {k}: {v}\n") for k, v in metadata.items()]
-                            f.write("# -- End Metadata --\n")
-                        if isinstance(result_content, (list, tuple)):
-                            if all(
-                                isinstance(row, (list, tuple)) for row in result_content
-                            ):
-                                csv.writer(f).writerows(result_content)
-                            elif all(isinstance(item, str) for item in result_content):
-                                csv.writer(f).writerows(
-                                    [[item] for item in result_content]
+                            else:
+                                json.dump(
+                                    {"result": result_content, "metadata": metadata},
+                                    f,
+                                    ensure_ascii=False,
                                 )
+                                f.write("\n")
+                        elif file_ext == ".csv":
+                            import csv
+
+                            if metadata:
+                                f.write("# -- Metadata --\n")
+                                [f.write(f"# {k}: {v}\n") for k, v in metadata.items()]
+                                f.write("# -- End Metadata --\n")
+                            if isinstance(result_content, (list, tuple)):
+                                if all(
+                                    isinstance(row, (list, tuple))
+                                    for row in result_content
+                                ):
+                                    csv.writer(f).writerows(result_content)
+                                elif all(
+                                    isinstance(item, str) for item in result_content
+                                ):
+                                    csv.writer(f).writerows(
+                                        [[item] for item in result_content]
+                                    )
+                                else:
+                                    f.write(str(result_content))
                             else:
                                 f.write(str(result_content))
                         else:
+                            if metadata:
+                                f.write("/* -- Metadata --\n")
+                                yaml.dump(
+                                    metadata,
+                                    f,
+                                    default_flow_style=False,
+                                    allow_unicode=True,
+                                )
+                                f.write("-- End Metadata -- */\n\n")
                             f.write(str(result_content))
-                    else:
-                        if metadata:
-                            f.write("/* -- Metadata --\n")
-                            yaml.dump(
-                                metadata,
-                                f,
-                                default_flow_style=False,
-                                allow_unicode=True,
-                            )
-                            f.write("-- End Metadata -- */\n\n")
-                        f.write(str(result_content))
 
-                print(f"Successfully wrote content to {output_file_abs}")
-            except Exception as e:
-                print(f"Error writing result content to {output_file_abs}: {e}")
-                try:
-                    with open(output_file_abs, "w", encoding="utf-8") as f:
-                        json.dump(
-                            {
-                                "error": f"Failed to write result content: {e}",
-                                "metadata": metadata,
-                            },
-                            f,
-                            indent=2,
+                    print(f"Successfully wrote content to {output_file_abs}")
+                except Exception as e:
+                    print(f"Error writing result content to {output_file_abs}: {e}")
+                    # Attempt to write error info even if content write failed
+                    try:
+                        with open(output_file_abs, "w", encoding="utf-8") as f:
+                            json.dump(
+                                {
+                                    "error": f"Failed to write result content: {e}",
+                                    "metadata": metadata,
+                                },
+                                f,
+                                indent=2,
+                            )
+                    except Exception as write_err:
+                        print(
+                            f"Failed even to write error to output file {output_file_abs}: {write_err}"
                         )
-                except Exception as write_err:
-                    print(
-                        f"Failed even to write error to output file {output_file_abs}: {write_err}"
-                    )
 
         else:
             error_msg = "finish_subtask called with null 'result'"
@@ -1168,12 +1282,6 @@ class SubTaskContext:
             # Check if we need to transition to conclusion stage
             if (token_count > self.max_token_limit) and not self.in_conclusion_stage:
                 await self._transition_to_conclusion_stage()
-                # Yield task update for transition to conclusion stage
-                yield TaskUpdate(
-                    task=self.task,
-                    subtask=self.subtask,
-                    event=TaskUpdateEvent.ENTERED_CONCLUSION_STAGE,
-                )
 
             # Process current iteration
             message = await self._process_iteration()
@@ -1222,7 +1330,6 @@ class SubTaskContext:
         4. Restricts available tools to only finish_subtask
         """
         self.in_conclusion_stage = True
-
         transition_message = f"""
         SYSTEM: The conversation history is approaching the token limit.
         ENTER CONCLUSION STAGE NOW: You MUST now synthesize all gathered information.
@@ -1307,6 +1414,113 @@ class SubTaskContext:
             tool_result_container.result
         )  # This is the dict returned by process()
 
+        # ---> IMAGE HANDLING LOGIC <---
+        if isinstance(tool_result_content, dict) and "image" in tool_result_content:
+            image_base64 = tool_result_content.get("image")
+            if isinstance(image_base64, str):
+                try:
+                    # Generate a unique filename
+                    image_filename = f"artifact_{uuid.uuid4().hex[:8]}.png"  # Assuming png, might need more logic for other types
+                    image_rel_path = os.path.join(
+                        "artifacts", image_filename
+                    )  # Save in an 'artifacts' subfolder
+                    image_abs_path = self.processing_context.resolve_workspace_path(
+                        image_rel_path
+                    )
+
+                    # Ensure artifacts directory exists
+                    os.makedirs(os.path.dirname(image_abs_path), exist_ok=True)
+
+                    # Decode and write the image
+                    image_data = base64.b64decode(image_base64)
+                    with open(image_abs_path, "wb") as img_file:
+                        img_file.write(image_data)
+
+                    print(
+                        f"Saved base64 image from tool '{tool_call.name}' to {image_rel_path}"
+                    )
+
+                    # Replace image data with file path in the result
+                    tool_result_content["image_path"] = (
+                        image_rel_path  # Use a new key to avoid confusion
+                    )
+                    del tool_result_content["image"]  # Remove the large base64 string
+
+                    # Add artifact path to subtask
+                    if image_rel_path not in self.subtask.artifacts:
+                        self.subtask.artifacts.append(image_rel_path)
+
+                except (binascii.Error, ValueError) as e:
+                    logger.error(
+                        f"Failed to decode base64 image from tool '{tool_call.name}': {e}"
+                    )
+                    # Optionally replace with an error indicator
+                    tool_result_content["image_path"] = f"Error decoding image: {e}"
+                    del tool_result_content["image"]
+                except Exception as e:
+                    logger.error(
+                        f"Failed to save image artifact from tool '{tool_call.name}': {e}"
+                    )
+                    # Optionally replace with an error indicator
+                    tool_result_content["image_path"] = f"Error saving image: {e}"
+                    del tool_result_content["image"]
+        # ---> END IMAGE HANDLING LOGIC <---
+
+        # ---> START NEW AUDIO HANDLING LOGIC <---
+        elif isinstance(tool_result_content, dict) and "audio" in tool_result_content:
+            audio_base64 = tool_result_content.get("audio")
+            # Default to mp3 if format not provided, ensure format is clean
+            audio_format = str(tool_result_content.get("format", "mp3")).strip().lower()
+
+            if isinstance(audio_base64, str):
+                try:
+                    # Generate a unique filename with the specified format
+                    audio_filename = f"artifact_{uuid.uuid4().hex[:8]}.{audio_format}"
+                    audio_rel_path = os.path.join("artifacts", audio_filename)
+                    audio_abs_path = self.processing_context.resolve_workspace_path(
+                        audio_rel_path
+                    )
+
+                    # Ensure artifacts directory exists
+                    os.makedirs(os.path.dirname(audio_abs_path), exist_ok=True)
+
+                    # Decode and write the audio data
+                    audio_data = base64.b64decode(audio_base64)
+                    with open(audio_abs_path, "wb") as audio_file:
+                        audio_file.write(audio_data)
+
+                    print(
+                        f"Saved base64 audio from tool '{tool_call.name}' to {audio_rel_path}"
+                    )
+
+                    # Replace audio data with file path in the result
+                    tool_result_content["audio_path"] = audio_rel_path
+                    del tool_result_content["audio"]  # Remove the large base64 string
+
+                    # Add artifact path to subtask
+                    if audio_rel_path not in self.subtask.artifacts:
+                        self.subtask.artifacts.append(audio_rel_path)
+
+                except (binascii.Error, ValueError) as e:
+                    logger.error(
+                        f"Failed to decode base64 audio from tool '{tool_call.name}': {e}"
+                    )
+                    tool_result_content["audio_path"] = f"Error decoding audio: {e}"
+                    if "audio" in tool_result_content:
+                        del tool_result_content["audio"]
+                    if "audio_format" in tool_result_content:
+                        del tool_result_content["audio_format"]
+                except Exception as e:
+                    logger.error(
+                        f"Failed to save audio artifact from tool '{tool_call.name}': {e}"
+                    )
+                    tool_result_content["audio_path"] = f"Error saving audio: {e}"
+                    if "audio" in tool_result_content:
+                        del tool_result_content["audio"]
+                    if "audio_format" in tool_result_content:
+                        del tool_result_content["audio_format"]
+        # ---> END NEW AUDIO HANDLING LOGIC <---
+
         if tool_call.name == "browser" and isinstance(tool_call.args, dict):
             action = tool_call.args.get("action", "")
             url = tool_call.args.get("url", "")
@@ -1336,8 +1550,8 @@ class SubTaskContext:
 
     async def _handle_max_iterations_reached(self):
         """
-        Handle the case where max iterations are reached without completion.
-        When output_type is JSON, use response_format with JSON schema to ensure proper formatting.
+        Handle the case where max iterations are reached without completion by prompting
+        the LLM to explicitly call the finish tool.
         """
         # --- Determine schema and tool name dynamically ---
         tool_name = "finish_task" if self.use_finish_task else "finish_subtask"
@@ -1407,13 +1621,17 @@ class SubTaskContext:
             Message(role="user", content=json_user_prompt),
         ]
 
+        # --- Modify schema before sending ---
+        modified_schema = SubTaskContext._enforce_strict_object_schema(schema)
+        # --- End schema modification ---
+
         # Get response with response_format set to JSON schema
         response_format = {
             "type": "json_schema",
             "json_schema": {
                 "name": schema_name,
-                "schema": schema,
-                "strict": True,  # Enforce strict adherence if possible
+                "schema": modified_schema,
+                "strict": True,
             },
         }
 
@@ -1513,3 +1731,45 @@ class SubTaskContext:
             args=tool_call.args,
             result={"error": f"Tool '{tool_call.name}' not found"},
         )
+
+    # --- Helper Function for Schema Modification ---
+    @staticmethod
+    def _enforce_strict_object_schema(schema: Any) -> Any:
+        """Recursively adds 'additionalProperties': False and sets all properties as required for object schemas."""
+        if isinstance(schema, dict):
+            if schema.get("type") == "object" and "properties" in schema:
+                schema["additionalProperties"] = False
+                # Set all properties as required
+                schema["required"] = list(schema["properties"].keys())
+                # Recursively apply to properties
+                for key, prop_schema in schema["properties"].items():
+                    schema["properties"][key] = (
+                        SubTaskContext._enforce_strict_object_schema(prop_schema)
+                    )
+            elif schema.get("type") == "array" and "items" in schema:
+                # Recursively apply to array items schema
+                schema["items"] = SubTaskContext._enforce_strict_object_schema(
+                    schema["items"]
+                )
+            # Recursively apply to other nested structures like allOf, anyOf, etc.
+            for key in ["allOf", "anyOf", "oneOf", "not"]:
+                if key in schema and isinstance(schema[key], list):
+                    schema[key] = [
+                        SubTaskContext._enforce_strict_object_schema(sub_schema)
+                        for sub_schema in schema[key]
+                    ]
+            if "definitions" in schema and isinstance(schema["definitions"], dict):
+                for key, def_schema in schema["definitions"].items():
+                    schema["definitions"][key] = (
+                        SubTaskContext._enforce_strict_object_schema(def_schema)
+                    )
+
+        elif isinstance(schema, list):
+            # Handle cases where the schema itself might be a list (e.g., type: [string, null])
+            return [
+                SubTaskContext._enforce_strict_object_schema(item) for item in schema
+            ]
+
+        return schema
+
+    # --- End Helper Function ---

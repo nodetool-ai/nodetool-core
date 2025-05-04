@@ -9,8 +9,8 @@ from nodetool.chat.providers.gemini_provider import GeminiProvider
 from nodetool.chat.providers.openai_provider import OpenAIProvider
 from nodetool.agents.sub_task_context import SubTaskContext
 from nodetool.agents.tools.base import Tool
-from nodetool.agents.tools.browser import BrowserTool
-from nodetool.agents.tools.google import GoogleGroundedSearchTool
+from nodetool.agents.tools.browser_tools import BrowserTool
+from nodetool.agents.tools.google_tools import GoogleGroundedSearchTool
 from nodetool.metadata.types import Task, SubTask, ToolCall
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import Chunk, TaskUpdate

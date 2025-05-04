@@ -274,6 +274,11 @@ async def create_image(prediction: Prediction, client: openai.AsyncClient):
             f"Warning: Pricing (incl. text_input) not found for image model {model_id}. Cost set to 0.0."
         )
 
+    assert images_response.data is not None
+    assert len(images_response.data) > 0
+    assert images_response.data[0].url is not None
+    assert images_response.data[0].b64_json is not None
+
     return PredictionResult(
         prediction=prediction,
         content=images_response.data[0].b64_json,

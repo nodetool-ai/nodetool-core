@@ -18,7 +18,7 @@ from nodetool.workflows.types import Chunk
 from nodetool.metadata.types import Provider
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.agents.tools.pdf import ConvertPDFToMarkdownTool
-from nodetool.agents.tools.chroma import (
+from nodetool.agents.tools.chroma_tools import (
     ChromaHybridSearchTool,
     ChromaMarkdownSplitAndIndexTool,
 )
@@ -53,11 +53,8 @@ async def test_chromadb_research_agent(provider: ChatProvider, model: str):
         enable_analysis_phase=False,
         enable_data_contracts_phase=False,
         tools=[
-            ConvertPDFToMarkdownTool(
-                workspace_dir=str(context.workspace_dir),
-            ),
+            ConvertPDFToMarkdownTool(),
             ChromaMarkdownSplitAndIndexTool(
-                workspace_dir=str(context.workspace_dir),
                 collection=collection,
             ),
         ],
@@ -74,7 +71,6 @@ async def test_chromadb_research_agent(provider: ChatProvider, model: str):
         enable_data_contracts_phase=False,
         tools=[
             ChromaHybridSearchTool(
-                workspace_dir=str(context.workspace_dir),
                 collection=collection,
             ),
         ],

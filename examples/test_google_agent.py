@@ -1,23 +1,22 @@
 #!/usr/bin/env python3
 """
-Test script for Multi-Agent Coordination using specialized agents.
+Test script for the Nodetool Agent class using web search tools.
 
-This script demonstrates the use of MultiAgentCoordinator to orchestrate two specialized agents:
-1. A Research Agent: Responsible for retrieving information from the web
-2. A Summarization Agent: Processes and summarizes the retrieved information
+This script demonstrates the use of a single Agent instance configured with
+web browsing capabilities (GoogleSearchTool, BrowserTool) to perform a specific task.
 
 This example shows how to:
-1. Set up multiple specialized agents with different capabilities
-2. Define their roles and coordination in a task plan
-3. Have the MultiAgentCoordinator manage task dependencies and execution flow
-4. Generate comprehensive research with information retrieval and summarization
+1. Set up a single agent with specific tools and an objective.
+2. Define an output schema for the desired results.
+3. Execute the agent and process its streaming output.
+4. Retrieve structured data (chicken wing recipes) from the web based on the objective.
 """
 
 import asyncio
 import datetime
 from nodetool.agents.agent import Agent
 from nodetool.chat.providers import get_provider
-from nodetool.agents.tools.browser import GoogleSearchTool, BrowserTool
+from nodetool.agents.tools.browser_tools import GoogleSearchTool, BrowserTool
 from nodetool.chat.providers.base import ChatProvider
 from nodetool.metadata.types import Provider
 from nodetool.workflows.processing_context import ProcessingContext
@@ -90,9 +89,9 @@ async def test_google_agent(provider: ChatProvider, model: str):
 
 
 if __name__ == "__main__":
-    asyncio.run(
-        test_google_agent(provider=get_provider(Provider.Ollama), model="qwen3:14b")
-    )
+    # asyncio.run(
+    #     test_google_agent(provider=get_provider(Provider.Ollama), model="qwen3:14b")
+    # )
     # asyncio.run(
     #     test_google_agent(
     #         provider=get_provider(Provider.Gemini), model="gemini-2.0-flash"
@@ -104,9 +103,9 @@ if __name__ == "__main__":
     #         model="claude-3-5-sonnet-20241022",
     #     )
     # )
-    # asyncio.run(
-    #     test_google_agent(provider=get_provider(Provider.OpenAI), model="gpt-4o-mini")
-    # )
+    asyncio.run(
+        test_google_agent(provider=get_provider(Provider.OpenAI), model="gpt-4o-mini")
+    )
     # asyncio.run(
     #     test_google_agent(
     #         provider=get_provider(Provider.Ollama),

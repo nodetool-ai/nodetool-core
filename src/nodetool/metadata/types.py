@@ -966,6 +966,10 @@ class SubTask(BaseType):
     output_file: str = Field(
         description="The file path where the subtask will save its output"
     )
+    is_reasoning: bool = Field(
+        default=False,
+        description="Whether the subtask is a reasoning task",
+    )
     artifacts: list[str] = Field(
         default=[],
         description="A list of files that the subtask will save as artifacts",
@@ -1013,14 +1017,11 @@ class SubTask(BaseType):
         return self.start_time > 0 and not self.completed
 
 
-class Task(BaseModel):
+class Task(BaseType):
     """A task containing a title, description, and list of subtasks."""
 
     type: Literal["task"] = "task"
 
-    agent_name: str = Field(
-        default="", description="The name of the agent to use for the task"
-    )
     title: str = Field(default="", description="The title of the task")
     description: str = Field(
         default="", description="A description of the task, not used for execution"
@@ -1035,7 +1036,7 @@ class Task(BaseModel):
 
     def to_markdown(self) -> str:
         """Converts task and subtasks to markdown format with headings and checkboxes."""
-        lines = f"# Task for {self.agent_name}: {self.title}\n"
+        lines = f"# Task: {self.title}\n"
         if self.description:
             lines += f"{self.description}\n"
         if self.subtasks:

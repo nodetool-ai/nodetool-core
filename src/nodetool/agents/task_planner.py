@@ -48,7 +48,7 @@ KEY RESPONSIBILITIES:
 2. **Analysis (Phase 1):** Decompose complex tasks into logical, self-contained subtasks based on the objective and retrieved information. Each subtask will be executed by an agent.
 3. **Data Flow (Phase 2):** Define precise data dependencies between subtasks (`input_files`, `output_file`, `artifacts`).
 4. **Plan Creation (Phase 3):** Generate the final plan using the `create_task` tool, specifying subtask instructions (`content`), inputs, outputs, and schemas.
-5. Identify parallel execution opportunities.
+5. Identify parallel execution opportunities. Instead of running all tools in sequence, run some in parallel if they don't depend on each other's results.
 6. For each subtask, provide high-level natural language instructions in the `content` field for the agent executor. The agent will decide how to achieve the objective, potentially using available tools.
 7. Ensure type safety (`output_type`, `output_schema`) and relative paths.
 8. Optimize for minimal context length.

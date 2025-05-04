@@ -10,10 +10,12 @@ from nodetool.common.huggingface_file import (
 )
 from nodetool.common.environment import Environment
 from nodetool.metadata.types import (
+    LanguageModel,
     ModelFile,
     HuggingFaceModel,
     LlamaModel,
     OpenAIModel,
+    Provider,
     comfy_model_to_folder,
 )
 from huggingface_hub import try_to_load_from_cache
@@ -89,25 +91,109 @@ async def get_ollama_models_endpoint(
     return await get_ollama_models()
 
 
-@router.get("/openai_models")
-async def get_openai_models_endpoint(
-    user: str = Depends(current_user),
-) -> list[OpenAIModel]:
-    env = Environment.get_environment()
-    api_key = env.get("OPENAI_API_KEY")
-    assert api_key, "OPENAI_API_KEY is not set"
+anthropic_models = [
+    LanguageModel(
+        id="claude-3-5-sonnet-latest",
+        name="Claude 3.5 Sonnet",
+        provider=Provider.Anthropic,
+    ),
+    LanguageModel(
+        id="claude-3-7-sonnet-latest",
+        name="Claude 3.7 Sonnet",
+        provider=Provider.Anthropic,
+    ),
+]
 
-    client = openai.AsyncClient(api_key=api_key)
-    res = await client.models.list()
-    return [
-        OpenAIModel(
-            id=model.id,
-            object=model.object,
-            created=model.created,
-            owned_by=model.owned_by,
-        )
-        for model in res.data
-    ]
+gemini_models = [
+    LanguageModel(
+        id="gemini-2.5-pro-exp-03-25",
+        name="Gemini 2.5 Pro Experimental",
+        provider=Provider.Gemini,
+    ),
+    LanguageModel(
+        id="gemini-2.5-flash-preview-04-17",
+        name="Gemini 2.5 Flash",
+        provider=Provider.Gemini,
+    ),
+    LanguageModel(
+        id="gemini-2.0-flash",
+        name="Gemini 2.0 Flash",
+        provider=Provider.Gemini,
+    ),
+    LanguageModel(
+        id="gemini-2.0-flash-exp-image-generation",
+        name="Gemini 2.0 Flash Exp Image Generation",
+        provider=Provider.Gemini,
+    ),
+]
+
+openai_models = [
+    LanguageModel(
+        id="gpt-4o",
+        name="GPT-4o",
+        provider=Provider.OpenAI,
+    ),
+    LanguageModel(
+        id="gpt-4o-audio-preview-2024-12-17",
+        name="GPT-4o Audio",
+        provider=Provider.OpenAI,
+    ),
+    LanguageModel(
+        id="gpt-4o-mini",
+        name="GPT-4o Mini",
+        provider=Provider.OpenAI,
+    ),
+    LanguageModel(
+        id="gpt-4o-mini-audio-preview-2024-12-17",
+        name="GPT-4o Mini Audio",
+        provider=Provider.OpenAI,
+    ),
+    LanguageModel(
+        id="chatgpt-4o-latest",
+        name="ChatGPT-4o",
+        provider=Provider.OpenAI,
+    ),
+    LanguageModel(
+        id="gpt-4.1",
+        name="GPT-4.1",
+        provider=Provider.OpenAI,
+    ),
+    LanguageModel(
+        id="gpt-4.1-mini",
+        name="GPT-4.1 Mini",
+        provider=Provider.OpenAI,
+    ),
+    LanguageModel(
+        id="o4-mini",
+        name="O4 Mini",
+        provider=Provider.OpenAI,
+    ),
+]
+
+
+@router.get("/language_models")
+async def get_language_models_endpoint(
+    user: str = Depends(current_user),
+) -> list[LanguageModel]:
+    env = Environment.get_environment()
+
+    models = []
+
+    if "ANTHROPIC_API_KEY" in env:
+        models.extend(anthropic_models)
+    if "GEMINI_API_KEY" in env:
+        models.extend(gemini_models)
+    if "OPENAI_API_KEY" in env:
+        models.extend(openai_models)
+
+    ollama_models = await get_ollama_models()
+    models.extend(
+        [
+            LanguageModel(id=model.name, name=model.name, provider=Provider.Ollama)
+            for model in ollama_models
+        ]
+    )
+    return models
 
 
 @router.get("/ollama_model_info")

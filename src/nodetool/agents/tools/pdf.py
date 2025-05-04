@@ -49,7 +49,7 @@ class ExtractPDFTextTool(Tool):
 
     async def process(self, context: ProcessingContext, params: dict) -> Any:
         try:
-            path = self.resolve_workspace_path(params["path"])
+            path = context.resolve_workspace_path(params["path"])
             doc = pymupdf.open(path)
 
             end = params.get("end_page", -1)
@@ -96,7 +96,7 @@ class ExtractPDFTablesTool(Tool):
 
     async def process(self, context: ProcessingContext, params: dict) -> Any:
         try:
-            path = self.resolve_workspace_path(params["path"])
+            path = context.resolve_workspace_path(params["path"])
             doc = pymupdf.open(path)
 
             end = params.get("end_page", -1)
@@ -129,7 +129,7 @@ class ExtractPDFTablesTool(Tool):
                     }
                     all_tables.append(table_data)
 
-            output_file = self.resolve_workspace_path(params["output_file"])
+            output_file = context.resolve_workspace_path(params["output_file"])
             with open(output_file, "w") as f:
                 json.dump(all_tables, f)
 
@@ -168,8 +168,8 @@ class ConvertPDFToMarkdownTool(Tool):
 
     async def process(self, context: ProcessingContext, params: dict):
         try:
-            input_file = self.resolve_workspace_path(params["input_file"])
-            output_file = self.resolve_workspace_path(params["output_file"])
+            input_file = context.resolve_workspace_path(params["input_file"])
+            output_file = context.resolve_workspace_path(params["output_file"])
 
             doc = pymupdf.open(input_file)
 
@@ -212,8 +212,8 @@ class ConvertMarkdownToPDFTool(Tool):
 
     async def process(self, context: ProcessingContext, params: dict) -> Any:
         try:
-            input_file = self.resolve_workspace_path(params["input_file"])
-            output_file = self.resolve_workspace_path(params["output_file"])
+            input_file = context.resolve_workspace_path(params["input_file"])
+            output_file = context.resolve_workspace_path(params["output_file"])
 
             os.makedirs(os.path.dirname(output_file), exist_ok=True)
 
@@ -267,8 +267,8 @@ class ConvertDocumentTool(Tool):
 
     async def process(self, context: ProcessingContext, params: dict) -> Any:
         try:
-            input_file = self.resolve_workspace_path(params["input_file"])
-            output_file = self.resolve_workspace_path(params["output_file"])
+            input_file = context.resolve_workspace_path(params["input_file"])
+            output_file = context.resolve_workspace_path(params["output_file"])
 
             os.makedirs(os.path.dirname(output_file), exist_ok=True)
 

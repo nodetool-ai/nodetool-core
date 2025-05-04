@@ -44,10 +44,11 @@ class TaskExecutor:
         tools: Sequence[Tool],
         task: Task,
         system_prompt: str | None = None,
+        reasoning_model: str | None = None,
         input_files: List[str] = [],
         max_steps: int = 50,
         max_subtask_iterations: int = 10,
-        max_token_limit: int = 20000,
+        max_token_limit: int = 100000,
         parallel_execution: bool = False,
     ):
         """
@@ -56,6 +57,7 @@ class TaskExecutor:
         Args:
             provider (ChatProvider): An LLM provider instance
             model (str): The model to use with the provider
+            reasoning_model (str, optional): The model to use for reasoning, defaults to the same as the provider model
             processing_context (ProcessingContext): The processing context
             tools (List[Tool]): List of tools available for task execution
             task (Task): The task to execute
@@ -68,6 +70,7 @@ class TaskExecutor:
         """
         self.provider = provider
         self.model = model
+        self.reasoning_model = reasoning_model or model
         self.tools = tools
         self.task = task
         self.processing_context = processing_context
@@ -133,7 +136,7 @@ class TaskExecutor:
                     processing_context=context,
                     system_prompt=self.system_prompt,
                     tools=list(self.tools).copy(),
-                    model=self.model,
+                    model=self.reasoning_model if subtask.is_reasoning else self.model,
                     provider=self.provider,
                     max_token_limit=self.max_token_limit,
                     use_finish_task=(subtask == self.task.subtasks[-1]),
