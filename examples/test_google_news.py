@@ -3,7 +3,7 @@ import asyncio
 import json
 import dotenv
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.agents.tools.browser_tools import GoogleNewsTool
+from nodetool.agents.tools import GoogleNewsTool
 
 # Load environment variables from .env file
 dotenv.load_dotenv()

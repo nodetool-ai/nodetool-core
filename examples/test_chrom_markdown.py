@@ -1,4 +1,19 @@
 # test_chroma_markdown_split_index.py
+"""
+End-to-end test script for the `ChromaMarkdownSplitAndIndexTool`.
+
+This script demonstrates how to use the `ChromaMarkdownSplitAndIndexTool`
+to split Markdown content based on headers and chunk size, and then index
+the resulting chunks into a ChromaDB collection.
+
+It performs the following steps:
+1. Initializes an in-memory ChromaDB client and creates a test collection.
+2. Initializes the `ChromaMarkdownSplitAndIndexTool`.
+3. Defines sample Markdown content.
+4. Runs the tool's `process` method to split and index the content.
+5. Verifies the indexing by retrieving the documents directly from ChromaDB
+   and comparing the count.
+"""
 import asyncio
 import chromadb
 from nodetool.agents.tools.chroma_tools import ChromaMarkdownSplitAndIndexTool

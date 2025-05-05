@@ -1,6 +1,6 @@
 import asyncio
 from nodetool.chat.providers import get_provider
-from nodetool.agents.tools.browser_tools import BrowserTool, GoogleSearchTool
+from nodetool.agents.tools import BrowserTool, GoogleSearchTool
 from nodetool.chat.providers.base import ChatProvider
 from nodetool.metadata.types import Provider, Task, SubTask
 from nodetool.agents.sub_task_context import SubTaskContext

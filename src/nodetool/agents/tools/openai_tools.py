@@ -67,6 +67,13 @@ class OpenAIWebSearchTool(Tool):
 
         return formatted_results
 
+    def user_message(self, params: dict) -> str:
+        query = params.get("query", "something")
+        msg = f"Searching the web for '{query}' using OpenAI..."
+        if len(msg) > 80:
+            msg = "Searching the web using OpenAI..."
+        return msg
+
 
 class OpenAIImageGenerationTool(Tool):
     """
@@ -133,6 +140,13 @@ class OpenAIImageGenerationTool(Tool):
                 raise ValueError("No image data received from OpenAI.")
         else:
             raise ValueError("No image data received from OpenAI.")
+
+    def user_message(self, params: dict) -> str:
+        prompt = params.get("prompt", "an image")
+        msg = f"Generating {prompt} using DALL-E..."
+        if len(msg) > 80:
+            msg = "Generating an image using DALL-E..."
+        return msg
 
 
 class OpenAITextToSpeechTool(Tool):
@@ -230,3 +244,13 @@ class OpenAITextToSpeechTool(Tool):
         }
 
         return formatted_results
+
+    def user_message(self, params: dict) -> str:
+        text = params.get("input", "some text")
+        voice = params.get("voice", "a voice")
+        msg = f"Converting text to speech with voice {voice}..."
+        if len(text) < 30 and len(msg) + len(text) + 4 < 80:  # Add preview if short
+            msg = f"Converting '{text}' to speech with voice {voice}..."
+        elif len(msg) > 80:
+            msg = "Converting text to speech..."
+        return msg

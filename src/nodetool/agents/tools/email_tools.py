@@ -173,6 +173,24 @@ class SearchEmailTool(Tool):
     )
     """
 
+    def user_message(self, params: dict) -> str:
+        query_parts = []
+        if params.get("subject"):
+            query_parts.append(f"subject: '{params['subject']}'")
+        if params.get("text"):
+            query_parts.append(f"text: '{params['text']}'")
+        if params.get("since_hours_ago"):
+            query_parts.append(f"since: {params['since_hours_ago']} hours ago")
+
+        query_str = ", ".join(query_parts)
+        if not query_str:
+            query_str = "emails"
+
+        msg = f"Searching {query_str}..."
+        if len(msg) > 80:
+            msg = "Searching emails..."
+        return msg
+
     async def process(self, context: ProcessingContext, params: dict) -> Any:
         import email
         import email.header
@@ -297,6 +315,15 @@ class ArchiveEmailTool(Tool):
         "required": ["message_ids"],
     }
 
+    def user_message(self, params: dict) -> str:
+        ids = params.get("message_ids", [])
+        count = len(ids)
+        if count == 1:
+            msg = f"Archiving email {ids[0]}..."
+        else:
+            msg = f"Archiving {count} emails..."
+        return msg
+
     async def process(self, context: ProcessingContext, params: dict) -> Any:
         try:
             imap, _, _ = create_gmail_connection(context)
@@ -340,6 +367,18 @@ class AddLabelTool(Tool):
         },
         "required": ["message_id", "label"],
     }
+
+    def user_message(self, params: dict) -> str:
+        label = params.get("label", "a label")
+        ids = params.get("message_ids", [])
+        count = len(ids)
+        if count == 1:
+            msg = f"Adding label '{label}' to email {ids[0]}..."
+        else:
+            msg = f"Adding label '{label}' to {count} emails..."
+        if len(msg) > 80:
+            msg = f"Adding label '{label}' to emails..."
+        return msg
 
     async def process(self, context: ProcessingContext, params: dict) -> Any:
         try:

@@ -17,7 +17,7 @@ import datetime
 import json
 from nodetool.agents.agent import Agent
 from nodetool.chat.providers import get_provider
-from nodetool.agents.tools.browser_tools import GoogleNewsTool  # Import GoogleNewsTool
+from nodetool.agents.tools import GoogleNewsTool
 from nodetool.chat.providers.base import ChatProvider
 from nodetool.metadata.types import Provider
 from nodetool.workflows.processing_context import ProcessingContext
@@ -42,20 +42,19 @@ async def test_google_news_agent(provider: ChatProvider, model: str):
     news_tool = GoogleNewsTool()
 
     # Define the search parameters within the objective or let the agent decide
-    search_keyword = "latest AI advancements"
+    search_keyword = (
+        "AI, OpenAI, ChatGPT, Anthropic, Gemini, Agents, LLMs, RAG, Vector Databases"
+    )
     search_location = "United States"
-    search_language = "English"
-    sort_by = "date"
 
     agent = Agent(
         name="Google News Agent",
         enable_analysis_phase=False,  # Can disable analysis if objective is direct
         enable_data_contracts_phase=True,  # Keep data contracts for structured output
         objective=f"""
-        Search Google News for the keyword '{search_keyword}'.
-        Specify the location as '{search_location}' and language as '{search_language}'.
-        Sort the results by '{sort_by}'.
-        Return the results in the format specified by the output_schema.
+        Search Google News for the keywords '{search_keyword}'.
+        Group common news items together.
+        Return a list of news items with exciting titles and summaries.
         """,
         provider=provider,
         model=model,
@@ -64,32 +63,26 @@ async def test_google_news_agent(provider: ChatProvider, model: str):
         output_schema={
             "type": "object",
             "properties": {
-                "search_results": {
+                "results": {
                     "type": "array",
                     "items": {
                         "type": "object",
                         "properties": {
-                            "rank_group": {"type": "integer"},
-                            "rank_absolute": {"type": "integer"},
-                            "position": {"type": "string"},
                             "title": {"type": "string"},
                             "link": {"type": "string"},
-                            "source": {"type": "string"},
                             "date": {"type": "string"},
-                            "snippet": {"type": "string"},
+                            "summary": {"type": "string"},
                         },
-                        "required": ["title", "link", "source", "date"],
+                        "required": ["title", "link", "date", "summary"],
                     },
                 }
             },
-            "required": ["search_results"],
+            "required": ["results"],
         },
     )
 
     print(f"Executing Google News Agent with model: {model}")
-    print(
-        f"Objective: Search Google News for '{search_keyword}' in {search_location} ({search_language}), sorted by {sort_by}"
-    )
+    print(f"Objective: Search Google News for '{search_keyword}' in {search_location}")
 
     async for item in agent.execute(context):
         if isinstance(item, Chunk):
@@ -102,10 +95,10 @@ async def test_google_news_agent(provider: ChatProvider, model: str):
     if agent.results:
         print("=== Agent Results ===")
         # Check if results conform to the expected structure
-        if isinstance(agent.results, dict) and "search_results" in agent.results:
+        if isinstance(agent.results, dict) and "results" in agent.results:
             print(json.dumps(agent.results, indent=2))
             print(
-                f"Successfully retrieved {len(agent.results.get('search_results', []))} news items."
+                f"Successfully retrieved {len(agent.results.get('results', []))} news items."
             )
         else:
             print("Results structure might not match the expected schema:")

@@ -10,7 +10,7 @@ import re
 import ast
 from typing import Any, AsyncGenerator, Sequence, Dict
 
-from ollama import AsyncClient
+from ollama import AsyncClient, Client
 from pydantic import BaseModel
 import tiktoken
 
@@ -28,7 +28,21 @@ from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import Chunk
 
 
+def get_ollama_sync_client() -> Client:
+    """Get a sync client for the Ollama API."""
+    api_url = Environment.get("OLLAMA_API_URL")
+    assert api_url, "OLLAMA_API_URL not set"
+
+    api_key = Environment.get("OLLAMA_API_KEY")
+    if api_key:
+        headers = {"Authorization": f"Bearer {api_key}"}
+    else:
+        headers = {}
+    return Client(api_url, headers=headers)
+
+
 def get_ollama_client() -> AsyncClient:
+    """Get an AsyncClient for the Ollama API."""
     api_url = Environment.get("OLLAMA_API_URL")
     assert api_url, "OLLAMA_API_URL not set"
 
@@ -97,6 +111,35 @@ class OllamaProvider(ChatProvider):
         }
         self.encoding = tiktoken.get_encoding("cl100k_base")
         self.log_file = log_file
+
+    def get_max_token_limit(self, model: str) -> int:
+        """Get the maximum token limit for a given model."""
+        try:
+            client = get_ollama_sync_client()
+
+            # Construct the URL for the show endpoint
+            model_info = client.show(model=model).modelinfo
+            if model_info is None:
+                return 4096
+
+            if model_info.get("llama.context_length"):
+                return model_info["llama.context_length"]
+            else:
+                # First try to get context length from model_info if available
+
+                # Otherwise, try to extract from modelfile parameters
+                if model_info["modelfile"]:
+                    modelfile = model_info["modelfile"]
+                    param_match = re.search(r"PARAMETER\s+num_ctx\s+(\d+)", modelfile)
+                    if param_match:
+                        return int(param_match.group(1))
+
+            # Default fallback if we can't determine the context length
+            return 4096
+        except Exception as e:
+            print(f"Error determining model context length: {e}")
+            # Fallback to a reasonable default
+            return 4096
 
     def _count_tokens(self, messages: Sequence[Message]) -> int:
         """

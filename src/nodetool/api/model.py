@@ -121,6 +121,11 @@ gemini_models = [
         provider=Provider.Gemini,
     ),
     LanguageModel(
+        id="gemini-2.0-flash-lite",
+        name="Gemini 2.0 Flash Lite",
+        provider=Provider.Gemini,
+    ),
+    LanguageModel(
         id="gemini-2.0-flash-exp-image-generation",
         name="Gemini 2.0 Flash Exp Image Generation",
         provider=Provider.Gemini,

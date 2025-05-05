@@ -142,6 +142,13 @@ class GoogleGroundedSearchTool(Tool):
 
         return formatted_results
 
+    def user_message(self, params: dict) -> str:
+        query = params.get("query", "something")
+        msg = f"Searching Google (grounded) for '{query}'..."
+        if len(msg) > 80:
+            msg = "Searching Google (grounded)..."
+        return msg
+
 
 class GoogleImageGenerationTool(Tool):
     """
@@ -202,12 +209,21 @@ class GoogleImageGenerationTool(Tool):
             base64_image = base64.b64encode(generated_image.image.image_bytes).decode(
                 "utf-8"
             )
+            # Only returning the first image for now
+            break
 
         return {
-            "prompt": prompt,
-            "image": base64_image,
+            "image_base64": base64_image,
+            "generated_prompt": response.generated_prompt,
             "status": "success",
         }
+
+    def user_message(self, params: dict) -> str:
+        prompt = params.get("prompt", "an image")
+        msg = f"Generating image '{prompt}' using Google..."
+        if len(msg) > 80:
+            msg = "Generating an image using Google..."
+        return msg
 
 
 if __name__ == "__main__":

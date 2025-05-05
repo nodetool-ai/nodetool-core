@@ -98,3 +98,13 @@ class DownloadFileTool(Tool):
 
         except Exception as e:
             return {"error": f"Error in download process: {str(e)}"}
+
+    def user_message(self, params: dict) -> str:
+        url = params.get("url", "a URL")
+        output = params.get("output_file", "a file")
+        msg = f"Downloading from {url} to {output}..."
+        if len(msg) > 80:
+            msg = f"Downloading file to {output}..."
+        if len(msg) > 80:
+            msg = "Downloading a file..."
+        return msg

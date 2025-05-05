@@ -7,6 +7,14 @@ from nodetool.types.job import JobUpdate
 from nodetool.types.prediction import Prediction
 
 
+class AgentUpdate(BaseModel):
+    """An update from an agent."""
+
+    type: Literal["agent_update"] = "agent_update"
+    node_id: str
+    message: str
+
+
 class TaskUpdateEvent(str, Enum):
     """Enum for different task update event types."""
 
@@ -19,9 +27,15 @@ class TaskUpdateEvent(str, Enum):
     TASK_COMPLETED = "task_completed"
 
 
-class TaskUpdate(BaseModel):
-    """A task update from a provider."""
+class PlanningUpdate(BaseModel):
+    type: Literal["planning_update"] = "planning_update"
+    node_id: str | None = None
+    phase: str
+    status: str
+    content: str | None = None
 
+
+class TaskUpdate(BaseModel):
     type: Literal["task_update"] = "task_update"
     node_id: str | None = None
     task: Task
@@ -44,8 +58,10 @@ class ToolCallUpdate(BaseModel):
     """A tool call from a provider."""
 
     type: Literal["tool_call_update"] = "tool_call_update"
+    node_id: str | None = None
     name: str
     args: dict[str, Any]
+    message: str | None = None
 
 
 class BinaryUpdate(BaseModel):
@@ -112,4 +128,5 @@ ProcessingMessage = (
     | RunFunction
     | TaskUpdate
     | ToolCallUpdate
+    | PlanningUpdate
 )

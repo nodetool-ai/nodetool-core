@@ -12,11 +12,10 @@ This script creates a Reddit agent that:
 import asyncio
 
 from nodetool.agents.agent import Agent
-from nodetool.chat.dataframes import json_schema_for_dataframe
 from nodetool.chat.providers import get_provider
-from nodetool.agents.tools.browser_tools import BrowserTool, GoogleSearchTool
+from nodetool.agents.tools import BrowserTool, GoogleSearchTool
 from nodetool.chat.providers.base import ChatProvider
-from nodetool.metadata.types import ColumnDef, Provider
+from nodetool.metadata.types import Provider
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import Chunk
 
@@ -31,14 +30,19 @@ async def test_reddit_scraper_agent(
     search_agent = Agent(
         name="Reddit Search Agent",
         objective="""
-        Search for Reddit posts in the r/n8n subreddit using Google Search
-        Identify the customer painpoints.
-        Group painpoints into themes.
+        You are a Reddit expert.
+        You are given a task to search for Reddit posts in the r/n8n subreddit using Google Search.
+        Compile a list of posts that are related to problems that customers are facing.
+        Browse the posts and extract post content and comments as a json list.
+        Analyze the posts and comments to find painpoints.
+        Generate a report of the findings.
         """,
         provider=provider,
         model=model,
         reasoning_model=reasoning_model,
         planning_model=planning_model,
+        enable_analysis_phase=True,
+        enable_data_contracts_phase=True,
         tools=[
             GoogleSearchTool(),
             BrowserTool(),
@@ -55,7 +59,7 @@ async def test_reddit_scraper_agent(
             print(item.content, end="", flush=True)
 
     report = search_agent.get_results()
-    print(report)
+    print(context.workspace_dir)
 
 
 if __name__ == "__main__":
@@ -63,9 +67,9 @@ if __name__ == "__main__":
     asyncio.run(
         test_reddit_scraper_agent(
             provider=get_provider(Provider.OpenAI),
-            model="gpt-4o-mini",
-            planning_model="gpt-4o-mini",
-            reasoning_model="gpt-4o-mini",
+            model="gpt-4o",
+            planning_model="gpt-4o",
+            reasoning_model="gpt-4o",
         )
     )
     # asyncio.run(

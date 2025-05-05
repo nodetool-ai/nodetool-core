@@ -224,7 +224,6 @@ async def test_agent_input_files_copy(
         retrieval_tools=ANY,
         input_files=relative_input_files,  # Check this specifically
         output_schema=ANY,
-        enable_retrieval_phase=ANY,
         enable_analysis_phase=ANY,
         enable_data_contracts_phase=ANY,
         use_structured_output=ANY,

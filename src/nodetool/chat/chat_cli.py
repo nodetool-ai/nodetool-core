@@ -40,7 +40,6 @@ from nodetool.agents.agent import Agent
 from nodetool.chat.providers import get_provider
 from nodetool.chat.providers.base import ChatProvider
 from nodetool.chat.regular_chat import process_regular_chat
-from nodetool.agents.tools.browser_tools import DownloadFileTool
 from nodetool.metadata.types import Provider, Message, ToolCall
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.chat.ollama_service import get_ollama_models
@@ -49,7 +48,6 @@ from nodetool.agents.tools import (
     GoogleSearchTool,
     BrowserTool,
     DownloadFileTool,
-    WebFetchTool,
     ScreenshotTool,
     ExtractPDFTablesTool,
     ExtractPDFTextTool,
@@ -418,7 +416,6 @@ class ChatCLI:
                 ExtractPDFTextTool(workspace_dir),
                 ConvertPDFToMarkdownTool(workspace_dir),
                 GoogleSearchTool(workspace_dir),
-                WebFetchTool(workspace_dir),
                 DownloadFileTool(workspace_dir),
                 BrowserTool(workspace_dir),
                 ScreenshotTool(workspace_dir),

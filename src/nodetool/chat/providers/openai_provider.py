@@ -105,6 +105,21 @@ class OpenAIProvider(ChatProvider):
             "reasoning_tokens": 0,
         }
 
+    def get_max_token_limit(self, model: str) -> int:
+        """Get the maximum token limit for a given model."""
+        if (
+            model.startswith("gpt-4o")
+            or model.startswith("chatgpt-4o")
+            or model.startswith("o3")
+        ):
+            return 128000
+        elif model.startswith("gpt-4.1"):
+            return 1000000
+        elif model.startswith("o4-mini"):
+            return 200000
+        else:
+            raise ValueError(f"Unsupported model: {model}")
+
     def uri_to_base64(self, uri: str) -> str:
         """Convert a URI to a base64 encoded data: URI string.
         If the URI points to an audio file, it converts it to MP3 first.

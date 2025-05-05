@@ -16,8 +16,7 @@ This example shows how to:
 import asyncio
 from nodetool.agents.agent import Agent
 from nodetool.chat.providers import get_provider
-from nodetool.agents.tools.browser_tools import BrowserTool
-from nodetool.agents.tools.google_tools import GoogleGroundedSearchTool
+from nodetool.agents.tools import BrowserTool, GoogleGroundedSearchTool
 from nodetool.metadata.types import Provider
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import Chunk
@@ -41,7 +40,7 @@ async def main():
 
     retrieval_tools = [
         GoogleGroundedSearchTool(),
-        BrowserTool(use_readability=True),
+        BrowserTool(),
     ]
 
     agent = Agent(

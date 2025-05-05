@@ -65,6 +65,13 @@ class ExtractPDFTextTool(Tool):
         except Exception as e:
             return {"error": str(e)}
 
+    def user_message(self, params: dict) -> str:
+        path = params.get("path", "a PDF")
+        msg = f"Extracting text from {path}..."
+        if len(msg) > 80:
+            msg = "Extracting text from PDF..."
+        return msg
+
 
 class ExtractPDFTablesTool(Tool):
     name = "extract_pdf_tables"
@@ -137,6 +144,16 @@ class ExtractPDFTablesTool(Tool):
         except Exception as e:
             return {"error": str(e)}
 
+    def user_message(self, params: dict) -> str:
+        path = params.get("path", "a PDF")
+        output = params.get("output_file", "output")
+        msg = f"Extracting tables from {path} to {output}..."
+        if len(msg) > 80:
+            msg = f"Extracting tables from PDF to {output}..."
+        if len(msg) > 80:
+            msg = "Extracting tables from PDF..."
+        return msg
+
 
 class ConvertPDFToMarkdownTool(Tool):
     name = "convert_pdf_to_markdown"
@@ -191,6 +208,16 @@ class ConvertPDFToMarkdownTool(Tool):
         except Exception as e:
             return {"error": str(e)}
 
+    def user_message(self, params: dict) -> str:
+        input_file = params.get("input_file", "a PDF")
+        output_file = params.get("output_file", "Markdown")
+        msg = f"Converting {input_file} to {output_file}..."
+        if len(msg) > 80:
+            msg = f"Converting PDF to {output_file}..."
+        if len(msg) > 80:
+            msg = "Converting PDF to Markdown..."
+        return msg
+
 
 class ConvertMarkdownToPDFTool(Tool):
     name = "convert_markdown_to_pdf"
@@ -229,6 +256,16 @@ class ConvertMarkdownToPDFTool(Tool):
 
         except Exception as e:
             return {"error": str(e)}
+
+    def user_message(self, params: dict) -> str:
+        input_file = params.get("input_file", "Markdown")
+        output_file = params.get("output_file", "a PDF")
+        msg = f"Converting {input_file} to {output_file}..."
+        if len(msg) > 80:
+            msg = f"Converting Markdown to {output_file}..."
+        if len(msg) > 80:
+            msg = "Converting Markdown to PDF..."
+        return msg
 
 
 class ConvertDocumentTool(Tool):
@@ -285,3 +322,14 @@ class ConvertDocumentTool(Tool):
 
         except Exception as e:
             return {"error": str(e)}
+
+    def user_message(self, params: dict) -> str:
+        input_file = params.get("input_file", "input")
+        output_file = params.get("output_file", "output")
+        to_format = params.get("to_format", "target format")
+        msg = f"Converting {input_file} to {output_file} ({to_format})..."
+        if len(msg) > 80:
+            msg = f"Converting {input_file} to {to_format}..."
+        if len(msg) > 80:
+            msg = f"Converting document to {to_format}..."
+        return msg

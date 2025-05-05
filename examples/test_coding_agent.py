@@ -49,7 +49,6 @@ async def test_coding_agent(
         4. Plot the data distributions using seaborn and create a markdown report.
         5. Generate a markdown report with the results, referencing the plots with relative paths.
         """,
-        enable_retrieval_phase=False,
         enable_analysis_phase=True,
         enable_data_contracts_phase=True,
         provider=provider,

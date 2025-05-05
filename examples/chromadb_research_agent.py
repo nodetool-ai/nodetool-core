@@ -17,7 +17,7 @@ from nodetool.chat.providers.base import ChatProvider
 from nodetool.workflows.types import Chunk
 from nodetool.metadata.types import Provider
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.agents.tools.pdf import ConvertPDFToMarkdownTool
+from nodetool.agents.tools.pdf_tools import ConvertPDFToMarkdownTool
 from nodetool.agents.tools.chroma_tools import (
     ChromaHybridSearchTool,
     ChromaMarkdownSplitAndIndexTool,

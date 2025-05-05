@@ -16,7 +16,7 @@ import asyncio
 import datetime
 from nodetool.agents.agent import Agent
 from nodetool.chat.providers import get_provider
-from nodetool.agents.tools.browser_tools import GoogleSearchTool, BrowserTool
+from nodetool.agents.tools import GoogleSearchTool, BrowserTool
 from nodetool.chat.providers.base import ChatProvider
 from nodetool.metadata.types import Provider
 from nodetool.workflows.processing_context import ProcessingContext
@@ -32,7 +32,7 @@ async def test_google_agent(provider: ChatProvider, model: str):
 
     retrieval_tools = [
         GoogleSearchTool(),
-        BrowserTool(use_readability=True),
+        BrowserTool(),
     ]
 
     agent = Agent(

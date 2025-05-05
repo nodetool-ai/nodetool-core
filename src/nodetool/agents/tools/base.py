@@ -81,6 +81,12 @@ class Tool:
     input_schema: Dict[str, Any] = {}  # Default schema
     example: str = ""
 
+    def user_message(self, params: Dict[str, Any]) -> str:
+        """
+        Returns a user message for the tool.
+        """
+        return f"Running {self.name} with the following parameters: {params}"
+
     def tool_param(self) -> Dict[str, Any]:
         """
         Returns the tool's definition in a format suitable for LLM function calling.

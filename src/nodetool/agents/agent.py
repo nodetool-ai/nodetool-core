@@ -27,12 +27,8 @@ from rich.live import Live
 import asyncio
 import traceback
 
-from nodetool.agents.tools.browser_tools import GoogleSearchTool
-from nodetool.agents.tools.google_tools import GoogleGroundedSearchTool
-from nodetool.agents.tools.openai_tools import OpenAIWebSearchTool
-from nodetool.common.environment import Environment
 from nodetool.common.settings import get_log_path
-from nodetool.workflows.types import Chunk, TaskUpdate, TaskUpdateEvent
+from nodetool.workflows.types import Chunk, PlanningUpdate, TaskUpdate, TaskUpdateEvent
 from nodetool.agents.task_executor import TaskExecutor
 from nodetool.chat.providers import ChatProvider
 from nodetool.agents.task_planner import TaskPlanner, clean_and_validate_path
@@ -108,7 +104,6 @@ class Agent:
         max_token_limit: int = 20000,
         output_schema: dict | None = None,
         output_type: str | None = None,
-        enable_retrieval_phase: bool = False,
         enable_analysis_phase: bool = True,
         enable_data_contracts_phase: bool = True,
         task: Task | None = None,  # Add optional task parameter
@@ -133,7 +128,6 @@ class Agent:
             max_subtasks (int, optional): Maximum number of subtasks to be created
             output_schema (dict, optional): JSON schema for the final task output
             output_type (str, optional): Type of the final task output
-            enable_retrieval_phase (bool, optional): Whether to run the retrieval phase (PHASE 1)
             enable_analysis_phase (bool, optional): Whether to run the analysis phase (PHASE 2)
             enable_data_contracts_phase (bool, optional): Whether to run the data contracts phase (PHASE 3)
             task (Task, optional): Pre-defined task to execute, skipping planning
@@ -156,19 +150,17 @@ class Agent:
         self.console = Console()
         self.output_schema = output_schema
         self.output_type = output_type
-        self.enable_retrieval_phase = enable_retrieval_phase
         self.enable_analysis_phase = enable_analysis_phase
         self.enable_data_contracts_phase = enable_data_contracts_phase
         self.initial_task = task  # Store the initial task
 
     def _create_subtasks_table(self, task: Task, tool_calls: List[ToolCall]) -> Table:
         """Create a rich table for displaying subtasks and their tool calls."""
-        table = Table(title=f"Task:\n{self.objective}", title_justify="left")
+        table = Table(title=f"Task:\\n{self.objective}", title_justify="left")
         table.add_column("Status", style="cyan", no_wrap=True, ratio=1)
-        table.add_column("Content", style="green", ratio=6)
+        table.add_column("Content", style="green", ratio=5)
         table.add_column("Tools", style="magenta", ratio=3)
-        table.add_column("Output", style="yellow", ratio=3)
-        table.add_column("Dependencies", style="blue", ratio=2)
+        table.add_column("Files", style="white", ratio=3)  # Combined I/O column
 
         for subtask in task.subtasks:
             status = "✓" if subtask.completed else "▶" if subtask.is_running() else "⏳"
@@ -180,16 +172,34 @@ class Agent:
             subtask_tool_calls = [
                 call for call in tool_calls if call.subtask_id == subtask.content
             ]
-            tool_calls_str = ", ".join([call.name for call in subtask_tool_calls])
+            tool_calls_str = "\n".join(
+                [
+                    f"{call.name}()\n{call.args}"
+                    for call in subtask_tool_calls
+                    if call.name not in ["finish_task", "finish_subtask"]
+                ]
+            )
 
-            deps = ", ".join(subtask.input_files) if subtask.input_files else "none"
+            if subtask.is_reasoning:
+                tool_calls_str = "Reasoning" + "\n" + tool_calls_str
+
+            # Combine inputs and outputs with color coding
+            files_str_parts = []
+            if subtask.input_files:
+                input_str = ", ".join(subtask.input_files)
+                files_str_parts.append(f"[blue]Inputs:[/] {input_str}")
+            if subtask.output_file:
+                # Display only the basename for cleaner output
+                output_basename = os.path.basename(subtask.output_file)
+                files_str_parts.append(f"[yellow]Output:[/] {output_basename}")
+
+            files_str = "\n".join(files_str_parts) if files_str_parts else "none"
 
             table.add_row(
                 f"[{status_style}]{status}[/]",
                 subtask.content,
                 tool_calls_str,
-                subtask.output_file,
-                deps,
+                files_str,  # Use the combined files string
             )
 
         return table
@@ -197,7 +207,7 @@ class Agent:
     async def execute(
         self,
         processing_context: ProcessingContext,
-    ) -> AsyncGenerator[Union[TaskUpdate, Chunk, ToolCall], None]:
+    ) -> AsyncGenerator[Union[TaskUpdate, Chunk, ToolCall, PlanningUpdate], None]:
         """
         Execute the agent using the task plan.
 
@@ -211,6 +221,11 @@ class Agent:
         input_files = []
         os.makedirs(
             os.path.join(processing_context.workspace_dir, "input_files"), exist_ok=True
+        )
+        # Ensure output_files directory exists as well
+        os.makedirs(
+            os.path.join(processing_context.workspace_dir, "output_files"),
+            exist_ok=True,
         )
         for file_path in self.input_files:
             destination_path = os.path.join(
@@ -250,39 +265,26 @@ class Agent:
                 )
             )
 
-            retrieval_tools = []
-
-            if Environment.get("GEMINI_API_KEY"):
-                retrieval_tools.append(
-                    GoogleGroundedSearchTool(),
-                )
-
-            if Environment.get("BRIGHTDATA_API_KEY"):
-                retrieval_tools.append(
-                    GoogleSearchTool(),
-                )
-
-            if Environment.get("OPENAI_API_KEY"):
-                retrieval_tools.append(
-                    OpenAIWebSearchTool(),
-                )
-
             task_planner = TaskPlanner(
                 provider=self.provider,
                 model=self.planning_model,
                 objective=self.objective,
                 workspace_dir=processing_context.workspace_dir,
                 execution_tools=tools,
-                retrieval_tools=retrieval_tools,
                 input_files=input_files,
                 output_schema=self.output_schema,
-                enable_retrieval_phase=self.enable_retrieval_phase,
                 enable_analysis_phase=self.enable_analysis_phase,
                 enable_data_contracts_phase=self.enable_data_contracts_phase,
                 use_structured_output=True,
             )
 
-            task = await task_planner.create_task(processing_context, self.objective)
+            async for chunk in task_planner.create_task(
+                processing_context, self.objective
+            ):
+                yield chunk
+
+            task = task_planner.task
+            assert task is not None, "Task was not created"
 
             yield TaskUpdate(
                 task=task,
@@ -315,7 +317,7 @@ class Agent:
 
             # Execute all subtasks within this task and yield results
             async for item in executor.execute_tasks(processing_context):
-                # self._save_task(task, processing_context.workspace_dir)
+                self._save_task(task, processing_context.workspace_dir)
                 live.update(self._create_subtasks_table(task, tool_calls))
                 if isinstance(item, ToolCall):
                     tool_calls.append(item)
@@ -326,6 +328,7 @@ class Agent:
                             event=TaskUpdateEvent.TASK_COMPLETED,
                         )
                 if isinstance(item, TaskUpdate):
+                    yield item
                     timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
                     subtask_title = item.subtask.content if item.subtask else ""
                     subtask_title = subtask_title[:20].translate(
@@ -375,13 +378,13 @@ class Agent:
         Save the current task plan to the tasks file.
         """
         task_dict = task.model_dump()
-        import yaml
+        import json
 
         with open(
-            os.path.join(workspace_dir, sanitize_file_path(self.name) + "_tasks.yaml"),
+            os.path.join(workspace_dir, "tasks.json"),
             "w",
         ) as f:
-            yaml.dump(task_dict, f, indent=2, sort_keys=False)
+            json.dump(task_dict, f, indent=2)
 
 
 # Schema for the LLM to generate a single subtask definition
@@ -587,19 +590,21 @@ Generate a JSON object conforming EXACTLY to the 'SingleSubtaskDefinition' schem
                     )
 
                 # --- Create Task and Subtask Objects ---
-                # Generate a unique output filename
-                output_filename = f"output_{uuid.uuid4()}.txt"  # Default extension
+                # Generate a unique output filename within the 'output_files' directory
+                output_dir_rel = "output_files"
+                output_filename = f"{self.name.replace(' ', '_')}_{uuid.uuid4().hex[:8]}.txt"  # Default extension
                 # Determine extension based on output_type if possible
                 ext_map = {
                     "json": ".json",
                     "csv": ".csv",
                     "markdown": ".md",
                     "text": ".txt",
+                    "html": ".html",
+                    "yaml": ".yaml",
+                    # Add other relevant types if needed
                 }
-                output_filename = (
-                    f"output_{uuid.uuid4()}{ext_map.get(self.output_type, '.txt')}"
-                )
-                full_output_path = os.path.join(context.workspace_dir, output_filename)
+                output_filename = f"{self.name.replace(' ', '_')}_{uuid.uuid4().hex[:8]}{ext_map.get(self.output_type, '.txt')}"
+                output_file_rel = os.path.join(output_dir_rel, output_filename)
 
                 # Ensure all fields expected by SubTask are present or defaulted
                 subtask_args = {
@@ -608,7 +613,7 @@ Generate a JSON object conforming EXACTLY to the 'SingleSubtaskDefinition' schem
                     "input_files": self.input_files,
                     "output_type": self.output_type,
                     "output_schema": json.dumps(self.output_schema),
-                    "output_file": full_output_path,  # Use generated path
+                    "output_file": output_file_rel,  # Use generated relative path
                 }
                 self.subtask = SubTask(**subtask_args)
                 self.task = Task(title=self.objective, subtasks=[self.subtask])
@@ -676,7 +681,7 @@ Generate a JSON object conforming EXACTLY to the 'SingleSubtaskDefinition' schem
             tools=self.tools,  # Provide tools for execution
             model=self.model,
             provider=self.provider,
-            max_token_limit=self.max_token_limit,
+            max_token_limit=self.provider.get_max_token_limit(self.model),
             max_iterations=self.max_iterations,
             save_output_to_file=False,
         )

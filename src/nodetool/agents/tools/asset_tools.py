@@ -60,6 +60,13 @@ class SaveAssetTool(Tool):
                 "error": str(e),
             }
 
+    def user_message(self, params: dict) -> str:
+        filename = params.get("filename", "an asset")
+        msg = f"Saving text asset as {filename}..."
+        if len(msg) > 80:
+            msg = "Saving text asset..."
+        return msg
+
 
 class ReadAssetTool(Tool):
     name = "read_asset"
@@ -101,6 +108,13 @@ class ReadAssetTool(Tool):
                 "success": False,
                 "error": str(e),
             }
+
+    def user_message(self, params: dict) -> str:
+        filename = params.get("filename", "an asset")
+        msg = f"Reading asset {filename}..."
+        if len(msg) > 80:
+            msg = "Reading an asset..."
+        return msg
 
 
 class ListAssetsDirectoryTool(Tool):
@@ -159,3 +173,6 @@ class ListAssetsDirectoryTool(Tool):
                 "success": False,
                 "error": str(e),
             }
+
+    def user_message(self, params: dict) -> str:
+        return "Listing assets..."

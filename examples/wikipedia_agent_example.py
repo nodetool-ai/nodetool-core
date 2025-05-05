@@ -11,7 +11,7 @@ This script demonstrates how to create a single agent that:
 import asyncio
 from nodetool.agents.agent import Agent
 from nodetool.chat.providers import get_provider
-from nodetool.agents.tools.browser_tools import GoogleSearchTool, BrowserTool
+from nodetool.agents.tools import GoogleSearchTool, BrowserTool
 from nodetool.metadata.types import Provider
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import Chunk
@@ -20,32 +20,29 @@ from nodetool.workflows.types import Chunk
 async def main():
     context = ProcessingContext()
 
-    provider = get_provider(Provider.Anthropic)
-    model = "claude-3-5-sonnet-20241022"
+    provider = get_provider(Provider.OpenAI)
+    model = "gpt-4o-mini"
 
     # Set up tools for retrieval
     retrieval_tools = [
-        GoogleSearchTool(context.workspace_dir),
-        BrowserTool(context.workspace_dir),
+        GoogleSearchTool(),
+        BrowserTool(),
     ]
 
     # Create the Wiki Creator agent
     agent = Agent(
         name="Wiki Creator Agent",
         objective="""
-        Create a comprehensive Wikipedia-style article about LLM fine-tuning.
-        1. Research information about LLM fine-tuning using search and browsing
-        2. Create a well-structured markdown document covering:
-            - Introduction to LLM fine-tuning
-            - Methodologies and techniques
-            - Best practices and challenges
-            - Applications and use cases
-            - References and further reading
-        3. Save the final document as 'llm_fine_tuning.md'
+        Crawl https://en.wikipedia.org/wiki/Fine-tuning_(deep_learning)
+        and create a comprehensive Wikipedia-style article about LLM fine-tuning.
+        1. Research what linked pages are relevant to LLM fine-tuning
+        2. Crawl the linked pages and extract the relevant information
+        3. Create a well-structured markdown document
         """,
         provider=provider,
         model=model,
         tools=retrieval_tools,
+        enable_analysis_phase=True,
     )
 
     async for item in agent.execute(context):

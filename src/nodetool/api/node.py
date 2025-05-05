@@ -75,13 +75,7 @@ from nodetool.metadata.types import (
 )
 from nodetool.workflows.base_node import get_node_class, get_registered_node_classes
 from nodetool.common.environment import Environment
-from nodetool.workflows.types import (
-    NodeProgress,
-    NodeUpdate,
-    TaskUpdate,
-    ToolCallUpdate,
-    Chunk,
-)
+from nodetool.workflows.types import ProcessingMessage
 from nodetool.packages.registry import Registry
 
 log = Environment.get_logger()
@@ -106,10 +100,6 @@ UnionType = (
     | NodeRef
     | Prediction
     | JobUpdate
-    | NodeUpdate
-    | NodeProgress
-    | TaskUpdate
-    | Chunk
     | HuggingFaceModel
     | HFImageTextToText
     | HFVisualQuestionAnswering
@@ -158,9 +148,9 @@ UnionType = (
     | SVGElement
     | SystemStats
     | TaskPlan
-    | ToolCallUpdate
     | PlotlyConfig
     | dict
+    | ProcessingMessage
 )
 
 

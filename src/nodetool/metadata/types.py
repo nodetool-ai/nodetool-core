@@ -5,7 +5,7 @@ from pathlib import Path
 from types import NoneType
 import numpy as np
 from pydantic import BaseModel, Field
-from typing import Any, Literal, Optional, Type, Union
+from typing import Any, Literal, Optional, Type, Union, List
 from typing import Literal
 import base64
 from datetime import datetime
@@ -957,6 +957,42 @@ class ToolName(BaseType):
     name: str = Field(default="", description="The name of the tool")
 
 
+class ConceptualSubTask(BaseType):
+    """
+    A preliminary representation of a subtask used during planning phases.
+    Focuses on the core objective, estimated complexity, and potential I/O.
+    """
+
+    type: Literal["conceptual_subtask"] = "conceptual_subtask"
+
+    content: str = Field(
+        description="Concise, high-level instructions for the subtask."
+    )
+    complexity_estimate: str = Field(
+        default="moderate",
+        description="Estimated complexity (e.g., 'simple', 'moderate', 'complex').",
+    )
+    potential_input_files: List[str] = Field(
+        default=[],
+        description="Preliminary list of potential input file paths (relative).",
+    )
+    potential_output_file: Optional[str] = Field(
+        default=None,
+        description="Preliminary path for the primary output file (relative).",
+    )
+    potential_artifacts: List[str] = Field(
+        default=[],
+        description="Preliminary list of potential artifact file paths (relative).",
+    )
+    potential_output_type: Optional[str] = Field(
+        default=None, description="Preliminary output type (e.g., 'json', 'markdown')."
+    )
+    potential_output_schema: Optional[str] = Field(
+        default=None,
+        description="Preliminary output schema as a JSON string (if applicable).",
+    )
+
+
 class SubTask(BaseType):
     """A subtask item with completion status, dependencies, and tools."""
 
@@ -969,6 +1005,10 @@ class SubTask(BaseType):
     is_reasoning: bool = Field(
         default=False,
         description="Whether the subtask is a reasoning task",
+    )
+    max_iterations: int = Field(
+        default=10,
+        description="The maximum number of iterations for the subtask",
     )
     artifacts: list[str] = Field(
         default=[],
@@ -1243,6 +1283,7 @@ class ToolCall(BaseModel):
     args: dict[str, Any] = {}
     result: Any = None
     subtask_id: str | None = None
+    message: str | None = None
 
 
 class MessageTextContent(BaseModel):

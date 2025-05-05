@@ -118,6 +118,10 @@ class AnthropicProvider(ChatProvider):
         }
         self.cost = 0.0
 
+    def get_max_token_limit(self, model: str) -> int:
+        """Get the maximum token limit for a given model."""
+        return 200000
+
     def convert_message(self, message: Message) -> MessageParam | None:
         """Convert an internal message to Anthropic's format."""
         if message.role == "tool":

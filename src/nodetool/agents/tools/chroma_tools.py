@@ -65,6 +65,13 @@ class ChromaTextSearchTool(Tool):
             )
         )
 
+    def user_message(self, params: dict) -> str:
+        text = params.get("text", "something")
+        msg = f"Performing semantic search for '{text}'..."
+        if len(msg) > 80:
+            msg = "Performing semantic search..."
+        return msg
+
 
 class ChromaIndexTool(Tool):
     name = "chroma_index"
@@ -119,6 +126,13 @@ class ChromaIndexTool(Tool):
             "document_id": document_id,
             "message": f"Successfully indexed text chunk with ID {document_id}",
         }
+
+    def user_message(self, params: dict) -> str:
+        source_id = params.get("source_id", "a source")
+        msg = f"Indexing text chunk from {source_id}..."
+        if len(msg) > 80:
+            msg = "Indexing text chunk..."
+        return msg
 
 
 class ChromaHybridSearchTool(Tool):
@@ -239,6 +253,13 @@ class ChromaHybridSearchTool(Tool):
         except Exception as e:
             return {"error": str(e)}
 
+    def user_message(self, params: dict) -> str:
+        text = params.get("text", "something")
+        msg = f"Performing hybrid search for '{text}'..."
+        if len(msg) > 80:
+            msg = "Performing hybrid search..."
+        return msg
+
 
 class SemanticDocSearchTool(Tool):
     name = "semantic_doc_search"
@@ -272,6 +293,13 @@ class SemanticDocSearchTool(Tool):
         except Exception as e:
             return {"error": str(e)}
 
+    def user_message(self, params: dict) -> str:
+        text = params.get("query", "something")
+        msg = f"Searching documentation semantically for '{text}'..."
+        if len(msg) > 80:
+            msg = "Searching documentation semantically..."
+        return msg
+
 
 class KeywordDocSearchTool(Tool):
     name = "keyword_doc_search"
@@ -304,6 +332,13 @@ class KeywordDocSearchTool(Tool):
             }
         except Exception as e:
             return {"error": str(e)}
+
+    def user_message(self, params: dict) -> str:
+        text = params.get("query", "something")
+        msg = f"Searching documentation by keyword for '{text}'..."
+        if len(msg) > 80:
+            msg = "Searching documentation by keyword..."
+        return msg
 
 
 class ChromaRecursiveSplitAndIndexTool(Tool):
@@ -433,6 +468,13 @@ class ChromaRecursiveSplitAndIndexTool(Tool):
             "message": f"Successfully indexed {len(indexed_ids)} chunks from document {document_id}",
         }
 
+    def user_message(self, params: dict) -> str:
+        source_id = params.get("source_id", "a source")
+        msg = f"Recursively splitting and indexing text from {source_id}..."
+        if len(msg) > 80:
+            msg = "Recursively splitting and indexing text..."
+        return msg
+
 
 class ChromaMarkdownSplitAndIndexTool(Tool):
     name = "chroma_markdown_split_and_index"
@@ -525,6 +567,13 @@ class ChromaMarkdownSplitAndIndexTool(Tool):
             "message": f"Successfully indexed {len(indexed_ids)} chunks from document {file_path}",
         }
 
+    def user_message(self, params: dict) -> str:
+        source_id = params.get("source_id", "a source")
+        msg = f"Splitting and indexing Markdown from {source_id}..."
+        if len(msg) > 80:
+            msg = "Splitting and indexing Markdown..."
+        return msg
+
 
 class ChromaBatchIndexTool(Tool):
     name = "chroma_batch_index"
@@ -607,3 +656,7 @@ class ChromaBatchIndexTool(Tool):
             }
         except Exception as e:
             return {"error": f"Indexing failed: {str(e)}"}
+
+    def user_message(self, params: dict) -> str:
+        count = len(params.get("chunks", []))
+        return f"Indexing a batch of {count} text chunks..."

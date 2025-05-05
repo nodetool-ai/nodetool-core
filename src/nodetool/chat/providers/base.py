@@ -37,6 +37,10 @@ class ChatProvider(ABC):
             "reasoning_tokens": 0,
         }
 
+    def get_max_token_limit(self, model: str) -> int:
+        """Get the maximum token limit for a given model."""
+        return 8192
+
     def _log_api_request(
         self,
         method: str,

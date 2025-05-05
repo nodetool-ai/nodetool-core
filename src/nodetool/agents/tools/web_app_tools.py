@@ -117,6 +117,13 @@ class ValidateJavaScriptTool(Tool):
         except Exception as e:
             return {"success": False, "error": str(e)}
 
+    def user_message(self, params: dict) -> str:
+        target = params.get("save_to_file", "JavaScript code")
+        msg = f"Validating {target} using ESLint..."
+        if len(msg) > 80:
+            msg = "Validating JavaScript using ESLint..."
+        return msg
+
 
 class ValidateCSSStyleTool(Tool):
     name = "validate_css"
@@ -213,6 +220,13 @@ class ValidateCSSStyleTool(Tool):
         except Exception as e:
             return {"success": False, "error": str(e)}
 
+    def user_message(self, params: dict) -> str:
+        target = params.get("save_to_file", "CSS code")
+        msg = f"Validating {target} using stylelint..."
+        if len(msg) > 80:
+            msg = "Validating CSS using stylelint..."
+        return msg
+
 
 class ValidateHTMLTool(Tool):
     name = "validate_html"
@@ -304,6 +318,13 @@ class ValidateHTMLTool(Tool):
         except Exception as e:
             return {"success": False, "error": str(e)}
 
+    def user_message(self, params: dict) -> str:
+        target = params.get("save_to_file", "HTML code")
+        msg = f"Validating {target} using html-validate..."
+        if len(msg) > 80:
+            msg = "Validating HTML using html-validate..."
+        return msg
+
 
 class FormatCodeTool(Tool):
     name = "format_code"
@@ -394,6 +415,13 @@ class FormatCodeTool(Tool):
         except Exception as e:
             return {"success": False, "error": str(e)}
 
+    def user_message(self, params: dict) -> str:
+        target = params.get("save_to_file", "code")
+        msg = f"Formatting {target} using Prettier..."
+        if len(msg) > 80:
+            msg = "Formatting code using Prettier..."
+        return msg
+
 
 class InstallNpmPackageTool(Tool):
     name = "install_npm_package"
@@ -452,6 +480,16 @@ class InstallNpmPackageTool(Tool):
         except Exception as e:
             return {"success": False, "error": str(e)}
 
+    def user_message(self, params: dict) -> str:
+        packages = params.get("packages", "npm package(s)")
+        dev = params.get("dev")
+        where = "development dependency" if dev else "dependency"
+        packages_str = ", ".join(packages) if isinstance(packages, list) else packages
+        msg = f"Installing {packages_str} as {where}..."
+        if len(msg) > 80:
+            msg = f"Installing {where}..."
+        return msg
+
 
 class InitializeReactAppTool(Tool):
     """Tool for initializing a new React application using create-react-app."""
@@ -505,3 +543,10 @@ class InitializeReactAppTool(Tool):
 
         except Exception as e:
             return {"success": False, "error": str(e)}
+
+    def user_message(self, params: dict) -> str:
+        app_name = params.get("app_name", "React app")
+        msg = f"Initializing {app_name} using npm create vite..."
+        if len(msg) > 80:
+            msg = "Initializing React app..."
+        return msg

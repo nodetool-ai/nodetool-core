@@ -11,8 +11,11 @@ from nodetool.chat.providers.ollama_provider import OllamaProvider
 from nodetool.chat.providers.openai_provider import OpenAIProvider
 from nodetool.agents.task_planner import TaskPlanner
 from nodetool.agents.tools.base import Tool
-from nodetool.agents.tools.browser_tools import BrowserTool, GoogleSearchTool
-from nodetool.agents.tools.google_tools import GoogleGroundedSearchTool
+from nodetool.agents.tools import (
+    BrowserTool,
+    GoogleSearchTool,
+    GoogleGroundedSearchTool,
+)
 from nodetool.workflows.processing_context import ProcessingContext
 import dotenv
 
@@ -32,7 +35,7 @@ async def test_task_planner(provider: ChatProvider, model: str):
     # Optional: Create test tools if needed
     tools = [
         GoogleSearchTool(),
-        BrowserTool(use_readability=True),
+        BrowserTool(),
     ]
 
     console.print(
@@ -51,8 +54,6 @@ async def test_task_planner(provider: ChatProvider, model: str):
         workspace_dir=context.workspace_dir,
         execution_tools=tools,
         input_files=input_files,
-        enable_analysis_phase=False,
-        enable_data_contracts_phase=True,
         use_structured_output=True,
         verbose=True,
         output_schema={
@@ -123,8 +124,8 @@ async def test_task_planner(provider: ChatProvider, model: str):
 
 # Run the test
 if __name__ == "__main__":
-    asyncio.run(test_task_planner(provider=OllamaProvider(), model="qwen3:14b"))
-    # asyncio.run(test_task_planner(provider=OpenAIProvider(), model="gpt-4.1"))
+    # asyncio.run(test_task_planner(provider=OllamaProvider(), model="qwen3:14b"))
+    asyncio.run(test_task_planner(provider=OpenAIProvider(), model="gpt-4o-mini"))
     # asyncio.run(
     #     test_task_planner(
     #         provider=AnthropicProvider(), model="claude-3-5-sonnet-20241022"

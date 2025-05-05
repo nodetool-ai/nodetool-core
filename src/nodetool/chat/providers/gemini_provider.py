@@ -157,6 +157,10 @@ class GeminiProvider(ChatProvider):
         self.usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
         self.cost = 0.0
 
+    def get_max_token_limit(self, model: str) -> int:
+        """Get the maximum token limit for a given model."""
+        return 1000000
+
     async def _uri_to_blob(self, uri: str) -> Blob:
         """Fetch data from URI and return a Gemini Blob."""
         async with aiohttp.ClientSession() as session:
