@@ -5,9 +5,6 @@ This package provides various utility tools for interacting with files,
 services, APIs, and other resources. Tools are grouped by category in
 separate modules but exposed here as a flat API for easy importing.
 
-It uses lazy loading via PEP 562 (__getattr__, __dir__) to only import
-submodules when a tool class from them is accessed.
-
 Each tool inherits from the base Tool class and implements:
 - input_schema: JSON schema defining the tool's parameters
 - process(): Async method to execute the tool's functionality

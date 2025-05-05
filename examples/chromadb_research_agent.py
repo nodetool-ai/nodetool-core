@@ -46,6 +46,7 @@ async def test_chromadb_research_agent(provider: ChatProvider, model: str):
         name="Document Ingestion Agent",
         objective="""
         Convert each pdf file into a markdown file and index it into ChromaDB using chroma_markdown_split_and_index.
+        Generate an indexing report.
         """,
         provider=provider,
         model=model,
@@ -64,11 +65,13 @@ async def test_chromadb_research_agent(provider: ChatProvider, model: str):
         name="Research Agent",
         objective="""
         Explain attention in LLMs. How does it work? What are the different types of attention?
+        Generate a research report as a markdown file.
         """,
         provider=provider,
         model=model,
         enable_analysis_phase=False,
         enable_data_contracts_phase=False,
+        output_type="markdown",
         tools=[
             ChromaHybridSearchTool(
                 collection=collection,
@@ -81,19 +84,18 @@ async def test_chromadb_research_agent(provider: ChatProvider, model: str):
         if isinstance(item, Chunk):
             print(item.content, end="", flush=True)
 
-    result = collection.query(
-        query_texts=["attention"],
-        n_results=5,
-    )
-    print("Query result:")
-    print(result)
+    if ingestion_agent.results:
+        print(ingestion_agent.results)
 
     print("Researching...")
     async for item in research_agent.execute(context):
         if isinstance(item, Chunk):
             print(item.content, end="", flush=True)
 
-    # print(f"\nWorkspace: {context.workspace_dir}")
+    if research_agent.results:
+        print(research_agent.results)
+
+    print(f"\nWorkspace: {context.workspace_dir}")
 
 
 if __name__ == "__main__":
@@ -101,7 +103,7 @@ if __name__ == "__main__":
     asyncio.run(
         test_chromadb_research_agent(
             provider=get_provider(Provider.OpenAI),
-            model="gpt-4o",
+            model="gpt-4o-mini",
         )
     )
 

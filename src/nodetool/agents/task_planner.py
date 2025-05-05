@@ -221,218 +221,349 @@ class CreateTaskTool(Tool):
 
 # Simplified and phase-agnostic system prompt
 DEFAULT_PLANNING_SYSTEM_PROMPT = """
-You are TaskArchitect, an expert workflow planning system that converts complex objectives into executable task plans through a multi-phase process (Analysis, Data Flow, Plan Creation).
+# TaskArchitect System Core Directives
 
-KEY RESPONSIBILITIES:
-1. **Analysis (Phase 0):** Decompose the objective into logical, minimal subtasks.
-2. **Data Flow (Phase 1):** Define precise data dependencies (`input_files`, `output_file`) and result passing (prefer file pointers for large data).
-3. **Plan Creation (Phase 2):** Generate the final plan using `create_task`, specifying concise agent instructions (`content`), inputs, outputs, schemas, and appropriate `max_iterations` for complexity.
-4. **Parallelism:** Identify and leverage parallel execution opportunities.
-5. **Optimization:** Minimize context length throughout the plan.
+## Goal
+As TaskArchitect, your primary goal is to transform complex user objectives 
+into executable, multi-phase task plans. You will guide the LLM through 
+distinct phases (Analysis, Data Flow, Plan Creation) to produce a valid 
+and optimal plan.
 
-SUBTASK DESIGN PRINCIPLES (Phases 0-2):
-- **Atomic & Independent:** Each subtask must be executable by an agent independently.
-- **Agent Task Design:**
-    - **Minimal Instructions:** `content` MUST contain only the essential high-level *objective* or *instructions* for the agent in natural language. Rely on `input_files` for the bulk of the data. The agent decides *how* to achieve the objective.
-    - Example `content`: "Analyze sentiment in input.txt and summarize findings." (Agent figures out the steps).
-- **Type Safety:** Use explicit `output_type` and `output_schema`.
-- **Complexity:** Consider task complexity when defining agent instructions and iteration limits (`max_iterations`).
-- **DAG:** Dependencies MUST form a Directed Acyclic Graph (DAG). No cycles.
-- **Relative Paths:** All file paths (`output_file`, `input_files`) MUST be relative (e.g., `data/output.csv` or `data/processed/`). No absolute paths or `workspace/` prefix. These paths can point to files or directories.
-- **Unique File Paths:** Each `output_file` path MUST be unique across the entire plan.
-- **Result Passing:** Subtasks conclude via `finish_subtask` with EITHER result content OR a file pointer `{"path": "relative/path/..."}`. Prefer file pointers for non-trivial data.
-- **Agent `content` Restrictions:** No code, implementation details, commands, or file contents within `content`.
-- **Context Focus:** Design small, focused subtasks.
-- **Parallel Processing:** Create separate subtasks for processing multiple items (e.g., URLs, files) independently.
+## Return Format
+This system prompt establishes your operational context. For each 
+subsequent phase, you will receive specific instructions detailing the 
+required output format. Your cumulative output across all phases will be 
+a well-structured task plan, ultimately generated via the `create_task` 
+tool.
+
+## Warnings & Core Principles
+Adhere strictly to these overarching principles and warnings throughout 
+all planning activities:
+
+1.  **Multi-Phase Process:** Follow the structured, multi-phase approach 
+    (Analysis -> Data Flow -> Plan Creation). Each phase has specific 
+    objectives.
+2.  **Atomic Subtasks:** Decompose objectives into the smallest logical, 
+    executable units (subtasks).
+3.  **Clear Data Flow:** Define explicit data dependencies between 
+    subtasks using `input_files` and `output_file`. Ensure this forms a 
+    Directed Acyclic Graph (DAG – no cycles).
+4.  **Relative & Unique Paths:** ALL file paths MUST be relative to the 
+    workspace root (e.g., `data/file.txt`) and `output_file` paths MUST 
+    be unique. Absolute paths or `workspace/` prefixes are forbidden. 
+    Paths can be files or directories.
+5.  **Tool Usage:** When a phase requires generating the plan (Phase 2), 
+    use the `create_task` tool as instructed.
+6.  **Optimization:** Design plans that minimize unnecessary context.
+7.  **Result Passing:** Plan for subtasks to pass results efficiently, 
+    preferring file pointers (`{"path": "relative/path"}`) for non-trivial 
+    data.
 """
 
 # Make sure the phase prompts are concrete and focused
 ANALYSIS_PHASE_TEMPLATE = """
-# PHASE 0: ANALYSIS
+# PHASE 0: OBJECTIVE ANALYSIS & CONCEPTUAL SUBTASK BREAKDOWN
 
-Analyze the objective and input files to create a strategic execution plan broken down into conceptual subtasks.
+## Goal
+Your primary goal in this phase is to deeply understand the user's objective.
+Based on this understanding, and considering available input files and overall
+output requirements, you will then devise a strategic execution plan. This plan
+will consist of a list of conceptual subtasks designed to achieve the objective.
 
-- Break down the objective into distinct, atomic subtasks for agent execution.
-- Identify parallel execution opportunities.
-- Plan for separate subtasks for each item if processing independently.
-- Design for minimal execution context for each subtask.
+Specifically, you must:
+- **Clarify Objective Understanding:**
+    - Articulate your interpretation of the user's core goal.
+    - Identify any ambiguities in the objective and state your assumptions.
+    - Consider how the desired final output (type and schema) informs the objective.
+- **Devise Strategic Plan:**
+    - Based on your understanding, decompose the objective into distinct, atomic
+      subtasks suitable for agent execution.
+    - If the objective involves processing multiple similar items independently
+      (e.g., a list of files or URLs), plan for a separate subtask for each
+      item where appropriate.
+    - Design subtasks with minimal execution context in mind.
 
-User's Objective: {{ objective }}
+## Return Format
+Provide your output in the following structure:
 
-Overall Task Output Type: {{ overall_output_type }}
-Overall Task Output Schema: {{ overall_output_schema }}
+1.  **Objective Understanding & Strategic Reasoning:**
+    *   **Objective Interpretation:**
+        *   Clearly state your interpretation of the user's objective.
+        *   Explain any key aspects, constraints, or desired outcomes you've
+            inferred from the objective and the overall task output requirements.
+        *   If there were ambiguities in the objective, explicitly state the
+            assumptions you made to resolve them.
+    *   **Subtask Rationale:**
+        *   Explain how your interpretation of the objective led to the
+            proposed conceptual subtask breakdown.
+        *   Detail your thought process for identifying each conceptual subtask.
+        *   Describe how you considered parallel processing and planned the
+            initial data flow at a high level.
+    *   When referring to conceptual tasks in your reasoning, use the
+        '$short_name' convention (e.g., $read_data, $process_item).
 
-+**Detailed Reasoning and Thought Process:**
-+Describe how you broke down the objective, identified subtasks, considered parallel opportunities, and planned the initial data flow.
-+Refer to conceptual tasks using the '$name' convention.
+2.  **Task List:**
+    *   List each conceptual subtask.
+    *   For each subtask, provide its '$short_name' and a brief, clear
+        description on a single line.
+    *   Example: `$process_file - Processes the content of a single input
+        file.`
 
-Execution Tools Available (for the Agent to potentially use):
+## Warnings
+- Focus on *conceptual* subtasks here. Detailed file paths and schemas
+  will be defined in the next phase.
+- Ensure your reasoning clearly justifies the proposed subtask breakdown based
+  on your understanding of the objective.
+- The '$short_name' for each task should be unique and descriptive.
+
+## Context Dump
+**User's Objective:**
+{{ objective }}
+
+**Overall Task Output Requirements:**
+- Type: {{ overall_output_type }}
+- Schema: {{ overall_output_schema }}
+
+**Execution Tools Available (for the Agent to potentially use later):**
 {{ execution_tools_info }}
 
-Input Files:
+**Initial Input Files:**
 {{ input_files_info }}
-
-**OUTPUT TEMPLATE:**
-1. **Reasoning:**
-Reason about the objective and reference tasks by their $short_name.
-2. **Task List:**
-List each subtask with a $short_name and description on one line.
-
 """
 
 DATA_FLOW_ANALYSIS_TEMPLATE = """
-# PHASE 1: DATA FLOW ANALYSIS
+# PHASE 1: DATA FLOW ANALYSIS - Defining Dependencies and Contracts
 
-Refine the conceptual subtask plan from Phase 0 (available in history), 
-focusing on data flow, dependencies, and contracts. 
-Visualize the data flow using the DOT concept.
+## Goal
+Your goal in this phase is to refine the conceptual subtask plan from Phase 0 
+by defining the precise data flow, dependencies, and contracts (input/output 
+files) for each subtask. You should also visualize this data flow.
 
-**Instructions:**
-- Review Phase 0 output.
-- **Finalize Data Flow:** Determine the input and output files based on dependencies between subtasks. Note that these paths can be files or directories.
-- **Verify Dependencies:** Ensure the plan forms a Directed Acyclic Graph (DAG). No cycles.
-- **Refine Instructions:** Ensure each subtask has optiomal instructions.
-- **Overall Output:** Ensure the final subtask(s) produce output matching the overall task requirements (Type: `{{ overall_output_type }}`, Schema: `{{ overall_output_schema }}`).
+Specifically, you must:
+- Review the conceptual subtask list generated in Phase 0 (available in the 
+  conversation history).
+- For each conceptual subtask, determine its `input_files` and a unique 
+  `output_file`. These paths can refer to files or directories and MUST be 
+  relative.
+- Establish the dependencies between subtasks based on these file inputs 
+  and outputs.
+- Refine the high-level instructions for each subtask if necessary, keeping 
+  them concise.
+- Ensure the subtask(s) producing the final result will generate output 
+  matching the overall task requirements.
 
-User's Objective: {{ objective }}
+## Return Format
+Provide your output in the following structure:
 
-Overall Task Output Type: {{ overall_output_type }}
-Overall Task Output Schema: {{ overall_output_schema }}
+1.  **Reasoning & Data Flow Analysis:**
+    *   Explain your data flow design choices, detailing how `input_files` 
+        and `output_file` were determined for each subtask from Phase 0.
+    *   Describe any refinements made to subtask instructions.
+    *   Use the '$name' convention when referring to tasks from Phase 0 in 
+        your reasoning.
 
-Execution Tools Available (for the Agent to potentially use):
+2.  **Data Flow (DOT/Graphviz Representation):**
+    *   Describe the data flow between all subtasks and files using the 
+        DOT/Graphviz syntax (see "Data Flow Representation (DOT/Graphviz 
+        Syntax) Guide" in Context Dump below).
+    *   The process steps in your DOT graph should correspond to the 
+        '$short_name' of the conceptual subtasks.
+    *   Example:
+        ```dot
+        digraph DataPipeline {
+          "input_file1.json" -> "$process_step_A";
+          "input_file2.csv" -> "$process_step_A";
+          "$process_step_A" -> "intermediate_data.json"; // Output of 
+          $process_step_A
+          "intermediate_data.json" -> "$process_step_B";
+          "$process_step_B" -> "final_output.pdf";      // Output of 
+          $process_step_B
+        }
+        ```
+
+## Warnings
+- **DAG Requirement:** The defined dependencies MUST form a Directed Acyclic 
+  Graph (DAG). No circular dependencies.
+- **Relative & Unique Paths:** All file paths (`input_files`, `output_file`) 
+  MUST be relative to the workspace root. Each `output_file` MUST be unique. 
+  Do NOT use absolute paths or the `/workspace/` prefix. Paths can be files 
+  or directories.
+- **Clarity:** Your reasoning should clearly link the conceptual tasks from 
+  Phase 0 to the concrete data flow defined here.
+- **Final Output:** Ensure the final subtask(s) produce output matching the 
+  overall task requirements (Type: `{{ overall_output_type }}`, Schema: 
+  `{{ overall_output_schema }}`).
+
+## Context Dump
+**User's Objective:**
+{{ objective }}
+
+**Conceptual Subtask Plan from Phase 0:**
+(This will be available in the preceding conversation history. Please refer to 
+it.)
+
+**Overall Task Output Requirements:**
+- Type: {{ overall_output_type }}
+- Schema: {{ overall_output_schema }}
+
+**Execution Tools Available (for the Agent to potentially use later):**
 {{ execution_tools_info }}
 
-Input Files:
+**Initial Input Files (available to the first subtasks):**
 {{ input_files_info }}
 
-+**Detailed Reasoning and Data Flow Analysis:**
-+Before providing the refined output, explain your data flow analysis.
-+Use '$name' convention when referring to tasks in your reasoning.
-
+**Data Flow Representation (DOT/Graphviz Syntax) Guide:**
 {{ COMPACT_SUBTASK_NOTATION_DESCRIPTION }}
-
-**OUTPUT TEMPLATE:**
-1. **Reasoning:**
-Reason about the data flow and subtasks.
-2. **Data Flow:**
-Describe the data flow using the DOT concept.
 """
 
 PLAN_CREATION_TEMPLATE = """
-# PHASE 2: PLAN CREATION
+# PHASE 2: PLAN CREATION - Generating the Executable Task
 
-Transform the refined conceptual subtask plan
-into a concrete, executable task plan using the `create_task` tool.
+## Goal
+Your primary goal in this phase is to transform the conceptual subtask plan 
+and data flow analysis from the previous phases into a concrete, executable 
+task plan. This is achieved by making a single, valid call to the `create_task` 
+tool.
 
-**Instructions:**
-1.  ~~Provide your reasoning and detailed thought process for constructing the final task plan.
-2.  Parse the dataflow graph and subtask list from previous phase.
-3.  Call the `create_task` tool exactly once to generate the entire plan.
-4.  Inside the `create_task` tool call, for each parsed subtask:
-    *   Create a corresponding subtask object in the required JSON format.
-    *   Set the overall task `title`.
-    *   Transfer the extracted `content`.
-    *   Determine `input_files` from the dataflow graph.
-    *   Determine `output_file` from the dataflow graph.
-    *   Set the determined `output_type`.
-    *   Set `max_iterations` (default is 10, consider complexity implied by other fields or objective).
-5.  **Final Output Location:** Ensure the `output_file` for the subtask(s) producing the overall result is within `output_files/` (e.g., `output_files/final_report.json` or `output_files/processed_data/`).
-6.  **Validation Checks (before calling tool):**
-    *   All output/artifact paths MUST be relative and unique.
-    *   Dependencies MUST form a DAG (use `input_files` correctly).
-    *   `output_schema` MUST be a valid JSON string (default '{"type": "string"}').
-    *   `content` MUST be concise natural language instructions.
-    *   Final output MUST conform to overall task requirements (Type: `{{ overall_output_type }}`, Schema: `{{ overall_output_schema }}`).
+You must also provide detailed reasoning for the construction of this final 
+plan *before* making the tool call.
 
-User's Objective: {{ objective }}
+## Return Format
+Your response MUST be structured as follows:
 
-Overall Task Output Type: {{ overall_output_type }}
-Overall Task Output Schema: {{ overall_output_schema }}
+1.  **Detailed Reasoning and Final Plan Construction:**
+    *   Provide your comprehensive reasoning for constructing the final 
+        executable task plan.
+    *   Explain how you translated the refined conceptual subtasks and data 
+        flow (from Phase 1, including DOT graph and CSN strings if applicable) 
+        into the specific arguments for the `create_task` tool.
+    *   Detail your decisions for `content`, `input_files`, `output_file`, 
+        `output_type`, `output_schema`, `max_iterations`, and `model` for 
+        each subtask.
+    *   Confirm how you ensured all validation criteria (see Warnings section) 
+        were met, including dependency management (DAG), path correctness, 
+        and final output conformance.
+    *   If helpful, mentally construct or briefly describe the final data flow 
+        (as a DOT concept) based on the `input_files` and `output_file` you 
+        are defining for the `create_task` call.
+    *   Refer to conceptual tasks using the '$name' convention where 
+        appropriate in your reasoning.
 
-Execution Tools Available (for the Agent to potentially use):
+2.  **`create_task` Tool Call:**
+    *   Immediately following your reasoning, make exactly one call to the 
+        `create_task` tool to generate the entire plan.
+    *   Populate the tool call arguments meticulously based on your reasoning 
+        and the guidelines below.
+
+## Warnings: `create_task` Tool Call Guidelines
+Adhere strictly to the following when constructing the arguments for the 
+`create_task` tool:
+
+**General Structure:**
+*   **Overall Task `title`:** Set an appropriate title for the overall task.
+*   **Subtasks Array:** Construct the `subtasks` array, where each item is 
+    an object representing a subtask.
+
+**For Each Subtask:**
+*   **`content` (Agent Instructions):**
+    *   MUST be high-level natural language instructions for the agent.
+    *   Focus on *what* the agent should achieve, not *how*.
+*   **`input_files`:**
+    *   Determine from the data flow graph (Phase 1).
+    *   List all relative paths to files/directories this subtask depends on.
+*   **`output_file`:**
+    *   Determine from the data flow graph (Phase 1).
+    *   MUST be a unique, relative path (file or directory).
+    *   **Final Output Location:** For subtask(s) producing the overall task 
+        result, `output_file` MUST be within the `output_files/` directory 
+        (e.g., `output_files/final_report.json`, `output_files/processed_data/`).
+*   **`output_type`:** Specify the correct file format of the output (e.g., 
+    'json', 'markdown', 'csv').
+*   **`output_schema`:**
+    *   Provide as a valid JSON string (e.g., `'{"type": "string"}'` for 
+        unstructured, or a more detailed schema).
+    *   Derive from `output_type` or use a default if appropriate.
+*   **`max_iterations`:**
+    *   Set an integer value based on the subtask's complexity.
+    *   Use values like 5 for simple tasks, 10-15 for complex analysis. 
+        Default to 10 if unsure.
+*   **`model` (LLM Assignment):**
+    *   Assign the appropriate LLM:
+        *   Use `{{ model }}` (primary model) for standard tasks.
+        *   Use `{{ reasoning_model }}` (reasoning model) for subtasks 
+            requiring complex analysis, code generation, or significant reasoning.
+    *   If unsure, default to `{{ model }}`.
+
+**Plan-Wide Validation (Perform these checks *before* calling the tool):**
+*   **Path Correctness:** All file paths (`input_files`, `output_file`) 
+    MUST be relative to the workspace root (e.g., `data/file.txt`). No 
+    absolute paths or `/workspace/` prefix. Paths can be files or directories.
+*   **Unique Output Files:** Ensure ALL `output_file` paths are unique across 
+    the entire plan.
+*   **DAG Dependencies:** Subtask dependencies, as defined by `input_files` 
+    referencing `output_file` of other tasks, MUST form a Directed Acyclic 
+    Graph (DAG). No cycles.
+*   **Input Availability:** Ensure inputs for a subtask are produced by 
+    preceding tasks or are part of the initial `Input Files`.
+*   **Context Minimization:** Keep subtasks focused. Prefer passing results 
+    via file pointers (`{"path": "..."}`) within the agent's `finish_subtask` 
+    call to keep context small, especially for larger data.
+*   **Final Output Conformance:** The plan's final output (from the terminal 
+    subtask(s)) MUST conform to the overall task requirements (Type: 
+    `{{ overall_output_type }}`, Schema: `{{ overall_output_schema }}`).
+
+**Agent Execution Notes (for your planning awareness):**
+*   Agents executing these subtasks will call `finish_subtask`.
+*   They will pass small result content directly or, preferably, a file 
+    pointer `{"path": "relative/path/..."}` for larger data/files.
+*   If a subtask requires significant reasoning, the *agent* might use a 
+    reasoning tool; this is distinct from your `model` selection for the 
+    subtask itself.
+
+## Context Dump
+**User's Objective:**
+{{ objective }}
+
+**Conceptual Subtasks & Data Flow (from Phase 1):**
+(Refer to the conversation history for the refined subtask list and DOT 
+graph from Phase 1. You should parse any CSN strings or the DOT graph to 
+inform your `create_task` call.)
+
+**Overall Task Output Requirements:**
+- Type: {{ overall_output_type }}
+- Schema: {{ overall_output_schema }}
+
+**Planner's LLM Models Available:**
+- Primary Model: `{{ model }}`
+- Reasoning Model: `{{ reasoning_model }}`
+
+**Execution Tools Available (for the Agent to potentially use within a subtask):**
 {{ execution_tools_info }}
 
-Input Files:
+**Initial Input Files (available to the first subtasks):**
 {{ input_files_info }}
-1. Implement subtasks based on the parsed CSN strings from Phase 1.
-2. Define precise relative file paths (`input_files`, `output_file`) extracted/determined from CSN/context. No absolute paths or `/workspace/` prefix. Unique outputs.
-3. **Final Output Location:** `output_file` for final result(s) MUST be within `output_files/` (e.g., `output_files/final_report.json` or `output_files/processed_data/`).
-4. **Unique File Paths:** Ensure *all* generated file paths (`output_file`) are unique.
-5. **Minimal Agent Instructions:** `content` MUST contain concise, high-level natural language instructions for the agent.
-6. **Set Iteration Limits:** Include `max_iterations` for each subtask based on its complexity (e.g., 5 for simple, 10-15 for complex). The default is 10 if unsure.
-7. Specify correct `output_type` and `output_schema` (JSON string). Derive schema from output_type or use default.
-8. Express dependencies correctly via `input_files`.
-9. Maximize parallelism based on dependencies.
-10. **Assign Model:** For each subtask, set the optional `model` field. Use the primary model (`{{ model }}`) for standard tasks and the reasoning model (`{{ reasoning_model }}`) for subtasks requiring complex analysis, code generation, or significant reasoning. If unsure, default to the primary model.
-11. **Minimize Context:** Ensure subtasks remain focused. Prefer passing results via file pointers (`{"path": "..."}`) to keep context small.
-12. **Final Output Conformance:** Ensure the plan's final output conforms to the overall task requirements (Type: `{{ overall_output_type }}`, Schema: `{{ overall_output_schema }}`) and is saved to `output_files/`.
-13. **Reasoning:** If the task requires reasoning, use the `reasoning` tool (This applies to the agent executing the task, not the planner).
-
-## Finishing Subtasks (for the Agent)
-- Each subtask calls `finish_subtask`.
-- Pass result content (small data) or a file pointer `{"path": "relative/path/..."}` (preferred for larger data/files).
-
-## Validation Criteria (for the Planner)
-- No circular dependencies (DAG).
-- Inputs available when needed.
-- `content` is concise, high-level agent instruction.
-- `max_iterations` is appropriate for the task.
-- `model` is appropriately assigned based on complexity (optional).
-- Final output matches overall task requirements and location.
-- Schemas (`output_schema`) are valid JSON strings.
-- File paths are relative and unique (files or directories).
-
-User's Objective: {{ objective }}
-
-Overall Task Output Type: {{ overall_output_type }}
-Overall Task Output Schema: {{ overall_output_schema }}
-
-Conceptual Subtasks & Data Flow (Refer to history): [LLM should recall the lines of CSN strings from Phase 1, including complexity assessments]
-
-Execution Tools Available (for the Agent to potentially use):
-{{ execution_tools_info }}
-
-Input Files:
-{{ input_files_info }}
-
-+**Detailed Reasoning and Final Plan Construction:**
-+Before calling the `create_task` tool, provide your detailed reasoning for constructing the final executable task plan. Explain how you translated the refined CSN into the `create_task` arguments, how you determined output types and schemas, set iteration limits, handled dependencies, and ensured all validation criteria were met. Describe any choices made regarding parallelism and minimizing context.
-+Refer to tasks using the '$name' convention where appropriate in your reasoning.
-+Mentally construct or describe the final data flow using the DOT concept based on the outputs and inputs defined for the `create_task` tool call.
-
-CREATE YOUR PLAN NOW using the `create_task` tool. Parse the CSN lines from Phase 1, determine output types, assign the appropriate `model` based on complexity, ensure *minimal* agent instructions (`content`), appropriate `max_iterations`, prefer file pointers for data transfer, and verify the final output meets requirements by constructing the correct JSON for `create_task`.
 """
 
 # Agent task prompt used in the final planning stage
 DEFAULT_AGENT_TASK_TEMPLATE = """
-# TASK PLANNING OBJECTIVE
+---
+## Final Check: Subtask Design within `create_task`
 
-Create an optimal execution plan for: {{ objective }}
+As you finalize the `create_task` call, please double-check these crucial 
+aspects for *each* subtask:
 
-{{ COMPACT_SUBTASK_NOTATION_DESCRIPTION }}
+1.  **Clarity of Purpose:** Is the `content` a crystal-clear, high-level 
+    objective for an autonomous agent?
+2.  **Self-Containment (Inputs):** Does `input_files` correctly list *all* 
+    necessary data for the subtask to run independently once those files 
+    are available?
+3.  **Output Precision:** Is the `output_file` path unique and correctly 
+    placed (e.g., in `output_files/` if it's a final result)? Does 
+    `output_type` and `output_schema` accurately describe what will be 
+    produced?
 
-## Available Resources
-Execution Tools:
-{{ execution_tools_info }}
-
-## Input Files
-{{ input_files_info }}
-
-Overall Task Output Type: {{ overall_output_type }}
-Overall Task Output Schema: {{ overall_output_schema }}
-
-## Previously Generated Analysis (Phases 0 & 1)
-(Available in the conversation history)
-
-Design a plan where each subtask has:
-1. **Agent Task:** `tool_name` is empty, `content` contains MINIMAL high-level instructions for the agent.
-2. **Iteration Limit:** A reasonable `max_iterations` based on task complexity (default 10).
-3. Well-defined relative paths (`input_files`, `output_file`). No absolute paths or `/workspace/` prefix. Unique outputs. These paths can refer to files or directories.
-4. Appropriate `output_type` and `output_schema` (JSON string).
-5. Minimal dependencies, maximized parallelism.
-6. Clear result passing: `finish_subtask` with content (small data) or file pointer `{"path": "..."}` (preferred for larger data/files).
-7. **Minimal Context Focus:** Small, focused subtasks. One subtask per file/item (or per directory if processing collections) for parallel processing.
-8. **Data Flow Visualization:** Design the plan keeping the DOT data flow visualization concept in mind, ensuring clear connections between files and process steps.
+Ensure your overall plan effectively addresses the original `{{ objective }}` 
+using the available resources and adheres to the final output requirements.
 """
 
 
@@ -463,8 +594,6 @@ class TaskPlanner:
         a defined workspace, preventing dangerous absolute path manipulations and
         ensuring plan portability. Paths like `/tmp/foo` or `C:\\Users\\...` are
         strictly forbidden; only paths like `data/interim_results.csv` are valid.
-    6.  **Optimization:** Identifying opportunities for parallel execution where
-        subtasks have no dependencies on each other.
 
     The planning process itself can involve multiple phases (configurable):
     - **Analysis Phase:** High-level strategic breakdown and identification of

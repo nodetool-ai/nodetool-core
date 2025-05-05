@@ -128,8 +128,8 @@ class AgentConsole:
         """Create a rich table for displaying subtasks and their tool calls."""
         table = Table(title=title, title_justify="left")
         table.add_column("Status", style="cyan", no_wrap=True, ratio=1)
-        table.add_column("Content", style="green", ratio=5)
-        table.add_column("Files", style="white", ratio=4)  # Adjusted ratio
+        table.add_column("Content", style="green", ratio=7)
+        table.add_column("Files", style="white", ratio=2)
 
         # Guard against task or subtasks being None
         if not task or not task.subtasks:

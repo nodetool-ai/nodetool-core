@@ -1335,6 +1335,12 @@ class SubTaskContext:
             # Check if we need to transition to conclusion stage
             if (token_count > self.max_token_limit) and not self.in_conclusion_stage:
                 await self._transition_to_conclusion_stage()
+                # Yield the event after transitioning
+                yield TaskUpdate(
+                    task=self.task,
+                    subtask=self.subtask,
+                    event=TaskUpdateEvent.ENTERED_CONCLUSION_STAGE,
+                )
 
             # Process current iteration
             message = await self._process_iteration()

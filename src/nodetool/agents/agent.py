@@ -334,9 +334,6 @@ class Agent:
             # Ensure live display is stopped
             self.display_manager.stop_live()
 
-        if not self.output_schema and not self.output_type:
-            self.results = executor.get_output_files()
-
         self.display_manager.print(self.provider.usage)
 
     def get_results(self) -> List[Any]:
@@ -694,9 +691,6 @@ Generate a JSON object conforming EXACTLY to the 'SingleSubtaskDefinition' schem
             output_file_to_read = output_file_path_abs
 
         if output_file_to_read:
-            print(
-                f"Single Task Agent: Reading final result from file: {output_file_to_read}"
-            )
             try:
                 with open(output_file_to_read, "r") as f:
                     file_content = f.read()
@@ -705,9 +699,6 @@ Generate a JSON object conforming EXACTLY to the 'SingleSubtaskDefinition' schem
                     try:
                         processed_result = json.loads(file_content)
                     except json.JSONDecodeError:
-                        print(
-                            f"Single Task Agent: Warning - Failed to parse JSON content from {output_file_to_read}. Returning raw content."
-                        )
                         processed_result = file_content  # Fallback to raw content
                 else:
                     processed_result = (
@@ -721,11 +712,6 @@ Generate a JSON object conforming EXACTLY to the 'SingleSubtaskDefinition' schem
 
         # Update self.results with the potentially processed content
         self.results = processed_result
-
-        # Execution finished (successfully or not, handled by SubTaskContext)
-        print(
-            f"Single Task Agent: Finished execution for objective: '{self.objective}'"
-        )
 
     def get_results(self) -> Any:
         """
