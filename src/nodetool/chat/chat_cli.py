@@ -35,7 +35,6 @@ from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
 from rich.syntax import Syntax
-from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.align import Align
 from rich.prompt import Confirm  # Added for boolean toggles
 from rich.columns import Columns  # Add Columns
@@ -65,7 +64,6 @@ from nodetool.agents.tools import (
     OpenAITextToSpeechTool,
     OpenAIWebSearchTool,
     ReadAssetTool,
-    ReasoningTool,
     SaveAssetTool,
     ScreenshotTool,
     SearchEmailTool,
