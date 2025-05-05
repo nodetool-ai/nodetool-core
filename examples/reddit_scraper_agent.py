@@ -66,9 +66,9 @@ if __name__ == "__main__":
     asyncio.run(
         test_reddit_scraper_agent(
             provider=get_provider(Provider.Ollama),
-            model="qwen3:4b",
-            planning_model="qwen3:4b",
-            reasoning_model="qwen3:4b",
+            model="qwen3:1.7b",
+            planning_model="qwen3:1.7b",
+            reasoning_model="qwen3:1.7b",
         )
     )
     # asyncio.run(

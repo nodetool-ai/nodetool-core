@@ -1,4 +1,5 @@
 import asyncio
+from chunk import Chunk
 import os
 import json
 from pathlib import Path
@@ -18,6 +19,8 @@ from nodetool.agents.tools import (
 )
 from nodetool.workflows.processing_context import ProcessingContext
 import dotenv
+
+from nodetool.workflows.types import PlanningUpdate
 
 dotenv.load_dotenv()
 
@@ -92,30 +95,14 @@ async def test_task_planner(provider: ChatProvider, model: str):
 
     try:
         # Generate the task plan
-        task = await planner.create_task(context, objective)
+        async for chunk in planner.create_task(context, objective):
+            pass
 
         # Display the generated plan
         console.print("[bold green]Plan generated successfully![/bold green]")
         console.print("\n[bold]Generated Task Plan:[/bold]")
 
-        console.print(f"[bold cyan]Task Title:[/bold cyan] {task.title}")
-        console.print(
-            f"[bold cyan]Number of Subtasks:[/bold cyan] {len(task.subtasks)}"
-        )
-
-        for i, subtask in enumerate(task.subtasks, 1):
-            console.print(f"\n[bold magenta]Subtask {i}:[/bold magenta]")
-            console.print(f"Content: {subtask.content}")
-            console.print(f"Output File: {subtask.output_file}")
-            console.print(f"Input Files: {subtask.input_files}")
-            console.print(f"Output Type: {subtask.output_type}")
-
-            # Print output schema in a readable format if it's complex
-            if subtask.output_type == "json":
-                console.print("Output Schema:")
-                console.print(json.dumps(subtask.output_schema, indent=2))
-            else:
-                console.print(f"Output Schema: {subtask.output_schema}")
+        print(planner.task_plan.to_markdown())
 
     except Exception as e:
         console.print(f"[bold red]Error during plan generation:[/bold red] {str(e)}")
@@ -124,8 +111,8 @@ async def test_task_planner(provider: ChatProvider, model: str):
 
 # Run the test
 if __name__ == "__main__":
-    # asyncio.run(test_task_planner(provider=OllamaProvider(), model="qwen3:14b"))
-    asyncio.run(test_task_planner(provider=OpenAIProvider(), model="gpt-4o-mini"))
+    asyncio.run(test_task_planner(provider=OllamaProvider(), model="qwen3:4b"))
+    # asyncio.run(test_task_planner(provider=OpenAIProvider(), model="gpt-4o-mini"))
     # asyncio.run(
     #     test_task_planner(
     #         provider=AnthropicProvider(), model="claude-3-5-sonnet-20241022"

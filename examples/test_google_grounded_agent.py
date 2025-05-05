@@ -28,12 +28,12 @@ SUMMARIZER_SYSTEM_PROMPT = """You are a specialized Summarization Agent for AI i
 async def main():
     context = ProcessingContext()
 
-    # provider = get_provider(Provider.OpenAI)
-    # model = "gpt-4o"
+    provider = get_provider(Provider.OpenAI)
+    model = "gpt-4o-mini"
 
-    provider = get_provider(Provider.Gemini)
+    # provider = get_provider(Provider.Gemini)
     # model = "gemini-2.5-pro-exp-03-25"
-    model = "gemini-2.0-flash"
+    # model = "gemini-2.0-flash"
 
     # provider = get_provider(Provider.Ollama)
     # model = "gemma3:12b"

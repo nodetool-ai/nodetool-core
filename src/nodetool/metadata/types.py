@@ -11,6 +11,7 @@ import base64
 from datetime import datetime
 from typing import Optional, Union
 from pydantic import BaseModel, Field
+import uuid
 
 from nodetool.metadata.type_metadata import TypeMetadata
 from nodetool.types.graph import Graph
@@ -961,6 +962,10 @@ class SubTask(BaseType):
     """A subtask item with completion status, dependencies, and tools."""
 
     type: Literal["subtask"] = "subtask"
+    id: str = Field(
+        default_factory=lambda: str(uuid.uuid4()),
+        description="Unique identifier for the subtask",
+    )
 
     model: str | None = Field(
         default=None,

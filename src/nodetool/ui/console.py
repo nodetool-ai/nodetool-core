@@ -146,9 +146,7 @@ class AgentConsole:
             )
             # Ensure tool_calls is not None before filtering
             subtask_tool_calls = [
-                call
-                for call in (tool_calls or [])
-                if call.subtask_id == subtask.content
+                call for call in (tool_calls or []) if call.subtask_id == subtask.id
             ]
 
             # Combine inputs and outputs with color coding

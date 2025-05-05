@@ -1575,10 +1575,6 @@ def _get_configured_serp_provider() -> (
     d4seo_password = Environment.get("DATA_FOR_SEO_PASSWORD")
     serpapi_key = Environment.get("SERPAPI_API_KEY")
 
-    print(f"d4seo_login: {d4seo_login}")
-    print(f"d4seo_password: {d4seo_password}")
-    print(f"serpapi_key: {serpapi_key}")
-
     if serpapi_key:
         return SerpApiProvider(), None
     elif d4seo_login and d4seo_password:

@@ -174,13 +174,13 @@ class CreateTaskTool(Tool):
                         },
                         "output_file": {
                             "type": "string",
-                            "description": "The file path where the subtask will save its output. MUST be relative to the workspace root (e.g., 'results/data.json'). Do NOT use absolute paths or '/workspace/' prefix.",
+                            "description": "The file path where the subtask will save its output. MUST be relative to the workspace root and at the top level (e.g., 'result.json'). Do NOT use subdirectories, absolute paths, or '/workspace/' prefix.",
                         },
                         "input_files": {
                             "type": "array",
                             "items": {
                                 "type": "string",
-                                "description": "An input file for the subtask. MUST be a relative path (e.g., 'inputs/source.txt') corresponding to an initial input file, the output_file of another subtask, or an artifact from another subtask.",
+                                "description": "An input file for the subtask. MUST be a relative path at the top level of the workspace (e.g., 'source.txt' or 'another_output.json'). Paths must not be in subdirectories. Corresponds to an initial input file or the output_file of another subtask.",
                             },
                         },
                         "output_schema": {
@@ -250,9 +250,12 @@ all planning activities:
     subtasks using `input_files` and `output_file`. Ensure this forms a 
     Directed Acyclic Graph (DAG – no cycles).
 4.  **Relative & Unique Paths:** ALL file paths MUST be relative to the 
-    workspace root (e.g., `data/file.txt`) and `output_file` paths MUST 
+    workspace root (e.g., `file.txt`) and `output_file` paths MUST 
     be unique. Absolute paths or `workspace/` prefixes are forbidden. 
-    Paths can be files or directories.
+    All file paths MUST be flat at the workspace root (e.g., 
+    `interim_file.json`, `final_output.pdf`), not in subdirectories. 
+    Paths *refer to files only*, not directories, unless they are initial 
+    input directories.
 5.  **Tool Usage:** When a phase requires generating the plan (Phase 2), 
     use the `create_task` tool as instructed.
 6.  **Optimization:** Design plans that minimize unnecessary context.
@@ -374,21 +377,17 @@ Provide your output in the following structure:
         digraph DataPipeline {
           "input_file1.json" -> "$process_step_A";
           "input_file2.csv" -> "$process_step_A";
-          "$process_step_A" -> "intermediate_data.json"; // Output of 
+          "$process_step_A" -> "intermediate_A.json"; // Output of 
           $process_step_A
-          "intermediate_data.json" -> "$process_step_B";
+          "intermediate_A.json" -> "$process_step_B";
           "$process_step_B" -> "final_output.pdf";      // Output of 
           $process_step_B
         }
         ```
 
 ## Warnings
-- **DAG Requirement:** The defined dependencies MUST form a Directed Acyclic 
-  Graph (DAG). No circular dependencies.
-- **Relative & Unique Paths:** All file paths (`input_files`, `output_file`) 
-  MUST be relative to the workspace root. Each `output_file` MUST be unique. 
-  Do NOT use absolute paths or the `/workspace/` prefix. Paths can be files 
-  or directories.
+- **DAG Requirement:** The defined dependencies MUST form a Directed Acyclic Graph (DAG). No circular dependencies.
+- **Relative & Unique Paths:** All file paths (`input_files`, `output_file`) MUST be relative to the workspace root and at the top level (e.g., `temp_file.csv`, `report.pdf`). Each `output_file` MUST be unique. No subdirectories. Do NOT use absolute paths or the `/workspace/` prefix. Paths refer to files only.
 - **Clarity:** Your reasoning should clearly link the conceptual tasks from 
   Phase 0 to the concrete data flow defined here.
 - **Final Output:** Ensure the final subtask(s) produce output matching the 
@@ -474,10 +473,7 @@ Adhere strictly to the following when constructing the arguments for the
     *   List all relative paths to files/directories this subtask depends on.
 *   **`output_file`:**
     *   Determine from the data flow graph (Phase 1).
-    *   MUST be a unique, relative path (file or directory).
-    *   **Final Output Location:** For subtask(s) producing the overall task 
-        result, `output_file` MUST be within the `output_files/` directory 
-        (e.g., `output_files/final_report.json`, `output_files/processed_data/`).
+    *   MUST be a unique, relative file path at the workspace root (e.g., `data.json`, `final_report.pdf`). No subdirectories.
 *   **`output_type`:** Specify the correct file format of the output (e.g., 
     'json', 'markdown', 'csv').
 *   **`output_schema`:**
@@ -497,8 +493,7 @@ Adhere strictly to the following when constructing the arguments for the
 
 **Plan-Wide Validation (Perform these checks *before* calling the tool):**
 *   **Path Correctness:** All file paths (`input_files`, `output_file`) 
-    MUST be relative to the workspace root (e.g., `data/file.txt`). No 
-    absolute paths or `/workspace/` prefix. Paths can be files or directories.
+    MUST be relative to the workspace root and at the top level (e.g., `data.txt` or `final_report.csv`). No subdirectories. No absolute paths or `/workspace/` prefix. Paths refer to files only.
 *   **Unique Output Files:** Ensure ALL `output_file` paths are unique across 
     the entire plan.
 *   **DAG Dependencies:** Subtask dependencies, as defined by `input_files` 
@@ -558,8 +553,7 @@ aspects for *each* subtask:
 2.  **Self-Containment (Inputs):** Does `input_files` correctly list *all* 
     necessary data for the subtask to run independently once those files 
     are available?
-3.  **Output Precision:** Is the `output_file` path unique and correctly 
-    placed (e.g., in `output_files/` if it's a final result)? Does 
+3.  **Output Precision:** Is the `output_file` path unique? Does 
     `output_type` and `output_schema` accurately describe what will be 
     produced?
 
@@ -646,10 +640,10 @@ class TaskPlanner:
         self,
         provider: ChatProvider,
         model: str,
-        reasoning_model: str,
         objective: str,
         workspace_dir: str,
         execution_tools: Sequence[Tool],
+        reasoning_model: str | None = None,
         input_files: Sequence[str] = [],
         system_prompt: str | None = None,
         output_schema: dict | None = None,
@@ -665,7 +659,7 @@ class TaskPlanner:
         Args:
             provider (ChatProvider): An LLM provider instance
             model (str): The model to use with the provider
-            reasoning_model (str): The model to use for reasoning
+            reasoning_model (str | None): The model to use for reasoning
             objective (str): The objective to solve
             workspace_dir (str): The workspace directory path
             execution_tools (List[Tool]): Tools available for subtask execution.
@@ -680,11 +674,10 @@ class TaskPlanner:
         """
         self.provider: ChatProvider = provider
         self.model: str = model
-        self.reasoning_model: str = reasoning_model
+        self.reasoning_model: str = reasoning_model or model
         self.objective: str = objective
         self.workspace_dir: str = workspace_dir
-        self.task: Optional[Task] = None
-        self.task_plan: Optional[TaskPlan] = None
+        self.task_plan: TaskPlan = TaskPlan()
         # Clean and validate initial input files relative to workspace
         self.input_files: List[str] = [
             self._clean_and_validate_path(f, "initial input files") for f in input_files
@@ -698,9 +691,7 @@ class TaskPlanner:
         self.enable_data_contracts_phase: bool = enable_data_contracts_phase
         self.use_structured_output: bool = use_structured_output
         self.verbose: bool = verbose
-
         self.tasks_file_path: Path = Path(workspace_dir) / "tasks.yaml"
-        # Initialize the display manager
         self.display_manager = AgentConsole(verbose=self.verbose)
 
         # Initialize Jinja2 environment
@@ -1096,7 +1087,7 @@ class TaskPlanner:
         """
         # Start the live display using the display manager
         self.display_manager.start_live(
-            self.display_manager.create_planning_table("Task Planning Phases")
+            self.display_manager.create_planning_table("Task Planner")
         )
 
         history: List[Message] = [
@@ -1138,7 +1129,7 @@ class TaskPlanner:
                 self.display_manager.print(  # Use display manager print
                     "[bold green]Plan created successfully.[/bold green]"
                 )
-                self.task = task
+                self.task_plan.tasks.append(task)
             else:
                 # Construct error message based on plan_creation_error or last message
                 if plan_creation_error:
@@ -1360,11 +1351,19 @@ class TaskPlanner:
         final_schema_str: Optional[str] = None
         schema_dict: Optional[dict] = None
 
+        # Add logging for the input schema string
+        self.display_manager.print(
+            f"{sub_context}: Attempting to process output_schema: '{current_schema_str}' of type {type(current_schema_str)}"
+        )
+
         if is_binary_output_type(output_type):
             final_schema_str = json.dumps(FILE_POINTER_SCHEMA)
         else:
             try:
                 if isinstance(current_schema_str, str) and current_schema_str.strip():
+                    self.display_manager.print(
+                        f"{sub_context}: Parsing string schema: '{current_schema_str}'"
+                    )  # Log before loads
                     schema_dict = json.loads(current_schema_str)
                 elif current_schema_str is None or (
                     isinstance(current_schema_str, str)
@@ -1387,6 +1386,10 @@ class TaskPlanner:
             except (ValueError, json.JSONDecodeError) as e:
                 validation_errors.append(
                     f"{sub_context}: Invalid output_schema provided: '{current_schema_str}'. Error: {e}. Using default for type '{output_type}'."
+                )
+                # Log the specific error
+                self.display_manager.print(
+                    f"{sub_context}: JSONDecodeError or ValueError for schema '{current_schema_str}': {e}"
                 )
                 # Attempt to generate default schema as fallback
                 try:
@@ -1419,14 +1422,37 @@ class TaskPlanner:
             processed_data["output_schema"] = (
                 final_schema_str  # Already validated/generated
             )
-            processed_data["output_file"] = self._clean_and_validate_path(
-                processed_data.get("output_file", ""), f"{sub_context} output_file"
+            raw_output_file = processed_data.get("output_file", "")
+            cleaned_output_file = self._clean_and_validate_path(
+                raw_output_file, f"{sub_context} output_file"
             )
-            processed_data["input_files"] = [
-                self._clean_and_validate_path(f, f"{sub_context} input_file '{f}'")
-                for f in processed_data.get("input_files", [])
-                if isinstance(f, str)  # Ensure items are strings
-            ]
+            if os.path.dirname(cleaned_output_file):
+                validation_errors.append(
+                    f"{sub_context}: Output file '{cleaned_output_file}' must be at the workspace root, not in a subdirectory."
+                )
+            processed_data["output_file"] = cleaned_output_file
+
+            raw_input_files = processed_data.get("input_files", [])
+            cleaned_input_files_list = []
+            for f_path in raw_input_files:
+                if not isinstance(f_path, str):
+                    validation_errors.append(
+                        f"{sub_context}: Input file path item '{f_path}' must be a string, got {type(f_path)}."
+                    )
+                    continue
+                cleaned_f_path = self._clean_and_validate_path(
+                    f_path, f"{sub_context} input_file '{f_path}'"
+                )
+                if os.path.dirname(cleaned_f_path):
+                    # If the cleaned path is in a subdirectory, it must be one of the initial input files.
+                    # self.input_files contains paths already cleaned by _clean_and_validate_path.
+                    if cleaned_f_path not in self.input_files:
+                        validation_errors.append(
+                            f"{sub_context}: Input file '{cleaned_f_path}' is in a subdirectory. Only initial input files are allowed in subdirectories, and this file is not part of the initial inputs."
+                        )
+                cleaned_input_files_list.append(cleaned_f_path)
+            processed_data["input_files"] = cleaned_input_files_list
+
             # Ensure tool_name is None if empty string or missing
             processed_data["tool_name"] = processed_data.get("tool_name") or None
 
@@ -1697,6 +1723,8 @@ class TaskPlanner:
                     )
                     # Raise a ValueError containing the raw response for retry feedback
                     raise ValueError(error_detail) from json_err
+
+                print(task_data)
 
                 # 3. Validate Plan (Subtasks & Dependencies)
                 validated_task, validation_errors = (

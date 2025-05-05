@@ -23,36 +23,86 @@ Core Components:
 Execution Algorithm:
 --------------------
 1.  **Initialization**: A `SubTaskContext` is created for a specific `SubTask`,
-    equipped with the necessary `ProcessingContext`, `ChatProvider`, tools, model,
-    and resource limits. A system prompt tailored to the subtask (execution vs.
-    final aggregation) is generated.
-2.  **LLM-Driven Execution**: The context enters an iterative loop with the LLM:
-    a.  **Prepare Prompt**: The overall task description, current subtask instructions,
-        input files, and any previous messages form the prompt.
-    b.  **Generate**: The LLM processes the history and generates a response,
-        which can be text content or a request to use one or more available tools.
-    c.  **Tool Handling**: If tools are called:
-        i.  The context finds and executes the requested tool (`_execute_tool`).
-        ii. The tool's output (often structured data like JSON) is added back
-            to the history as a `tool` role message.
-        iii. If `finish_subtask` or `finish_task` is called, the context saves
-             the provided result (`_save_to_output_file`) and marks the subtask
-             as complete.
-    d.  **Iteration & Limits**: The loop continues. Token count and iteration limits
-        are monitored.
-    e.  **Conclusion Stage**: If the token limit is exceeded, the context enters
-        a "conclusion stage", restricting tools to only the `finish_...` tool
-        and prompting the LLM to synthesize results.
-    f.  **Max Iterations**: If the maximum iterations are reached without calling
-        `finish_...`, the context forces completion by requesting a final
-        structured output from the LLM conforming to the finish tool's schema
-        (`_handle_max_iterations_reached`, `request_structured_output`) and saves it.
-3.  **Output Saving (`_save_to_output_file`)**: Handles saving the final result provided
-    to the `finish_...` tool. It correctly processes results passed as direct content
-    (writing to the `output_file` with appropriate formatting based on extension,
-    embedding metadata) or as a file pointer object `{"path": "..."}` (copying the
-    referenced workspace file to the `output_file`).
-4.  **Completion**: The subtask is marked as completed, and status updates are yielded.
+    equipped with the necessary `ProcessingContext`, `ChatProvider`, tools (including
+    special `finish_subtask` or `finish_task` tools), model, and resource limits.
+    A system prompt tailored to the subtask (execution vs. final aggregation) is
+    generated. The subtask's internal message history is initialized with this
+    system prompt.
+
+2.  **LLM-Driven Execution Loop**: The context enters an iterative loop driven by
+    interactions with the LLM. The loop continues as long as the subtask is not
+    completed and the number of iterations is less than `max_iterations`:
+    a.  **Iteration & Limit Checks (Pre-LLM Call)**:
+        - If `max_iterations` is reached, the context proceeds to step 2.f (Forced Completion).
+        - Token count of the history is checked. If it exceeds `max_token_limit`
+          and not already in conclusion stage, the context transitions to
+          `in_conclusion_stage` (see step 2.e).
+    b.  **Prepare Prompt & LLM Call**: The overall task description, current subtask
+        instructions, input files, and the current message history form the prompt.
+        The LLM processes this history and generates a response. This response can
+        be text content or a request to use one or more available tools (LLM Tool Calls).
+        The LLM's text response (if any) is yielded externally as a `Chunk` and added
+        to the internal history as an assistant message.
+    c.  **Handling LLM Tool Calls**: If the LLM response includes tool calls:
+        i.   For each `ToolCall` requested by the LLM:
+             - A user-friendly message describing the tool call is generated
+               (via `_generate_tool_call_message` which typically uses the tool's
+               `user_message` method).
+             - The `ToolCall` object, now including this descriptive message,
+               is yielded externally from the `execute` method.
+             - If the tool call is for `finish_subtask` or `finish_task`, a
+               `TaskUpdateEvent.SUBTASK_COMPLETED` update is also yielded.
+        ii.  Internally, after being yielded, these LLM-generated tool calls are
+             processed by `_handle_tool_call`. This method orchestrates:
+             - **Execution**: Invokes the tool's logic (`_process_tool_execution`).
+             - **Result Compression**: Compresses large tool results via LLM-based
+               summarization if they exceed a token threshold
+               (`_maybe_compress_tool_result` calling `_compress_tool_result`).
+             - **Binary Artifact Handling**: Saves base64 encoded binary data
+               (images, audio) from the result to workspace files (in an 'artifacts'
+               folder) and updates the result to point to these files
+               (`_handle_binary_artifact`).
+             - **Special Side-Effects**: Manages tool-specific actions
+               (`_process_special_tool_side_effects`). For `browser` navigation,
+               it logs sources. For `finish_subtask`/`finish_task`, it marks
+               the subtask complete and triggers result saving (step 3).
+             - **Serialization**: Converts the processed tool result to a JSON
+               string (`_serialize_tool_result_for_history`).
+        iii. The serialized JSON string (tool output) is then added to the subtask's
+             internal message history as a `Message` with role 'tool'.
+    d.  **Continuation**: The loop continues to the next LLM interaction unless a
+        `finish_...` tool completed the subtask or `max_iterations` was reached.
+    e.  **Conclusion Stage**: If the token limit is exceeded, the context enters a
+        "conclusion stage". In this stage, available tools are restricted to only
+        the `finish_...` tool, and the LLM is prompted to synthesize results and
+        conclude the subtask.
+    f.  **Forced Completion (Max Iterations)**: If `max_iterations` is reached
+        before `finish_...` is called, `_handle_max_iterations_reached` is invoked.
+        This forces completion by:
+        - Requesting a final structured output from the LLM, conforming to the
+          finish tool's schema (`request_structured_output`).
+        - Triggering result saving with this structured output (step 3).
+        - Marking the subtask as complete.
+        - Creating an assistant message with the `ToolCall` for record and adding
+          it to history.
+        - Yielding this record `ToolCall` externally.
+        The subtask loop then terminates.
+
+3.  **Output Saving (`_save_to_output_file`)**: This method is called when a `finish_...`
+    tool is successfully processed (via `_process_special_tool_side_effects` during
+    `_handle_tool_call`) or when forced completion occurs (`_handle_max_iterations_reached`).
+    It handles saving the final subtask result.
+    - If the result (from the `finish_...` tool's arguments) is direct content,
+      it's written to the subtask's `output_file` with appropriate formatting based
+      on file extension and embedded metadata.
+    - If the result is a file pointer object `{"path": "..."}`, the referenced
+      workspace file/directory is copied to the `output_file` location.
+    - Handles cases where `output_file` itself is a directory (content saved to a
+      summary file inside it, or source copied into it).
+
+4.  **Completion**: The subtask is marked as `completed` (either by a `finish_...`
+    tool call or by reaching max iterations). Status updates reflecting completion
+    or failure are yielded. The `execute` loop terminates.
 
 Key Data Structures:
 --------------------
@@ -61,8 +111,10 @@ Key Data Structures:
     files, expected `output_type`, `output_schema`.
 *   `Message`: Represents a single turn in the conversation history (system, user,
     assistant, tool).
-*   `ToolCall`: Represents the LLM's request to use a tool, including its arguments
-    and eventual result.
+*   `ToolCall`: Represents the LLM's request to use a tool, including its arguments.
+    It also includes a user-facing message string generated before execution, and
+    eventually the tool's result (when part of an assistant message in history or
+    processed internally).
 *   `ProcessingContext`: Holds shared workflow state like the workspace directory.
 *   `Tool`: Interface for tools the LLM can use.
 
@@ -70,56 +122,59 @@ High-Level Execution Flow Diagram:
 ---------------------------------
 ```ascii
 +-----------------------+
-| Start SubTaskContext  |
-| (Initialize History,  |
-| Tools, System Prompt) |
+| Init SubTaskContext   |
+| (History, Tools,      |
+|  System Prompt)       |
 +-----------+-----------+
             |
+            | (Subtask active & within iters)
             V
-+-----------+-------------+      No
-|    Start LLM Loop       |<--------------------------------+
-|(Max Iterations Limit?)  | Yes                             |
-+-----------+-------------+-------+                         |
-            |                     |                         V
-            V                     |                         |
-+-----------+-------------+       |             +-----------+-----------+
-|   Check Limits (Tokens) |       |             | Force Finish          |
-+-----------+-------------+       |             | (Request Structured   |
-            | Token Limit Exceeded?             | Output -> Save Result)|
-            |----------+ Yes                    +-----------+-----------+
-            V No       |                                  |
-+-----------+-------------+        +-----------------+    |
-|      Execute LLM        |        | Enter Conclusion|    |
-| (Generate Message/      |        | Stage (limit    |    |
-|      Tool Calls)        |        | tools to finish)|    |
-+-----------+-------------+        +--------+--------+    |
-            |                               ^             |
-            V                               |             |
-+-----------+-------------+                 |             |
-|      Tool Call?         |<----------------+             |
-+-----------+-------------+                               |
-            | Yes                                         |
-            V                                             |
-+---------------+---------------+                       |
-|         Execute Tool          |                       |
-|   Add Result to History       |                       |
-+---------------+---------------+                       |
-            |                                             |
-            V                                             |
-+---------------+---------------+                       |
-| Called `finish_...` Tool? |---------------------------+ No (Text Content/Loop Back)
-+---------------+---------------+
-            | Yes
-            V
-+----------------+--------------+
-|   Save Result from Tool Call  |
-|   (SubTask Completed)         |
-+----------------+--------------+
++-----------+-------------+<-----------------------------------------------------+ (Loop if active)
+| LLM Loop                |
+| (Check completion/      |
+|  max_iters)             |
++-----------+-------------+
+            |                                +-----------------------------------+
+            +--(Max iters?)----------------->| `Handle Max Iters`                |
+            | Yes                            |  - Req. structured output         |
+            V No                             |  - Save output                    |
++--------------------------+                 |  - Mark complete                  |
+|   Check Tokens           |                 |  - Log ToolCall to history        |
+| (May enter Conclusion    |                 +-----------+-----------------------+
+|  Stage if limit reached) |                             |
++--------------------------+                             V
+            |                                +-----------+-----------------------+
+            V                                | Yield ToolCall (Task ends)        |
++--------------------------+                 +-----------------------------------+
+| Execute LLM              |
+| (Gen Msg/ToolCalls)      |
++--------------------------+
             |
-+-----------+-----------+
-| SubTask Completed   |
-|  or Failed          |
-+---------------------+
+            | (Tool Calls?)
+            No +-----------------------------+ Yes
+               V                             V (For each ToolCall)
++--------------------------+                +------------------------------------+
+| Yield Text Chunk         |                | `Gen. ToolCall Msg`                |
+| Add Asst Msg to History  |                | Yield ToolCall (w/ user msg)       |
++--------------------------+                | (Yield COMPLETED if finish_*)      |
+            | (Loop)                        +------------------------------------+
+            |                                      |
+            |                                      V (Internal processing)
+            |                               +----------------------------------------+
+            |                               | `_handle_tool_call` (Process ToolCall) |
+            |                               |   - Tool Exec                          |
+            |                               |   - Compress?                          |
+            |                               |   - Save Binaries                      |
+            |                               |   - Side Effects (finish_*, nav)       |
+            |                               |     - finish_*: Save, mark complete    |
+            |                               |   - Serialize Result (JSON)            |
+            |                               +----------------------------------------+
+            |                                            |
+            |                                            V
+            |      +---------------------------------------+
+            |      | Add Tool Result to History            |
+            +------+ (role='tool')                         | (Loop)
+                   +---------------------------------------+
 ```
 """
 
@@ -172,7 +227,7 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_MAX_TOKEN_LIMIT: int = 4096
 DEFAULT_MAX_ITERATIONS: int = 10
-MESSAGE_COMPRESSION_THRESHOLD: int = 2000
+MESSAGE_COMPRESSION_THRESHOLD: int = 4096
 
 DEFAULT_EXECUTION_SYSTEM_PROMPT: str = """
 You are a executing a single subtask from a larger task plan.
@@ -188,7 +243,7 @@ EXECUTION PROTOCOL:
 4. Ensure the final result matches the expected `output_type` and `output_schema`.
 5. **Crucially**: Call `finish_subtask` ONCE at the end with the final result.
     - If the result is content (text, JSON, etc.), provide it directly in the `result` parameter.
-    - If a tool directly generated the final `output_file` (e.g., download_file), provide `result` as `{"path": "relative/path/to/output_file.ext"}`.
+    - If a tool directly generated the final `output_file` (e.g., download_file to `downloaded.pdf` at the root), provide `result` as `{"path": "downloaded.pdf"}`. The path MUST be to a file at the workspace root.
     - Always include relevant `metadata` (title, description, sources). Sources should cite original inputs, not just intermediate files.
 6. Do NOT call `finish_subtask` multiple times. Structure your work to produce the final output, then call `finish_subtask`.
 """
@@ -486,11 +541,11 @@ def json_schema_for_output_type(output_type: str) -> Dict[str, Any]:
 # Define the schema for the file pointer object
 FILE_POINTER_SCHEMA: Dict[str, Any] = {
     "type": "object",
-    "description": "An object indicating the result is a file or directory path within the workspace.",
+    "description": "An object indicating the result is a file path within the workspace.",
     "properties": {
         "path": {
             "type": "string",
-            "description": "The path to the result file or directory relative to the workspace root.",
+            "description": "The path to the result file relative to the workspace root (e.g., 'result_data.json'). Must be at the top level, not in a subdirectory.",
         },
     },
     "required": ["path"],
@@ -505,9 +560,9 @@ class FinishTaskTool(Tool):
 
     name: str = "finish_task"
     description: str = """
-    Finish a task by saving its final result. Provide content OR a file/directory pointer
-    object {"path": "..."} in 'result'. Include 'metadata'.
-    This will hold the final result of all subtasks.
+    Finish a task by saving its final result. Provide content OR a file pointer
+    object {"path": "final_file.ext"} in 'result'. The path must be to a file at the workspace root.
+    Include 'metadata'. This will hold the final result of all subtasks.
     """
     input_schema: Dict[str, Any]  # Defined in __init__
 
@@ -611,37 +666,38 @@ class FinishTaskTool(Tool):
 
 class FinishSubTaskTool(Tool):
     """
-    🏁 Task Completion Tool - Marks a subtask as done and saves its results
+        🏁 Task Completion Tool - Marks a subtask as done and saves its results
 
-    This tool serves as the formal completion mechanism for subtasks by:
-    1. Saving the final output provided in `result`. The `result` can be the actual content
-       (matching the subtask's output schema) OR an object `{"path": "..."}`
-       pointing to a file in the workspace.
-    2. If `result` is a file pointer object, the referenced file is copied to the designated
-       output location (`output_file` defined in the subtask).
-    3. If `result` is content, it's saved directly to the `output_file`.
-    4. Preserving structured metadata about the results.
-    5. Marking the subtask as completed.
+        This tool serves as the formal completion mechanism for subtasks by:
+        1. Saving the final output provided in `result`. The `result` can be the actual content
+           (matching the subtask's output schema) OR an object `{"path": "...
+    "`
+           pointing to a file in the workspace at the root level.
+        2. If `result` is a file pointer object, the referenced file is copied to the designated
+           output location (`output_file` defined in the subtask, which also must be a root-level file).
+        3. If `result` is content, it's saved directly to the `output_file` (a root-level file).
+        4. Preserving structured metadata about the results.
+        5. Marking the subtask as completed.
 
-    **IMPORTANT**:
-    - Provide the final content OR a file pointer object `{"path": "path/to/file"}` in the `result` parameter.
-    - Always include the `metadata`.
+        **IMPORTANT**:
+        - Provide the final content OR a file pointer object `{"path": "path/to/file"}` in the `result` parameter.
+        - Always include the `metadata`.
 
-    Example usage with content (assuming output_type is markdown):
-    finish_subtask(result="Final analysis text...", metadata={...})
+        Example usage with content (assuming output_type is markdown):
+        finish_subtask(result="Final analysis text...", metadata={...})
 
-    Example usage with file path:
-    finish_subtask(result={"path": "intermediate_outputs/final_report.pdf"}, metadata={...})
+        Example usage with file path:
+        finish_subtask(result={"path": "final_report.pdf"}, metadata={...})
 
-    Example usage with directory path:
-    finish_subtask(result={"path": "analysis_results/"}, metadata={...})
+        Example usage with directory path:
+        finish_subtask(result={"path": "analysis_results/"}, metadata={...})
     """
 
     name: str = "finish_subtask"
     description: str = """
-    Finish a subtask by saving its final result. Provide content OR a file/directory pointer
-    object {"path": "..."} in 'result'. Include 'metadata'.
-    The result will be saved to the output_path defined in the subtask.
+    Finish a subtask by saving its final result. Provide content OR a file pointer
+    object {"path": "generated_file.ext"} in 'result'. The path must point to a file at the workspace root.
+    Include 'metadata'. The result will be saved to the output_path defined in the subtask (must also be a root-level file).
     """
     input_schema: Dict[str, Any]  # Defined in __init__
 
@@ -779,7 +835,6 @@ class SubTaskContext:
     history: List[Message]
     iterations: int
     max_iterations: int
-    tool_call_count: int
     sources: List[str]
     progress: List[Any]
     encoding: tiktoken.Encoding
@@ -797,7 +852,7 @@ class SubTaskContext:
         provider: ChatProvider,
         system_prompt: Optional[str] = None,
         use_finish_task: bool = False,
-        max_token_limit: int = DEFAULT_MAX_TOKEN_LIMIT,
+        max_token_limit: int | None = None,
         max_iterations: int = DEFAULT_MAX_ITERATIONS,
         save_output_to_file: bool = True,
     ):
@@ -823,11 +878,11 @@ class SubTaskContext:
         self.model = model
         self.provider = provider
         self.workspace_dir = processing_context.workspace_dir
-        self.max_token_limit = max_token_limit
+        self.max_token_limit = max_token_limit or provider.get_max_token_limit(model)
         self.use_finish_task = use_finish_task
         self.save_output_to_file = save_output_to_file
         self.message_compression_threshold = max(
-            int(max_token_limit // max_iterations),
+            self.max_token_limit // self.subtask.max_iterations // 2,
             MESSAGE_COMPRESSION_THRESHOLD,
         )
 
@@ -883,9 +938,6 @@ class SubTaskContext:
         if max_iterations < 3:
             raise ValueError("max_iterations must be at least 3")
         self.max_iterations = max_iterations
-
-        # Track tool calls for this subtask
-        self.tool_call_count = 0
 
         # Track sources for data lineage
         self.sources = []
@@ -1109,12 +1161,16 @@ class SubTaskContext:
 
     def _save_to_output_file(self, finish_params: dict) -> None:
         """
-        Save the result of a subtask to its designated output path (file or directory).
+        Save the result of a subtask to its designated output file.
         Handles results that are direct content or a file/directory pointer object.
         If the output path is a directory, content is saved to a summary file inside it.
         """
         metadata = finish_params.get("metadata", {})
         result_value = finish_params.get("result")
+        output_path_rel = self.subtask.output_file
+        output_path_abs = self.processing_context.resolve_workspace_path(
+            output_path_rel
+        )
 
         # Add tracked sources to metadata
         if self.sources:
@@ -1125,166 +1181,48 @@ class SubTaskContext:
             else:
                 metadata["sources"] = list(self.sources)
 
-        output_path_rel = (
-            self.subtask.output_file
-        )  # Keep using 'output_file' field for now
-        output_path_abs = self.processing_context.resolve_workspace_path(
-            output_path_rel
-        )
-
-        is_output_path_dir = os.path.isdir(output_path_abs)
-        output_parent_dir = os.path.dirname(output_path_abs)
-
-        # Ensure parent directory exists IF the target itself is not the intended directory
-        if (
-            not is_output_path_dir
-            and output_parent_dir
-            and not os.path.exists(output_parent_dir)
-        ):
-            os.makedirs(output_parent_dir, exist_ok=True)
-        # Ensure the target directory exists IF it's the intended output path
-        elif is_output_path_dir and not os.path.exists(output_path_abs):
-            os.makedirs(output_path_abs, exist_ok=True)
-
         # --- Handle File Pointer Case ---
         if self._is_file_pointer(result_value):
             assert isinstance(result_value, dict)
-            source_path_rel = result_value["path"]
+            source_path_rel_raw = result_value["path"]
+            source_path_rel = os.path.normpath(source_path_rel_raw)
             source_path_abs = self.processing_context.resolve_workspace_path(
                 source_path_rel
             )
 
-            try:
-                if not os.path.exists(source_path_abs):
-                    raise FileNotFoundError(
-                        f"Source path '{source_path_rel}' pointed to by result object not found in workspace."
-                    )
-
-                is_source_path_dir = os.path.isdir(source_path_abs)
-
-                if is_output_path_dir:
-                    # Target is a directory: Copy source *into* it
-                    target_path_abs = os.path.join(
-                        output_path_abs, os.path.basename(source_path_abs)
-                    )
-                    if is_source_path_dir:
-                        shutil.copytree(
-                            source_path_abs, target_path_abs, dirs_exist_ok=True
-                        )  # Overwrite/merge
-                    else:  # Source is a file
-                        shutil.copy2(
-                            source_path_abs, target_path_abs
-                        )  # copy2 preserves metadata
-                else:
-                    # Target is a file path: Source MUST be a file
-                    if is_source_path_dir:
-                        raise ValueError(
-                            f"Cannot copy source directory '{source_path_rel}' to target file path '{output_path_rel}'"
-                        )
-                    else:  # Source is a file
-                        shutil.copy2(source_path_abs, output_path_abs)
-
-            except (FileNotFoundError, ValueError, Exception) as e:
-                error_msg = (
-                    f"Error processing pointer result for '{output_path_rel}': {e}"
+            if source_path_abs != output_path_abs:
+                shutil.copy2(source_path_abs, output_path_abs)
+                logger.info(
+                    f"Successfully copied file '{source_path_abs}' to '{output_path_abs}'."
                 )
-                logger.error(error_msg)
-                # Write error file - choose location based on whether output is dir or file
-                error_file_path = (
-                    os.path.join(output_path_abs, "error.json")
-                    if is_output_path_dir
-                    else output_path_abs
-                )
-                try:
-                    # Ensure parent/target dir exists before writing error file
-                    error_dir = os.path.dirname(error_file_path)
-                    if error_dir and not os.path.exists(error_dir):
-                        os.makedirs(error_dir, exist_ok=True)
-                    with open(error_file_path, "w", encoding="utf-8") as f:
-                        json.dump(
-                            {"error": error_msg, "metadata": metadata}, f, indent=2
-                        )
-                except Exception as write_err:
-                    logger.error(
-                        f"Failed to write error file to {error_file_path}: {write_err}"
-                    )
 
         # --- Handle Direct Content Case ---
         elif result_value is not None:
             result_content = result_value
-
-            if is_output_path_dir:
-                # Output is a directory: Write content to a summary file inside it
-                output_dir_abs = output_path_abs
-                # Determine summary file extension based on output_type, default to .json
-                output_type_map = {
-                    "json": ".json",
-                    "yaml": ".yaml",
-                    "yml": ".yml",
-                    "markdown": ".md",
-                    "md": ".md",
-                    "html": ".html",
-                    "python": ".py",
-                    "javascript": ".js",
-                    "typescript": ".ts",
-                    "shell": ".sh",
-                    "sql": ".sql",
-                    "css": ".css",
-                    "svg": ".svg",
-                    "csv": ".csv",
-                    "jsonl": ".jsonl",
-                    "text": ".txt",
-                    "txt": ".txt",
-                    # Add more mappings as needed
-                }
-                summary_ext = output_type_map.get(
-                    str(self.subtask.output_type).lower(), ".json"
-                )
-                summary_base_name = "summary"
-
-                # Find unique path for summary file
-                summary_path_abs = self._find_unique_summary_path(
-                    output_dir_abs, summary_base_name, summary_ext
-                )
+            if not os.path.exists(output_path_abs):
+                file_ext = os.path.splitext(output_path_rel)[1].lower()
                 self._write_content_to_file(
-                    summary_path_abs, result_content, metadata, summary_ext
+                    output_path_abs, result_content, metadata, file_ext
                 )
-
-            else:
-                # Output is a file path: Write content directly to it (if it doesn't exist)
-                output_file_abs = output_path_abs
-                if os.path.exists(output_file_abs):
-                    logger.warning(
-                        f"Output file '{output_file_abs}' already exists (potentially created by a prior tool).\n                        Consider using a file pointer result if the file was intentionally created by another tool."
-                    )
-                    # NOTE: We might still want to update metadata on the existing file if possible,
-                    # but that's complex. Skipping is safer.
-                else:
-                    file_ext = os.path.splitext(output_path_rel)[1].lower()
-                    self._write_content_to_file(
-                        output_file_abs, result_content, metadata, file_ext
-                    )
 
         # --- Handle Null Result Case ---
         else:  # result_value is None
-            error_msg = f"finish_... tool called with null 'result' for target '{output_path_rel}'"
+            error_msg = f"finish_... tool called with null 'result' for target file '{output_path_rel}'"
             logger.error(error_msg)
-            # Write error file - choose location based on whether output is dir or file
-            error_file_path = (
-                os.path.join(output_path_abs, "error.json")
-                if is_output_path_dir
-                else output_path_abs
+            error_filename = (
+                f"error_null_{os.path.basename(output_path_rel)}.json"
+                if os.path.basename(output_path_rel)
+                else f"error_null_{self.subtask.id}.json"
+            )
+            error_file_path_abs = self.processing_context.resolve_workspace_path(
+                error_filename
             )
             try:
-                # Ensure parent/target dir exists before writing error file
-                error_dir = os.path.dirname(error_file_path)
-                if error_dir and not os.path.exists(error_dir):
-                    os.makedirs(error_dir, exist_ok=True)
-                with open(error_file_path, "w", encoding="utf-8") as f:
+                with open(error_file_path_abs, "w", encoding="utf-8") as f:
                     json.dump({"error": error_msg, "metadata": metadata}, f, indent=2)
             except Exception as write_err:
                 logger.error(
-                    f"Failed to write error file to {error_file_path}: {write_err}"
+                    f"Failed to write error file to {error_file_path_abs}: {write_err}"
                 )
 
     async def execute(
@@ -1309,19 +1247,22 @@ class SubTaskContext:
         if self.subtask.input_files:
             # Document that input files can be directories
             input_files_str = "\n".join(
-                [f"- {f} (may be a directory)" for f in self.subtask.input_files]
+                [
+                    f"- {f} (must be at root unless it is an initial task input file. Initial inputs can be files or directories in subdirs.)"
+                    for f in self.subtask.input_files
+                ]
             )
             prompt_parts.append(
-                f"**Input Files/Directories for this Subtask:**\n{input_files_str}\n"
+                f"**Input Files for this Subtask:**\n{input_files_str}\n"
             )
 
         # Mention output path can be a directory
         prompt_parts.append(
-            f"**Expected Output Path (file or directory):**\n{self.subtask.output_file}\n"
+            f"**Expected Output File (must be at workspace root):**\n{self.subtask.output_file}\n"
         )
 
         prompt_parts.append(
-            "Please perform the subtask based on the provided context, instructions, inputs, and expected output path."  # Updated prompt wording
+            "Please perform the subtask based on the provided context, instructions, inputs, and expected output file."
         )
         task_prompt = "\n".join(prompt_parts)
 
@@ -1358,11 +1299,13 @@ class SubTaskContext:
                 if message.content:
                     yield Chunk(content=str(message.content))
                 for tool_call in message.tool_calls:
+                    message = self._generate_tool_call_message(tool_call)
                     yield ToolCall(
                         id=tool_call.id,
                         name=tool_call.name,
                         args=tool_call.args,
-                        subtask_id=self.subtask.content,  # Still use content as ID? Or subtask.id if available? Keeping content for now.
+                        subtask_id=self.subtask.id,
+                        message=message,
                     )
                     if (
                         tool_call.name == "finish_subtask"
@@ -1438,7 +1381,6 @@ class SubTaskContext:
 
         for i, msg in enumerate(self.history):
             msg_token_count = self._count_single_message_tokens(msg)
-            logger.info(f"  Msg {i}: Role={msg.role}, Tokens={msg_token_count}")
 
         message = await self.provider.generate_message(
             messages=self.history,
@@ -1514,207 +1456,214 @@ class SubTaskContext:
 
         return message
 
+    def _generate_tool_call_message(self, tool_call: ToolCall) -> str:
+        """
+        Generate a message object from a tool call.
+        """
+        for tool in self.tools:
+            if tool.name == tool_call.name:
+                return tool.user_message(tool_call.args)
+
+        raise ValueError(f"Tool '{tool_call.name}' not found in available tools.")
+
     async def _handle_tool_call(self, tool_call: ToolCall) -> Message:
         """
-        Handle a tool call by executing it and returning the result as a message.
+        Handle a tool call by executing it, processing its result, and returning a message for history.
+        This involves execution, potential compression, artifact handling, special side-effects, and serialization.
 
         Args:
             tool_call (ToolCall): The tool call from the assistant message.
 
         Returns:
-            Message: A message object with role 'tool' containing the result.
+            Message: A message object with role 'tool' containing the processed and serialized result.
         """
-        # Increment tool call counter
-        self.tool_call_count += 1
+        # 1. Execute the tool
+        raw_tool_result = await self._process_tool_execution(tool_call)
 
-        args_json = json.dumps(tool_call.args)[:100]
+        # 2. Conditionally compress the tool result
+        processed_tool_result = await self._maybe_compress_tool_result(
+            raw_tool_result, tool_call
+        )
 
-        tool_result_container = await self._execute_tool(tool_call)
-        tool_result_content = (
-            tool_result_container.result
-        )  # This is the dict returned by process()
+        # 3. Handle binary artifacts (images, audio)
+        if isinstance(processed_tool_result, dict):
+            if "image" in processed_tool_result:
+                processed_tool_result = self._handle_binary_artifact(
+                    processed_tool_result, tool_call.name, "image"
+                )
+            elif "audio" in processed_tool_result:
+                processed_tool_result = self._handle_binary_artifact(
+                    processed_tool_result, tool_call.name, "audio"
+                )
 
-        # ====> Check and Compress Large Tool Result <====
+        # 4. Process special tool side-effects (e.g., finish_task, browser navigation)
+        self._process_special_tool_side_effects(processed_tool_result, tool_call)
+
+        # 5. Serialize the final processed result for history
+        content_str = self._serialize_tool_result_for_history(
+            processed_tool_result, tool_call.name
+        )
+
+        # Return the tool result as a message to be added to history
+        return Message(
+            role="tool",
+            tool_call_id=tool_call.id,
+            name=tool_call.name,
+            content=content_str,
+        )
+
+    async def _process_tool_execution(self, tool_call: ToolCall) -> Any:
+        """Executes the specified tool and returns its raw result."""
+        for tool in self.tools:
+            if tool.name == tool_call.name:
+                return await tool.process(self.processing_context, tool_call.args)
+        raise ValueError(f"Tool '{tool_call.name}' not found in available tools.")
+
+    async def _maybe_compress_tool_result(
+        self, tool_result: Any, tool_call: ToolCall
+    ) -> Any:
+        """Compresses the tool result if it's too large."""
         # Skip compression for finish tools as their structure is required for saving
-        if tool_call.name not in ("finish_task", "finish_subtask"):
-            try:
-                # Serialize the result to check its size
-                result_str_for_size_check = json.dumps(
-                    tool_result_content, ensure_ascii=False
+        if tool_call.name in ("finish_task", "finish_subtask"):
+            return tool_result
+
+        try:
+            # Serialize the result to check its size
+            result_str_for_size_check = json.dumps(tool_result, ensure_ascii=False)
+            result_token_count = len(self.encoding.encode(result_str_for_size_check))
+
+            if result_token_count > self.message_compression_threshold:
+                logger.info(
+                    f"Tool result for '{tool_call.name}' ({result_token_count} tokens) "
+                    f"exceeds threshold ({self.message_compression_threshold}). Compressing..."
                 )
-                result_token_count = len(
-                    self.encoding.encode(result_str_for_size_check)
+                compressed_result = await self._compress_tool_result(
+                    tool_result, tool_call.name, tool_call.args
                 )
-
-                if result_token_count > self.message_compression_threshold:
-                    logger.info(
-                        f"Tool result for '{tool_call.name}' ({result_token_count} tokens) "
-                        f"exceeds threshold ({self.message_compression_threshold}). Compressing..."
+                new_token_count = len(
+                    self.encoding.encode(
+                        json.dumps(compressed_result, ensure_ascii=False)
                     )
-                    compressed_result = await self._compress_tool_result(
-                        tool_result_content, tool_call.name, tool_call.args
-                    )
-                    tool_result_content = compressed_result
-                    new_token_count = len(
-                        self.encoding.encode(
-                            json.dumps(tool_result_content, ensure_ascii=False)
-                        )
-                    )
-                    logger.info(
-                        f"Compressed tool result for '{tool_call.name}' to {new_token_count} tokens."
-                    )
-
-            except TypeError as e:
-                logger.warning(
-                    f"Could not serialize tool result for '{tool_call.name}' to check size: {e}. Skipping compression check."
                 )
-            except Exception as e:
-                logger.error(
-                    f"Error during tool result compression check for '{tool_call.name}': {e}"
+                logger.info(
+                    f"Compressed tool result for '{tool_call.name}' to {new_token_count} tokens."
                 )
-        # ====> End Compression Logic <====
+                return compressed_result
+            return tool_result
+        except TypeError as e:
+            logger.warning(
+                f"Could not serialize tool result for '{tool_call.name}' to check size: {e}. Skipping compression check."
+            )
+            return tool_result
+        except Exception as e:
+            logger.error(
+                f"Error during tool result compression check for '{tool_call.name}': {e}"
+            )
+            return tool_result  # Return original result if compression check fails
 
-        # ---> IMAGE HANDLING LOGIC <---
-        if isinstance(tool_result_content, dict) and "image" in tool_result_content:
-            image_base64 = tool_result_content.get("image")
-            if isinstance(image_base64, str):
-                try:
-                    # Generate a unique filename
-                    image_filename = f"{uuid.uuid4().hex[:8]}.png"  # Assuming png, might need more logic for other types
-                    image_rel_path = os.path.join(
-                        "artifacts", image_filename
-                    )  # Save in an 'artifacts' subfolder
-                    image_abs_path = self.processing_context.resolve_workspace_path(
-                        image_rel_path
-                    )
+    def _handle_binary_artifact(
+        self, tool_result: Dict[str, Any], tool_call_name: str, artifact_type: str
+    ) -> Dict[str, Any]:
+        """Handles saving binary artifacts (image or audio) and updating the tool result."""
+        artifact_key = artifact_type  # "image" or "audio"
+        base64_data = tool_result.get(artifact_key)
 
-                    # Ensure artifacts directory exists
-                    os.makedirs(os.path.dirname(image_abs_path), exist_ok=True)
+        if not isinstance(base64_data, str):
+            logger.warning(
+                f"No valid base64 data found for artifact type '{artifact_type}' in tool '{tool_call_name}' result."
+            )
+            return tool_result
 
-                    # Decode and write the image
-                    image_data = base64.b64decode(image_base64)
-                    with open(image_abs_path, "wb") as img_file:
-                        img_file.write(image_data)
+        # Determine file extension
+        file_ext = "png"  # Default for images
+        if artifact_type == "audio":
+            file_ext = str(tool_result.get("format", "mp3")).strip().lower()
 
-                    print(
-                        f"Saved base64 image from tool '{tool_call.name}' to {image_rel_path}"
-                    )
+        try:
+            # Generate a unique filename
+            artifact_filename = f"artifact_{uuid.uuid4().hex[:8]}.{file_ext}"
+            artifact_rel_path = artifact_filename  # Save at the root
+            artifact_abs_path = self.processing_context.resolve_workspace_path(
+                artifact_rel_path
+            )
 
-                    # Replace image data with file path in the result
-                    tool_result_content["image_path"] = (
-                        image_rel_path  # Use a new key to avoid confusion
-                    )
-                    del tool_result_content["image"]  # Remove the large base64 string
+            # Ensure artifacts directory exists (No longer needed for root saving, parent is workspace_dir)
+            # os.makedirs(os.path.dirname(artifact_abs_path), exist_ok=True)
 
-                except (binascii.Error, ValueError) as e:
-                    logger.error(
-                        f"Failed to decode base64 image from tool '{tool_call.name}': {e}"
-                    )
-                    # Optionally replace with an error indicator
-                    tool_result_content["image_path"] = f"Error decoding image: {e}"
-                    del tool_result_content["image"]
-                except Exception as e:
-                    logger.error(
-                        f"Failed to save image artifact from tool '{tool_call.name}': {e}"
-                    )
-                    # Optionally replace with an error indicator
-                    tool_result_content["image_path"] = f"Error saving image: {e}"
-                    del tool_result_content["image"]
-        # ---> END IMAGE HANDLING LOGIC <---
+            # Decode and write the artifact
+            decoded_data = base64.b64decode(base64_data)
+            with open(artifact_abs_path, "wb") as artifact_file:
+                artifact_file.write(decoded_data)
 
-        # ---> START NEW AUDIO HANDLING LOGIC <---
-        elif isinstance(tool_result_content, dict) and "audio" in tool_result_content:
-            audio_base64 = tool_result_content.get("audio")
-            # Default to mp3 if format not provided, ensure format is clean
-            audio_format = str(tool_result_content.get("format", "mp3")).strip().lower()
+            print(
+                f"Saved base64 {artifact_type} from tool '{tool_call_name}' to {artifact_rel_path}"
+            )
 
-            if isinstance(audio_base64, str):
-                try:
-                    # Generate a unique filename with the specified format
-                    audio_filename = f"artifact_{uuid.uuid4().hex[:8]}.{audio_format}"
-                    audio_rel_path = os.path.join("artifacts", audio_filename)
-                    audio_abs_path = self.processing_context.resolve_workspace_path(
-                        audio_rel_path
-                    )
+            # Update result: add path, remove original base64 data
+            tool_result[f"{artifact_type}_path"] = artifact_rel_path
+            del tool_result[artifact_key]
+            if artifact_type == "audio" and "format" in tool_result:
+                del tool_result["format"]  # Clean up format key for audio
 
-                    # Ensure artifacts directory exists
-                    os.makedirs(os.path.dirname(audio_abs_path), exist_ok=True)
+        except (binascii.Error, ValueError) as e:
+            logger.error(
+                f"Failed to decode base64 {artifact_type} from tool '{tool_call_name}': {e}"
+            )
+            tool_result[f"{artifact_type}_path"] = (
+                f"Error decoding {artifact_type}: {e}"
+            )
+            if artifact_key in tool_result:
+                del tool_result[artifact_key]
+            if artifact_type == "audio" and "format" in tool_result:
+                del tool_result["format"]
+        except Exception as e:
+            logger.error(
+                f"Failed to save {artifact_type} artifact from tool '{tool_call_name}': {e}"
+            )
+            tool_result[f"{artifact_type}_path"] = f"Error saving {artifact_type}: {e}"
+            if artifact_key in tool_result:
+                del tool_result[artifact_key]
+            if artifact_type == "audio" and "format" in tool_result:
+                del tool_result["format"]
+        return tool_result
 
-                    # Decode and write the audio data
-                    audio_data = base64.b64decode(audio_base64)
-                    with open(audio_abs_path, "wb") as audio_file:
-                        audio_file.write(audio_data)
-
-                    print(
-                        f"Saved base64 audio from tool '{tool_call.name}' to {audio_rel_path}"
-                    )
-
-                    # Replace audio data with file path in the result
-                    tool_result_content["audio_path"] = audio_rel_path
-                    del tool_result_content["audio"]  # Remove the large base64 string
-
-                except (binascii.Error, ValueError) as e:
-                    logger.error(
-                        f"Failed to decode base64 audio from tool '{tool_call.name}': {e}"
-                    )
-                    tool_result_content["audio_path"] = f"Error decoding audio: {e}"
-                    if "audio" in tool_result_content:
-                        del tool_result_content["audio"]
-                    if "audio_format" in tool_result_content:
-                        del tool_result_content["audio_format"]
-                except Exception as e:
-                    logger.error(
-                        f"Failed to save audio artifact from tool '{tool_call.name}': {e}"
-                    )
-                    tool_result_content["audio_path"] = f"Error saving audio: {e}"
-                    if "audio" in tool_result_content:
-                        del tool_result_content["audio"]
-                    if "audio_format" in tool_result_content:
-                        del tool_result_content["audio_format"]
-        # ---> END NEW AUDIO HANDLING LOGIC <---
-
+    def _process_special_tool_side_effects(self, tool_result: Any, tool_call: ToolCall):
+        """Handles side effects for specific tools, like 'browser' or 'finish_*'."""
         if tool_call.name == "browser" and isinstance(tool_call.args, dict):
             action = tool_call.args.get("action", "")
             url = tool_call.args.get("url", "")
             if action == "navigate" and url:
-                self.sources.append(url)
+                if url not in self.sources:  # Avoid duplicates
+                    self.sources.append(url)
 
-        # Handle finish_subtask tool specially
         if tool_call.name == "finish_task":
             self.subtask.completed = True
             self.subtask.end_time = int(time.time())
             if self.save_output_to_file:
-                self._save_to_output_file(cast(dict, tool_result_content))
+                self._save_to_output_file(cast(dict, tool_result))
 
         if tool_call.name == "finish_subtask":
             self.subtask.completed = True
             self.subtask.end_time = int(time.time())
             if self.save_output_to_file:
-                self._save_to_output_file(cast(dict, tool_result_content))
+                self._save_to_output_file(cast(dict, tool_result))
 
-        # Serialize the result content carefully
-        # If tool_result_content is already a primitive or simple dict/list, json.dumps is fine.
-        # If it contains complex objects, ensure they are serializable or handle appropriately.
+    def _serialize_tool_result_for_history(
+        self, tool_result: Any, tool_name: str
+    ) -> str:
+        """Serializes the tool result to a JSON string for message history."""
         try:
-            content_str = json.dumps(tool_result_content, ensure_ascii=False)
+            return json.dumps(tool_result, ensure_ascii=False)
         except TypeError as e:
             logger.error(
-                f"Failed to serialize tool result for '{tool_call.name}' to JSON: {e}. Result: {tool_result_content}"
+                f"Failed to serialize tool result for '{tool_name}' to JSON: {e}. Result: {tool_result}"
             )
-            content_str = json.dumps(
+            return json.dumps(
                 {
                     "error": f"Failed to serialize tool result: {e}",
-                    "result_repr": repr(tool_result_content),
+                    "result_repr": repr(tool_result),
                 }
             )
-
-        # Return the tool result as a message to be added to history
-        return Message(
-            role="tool",
-            tool_call_id=tool_result_container.id,
-            name=tool_call.name,
-            content=content_str,  # Store the structured result back as JSON string
-        )
 
     async def _handle_max_iterations_reached(self):
         """
@@ -1879,7 +1828,7 @@ class SubTaskContext:
                 },
             }
 
-    async def _execute_tool(self, tool_call: ToolCall) -> ToolCall:
+    async def _execute_tool(self, tool_call: ToolCall) -> Any:
         """
         Execute a tool call using the available tools.
 
@@ -1891,24 +1840,9 @@ class SubTaskContext:
         """
         for tool in self.tools:
             if tool.name == tool_call.name:
-                result = await tool.process(self.processing_context, tool_call.args)
-                message = tool.user_message(tool_call.args)
+                return await tool.process(self.processing_context, tool_call.args)
 
-                return ToolCall(
-                    id=tool_call.id,
-                    name=tool_call.name,
-                    args=tool_call.args,
-                    result=result,
-                    message=message,
-                )
-
-        # Tool not found
-        return ToolCall(
-            id=tool_call.id,
-            name=tool_call.name,
-            args=tool_call.args,
-            result={"error": f"Tool '{tool_call.name}' not found"},
-        )
+        raise ValueError(f"Tool '{tool_call.name}' not found")
 
     async def _compress_tool_result(
         self, result_content: Any, tool_name: str, tool_args: dict
@@ -1939,11 +1873,15 @@ class SubTaskContext:
             }
 
         compression_system_prompt = f"""
-        You are a result compression assistant. Your task is to summarize the provided large tool result content concisely,
-        retaining the core meaning, key information, and overall structure (especially if it's JSON).
-        This summary will replace the original large result in the conversation history to save space.
+        # Goal
+        Reduce the size of the 'TOOL RESULT TO COMPRESS' by removing duplicate information and summarizing the content.
+        Ensure that all information vital to achieving the subtask's objective ('{self.subtask.content}') is retained.
 
-        Context:
+        # Output Format
+        - If the input is JSON, the output should ideally be a valid, smaller JSON object preserving the essential structure and data.
+        - If the input is not JSON or cannot be effectively summarized as JSON, provide a concise text summary.
+
+        # Context
         - Tool Name: {tool_name}
         - Tool Arguments: {json.dumps(tool_args, ensure_ascii=False)}
         - Overall Task: {self.task.title} - {self.task.description}
@@ -1951,10 +1889,12 @@ class SubTaskContext:
 
         Instructions:
         - Focus ONLY on summarizing the 'TOOL RESULT TO COMPRESS' provided below.
+        - **Crucially, ensure that all information vital to achieving the subtask's objective ('{self.subtask.content}') is retained.**
+        - Keep all URLs, file paths, and other references to external sources.
+        - Keep all code snippets and other non-text information.
+        - Keep all name, entity, and other specific information.
         - Output *only* the compressed summary.
-        - If the input is JSON, the output should ideally be a valid, smaller JSON object preserving the essential structure and data.
-        - If the input is not JSON or cannot be effectively summarized as JSON, provide a concise text summary.
-        - Make the summary significantly shorter than the original (~{original_token_count} tokens). Aim for less than {self.message_compression_threshold} tokens.
+        - KEEP all relevant details of the original content.
         """
 
         compression_user_prompt = f"TOOL RESULT TO COMPRESS:\n---\n{original_content_str}\n---\nCOMPRESSED SUMMARY:"

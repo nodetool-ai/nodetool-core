@@ -12,6 +12,8 @@ import imaplib
 from datetime import datetime, timedelta
 from typing import Any, Dict, Tuple
 
+import html2text
+
 from nodetool.agents.tools.base import Tool
 from nodetool.workflows.processing_context import ProcessingContext
 
@@ -259,7 +261,6 @@ class SearchEmailTool(Tool):
                         if header_data.is_multipart():
                             for part in header_data.walk():
                                 # Check if part.get_payload() returns a list
-                                payload = part.get_payload()
                                 if part.get_content_type() == "text/plain":
                                     content_text = part.get_payload(decode=True)
                                 elif part.get_content_type() == "text/html":
@@ -272,10 +273,11 @@ class SearchEmailTool(Tool):
                                 return decode_bytes(content)
                             return str(content)
 
-                        if content_text:
+                        # Prefer HTML part
+                        if content_html:
+                            body = html2text.html2text(to_str(content_html))
+                        elif content_text:
                             body = to_str(content_text)
-                        elif content_html:
-                            body = to_str(content_html)
                         else:
                             body = ""
 

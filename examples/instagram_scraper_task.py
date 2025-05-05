@@ -33,8 +33,13 @@ async def test_instagram_scraper_task(
 
     # 5. Create a sample subtask
     subtask = SubTask(
-        content="Use BrowserTool to search for Instagram trends and create a summary",
-        output_file="instagram_trends.json",
+        content="""
+        Use google and browser tools to search for Instagram trends.
+        Find example posts for each trend.
+        Create a summary of the trends, hashtags, and viral content.
+        Return all trends you can find.
+        """,
+        output_file="instagram_trends_detailed.json",
         input_files=[],
         output_type="json",
         output_schema=json.dumps(
@@ -48,8 +53,25 @@ async def test_instagram_scraper_task(
                             "properties": {
                                 "hashtag": {"type": "string"},
                                 "description": {"type": "string"},
-                                "popularity": {"type": "string"},
+                                "popularity_score": {
+                                    "type": "string",
+                                    "description": "e.g., High, Medium, Low or a numeric score",
+                                },
+                                "example_posts": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "object",
+                                        "properties": {
+                                            "post_url": {"type": "string"},
+                                            "caption": {"type": "string"},
+                                            "like_count": {"type": "integer"},
+                                            "comment_count": {"type": "integer"},
+                                        },
+                                        "required": ["post_url"],
+                                    },
+                                },
                             },
+                            "required": ["hashtag", "description"],
                         },
                     },
                 },
@@ -68,7 +90,7 @@ async def test_instagram_scraper_task(
         tools=tools,
         model=model,
         provider=provider,
-        max_iterations=10,
+        max_iterations=20,
     )
 
     # 7. Execute the subtask

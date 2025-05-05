@@ -151,18 +151,21 @@ class BrowserTool(Tool):
         if not url:
             return {"error": "URL is required"}
 
-        # headless = True # This is now controlled by _initialize_browser's internal launch_args_dict
-        playwright_instance = None
         browser_context = None
 
         try:
             # Initialize browser using the helper function
             browser = await context.get_browser()
             browser_context = await browser.new_context(
-                bypass_csp=True,
+                locale="en-US",
+                timezone_id="America/New_York",
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.93 Safari/537.36",
             )
 
             page = await browser_context.new_page()
+            await page.add_init_script(
+                "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
+            )
 
             # Navigate to the URL with the specified timeout
             await page.goto(url, wait_until="domcontentloaded", timeout=timeout)

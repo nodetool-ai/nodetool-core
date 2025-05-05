@@ -78,9 +78,9 @@ if __name__ == "__main__":
     asyncio.run(
         test_coding_agent(
             provider=OpenAIProvider(),
-            model="gpt-4o",
-            planning_model="o3",
-            reasoning_model="o3",
+            model="gpt-4o-mini",
+            planning_model="o4-mini",
+            reasoning_model="o4-mini",
         )
     )
     # asyncio.run(test_coding_agent(provider=GeminiProvider(), model="gemini-2.0-flash"))
