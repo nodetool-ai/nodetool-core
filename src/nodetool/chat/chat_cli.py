@@ -752,7 +752,6 @@ class ChatCLI:
             SaveAssetTool(),
             ScreenshotTool(),
             SearchEmailTool(),
-            ReasoningTool(),
         ]
 
     async def setup_prompt_session(self):
