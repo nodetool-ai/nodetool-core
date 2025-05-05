@@ -3,6 +3,7 @@ import os
 import platform
 import shutil
 import subprocess
+import re
 
 
 class WorkspaceManager:
@@ -30,8 +31,8 @@ class WorkspaceManager:
                 If None, a timestamped directory is created automatically.
         """
         if workspace_dir:
-            self.workspace_root = workspace_dir
-            self.current_workspace = workspace_dir
+            self.workspace_root = os.path.abspath(workspace_dir)
+            self.current_workspace = self.workspace_root
         else:
             # Use ~/.nodetool-workspaces as the default root
             self.workspace_root = os.path.expanduser("~/.nodetool-workspaces")
@@ -39,10 +40,37 @@ class WorkspaceManager:
             self.create_new_workspace()
 
     def create_new_workspace(self):
-        """Creates a new workspace with a unique name"""
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        workspace_name = f"workspace_{timestamp}"
+        """Creates a new workspace named with an incrementing number."""
+        existing_workspaces = []
+        try:
+            items = os.listdir(self.workspace_root)
+            for item in items:
+                # Check if the item is a directory and its name is purely numeric
+                if os.path.isdir(os.path.join(self.workspace_root, item)):
+                    match = re.match(r"^(\d+)$", item)  # Match only digits
+                    if match:
+                        try:
+                            existing_workspaces.append(int(match.group(1)))
+                        except ValueError:
+                            # Ignore items that look like numbers but aren't valid integers
+                            pass
+        except FileNotFoundError:
+            # Handle case where workspace_root doesn't exist yet (though __init__ should create it)
+            pass
+
+        next_num = 1
+        if existing_workspaces:
+            next_num = max(existing_workspaces) + 1
+
+        workspace_name = str(next_num)  # Use just the number as the name
         workspace_path = os.path.join(self.workspace_root, workspace_name)
+
+        # Handle potential race condition: ensure the directory doesn't exist before creating
+        while os.path.exists(workspace_path):
+            next_num += 1
+            workspace_name = str(next_num)
+            workspace_path = os.path.join(self.workspace_root, workspace_name)
+
         os.makedirs(workspace_path, exist_ok=True)
         self.current_workspace = workspace_path
         print(f"Created new workspace at: {self.current_workspace}")

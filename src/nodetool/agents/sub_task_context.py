@@ -131,7 +131,7 @@ import mimetypes
 from nodetool.chat.providers import ChatProvider
 from nodetool.agents.tools.base import Tool
 from nodetool.metadata.types import Message, MessageFile, SubTask, Task, ToolCall
-from nodetool.workflows.types import Chunk, TaskUpdate, TaskUpdateEvent, AgentUpdate
+from nodetool.workflows.types import Chunk, TaskUpdate, TaskUpdateEvent
 from nodetool.workflows.processing_context import ProcessingContext
 
 import tiktoken
@@ -173,28 +173,13 @@ DEFAULT_MAX_TOKEN_LIMIT: int = 4096
 DEFAULT_MAX_ITERATIONS: int = 10
 MESSAGE_COMPRESSION_THRESHOLD: int = 2000
 
-DEFAULT_REASONING_SYSTEM_PROMPT: str = """
-You are performing a reasoning subtask within a larger plan.
-YOUR GOAL IS TO ANALYZE AND SYNTHESIZE INFORMATION.
-
-REASONING PROTOCOL:
-1. Focus on understanding the core question or objective of this reasoning step: {{ subtask_content }}.
-2. Carefully analyze the provided input files/artifacts. Use `read_file` efficiently if needed to understand their contents.
-3. Synthesize the information, draw connections, identify patterns, or perform the specific reasoning required.
-4. Structure your thoughts and conclusions clearly in your response.
-5. **Crucially**: Call `finish_subtask` ONCE at the end with your final reasoning output or analysis as the `result`.
-    - The `result` should be the text of your analysis/conclusion.
-    - Include relevant `metadata` (title, description, sources - citing inputs).
-6. Minimize the use of other tools unless absolutely necessary for understanding the inputs. The focus is on cognitive work, not external actions.
-"""
-
 DEFAULT_EXECUTION_SYSTEM_PROMPT: str = """
 You are a executing a single subtask from a larger task plan.
 YOUR GOAL IS TO PRODUCE THE INTENDED `output_file` FOR THIS SUBTASK.
 
 EXECUTION PROTOCOL:
 1. Focus exclusively on the current subtask objective: {{ subtask_content }}.
-2. Use the provided input files/artifacts efficiently:
+2. Use the provided input files efficiently:
     - Read only the necessary parts of input files using available tools if possible.
     - Avoid loading entire large files into your working context unless absolutely required.
     - Prefer tools that process data directly (e.g., summarizing, extracting) over just reading content.
@@ -528,10 +513,6 @@ class FinishTaskTool(Tool):
         content_schema: Optional[Dict[str, Any]] = None
         # Check if the output type is binary
         if is_binary_output_type(self.output_type):
-            logger.info(
-                f"Output type '{self.output_type}' detected as binary. Forcing FILE_POINTER_SCHEMA for FinishTaskTool content."
-            )
-            # For binary types, the only valid "content" is a file pointer.
             content_schema = FILE_POINTER_SCHEMA
         else:
             # --- Start Refined Schema Logic ---
@@ -666,10 +647,6 @@ class FinishSubTaskTool(Tool):
         content_schema: Optional[Dict[str, Any]] = None
         # Check if the output type is binary
         if is_binary_output_type(self.output_type):
-            logger.info(
-                f"Output type '{self.output_type}' detected as binary. Forcing FILE_POINTER_SCHEMA for FinishSubTaskTool content."
-            )
-            # For binary types, the only valid "content" is a file pointer.
             content_schema = FILE_POINTER_SCHEMA
         else:
             # --- Start Refined Schema Logic ---
@@ -847,22 +824,7 @@ class SubTaskContext:
         # --- Prepare prompt templates ---
         self.jinja_env = Environment(loader=BaseLoader())
 
-        # Select the appropriate system prompt template and context
-        if subtask.is_reasoning:
-            base_system_prompt = system_prompt or DEFAULT_REASONING_SYSTEM_PROMPT
-            prompt_context = {
-                "subtask_content": self.subtask.content,
-                # Reasoning tasks might still refer to an expected output format/schema
-                "output_schema": json.dumps(
-                    self.subtask.output_schema or {"type": "string"}, indent=2
-                ),
-            }
-            # Reasoning subtasks always use finish_subtask and typically output text/analysis
-            finish_tool_output_schema = self.subtask.output_schema or {"type": "string"}
-            self.use_finish_task = False  # Reasoning tasks are intermediate steps
-            finish_tool_class = FinishSubTaskTool
-
-        elif use_finish_task:
+        if use_finish_task:
             base_system_prompt = system_prompt or DEFAULT_FINISH_TASK_SYSTEM_PROMPT
             prompt_context = {
                 "output_schema": json.dumps(
@@ -1117,7 +1079,6 @@ class SubTaskContext:
                             logger.warning(f"Metadata YAML dump failed: {ye}")
                         f.write("-- End Metadata -- */\n\n")
                     f.write(str(content))
-            logger.info(f"Successfully wrote content to {file_path}")
         except Exception as e:
             logger.error(f"Error writing content to {file_path}: {e}")
             # Attempt to write error info even if content write failed
@@ -1161,8 +1122,6 @@ class SubTaskContext:
             output_path_rel
         )
 
-        logger.info(f"Saving result for subtask to designated path: {output_path_abs}")
-
         is_output_path_dir = os.path.isdir(output_path_abs)
         output_parent_dir = os.path.dirname(output_path_abs)
 
@@ -1184,9 +1143,6 @@ class SubTaskContext:
             source_path_abs = self.processing_context.resolve_workspace_path(
                 source_path_rel
             )
-            logger.info(
-                f"Result is a pointer to '{source_path_rel}'. Processing copy/move..."
-            )
 
             try:
                 if not os.path.exists(source_path_abs):
@@ -1202,16 +1158,10 @@ class SubTaskContext:
                         output_path_abs, os.path.basename(source_path_abs)
                     )
                     if is_source_path_dir:
-                        logger.info(
-                            f"Copying directory from {source_path_abs} into {output_path_abs}"
-                        )
                         shutil.copytree(
                             source_path_abs, target_path_abs, dirs_exist_ok=True
                         )  # Overwrite/merge
                     else:  # Source is a file
-                        logger.info(
-                            f"Copying file from {source_path_abs} into {output_path_abs}"
-                        )
                         shutil.copy2(
                             source_path_abs, target_path_abs
                         )  # copy2 preserves metadata
@@ -1222,14 +1172,7 @@ class SubTaskContext:
                             f"Cannot copy source directory '{source_path_rel}' to target file path '{output_path_rel}'"
                         )
                     else:  # Source is a file
-                        logger.info(
-                            f"Copying file from {source_path_abs} to {output_path_abs}"
-                        )
                         shutil.copy2(source_path_abs, output_path_abs)
-
-                logger.info(
-                    f"Successfully processed pointer result to {output_path_abs}"
-                )
 
             except (FileNotFoundError, ValueError, Exception) as e:
                 error_msg = (
@@ -1259,7 +1202,6 @@ class SubTaskContext:
         # --- Handle Direct Content Case ---
         elif result_value is not None:
             result_content = result_value
-            logger.info(f"Result is direct content. Determining where to write...")
 
             if is_output_path_dir:
                 # Output is a directory: Write content to a summary file inside it
@@ -1294,7 +1236,6 @@ class SubTaskContext:
                 summary_path_abs = self._find_unique_summary_path(
                     output_dir_abs, summary_base_name, summary_ext
                 )
-                logger.info(f"Writing content summary to {summary_path_abs}")
                 self._write_content_to_file(
                     summary_path_abs, result_content, metadata, summary_ext
                 )
@@ -1310,7 +1251,6 @@ class SubTaskContext:
                     # but that's complex. Skipping is safer.
                 else:
                     file_ext = os.path.splitext(output_path_rel)[1].lower()
-                    logger.info(f"Writing content to new file {output_file_abs}")
                     self._write_content_to_file(
                         output_file_abs, result_content, metadata, file_ext
                     )
@@ -1339,7 +1279,7 @@ class SubTaskContext:
 
     async def execute(
         self,
-    ) -> AsyncGenerator[Union[Chunk, ToolCall, TaskUpdate, AgentUpdate], None]:
+    ) -> AsyncGenerator[Union[Chunk, ToolCall, TaskUpdate], None]:
         """
         Runs a single subtask to completion using the LLM-driven execution loop.
 
@@ -1363,14 +1303,6 @@ class SubTaskContext:
             )
             prompt_parts.append(
                 f"**Input Files/Directories for this Subtask:**\n{input_files_str}\n"
-            )
-
-        # Removed the "Arguments for this Subtask" section as content is now instructions
-
-        if self.subtask.artifacts:
-            artifacts_str = "\n".join([f"- {f}" for f in self.subtask.artifacts])
-            prompt_parts.append(
-                f"**Artifacts generated by this Subtask:**\n{artifacts_str}\n"
             )
 
         # Mention output path can be a directory
@@ -1488,22 +1420,9 @@ class SubTaskContext:
         unique_tools = {tool.name: tool for tool in tools_for_iteration}
         final_tools = list(unique_tools.values())
 
-        # --- Log token count before calling LLM ---
-        logger.info(
-            f"--- Iteration {self.iterations}: Message History Token Breakdown ---"
-        )
         for i, msg in enumerate(self.history):
             msg_token_count = self._count_single_message_tokens(msg)
             logger.info(f"  Msg {i}: Role={msg.role}, Tokens={msg_token_count}")
-        logger.info(f"--- End of Message History Token Breakdown ---")
-
-        current_token_count = self._count_tokens(self.history)
-        logger.info(
-            f"Iteration {self.iterations}: History token count before LLM call: {current_token_count} (Limit: {self.max_token_limit})"
-        )
-        if self.in_conclusion_stage:
-            logger.info(">>> IN CONCLUSION STAGE <<<")
-        # ---
 
         message = await self.provider.generate_message(
             messages=self.history,
@@ -1579,7 +1498,6 @@ class SubTaskContext:
         self.tool_call_count += 1
 
         args_json = json.dumps(tool_call.args)[:100]
-        print(f"Executing tool: {tool_call.name} with {args_json}")
 
         tool_result_container = await self._execute_tool(tool_call)
         tool_result_content = (
@@ -1632,7 +1550,7 @@ class SubTaskContext:
             if isinstance(image_base64, str):
                 try:
                     # Generate a unique filename
-                    image_filename = f"artifact_{uuid.uuid4().hex[:8]}.png"  # Assuming png, might need more logic for other types
+                    image_filename = f"{uuid.uuid4().hex[:8]}.png"  # Assuming png, might need more logic for other types
                     image_rel_path = os.path.join(
                         "artifacts", image_filename
                     )  # Save in an 'artifacts' subfolder
@@ -1657,10 +1575,6 @@ class SubTaskContext:
                         image_rel_path  # Use a new key to avoid confusion
                     )
                     del tool_result_content["image"]  # Remove the large base64 string
-
-                    # Add artifact path to subtask
-                    if image_rel_path not in self.subtask.artifacts:
-                        self.subtask.artifacts.append(image_rel_path)
 
                 except (binascii.Error, ValueError) as e:
                     logger.error(
@@ -1708,10 +1622,6 @@ class SubTaskContext:
                     # Replace audio data with file path in the result
                     tool_result_content["audio_path"] = audio_rel_path
                     del tool_result_content["audio"]  # Remove the large base64 string
-
-                    # Add artifact path to subtask
-                    if audio_rel_path not in self.subtask.artifacts:
-                        self.subtask.artifacts.append(audio_rel_path)
 
                 except (binascii.Error, ValueError) as e:
                     logger.error(

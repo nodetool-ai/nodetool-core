@@ -25,6 +25,7 @@ from typing import Any, Sequence
 
 import openai
 from pydantic import BaseModel
+from rich.console import Console
 
 from nodetool.agents.tools.base import Tool
 from nodetool.common.environment import Environment
@@ -87,75 +88,3 @@ def default_serializer(obj: Any) -> dict:
     if isinstance(obj, BaseModel):
         return obj.model_dump()
     raise TypeError("Type not serializable")
-
-
-async def run_tool(
-    context: ProcessingContext,
-    tool_call: ToolCall,
-    tools: Sequence[Tool],
-) -> ToolCall:
-    """Execute a tool call requested by the chat model.
-
-    Locates the appropriate tool implementation by name from the available tools,
-    executes it with the provided arguments, and captures the result.
-
-    Args:
-        context (ProcessingContext): The processing context containing user information and state
-        tool_call (ToolCall): The tool call to execute, containing name, ID, and arguments
-        tools (Sequence[Tool]): Available tools that can be executed
-
-    Returns:
-        ToolCall: The original tool call object updated with the execution result
-
-    Raises:
-        AssertionError: If the specified tool is not found in the available tools
-    """
-
-    def find_tool(name):
-        for tool in tools:
-            if tool.name == name:
-                return tool
-        return None
-
-    tool = find_tool(tool_call.name)
-
-    assert tool is not None, f"Tool {tool_call.name} not found"
-
-    result = await tool.process(context, tool_call.args)
-
-    return ToolCall(
-        id=tool_call.id,
-        name=tool_call.name,
-        args=tool_call.args,
-        result=result,
-    )
-
-
-async def run_tools(
-    context: ProcessingContext,
-    tool_calls: Sequence[ToolCall],
-    tools: Sequence[Tool],
-) -> list[ToolCall]:
-    """Execute a list of tool calls in parallel.
-
-    Runs multiple tool calls concurrently using asyncio.gather to improve performance when
-    multiple tools need to be executed. Each tool call is processed independently.
-
-    Args:
-        context (ProcessingContext): The processing context containing user information and state
-        tool_calls (Sequence[ToolCall]): A sequence of tool calls to execute
-        tools (Sequence[Tool]): Available tools that can be executed
-
-    Returns:
-        list[ToolCall]: List of tool calls with their execution results
-    """
-    return await asyncio.gather(
-        *[
-            run_tool(
-                context=context,
-                tool_call=tool_call,
-                tools=tools,
-            )
-            for tool_call in tool_calls
-        ]
-    )

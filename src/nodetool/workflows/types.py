@@ -7,14 +7,6 @@ from nodetool.types.job import JobUpdate
 from nodetool.types.prediction import Prediction
 
 
-class AgentUpdate(BaseModel):
-    """An update from an agent."""
-
-    type: Literal["agent_update"] = "agent_update"
-    node_id: str
-    message: str
-
-
 class TaskUpdateEvent(str, Enum):
     """Enum for different task update event types."""
 

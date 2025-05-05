@@ -28,12 +28,11 @@ import traceback
 import uuid
 import json
 import msgpack
-from typing import List
+from typing import List, Sequence
 from enum import Enum
 
 from fastapi import WebSocket
 
-from nodetool.chat.chat import run_tool
 from nodetool.chat.providers import get_provider
 from nodetool.agents.tools.base import Tool, get_tool_by_name
 from nodetool.chat.providers.base import ChatProvider
@@ -66,6 +65,47 @@ def provider_from_model(model: str) -> ChatProvider:
         return get_provider(Provider.Gemini)
     else:
         raise ValueError(f"Unsupported model: {model}")
+
+
+async def run_tool(
+    context: ProcessingContext,
+    tool_call: ToolCall,
+    tools: Sequence[Tool],
+) -> ToolCall:
+    """Execute a tool call requested by the chat model.
+
+    Locates the appropriate tool implementation by name from the available tools,
+    executes it with the provided arguments, and captures the result.
+
+    Args:
+        context (ProcessingContext): The processing context containing user information and state
+        tool_call (ToolCall): The tool call to execute, containing name, ID, and arguments
+        tools (Sequence[Tool]): Available tools that can be executed
+
+    Returns:
+        ToolCall: The original tool call object updated with the execution result
+
+    Raises:
+        AssertionError: If the specified tool is not found in the available tools
+    """
+
+    def find_tool(name):
+        for tool in tools:
+            if tool.name == name:
+                return tool
+        return None
+
+    tool = find_tool(tool_call.name)
+
+    assert tool is not None, f"Tool {tool_call.name} not found"
+    result = await tool.process(context, tool_call.args)
+
+    return ToolCall(
+        id=tool_call.id,
+        name=tool_call.name,
+        args=tool_call.args,
+        result=result,
+    )
 
 
 class WebSocketMode(str, Enum):
@@ -160,7 +200,7 @@ class ChatWebSocketRunner:
         def init_tool(name: str) -> Tool:
             tool_class = get_tool_by_name(name)
             if tool_class:
-                return tool_class(processing_context.workspace_dir)
+                return tool_class()
             else:
                 raise ValueError(f"Tool {name} not found")
 

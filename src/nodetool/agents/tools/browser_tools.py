@@ -16,7 +16,6 @@ from playwright.async_api import Page, Playwright, BrowserContext, async_playwri
 import os
 from typing import Any
 import asyncio
-import json
 
 
 async def extract_metadata(page: Page):
@@ -139,10 +138,6 @@ class BrowserTool(Tool):
                 "type": "string",
                 "description": "URL to navigate to",
             },
-            "output_file": {
-                "type": "string",
-                "description": "Path to save the extracted content as a json file",
-            },
         },
         "required": ["url"],
     }
@@ -220,25 +215,12 @@ class BrowserTool(Tool):
             h.ignore_mailto_links = True
             content = h.handle(await page.content())
 
-            # Handle output file if specified
-            if output_file:
-                full_path = context.resolve_workspace_path(output_file)
-                os.makedirs(os.path.dirname(full_path), exist_ok=True)
-                with open(full_path, "w", encoding="utf-8") as f:
-                    json.dump(
-                        {
-                            "url": url,
-                            "content": content,
-                            "metadata": metadata,
-                        },
-                        f,
-                        indent=4,
-                    )
-                result["output_file"] = full_path
-            else:
-                result["content"] = content
-
-            return result
+            return {
+                "success": True,
+                "url": url,
+                "content": content,
+                "metadata": metadata,
+            }
         except Exception as e:
             print(e)
             return {"error": f"Error fetching page: {str(e)}"}

@@ -48,6 +48,9 @@ from .pdf_tools import (
 # Search and database tools
 from .chroma_tools import ChromaHybridSearchTool, ChromaIndexTool, ChromaTextSearchTool
 
+# Reasoning tool
+from .reasoning import ReasoningTool
+
 # Email tools
 from nodetool.agents.tools.email_tools import (
     AddLabelTool,
@@ -87,6 +90,7 @@ __all__ = [
     "OpenAIWebSearchTool",
     "ReadAssetTool",
     "ReadFileTool",
+    "ReasoningTool",
     "SaveAssetTool",
     "ScreenshotTool",
     "SearchEmailTool",

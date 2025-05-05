@@ -176,12 +176,8 @@ openai_models = [
 ]
 
 
-@router.get("/language_models")
-async def get_language_models_endpoint(
-    user: str = Depends(current_user),
-) -> list[LanguageModel]:
+async def get_language_models() -> list[LanguageModel]:
     env = Environment.get_environment()
-
     models = []
 
     if "ANTHROPIC_API_KEY" in env:
@@ -199,6 +195,13 @@ async def get_language_models_endpoint(
         ]
     )
     return models
+
+
+@router.get("/language_models")
+async def get_language_models_endpoint(
+    user: str = Depends(current_user),
+) -> list[LanguageModel]:
+    return await get_language_models()
 
 
 @router.get("/ollama_model_info")

@@ -18,12 +18,9 @@ import datetime
 import json
 import os
 import shutil
-from typing import AsyncGenerator, List, Sequence, Union, Any
+from typing import AsyncGenerator, List, Sequence, Union, Any, Optional
 import uuid
 from jinja2 import BaseLoader, Environment as JinjaEnvironment
-from rich.console import Console
-from rich.table import Table
-from rich.live import Live
 import asyncio
 import traceback
 
@@ -45,6 +42,7 @@ from nodetool.agents.sub_task_context import (
     DEFAULT_MAX_TOKEN_LIMIT,
     SubTaskContext,
 )
+from nodetool.ui.console import AgentConsole
 
 
 def sanitize_file_path(file_path: str) -> str:
@@ -107,6 +105,7 @@ class Agent:
         enable_analysis_phase: bool = True,
         enable_data_contracts_phase: bool = True,
         task: Task | None = None,  # Add optional task parameter
+        verbose: bool = True,  # Add verbose flag
     ):
         """
         Initialize the base agent.
@@ -131,6 +130,7 @@ class Agent:
             enable_analysis_phase (bool, optional): Whether to run the analysis phase (PHASE 2)
             enable_data_contracts_phase (bool, optional): Whether to run the data contracts phase (PHASE 3)
             task (Task, optional): Pre-defined task to execute, skipping planning
+            verbose (bool, optional): Enable/disable console output (default: True)
         """
         self.name = name
         self.objective = objective
@@ -147,62 +147,15 @@ class Agent:
         self.max_subtasks = max_subtasks
         self.system_prompt = system_prompt or ""
         self.results: Any = None
-        self.console = Console()
         self.output_schema = output_schema
         self.output_type = output_type
         self.enable_analysis_phase = enable_analysis_phase
         self.enable_data_contracts_phase = enable_data_contracts_phase
         self.initial_task = task  # Store the initial task
-
-    def _create_subtasks_table(self, task: Task, tool_calls: List[ToolCall]) -> Table:
-        """Create a rich table for displaying subtasks and their tool calls."""
-        table = Table(title=f"Task:\\n{self.objective}", title_justify="left")
-        table.add_column("Status", style="cyan", no_wrap=True, ratio=1)
-        table.add_column("Content", style="green", ratio=5)
-        table.add_column("Tools", style="magenta", ratio=3)
-        table.add_column("Files", style="white", ratio=3)  # Combined I/O column
-
-        for subtask in task.subtasks:
-            status = "✓" if subtask.completed else "▶" if subtask.is_running() else "⏳"
-            status_style = (
-                "green"
-                if subtask.completed
-                else "yellow" if subtask.is_running() else "white"
-            )
-            subtask_tool_calls = [
-                call for call in tool_calls if call.subtask_id == subtask.content
-            ]
-            tool_calls_str = "\n".join(
-                [
-                    f"{call.name}()\n{call.args}"
-                    for call in subtask_tool_calls
-                    if call.name not in ["finish_task", "finish_subtask"]
-                ]
-            )
-
-            if subtask.is_reasoning:
-                tool_calls_str = "Reasoning" + "\n" + tool_calls_str
-
-            # Combine inputs and outputs with color coding
-            files_str_parts = []
-            if subtask.input_files:
-                input_str = ", ".join(subtask.input_files)
-                files_str_parts.append(f"[blue]Inputs:[/] {input_str}")
-            if subtask.output_file:
-                # Display only the basename for cleaner output
-                output_basename = os.path.basename(subtask.output_file)
-                files_str_parts.append(f"[yellow]Output:[/] {output_basename}")
-
-            files_str = "\n".join(files_str_parts) if files_str_parts else "none"
-
-            table.add_row(
-                f"[{status_style}]{status}[/]",
-                subtask.content,
-                tool_calls_str,
-                files_str,  # Use the combined files string
-            )
-
-        return table
+        self.verbose = verbose  # Store verbose flag
+        self.display_manager = AgentConsole(
+            verbose=self.verbose
+        )  # Initialize display manager
 
     async def execute(
         self,
@@ -237,6 +190,7 @@ class Agent:
             input_files.append(os.path.join("input_files", os.path.basename(file_path)))
 
         tools = list(self.tools)
+        task: Optional[Task] = None  # Initialize task
 
         if self.initial_task:
             task = self.initial_task
@@ -245,18 +199,11 @@ class Agent:
                     subtask.output_file = os.path.join(
                         processing_context.workspace_dir, subtask.output_file
                     )
-                if subtask.artifacts:
-                    subtask.artifacts = [
-                        (
-                            os.path.join(processing_context.workspace_dir, art)
-                            if not os.path.isabs(art)
-                            else art
-                        )
-                        for art in subtask.artifacts
-                    ]
 
         else:
-            print(f"Agent '{self.name}' planning task for objective: {self.objective}")
+            self.display_manager.print(
+                f"Agent '{self.name}' planning task for objective: {self.objective}"
+            )
             self.provider.log_file = str(
                 get_log_path(
                     sanitize_file_path(
@@ -268,6 +215,7 @@ class Agent:
             task_planner = TaskPlanner(
                 provider=self.provider,
                 model=self.planning_model,
+                reasoning_model=self.reasoning_model,
                 objective=self.objective,
                 workspace_dir=processing_context.workspace_dir,
                 execution_tools=tools,
@@ -276,6 +224,7 @@ class Agent:
                 enable_analysis_phase=self.enable_analysis_phase,
                 enable_data_contracts_phase=self.enable_data_contracts_phase,
                 use_structured_output=True,
+                verbose=self.verbose,  # Pass verbose flag
             )
 
             async for chunk in task_planner.create_task(
@@ -284,7 +233,7 @@ class Agent:
                 yield chunk
 
             task = task_planner.task
-            assert task is not None, "Task was not created"
+            assert task is not None, "Task was not created by planner"
 
             yield TaskUpdate(
                 task=task,
@@ -297,11 +246,16 @@ class Agent:
         if self.output_schema and len(task.subtasks) > 0:
             task.subtasks[-1].output_schema = json.dumps(self.output_schema)
 
-        tool_calls = []
+        tool_calls: List[ToolCall] = []
 
-        with Live(
-            self._create_subtasks_table(task, tool_calls), refresh_per_second=4
-        ) as live:
+        # Start live display managed by AgentConsole
+        self.display_manager.start_live(
+            self.display_manager.create_execution_table(
+                title=f"Task:\n{self.objective}", task=task, tool_calls=tool_calls
+            )
+        )
+
+        try:
             executor = TaskExecutor(
                 provider=self.provider,
                 model=self.model,
@@ -318,49 +272,72 @@ class Agent:
             # Execute all subtasks within this task and yield results
             async for item in executor.execute_tasks(processing_context):
                 self._save_task(task, processing_context.workspace_dir)
-                live.update(self._create_subtasks_table(task, tool_calls))
+                # Update tool_calls list if item is a ToolCall
                 if isinstance(item, ToolCall):
                     tool_calls.append(item)
-                    if item.name == "finish_task":
-                        self.results = item.args["result"]
-                        yield TaskUpdate(
-                            task=task,
-                            event=TaskUpdateEvent.TASK_COMPLETED,
-                        )
-                if isinstance(item, TaskUpdate):
-                    yield item
-                    timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-                    subtask_title = item.subtask.content if item.subtask else ""
-                    subtask_title = subtask_title[:20].translate(
-                        str.maketrans(
-                            {
-                                " ": "_",
-                                "\n": "_",
-                                ".": "_",
-                                "/": "_",
-                                "\\": "_",
-                                ":": "_",
-                                "-": "_",
-                                "=": "_",
-                                "+": "_",
-                                "*": "_",
-                                "?": "_",
-                                "!": "_",
-                            }
-                        )
+
+                # Create the updated table and update the live display
+                new_table = self.display_manager.create_execution_table(
+                    title=f"Task:\n{self.objective}", task=task, tool_calls=tool_calls
+                )
+                self.display_manager.update_live(new_table)
+
+                # Yield the item
+                if isinstance(item, ToolCall) and item.name == "finish_task":
+                    self.results = item.args["result"]
+                    yield TaskUpdate(
+                        task=task,
+                        event=TaskUpdateEvent.TASK_COMPLETED,
                     )
-                    self.provider.log_file = str(
-                        get_log_path(
-                            sanitize_file_path(
-                                f"{timestamp}__{self.name}__{item.task.title}__{subtask_title}.jsonl"
+                elif isinstance(item, TaskUpdate):
+                    yield item
+                    # Update provider log file when a subtask starts/completes
+                    if item.event in [
+                        TaskUpdateEvent.SUBTASK_STARTED,
+                        TaskUpdateEvent.SUBTASK_COMPLETED,
+                    ]:
+                        timestamp = datetime.datetime.now().strftime(
+                            "%Y-%m-%d_%H-%M-%S"
+                        )
+                        subtask_title = item.subtask.content if item.subtask else ""
+                        subtask_title = subtask_title[:20].translate(
+                            str.maketrans(
+                                {
+                                    " ": "_",
+                                    "\n": "_",
+                                    ".": "_",
+                                    "/": "_",
+                                    "\\": "_",
+                                    ":": "_",
+                                    "-": "_",
+                                    "=": "_",
+                                    "+": "_",
+                                    "*": "_",
+                                    "?": "_",
+                                    "!": "_",
+                                }
                             )
                         )
-                    )
+                        self.provider.log_file = str(
+                            get_log_path(
+                                sanitize_file_path(
+                                    f"{timestamp}__{self.name}__{item.task.title}__{subtask_title}.jsonl"
+                                )
+                            )
+                        )
+                elif isinstance(
+                    item, (Chunk, ToolCall)
+                ):  # Yield chunks and other tool calls too
+                    yield item
+
+        finally:
+            # Ensure live display is stopped
+            self.display_manager.stop_live()
 
         if not self.output_schema and not self.output_type:
             self.results = executor.get_output_files()
 
-        print(self.provider.usage)
+        self.display_manager.print(self.provider.usage)
 
     def get_results(self) -> List[Any]:
         """
@@ -396,16 +373,10 @@ SINGLE_SUBTASK_DEFINITION_SCHEMA = {
             "type": "string",
             "description": "High-level natural language instructions for the agent executing this subtask.",
         },
-        "artifacts": {
-            "type": "array",
-            "description": "Any additional artifact files generated (relative paths).",
-            "items": {"type": "string"},
-        },
     },
     "additionalProperties": False,
     "required": [
         "content",
-        "artifacts",
     ],
 }
 
@@ -490,8 +461,7 @@ class SingleTaskAgent:
         template_string = """
 You are the {{ name }} agent.
 Your goal is to define a *single* subtask to achieve the given objective.
-You must define the subtask's execution instructions (`content`)
-and specify the artifacts that will be generated (relative paths).
+You must define the subtask's execution instructions (`content`) and specify the output type (`output_type`).
 
 Objective: {{ objective }}
 Initial Input Files Available:
@@ -562,21 +532,6 @@ Generate a JSON object conforming EXACTLY to the 'SingleSubtaskDefinition' schem
                 # --- Validate Subtask Data ---
                 validation_errors = []
 
-                # 2. Validate paths (output, inputs, artifacts)
-                try:
-                    if "artifacts" in subtask_data:
-                        cleaned_artifacts = []
-                        for i, f in enumerate(subtask_data.get("artifacts", [])):
-                            cleaned_artifacts.append(
-                                clean_and_validate_path(
-                                    context.workspace_dir, f, f"artifacts[{i}]"
-                                )
-                            )
-                        subtask_data["artifacts"] = cleaned_artifacts
-
-                except ValueError as path_err:
-                    validation_errors.append(f"Path Validation Error: {path_err}")
-
                 # Check for other required fields implicitly handled by schema, but double-check content
                 if not subtask_data.get("content"):
                     validation_errors.append(
@@ -609,7 +564,6 @@ Generate a JSON object conforming EXACTLY to the 'SingleSubtaskDefinition' schem
                 # Ensure all fields expected by SubTask are present or defaulted
                 subtask_args = {
                     "content": subtask_data["content"],
-                    "artifacts": subtask_data.get("artifacts", []),
                     "input_files": self.input_files,
                     "output_type": self.output_type,
                     "output_schema": json.dumps(self.output_schema),
@@ -687,14 +641,86 @@ Generate a JSON object conforming EXACTLY to the 'SingleSubtaskDefinition' schem
         )
 
         # Execute the subtask and yield all its updates
+        final_result_from_tool = None
         async for item in subtask_context.execute():
             if isinstance(item, ToolCall) and item.name in [
                 "finish_subtask",
                 "finish_task",
             ]:
                 if isinstance(item.args, dict):
-                    self.results = item.args.get("result")
-            yield item
+                    # Capture the direct result from the finish tool call args
+                    final_result_from_tool = item.args.get("result")
+            yield item  # Continue yielding progress
+
+        # --- Post-Execution Result Processing ---
+        output_file_path_abs = None
+        if self.subtask and self.subtask.output_file:
+            # Construct absolute path from relative path stored in subtask
+            output_file_path_abs = os.path.join(
+                context.workspace_dir, self.subtask.output_file
+            )
+            # Ensure the output directory exists (it should, but double-check)
+            os.makedirs(os.path.dirname(output_file_path_abs), exist_ok=True)
+
+        processed_result = (
+            final_result_from_tool  # Start with the result from the tool call
+        )
+
+        # Scenario 1: Tool returned a path (or we expect output in the designated file)
+        # Check if the result looks like a path structure OR if an output file exists
+        result_is_path_dict = (
+            isinstance(processed_result, dict)
+            and "path" in processed_result
+            and isinstance(processed_result.get("path"), str)
+        )
+        output_file_to_read = None
+
+        if result_is_path_dict:
+            # Prefer path from result dict if available and seems valid
+            # Ensure processed_result is actually a dict before accessing "path"
+            if isinstance(processed_result, dict):  # <-- Added check
+                maybe_path = os.path.join(
+                    context.workspace_dir, processed_result["path"]
+                )
+                if os.path.exists(maybe_path):
+                    output_file_to_read = maybe_path
+                elif output_file_path_abs and os.path.exists(
+                    output_file_path_abs
+                ):  # Fallback to subtask's path
+                    output_file_to_read = output_file_path_abs
+            # else: If not a dict, can't have a path key, do nothing here
+        elif output_file_path_abs and os.path.exists(output_file_path_abs):
+            # If result wasn't a path dict, but the expected output file exists, read it
+            output_file_to_read = output_file_path_abs
+
+        if output_file_to_read:
+            print(
+                f"Single Task Agent: Reading final result from file: {output_file_to_read}"
+            )
+            try:
+                with open(output_file_to_read, "r") as f:
+                    file_content = f.read()
+                # Try parsing if output type suggests structured data (e.g., JSON)
+                if self.output_type == "json":
+                    try:
+                        processed_result = json.loads(file_content)
+                    except json.JSONDecodeError:
+                        print(
+                            f"Single Task Agent: Warning - Failed to parse JSON content from {output_file_to_read}. Returning raw content."
+                        )
+                        processed_result = file_content  # Fallback to raw content
+                else:
+                    processed_result = (
+                        file_content  # Return raw content for non-JSON types
+                    )
+            except Exception as read_err:
+                print(
+                    f"Single Task Agent: Error reading output file {output_file_to_read}: {read_err}"
+                )
+                # Keep the original `processed_result` (which might be the path dict or None)
+
+        # Update self.results with the potentially processed content
+        self.results = processed_result
 
         # Execution finished (successfully or not, handled by SubTaskContext)
         print(

@@ -6,26 +6,83 @@ It processes user input, generates responses, and handles tool calls and their r
 """
 
 import json
-from typing import List, Optional
+from typing import List, Optional, Sequence
 
+from nodetool.agents.tools.base import Tool
+from nodetool.ui import console
 from nodetool.workflows.types import Chunk
 from nodetool.chat.providers.base import ChatProvider
-from nodetool.chat.chat import run_tool, default_serializer
+from nodetool.chat.chat import default_serializer
 from nodetool.metadata.types import Message, ToolCall
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.agents.tools import (
-    Tool,
-    SearchEmailTool,
-    GoogleSearchTool,
     AddLabelTool,
+    ArchiveEmailTool,
     BrowserTool,
-    ScreenshotTool,
+    ConvertPDFToMarkdownTool,
+    DownloadFileTool,
     ExtractPDFTablesTool,
     ExtractPDFTextTool,
-    ConvertPDFToMarkdownTool,
-    CreateAppleNoteTool,
-    ReadAppleNotesTool,
+    GoogleGroundedSearchTool,
+    GoogleImageGenerationTool,
+    GoogleImagesTool,
+    GoogleNewsTool,
+    GoogleSearchTool,
+    ListAssetsDirectoryTool,
+    OpenAIImageGenerationTool,
+    OpenAITextToSpeechTool,
+    OpenAIWebSearchTool,
+    ReadAssetTool,
+    SaveAssetTool,
+    ScreenshotTool,
+    SearchEmailTool,
 )
+from rich.status import Status
+
+
+async def run_tool(
+    status: Status,
+    context: ProcessingContext,
+    tool_call: ToolCall,
+    tools: Sequence[Tool],
+) -> ToolCall:
+    """Execute a tool call requested by the chat model.
+
+    Locates the appropriate tool implementation by name from the available tools,
+    executes it with the provided arguments, and captures the result.
+
+    Args:
+        console (Console): The console to use for status updates
+        context (ProcessingContext): The processing context containing user information and state
+        tool_call (ToolCall): The tool call to execute, containing name, ID, and arguments
+        tools (Sequence[Tool]): Available tools that can be executed
+
+    Returns:
+        ToolCall: The original tool call object updated with the execution result
+
+    Raises:
+        AssertionError: If the specified tool is not found in the available tools
+    """
+
+    def find_tool(name):
+        for tool in tools:
+            if tool.name == name:
+                return tool
+        return None
+
+    tool = find_tool(tool_call.name)
+
+    assert tool is not None, f"Tool {tool_call.name} not found"
+
+    status.update(tool.user_message(tool_call.args), spinner="dots")
+    result = await tool.process(context, tool_call.args)
+
+    return ToolCall(
+        id=tool_call.id,
+        name=tool_call.name,
+        args=tool_call.args,
+        result=result,
+    )
 
 
 async def process_regular_chat(
@@ -33,7 +90,7 @@ async def process_regular_chat(
     messages: List[Message],
     model: str,
     provider: ChatProvider,
-    workspace_dir: str,
+    status: Status,
     context: ProcessingContext,
     debug_mode: bool = False,
 ) -> List[Message]:
@@ -44,7 +101,8 @@ async def process_regular_chat(
         user_input: The text input from the user
         messages: The current message history
         model: The AI model to use
-        tools: Available tools
+        provider: The chat provider to use
+        console: The console to use for status updates
         context: The processing context
         debug_mode: Whether to display debug information about tool calls
 
@@ -59,16 +117,26 @@ async def process_regular_chat(
     messages_to_send = messages
 
     tools: List[Tool] = [
-        SearchEmailTool(),
-        GoogleSearchTool(),
         AddLabelTool(),
-        BrowserTool(use_readability=True),
-        ScreenshotTool(),
+        ArchiveEmailTool(),
+        BrowserTool(),
+        ConvertPDFToMarkdownTool(),
+        DownloadFileTool(),
         ExtractPDFTablesTool(),
         ExtractPDFTextTool(),
-        ConvertPDFToMarkdownTool(),
-        CreateAppleNoteTool(),
-        ReadAppleNotesTool(),
+        GoogleGroundedSearchTool(),
+        GoogleImageGenerationTool(),
+        GoogleImagesTool(),
+        GoogleNewsTool(),
+        GoogleSearchTool(),
+        ListAssetsDirectoryTool(),
+        OpenAIImageGenerationTool(),
+        OpenAITextToSpeechTool(),
+        OpenAIWebSearchTool(),
+        ReadAssetTool(),
+        SaveAssetTool(),
+        ScreenshotTool(),
+        SearchEmailTool(),
     ]
 
     while True:
@@ -93,7 +161,12 @@ async def process_regular_chat(
                     print(f"  Name: {chunk.name}")
                     print(f"  Arguments: {json.dumps(chunk.args, indent=2)}")
 
-                tool_result = await run_tool(context, chunk, tools)
+                tool_result = await run_tool(
+                    status=status,
+                    context=context,
+                    tool_call=chunk,
+                    tools=tools,
+                )
 
                 # Display tool result in debug mode
                 if debug_mode:
