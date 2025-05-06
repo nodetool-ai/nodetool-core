@@ -128,6 +128,7 @@ import base64
 import binascii
 import datetime
 import mimetypes
+import re
 from nodetool.chat.providers import ChatProvider
 from nodetool.agents.tools.base import Tool
 from nodetool.metadata.types import Message, MessageFile, SubTask, Task, ToolCall
@@ -272,6 +273,15 @@ _known_text_types: set[str] = {
     "xml",
     "rst",  # Added more text types
 }
+
+
+def _remove_think_tags(text_content: Optional[str]) -> Optional[str]:
+    if text_content is None:
+        return None
+    # Use regex to remove <think>...</think> blocks, including newlines within them.
+    # re.DOTALL makes . match newlines.
+    # We also strip leading/trailing whitespace from the result.
+    return re.sub(r"<think>.*?</think>", "", text_content, flags=re.DOTALL).strip()
 
 
 def is_binary_output_type(output_type: str) -> bool:
@@ -1436,6 +1446,20 @@ class SubTaskContext:
             tools=final_tools,
         )
 
+        # Clean assistant message content
+        if isinstance(message.content, str):
+            message.content = _remove_think_tags(message.content)
+        elif isinstance(message.content, list):
+            for part_dict in message.content:  # Iterate directly over parts
+                if isinstance(part_dict, dict) and part_dict.get("type") == "text":
+                    text_val = part_dict.get("text")
+                    if isinstance(text_val, str):
+                        cleaned_text = _remove_think_tags(text_val)
+                        part_dict["text"] = cleaned_text
+                    elif text_val is None:
+                        cleaned_text = _remove_think_tags(None)  # Explicitly pass None
+                        part_dict["text"] = cleaned_text  # Assigns None back
+
         # Check if the message contains output files and use them as subtask output
         if hasattr(message, "output_files") and message.output_files:
             # Use the first output file as the subtask output
@@ -1946,6 +1970,26 @@ class SubTaskContext:
                 tools=[],
                 max_tokens=self.message_compression_threshold,  # Limit the summary size
             )
+
+            # Clean compression_response.content before str() and strip()
+            if isinstance(compression_response.content, str):
+                compression_response.content = _remove_think_tags(
+                    compression_response.content
+                )
+            elif isinstance(compression_response.content, list):
+                for (
+                    part_dict
+                ) in compression_response.content:  # Iterate directly over parts
+                    if isinstance(part_dict, dict) and part_dict.get("type") == "text":
+                        text_val = part_dict.get("text")
+                        if isinstance(text_val, str):
+                            cleaned_text = _remove_think_tags(text_val)
+                            part_dict["text"] = cleaned_text
+                        elif text_val is None:
+                            cleaned_text = _remove_think_tags(
+                                None
+                            )  # Explicitly pass None
+                            part_dict["text"] = cleaned_text  # Assigns None back
 
             compressed_content_str = str(compression_response.content).strip()
 

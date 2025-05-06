@@ -103,17 +103,13 @@ class SecretsModel(BaseModel):
         default=None,
         description="FAL API key for accessing FAL.ai's serverless AI infrastructure",
     )
-    BRIGHTDATA_API_KEY: str | None = Field(
+    SERPAPI_API_KEY: str | None = Field(
         default=None,
-        description="Brightdata API key for accessing Brightdata's proxy infrastructure",
+        description="API key for accessing SerpAPI scraping infrastructure",
     )
-    BRIGHTDATA_SERP_ZONE: str | None = Field(
+    BROWSER_URL: str | None = Field(
         default=None,
-        description="Brightdata SERP zone for accessing Brightdata's SERP infrastructure",
-    )
-    BRIGHTDATA_SCRAPING_BROWSER_ENDPOINT: str | None = Field(
-        default=None,
-        description="Brightdata scraping browser endpoint for accessing Brightdata's proxy infrastructure",
+        description="Browser URL for accessing a browser instance",
     )
     DATA_FOR_SEO_LOGIN: str | None = Field(
         default=None,

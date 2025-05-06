@@ -4,6 +4,7 @@ from collections.abc import Sequence
 from datetime import datetime
 from enum import Enum
 from urllib.parse import urlparse
+from playwright.async_api import async_playwright, Browser
 import io
 import json
 import multiprocessing
@@ -2111,3 +2112,86 @@ class ProcessingContext:
             # return workspace_dir
 
         return abs_path
+
+    async def get_browser(
+        self,
+    ) -> Browser:
+        """
+        Initializes a Playwright browser instance (local or remote).
+
+        Returns:
+            A Playwright browser instance.
+        """
+        from urllib.parse import urlparse, urlunparse, parse_qs, urlencode
+
+        if getattr(self, "_browser", None):
+            return self._browser  # type: ignore
+
+        playwright_instance = await async_playwright().start()
+
+        # User-defined launch arguments and query parameters from the user's request
+        launch_args_dict = {
+            "headless": False,
+            "stealth": True,  # This will be handled by specific args for local, and sent for remote
+            "args": ["--window-size=1920,1080", "--force-color-profile=srgb"],
+        }
+
+        # For local launch, add stealth-related args if "stealth" is true
+        local_launch_actual_args = list(launch_args_dict["args"])  # Make a copy
+        if launch_args_dict.get("stealth"):
+            local_launch_actual_args.append(
+                "--disable-blink-features=AutomationControlled"
+            )
+
+        browser_url_env = Environment.get("BROWSER_URL")
+
+        if browser_url_env:
+            # Logic for remote browser connection using BROWSER_URL
+            print(f"Connecting to browser at {browser_url_env}")
+
+            # Query parameters from the user's request
+            query_params_to_add = {
+                "proxy": "residential",
+                "proxyCountry": "us",
+                "timeout": "60000",
+                "launch": json.dumps(launch_args_dict),
+            }
+
+            parsed_url = urlparse(browser_url_env)
+            current_query_dict = parse_qs(parsed_url.query, keep_blank_values=True)
+
+            # Update current_query_dict with new params.
+            # For each key in query_params_to_add, set it in current_query_dict.
+            # parse_qs returns lists for values, so wrap single values in lists.
+            for key, value in query_params_to_add.items():
+                current_query_dict[key] = [value]
+
+            encoded_query = urlencode(current_query_dict, doseq=True)
+
+            new_url = urlunparse(
+                (
+                    parsed_url.scheme,
+                    parsed_url.netloc,
+                    parsed_url.path,
+                    parsed_url.params,
+                    encoded_query,
+                    parsed_url.fragment,
+                )
+            )
+            connection_timeout_ms = int(query_params_to_add.get("timeout", 30000))
+
+            browser = await playwright_instance.chromium.connect_over_cdp(
+                new_url, timeout=connection_timeout_ms
+            )
+        else:
+            # Logic for local browser launch
+            browser = await playwright_instance.chromium.launch(
+                headless=launch_args_dict[
+                    "headless"
+                ],  # Use headless from launch_args_dict
+                args=local_launch_actual_args,  # Use modified args for local launch
+            )
+
+        self._browser = browser
+
+        return browser

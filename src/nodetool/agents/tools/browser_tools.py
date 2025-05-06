@@ -11,7 +11,7 @@ import html2text
 from nodetool.common.environment import Environment
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.agents.tools.base import Tool
-from playwright.async_api import Page, Playwright, BrowserContext, async_playwright
+from playwright.async_api import Page
 
 import os
 from typing import Any
@@ -91,36 +91,6 @@ async def extract_metadata(page: Page):
     return metadata
 
 
-async def _initialize_browser(
-    headless: bool = True, use_remote_browser: bool = False
-) -> Tuple[Playwright, BrowserContext]:
-    """
-    Initializes a Playwright browser instance (local or remote).
-
-    Args:
-        headless: Run the browser in headless mode (local only).
-        use_remote_browser: Use a remote browser endpoint.
-
-    Returns:
-        A tuple containing the Playwright instance and the BrowserContext.
-    """
-    playwright_instance = await async_playwright().start()
-
-    if use_remote_browser:
-        browser_endpoint = Environment.get("BRIGHTDATA_SCRAPING_BROWSER_ENDPOINT")
-        if not browser_endpoint:
-            raise ValueError(
-                "BRIGHTDATA_SCRAPING_BROWSER_ENDPOINT environment variable not set."
-            )
-        browser = await playwright_instance.chromium.connect_over_cdp(browser_endpoint)
-        browser_context = await browser.new_context(bypass_csp=True)
-    else:
-        browser = await playwright_instance.chromium.launch(headless=headless)
-        browser_context = await browser.new_context(bypass_csp=True)
-
-    return playwright_instance, browser_context
-
-
 class BrowserTool(Tool):
     """
     A tool that allows fetching web content.
@@ -172,27 +142,26 @@ class BrowserTool(Tool):
         Returns:
             dict: Result containing page content and metadata
         """
-        from playwright.async_api import async_playwright
+        # from playwright.async_api import async_playwright # Removed unused import
 
         url = params.get("url")
-        output_file = params.get("output_file")
-        timeout = 30000
+        timeout = (
+            30000  # This is page navigation timeout, distinct from connection timeout
+        )
         if not url:
             return {"error": "URL is required"}
 
-        headless = True
-        use_remote_browser = (
-            Environment.get("BRIGHTDATA_SCRAPING_BROWSER_ENDPOINT") is not None
-        )
-
+        # headless = True # This is now controlled by _initialize_browser's internal launch_args_dict
         playwright_instance = None
         browser_context = None
 
         try:
             # Initialize browser using the helper function
-            playwright_instance, browser_context = await _initialize_browser(
-                headless=headless, use_remote_browser=use_remote_browser
+            browser = await context.get_browser()
+            browser_context = await browser.new_context(
+                bypass_csp=True,
             )
+
             page = await browser_context.new_page()
 
             # Navigate to the URL with the specified timeout
@@ -200,13 +169,6 @@ class BrowserTool(Tool):
 
             # Extract metadata from the page
             metadata = await extract_metadata(page)
-
-            result = {
-                "success": True,
-                "url": url,
-                "metadata": metadata,
-            }
-
             content = None
 
             # Directly use html2text on the full page content
@@ -230,11 +192,6 @@ class BrowserTool(Tool):
             if browser_context:
                 try:
                     await browser_context.close()
-                except Exception as e:
-                    pass
-            if playwright_instance:
-                try:
-                    await playwright_instance.stop()
                 except Exception as e:
                     pass
 
@@ -289,8 +246,8 @@ class ScreenshotTool(Tool):
         if not url:
             return {"error": "URL is required for taking a screenshot"}
 
-        timeout = 30000
-        headless = True
+        timeout = 30000  # Page navigation timeout
+        # headless = True # Controlled by _initialize_browser
         output_file = params.get("output_file", "screenshot.png")
         full_path = context.resolve_workspace_path(output_file)
         os.makedirs(os.path.dirname(full_path), exist_ok=True)
@@ -300,8 +257,9 @@ class ScreenshotTool(Tool):
 
         try:
             # Initialize browser
-            playwright_instance, browser_context = await _initialize_browser(
-                headless=headless
+            browser = await context.get_browser()
+            browser_context = await browser.new_context(
+                bypass_csp=True,
             )
             page = await browser_context.new_page()
 
@@ -318,11 +276,6 @@ class ScreenshotTool(Tool):
             if browser_context:
                 try:
                     await browser_context.close()
-                except Exception as e:
-                    pass
-            if playwright_instance:
-                try:
-                    await playwright_instance.stop()
                 except Exception as e:
                     pass
 
@@ -342,13 +295,12 @@ if __name__ == "__main__":
         )
         print(result)
 
-    async def remote_browser_example():
+    async def reddit_example():
         browser_tool = BrowserTool()
         result = await browser_tool.process(
             context,
             {
                 "url": "https://www.reddit.com/r/LocalLLaMA/comments/1ka8ban/qwen_3_unimpressive_coding_performance_so_far/",
-                "use_remote_browser": True,
             },
         )
         print(result)
@@ -365,5 +317,5 @@ if __name__ == "__main__":
         print(result)
 
     # asyncio.run(browser_tool_example())
-    # asyncio.run(remote_browser_example())
-    asyncio.run(screenshot_tool_example())
+    asyncio.run(reddit_example())
+    # asyncio.run(screenshot_tool_example())

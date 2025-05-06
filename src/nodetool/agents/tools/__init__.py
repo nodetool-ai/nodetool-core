@@ -23,7 +23,16 @@ from .browser_use_tools import BrowserUseTool
 from .http_tools import DownloadFileTool
 
 # SERP tools
-from .serp_tools import GoogleImagesTool, GoogleNewsTool, GoogleSearchTool
+from .serp_tools import (
+    GoogleImagesTool,
+    GoogleNewsTool,
+    GoogleSearchTool,
+    GoogleLensTool,
+    GoogleMapsTool,
+    GoogleShoppingTool,
+    GoogleFinanceTool,
+    GoogleJobsTool,
+)
 
 # Google tools
 from .google_tools import GoogleGroundedSearchTool, GoogleImageGenerationTool
@@ -79,8 +88,13 @@ __all__ = [
     "GoogleGroundedSearchTool",
     "GoogleImageGenerationTool",
     "GoogleImagesTool",
+    "GoogleJobsTool",
+    "GoogleLensTool",
+    "GoogleMapsTool",
     "GoogleNewsTool",
     "GoogleSearchTool",
+    "GoogleShoppingTool",
+    "GoogleFinanceTool",
     "ListAssetsDirectoryTool",
     "OpenAIImageGenerationTool",
     "OpenAITextToSpeechTool",

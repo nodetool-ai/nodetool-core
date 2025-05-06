@@ -63,15 +63,22 @@ async def test_reddit_scraper_agent(
 
 
 if __name__ == "__main__":
-
     asyncio.run(
         test_reddit_scraper_agent(
-            provider=get_provider(Provider.OpenAI),
-            model="gpt-4o",
-            planning_model="gpt-4o",
-            reasoning_model="gpt-4o",
+            provider=get_provider(Provider.Ollama),
+            model="qwen3:4b",
+            planning_model="qwen3:4b",
+            reasoning_model="qwen3:4b",
         )
     )
+    # asyncio.run(
+    #     test_reddit_scraper_agent(
+    #         provider=get_provider(Provider.OpenAI),
+    #         model="gpt-4o",
+    #         planning_model="gpt-4o",
+    #         reasoning_model="gpt-4o",
+    #     )
+    # )
     # asyncio.run(
     #     test_reddit_scraper_agent(
     #         provider=get_provider(Provider.Gemini), model="gemini-2.0-flash"

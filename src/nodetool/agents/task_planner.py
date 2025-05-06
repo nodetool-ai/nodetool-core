@@ -22,6 +22,7 @@ import jsonschema
 from jsonschema import validate, ValidationError
 import yaml
 import os
+import re  # Added import re
 from pathlib import Path
 from typing import (
     Any,
@@ -1207,10 +1208,19 @@ class TaskPlanner:
             # Stop the live display using the display manager
             self.display_manager.stop_live()
 
+    def _remove_think_tags(self, text_content: Optional[str]) -> Optional[str]:
+        if text_content is None:
+            return None
+        # Use regex to remove <think>...</think> blocks, including newlines within them.
+        # re.DOTALL makes . match newlines.
+        # We also strip leading/trailing whitespace from the result.
+        return re.sub(r"<think>.*?</think>", "", text_content, flags=re.DOTALL).strip()
+
     def _format_message_content(self, message: Optional[Message]) -> str | Text:
         """Formats message content for table display. (Handles None message)"""
         if not message:
             return Text("No response message.", style="dim")
+
         if message.tool_calls:
             # Summarize tool calls
             calls_summary: List[str] = []
@@ -1219,28 +1229,39 @@ class TaskPlanner:
                 args_str = json.dumps(tc.args)
                 if len(args_str) > 200:
                     args_str = args_str[:200] + "..."
-                calls_summary.append(f"- Tool Call: {tc.name}\n  Args: {args_str}")
+                calls_summary.append(f"- Tool Call: {tc.name}\\n  Args: {args_str}")
             # Use Text object for potential future styling
-            return Text("\n".join(calls_summary))
-        elif message.content:
-            # Return raw content (often reasoning)
+            return Text(
+                "\\n".join(calls_summary)
+            )  # No <think> tag removal for tool call summaries
+
+        raw_content_str: Optional[str] = None
+        if message.content:
             if isinstance(message.content, list):
                 # Attempt to join list items; handle potential non-string items
                 try:
-                    return Text("\n".join(str(item) for item in message.content))
+                    raw_content_str = "\\n".join(str(item) for item in message.content)
                 except Exception:
-                    return Text(
-                        str(message.content)
+                    raw_content_str = str(
+                        message.content
                     )  # Fallback to string representation of the list
             elif isinstance(message.content, str):
-                return Text(message.content)
+                raw_content_str = message.content
             else:
                 # Handle other unexpected content types
-                return Text(
+                raw_content_str = (
                     f"Unexpected content type: {type(message.content).__name__}"
                 )
 
-        else:
+        cleaned_content: Optional[str] = self._remove_think_tags(raw_content_str)
+
+        if cleaned_content:  # If cleaned_content is not None and not empty
+            return Text(cleaned_content)
+        elif (
+            raw_content_str is not None
+        ):  # Original content existed but was all <think> tags or whitespace
+            return Text("")  # Display as empty, not "Empty message content"
+        else:  # No message.content to begin with
             return Text("Empty message content.", style="dim")
 
     def _format_message_content_for_update(
@@ -1249,18 +1270,22 @@ class TaskPlanner:
         """Formats message content into a simple string for PlanningUpdate."""
         if not message:
             return None
-        if message.content:
+
+        raw_str_content: Optional[str] = None
+        if message.content:  # This method primarily processes .content
             if isinstance(message.content, list):
                 try:
-                    return "\n".join(str(item) for item in message.content)
+                    raw_str_content = "\\n".join(str(item) for item in message.content)
                 except Exception:
-                    return str(message.content)  # Fallback
+                    raw_str_content = str(message.content)  # Fallback
             elif isinstance(message.content, str):
-                return message.content
+                raw_str_content = message.content
             else:
-                return f"Unexpected content type: {type(message.content).__name__}"
-        else:
-            return None  # Empty content
+                raw_str_content = (
+                    f"Unexpected content type: {type(message.content).__name__}"
+                )
+
+        return self._remove_think_tags(raw_str_content)
 
     def _validate_tool_task(
         self,

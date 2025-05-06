@@ -9,6 +9,7 @@ import json
 import re
 import ast
 from typing import Any, AsyncGenerator, Sequence, Dict
+from contextlib import asynccontextmanager
 
 from ollama import AsyncClient, Client
 from pydantic import BaseModel
@@ -41,7 +42,8 @@ def get_ollama_sync_client() -> Client:
     return Client(api_url, headers=headers)
 
 
-def get_ollama_client() -> AsyncClient:
+@asynccontextmanager
+async def get_ollama_client() -> AsyncGenerator[AsyncClient, None]:
     """Get an AsyncClient for the Ollama API."""
     api_url = Environment.get("OLLAMA_API_URL")
     assert api_url, "OLLAMA_API_URL not set"
@@ -51,7 +53,12 @@ def get_ollama_client() -> AsyncClient:
         headers = {"Authorization": f"Bearer {api_key}"}
     else:
         headers = {}
-    return AsyncClient(api_url, headers=headers)
+
+    client = AsyncClient(api_url, headers=headers)
+    try:
+        yield client
+    finally:
+        await client._client.aclose()
 
 
 class OllamaProvider(ChatProvider):
@@ -103,7 +110,6 @@ class OllamaProvider(ChatProvider):
                 If None, no logging will be performed.
         """
         super().__init__()
-        self.client = get_ollama_client()
         self.usage = {
             "prompt_tokens": 0,
             "completion_tokens": 0,
@@ -271,6 +277,7 @@ class OllamaProvider(ChatProvider):
         max_tokens: int = 4096,
         use_textual_tools: bool = True,
         context_window: int = 4096,
+        **kwargs,
     ) -> Dict[str, Any]:
         """
         Prepare common parameters for Ollama API requests.
@@ -384,7 +391,7 @@ class OllamaProvider(ChatProvider):
         max_tokens: int = 8192,
         context_window: int = 4096,
         response_format: dict | None = None,
-        audio: dict | None = None,
+        **kwargs,
     ) -> AsyncGenerator[Chunk | ToolCall, Any]:
         """
         Generate streaming completions from Ollama.
@@ -399,71 +406,71 @@ class OllamaProvider(ChatProvider):
         Yields:
             Chunk | ToolCall: Content chunks or tool calls
         """
-        if audio:
-            raise NotImplementedError("Audio is not supported for Ollama")
-
         self._log_api_request("chat_stream", messages, model, tools)
 
         use_textual_tools = (
             len(tools) > 0 and model.startswith("gemma") and not response_format
         )
-        if use_textual_tools and tools:
-            params = self._prepare_request_params(
-                messages,
-                model,
-                tools,
-                max_tokens=max_tokens,
-                use_textual_tools=use_textual_tools,
-                context_window=context_window,
-            )
-            params["stream"] = True
 
-            completion = await self.client.chat(**params)
-            buffer = ""
-
-            async for response in completion:
-                # Track usage metrics when we receive the final response
-                if response.done:
-                    self._update_usage_stats(response)
-
-                new_content = response.message.content or ""
-                buffer += new_content
-
-                tool_calls = self._extract_tool_calls(buffer)
-
-                if tool_calls:
-                    for tool_call in tool_calls:
-                        yield tool_call
-
-                yield Chunk(content=new_content, done=response.done or False)
-        else:
-            # Standard tool calling handling
-            params = self._prepare_request_params(
-                messages,
-                model,
-                tools,
-                use_textual_tools=use_textual_tools,
-                max_tokens=max_tokens,
-                context_window=context_window,
-            )
-            params["stream"] = True
-
-            completion = await self.client.chat(**params)
-            async for response in completion:
-                # Track usage metrics when we receive the final response
-                if response.done:
-                    self._update_usage_stats(response)
-
-                if response.message.tool_calls is not None:
-                    for tool_call in response.message.tool_calls:
-                        yield ToolCall(
-                            name=tool_call.function.name,
-                            args=dict(tool_call.function.arguments),
-                        )
-                yield Chunk(
-                    content=response.message.content or "",
-                    done=response.done or False,
+        async with get_ollama_client() as client:
+            if use_textual_tools and tools:
+                params = self._prepare_request_params(
+                    messages,
+                    model,
+                    tools,
+                    max_tokens=max_tokens,
+                    use_textual_tools=use_textual_tools,
+                    context_window=context_window,
                 )
+                params["stream"] = True
+
+                completion = await client.chat(**params)
+                buffer = ""
+
+                async for response in completion:
+                    # Track usage metrics when we receive the final response
+                    if response.done:
+                        self._update_usage_stats(response)
+
+                    new_content = response.message.content or ""
+                    buffer += new_content
+
+                    tool_calls = self._extract_tool_calls(buffer)
+
+                    if tool_calls:
+                        for tool_call in tool_calls:
+                            yield tool_call
+
+                    yield Chunk(content=new_content, done=response.done or False)
+            else:
+                # Standard tool calling handling
+                params = self._prepare_request_params(
+                    messages,
+                    model,
+                    tools,
+                    use_textual_tools=False,
+                    max_tokens=max_tokens,
+                    context_window=context_window,
+                    **kwargs,
+                )
+                params["stream"] = True
+
+                completion = await client.chat(**params)
+                async for response in completion:
+                    # Track usage metrics when we receive the final response
+                    if response.done:
+                        self._update_usage_stats(response)
+
+                    if response.message.tool_calls is not None:
+                        for tool_call in response.message.tool_calls:
+                            yield ToolCall(
+                                name=tool_call.function.name,
+                                args=dict(tool_call.function.arguments),
+                            )
+                    yield Chunk(
+                        content=response.message.content or "",
+                        done=response.done or False,
+                    )
 
     async def generate_message(
         self,
@@ -492,76 +499,78 @@ class OllamaProvider(ChatProvider):
         use_textual_tools = (
             len(tools) > 0 and model.startswith("gemma") and not response_format
         )
-        if use_textual_tools and tools:
-            params = self._prepare_request_params(
-                messages,
-                model,
-                tools,
-                response_format=response_format,
-                max_tokens=max_tokens,
-                use_textual_tools=use_textual_tools,
-                context_window=context_window,
-            )
-            params["stream"] = False
 
-            # Call API without streaming
-            response = await self.client.chat(**params)
+        async with get_ollama_client() as client:
+            if use_textual_tools and tools:
+                params = self._prepare_request_params(
+                    messages,
+                    model,
+                    tools,
+                    response_format=response_format,
+                    max_tokens=max_tokens,
+                    use_textual_tools=use_textual_tools,
+                    context_window=context_window,
+                )
+                params["stream"] = False
 
-            # Update token usage
-            self._update_usage_stats(response)
+                # Call API without streaming
+                response = await client.chat(**params)
 
-            content = response.message.content or ""
+                # Update token usage
+                self._update_usage_stats(response)
 
-            # Check for tool calls in the response
-            tool_calls = self._extract_tool_calls(content)
+                content = response.message.content or ""
 
-            if tool_calls:
+                # Check for tool calls in the response
+                tool_calls = self._extract_tool_calls(content)
+
+                if tool_calls:
+                    res = Message(
+                        role="assistant",
+                        content=content,
+                        tool_calls=tool_calls,
+                    )
+                else:
+                    res = Message(
+                        role="assistant",
+                        content=content,
+                    )
+            else:
+                # Standard tool calling handling
+                params = self._prepare_request_params(
+                    messages,
+                    model,
+                    tools,
+                    response_format=response_format,
+                    max_tokens=max_tokens,
+                    use_textual_tools=use_textual_tools,
+                )
+                params["stream"] = False
+
+                response = await client.chat(**params)
+
+                self._update_usage_stats(response)
+                content = response.message.content or ""
+
+                tool_calls = None
+                if response.message.tool_calls:
+                    tool_calls = [
+                        ToolCall(
+                            name=tool_call.function.name,
+                            args=dict(tool_call.function.arguments),
+                        )
+                        for tool_call in response.message.tool_calls
+                    ]
+
                 res = Message(
                     role="assistant",
-                    content=content,
+                    content=response.message.content or "",
                     tool_calls=tool_calls,
                 )
-            else:
-                res = Message(
-                    role="assistant",
-                    content=content,
-                )
-        else:
-            # Standard tool calling handling
-            params = self._prepare_request_params(
-                messages,
-                model,
-                tools,
-                response_format=response_format,
-                max_tokens=max_tokens,
-                use_textual_tools=use_textual_tools,
-            )
-            params["stream"] = False
 
-            response = await self.client.chat(**params)
+            self._log_api_response("chat", res)
 
-            self._update_usage_stats(response)
-            content = response.message.content or ""
-
-            tool_calls = None
-            if response.message.tool_calls:
-                tool_calls = [
-                    ToolCall(
-                        name=tool_call.function.name,
-                        args=dict(tool_call.function.arguments),
-                    )
-                    for tool_call in response.message.tool_calls
-                ]
-
-            res = Message(
-                role="assistant",
-                content=response.message.content or "",
-                tool_calls=tool_calls,
-            )
-
-        self._log_api_response("chat", res)
-
-        return res
+            return res
 
     def _create_textual_tools_prompt(self, tools: Sequence[Tool]) -> str:
         """Create a textual prompt with tool instructions and function signatures."""
