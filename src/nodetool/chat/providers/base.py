@@ -27,6 +27,7 @@ class ChatProvider(ABC):
 
     log_file: str | None = None
     cost: float = 0.0
+    usage: dict[str, int] = {}
 
     def __init__(self):
         self.usage = {

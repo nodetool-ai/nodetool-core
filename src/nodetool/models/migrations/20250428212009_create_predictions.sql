@@ -15,5 +15,7 @@ CREATE TABLE IF NOT EXISTS nodetool_predictions (
     completed_at TIMESTAMP,
     cost REAL,
     duration REAL,
-    hardware TEXT
+    hardware TEXT,
+    input_tokens INTEGER,
+    output_tokens INTEGER
 ); 

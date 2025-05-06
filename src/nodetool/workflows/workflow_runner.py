@@ -742,7 +742,7 @@ class WorkflowRunner:
 
                 # Get the result of the subgraph and add it to the results.
                 for output_node in output_nodes:
-                    results[output_node._id].append(getattr(output_node, "_value"))
+                    results[output_node._id].append(getattr(output_node, "input"))
 
             if len(results) > 1:
                 log.warning("Multiple output nodes are not fully supported.")

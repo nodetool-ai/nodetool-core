@@ -1,4 +1,7 @@
 import asyncio
+from chunk import Chunk
+from collections.abc import Sequence
+from datetime import datetime
 from enum import Enum
 from urllib.parse import urlparse
 import io
@@ -33,7 +36,7 @@ from nodetool.types.prediction import (
 from nodetool.types.workflow import Workflow
 from nodetool.chat.workspace_manager import WorkspaceManager
 from nodetool.common.nodetool_api_client import NodetoolAPIClient
-from nodetool.metadata.types import ComfyModel, Message, Provider
+from nodetool.metadata.types import ComfyModel, Message, Provider, ToolCall
 from nodetool.workflows.graph import Graph
 from nodetool.workflows.types import (
     NodeProgress,
@@ -518,6 +521,108 @@ class ProcessingContext:
             data=data,
         )
 
+    async def generate_message(
+        self,
+        messages: Sequence[Message],
+        provider: Provider,
+        model: str,
+        node_id: str,
+        tools: Sequence[Any] = [],
+        max_tokens: int = 16384,
+        context_window: int = 128000,
+        response_format: dict | None = None,
+    ) -> Message:  # type: ignore
+        """Generate a message from a provider."""
+        from nodetool.models.prediction import Prediction as PredictionModel
+        from nodetool.chat.providers import get_provider
+        from nodetool.chat.providers.openai_prediction import calculate_chat_cost
+
+        start_time = datetime.now()
+        _provider = get_provider(provider)
+        message_result = await _provider.generate_message(
+            messages,
+            model,
+            tools,
+            max_tokens,
+            context_window,
+            response_format,
+        )
+
+        duration = (datetime.now() - start_time).total_seconds()
+        cost = await calculate_chat_cost(
+            model,
+            _provider.usage["prompt_tokens"],
+            _provider.usage["completion_tokens"],
+        )
+        PredictionModel.create(
+            user_id=self.user_id,
+            node_id=node_id,
+            provider=provider,
+            model=model,
+            workflow_id=self.workflow_id,
+            duration=duration,
+            hardware="",  # Or determine actual hardware if possible
+            created_at=start_time,
+            started_at=start_time,
+            completed_at=datetime.now(),
+            cost=cost,
+            input_tokens=_provider.usage["prompt_tokens"],
+            output_tokens=_provider.usage["completion_tokens"],
+        )
+        return message_result
+
+    async def generate_messages(
+        self,
+        messages: Sequence[Message],
+        provider: Provider,
+        model: str,
+        node_id: str,
+        tools: Sequence[Any] = [],
+        max_tokens: int = 8192,
+        context_window: int = 4096,
+        response_format: dict | None = None,
+        **kwargs,
+    ) -> AsyncGenerator[Chunk | ToolCall, Any]:
+        """"""
+        from nodetool.models.prediction import Prediction as PredictionModel
+        from nodetool.chat.providers import get_provider
+        from nodetool.chat.providers.openai_prediction import calculate_chat_cost
+
+        start_time = datetime.now()
+        _provider = get_provider(provider)
+        async for chunk in _provider.generate_messages(
+            messages,
+            model,
+            tools,
+            max_tokens,
+            context_window,
+            response_format,
+            **kwargs,
+        ):  # type: ignore
+            yield chunk
+
+        duration = (datetime.now() - start_time).total_seconds()
+        cost = await calculate_chat_cost(
+            model,
+            _provider.usage["prompt_tokens"],
+            _provider.usage["completion_tokens"],
+        )
+        PredictionModel.create(
+            user_id=self.user_id,
+            node_id=node_id,
+            provider=provider,
+            model=model,
+            workflow_id=self.workflow_id,
+            duration=duration,
+            hardware="",
+            created_at=start_time,
+            started_at=start_time,
+            completed_at=datetime.now(),
+            cost=cost,
+            input_tokens=_provider.usage["prompt_tokens"],
+            output_tokens=_provider.usage["completion_tokens"],
+        )
+
     async def run_prediction(
         self,
         node_id: str,
@@ -546,12 +651,29 @@ class ProcessingContext:
         Raises:
             ValueError: If the prediction did not return a result.
         """
+        from nodetool.models.prediction import Prediction as PredictionModel
+
         prediction = await self._prepare_prediction(
             node_id, provider, model, params, data
         )
 
+        started_at = datetime.now()
         async for msg in run_prediction_function(prediction, self.environment):
             if isinstance(msg, PredictionResult):
+                PredictionModel.create(
+                    user_id=self.user_id,
+                    node_id=node_id,
+                    provider=provider,
+                    model=model,
+                    workflow_id=self.workflow_id,
+                    status="completed",
+                    cost=0,
+                    hardware="cpu",
+                    created_at=started_at,
+                    started_at=started_at,
+                    completed_at=datetime.now(),
+                    duration=(datetime.now() - started_at).total_seconds(),
+                )
                 return msg.decode_content()
             elif isinstance(msg, Prediction):
                 self.post_message(msg)

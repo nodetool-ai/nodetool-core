@@ -41,6 +41,8 @@ class Prediction(DBModel):
     cost: float | None = DBField(default=None)
     duration: float | None = DBField(default=None)
     hardware: str | None = DBField(default=None)
+    input_tokens: int | None = DBField(default=None)
+    output_tokens: int | None = DBField(default=None)
 
     @classmethod
     def create(
@@ -52,8 +54,13 @@ class Prediction(DBModel):
         workflow_id: str | None = None,
         status: str = "starting",
         cost: float | None = None,
+        duration: float | None = None,
         hardware: str | None = None,
+        created_at: datetime | None = None,
         started_at: datetime | None = None,
+        completed_at: datetime | None = None,
+        input_tokens: int | None = None,
+        output_tokens: int | None = None,
     ):
         """Creates a new prediction record in the database.
 
@@ -65,8 +72,11 @@ class Prediction(DBModel):
             workflow_id: Optional ID of the workflow this prediction belongs to.
             status: Initial status of the prediction (default: 'starting').
             cost: Optional estimated or actual cost of the prediction.
+            duration: Optional duration of the prediction in seconds.
             hardware: Optional identifier for the hardware used.
+            created_at: Optional timestamp when the prediction was created.
             started_at: Optional timestamp when the prediction started.
+            completed_at: Optional timestamp when the prediction completed.
 
         Returns:
             The newly created and saved Prediction instance.
@@ -81,7 +91,11 @@ class Prediction(DBModel):
             status=status,
             cost=cost,
             hardware=hardware,
+            created_at=created_at,
             started_at=started_at,
+            completed_at=completed_at,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
         )
         prediction.save()
         return prediction

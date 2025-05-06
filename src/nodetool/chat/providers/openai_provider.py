@@ -314,8 +314,13 @@ class OpenAIProvider(ChatProvider):
         """Generate streaming completions from OpenAI."""
 
         modalities = ["text"]
-        if kwargs.get("audio", None):
+        if kwargs.get("audio", None) or "audio" in model:
             modalities.append("audio")
+            if not kwargs.get("audio", None):
+                kwargs["audio"] = {
+                    "voice": "alloy",
+                    "format": "pcm16",
+                }
 
         # Convert system messages to user messages for O1/O3 models
         kwargs = {
@@ -379,9 +384,6 @@ class OpenAIProvider(ChatProvider):
                 self.usage["prompt_tokens"] += chunk.usage.prompt_tokens
                 self.usage["completion_tokens"] += chunk.usage.completion_tokens
                 self.usage["total_tokens"] += chunk.usage.total_tokens
-                self.cost += await calculate_chat_cost(
-                    model, chunk.usage.prompt_tokens, chunk.usage.completion_tokens
-                )
                 if (
                     chunk.usage.prompt_tokens_details
                     and chunk.usage.prompt_tokens_details.cached_tokens

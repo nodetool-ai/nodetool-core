@@ -16,50 +16,57 @@ from nodetool.common.environment import Environment
 from nodetool.metadata.types import OpenAIModel
 from nodetool.types.prediction import Prediction, PredictionResult
 
-pricing: dict[str, Any] = {
-    "gpt-4o": {"input": 2.50, "output": 10.00},
-    "gpt-4o-audio-preview": {"input": 40.00, "output": 80.00},
-    "gpt-4o-mini-audio-preview": {"input": 10.00, "output": 20.00},
-    "gpt-4o-mini": {"input": 0.15, "output": 0.6},
-    "gpt-4.1": {"input": 2.00, "output": 8.00},
-    "gpt-4.1-mini": {"input": 0.40, "output": 1.60},
-    "gpt-4.1-nano": {"input": 0.10, "output": 0.40},
-    "text-embedding-3-small": {"usage": 0.02},
-    "text-embedding-3-large": {"usage": 0.13},
-    "whisper-1": {"usage": 0.006},
-    "tts-1": {"usage": 15.00},
-    "tts-1-hd": {"usage": 30.00},
-    "gpt4o-mini-tts": {"usage": 0.60},
-    "o3": {"input": 10.00, "output": 40.00},
-    "o4-mini": {"input": 1.100, "output": 4.400},
-    "gpt-4o-mini-search-preview": {"input": 0.15, "output": 0.60},
-    "gpt-4o-search-preview": {"input": 2.50, "output": 10.00},
-    "computer-use-preview": {"input": 3.00, "output": 12.00},
-    "gpt-image-1": {"text_input": 5.00, "image_input": 10.00, "output": 40.00},
-    "gpt-4o-transcribe": {"usage": 0.006},
-    "gpt-4o-mini-transcribe": {"usage": 0.003},
-    # --- Claude Models (Note: Cost calculation logic not implemented) ---
-    "claude-3.7-sonnet": {
-        "input": 3.00,  # Price per million tokens
-        "cache_write": 3.75,  # Price per million tokens
-        "cache_hit": 0.30,  # Price per million tokens
-        "output": 15.00,  # Price per million tokens
-    },
-    "claude-3.5-sonnet": {
-        "input": 3.00,  # Price per million tokens
-        "cache_write": 3.75,  # Price per million tokens
-        "cache_hit": 0.30,  # Price per million tokens
-        "output": 15.00,  # Price per million tokens
-    },
-    "gemini-2.5-flash": {
-        "input": 0.15,  # Price per million tokens
-        "output": 0.60,  # Price per million tokens
-    },
-    "gemini-2.5-pro-exp-03-25": {
-        "input": 1.25,  # Price per million tokens
-        "output": 10.00,  # Price per million tokens
-    },
+# --- New Credit-Based Pricing System ---
+# 1 credit = $0.01 USD (i.e., 1000 credits = $10 USD)
+# All rates include a 50% premium over provider base costs.
+
+CREDIT_PRICING_TIERS = {
+    # Rates per 1,000 tokens
+    "top_tier_chat": {"input_1k_tokens": 0.375, "output_1k_tokens": 1.5},
+    "low_tier_chat": {"input_1k_tokens": 0.0225, "output_1k_tokens": 0.09},
+    # Rates per image for gpt-image-1 (1 credit = $0.01)
+    "image_gpt_low": {"per_image": 1.5},
+    "image_gpt_medium": {"per_image": 6.0},
+    "image_gpt_high": {"per_image": 25.0},
+    # Rates per minute of audio
+    "whisper_standard": {"per_minute": 0.9},
+    "whisper_low_cost": {"per_minute": 0.45},
+    # Rates per 1,000 characters
+    "tts_standard": {"per_1k_chars": 0.09},
+    "tts_hd": {"per_1k_chars": 2.25},
+    "tts_ultra_hd": {"per_1k_chars": 4.5},
+    # Rates per 1,000 tokens
+    "embedding_small": {"per_1k_tokens": 0.003},
+    "embedding_large": {"per_1k_tokens": 0.0195},
 }
+
+MODEL_TO_TIER_MAP = {
+    # Top Tier Chat
+    "gpt-4o": "top_tier_chat",
+    "gpt-4o-search-preview": "top_tier_chat",
+    "computer-use-preview": "top_tier_chat",
+    "o3": "top_tier_chat",  # From original pricing, mapped to top_tier
+    "gpt-4.1": "top_tier_chat",  # Assuming future model
+    # Low Tier Chat
+    "gpt-4o-mini": "low_tier_chat",
+    "gpt-4o-mini-search-preview": "low_tier_chat",
+    "o4-mini": "low_tier_chat",  # From original pricing, mapped to low_tier
+    "gpt-4.1-mini": "low_tier_chat",  # Assuming future model
+    "gpt-4.1-nano": "low_tier_chat",  # Assuming future model
+    # Image models like "gpt-image-1" are handled by create_image based on params.quality.
+    # Whisper / Speech-to-Text
+    "whisper-1": "whisper_standard",
+    "gpt-4o-transcribe": "whisper_standard",  # Same base price as whisper-1
+    "gpt-4o-mini-transcribe": "whisper_low_cost",
+    # TTS / Text-to-Speech
+    "gpt-4o-mini-tts": "tts_standard",
+    "tts-1": "tts_hd",
+    "tts-1-hd": "tts_ultra_hd",
+    # Embeddings
+    "text-embedding-3-small": "embedding_small",
+    "text-embedding-3-large": "embedding_large",
+}
+# --- End of New Credit-Based Pricing System ---
 
 
 async def get_openai_models():
@@ -87,15 +94,22 @@ async def create_embedding(prediction: Prediction, client: openai.AsyncClient):
         input=prediction.params["input"], model=model_id
     )
 
-    # Cost calculation specific to embeddings
-    model_pricing = pricing.get(model_id.lower())
-    if not model_pricing or "usage" not in model_pricing:
-        # Log warning or handle differently?
-        prediction.cost = 0.0  # Or raise an error
+    prediction.cost = 0.0  # Default cost in credits
+    model_id_lower = model_id.lower()
+    tier_name = MODEL_TO_TIER_MAP.get(model_id_lower)
+
+    if tier_name and tier_name in CREDIT_PRICING_TIERS:
+        tier_pricing = CREDIT_PRICING_TIERS[tier_name]
+        if "per_1k_tokens" in tier_pricing and res.usage:
+            input_tokens = res.usage.prompt_tokens if res.usage.prompt_tokens else 0
+            cost_per_1k_tokens = tier_pricing["per_1k_tokens"]
+            prediction.cost = (input_tokens / 1000) * cost_per_1k_tokens
+        else:
+            print(
+                f"Warning: Pricing rule 'per_1k_tokens' or usage data missing for tier {tier_name} (model {model_id})."
+            )
     else:
-        input_tokens = res.usage.prompt_tokens if res.usage else 0
-        price_per_million_tokens = model_pricing["usage"]
-        prediction.cost = price_per_million_tokens / 1_000_000 * input_tokens
+        print(f"Warning: Tier or pricing not found for embedding model {model_id}.")
 
     return PredictionResult(
         prediction=prediction,
@@ -114,15 +128,22 @@ async def create_speech(prediction: Prediction, client: openai.AsyncClient):
         **params,
     )
 
-    # Cost calculation specific to speech (TTS)
-    model_pricing = pricing.get(model_id.lower())
-    if not model_pricing or "usage" not in model_pricing:
-        prediction.cost = 0.0  # Or raise an error
+    prediction.cost = 0.0  # Default cost in credits
+    model_id_lower = model_id.lower()
+    tier_name = MODEL_TO_TIER_MAP.get(model_id_lower)
+
+    if tier_name and tier_name in CREDIT_PRICING_TIERS:
+        tier_pricing = CREDIT_PRICING_TIERS[tier_name]
+        if "per_1k_chars" in tier_pricing:
+            input_length = len(params.get("input", ""))
+            cost_per_1k_chars = tier_pricing["per_1k_chars"]
+            prediction.cost = (input_length / 1000) * cost_per_1k_chars
+        else:
+            print(
+                f"Warning: Pricing rule 'per_1k_chars' missing for tier {tier_name} (model {model_id})."
+            )
     else:
-        # Cost is per 1M characters
-        input_length = len(params.get("input", ""))
-        price_per_million_chars = model_pricing["usage"]
-        prediction.cost = price_per_million_chars / 1_000_000 * input_length
+        print(f"Warning: Tier or pricing not found for TTS model {model_id}.")
 
     return PredictionResult(
         prediction=prediction,
@@ -134,7 +155,7 @@ async def create_speech(prediction: Prediction, client: openai.AsyncClient):
 async def create_chat_completion(
     prediction: Prediction, client: openai.AsyncClient
 ) -> Any:
-    """Creates a chat completion and calculates cost, handling detailed usage for multimodal models."""
+    """Creates a chat completion and calculates cost in credits."""
     model_id = prediction.model
     assert model_id is not None, "Model is not set"
     res: ChatCompletion = await client.chat.completions.create(
@@ -143,57 +164,33 @@ async def create_chat_completion(
     )
     assert res.usage is not None
 
-    # Cost calculation specific to chat completions
-    model_pricing = pricing.get(model_id.lower())
-    prediction.cost = 0.0  # Default
+    prediction.cost = 0.0  # Default cost in credits
+    model_id_lower = model_id.lower()
+    tier_name = MODEL_TO_TIER_MAP.get(model_id_lower)
 
-    if model_pricing and res.usage:
-        usage_info = res.usage.model_dump()
-        input_details = usage_info.get(
-            "input_tokens_details"
-        )  # Check for multimodal usage structure
-        input_tokens = usage_info.get("prompt_tokens", 0)
-        output_tokens = usage_info.get("completion_tokens", 0)
-
+    if tier_name and tier_name in CREDIT_PRICING_TIERS:
+        tier_pricing = CREDIT_PRICING_TIERS[tier_name]
         if (
-            input_details
-            and "text_input" in model_pricing
-            and "image_input" in model_pricing
-            and "output" in model_pricing
+            "input_1k_tokens" in tier_pricing
+            and "output_1k_tokens" in tier_pricing
+            and res.usage
         ):
-            # Multimodal cost calculation (like gpt-image-1)
-            try:
-                text_tokens = input_details.get("text_tokens", 0)
-                image_tokens = input_details.get("image_tokens", 0)
-
-                text_input_price = model_pricing["text_input"] / 1_000_000
-                image_input_price = model_pricing["image_input"] / 1_000_000
-                output_price = model_pricing["output"] / 1_000_000
-
-                prediction.cost = (
-                    (text_input_price * text_tokens)
-                    + (image_input_price * image_tokens)
-                    + (output_price * output_tokens)
-                )
-            except (KeyError, TypeError) as e:
-                print(
-                    f"Error calculating multimodal chat cost from usage for {model_id}: {e}"
-                )
-                prediction.cost = 0.0  # Fallback on error
-
-        elif "input" in model_pricing and "output" in model_pricing:
-            # Standard chat cost calculation
-            input_price = model_pricing["input"] / 1_000_000 * input_tokens
-            output_price = model_pricing["output"] / 1_000_000 * output_tokens
-            prediction.cost = input_price + output_price
-        else:
-            print(
-                f"Warning: Missing required pricing keys (input/output or text_input/image_input/output) for model {model_id}."
+            input_tokens = res.usage.prompt_tokens if res.usage.prompt_tokens else 0
+            output_tokens = (
+                res.usage.completion_tokens if res.usage.completion_tokens else 0
             )
 
-    elif not model_pricing:
-        print(f"Warning: Pricing not found for model {model_id}.")
-    elif not res.usage:
+            cost_input = (input_tokens / 1000) * tier_pricing["input_1k_tokens"]
+            cost_output = (output_tokens / 1000) * tier_pricing["output_1k_tokens"]
+            prediction.cost = cost_input + cost_output
+        else:
+            print(
+                f"Warning: Pricing rules ('input_1k_tokens'/'output_1k_tokens') or usage data missing for tier {tier_name} (model {model_id})."
+            )
+    else:
+        print(f"Warning: Tier or pricing not found for chat model {model_id}.")
+
+    if not res.usage:  # Should be caught by assert above, but as a fallback
         print(f"Warning: Usage data not returned by API for model {model_id}.")
 
     return PredictionResult(
@@ -207,81 +204,119 @@ async def create_whisper(prediction: Prediction, client: openai.AsyncClient) -> 
     model_id = prediction.model
     assert model_id is not None, "Model is not set"
     params = prediction.params
-    file = base64.b64decode(params["file"])
-    audio_segment: pydub.AudioSegment = pydub.AudioSegment.from_file(BytesIO(file))
+    file_content = base64.b64decode(
+        params["file"]
+    )  # Renamed from 'file' to 'file_content'
+    audio_segment: pydub.AudioSegment = pydub.AudioSegment.from_file(
+        BytesIO(file_content)
+    )
 
     # Determine API call based on translate flag
     if params.get("translate", False):
         res = await client.audio.translations.create(
             model=model_id,
-            file=("file.mp3", file, "audio/mp3"),
-            temperature=params["temperature"],
+            file=("file.mp3", file_content, "audio/mp3"),  # Use file_content
+            temperature=params.get("temperature", 0.0),  # Ensure temperature is passed
         )
     else:
         res = await client.audio.transcriptions.create(
             model=model_id,
-            file=("file.mp3", file, "audio/mp3"),
-            temperature=params["temperature"] if "temperature" in params else 0.0,
+            file=("file.mp3", file_content, "audio/mp3"),  # Use file_content
+            temperature=params.get("temperature", 0.0),
+            response_format=params.get("response_format", "text"),
+            language=params.get("language", None),
+            prompt=params.get("prompt", None),
+            timestamp_granularities=params.get("timestamp_granularities", None),
         )
 
-    # Cost calculation specific to whisper (per second, rounded up)
-    model_pricing = pricing.get(model_id.lower())
-    if not model_pricing or "usage" not in model_pricing:
-        prediction.cost = 0.0  # Or raise an error
+    prediction.cost = 0.0  # Default cost in credits
+    model_id_lower = model_id.lower()  # model_id is already defined
+    tier_name = MODEL_TO_TIER_MAP.get(model_id_lower)
+
+    if tier_name and tier_name in CREDIT_PRICING_TIERS:
+        tier_pricing = CREDIT_PRICING_TIERS[tier_name]
+        if "per_minute" in tier_pricing:
+            duration_minutes = audio_segment.duration_seconds / 60.0
+            cost_per_minute = tier_pricing["per_minute"]
+            prediction.cost = duration_minutes * cost_per_minute
+        else:
+            print(
+                f"Warning: Pricing rule 'per_minute' missing for tier {tier_name} (model {model_id})."
+            )
     else:
-        # Assuming 'usage' price is per minute for whisper, convert duration to minutes
-        duration_minutes = audio_segment.duration_seconds / 60.0
-        # Cost is often per minute, need to confirm Whisper pricing unit
-        price_per_minute = model_pricing[
-            "usage"
-        ]  # Ensure this key matches cost_calculation.py
-        prediction.cost = price_per_minute * duration_minutes
+        print(f"Warning: Tier or pricing not found for Whisper model {model_id}.")
+
+    # Ensure content is serializable if it's not already a dict (e.g. if it's a Pydantic model)
+    response_content = res
+    if hasattr(res, "model_dump"):
+        response_content = res.model_dump()
+    elif not isinstance(res, dict):  # Fallback for other types if necessary
+        response_content = {"text": str(res)}
 
     return PredictionResult(
         prediction=prediction,
-        content=res.model_dump(),
+        content=response_content,  # Use serializable content
         encoding="json",
     )
 
 
 async def create_image(prediction: Prediction, client: openai.AsyncClient):
-    """Creates an image using the OpenAI API (images.generate) and calculates cost based on potential usage data."""
-    model_id = prediction.model
+    """Creates an image using the OpenAI API and calculates cost in credits."""
+    model_id = (
+        prediction.model
+    )  # This model_id (e.g., "gpt-image-1") is used for the API call.
     assert model_id is not None, "Model is not set"
     params = prediction.params
 
     images_response: ImagesResponse = await client.images.generate(
-        model=model_id,
+        model=model_id,  # Pass the specific model if required by API, e.g., "dall-e-3" or "gpt-image-1"
         **params,
     )
 
-    # Cost calculation specific to images based on usage data (if available)
-    model_pricing = pricing.get(model_id.lower())
-    prediction.cost = 0.0  # Default cost
+    prediction.cost = 0.0  # Default cost in credits
+    # quality parameter from params should map to low, medium, high
+    quality = params.get(
+        "quality", "medium"
+    ).lower()  # Default to medium if not specified
+    num_images = params.get("n", 1)
 
-    usage_data = getattr(images_response, "usage", None)
-    if model_pricing:
-        # Delegate cost calculation
-        prediction.cost = await calculate_image_cost(
-            model_id, model_pricing, usage_data
-        )
-    elif not usage_data:  # Handle case where pricing exists but usage doesn't
+    selected_tier_name = None
+    if quality == "low":
+        selected_tier_name = "image_gpt_low"
+    elif quality == "medium":
+        selected_tier_name = "image_gpt_medium"
+    elif quality == "high":
+        selected_tier_name = "image_gpt_high"
+    else:
         print(
-            f"Warning: Usage data not found in images.generate response for {model_id}. Cost set to 0.0."
+            f"Warning: Unknown image quality '{quality}'. Defaulting to medium pricing."
         )
-    elif not model_pricing or "text_input" not in model_pricing:
-        print(
-            f"Warning: Pricing (incl. text_input) not found for image model {model_id}. Cost set to 0.0."
+        selected_tier_name = (
+            "image_gpt_medium"  # Fallback to medium for unknown quality values
         )
+
+    if selected_tier_name and selected_tier_name in CREDIT_PRICING_TIERS:
+        tier_pricing = CREDIT_PRICING_TIERS[selected_tier_name]
+        if "per_image" in tier_pricing:
+            prediction.cost = tier_pricing["per_image"] * num_images
+        else:
+            print(
+                f"Warning: Pricing rule 'per_image' missing for image tier {selected_tier_name}."
+            )
+    else:
+        print(f"Warning: Image pricing tier '{selected_tier_name}' not found.")
 
     assert images_response.data is not None
     assert len(images_response.data) > 0
-    assert images_response.data[0].url is not None
-    assert images_response.data[0].b64_json is not None
+    image_content = images_response.data[0].b64_json
+    if image_content is None:  # Fallback if b64_json is None, try url
+        image_content = images_response.data[0].url
+        print(f"Warning: b64_json not available for image, using URL: {image_content}")
+        # Note: Using URL as content might require different handling downstream
 
     return PredictionResult(
         prediction=prediction,
-        content=images_response.data[0].b64_json,
+        content=image_content if image_content else "Error: No image content found",
         encoding="base64",
     )
 
@@ -306,119 +341,137 @@ async def run_openai(
     elif model_id.startswith("tts-") or model_id.startswith("gpt-4o-mini-tts"):
         yield await create_speech(prediction, client)
 
-    elif model_id.startswith("whisper-") or model_id.startswith(
-        "gpt-4o-mini-transcribe"
-    ):
+    elif model_id.startswith("whisper-") or "transcribe" in model_id:
         yield await create_whisper(prediction, client)
     else:
         yield await create_chat_completion(prediction, client)
 
 
-# --- Cost Calculation Helpers for Smoke Tests ---
+# --- Cost Calculation Helpers for Smoke Tests (now calculate in CREDITS) ---
 
 
 async def calculate_chat_cost(
     model_id: str, input_tokens: int, output_tokens: int
 ) -> float:
-    """Calculates cost for chat models based on stored pricing."""
-    model_pricing = pricing.get(model_id.lower())
-    if (
-        not model_pricing
-        or "input" not in model_pricing
-        or "output" not in model_pricing
-    ):
-        print(f"Warning: Pricing not found or incomplete for chat model {model_id}")
-        return 0.0
-    input_price = model_pricing["input"] / 1_000_000 * input_tokens
-    output_price = model_pricing["output"] / 1_000_000 * output_tokens
-    return input_price + output_price
+    """Calculates cost in CREDITS for chat models."""
+    model_id_lower = model_id.lower()
+    tier_name = MODEL_TO_TIER_MAP.get(model_id_lower)
+    cost = 0.0
+
+    if tier_name and tier_name in CREDIT_PRICING_TIERS:
+        tier_pricing = CREDIT_PRICING_TIERS[tier_name]
+        if "input_1k_tokens" in tier_pricing and "output_1k_tokens" in tier_pricing:
+            cost_input = (input_tokens / 1000) * tier_pricing["input_1k_tokens"]
+            cost_output = (output_tokens / 1000) * tier_pricing["output_1k_tokens"]
+            cost = cost_input + cost_output
+        else:
+            print(
+                f"Warning (test helper): Pricing rules missing for chat tier {tier_name} (model {model_id})."
+            )
+    else:
+        print(
+            f"Warning (test helper): Tier or pricing not found for chat model {model_id}."
+        )
+    return cost
 
 
 async def calculate_embedding_cost(model_id: str, input_tokens: int) -> float:
-    """Calculates cost for embedding models based on stored pricing."""
-    model_pricing = pricing.get(model_id.lower())
-    if not model_pricing or "usage" not in model_pricing:
+    """Calculates cost in CREDITS for embedding models."""
+    model_id_lower = model_id.lower()
+    tier_name = MODEL_TO_TIER_MAP.get(model_id_lower)
+    cost = 0.0
+
+    if tier_name and tier_name in CREDIT_PRICING_TIERS:
+        tier_pricing = CREDIT_PRICING_TIERS[tier_name]
+        if "per_1k_tokens" in tier_pricing:
+            cost = (input_tokens / 1000) * tier_pricing["per_1k_tokens"]
+        else:
+            print(
+                f"Warning (test helper): Pricing rule 'per_1k_tokens' missing for embedding tier {tier_name} (model {model_id})."
+            )
+    else:
         print(
-            f"Warning: Pricing not found or incomplete for embedding model {model_id}"
+            f"Warning (test helper): Tier or pricing not found for embedding model {model_id}."
         )
-        return 0.0
-    price_per_million_tokens = model_pricing["usage"]
-    return price_per_million_tokens / 1_000_000 * input_tokens
+    return cost
 
 
 async def calculate_speech_cost(model_id: str, input_chars: int) -> float:
-    """Calculates cost for speech (TTS) models based on stored pricing."""
-    model_pricing = pricing.get(model_id.lower())
-    if not model_pricing or "usage" not in model_pricing:
-        print(f"Warning: Pricing not found or incomplete for TTS model {model_id}")
-        return 0.0
-    price_per_million_chars = model_pricing["usage"]
-    return price_per_million_chars / 1_000_000 * input_chars
+    """Calculates cost in CREDITS for speech (TTS) models."""
+    model_id_lower = model_id.lower()
+    tier_name = MODEL_TO_TIER_MAP.get(model_id_lower)
+    cost = 0.0
+
+    if tier_name and tier_name in CREDIT_PRICING_TIERS:
+        tier_pricing = CREDIT_PRICING_TIERS[tier_name]
+        if "per_1k_chars" in tier_pricing:
+            cost = (input_chars / 1000) * tier_pricing["per_1k_chars"]
+        else:
+            print(
+                f"Warning (test helper): Pricing rule 'per_1k_chars' missing for TTS tier {tier_name} (model {model_id})."
+            )
+    else:
+        print(
+            f"Warning (test helper): Tier or pricing not found for TTS model {model_id}."
+        )
+    return cost
 
 
 async def calculate_whisper_cost(model_id: str, duration_seconds: float) -> float:
-    """Calculates cost for Whisper models based on stored pricing."""
-    model_pricing = pricing.get(model_id.lower())
-    if not model_pricing or "usage" not in model_pricing:
-        print(f"Warning: Pricing not found or incomplete for Whisper model {model_id}")
-        return 0.0
-    # 'usage' price is per minute for whisper
-    duration_minutes = duration_seconds / 60.0
-    price_per_minute = model_pricing["usage"]
-    return price_per_minute * duration_minutes
-
-
-async def calculate_image_cost(
-    model_id: str, model_pricing: Dict[str, Any], usage_data: Any
-) -> float:
-    """Calculates cost for image generation based on usage data (if available)."""
+    """Calculates cost in CREDITS for Whisper models."""
     model_id_lower = model_id.lower()
-    cost = 0.0  # Default cost
+    tier_name = MODEL_TO_TIER_MAP.get(model_id_lower)
+    cost = 0.0
 
-    if usage_data and "text_input" in model_pricing:  # Check for necessary pricing keys
-        # Assuming the usage structure provided previously might appear
-        try:
-            usage_info = dict(usage_data)  # Convert if it's a Pydantic model
-            input_details = usage_info.get("input_tokens_details")
-            output_tokens = usage_info.get("output_tokens")
-
-            if input_details and output_tokens is not None:
-                text_tokens = input_details.get("text_tokens", 0)
-                image_tokens = input_details.get("image_tokens", 0)
-
-                text_input_price = model_pricing.get("text_input", 0)
-                image_input_price = model_pricing.get("image_input", 0)
-                output_price = model_pricing.get("output", 0)
-
-                text_input_cost = text_input_price / 1_000_000 * text_tokens
-                image_input_cost = image_input_price / 1_000_000 * image_tokens
-                output_cost = output_price / 1_000_000 * output_tokens
-
-                cost = text_input_cost + image_input_cost + output_cost
-            else:
-                print(
-                    f"Warning (calculate_image_cost): Incomplete usage data for image model {model_id}. Cannot calculate token-based cost."
-                )
-
-        except (KeyError, TypeError, AttributeError) as e:
+    if tier_name and tier_name in CREDIT_PRICING_TIERS:
+        tier_pricing = CREDIT_PRICING_TIERS[tier_name]
+        if "per_minute" in tier_pricing:
+            duration_minutes = duration_seconds / 60.0
+            cost = duration_minutes * tier_pricing["per_minute"]
+        else:
             print(
-                f"Error (calculate_image_cost): Calculating image cost from usage for model {model_id}: {e}"
+                f"Warning (test helper): Pricing rule 'per_minute' missing for Whisper tier {tier_name} (model {model_id})."
             )
-            cost = 0.0  # Reset cost on error
-    elif not usage_data:
-        print(
-            f"Warning (calculate_image_cost): Usage data not provided for {model_id}. Cost set to 0.0."
-        )
-    elif "text_input" not in model_pricing:
-        print(
-            f"Warning (calculate_image_cost): Required 'text_input' pricing not found for image model {model_id}. Cost set to 0.0."
-        )
     else:
-        # Catch other cases? E.g., DALL-E 3 specific pricing based on params could go here
         print(
-            f"Warning (calculate_image_cost): Unhandled pricing scenario for image model {model_id}. Cost set to 0.0."
+            f"Warning (test helper): Tier or pricing not found for Whisper model {model_id}."
         )
+    return cost
 
+
+async def calculate_image_cost(  # Changed signature
+    model_params: Dict[
+        str, Any
+    ],  # model_id is in params or implicit, params has quality & n
+) -> float:
+    """Calculates cost in CREDITS for image generation."""
+    cost = 0.0
+    # quality parameter from params should map to low, medium, high
+    quality = model_params.get("quality", "medium").lower()  # Default to medium
+    num_images = model_params.get("n", 1)
+
+    selected_tier_name = None
+    if quality == "low":
+        selected_tier_name = "image_gpt_low"
+    elif quality == "medium":
+        selected_tier_name = "image_gpt_medium"
+    elif quality == "high":
+        selected_tier_name = "image_gpt_high"
+    else:  # Fallback for unknown quality values in test helper
+        selected_tier_name = "image_gpt_medium"
+
+    if selected_tier_name in CREDIT_PRICING_TIERS:
+        tier_pricing = CREDIT_PRICING_TIERS[selected_tier_name]
+        if "per_image" in tier_pricing:
+            cost = tier_pricing["per_image"] * num_images
+        else:
+            print(
+                f"Warning (test helper): Pricing rule 'per_image' missing for image tier {selected_tier_name}."
+            )
+    else:
+        print(
+            f"Warning (test helper): Image pricing tier '{selected_tier_name}' not found."
+        )
     return cost
 
 
@@ -519,10 +572,41 @@ if __name__ == "__main__":
             user_id="test_user",
             node_id="test_node",
             status="testing",
+            model="gpt-image-1",  # Explicitly use gpt-image-1
+            params={
+                "prompt": "A futuristic cityscape at dusk, photorealistic",
+                "quality": "medium",  # Test medium quality
+                "n": 1,
+                "size": "1024x1024",  # Common size for square images
+            },
+        )
+
+        # Create a high quality image prediction for testing that tier
+        image_prediction_high_quality = Prediction(
+            id="test_id_multimodal_high",
+            user_id="test_user",
+            node_id="test_node",
+            status="testing",
             model="gpt-image-1",
             params={
-                "prompt": "make a cartoon style image of a cat",
+                "prompt": "A detailed macro shot of a dewdrop on a leaf, vibrant colors",
+                "quality": "high",
+                "n": 1,
+                "size": "1024x1024",
+            },
+        )
+        # Create a low quality image prediction for testing that tier
+        image_prediction_low_quality = Prediction(
+            id="test_id_multimodal_low",
+            user_id="test_user",
+            node_id="test_node",
+            status="testing",
+            model="gpt-image-1",
+            params={
+                "prompt": "A simple sketch of a happy cloud",
                 "quality": "low",
+                "n": 1,
+                "size": "1024x1024",
             },
         )
 
@@ -561,6 +645,8 @@ if __name__ == "__main__":
             embedding_prediction,
             tts_prediction,
             image_prediction,
+            image_prediction_low_quality,  # Add low quality image test
+            image_prediction_high_quality,  # Add high quality image test
             new_tts_prediction,  # Add new TTS test
         ]
         # Conditionally add predictions that might have failed initialization
@@ -576,20 +662,35 @@ if __name__ == "__main__":
                 # run_openai returns an async generator
                 async for result in run_openai(prediction_request, env_vars):
                     print(f"  Status: SUCCESS")
-                    print(
-                        f"  Cost: ${result.prediction.cost:.8f}"
-                    )  # Show more precision for small costs
+                    # Cost is now in credits, format accordingly
+                    cost_display = f"{result.prediction.cost:.4f} credits"
+                    # Add warning if model_name is valid but seems unmapped or cost is zero unexpectedly
+                    if (
+                        result.prediction.cost == 0
+                        and model_name
+                        and model_name.lower() not in MODEL_TO_TIER_MAP
+                        and not model_name.lower().startswith("gpt-image-1")
+                        and not model_name.lower().startswith("dall-e")
+                    ):  # Adjusted for gpt-image-1
+                        cost_display += " (Warning: model might not be mapped to a tier or pricing failed)"
+                    print(f"  Cost: {cost_display}")
 
                     # Print relevant part of the result content
-                    if result.encoding == "json" and model_name:
+                    if (
+                        result.encoding == "json" and model_name
+                    ):  # ensure model_name is not None
                         content_dict = result.content
-                        if model_name.startswith("gpt-"):  # Chat
+                        if model_name.lower().startswith(
+                            "gpt-"
+                        ):  # Chat (ensure model_name is not None for lower())
                             choice = content_dict.get("choices", [{}])[0]
                             message = choice.get("message", {}).get("content", "N/A")
                             usage = content_dict.get("usage", {})
                             print(f"  Response Snippet: {message[:100]}...")
                             print(f"  Usage: {usage}")
-                        elif model_name.startswith("text-embedding-"):  # Embedding
+                        elif model_name.lower().startswith(
+                            "text-embedding-"
+                        ):  # Embedding
                             embedding_info = content_dict.get("data", [{}])[0]
                             object_type = embedding_info.get("object", "N/A")
                             embedding_len = len(embedding_info.get("embedding", []))
@@ -598,26 +699,38 @@ if __name__ == "__main__":
                                 f"  Result Type: {object_type}, Embedding Dim: {embedding_len}"
                             )
                             print(f"  Usage: {usage}")
-                        elif model_name.startswith("whisper-"):  # Whisper
+                        elif model_name.lower().startswith("whisper-"):  # Whisper
                             text = content_dict.get("text", "N/A")
                             print(f"  Transcription: {text}")
-                        elif model_name.startswith(
-                            "gpt-image-"
-                        ):  # Image Generation (images.generate)
-                            # Print info from the ImagesResponse model dump
+                        elif model_name.lower().startswith(
+                            "gpt-image-1"
+                        ) or model_name.lower().startswith(
+                            "dall-e"
+                        ):  # Image Generation
                             created = content_dict.get("created", "N/A")
                             print(f"  Created timestamp: {created}")
-                            usage = content_dict.get("usage", {})
-                            if usage:  # Only print if usage was found in response
-                                print(f"  Usage: {usage}")
-                            # Optionally print b64_json snippet or URL if needed
+                            # Usage data is not typically returned or used for DALL-E cost calculation with this new model
                             data = content_dict.get("data", [{}])[0]
+                            content_url = data.get(
+                                "url", "N/A"
+                            )  # DALL-E 3 provides URLs
                             b64_preview = data.get("b64_json", "N/A")
-                            if b64_preview != "N/A":
+
+                            if b64_preview != "N/A" and b64_preview is not None:
                                 print(f"  B64 Preview: {b64_preview[:60]}...")
+                            elif content_url != "N/A":
+                                print(f"  Image URL: {content_url}")
+                            else:
+                                print(
+                                    "  No image content (b64 or URL) found in response."
+                                )
                         else:
-                            print(f"  Encoding: {result.encoding}")
-                    elif result.encoding == "base64":  # TTS
+                            print(
+                                f"  Encoding: {result.encoding}, Content: {str(result.content)[:100]}..."
+                            )
+                    elif (
+                        result.encoding == "base64"
+                    ):  # TTS or potentially other b64 image content
                         print(f"  Encoding: {result.encoding}")
                         print(
                             f"  Content Length (bytes): {len(base64.b64decode(result.content))}"
