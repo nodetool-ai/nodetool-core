@@ -1,5 +1,5 @@
 # Base image with CUDA and cuDNN runtime
-FROM nvcr.io/nvidia/cuda:12.6.3-cudnn-runtime-ubuntu22.04 AS base
+FROM nvcr.io/nvidia/cuda:12.9.0-cudnn-runtime-ubuntu22.04 AS base
 
 # Set the working directory
 WORKDIR /app
