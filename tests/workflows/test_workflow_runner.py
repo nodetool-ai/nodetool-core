@@ -66,40 +66,75 @@ def workflow_runner() -> WorkflowRunner:
 @pytest.mark.asyncio
 async def test_process_node(workflow_runner: WorkflowRunner):
     node = String(id="1", value="test")  # type: ignore
-    context = ProcessingContext(user_id="", workflow_id="", auth_token="token")
+    next_node = IntegerOutput(id="2")  # type: ignore
+    context = ProcessingContext(
+        user_id="",
+        workflow_id="",
+        auth_token="token",
+        graph=Graph(
+            nodes=[node, next_node],
+            edges=[
+                Edge(
+                    id="1",
+                    source="1",
+                    target="2",
+                    sourceHandle="output",
+                    targetHandle="value",
+                ),
+            ],
+        ),
+    )
     await workflow_runner.process_node(context, node, {})
-    assert context.get_result("1", "output") == "test"
+
+    assert len(workflow_runner.messages) == 1
+    message = workflow_runner.messages[0]
+
+    assert message.target.id == "2"
+    assert message.slot == "value"
+    assert message.value == "test"
 
 
 @pytest.mark.asyncio
 async def test_process_node_with_input_edges(workflow_runner: WorkflowRunner):
-    input_a = {"id": "1", "type": Float.get_node_type(), "data": {"value": 1}}
-    input_b = {"id": "2", "type": Float.get_node_type(), "data": {"value": 2}}
-    add_node = {"id": "3", "type": Add.get_node_type()}
-    nodes = [input_a, input_b, add_node]
+    input_a = Float(id="1", value=1)  # type: ignore
+    input_b = Float(id="2", value=2)  # type: ignore
+    add_node = Add(id="3")  # type: ignore
+    output_node = IntegerOutput(id="4", name="sum")  # type: ignore
+    nodes = [input_a, input_b, add_node, output_node]
     edges = [
-        {
-            "id": "1",
-            "source": "1",
-            "target": "3",
-            "sourceHandle": "output",
-            "targetHandle": "a",
-        },
-        {
-            "id": "2",
-            "source": "2",
-            "target": "3",
-            "sourceHandle": "output",
-            "targetHandle": "b",
-        },
+        Edge(
+            id="1",
+            source="1",
+            target="3",
+            sourceHandle="output",
+            targetHandle="a",
+        ),
+        Edge(
+            id="2",
+            source="2",
+            target="3",
+            sourceHandle="output",
+            targetHandle="b",
+        ),
+        Edge(
+            id="3",
+            source="3",
+            target="4",
+            sourceHandle="output",
+            targetHandle="value",
+        ),
     ]
 
-    context = ProcessingContext(user_id="", workflow_id="", auth_token="token")
-    context.graph = Graph.from_dict({"nodes": nodes, "edges": edges})
+    context = ProcessingContext(
+        user_id="",
+        workflow_id="",
+        auth_token="token",
+        graph=Graph(nodes=nodes, edges=edges),
+    )
 
     await workflow_runner.process_graph(context, context.graph)
 
-    assert context.get_result("3", "output") == 3
+    assert workflow_runner.outputs["sum"] == 3
 
 
 async def get_workflow_updates(context: ProcessingContext):

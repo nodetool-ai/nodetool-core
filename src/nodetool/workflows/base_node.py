@@ -1031,6 +1031,25 @@ class Preview(BaseNode):
         return self.result_for_all_outputs(result)
 
 
+class IteratorNode(BaseNode):
+    """
+    Iterates over a list of items and triggers downstream execution for each item.
+    The node itself is a 'dummy' node; the WorkflowRunner handles the iteration logic.
+    """
+
+    input_list: list[Any] = Field(
+        default_factory=list, description="The list of items to iterate over."
+    )
+
+    @classmethod
+    def get_title(cls) -> str:
+        return "Iterator"
+
+    @classmethod
+    def is_cacheable(cls) -> bool:
+        return False
+
+
 def get_comfy_class_by_name(class_name: str) -> type[BaseNode] | None:
     """
     Retrieve node classes based on their class name.

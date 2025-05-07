@@ -125,7 +125,6 @@ class ProcessingContext:
         graph: Graph | None = None,
         variables: dict[str, Any] | None = None,
         environment: dict[str, str] | None = None,
-        results: dict[str, Any] | None = None,
         message_queue: Union[
             queue.Queue, asyncio.Queue, multiprocessing.Queue, None
         ] = None,
@@ -141,7 +140,6 @@ class ProcessingContext:
         self.auth_token = auth_token or "local_token"
         self.workflow_id = workflow_id or ""
         self.graph = graph or Graph()
-        self.results = results if results else {}
         self.message_queue = message_queue if message_queue else asyncio.Queue()
         self.device = device
         self.variables: dict[str, Any] = variables if variables else {}
@@ -170,7 +168,6 @@ class ProcessingContext:
         """
         return ProcessingContext(
             graph=self.graph,
-            results=self.results.copy(),
             user_id=self.user_id,
             auth_token=self.auth_token,
             workflow_id=self.workflow_id,
@@ -387,42 +384,6 @@ class ProcessingContext:
 
         return self.asset_storage_url(asset.file_name)
 
-    def get_result(self, node_id: str, slot: str) -> Any:
-        """
-        Get the result of a node.
-
-        Results are stored in the context's results dictionary after a node is processed.
-
-        Args:
-            node_id (str): The ID of the node.
-            slot (str): The slot name.
-
-        Returns:
-            Any: The result of the node.
-        """
-        res = self.results.get(node_id, {})
-
-        if res:
-            if self.encode_assets_as_base64:
-                res = self.encode_assets_as_uri(res)
-            if self.upload_assets_to_s3:
-                res = self.upload_assets_to_temp(res)
-            return res.get(slot, None)
-        else:
-            return None
-
-    def set_result(self, node_id: str, res: dict[str, Any]):
-        """
-        Set the result of a node.
-
-        Results are stored in the context's results dictionary after a node is processed.
-
-        Args:
-            node_id (str): The ID of the node.
-            res (dict[str, Any]): The result of the node.
-        """
-        self.results[node_id] = res
-
     def get_node_input_types(self, node_id: str) -> dict[str, TypeMetadata | None]:
         """
         Retrieves the input types for a given node, inferred from the output types of the source nodes.
@@ -446,23 +407,6 @@ class ProcessingContext:
 
         return {
             edge.targetHandle: output_type(edge.source, edge.sourceHandle)
-            for edge in self.graph.edges
-            if edge.target == node_id
-        }
-
-    def get_node_inputs(self, node_id: str) -> dict[str, Any]:
-        """
-        Retrieves the inputs for a given node.
-
-        Args:
-            node_id (str): The ID of the node.
-
-        Returns:
-            dict[str, Any]: A dictionary containing the inputs for the node, where the keys are the input slot names
-            and the values are the results from the corresponding source nodes.
-        """
-        return {
-            edge.targetHandle: self.get_result(edge.source, edge.sourceHandle)
             for edge in self.graph.edges
             if edge.target == node_id
         }
@@ -2129,27 +2073,16 @@ class ProcessingContext:
 
         playwright_instance = await async_playwright().start()
 
-        # User-defined launch arguments and query parameters from the user's request
-        launch_args_dict = {
-            "headless": False,
-            "stealth": True,  # This will be handled by specific args for local, and sent for remote
-            "args": ["--window-size=1920,1080", "--force-color-profile=srgb"],
-        }
-
-        # For local launch, add stealth-related args if "stealth" is true
-        local_launch_actual_args = list(launch_args_dict["args"])  # Make a copy
-        if launch_args_dict.get("stealth"):
-            local_launch_actual_args.append(
-                "--disable-blink-features=AutomationControlled"
-            )
-
         browser_url_env = Environment.get("BROWSER_URL")
 
         if browser_url_env:
-            # Logic for remote browser connection using BROWSER_URL
-            print(f"Connecting to browser at {browser_url_env}")
+            launch_args_dict = {
+                "headless": True,
+                "stealth": True,
+                "args": ["--window-size=1920,1080", "--force-color-profile=srgb"],
+            }
 
-            # Query parameters from the user's request
+            # Browserless query params
             query_params_to_add = {
                 "proxy": "residential",
                 "proxyCountry": "us",
@@ -2186,10 +2119,20 @@ class ProcessingContext:
         else:
             # Logic for local browser launch
             browser = await playwright_instance.chromium.launch(
-                headless=launch_args_dict[
-                    "headless"
-                ],  # Use headless from launch_args_dict
-                args=local_launch_actual_args,  # Use modified args for local launch
+                headless=True,
+                args=[
+                    "--window-size=1920,1080",
+                    "--force-color-profile=srgb",
+                    "--disable-blink-features=AutomationControlled",
+                    "--disable-infobars",
+                    "--disable-notifications",
+                    "--disable-extensions",
+                    "--mute-audio",
+                    "--disable-gpu",
+                    "--no-first-run",
+                    "--no-default-browser-check",
+                    "--disable-dev-shm-usage",
+                ],
             )
 
         self._browser = browser
