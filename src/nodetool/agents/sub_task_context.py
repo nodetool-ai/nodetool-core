@@ -1723,7 +1723,9 @@ class SubTaskContext:
         json_system_prompt = f"""
         You MUST provide the final output for the subtask in JSON format, strictly matching the '{schema_name}' tool's input schema.
         You have reached the maximum iterations allowed ({self.max_iterations}). Synthesize all previous work from the conversation history into a single, valid JSON response.
-        Ensure the JSON includes all required fields specified in the schema, particularly 'result' and 'metadata'. If you cannot determine appropriate values from the history, use sensible defaults or indicate the missing information clearly within the structure (e.g., in the description field of metadata).
+        Ensure the JSON includes all required fields specified in the schema, particularly 'result' and 'metadata'.
+        For the 'result' field, you must provide the actual computed data that fulfills the subtask's objective and conforms to its defined schema. Do NOT provide the schema definition itself as the value for the 'result' field.
+        If you cannot determine appropriate values for the 'result' or 'metadata' fields from the history, use sensible defaults or indicate the missing information clearly within the data structure (e.g., in the description field of metadata, or as null/empty values within the 'result' data if its schema allows).
         Do NOT include any explanatory text outside the JSON object. Your entire response must be the JSON object itself.
         """
 
