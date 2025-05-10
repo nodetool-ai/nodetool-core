@@ -169,6 +169,14 @@ def create_app(
 
         @app.websocket("/chat")
         async def chat_websocket_endpoint(websocket: WebSocket):
+            auth_token = websocket.query_params.get("api_key")
+
+            # In proxy mode, we still need to validate authentication
+            # but the actual WebSocket is handled by the proxy
+            if Environment.is_production() and not auth_token:
+                await websocket.close(code=1008, reason="Missing authentication")
+                return
+
             await chat_proxy(websocket)
 
     else:
@@ -183,7 +191,21 @@ def create_app(
 
         @app.websocket("/chat")
         async def chat_websocket_endpoint(websocket: WebSocket):
-            await ChatWebSocketRunner().run(websocket)
+            # Extract authentication information
+            auth_header = websocket.headers.get("authorization")
+            auth_token = None
+
+            # Extract bearer token if present
+            if auth_header and auth_header.startswith("Bearer "):
+                auth_token = auth_header.replace("Bearer ", "")
+
+            # Check for API key in query params as fallback
+            if not auth_token:
+                auth_token = websocket.query_params.get("api_key")
+
+            # Create runner with authentication token
+            chat_runner = ChatWebSocketRunner(auth_token=auth_token)
+            await chat_runner.run(websocket)
 
         @app.websocket("/updates")
         async def updates_websocket_endpoint(websocket: WebSocket):

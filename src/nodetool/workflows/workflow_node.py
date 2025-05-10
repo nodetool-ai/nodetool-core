@@ -53,7 +53,7 @@ class WorkflowNode(BaseNode):
             params=self._dynamic_properties,
         )
         output = {}
-        async for msg in run_workflow(req, use_thread=True):
+        async for msg in run_workflow(req):
             assert "type" in msg
             if msg["type"] == "error":
                 raise Exception(msg["error"])

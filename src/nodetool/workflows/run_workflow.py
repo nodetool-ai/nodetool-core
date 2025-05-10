@@ -19,7 +19,7 @@ async def run_workflow(
     req: RunJobRequest,
     runner: WorkflowRunner | None = None,
     context: ProcessingContext | None = None,
-    use_thread: bool = False,
+    use_thread: bool = True,
 ) -> AsyncGenerator[Any, None]:
     """
     Runs a workflow asynchronously, with the option to run in a separate thread.
@@ -63,6 +63,16 @@ async def run_workflow(
             )
 
     if use_thread:
+        # Running the workflow in a separate thread (via ThreadedEventLoop) is beneficial
+        # in scenarios where:
+        # 1. The calling environment is synchronous, or its asyncio event loop should not
+        #    be blocked by the workflow's execution. This keeps the caller responsive.
+        # 2. The workflow needs to be integrated into a larger, primarily synchronous
+        #    multi-threaded application. ThreadedEventLoop provides a managed asyncio
+        #    environment within a dedicated thread.
+        # 3. The workflow's operations are potentially long-running or resource-intensive,
+        #    and isolating them in a separate thread prevents interference with other
+        #    operations in the main application thread or event loop.
         log.info(f"Running workflow in thread for {req.workflow_id}")
         with ThreadedEventLoop() as tel:
             run_future = tel.run_coroutine(run())

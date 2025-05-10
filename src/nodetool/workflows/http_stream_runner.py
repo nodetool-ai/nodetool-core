@@ -56,7 +56,9 @@ class HTTPStreamRunner:
             log.info("Running job: %s", self.job_id)
 
             async for msg in run_workflow(
-                req, self.runner, self.context, use_thread=True
+                req,
+                self.runner,
+                self.context,
             ):
                 try:
                     msg_dict = msg.model_dump()

@@ -37,7 +37,7 @@ from weakref import WeakKeyDictionary
 from pydantic import BaseModel, Field
 from pydantic.fields import FieldInfo
 import traceback
-from typing import Any, Callable, Type, TypeVar
+from typing import Any, AsyncGenerator, Callable, Type, TypeVar
 
 from nodetool.types.graph import Edge
 from nodetool.common.environment import Environment
@@ -83,7 +83,17 @@ COMFY_NODE_CLASSES: dict[str, type["BaseNode"]] = {}
 log = Environment.get_logger()
 
 
-def split_camel_case(text):
+def split_camel_case(text: str) -> str:
+    """Splits a camelCase or PascalCase string into space-separated words.
+
+    Uppercase sequences are kept together. Numbers are treated as separate words.
+
+    Args:
+        text: The input string to split.
+
+    Returns:
+        A string with words separated by spaces.
+    """
     # Split the string into parts, keeping uppercase sequences together
     parts = re.findall(r"[A-Z]+[a-z]*|\d+|[a-z]+", text)
 
@@ -92,16 +102,15 @@ def split_camel_case(text):
 
 
 def add_comfy_classname(node_class: type["BaseNode"]) -> None:
-    """
-    Register a comfy node class by its class name in the NODES_BY_CLASSNAME dictionary.
-    To avoid name conflicts, we store comfy classes in a separate dictionary.
+    """Register a ComfyUI node class by its class name.
+
+    This function stores ComfyUI node classes in a separate dictionary
+    `COMFY_NODE_CLASSES` to avoid name conflicts with standard nodes.
+    If the node class has a `comfy_class` attribute, that name is used;
+    otherwise, the actual class name of `node_class` is used.
 
     Args:
-        node_class (type["BaseNode"]): The node class to be registered.
-
-    Note:
-        If the node class has a 'comfy_class' attribute, it uses that as the class name.
-        Otherwise, it uses the actual class name.
+        node_class: The ComfyUI node class to be registered.
     """
     if hasattr(node_class, "comfy_class") and node_class.comfy_class != "":  # type: ignore
         class_name = node_class.comfy_class  # type: ignore
@@ -112,12 +121,14 @@ def add_comfy_classname(node_class: type["BaseNode"]) -> None:
 
 
 def add_node_type(node_class: type["BaseNode"]) -> None:
-    """
-    Add a node type to the registry.
+    """Add a node type to the global registry `NODE_BY_TYPE`.
+
+    The node type is determined by `node_class.get_node_type()`.
+    If the node type starts with "comfy.", it is also registered
+    as a ComfyUI node class using `add_comfy_classname`.
 
     Args:
-        node_type (str): The node_type of the node.
-        node_class (type[Node]): The class of the node.
+        node_class: The node class to register.
     """
     node_type = node_class.get_node_type()
 
@@ -128,20 +139,21 @@ def add_node_type(node_class: type["BaseNode"]) -> None:
 
 
 def type_metadata(python_type: Type | UnionType) -> TypeMetadata:
-    """
-    Generate TypeMetadata for a given Python type.
+    """Generate `TypeMetadata` for a given Python type.
+
+    Supports basic types, lists, tuples, dicts, optional types, unions,
+    and enums.
 
     Args:
-        python_type (Type | UnionType): The Python type to generate metadata for.
+        python_type: The Python type to generate metadata for.
 
     Returns:
-        TypeMetadata: Metadata describing the structure and properties of the input type.
+        A `TypeMetadata` object describing the structure and properties
+        of the input type.
 
     Raises:
-        ValueError: If the input type is unknown or unsupported.
-
-    Note:
-        Supports basic types, lists, dicts, optional types, unions, and enums.
+        ValueError: If the input type is unknown or unsupported (i.e., does
+            not derive from `BaseType` or is not a recognized compound type).
     """
     # if type is unkonwn, return the type as a string
     if python_type in TypeToName:
@@ -189,8 +201,18 @@ T = TypeVar("T")
 
 
 def memoized_class_method(func: Callable[..., T]):
-    """
-    A decorator that implements memoization for class methods using a functional approach.
+    """A decorator to memoize the results of a class method.
+
+    The cache is stored in a `WeakKeyDictionary` keyed by the class,
+    allowing cache entries to be garbage-collected when the class itself is
+    no longer referenced. Within each class's cache, results are stored
+    based on the method's arguments and keyword arguments.
+
+    Args:
+        func: The class method to be memoized.
+
+    Returns:
+        A wrapped class method that caches its results.
     """
     cache: WeakKeyDictionary[type, dict[tuple, Any]] = WeakKeyDictionary()
 
@@ -229,6 +251,7 @@ class BaseNode(BaseModel):
     _layout: str = "default"
     _dynamic_properties: dict[str, Any] = {}
     _is_dynamic: bool = False
+    _requires_grad: bool = False
 
     def __init__(
         self,
@@ -624,10 +647,11 @@ class BaseNode(BaseModel):
     def is_cacheable(cls):
         """
         Check if the node is cacheable.
-
-        Returns:
-            bool: True if the node is cacheable, False otherwise.
+        Nodes that implement gen_process (i.e., have overridden it) are not cacheable.
         """
+        # Check if gen_process method in cls is different from the one in BaseNode
+        if cls.gen_process is not BaseNode.gen_process:
+            return False
         return not cls.is_dynamic()
 
     def get_dynamic_properties(self):
@@ -706,12 +730,10 @@ class BaseNode(BaseModel):
     @classmethod
     def is_streaming_output(cls):
         """
-        Check if the node has any streaming outputs.
-
-        Returns:
-            bool: True if any of the node's outputs are marked for streaming, False otherwise.
+        Check if the node has any streaming outputs implemented via gen_process.
         """
-        return any(output.stream for output in cls.outputs())
+        # Check if gen_process method in cls is different from the one in BaseNode
+        return cls.gen_process is not BaseNode.gen_process
 
     @classmethod
     def return_type(cls) -> Type | dict[str, Type] | None:
@@ -914,7 +936,19 @@ class BaseNode(BaseModel):
         """
         pass
 
-    async def process_with_gpu(self, context: Any) -> Any:
+    async def gen_process(self, context: Any) -> AsyncGenerator[tuple[str, Any], None]:
+        """
+        Generate output messages for streaming.
+        Node implementers should override this method to provide streaming output.
+        It should yield tuples of (slot_name, value).
+        If this method is implemented, `process` should not be.
+        """
+        # This construct ensures this is a generator function template.
+        # It will not yield anything unless overridden by a subclass.
+        if False:
+            yield "", None  # type: ignore
+
+    async def process_with_gpu(self, context: Any, max_retries: int = 3) -> Any:
         """
         Process the node with GPU.
         Default implementation calls the process method in inference mode.
@@ -1033,8 +1067,8 @@ class Preview(BaseNode):
 
 class IteratorNode(BaseNode):
     """
-    Iterates over a list of items and triggers downstream execution for each item.
-    The node itself is a 'dummy' node; the WorkflowRunner handles the iteration logic.
+    Iterates over a list of items and triggers downstream execution for each item
+    by yielding them one by one using `gen_process`.
     """
 
     input_list: list[Any] = Field(
@@ -1046,22 +1080,41 @@ class IteratorNode(BaseNode):
         return "Iterator"
 
     @classmethod
-    def is_cacheable(cls) -> bool:
-        return False
+    def return_type(cls):
+        return {"output": Any, "index": int}
+
+    async def gen_process(self, context: Any) -> AsyncGenerator[tuple[str, Any], None]:
+        """Iterate over `self.input_list` and yield each item and its index.
+
+        For each item in the `self.input_list`, this generator yields two tuples:
+        first, the item itself associated with the 'output' slot, and second,
+        the index of the item associated with the 'index' slot.
+
+        Args:
+            context: The execution context for the node. (Currently unused).
+
+        Yields:
+            Tuples of (slot_name, value), where `slot_name` is either
+            'output' or 'index'.
+        """
+        for index, item in enumerate(self.input_list):
+            yield "output", item
+            yield "index", index
 
 
 def get_comfy_class_by_name(class_name: str) -> type[BaseNode] | None:
-    """
-    Retrieve node classes based on their class name.
+    """Retrieve a ComfyUI node class by its registered name.
+
+    Handles special cases like "Note" (maps to `Comment`) and "PreviewImage"
+    (maps to `Preview`). If an exact match for `class_name` isn't found in
+    `COMFY_NODE_CLASSES`, it attempts a match by removing hyphens from
+    `class_name`.
 
     Args:
-        class_name (str): The name of the node class to retrieve.
+        class_name: The name of the ComfyUI node class to retrieve.
 
     Returns:
-        list[type[BaseNode]]: A list of node classes matching the given name.
-
-    Note:
-        If no exact match is found, it attempts to find a match by removing hyphens from the class name.
+        The corresponding `BaseNode` subclass if found, otherwise `None`.
     """
     if class_name == "Note":
         return Comment
@@ -1077,6 +1130,18 @@ def get_comfy_class_by_name(class_name: str) -> type[BaseNode] | None:
 
 
 def find_node_class_by_name(class_name: str) -> type[BaseNode] | None:
+    """Find a registered node class by its Python class name.
+
+    Iterates through all registered node classes (obtained via
+    `get_registered_node_classes`) and returns the first one whose
+    `__name__` attribute matches the given `class_name`.
+
+    Args:
+        class_name: The Python class name of the node to find.
+
+    Returns:
+        The `BaseNode` subclass if found, otherwise `None`.
+    """
     for node_class in get_registered_node_classes():
         if node_class.__name__ == class_name:
             return node_class
@@ -1084,15 +1149,22 @@ def find_node_class_by_name(class_name: str) -> type[BaseNode] | None:
 
 
 def get_node_class(node_type: str) -> type[BaseNode] | None:
-    """
-    Retrieve a node class based on its unique node type identifier.
-    Tries to load the module if the node type is not found.
+    """Retrieve a node class by its unique node type identifier.
+
+    First, it checks the `NODE_BY_TYPE` registry. If not found, it attempts
+    to dynamically import the module where the node class might be defined,
+    based on the `node_type` string (e.g., "namespace.ClassName" implies
+    `nodetool.nodes.namespace`). After attempting import, it checks the
+    registry again. If still not found, it falls back to searching by the
+    class name part of the `node_type` using `find_node_class_by_name`.
 
     Args:
-        node_type (str): The node type identifier.
+        node_type: The unique type identifier of the node (e.g.,
+            "namespace.ClassName").
 
     Returns:
-        type[BaseNode] | None: The node class if found, None otherwise.
+        The `BaseNode` subclass corresponding to `node_type` if found,
+        otherwise `None`.
     """
     if node_type in NODE_BY_TYPE:
         return NODE_BY_TYPE[node_type]
@@ -1112,11 +1184,13 @@ def get_node_class(node_type: str) -> type[BaseNode] | None:
 
 
 def get_registered_node_classes() -> list[type[BaseNode]]:
-    """
-    Retrieve all registered and visible node classes.
+    """Retrieve all registered node classes that are marked as visible.
+
+    Filters the global `NODE_BY_TYPE` dictionary to include only those
+    node classes for which `is_visible()` returns `True`.
 
     Returns:
-        list[type[BaseNode]]: A list of all registered node classes that are marked as visible.
+        A list of visible `BaseNode` subclasses.
     """
     return [c for c in NODE_BY_TYPE.values() if c.is_visible()]
 
@@ -1135,6 +1209,18 @@ class GroupNode(BaseNode):
 
 
 def get_recommended_models() -> dict[str, list[HuggingFaceModel]]:
+    """Aggregate recommended HuggingFace models from all registered node classes.
+
+    Iterates through all registered and visible node classes, collecting
+    their recommended models. It ensures that each unique model (identified
+    by repository ID and path) is listed only once. The result is a
+    dictionary mapping repository IDs to a list of `HuggingFaceModel`
+    objects from that repository.
+
+    Returns:
+        A dictionary where keys are Hugging Face repository IDs (str) and
+        values are lists of `HuggingFaceModel` instances.
+    """
     node_classes = get_registered_node_classes()
     model_ids = set()
     models = {}

@@ -125,10 +125,7 @@ class ProcessingContext:
         graph: Graph | None = None,
         variables: dict[str, Any] | None = None,
         environment: dict[str, str] | None = None,
-        message_queue: Union[
-            queue.Queue, asyncio.Queue, multiprocessing.Queue, None
-        ] = None,
-        http_client: httpx.AsyncClient | None = None,
+        message_queue: queue.Queue | None = None,
         device: str | None = None,
         endpoint_url: URL | None = None,
         encode_assets_as_base64: bool = False,
@@ -140,7 +137,7 @@ class ProcessingContext:
         self.auth_token = auth_token or "local_token"
         self.workflow_id = workflow_id or ""
         self.graph = graph or Graph()
-        self.message_queue = message_queue if message_queue else asyncio.Queue()
+        self.message_queue = message_queue if message_queue else queue.Queue()
         self.device = device
         self.variables: dict[str, Any] = variables if variables else {}
         self.nodes: dict[str, BaseNode] = {}
@@ -148,16 +145,18 @@ class ProcessingContext:
         if environment:
             self.environment.update(environment)
         self.endpoint_url = endpoint_url
-        self.http_client = (
-            httpx.AsyncClient(follow_redirects=True, timeout=600, verify=False)
-            if http_client is None
-            else http_client
-        )
         assert self.auth_token is not None, "Auth token is required"
         self.encode_assets_as_base64 = encode_assets_as_base64
         self.upload_assets_to_s3 = upload_assets_to_s3
         self.chroma_client = chroma_client
         self.workspace_dir = workspace_dir or WorkspaceManager().get_current_directory()
+
+    def get_http_client(self):
+        if self.http_client is None:
+            self.http_client = httpx.AsyncClient(
+                follow_redirects=True, timeout=600, verify=False
+            )
+        return self.http_client
 
     def copy(self):
         """
@@ -175,7 +174,6 @@ class ProcessingContext:
             device=self.device,
             variables=self.variables,
             environment=self.environment,
-            http_client=self.http_client,
         )
 
     @property
@@ -226,8 +224,7 @@ class ProcessingContext:
         Returns:
             The retrieved message from the message queue.
         """
-        assert isinstance(self.message_queue, asyncio.Queue)
-        return await self.message_queue.get()
+        return self.message_queue.get()
 
     # def pop_message(self) -> ProcessingMessage:
     #     """
@@ -852,7 +849,7 @@ class ProcessingContext:
         """
         _headers = HTTP_HEADERS.copy()
         kwargs["headers"] = _headers.update(kwargs.get("headers", {}))
-        response = await self.http_client.get(url, **kwargs)
+        response = await self.get_http_client().get(url, **kwargs)
         log.info(f"GET {url} {response.status_code}")
         response.raise_for_status()
         return response
@@ -874,7 +871,7 @@ class ProcessingContext:
         """
         _headers = HTTP_HEADERS.copy()
         kwargs["headers"] = _headers.update(kwargs.get("headers", {}))
-        response = await self.http_client.post(url, **kwargs)
+        response = await self.get_http_client().post(url, **kwargs)
         log.info(f"POST {url} {response.status_code}")
         response.raise_for_status()
         return response
@@ -896,7 +893,7 @@ class ProcessingContext:
         """
         _headers = HTTP_HEADERS.copy()
         kwargs["headers"] = _headers.update(kwargs.get("headers", {}))
-        response = await self.http_client.patch(url, **kwargs)
+        response = await self.get_http_client().patch(url, **kwargs)
         log.info(f"PATCH {url} {response.status_code}")
         response.raise_for_status()
         return response
@@ -918,7 +915,7 @@ class ProcessingContext:
         """
         _headers = HTTP_HEADERS.copy()
         kwargs["headers"] = _headers.update(kwargs.get("headers", {}))
-        response = await self.http_client.put(url, **kwargs)
+        response = await self.get_http_client().put(url, **kwargs)
         log.info(f"PUT {url} {response.status_code}")
         response.raise_for_status()
         return response
@@ -939,7 +936,7 @@ class ProcessingContext:
         """
         _headers = HTTP_HEADERS.copy()
         kwargs["headers"] = _headers.update(kwargs.get("headers", {}))
-        response = await self.http_client.delete(url, **kwargs)
+        response = await self.get_http_client().delete(url, **kwargs)
         log.info(f"DELETE {url} {response.status_code}")
         response.raise_for_status()
         return response
@@ -960,7 +957,7 @@ class ProcessingContext:
         """
         _headers = HTTP_HEADERS.copy()
         kwargs["headers"] = _headers.update(kwargs.get("headers", {}))
-        response = await self.http_client.head(url, **kwargs)
+        response = await self.get_http_client().head(url, **kwargs)
         log.info(f"HEAD {url} {response.status_code}")
         response.raise_for_status()
         return response
@@ -1790,7 +1787,7 @@ class ProcessingContext:
         # log.info(json.dumps(req.model_dump(), indent=2))
         result = {}
 
-        async with self.http_client.stream(
+        async with self.get_http_client().stream(
             "POST",
             url,
             headers=headers,

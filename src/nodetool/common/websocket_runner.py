@@ -16,7 +16,7 @@ from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.workflow_runner import WorkflowRunner
 from nodetool.workflows.threaded_event_loop import ThreadedEventLoop
-from nodetool.workflows.types import Error, RunFunction
+from nodetool.workflows.types import Error
 import gc
 
 log = Environment.get_logger()
@@ -80,8 +80,6 @@ async def process_message(context: ProcessingContext, explicit_types: bool = Fal
     msg = await context.pop_message_async()
     if isinstance(msg, Error):
         raise Exception(msg.error)
-    elif isinstance(msg, RunFunction):
-        msg.function(*msg.args, **msg.kwargs)
     else:
         msg_dict = msg.model_dump()
 

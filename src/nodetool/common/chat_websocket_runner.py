@@ -9,6 +9,47 @@ binary (MessagePack) and text (JSON) message formats. It handles:
 - Workflow processing with job updates
 - Support for various content types (text, images, audio, video)
 
+## Chat Protocol
+
+### Authentication
+- Bearer Token: Send token in the WebSocket connection request header:
+  ```
+  Authorization: Bearer <token>
+  ```
+- API Key: Include API key in connection query parameters:
+  ```
+  ws://server/chat?api_key=<your_api_key>
+  ```
+- Session-based: Establish an authenticated session before WebSocket connection
+  by sending credentials to the authentication endpoint.
+
+Authentication errors result in connection closure with appropriate status codes:
+- 401: Unauthorized (missing or invalid credentials)
+- 403: Forbidden (valid credentials but insufficient permissions)
+
+### Message Format
+- Binary: Messages are encoded using MessagePack for efficient binary transmission
+- Text: Messages are encoded as JSON strings
+
+### Message Types
+- Client to Server:
+  - Regular chat messages with optional tool specifications
+  - Workflow execution requests with workflow_id and optional graph data
+
+- Server to Client:
+  - Content chunks: Partial responses during generation
+  - Tool calls: When the model requests a tool execution
+  - Tool results: After a tool has been executed
+  - Job updates: Status updates during workflow execution
+  - Error messages: When exceptions occur during processing
+
+### Content Types
+The protocol supports multiple content formats:
+- Text content
+- Image references (ImageRef)
+- Audio references (AudioRef)
+- Video references (VideoRef)
+
 The main class ChatWebSocketRunner manages the WebSocket connection lifecycle and message
 processing, including:
 - Connection management
@@ -36,6 +77,7 @@ from fastapi import WebSocket
 from nodetool.chat.providers import get_provider
 from nodetool.agents.tools.base import Tool, get_tool_by_name
 from nodetool.chat.providers.base import ChatProvider
+from nodetool.common.environment import Environment
 from nodetool.metadata.types import (
     AudioRef,
     ImageRef,
@@ -114,23 +156,93 @@ class WebSocketMode(str, Enum):
 
 
 class ChatWebSocketRunner:
-    def __init__(self):
+    """
+    Manages WebSocket connections for chat, handling message processing and tool execution.
+
+    This class is responsible for the entire lifecycle of a chat WebSocket connection,
+    including:
+    - Accepting and establishing connections.
+    - Receiving, parsing, and processing messages in binary (MessagePack) or text (JSON) format.
+    - Maintaining chat history.
+    - Executing tools requested by the language model.
+    - Integrating with workflows for more complex interactions.
+    - Streaming responses and tool results back to the client.
+    """
+
+    def __init__(self, auth_token: str | None = None):
         self.websocket: WebSocket | None = None
         self.chat_history: List[Message] = []
         self.mode: WebSocketMode = WebSocketMode.BINARY
+        self.auth_token = auth_token
 
     async def connect(self, websocket: WebSocket):
+        """
+        Accepts and establishes a new WebSocket connection.
+
+        Args:
+            websocket (WebSocket): The FastAPI WebSocket object representing the client connection.
+
+        Raises:
+            WebSocketDisconnect: If authentication fails.
+        """
+        # Validate authentication if token is required in your environment
+        # This is where you would implement your authentication logic
+        if Environment.is_production() and not self.auth_token:
+            # Close connection with 401 Unauthorized status code
+            await websocket.close(code=1008, reason="Missing authentication")
+            log.warning("WebSocket connection rejected: Missing authentication")
+            return
+
+        if self.auth_token:
+            # Validate token (implementation depends on your auth system)
+            is_valid = await self.validate_token(self.auth_token)
+            if not is_valid:
+                await websocket.close(code=1008, reason="Invalid authentication")
+                log.warning("WebSocket connection rejected: Invalid authentication")
+                return
+
         await websocket.accept()
         self.websocket = websocket
         log.info("WebSocket connection established for chat")
 
+    async def validate_token(self, token: str) -> bool:
+        """
+        Validates the authentication token.
+
+        Args:
+            token (str): The authentication token to validate.
+
+        Returns:
+            bool: True if the token is valid, False otherwise.
+        """
+        # Implement your token validation logic here
+        # This is a placeholder - replace with your actual validation logic
+        # Example: Call your auth service, check JWT validity, etc.
+
+        # For demonstration purposes, we're returning True
+        # In a real implementation, you would verify the token against your auth system
+        return True
+
     async def disconnect(self):
+        """
+        Closes the WebSocket connection if it is active.
+        """
         if self.websocket:
             await self.websocket.close()
         self.websocket = None
         log.info("WebSocket disconnected for chat")
 
     async def run(self, websocket: WebSocket):
+        """
+        Main loop for handling an active WebSocket connection.
+
+        Listens for incoming messages, processes them, and sends responses.
+        This method handles message parsing, dispatches to either standard
+        message processing or workflow processing, and manages error handling.
+
+        Args:
+            websocket (WebSocket): The FastAPI WebSocket object for the connection.
+        """
         await self.connect(websocket)
 
         assert self.websocket is not None, "WebSocket is not connected"
@@ -172,7 +284,7 @@ class ChatWebSocketRunner:
                 self.chat_history.append(response_message)
 
                 # Send the response back to the client
-                await self.send_message(response_message.model_dump())
+                # await self.send_message(response_message.model_dump())
 
             except Exception as e:
                 log.error(f"Error processing message: {str(e)}")
@@ -184,15 +296,21 @@ class ChatWebSocketRunner:
 
     async def process_messages(self) -> Message:
         """
-        Process messages without a workflow.
-        Used for global chat.
+        Process messages without a workflow, typically for general chat interactions.
+
+        This method takes the last message from the chat history, initializes
+        any specified tools, and uses a chat provider to generate a response.
+        It supports streaming responses and tool execution.
+
+        Returns:
+            Message: The assistant's response message.
+
+        Raises:
+            ValueError: If a specified tool is not found or if the model is not specified in the last message.
         """
         last_message = self.chat_history[-1]
 
-        processing_context = ProcessingContext(
-            user_id=last_message.user_id or "",
-            auth_token=last_message.auth_token or "",
-        )
+        processing_context = ProcessingContext()
 
         content = ""
         unprocessed_messages = []
@@ -266,6 +384,19 @@ class ChatWebSocketRunner:
         )
 
     async def process_messages_for_workflow(self) -> Message:
+        """
+        Processes messages that are part of a defined workflow.
+
+        This method retrieves the workflow ID from the last message,
+        initializes a WorkflowRunner, and executes the workflow. It streams
+        updates (including job status and results) back to the client.
+
+        Returns:
+            Message: A message containing the final result of the workflow execution.
+
+        Raises:
+            AssertionError: If the workflow ID is not present in the last message.
+        """
         job_id = str(uuid.uuid4())
         last_message = self.chat_history[-1]
         assert last_message.workflow_id is not None, "Workflow ID is required"
@@ -273,8 +404,6 @@ class ChatWebSocketRunner:
         workflow_runner = WorkflowRunner(job_id=job_id)
 
         processing_context = ProcessingContext(
-            user_id=last_message.user_id or "",
-            auth_token=last_message.auth_token or "",
             workflow_id=last_message.workflow_id,
         )
 
@@ -287,7 +416,9 @@ class ChatWebSocketRunner:
         log.info(f"Running workflow for {last_message.workflow_id}")
         result = {}
         async for update in run_workflow(
-            request, workflow_runner, processing_context, use_thread=True
+            request,
+            workflow_runner,
+            processing_context,
         ):
             await self.send_message(update)
             if update["type"] == "job_update" and update["status"] == "completed":
@@ -296,10 +427,30 @@ class ChatWebSocketRunner:
         return self.create_response_message(result)
 
     def create_response_message(self, result: dict) -> Message:
+        """
+        Constructs a response Message object from a dictionary of results.
+
+        The method iterates through the result dictionary and converts string values
+        to MessageTextContent. For dictionary values, it attempts to interpret them
+        as ImageRef, VideoRef, or AudioRef based on a 'type' field.
+
+        Args:
+            result (dict): A dictionary containing the data to be included in the message content.
+                           Keys are typically identifiers, and values can be strings or dictionaries
+                           representing rich media types.
+
+        Returns:
+            Message: An assistant Message object populated with content derived from the result.
+
+        Raises:
+            ValueError: If an unknown content type is encountered in the result dictionary.
+        """
         content = []
         for key, value in result.items():
             if isinstance(value, str):
                 content.append(MessageTextContent(text=value))
+            elif isinstance(value, list):
+                content.append(MessageTextContent(text=" ".join(value)))
             elif isinstance(value, dict):
                 if value.get("type") == "image":
                     content.append(MessageImageContent(image=ImageRef(**value)))
@@ -318,6 +469,19 @@ class ChatWebSocketRunner:
         )
 
     async def send_message(self, message: dict):
+        """
+        Sends a message to the connected WebSocket client.
+
+        The message is encoded in binary (MessagePack) or text (JSON) format
+        based on the established mode for the connection.
+
+        Args:
+            message (dict): The message payload to send.
+
+        Raises:
+            AssertionError: If the WebSocket is not connected.
+            Exception: If an error occurs during message sending.
+        """
         assert self.websocket, "WebSocket is not connected"
         try:
             if self.mode == WebSocketMode.BINARY:

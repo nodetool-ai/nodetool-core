@@ -1303,11 +1303,6 @@ class Message(BaseType):
     The unique identifier of the message.
     """
 
-    auth_token: str | None = None
-    """
-    The authentication token for the user.
-    """
-
     workflow_id: str | None = None
     """
     The unique identifier of the workflow the message should be processed within.
@@ -1318,19 +1313,9 @@ class Message(BaseType):
     For unsaved workflows, the whole graph needs to be provided.
     """
 
-    task_id: str | None = None
-    """
-    The unique identifier of the task the message belongs to.
-    """
-
     thread_id: str | None = None
     """
     The unique identifier of the thread the message belongs to.
-    """
-
-    user_id: str | None = None
-    """
-    The unique identifier of the user who sent the message.
     """
 
     tools: list[str] | None = None
@@ -1348,9 +1333,9 @@ class Message(BaseType):
     One of "user", "assistant", "system", or "tool".
     """
 
-    name: str = ""
+    name: str | None = None
     """
-    The name of the user who sent the message.
+    The name of the tool that sent the message (aka tool result).
     """
 
     content: str | list[MessageContent] | None = None
