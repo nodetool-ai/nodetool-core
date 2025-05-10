@@ -11,6 +11,7 @@ import json
 import io
 from typing import Any, AsyncGenerator, Sequence
 
+import httpx
 import openai
 from openai.types.chat import (
     ChatCompletionMessageParam,
@@ -93,10 +94,10 @@ class OpenAIProvider(ChatProvider):
         """Initialize the OpenAI provider with client credentials."""
         super().__init__()
         env = Environment.get_environment()
-        api_key = env.get("OPENAI_API_KEY")
-        assert api_key, "OPENAI_API_KEY is not set"
+        self.api_key = env.get("OPENAI_API_KEY")
+        assert self.api_key, "OPENAI_API_KEY is not set"
+        self.client = None
         self.cost = 0.0
-        self.client = openai.AsyncClient(api_key=api_key)
         self.usage = {
             "prompt_tokens": 0,
             "completion_tokens": 0,
@@ -104,6 +105,16 @@ class OpenAIProvider(ChatProvider):
             "cached_prompt_tokens": 0,
             "reasoning_tokens": 0,
         }
+
+    def get_client(
+        self,
+    ) -> openai.AsyncClient:
+        return openai.AsyncClient(
+            api_key=self.api_key,
+            http_client=httpx.AsyncClient(
+                follow_redirects=True, timeout=600, verify=False
+            ),
+        )
 
     def get_max_token_limit(self, model: str) -> int:
         """Get the maximum token limit for a given model."""
@@ -370,7 +381,7 @@ class OpenAIProvider(ChatProvider):
         #     if model.startswith("o1") or model.startswith("o3"):
         #         kwargs["reasoning_effort"] = "high"
 
-        completion = await self.client.chat.completions.create(
+        completion = await self.get_client().chat.completions.create(
             messages=openai_messages,
             **kwargs,
         )
@@ -514,7 +525,7 @@ class OpenAIProvider(ChatProvider):
         openai_messages = [self.convert_message(m) for m in messages]
 
         # Make non-streaming call to OpenAI
-        completion = await self.client.chat.completions.create(
+        completion = await self.get_client().chat.completions.create(
             model=model,
             messages=openai_messages,
             stream=False,

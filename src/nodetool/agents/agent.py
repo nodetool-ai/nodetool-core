@@ -161,22 +161,13 @@ class Agent:
         """
         # Copy input files to the workspace directory if they are not already there
         input_files = []
-        os.makedirs(
-            os.path.join(processing_context.workspace_dir, "input_files"), exist_ok=True
-        )
-        # Ensure output_files directory exists as well
-        os.makedirs(
-            os.path.join(processing_context.workspace_dir, "output_files"),
-            exist_ok=True,
-        )
         for file_path in self.input_files:
             destination_path = os.path.join(
                 processing_context.workspace_dir,
-                "input_files",
                 os.path.basename(file_path),
             )
             shutil.copy(file_path, destination_path)
-            input_files.append(os.path.join("input_files", os.path.basename(file_path)))
+            input_files.append(os.path.basename(file_path))
 
         tools = list(self.tools)
         task: Optional[Task] = None  # Initialize task

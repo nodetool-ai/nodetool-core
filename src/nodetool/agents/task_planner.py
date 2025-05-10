@@ -1,3 +1,18 @@
+"""Manages the breakdown of complex objectives into executable task plans.
+
+The TaskPlanner is responsible for taking a high-level user objective and
+transforming it into a structured `TaskPlan`. This plan consists of
+interdependent `SubTask` instances. The planning process can involve
+multiple phases, including self-reflection for complexity assessment,
+objective analysis, data flow definition, and final plan creation.
+
+The planner interacts with an LLM provider to generate and refine the plan,
+ensuring that subtasks are well-defined, dependencies are clear (forming a
+Directed Acyclic Graph - DAG), and file paths are correctly managed within
+a specified workspace. Validation is a key aspect of the planner's role to
+ensure the generated plan is robust and executable.
+"""
+
 import asyncio
 import traceback
 from nodetool.chat.providers import ChatProvider
@@ -215,9 +230,18 @@ class CreateTaskTool(Tool):
     }
 
     async def process(self, context: ProcessingContext, params: dict):
-        # Validation is handled by the TaskPlanner when processing the LLM's response
-        # using this tool schema, specifically in _process_subtask_list.
-        pass  # No validation needed here
+        """Process the CreateTaskTool call.
+
+        This method is called when the LLM uses the 'create_task' tool.
+        However, the actual validation and processing of the task and subtask
+        data are handled by the `TaskPlanner`.
+
+        Args:
+            context: The processing context.
+            params: The parameters provided by the LLM for the tool call,
+                    matching the `input_schema`.
+        """
+        pass
 
 
 # Simplified and phase-agnostic system prompt
@@ -562,6 +586,60 @@ using the available resources and adheres to the final output requirements.
 """
 
 
+# --- Tiered Planning ---
+# Added a new enum-like structure for planning tiers
+class PlanningTier:
+    """Defines the complexity tiers for planning strategies."""
+
+    TIER_LOW_COMPLEXITY = "Low Complexity"  # Analysis -> Plan Creation
+    TIER_HIGH_COMPLEXITY = "High Complexity"  # Analysis -> Data Flow -> Plan Creation
+    DEFAULT = TIER_HIGH_COMPLEXITY  # Default to full planning if reflection fails
+
+    @classmethod
+    def from_string(cls, s: str) -> str:
+        """Parse a string to determine the corresponding planning tier.
+
+        Args:
+            s: The string to parse, expected to contain "Low Complexity" or "High Complexity".
+
+        Returns:
+            The identified planning tier string
+            or the default tier if no match is found.
+        """
+        if "Low Complexity" in s:  # Match the exact string for robustness
+            return cls.TIER_LOW_COMPLEXITY
+        elif "High Complexity" in s:  # Match the exact string
+            return cls.TIER_HIGH_COMPLEXITY
+        return cls.DEFAULT
+
+
+SELF_REFLECTION_PROMPT_TEMPLATE = """
+# Objective Complexity Assessment
+
+## Context:
+You are an expert at assessing the complexity of a given objective to determine the most efficient planning strategy.
+
+**Objective:**
+{{ objective }}
+
+**Initial Input Files:**
+{{ input_files_info }}
+
+**Overall Task Output Requirements:**
+- Type: {{ overall_output_type }}
+- Schema: {{ overall_output_schema }}
+
+## Task:
+Based on the objective, inputs, and desired outputs, classify the objective's complexity into one of the following tiers.
+Respond with ONLY the tier name (e.g., "Low Complexity" or "High Complexity"). Your response must contain nothing else.
+
+*   **Low Complexity:** The planning process involves an initial analysis of the objective to define conceptual subtasks, followed directly by the creation of the executable plan. This tier bypasses the explicit data flow definition phase. (Phases: Analysis -> Plan Creation)
+*   **High Complexity:** The planning process is comprehensive, including an initial analysis to define conceptual subtasks, a dedicated phase to define detailed data flows and dependencies between these subtasks, and finally, the creation of the executable plan. (Phases: Analysis -> Data Flow Analysis -> Plan Creation)
+
+**Your Classification (Low Complexity or High Complexity):**
+"""
+
+
 class TaskPlanner:
     """
     Orchestrates the breakdown of a complex objective into a validated, executable
@@ -634,6 +712,7 @@ class TaskPlanner:
         display_manager (AgentConsole): Handles Rich display output.
         jinja_env (Environment): Jinja2 environment for rendering prompts.
         tasks_file_path (Path): Path where the plan might be saved/loaded (`tasks.yaml`).
+        current_planning_tier (str): The current planning tier determined by self-reflection.
     """
 
     def __init__(
@@ -693,25 +772,40 @@ class TaskPlanner:
         self.verbose: bool = verbose
         self.tasks_file_path: Path = Path(workspace_dir) / "tasks.yaml"
         self.display_manager = AgentConsole(verbose=self.verbose)
+        self.current_planning_tier: str = PlanningTier.DEFAULT  # Added
 
         # Initialize Jinja2 environment
         self.jinja_env: Environment = Environment(loader=BaseLoader())
 
     def _clean_and_validate_path(self, path: Any, context: str) -> str:
-        """
-        Clean and validate a path relative to the workspace directory.
+        """Clean and validate a path relative to the workspace directory.
+
+        This is a wrapper around the global `clean_and_validate_path` function,
+        using the instance's `self.workspace_dir`.
+
+        Args:
+            path: The path to clean and validate.
+            context: A string describing the context of the validation.
+
+        Returns:
+            The cleaned and validated relative path.
+
+        Raises:
+            ValueError: If the path is invalid.
         """
         return clean_and_validate_path(self.workspace_dir, path, context)
 
     def _customize_system_prompt(self, system_prompt: str | None) -> str:
-        """
-        Customize the system prompt based on provider capabilities.
+        """Customize the system prompt based on provider capabilities.
+
+        If a custom `system_prompt` is provided, it's used directly.
+        Otherwise, `DEFAULT_PLANNING_SYSTEM_PROMPT` is used.
 
         Args:
-            system_prompt: Optional custom system prompt
+            system_prompt: Optional custom system prompt string.
 
         Returns:
-            str: The customized system prompt
+            The system prompt string to be used.
         """
         if system_prompt:
             base_prompt = system_prompt
@@ -732,13 +826,30 @@ class TaskPlanner:
                 with open(self.tasks_file_path, "r") as f:
                     task_plan_data: dict = yaml.safe_load(f)
                     self.task_plan = TaskPlan(**task_plan_data)
+                    self.display_manager.print(
+                        f"[cyan]Loaded existing task plan from {self.tasks_file_path}[/cyan]"
+                    )
                     return True
-            except Exception:  # Keep general exception for file I/O or parsing issues
+            except (
+                Exception
+            ) as e:  # Keep general exception for file I/O or parsing issues
+                self.display_manager.print(  # Use display manager print
+                    f"[yellow]Could not load or parse existing task plan from {self.tasks_file_path}: {e}[/yellow]"
+                )
                 return False
         return False
 
     def _get_prompt_context(self) -> Dict[str, str]:
-        """Helper to build the context for Jinja2 rendering."""
+        """Helper to build the context for Jinja2 prompt rendering.
+
+        This method assembles a dictionary of common variables required by
+        the Jinja2 prompt templates used in different planning phases.
+
+        Returns:
+            A dictionary containing key-value pairs for prompt templating,
+            such as objective, model names, tool information, input file info,
+            and overall output requirements.
+        """
         # Provide default string representation if schema/type are None or not set
         overall_output_schema_str = (
             json.dumps(self.output_schema)
@@ -763,25 +874,45 @@ class TaskPlanner:
     def _render_prompt(
         self, template_string: str, context: Optional[Dict[str, str]] = None
     ) -> str:
-        """Renders a prompt template using Jinja2."""
+        """Renders a prompt template using Jinja2.
+
+        Args:
+            template_string: The Jinja2 template string.
+            context: An optional dictionary of context variables. If None,
+                     `_get_prompt_context()` is used to get default context.
+
+        Returns:
+            The rendered prompt string.
+        """
         if context is None:
             context = self._get_prompt_context()
         template = self.jinja_env.from_string(template_string)
         return template.render(context)
 
     async def _build_agent_task_prompt_content(self) -> str:
-        """Builds the content for the agent task prompt using Jinja2."""
+        """Builds the content for the agent task prompt using Jinja2.
+
+        This prompt (`DEFAULT_AGENT_TASK_TEMPLATE`) provides final check
+        guidelines to the LLM when it's constructing the `create_task` tool call.
+
+        Returns:
+            The rendered agent task prompt string.
+        """
         return self._render_prompt(DEFAULT_AGENT_TASK_TEMPLATE)
 
     def _build_dependency_graph(self, subtasks: List[SubTask]) -> nx.DiGraph:
         """
         Build a directed graph of dependencies between subtasks.
 
+        The graph nodes represent subtasks (identified by their `output_file`).
+        An edge from subtask A to subtask B means B depends on the output of A
+        (i.e., one of B's `input_files` is A's `output_file`).
+
         Args:
-            subtasks: List of subtasks to analyze
+            subtasks: A list of `SubTask` objects.
 
         Returns:
-            nx.DiGraph: Directed graph representing dependencies
+            A `networkx.DiGraph` representing the dependencies.
         """
         # Create mapping of output files to their subtasks
         output_to_subtask: Dict[str, SubTask] = {}
@@ -809,7 +940,21 @@ class TaskPlanner:
     def _check_output_file_conflicts(
         self, subtasks: List[SubTask]
     ) -> tuple[List[str], Set[str]]:
-        """Checks for duplicate output files."""
+        """Checks for duplicate output files among subtasks.
+
+        Ensures that each subtask defines a unique `output_file`.
+        It also checks that a subtask's primary `output_file` does not
+        conflict with any artifact files if those were to be tracked separately
+        (currently, artifacts are not explicitly handled here beyond primary outputs).
+
+        Args:
+            subtasks: A list of `SubTask` objects.
+
+        Returns:
+            A tuple containing:
+                - A list of string error messages describing any conflicts found.
+                - A set of all unique `output_file` paths generated by the subtasks.
+        """
         validation_errors: List[str] = []
         output_files: Dict[str, SubTask] = {}
         all_generated_files: Set[str] = set()
@@ -834,7 +979,19 @@ class TaskPlanner:
     def _check_input_file_availability(
         self, subtasks: List[SubTask], all_generated_files: Set[str]
     ) -> List[str]:
-        """Checks if all input files for subtasks are available."""
+        """Checks if all input files for subtasks are available.
+
+        An input file is considered available if it's one of the initial
+        input files provided to the planner or if it's an `output_file`
+        of another subtask in the plan.
+
+        Args:
+            subtasks: A list of `SubTask` objects.
+            all_generated_files: A set of all `output_file` paths from the subtasks.
+
+        Returns:
+            A list of string error messages for any missing input file dependencies.
+        """
         validation_errors: List[str] = []
         available_files: Set[str] = set(self.input_files)
 
@@ -853,6 +1010,25 @@ class TaskPlanner:
     def _validate_dependencies(self, subtasks: List[SubTask]) -> List[str]:
         """
         Validate dependencies, file conflicts, and DAG structure for subtasks.
+
+        This method performs several checks:
+        1.  Output file conflicts: Ensures no two subtasks write to the same
+            primary output file.
+        2.  Cycle detection: Builds a dependency graph and checks for circular
+            dependencies, which would make execution impossible.
+        3.  Input file availability: Verifies that all `input_files` for each
+            subtask are either part of the initial task inputs or are generated
+            by a preceding subtask.
+        4.  Topological sort feasibility: Checks if a valid linear execution
+            order for the subtasks can be determined.
+
+        Args:
+            subtasks: A list of `SubTask` objects to validate.
+
+        Returns:
+            A list of strings, where each string is an error message
+            describing a validation failure. An empty list indicates
+            all dependency checks passed.
         """
         validation_errors: List[str] = []
 
@@ -891,15 +1067,133 @@ class TaskPlanner:
 
         return validation_errors
 
+    async def _run_self_reflection_phase(
+        self, history: List[Message]
+    ) -> tuple[List[Message], Optional[PlanningUpdate]]:
+        """Runs self-reflection to determine planning complexity tier.
+
+        This phase uses the LLM to assess the user's objective and classify
+        its complexity into high or low. The result dictates which subsequent planning
+        phases (Analysis, Data Flow) are executed.
+
+        The prompt used for self-reflection (`SELF_REFLECTION_PROMPT_TEMPLATE`)
+        is not added to the main planning history.
+
+        Args:
+            history: The current list of messages in the planning conversation.
+                     This list is not modified by this method.
+
+        Returns:
+            A tuple containing:
+                - The original, unmodified history.
+                - A `PlanningUpdate` object summarizing the outcome of this phase,
+                  or None if an error occurs that prevents update generation.
+        """
+        # Skip self-reflection if data contracts phase is disabled globally
+        if not self.enable_data_contracts_phase:
+            self.display_manager.update_planning_display(
+                "-1. Self-Reflection",
+                "Skipped",
+                Text(
+                    "Skipped as Data Contracts phase is disabled. Tier defaulted to Low Complexity."
+                ),
+            )
+            self.current_planning_tier = PlanningTier.TIER_LOW_COMPLEXITY
+            planning_update = PlanningUpdate(
+                phase="Self-Reflection",
+                status="Skipped",
+                content="Skipped as Data Contracts phase is disabled. Tier defaulted to Low Complexity.",
+            )
+            return history, planning_update
+
+        reflection_prompt_content: str = self._render_prompt(
+            SELF_REFLECTION_PROMPT_TEMPLATE
+        )
+        # We don't add the prompt to history for this special call,
+        # as it's a meta-instruction for the planner itself.
+        # However, the response from the LLM (the tier) can be logged.
+
+        self.display_manager.update_planning_display(
+            "-1. Self-Reflection", "Running", "Assessing objective complexity..."
+        )
+
+        try:
+            # Use a separate call, not part of the main history chain for planning
+            # Use the reasoning_model for this critical decision.
+            reflection_message: Message = await self.provider.generate_message(
+                messages=[Message(role="user", content=reflection_prompt_content)],
+                model=self.reasoning_model,  # Use reasoning model for this step
+                tools=[],
+                max_tokens=10,  # Expecting a very short response like "Tier X"
+            )
+
+            tier_response_content = str(reflection_message.content).strip()
+
+            self.current_planning_tier = PlanningTier.from_string(tier_response_content)
+
+            phase_status = "Completed"
+            phase_content = f"Determined Planning Tier: {self.current_planning_tier}"
+            if (
+                self.current_planning_tier == PlanningTier.DEFAULT
+                and tier_response_content
+                not in [
+                    PlanningTier.TIER_LOW_COMPLEXITY,
+                    PlanningTier.TIER_HIGH_COMPLEXITY,
+                ]
+            ):
+                phase_status = "Warning"
+                phase_content += f" (LLM response: '{tier_response_content}', defaulted to {PlanningTier.DEFAULT})"
+
+        except Exception as e:
+            self.current_planning_tier = PlanningTier.DEFAULT
+            phase_status = "Failed"
+            phase_content = f"Error during self-reflection: {e}. Defaulting to {self.current_planning_tier}"
+            # Log the error if verbose or always for critical failures
+            self.display_manager.print(f"[red]Self-reflection error: {e}[/red]")
+
+        self.display_manager.update_planning_display(
+            "-1. Self-Reflection", phase_status, Text(str(phase_content))
+        )
+        planning_update = PlanningUpdate(
+            phase="Self-Reflection",
+            status=phase_status,
+            content=str(phase_content),
+        )
+        # Do not append reflection messages to the main planning history
+        return history, planning_update
+
     async def _run_analysis_phase(
         self, history: List[Message]
     ) -> tuple[List[Message], Optional[PlanningUpdate]]:
-        """Handles Phase 0: Analysis."""
+        """Handles Phase 0: Analysis.
+
+        In this phase, the LLM interprets the user's objective, clarifies
+        understanding, and devises a high-level strategic plan by breaking
+        down the objective into conceptual subtasks.
+
+        This phase can be skipped if:
+        - `self.enable_analysis_phase` is False.
+        # Tier-based skipping is removed as Analysis runs for both Low and High complexity.
+
+        Args:
+            history: The current list of messages in the planning conversation.
+                     The LLM's prompt and response for this phase are appended.
+
+        Returns:
+            A tuple containing:
+                - The updated history with messages from this phase.
+                - A `PlanningUpdate` object summarizing the outcome, or None if skipped.
+        """
         if not self.enable_analysis_phase:
             self.display_manager.update_planning_display(
-                "0. Analysis", "Skipped", "Phase disabled."
+                "0. Analysis", "Skipped", "Phase disabled by global flag."
             )
             return history, None
+
+        # Skip based on determined tier - REMOVED
+        # Analysis phase runs for both Low and High complexity tiers,
+        # so tier-based skipping is removed from here.
+        # It is only skipped if self.enable_analysis_phase is False (handled above).
 
         analysis_prompt_content: str = self._render_prompt(ANALYSIS_PHASE_TEMPLATE)
         history.append(Message(role="user", content=analysis_prompt_content))
@@ -931,10 +1225,39 @@ class TaskPlanner:
     async def _run_data_flow_phase(
         self, history: List[Message]
     ) -> tuple[List[Message], Optional[PlanningUpdate]]:
-        """Handles Phase 1: Data Flow Analysis."""
+        """Handles Phase 1: Data Flow Analysis.
+
+        This phase refines the conceptual subtask plan from Phase 0 by
+        defining precise data flow, dependencies (input/output files),
+        and contracts for each subtask. It may also involve the LLM
+        generating a DOT/Graphviz representation of the data flow.
+
+        This phase can be skipped if:
+        - `self.enable_data_contracts_phase` is False.
+        - The `self.current_planning_tier` is `PlanningTier.TIER_1_SIMPLE` or
+          `PlanningTier.TIER_2_MODERATE`.
+
+        Args:
+            history: The current list of messages in the planning conversation.
+                     The LLM's prompt and response for this phase are appended.
+
+        Returns:
+            A tuple containing:
+                - The updated history with messages from this phase.
+                - A `PlanningUpdate` object summarizing the outcome, or None if skipped.
+        """
         if not self.enable_data_contracts_phase:
             self.display_manager.update_planning_display(
-                "1. Data Contracts", "Skipped", "Phase disabled."
+                "1. Data Contracts", "Skipped", "Phase disabled by global flag."
+            )
+            return history, None
+
+        # Skip based on determined tier
+        if self.current_planning_tier == PlanningTier.TIER_LOW_COMPLEXITY:
+            self.display_manager.update_planning_display(
+                "1. Data Contracts",
+                "Skipped",
+                f"Skipped due to {self.current_planning_tier} (Low Complexity).",
             )
             return history, None
 
@@ -971,13 +1294,46 @@ class TaskPlanner:
         objective: str,
         max_retries: int,
     ) -> tuple[Optional[Task], Optional[Exception], Optional[PlanningUpdate]]:
-        """Handles Phase 2: Plan Creation."""
+        """Handles Phase 2: Plan Creation.
+
+        This is the final planning phase where the LLM generates the concrete,
+        executable task plan. It does this either by making a call to the
+        `create_task` tool (if `self.use_structured_output` is False) or
+        by generating structured JSON output directly if the LLM and provider
+        support it.
+
+        The complexity of the plan generated depends on the information
+        gathered in preceding phases (Analysis, Data Flow), which are themselves
+        conditional on the `current_planning_tier`.
+
+        Args:
+            history: The list of messages from previous planning phases.
+                     The LLM's prompt and response for this phase are appended if
+                     using tool-based generation.
+            objective: The original user objective, used as a fallback title
+                       and for context in structured output.
+            max_retries: The maximum number of retries for LLM generation if
+                         initial attempts fail validation or don't produce
+                         the expected output.
+
+        Returns:
+            A tuple containing:
+                - The generated `Task` object if successful, otherwise None.
+                - An `Exception` object if an error occurred during plan creation,
+                  otherwise None.
+                - A `PlanningUpdate` object summarizing the outcome of this phase.
+        """
         task: Optional[Task] = None
         final_message: Optional[Message] = None
         plan_creation_error: Optional[Exception] = None
         phase_status: str = "Failed"
         phase_content: str | Text = "N/A"
         current_phase_name: str = "2. Plan Creation"
+
+        # Adjust prompt/logic for Tier 1 if necessary, e.g., by using a simpler template
+        # or adding specific instructions to the existing template for single-task plans.
+        # For now, we use the same template but the LLM will have less preceding context from skipped phases.
+        # The main effect of Tier 1 will be the lack of Analysis and Data Flow history.
 
         if self.use_structured_output:
             self.display_manager.update_planning_display(
@@ -1101,6 +1457,14 @@ class TaskPlanner:
         current_phase = "Initialization"
 
         try:
+            # Phase -1: Self-Reflection
+            current_phase = "Self-Reflection"
+            yield PlanningUpdate(phase=current_phase, status="Starting", content=None)
+            # Run self-reflection. Note: history is not modified by this special phase call.
+            _, planning_update = await self._run_self_reflection_phase(history)
+            if planning_update:
+                yield planning_update
+
             # Phase 0: Analysis
             current_phase = "Analysis"
             yield PlanningUpdate(phase=current_phase, status="Starting", content=None)
@@ -1200,6 +1564,14 @@ class TaskPlanner:
             self.display_manager.stop_live()
 
     def _remove_think_tags(self, text_content: Optional[str]) -> Optional[str]:
+        """Removes <think>...</think> blocks from a string.
+
+        Args:
+            text_content: The string to process.
+
+        Returns:
+            The string with <think> blocks removed, or None if input was None.
+        """
         if text_content is None:
             return None
         # Use regex to remove <think>...</think> blocks, including newlines within them.
@@ -1208,7 +1580,19 @@ class TaskPlanner:
         return re.sub(r"<think>.*?</think>", "", text_content, flags=re.DOTALL).strip()
 
     def _format_message_content(self, message: Optional[Message]) -> str | Text:
-        """Formats message content for table display. (Handles None message)"""
+        """Formats message content for table display.
+
+        Handles `None` messages, summarizes tool calls, and cleans `<think>`
+        tags from textual content.
+
+        Args:
+            message: The `Message` object to format. Can be None.
+
+        Returns:
+            A `rich.text.Text` object suitable for display, or a plain string
+            for tool call summaries (though Text is preferred).
+            Returns a default Text object if the message is None or content is empty.
+        """
         if not message:
             return Text("No response message.", style="dim")
 
@@ -1258,7 +1642,20 @@ class TaskPlanner:
     def _format_message_content_for_update(
         self, message: Optional[Message]
     ) -> Optional[str]:
-        """Formats message content into a simple string for PlanningUpdate."""
+        """Formats message content into a simple string for PlanningUpdate.
+
+        This method is similar to `_format_message_content` but specifically
+        targets the `content` attribute of a `Message` and returns a plain
+        string, primarily for use in `PlanningUpdate.content`. It removes
+        `<think>` tags.
+
+        Args:
+            message: The `Message` object. Can be None.
+
+        Returns:
+            A string representation of the message content after cleaning,
+            or None if the message or its content is None/empty.
+        """
         if not message:
             return None
 
@@ -1286,7 +1683,29 @@ class TaskPlanner:
         available_execution_tools: Dict[str, Tool],
         sub_context: str,
     ) -> tuple[Optional[dict], List[str]]:
-        """Validates a subtask intended as a direct tool call."""
+        """Validates a subtask intended as a direct tool call.
+
+        This involves:
+        1.  Checking if the specified `tool_name` is among the available
+            `execution_tools`.
+        2.  Ensuring the `content` (expected to be tool arguments) is valid JSON.
+        3.  Validating the parsed JSON arguments against the tool's `input_schema`
+            using `jsonschema.validate`.
+
+        Args:
+            subtask_data: The raw dictionary data for the subtask.
+            tool_name: The name of the tool to be called.
+            content: The content for the subtask, expected to be JSON arguments
+                     for the tool.
+            available_execution_tools: A dictionary mapping tool names to `Tool` objects.
+            sub_context: A string prefix for error messages (e.g., "Subtask 1").
+
+        Returns:
+            A tuple containing:
+                - A dictionary of the parsed and validated tool arguments if
+                  validation is successful, otherwise None.
+                - A list of string error messages encountered during validation.
+        """
         validation_errors: List[str] = []
         parsed_content: Optional[dict] = None
 
@@ -1333,7 +1752,18 @@ class TaskPlanner:
         return parsed_content, validation_errors
 
     def _validate_agent_task(self, content: Any, sub_context: str) -> List[str]:
-        """Validates a subtask intended for agent execution."""
+        """Validates a subtask intended for agent execution.
+
+        Ensures that the `content` for an agent task (which represents
+        natural language instructions) is a non-empty string.
+
+        Args:
+            content: The content of the subtask (instructions for the agent).
+            sub_context: A string prefix for error messages (e.g., "Subtask 1").
+
+        Returns:
+            A list of string error messages. An empty list means validation passed.
+        """
         validation_errors: List[str] = []
         if not isinstance(content, str) or not content.strip():
             validation_errors.append(
@@ -1344,7 +1774,26 @@ class TaskPlanner:
     def _process_subtask_schema(
         self, subtask_data: dict, sub_context: str
     ) -> tuple[Optional[str], List[str]]:
-        """Processes and validates the output_schema for a subtask."""
+        """Processes and validates the output_schema for a subtask.
+
+        Handles several cases for `output_schema`:
+        - If `output_type` is binary, uses `FILE_POINTER_SCHEMA`.
+        - If `output_schema` is a valid JSON string, it's parsed.
+        - If `output_schema` is None or an empty string, a default schema is
+          generated based on `output_type` using `json_schema_for_output_type`.
+        - Ensures `additionalProperties: false` is set on object schemas.
+
+        Args:
+            subtask_data: The raw dictionary data for the subtask, containing
+                          `output_type` and `output_schema`.
+            sub_context: A string prefix for error messages.
+
+        Returns:
+            A tuple containing:
+                - The processed and validated `output_schema` as a JSON string,
+                  or None if a fatal error occurred.
+                - A list of string error messages encountered.
+        """
         validation_errors: List[str] = []
         output_type: str = subtask_data.get("output_type", "string")
         current_schema_str: Any = subtask_data.get("output_schema")
@@ -1414,7 +1863,32 @@ class TaskPlanner:
         parsed_tool_content: Optional[dict],
         sub_context: str,
     ) -> tuple[Optional[dict], List[str]]:
-        """Cleans paths and prepares the final data dictionary for SubTask creation."""
+        """Cleans paths and prepares the final data dictionary for SubTask creation.
+
+        This method takes the raw subtask data, the validated `final_schema_str`,
+        and potentially parsed tool content, then performs:
+        1.  Path cleaning and validation for `output_file` and `input_files`
+            using `_clean_and_validate_path`. It also checks that output files
+            are at the workspace root.
+        2.  Ensures `tool_name` is None if it was an empty string.
+        3.  Handles default model assignment for the subtask.
+        4.  Filters the data dictionary to include only fields recognized by the
+            `SubTask` Pydantic model.
+        5.  Stringifies `parsed_tool_content` back into the `content` field if
+            it was a tool task.
+
+        Args:
+            subtask_data: The raw dictionary data for the subtask.
+            final_schema_str: The validated output schema as a JSON string.
+            parsed_tool_content: Parsed JSON arguments if it's a tool task, else None.
+            sub_context: A string prefix for error messages.
+
+        Returns:
+            A tuple containing:
+                - A dictionary ready for `SubTask` model instantiation, or None
+                  if a fatal error occurred.
+                - A list of string error messages.
+        """
         validation_errors: List[str] = []
         processed_data = subtask_data.copy()  # Work on a copy
 
@@ -1623,7 +2097,24 @@ class TaskPlanner:
     async def _validate_structured_output_plan(
         self, task_data: dict, objective: str
     ) -> tuple[Optional[Task], List[str]]:
-        """Validates the plan data received from structured output."""
+        """Validates the plan data received from structured output.
+
+        This method is used when the LLM generates the plan as direct JSON
+        output rather than through a tool call. It involves:
+        1.  Processing the list of subtasks using `_process_subtask_list`.
+        2.  Validating dependencies between the processed subtasks using
+            `_validate_dependencies`.
+
+        Args:
+            task_data: A dictionary representing the entire task plan, typically
+                       with "title" and "subtasks" keys, as generated by the LLM.
+            objective: The original user objective, used as a fallback title.
+
+        Returns:
+            A tuple containing:
+                - A `Task` object if the plan is valid, otherwise None.
+                - A list of all validation error messages encountered.
+        """
         all_validation_errors: List[str] = []
 
         # Validate the subtasks first
@@ -1669,7 +2160,24 @@ class TaskPlanner:
         self, objective: str, max_retries: int = 3
     ) -> Task:
         """
-        Create a task plan using structured output, with validation and retry logic.
+        Create a task plan using structured output from the LLM.
+
+        This method attempts to have the LLM generate a complete task plan
+        as a JSON object that conforms to the schema of the `CreateTaskTool`.
+        It includes retry logic: if the LLM's output is not valid JSON or
+        fails plan validation (`_validate_structured_output_plan`), it re-prompts
+        the LLM with error feedback.
+
+        Args:
+            objective: The user's objective for the task plan.
+            max_retries: The maximum number of attempts to get a valid plan.
+
+        Returns:
+            A `Task` object representing the validated plan.
+
+        Raises:
+            ValueError: If a valid task plan cannot be generated after all retries,
+                        or if other critical errors occur.
         """
         create_task_tool = CreateTaskTool()
         response_schema: dict = create_task_tool.input_schema
@@ -1777,7 +2285,40 @@ class TaskPlanner:
     async def _validate_and_build_task_from_tool_calls(
         self, tool_calls: List[ToolCall], history: List[Message]
     ) -> tuple[Optional[Task], List[str]]:
-        """Processes 'create_task' tool calls, validates subtasks and dependencies."""
+        """Processes 'create_task' tool calls, validates subtasks and dependencies.
+
+        This method handles the arguments from one or more `create_task` tool
+        calls made by the LLM. For each such call, it:
+        1.  Extracts the task title and the list of raw subtask data.
+        2.  Processes the raw subtasks using `_process_subtask_list` to convert
+            them into `SubTask` objects and collect validation errors.
+        3.  Appends a "tool" role message to the history acknowledging the call
+            and summarizing any validation issues for that specific call.
+
+        After processing all `create_task` calls, it:
+        4.  Validates dependencies across *all* collected subtasks from *all* calls
+            using `_validate_dependencies`.
+
+        If any validation errors occur at any stage (either within a single
+        subtask, a tool call's subtask list, or in the final dependency check),
+        it raises a `ValueError` to trigger retry logic in the calling function
+        (`_generate_with_retry`).
+
+        Args:
+            tool_calls: A list of `ToolCall` objects from the LLM's message.
+            history: The current planning conversation history. Tool response
+                     messages will be appended to this list.
+
+        Returns:
+            A tuple containing:
+                - A `Task` object if all validations pass and subtasks exist.
+                - An empty list of validation errors (as errors trigger an exception).
+
+        Raises:
+            ValueError: If any validation errors are found during the processing
+                        of subtasks or overall plan dependencies, or if a
+                        `create_task` call results in no valid subtasks.
+        """
         all_subtasks: List[SubTask] = []
         all_validation_errors: List[str] = []
         task_title: str = self.objective  # Default title
@@ -1977,7 +2518,10 @@ class TaskPlanner:
 
     async def save_task_plan(self) -> None:
         """
-        Save the current task plan to tasks.yaml.
+        Save the current task plan to `tasks.yaml` in the workspace directory.
+
+        The plan is serialized to YAML format. Errors during saving are
+        printed to the display manager.
         """
         if self.task_plan:
             task_dict: dict = self.task_plan.model_dump(
@@ -2009,6 +2553,15 @@ class TaskPlanner:
     def _get_execution_tools_info(self) -> str:
         """
         Get formatted string information about available execution tools.
+
+        This information is used in prompts to inform the LLM about the tools
+        that agents can use later to execute subtasks. It includes the tool's
+        name, description, and a summary of its arguments (if an input schema
+        is defined).
+
+        Returns:
+            A string detailing the available execution tools, or
+            "No execution tools available" if none are configured.
         """
         if not self.execution_tools:
             return "No execution tools available"
@@ -2030,7 +2583,14 @@ class TaskPlanner:
 
     def _get_input_files_info(self) -> str:
         """
-        Get formatted string information about input files.
+        Get formatted string information about initial input files.
+
+        This is used in prompts to inform the LLM about files that are
+        available at the very beginning of the task execution.
+
+        Returns:
+            A string listing the input files, or "No input files available"
+            if the `input_files` list is empty.
         """
         if not self.input_files:
             return "No input files available"
@@ -2042,8 +2602,20 @@ class TaskPlanner:
 
     def _ensure_additional_properties_false(self, schema: dict) -> dict:
         """
-        Recursively ensures additionalProperties: false on objects, adds default items
-        for arrays, and sets all object properties as required by default.
+        Recursively ensures `additionalProperties: false` on object schemas.
+
+        It also adds default `items: {"type": "string"}` for array schemas
+        if `items` is not defined, and makes all properties of an object
+        required by default if a `required` list is not already present.
+
+        This is used to make JSON schemas generated or processed by the planner
+        stricter, reducing ambiguity for LLM interactions.
+
+        Args:
+            schema: The JSON schema dictionary to process.
+
+        Returns:
+            The modified schema dictionary.
         """
         # Handle the current level if it's an object schema
         if isinstance(schema, dict) and schema.get("type") == "object":
