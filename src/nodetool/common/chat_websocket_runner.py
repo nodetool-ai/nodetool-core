@@ -94,6 +94,7 @@ from nodetool.workflows.run_workflow import run_workflow
 from nodetool.workflows.types import Chunk
 from nodetool.workflows.workflow_runner import WorkflowRunner
 from nodetool.workflows.processing_context import ProcessingContext
+from nodetool.chat.help import create_help_answer
 
 log = logging.getLogger(__name__)
 
@@ -267,6 +268,7 @@ class ChatWebSocketRunner:
                     log.warning("Received message with unknown format")
                     continue
 
+                print(data)
                 message = Message(**data)
 
                 # Add the new message to chat history
@@ -294,6 +296,35 @@ class ChatWebSocketRunner:
                 # Optionally, you can decide whether to break the loop or continue
                 # break
 
+    async def _process_help_messages(self, model: str) -> Message:
+        """
+        Processes messages using the integrated help system.
+
+        Args:
+            model (str): The name of the model to use for help.
+
+        Returns:
+            Message: An assistant message containing the aggregated help content.
+        """
+        provider = provider_from_model(model)
+        accumulated_content = ""
+        async for help_text_chunk in create_help_answer(
+            provider=provider,
+            messages=self.chat_history,
+            model=model,
+        ):
+            accumulated_content += help_text_chunk
+            await self.send_message(
+                {"type": "chunk", "content": help_text_chunk, "done": False}
+            )
+
+        # Signal the end of the help stream
+        await self.send_message({"type": "chunk", "content": "", "done": True})
+        return Message(
+            role="assistant",
+            content=accumulated_content if accumulated_content else None,
+        )
+
     async def process_messages(self) -> Message:
         """
         Process messages without a workflow, typically for general chat interactions.
@@ -301,6 +332,7 @@ class ChatWebSocketRunner:
         This method takes the last message from the chat history, initializes
         any specified tools, and uses a chat provider to generate a response.
         It supports streaming responses and tool execution.
+        It also handles requests for the integrated help system.
 
         Returns:
             Message: The assistant's response message.
@@ -310,78 +342,90 @@ class ChatWebSocketRunner:
         """
         last_message = self.chat_history[-1]
 
-        processing_context = ProcessingContext()
-
-        content = ""
-        unprocessed_messages = []
-
-        def init_tool(name: str) -> Tool:
-            tool_class = get_tool_by_name(name)
-            if tool_class:
-                return tool_class()
-            else:
-                raise ValueError(f"Tool {name} not found")
-
-        if last_message.tools:
-            selected_tools = [init_tool(name) for name in last_message.tools]
+        # Check for help request
+        if last_message.model and last_message.model.startswith("help"):
+            parts = last_message.model.split(":", 1)
+            if len(parts) > 1 and parts[1]:
+                actual_model_name = parts[1]
+            return await self._process_help_messages(actual_model_name)
         else:
-            selected_tools = []
+            # Existing logic for regular messages
+            processing_context = ProcessingContext()
 
-        assert last_message.model, "Model is required"
-
-        provider = provider_from_model(last_message.model)
-
-        # Stream the response chunks
-        while True:
-            messages_to_send = self.chat_history + unprocessed_messages
+            content = ""
             unprocessed_messages = []
 
-            async for chunk in provider.generate_messages(
-                messages=messages_to_send,
-                model=last_message.model,
-                tools=selected_tools,
-            ):  # type: ignore
-                if isinstance(chunk, Chunk):
-                    content += chunk.content
-                    # Send intermediate chunks to client
-                    await self.send_message(
-                        {"type": "chunk", "content": chunk.content, "done": chunk.done}
-                    )
-                elif isinstance(chunk, ToolCall):
-                    # Send tool call to client
-                    await self.send_message(
-                        {"type": "tool_call", "tool_call": chunk.model_dump()}
-                    )
+            def init_tool(name: str) -> Tool:
+                tool_class = get_tool_by_name(name)
+                if tool_class:
+                    return tool_class()
+                else:
+                    raise ValueError(f"Tool {name} not found")
 
-                    # Process the tool call
-                    tool_result = await run_tool(
-                        processing_context, chunk, selected_tools
-                    )
-                    # Add tool messages to unprocessed messages
-                    unprocessed_messages.append(
-                        Message(role="assistant", tool_calls=[chunk])
-                    )
-                    unprocessed_messages.append(
-                        Message(
-                            role="tool",
-                            tool_call_id=tool_result.id,
-                            content=json.dumps(tool_result.result),
+            if last_message.tools:
+                selected_tools = [init_tool(name) for name in last_message.tools]
+            else:
+                selected_tools = []
+
+            assert last_message.model, "Model is required"
+
+            provider = provider_from_model(last_message.model)
+
+            # Stream the response chunks
+            while True:
+                messages_to_send = self.chat_history + unprocessed_messages
+                unprocessed_messages = []
+
+                async for chunk in provider.generate_messages(
+                    messages=messages_to_send,
+                    model=last_message.model,
+                    tools=selected_tools,
+                ):  # type: ignore
+                    if isinstance(chunk, Chunk):
+                        content += chunk.content
+                        # Send intermediate chunks to client
+                        await self.send_message(
+                            {
+                                "type": "chunk",
+                                "content": chunk.content,
+                                "done": chunk.done,
+                            }
                         )
-                    )
+                    elif isinstance(chunk, ToolCall):
+                        # Send tool call to client
+                        await self.send_message(
+                            {"type": "tool_call", "tool_call": chunk.model_dump()}
+                        )
 
-                    # Send tool result to client
-                    await self.send_message(
-                        {"type": "tool_result", "result": tool_result.model_dump()}
-                    )
+                        # Process the tool call
+                        tool_result = await run_tool(
+                            processing_context, chunk, selected_tools
+                        )
+                        # Add tool messages to unprocessed messages
+                        unprocessed_messages.append(
+                            Message(role="assistant", tool_calls=[chunk])
+                        )
+                        unprocessed_messages.append(
+                            Message(
+                                role="tool",
+                                tool_call_id=tool_result.id,
+                                content=json.dumps(tool_result.result),
+                            )
+                        )
 
-            # If no more unprocessed messages, we're done
-            if not unprocessed_messages:
-                break
+                        # Send tool result to client
+                        await self.send_message(
+                            {"type": "tool_result", "result": tool_result.model_dump()}
+                        )
 
-        return Message(
-            role="assistant",
-            content=content if content else None,
-        )
+                # If no more unprocessed messages, we're done
+                if not unprocessed_messages:
+                    break
+
+            return Message(
+                role="assistant",
+                content=content if content else None,
+            )
 
     async def process_messages_for_workflow(self) -> Message:
         """

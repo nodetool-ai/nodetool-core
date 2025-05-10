@@ -22,23 +22,30 @@ import asyncio
 import json
 import os
 import re
-from typing import Any, AsyncGenerator, Mapping
+from typing import Any, AsyncGenerator, Mapping, List, Type, Dict, cast
 import ollama
 import readline
+import uuid
 from pydantic import BaseModel
 
 import chromadb
-
+from chromadb.api.types import IncludeEnum, WhereDocument, Metadata
+from jsonschema import validators
+from nodetool.chat.providers.base import ChatProvider
 from nodetool.common.settings import get_system_data_path
 from nodetool.chat.ollama_service import get_ollama_client
 from nodetool.common.environment import Environment
 from nodetool.metadata.types import (
     Message,
     MessageTextContent,
+    Provider,
+    ToolCall,
 )
 from nodetool.packages.registry import Registry
-from jsonschema import validators
-from chromadb.api.types import IncludeEnum
+from nodetool.workflows.types import Chunk
+from nodetool.workflows.processing_context import ProcessingContext
+from nodetool.agents.tools.base import Tool
+from nodetool.chat.providers import get_provider
 
 
 doc_folder = os.path.join(os.path.dirname(__file__), "docs")
@@ -111,9 +118,16 @@ def index_documentation(collection: chromadb.Collection):
             for node in package.nodes:
                 ids.append(node.node_type)
                 docs.append(node.description)
-                metadata.append(node.model_dump())
+                node_meta_raw = node.model_dump()
+                # Filter to include only valid Metadata types (str, int, float, bool)
+                node_meta: Metadata = {
+                    k: v
+                    for k, v in node_meta_raw.items()
+                    if isinstance(v, (str, int, float, bool))
+                }
+                metadata.append(node_meta)
 
-    collection.add(ids, documents=docs, metadatas=metadata)  # type: ignore
+    collection.add(ids=ids, documents=docs, metadatas=metadata)  # type: ignore
     return collection
 
 
@@ -127,7 +141,7 @@ def index_examples(collection: chromadb.Collection):
     ids = [example.id for example in examples]
     docs = [example.model_dump_json() for example in examples]
 
-    collection.add(ids, documents=docs)
+    collection.add(ids=ids, documents=docs)
     print("Indexed examples")
 
 
@@ -149,7 +163,7 @@ def get_example_collection():
 class SearchResult(BaseModel):
     id: str
     content: str
-    metadata: dict | None = None
+    metadata: Mapping[str, Any] | None = None
 
 
 def semantic_search_documentation(
@@ -169,35 +183,63 @@ def semantic_search_documentation(
     results = collection.query(
         query_texts=[query],
         n_results=n_results,
-        include=[IncludeEnum.documents, IncludeEnum.distances],
+        include=[IncludeEnum.documents, IncludeEnum.metadatas, IncludeEnum.distances],
     )
 
     search_results = []
-    if results["documents"]:
+    if (
+        results["documents"]
+        and results["ids"]
+        and results["ids"][0]
+        and len(results["documents"][0]) > 0
+    ):
         for i, doc in enumerate(results["documents"][0]):
-            metadata = results["metadatas"][0][i] if results["metadatas"] else None
+            current_metadata = None
+            if (
+                results["metadatas"]
+                and results["metadatas"][0]
+                and i < len(results["metadatas"][0])
+            ):
+                current_metadata = results["metadatas"][0][i]
+
             search_results.append(
                 SearchResult(
                     id=results["ids"][0][i],
                     content=doc,
-                    metadata=metadata,  # type: ignore
+                    metadata=current_metadata,
                 )
             )
     return search_results
 
 
-def node_properties(node_type: str) -> dict:
+def node_properties(node_type: str) -> Dict[str, Any]:
     """
     Get the properties of a node.
     """
     collection = get_doc_collection()
-    results = collection.query(
-        query_texts=[node_type],
-        n_results=1,
-        include=[IncludeEnum.documents, IncludeEnum.metadatas],
+    results = collection.get(
+        ids=[node_type], include=[IncludeEnum.documents, IncludeEnum.metadatas]
     )
-    if results["documents"]:
-        return results["metadatas"][0][0]  # type: ignore
+    if (
+        results["metadatas"]
+        and len(results["metadatas"]) > 0
+        and results["metadatas"][0] is not None
+    ):
+        # Convert Mapping to dict for consistent return type
+        return dict(results["metadatas"][0])
+    elif (
+        results["documents"]
+        and len(results["documents"]) > 0
+        and results["documents"][0] is not None
+    ):
+        doc_content_str = results["documents"][0]
+        try:
+            loaded_json = json.loads(doc_content_str)
+            if isinstance(loaded_json, dict):
+                return loaded_json
+            return {"description": doc_content_str}  # If not a dict, wrap it
+        except json.JSONDecodeError:
+            return {"description": doc_content_str}
     return {}
 
 
@@ -226,19 +268,30 @@ def keyword_search_documentation(query: str) -> list[SearchResult]:
     results = collection.query(
         query_texts=[query],
         n_results=n_results,
-        where_document=where_document,  # type: ignore
-        include=[IncludeEnum.documents, IncludeEnum.distances],
+        where_document=cast(WhereDocument, where_document),
+        include=[IncludeEnum.documents, IncludeEnum.metadatas, IncludeEnum.distances],
     )
 
     search_results = []
-    if results["documents"]:
+    if (
+        results["documents"]
+        and results["ids"]
+        and results["ids"][0]
+        and len(results["documents"][0]) > 0
+    ):
         for i, doc in enumerate(results["documents"][0]):
-            metadata = results["metadatas"][0][i] if results["metadatas"] else None
+            current_metadata = None
+            if (
+                results["metadatas"]
+                and results["metadatas"][0]
+                and i < len(results["metadatas"][0])
+            ):
+                current_metadata = results["metadatas"][0][i]
             search_results.append(
                 SearchResult(
                     id=results["ids"][0][i],
                     content=doc,
-                    metadata=metadata,  # type: ignore
+                    metadata=current_metadata,
                 )
             )
     return search_results
@@ -405,8 +458,9 @@ CORE_DOCS = [
 
 def index_core_docs(collection: chromadb.Collection):
     collection.add(
-        [doc["id"] for doc in CORE_DOCS],
+        ids=[doc["id"] for doc in CORE_DOCS],
         documents=[doc["content"] for doc in CORE_DOCS],
+        metadatas=[{"title": doc["title"], "id": doc["id"]} for doc in CORE_DOCS],
     )
 
 
@@ -547,134 +601,380 @@ async def create_message(message: Message) -> Mapping[str, str | list[str]]:
     return ollama_message
 
 
-available_functions = {
-    "semantic_search_documentation": semantic_search_documentation,
-    "keyword_search_documentation": keyword_search_documentation,
-    "search_examples": search_examples,
-    "node_properties": node_properties,
-}
+# --- Pydantic Models for Tool Arguments ---
+class SearchArgs(BaseModel):
+    query: str
+
+
+class NodePropertiesArgs(BaseModel):
+    node_type: str
+
+
+# --- Tool Classes for Help System ---
+class BaseHelpTool(Tool):
+    _args_model_class: Type[BaseModel]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if hasattr(self, "_args_model_class") and self._args_model_class:
+            self.input_schema = self._args_model_class.model_json_schema()
+        else:
+            self.input_schema = super().input_schema
+
+    # Override process to parse params with Pydantic model
+    async def _process_typed(
+        self, context: ProcessingContext, typed_params: BaseModel
+    ) -> Any:
+        # This method should be implemented by subclasses if they want to work with typed_params
+        raise NotImplementedError(
+            "Subclasses must implement _process_typed or override process directly"
+        )
+
+    async def process(self, context: ProcessingContext, params: Dict[str, Any]) -> Any:
+        # Parse the raw params dict using the specific Pydantic model for this tool
+        if hasattr(self, "_args_model_class") and self._args_model_class:
+            try:
+                typed_params_instance = self._args_model_class(**params)
+                return await self._process_typed(context, typed_params_instance)
+            except Exception as e:  # Catch Pydantic validation errors or other issues
+                log.error(
+                    f"Error parsing params for tool {self.name} with model {self._args_model_class.__name__}: {params}. Error: {e}"
+                )
+                # Return a JSON string error, as tool results are often expected to be strings by LLMs
+                return json.dumps(
+                    {"error": f"Invalid parameters for tool {self.name}: {str(e)}"}
+                )
+        else:
+            log.warning(
+                f"Tool {self.name} is missing _args_model_class for Pydantic validation."
+            )
+            return await super().process(
+                context, params
+            )  # Fallback to base if no model defined
+
+
+class SemanticSearchDocumentationTool(BaseHelpTool):
+    name: str = "semantic_search_documentation"
+    description: str = (
+        "Performs semantic search on Nodetool documentation. Use for conceptual queries and finding related content."
+    )
+    _args_model_class: Type[BaseModel] = SearchArgs
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    async def _process_typed(self, context: ProcessingContext, typed_params: SearchArgs) -> str:  # type: ignore
+        log.info(
+            f"Executing SemanticSearchDocumentationTool with query: {typed_params.query}"
+        )
+        results = semantic_search_documentation(query=typed_params.query)
+        return convert_results_to_json(results)
+
+
+class KeywordSearchDocumentationTool(BaseHelpTool):
+    name: str = "keyword_search_documentation"
+    description: str = (
+        "Performs keyword search on Nodetool documentation. Use for finding specific node types or features by exact word matches."
+    )
+    _args_model_class: Type[BaseModel] = SearchArgs
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    async def _process_typed(self, context: ProcessingContext, typed_params: SearchArgs) -> str:  # type: ignore
+        log.info(
+            f"Executing KeywordSearchDocumentationTool with query: {typed_params.query}"
+        )
+        results = keyword_search_documentation(query=typed_params.query)
+        return convert_results_to_json(results)
+
+
+class SearchExamplesTool(BaseHelpTool):
+    name: str = "search_examples"
+    description: str = (
+        "Searches for relevant Nodetool workflow examples. Use for finding example workflows and use cases."
+    )
+    _args_model_class: Type[BaseModel] = SearchArgs
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    async def _process_typed(self, context: ProcessingContext, typed_params: SearchArgs) -> str:  # type: ignore
+        log.info(f"Executing SearchExamplesTool with query: {typed_params.query}")
+        results = search_examples(query=typed_params.query)
+        return convert_results_to_json(results)
+
+
+class NodePropertiesTool(BaseHelpTool):
+    name: str = "node_properties"
+    description: str = (
+        "Gets the properties (inputs, outputs, description) of a specific Nodetool node type."
+    )
+    _args_model_class: Type[BaseModel] = NodePropertiesArgs
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    async def _process_typed(self, context: ProcessingContext, typed_params: NodePropertiesArgs) -> str:  # type: ignore
+        log.info(
+            f"Executing NodePropertiesTool with node_type: {typed_params.node_type}"
+        )
+        properties = node_properties(node_type=typed_params.node_type)
+        return convert_results_to_json(properties)
 
 
 def convert_results_to_json(obj: Any) -> str:
     if isinstance(obj, BaseModel):
         return obj.model_dump_json()
     elif isinstance(obj, list):
-        return json.dumps([convert_results_to_json(item) for item in obj])
+        return json.dumps(
+            [
+                (
+                    json.loads(convert_results_to_json(item))
+                    if isinstance(convert_results_to_json(item), str)
+                    else convert_results_to_json(item)
+                )
+                for item in obj
+            ]
+        )
     elif isinstance(obj, dict):
-        return json.dumps({k: convert_results_to_json(v) for k, v in obj.items()})
-    elif isinstance(obj, str):
-        return obj
-    elif isinstance(obj, bool):
-        return str(obj).lower()
-    elif isinstance(obj, int):
-        return str(obj)
-    elif isinstance(obj, float):
-        return str(obj)
-    else:
+        return json.dumps(
+            {
+                k: (
+                    json.loads(convert_results_to_json(v))
+                    if isinstance(convert_results_to_json(v), str)
+                    else convert_results_to_json(v)
+                )
+                for k, v in obj.items()
+            }
+        )
+    elif isinstance(obj, (str, int, float, bool)):
         return json.dumps(obj)
+    else:
+        try:
+            return json.dumps(obj)
+        except TypeError:
+            return json.dumps(str(obj))
 
 
 async def create_help_answer(
-    messages: list[Message], model: str
+    provider: ChatProvider, messages: List[Message], model: str
 ) -> AsyncGenerator[str, None]:
-    assert len(messages) > 0
+    """
+    Generates help answers using a ChatProvider and a set of help-specific tools.
+    Streams text chunks of the answer.
+    """
+    semantic_search_tool = SemanticSearchDocumentationTool()
+    keyword_search_tool = KeywordSearchDocumentationTool()
+    search_examples_tool = SearchExamplesTool()
+    node_properties_tool = NodePropertiesTool()
 
-    client = get_ollama_client()
+    help_tools_instances: List[Tool] = [
+        semantic_search_tool,
+        keyword_search_tool,
+        search_examples_tool,
+        node_properties_tool,
+    ]
 
-    system_message = ollama.Message(role="system", content=SYSTEM_PROMPT)
+    effective_messages_for_provider: List[Message] = [
+        Message(role="system", content=SYSTEM_PROMPT)
+    ] + messages
 
-    ollama_messages = [await create_message(m) for m in messages]
-    all_messages = [system_message] + ollama_messages
-
-    res = await client.chat(
-        model=model,
-        messages=all_messages,
-        options={"num_ctx": 20000},
-        tools=list(available_functions.values()),
-        stream=True,
-    )
-
-    # Check for "does not support tools" error message
-    async for part in res:
-        content = part.message.content or ""
-        # Check if the response contains indicators of tool support issues
-        if any(
-            phrase in content.lower()
-            for phrase in [
-                "does not support tools",
-                "doesn't support tools",
-                "tool calls are not supported",
-            ]
-        ):
-            yield "This model does not support tools. Please select a model that supports tools, such as 'llama3'."
-            return
-
-        if part.message.tool_calls:
-            # Create tasks for all tool calls
-            tasks = []
-            for tool in part.message.tool_calls:
-                yield f"Calling tool: {tool.function.name}\n"
-                if function_to_call := available_functions.get(tool.function.name):
-                    task = asyncio.create_task(
-                        asyncio.to_thread(function_to_call, **tool.function.arguments)
-                    )
-                    tasks.append((tool.function.name, task))
-
-            # Wait for all tasks to complete
-            for name, task in tasks:
-                results = await task
-                all_messages.append(part.message)
-                all_messages.append(
-                    {
-                        "role": "tool",
-                        "content": convert_results_to_json(results),
-                        "name": name,
-                    }
-                )
-        else:
-            yield part.message.content or ""
-
-    # Get final response with tool results
-    final_res = await client.chat(
-        model="llama3.2:3b",
-        messages=all_messages,
-        options={"num_ctx": 20000},
-        stream=True,
-    )
-    async for chunk in final_res:
-        yield chunk.message.content or ""
-
-
-async def test_chat():
-    """Simple terminal-based chat tester with readline support"""
-    print("Starting chat test (type 'exit' to quit)")
-    messages = []
-
-    # Configure readline
-    readline.parse_and_bind("tab: complete")
-    readline.set_completer(lambda text, state: None)  # Disable default completion
+    dummy_processing_context = ProcessingContext()  # Create a dummy context
 
     while True:
+        tool_messages_generated_this_iteration: List[Message] = []
+        made_tool_call_this_iteration = False
+
         try:
-            user_input = input("\n> ")
-            if user_input.lower() == "exit":
-                break
+            async for item in provider.generate_messages(
+                messages=effective_messages_for_provider,
+                model=model,
+                tools=help_tools_instances,
+            ):  # type: ignore
+                if isinstance(item, Chunk):
+                    if item.content:
+                        yield item.content
+                elif isinstance(item, ToolCall):
+                    log.info(
+                        f"Help system received tool call: {item.name} with args {item.args}"
+                    )
+                    yield f"Executing: {item.name}({json.dumps(item.args)})\n"
 
-            messages.append(Message(role="user", content=user_input))
+                    found_tool_instance = next(
+                        (t for t in help_tools_instances if t.name == item.name), None
+                    )
 
-            async for chunk in create_help_answer(messages, model="llama3.2:3b"):
-                print(chunk, end="", flush=True)
-            print()
+                    tool_call_id = item.id or str(uuid.uuid4())
 
-        except KeyboardInterrupt:
-            print("\nUse 'exit' to quit")
-            continue
-        except EOFError:
+                    if found_tool_instance and isinstance(
+                        found_tool_instance, BaseHelpTool
+                    ):
+                        try:
+                            tool_args_dict = (
+                                item.args if isinstance(item.args, dict) else {}
+                            )
+                            if not isinstance(item.args, dict):
+                                log.warning(
+                                    f"Tool call arguments for {item.name} is not a dict: {item.args}. Attempting to use empty dict."
+                                )
+
+                            # The process method of BaseHelpTool will handle Pydantic parsing internally
+                            tool_result_data = await found_tool_instance.process(
+                                context=dummy_processing_context,  # Pass dummy context
+                                params=tool_args_dict,  # Pass raw dict as params
+                            )
+
+                            assistant_tool_call_msg = Message(
+                                role="assistant", tool_calls=[item]
+                            )
+
+                            tool_result_msg = Message(
+                                role="tool",
+                                tool_call_id=tool_call_id,
+                                name=item.name,
+                                content=tool_result_data,
+                            )
+                            tool_messages_generated_this_iteration.extend(
+                                [assistant_tool_call_msg, tool_result_msg]
+                            )
+                            made_tool_call_this_iteration = True
+                        except Exception as e:
+                            log.error(f"Error processing tool {item.name}: {e}")
+                            error_content = (
+                                f"Error executing tool {item.name}: {str(e)}"
+                            )
+                            yield f"[ERROR] {error_content}\n"
+                            tool_messages_generated_this_iteration.append(
+                                Message(
+                                    role="tool",
+                                    tool_call_id=tool_call_id,
+                                    name=item.name,
+                                    content=json.dumps(
+                                        {"error": error_content, "status": "failed"}
+                                    ),
+                                )
+                            )
+                            made_tool_call_this_iteration = True
+                    else:
+                        error_content = f"Tool '{item.name}' not found or not a BaseHelpTool instance."
+                        log.error(error_content)
+                        yield f"[ERROR] {error_content}\n"
+                        tool_messages_generated_this_iteration.append(
+                            Message(
+                                role="tool",
+                                tool_call_id=tool_call_id,
+                                name=item.name,
+                                content=json.dumps(
+                                    {"error": error_content, "status": "not_found"}
+                                ),
+                            )
+                        )
+                        made_tool_call_this_iteration = True
+
+        except Exception as e:
+            log.error(f"Error during provider.generate_messages in help system: {e}")
+            err_str = str(e).lower()
+            if any(
+                phrase in err_str
+                for phrase in ["does not support tools", "tool calls are not supported"]
+            ):
+                yield "This help model does not support advanced tool usage. Please select a different model or ask a simpler question."
+            else:
+                yield "An unexpected error occurred while trying to get help. Please try again."
+            return
+
+        if made_tool_call_this_iteration:
+            effective_messages_for_provider.extend(
+                tool_messages_generated_this_iteration
+            )
+        else:
             break
 
 
+async def test_chat(provider: ChatProvider, model: str):
+    """Simple terminal-based chat tester with readline support"""
+    print("Starting help chat test (type 'exit' to quit)")
+    print("This test uses the refactored create_help_answer with a provider.")
+
+    try:
+        doc_collection = get_doc_collection()
+        if doc_collection.count() == 0:
+            print("Indexing core documentation for test...")
+            index_core_docs(doc_collection)
+            print("Indexing package documentation for test...")
+            index_documentation(doc_collection)
+
+        example_collection = get_example_collection()
+        if example_collection.count() == 0:
+            print("Indexing examples for test...")
+            index_examples(example_collection)
+    except Exception as e:
+        print(f"Error initializing ChromaDB collections for test: {e}")
+        print("Searches might not work correctly.")
+
+    chat_history: List[Message] = []
+
+    readline.parse_and_bind("tab: complete")
+    readline.set_completer(lambda text, state: None)
+
+    print(f"Using model: {model}")
+
+    while True:
+        try:
+            user_input = await asyncio.to_thread(input, "\n> ")
+            if user_input.lower() == "exit":
+                break
+            if not user_input.strip():
+                continue
+
+            chat_history.append(Message(role="user", content=user_input))
+
+            full_response = []
+            print("Assistant: ", end="", flush=True)
+            async for chunk in create_help_answer(
+                provider=provider, messages=chat_history, model=model
+            ):
+                print(chunk, end="", flush=True)
+                full_response.append(chunk)
+            print()
+
+            if full_response:
+                chat_history.append(
+                    Message(role="assistant", content="".join(full_response))
+                )
+
+        except KeyboardInterrupt:
+            print("\nUse 'exit' to quit.")
+            continue
+        except EOFError:
+            print("\nExiting...")
+            break
+        except Exception as e:
+            print(f"\nAn error occurred in test_chat: {e}")
+
+
 if __name__ == "__main__":
-    index_core_docs(get_doc_collection())
-    index_documentation(get_doc_collection())
-    index_examples(get_example_collection())
-    asyncio.run(test_chat())
+    print("Initializing ChromaDB collections for __main__...")
+    try:
+        doc_collection = get_doc_collection()
+        if doc_collection.count() == 0:
+            print("Indexing core documentation...")
+            index_core_docs(doc_collection)
+            print("Indexing package documentation...")
+            index_documentation(doc_collection)
+        else:
+            print("Documentation collections appear to be already indexed.")
+
+        example_collection = get_example_collection()
+        if example_collection.count() == 0:
+            print("Indexing examples...")
+            index_examples(example_collection)
+        else:
+            print("Example collection appears to be already indexed.")
+        print("ChromaDB initialization complete.")
+    except Exception as e:
+        print(f"Error during __main__ ChromaDB initialization: {e}")
+        print("Help tool searches might fail or return empty results.")
+
+    asyncio.run(test_chat(provider=get_provider(Provider.OpenAI), model="gpt-4o-mini"))
