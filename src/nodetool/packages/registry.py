@@ -504,3 +504,74 @@ def get_nodetool_package_source_folders() -> List[Path]:
                 source_folders.append(source_path)
 
     return source_folders
+
+
+async def main():
+    """
+    Main function to run smoke tests for the registry module.
+    """
+    print("--- Running Smoke Tests for nodetool.packages.registry ---")
+
+    print("\n--- Testing get_packages_dir ---")
+    packages_dir = get_packages_dir()
+    print(f"Packages directory: {packages_dir}")
+
+    print("\n--- Testing get_package_manager_command ---")
+    pkg_mgr_cmd = get_package_manager_command()
+    print(f"Package manager command: {pkg_mgr_cmd}")
+
+    print("\n--- Testing discover_node_packages ---")
+    installed_discovered_packages = discover_node_packages()
+    print(
+        f"Discovered {len(installed_discovered_packages)} installed node packages (via discover_node_packages)."
+    )
+    for pkg in installed_discovered_packages:
+        print(f"  - {pkg.name} ({pkg.repo_id if hasattr(pkg, 'repo_id') else 'N/A'})")
+
+    print("\n--- Testing get_nodetool_package_source_folders ---")
+    source_folders = get_nodetool_package_source_folders()
+    print(f"Found {len(source_folders)} nodetool package source folders.")
+    for folder in source_folders:
+        print(f"  - {folder}")
+
+    # Initialize Registry
+    registry = Registry()
+
+    print("\n--- Testing registry.list_installed_packages ---")
+    installed_packages = registry.list_installed_packages()
+    print(f"Found {len(installed_packages)} installed packages (via registry).")
+    for pkg in installed_packages:
+        print(f"  - {pkg.name} ({pkg.repo_id if hasattr(pkg, 'repo_id') else 'N/A'})")
+
+    # Test list_available_packages
+    print("\n--- Testing registry.list_available_packages ---")
+    available_packages = registry.list_available_packages()
+    print(f"Found {len(available_packages)} available packages from registry.")
+    if available_packages:
+        print(f"  First few: {[pkg.name for pkg in available_packages[:3]]}")
+
+    # Test search_nodes
+    print("\n--- Testing registry.search_nodes ---")
+    print("Searching for all nodes (empty query)...")
+    all_nodes = await registry.search_nodes("huggingface")
+    print(f"Found {len(all_nodes)} nodes in total.")
+    if all_nodes:
+        print(f"  Sample node name: {all_nodes[0].get('name') if all_nodes else 'N/A'}")
+
+    # Test get_package_for_node_type
+    print("\n--- Testing registry.get_package_for_node_type ---")
+    # This test depends on search_nodes populating the cache.
+    sample_node_type = "huggingface.text_to_image.StableDiffusion"
+    await registry.search_nodes()  # This might repopulate or confirm emptiness due to prior errors
+
+    package_repo_id = await registry.get_package_for_node_type(sample_node_type)
+    if package_repo_id:
+        print(f"Package for node type '{sample_node_type}': {package_repo_id}")
+    else:
+        print(
+            f"No package found for node type '{sample_node_type}' (this is expected if cache is empty, node type doesn't exist, or due to prior network issues)."
+        )
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
