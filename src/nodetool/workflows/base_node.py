@@ -979,11 +979,12 @@ class InputNode(BaseNode):
         name (str): The parameter name for this input in the workflow.
     """
 
+    value: Any = Field(None, description="The value of the input.")
     name: str = Field("", description="The parameter name for the workflow.")
 
     @classmethod
     def get_basic_fields(cls):
-        return ["name", "value"]
+        return ["value"]
 
     @classmethod
     def is_visible(cls):
@@ -1004,6 +1005,7 @@ class OutputNode(BaseNode):
         value (Any): The value of the output.
     """
 
+    value: Any = Field(None, description="The value of the output.")
     name: str = Field("", description="The parameter name for the workflow.")
 
     @classmethod
@@ -1012,7 +1014,7 @@ class OutputNode(BaseNode):
 
     @classmethod
     def get_basic_fields(cls):
-        return ["name", "value"]
+        return ["value"]
 
     def result_for_client(self, result: dict[str, Any]) -> dict[str, Any]:
         return self.result_for_all_outputs({"name": self.name, **result})
