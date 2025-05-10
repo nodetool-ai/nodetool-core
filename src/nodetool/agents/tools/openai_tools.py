@@ -88,8 +88,6 @@ class OpenAIImageGenerationTool(Tool):
 
     def __init__(self):
         self.client = openai.AsyncClient(api_key=Environment.get("OPENAI_API_KEY"))
-        # Define schema based on OpenAI API parameters for dall-e-3
-        # Reference: https://platform.openai.com/docs/api-reference/images/create
         self.input_schema = {
             "type": "object",
             "properties": {
@@ -97,15 +95,19 @@ class OpenAIImageGenerationTool(Tool):
                     "type": "string",
                     "description": "A text description of the desired image(s).",
                 },
+                "output_file": {
+                    "type": "string",
+                    "description": "The path to save the generated image as png file.",
+                },
             },
-            "required": ["prompt"],
+            "required": ["prompt", "output_file"],
         }
 
     async def process(
         self, context: ProcessingContext, params: Dict[str, Any]
     ) -> Dict[str, Any]:
         """
-        Generate an image using OpenAI's DALL-E API.
+        Generate an image using OpenAI's Image Generation API.
 
         Args:
             context: The processing context
@@ -115,8 +117,13 @@ class OpenAIImageGenerationTool(Tool):
             Dict containing the image generation result (e.g., image URL)
         """
         prompt = params.get("prompt")
+        output_file = params.get("output_file")
+
         if not prompt:
             raise ValueError("Image generation prompt is required")
+
+        if not output_file:
+            raise ValueError("Output file is required")
 
         response = await self.client.images.generate(
             model="gpt-image-1",
@@ -128,11 +135,14 @@ class OpenAIImageGenerationTool(Tool):
             image_data = response.data[0]
             # Safely access url and revised_prompt
             b64_image = getattr(image_data, "b64_json", None)
-
             if b64_image:
+                file_path = context.resolve_workspace_path(output_file)
+                with open(file_path, "wb") as f:
+                    f.write(base64.b64decode(b64_image))
                 formatted_results = {
+                    "type": "image",
                     "prompt": prompt,
-                    "image": b64_image,
+                    "output_file": output_file,
                     "status": "success",
                 }
                 return formatted_results
@@ -143,9 +153,9 @@ class OpenAIImageGenerationTool(Tool):
 
     def user_message(self, params: dict) -> str:
         prompt = params.get("prompt", "an image")
-        msg = f"Generating {prompt} using DALL-E..."
+        msg = f"Generating {prompt} using OpenAI..."
         if len(msg) > 80:
-            msg = "Generating an image using DALL-E..."
+            msg = "Generating an image using OpenAI..."
         return msg
 
 
@@ -171,19 +181,13 @@ class OpenAITextToSpeechTool(Tool):
                     "type": "string",
                     "description": "The text to synthesize speech from (max 4096 characters).",
                 },
-                "model": {
+                "output_file": {
                     "type": "string",
-                    "description": "The TTS model to use (e.g., 'tts-1', 'tts-1-hd').",
-                    "default": "tts-1",
+                    "description": "The path to save the generated audio as mp3 file.",
                 },
                 "voice": {
                     "type": "string",
                     "description": "The voice to use (e.g., 'alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer').",
-                },
-                "response_format": {
-                    "type": "string",
-                    "description": "The format of the audio output (e.g., 'mp3', 'opus', 'aac', 'flac').",
-                    "default": "mp3",
                 },
                 "speed": {
                     "type": "number",
@@ -191,7 +195,7 @@ class OpenAITextToSpeechTool(Tool):
                     "default": 1.0,
                 },
             },
-            "required": ["input", "voice"],
+            "required": ["input", "voice", "output_file"],
         }
 
     async def process(
@@ -208,15 +212,16 @@ class OpenAITextToSpeechTool(Tool):
             Dict containing the TTS result (e.g., base64 encoded audio data)
         """
         text_input = params.get("input")
-        voice = params.get("voice")
+        voice = params.get("voice", "alloy")
         model = params.get("model", "tts-1")
-        response_format = params.get("response_format", "mp3")
+        response_format = "mp3"
         speed = params.get("speed", 1.0)
+        output_file = params.get("output_file")
 
         if not text_input:
             raise ValueError("Input text is required for TTS.")
-        if not voice:
-            raise ValueError("Voice selection is required for TTS.")
+        if not output_file:
+            raise ValueError("Output file is required for TTS.")
         if len(text_input) > 4096:
             raise ValueError("Input text exceeds maximum length of 4096 characters.")
 
@@ -233,13 +238,19 @@ class OpenAITextToSpeechTool(Tool):
         audio_content = response.content
         b64_audio = base64.b64encode(audio_content).decode("utf-8")
 
+        if output_file:
+            file_path = context.resolve_workspace_path(output_file)
+            with open(file_path, "wb") as f:
+                f.write(base64.b64decode(b64_audio))
+
         formatted_results = {
+            "type": "audio",
             "input_text": text_input,
             "voice": voice,
             "model": model,
             "format": response_format,
             "speed": speed,
-            "audio": b64_audio,
+            "output_file": output_file,
             "status": "success",
         }
 
