@@ -15,7 +15,8 @@ Core Components:
 *   `FinishSubTaskTool` / `FinishTaskTool`: Special tools injected into the context.
     The LLM *must* call one of these tools (`finish_subtask` for regular subtasks,
     `finish_task` for the final aggregation task) to signify completion and provide
-    the final result (either as direct content or a file pointer `{"path": "..."}`).
+    the final result as a file pointer `{"path": "..."}`. The referenced file must be
+    at the workspace root.
 *   Helper Functions (`is_binary_output_type`, `json_schema_for_output_type`, etc.):
     Utilities for determining output types, generating appropriate JSON schemas for
     tools, and handling file operations.
@@ -65,7 +66,8 @@ Execution Algorithm:
              - **Special Side-Effects**: Manages tool-specific actions
                (`_process_special_tool_side_effects`). For `browser` navigation,
                it logs sources. For `finish_subtask`/`finish_task`, it marks
-               the subtask complete and triggers result saving (step 3).
+               the subtask complete and triggers result saving (step 3), expecting
+               the result to be a file pointer.
              - **Serialization**: Converts the processed tool result to a JSON
                string (`_serialize_tool_result_for_history`).
         iii. The serialized JSON string (tool output) is then added to the subtask's
@@ -75,12 +77,13 @@ Execution Algorithm:
     e.  **Conclusion Stage**: If the token limit is exceeded, the context enters a
         "conclusion stage". In this stage, available tools are restricted to only
         the `finish_...` tool, and the LLM is prompted to synthesize results and
-        conclude the subtask.
+        conclude the subtask by providing a file pointer result.
     f.  **Forced Completion (Max Iterations)**: If `max_iterations` is reached
         before `finish_...` is called, `_handle_max_iterations_reached` is invoked.
         This forces completion by:
         - Requesting a final structured output from the LLM, conforming to the
-          finish tool's schema (`request_structured_output`).
+          finish tool's schema (which mandates a file pointer for `result`)
+          (`request_structured_output`).
         - Triggering result saving with this structured output (step 3).
         - Marking the subtask as complete.
         - Creating an assistant message with the `ToolCall` for record and adding
@@ -92,13 +95,10 @@ Execution Algorithm:
     tool is successfully processed (via `_process_special_tool_side_effects` during
     `_handle_tool_call`) or when forced completion occurs (`_handle_max_iterations_reached`).
     It handles saving the final subtask result.
-    - If the result (from the `finish_...` tool's arguments) is direct content,
-      it's written to the subtask's `output_file` with appropriate formatting based
-      on file extension and embedded metadata.
-    - If the result is a file pointer object `{"path": "..."}`, the referenced
-      workspace file/directory is copied to the `output_file` location.
-    - Handles cases where `output_file` itself is a directory (content saved to a
-      summary file inside it, or source copied into it).
+    - The result (from the `finish_...` tool's arguments) MUST be a file pointer
+      object `{"path": "..."}`. The referenced workspace file/directory is copied
+      to the `output_file` location.
+    - Handles cases where `output_file` itself is a directory (source copied into it).
 
 4.  **Completion**: The subtask is marked as `completed` (either by a `finish_...`
     tool call or by reaching max iterations). Status updates reflecting completion
@@ -560,9 +560,10 @@ class FinishTaskTool(Tool):
 
     name: str = "finish_task"
     description: str = """
-    Finish a task by saving its final result. Provide content OR a file pointer
+    Finish a task by saving its final result. Provide a file pointer
     object {"path": "final_file.ext"} in 'result'. The path must be to a file at the workspace root.
     Include 'metadata'. This will hold the final result of all subtasks.
+    The 'result' parameter MUST ALWAYS be a file pointer object like {"path": "your_final_output_file.ext"}.
     """
     input_schema: Dict[str, Any]  # Defined in __init__
 
@@ -574,76 +575,8 @@ class FinishTaskTool(Tool):
         super().__init__()  # Call parent constructor
         self.output_type: str = output_type  # Store output_type
 
-        # Determine the schema for the actual content result
-        content_schema: Optional[Dict[str, Any]] = None
-        # Check if the output type is binary
-        if is_binary_output_type(self.output_type):
-            content_schema = FILE_POINTER_SCHEMA
-        else:
-            # --- Start Refined Schema Logic ---
-            is_valid_schema = False
-            if output_schema:
-                loaded_schema_dict: Optional[Dict[str, Any]] = None
-                if isinstance(output_schema, str):
-                    try:
-                        # Attempt to load if it's a JSON string
-                        loaded_schema = json.loads(output_schema)
-                        if isinstance(loaded_schema, dict):
-                            loaded_schema_dict = loaded_schema
-                        else:
-                            logger.warning(
-                                f"Provided output schema string for FinishTaskTool did not parse to a dictionary: {output_schema}"
-                            )
-                    except json.JSONDecodeError as e:
-                        logger.warning(
-                            f"Error parsing provided output schema string for FinishTaskTool: {e}"
-                        )
-                    except (
-                        Exception
-                    ) as e:  # Catch other potential errors during loading
-                        logger.warning(
-                            f"Unexpected error loading output schema string for FinishTaskTool: {e}"
-                        )
-                elif isinstance(output_schema, dict):
-                    loaded_schema_dict = (
-                        output_schema  # Assume it's already a dict/schema
-                    )
-                else:
-                    logger.warning(
-                        f"Provided output schema for FinishTaskTool is not a string or dict: {type(output_schema)}"
-                    )
-
-                # Validate the loaded/provided dictionary schema
-                if loaded_schema_dict is not None:
-                    # Basic validation: Check if it's a dict and has a 'type' key which is a string
-                    if isinstance(loaded_schema_dict, dict) and isinstance(
-                        loaded_schema_dict.get("type"), str
-                    ):
-                        content_schema = loaded_schema_dict
-                        is_valid_schema = True
-                    else:
-                        logger.warning(
-                            f"Provided/loaded output schema for FinishTaskTool is not a valid schema dictionary (missing/invalid 'type'?): {loaded_schema_dict}"
-                        )
-
-            # Fallback if schema wasn't valid, provided, or properly loaded
-            if not is_valid_schema:
-                logger.warning(
-                    f"Output schema for FinishTaskTool was invalid or unusable. Falling back based on output_type '{self.output_type}'."
-                )
-                content_schema = json_schema_for_output_type(self.output_type)
-            # --- End Refined Schema Logic ---
-
-            # Ensure strictness before using
-            content_schema = SubTaskContext._enforce_strict_object_schema(
-                content_schema
-            )
-
-        if content_schema is None:  # Ensure content_schema is assigned (safety net)
-            logger.error(
-                f"Content schema for FinishTaskTool ended up as None for output_type '{self.output_type}'. Defaulting."
-            )
-            content_schema = {"type": "string"}
+        # Always use FILE_POINTER_SCHEMA regardless of output type
+        content_schema = FILE_POINTER_SCHEMA
 
         # Final input schema for the tool
         self.input_schema = {
@@ -666,38 +599,33 @@ class FinishTaskTool(Tool):
 
 class FinishSubTaskTool(Tool):
     """
-        🏁 Task Completion Tool - Marks a subtask as done and saves its results
+    🏁 Task Completion Tool - Marks a subtask as done and saves its results
 
-        This tool serves as the formal completion mechanism for subtasks by:
-        1. Saving the final output provided in `result`. The `result` can be the actual content
-           (matching the subtask's output schema) OR an object `{"path": "...
-    "`
-           pointing to a file in the workspace at the root level.
-        2. If `result` is a file pointer object, the referenced file is copied to the designated
-           output location (`output_file` defined in the subtask, which also must be a root-level file).
-        3. If `result` is content, it's saved directly to the `output_file` (a root-level file).
-        4. Preserving structured metadata about the results.
-        5. Marking the subtask as completed.
+    This tool serves as the formal completion mechanism for subtasks by:
+    1. Requiring the final output to be provided in `result` as an object `{"path": "..."}`
+       pointing to a file in the workspace at the root level.
+    2. The referenced file is copied to the designated output location (`output_file` defined
+       in the subtask, which also must be a root-level file).
+    3. Preserving structured metadata about the results.
+    4. Marking the subtask as completed.
 
-        **IMPORTANT**:
-        - Provide the final content OR a file pointer object `{"path": "path/to/file"}` in the `result` parameter.
-        - Always include the `metadata`.
+    **IMPORTANT**:
+    - The `result` parameter MUST ALWAYS be a file pointer object `{"path": "path/to/workspace_root_file.ext"}`.
+    - Always include the `metadata`.
 
-        Example usage with content (assuming output_type is markdown):
-        finish_subtask(result="Final analysis text...", metadata={...})
+    Example usage with file path:
+    finish_subtask(result={"path": "final_report.pdf"}, metadata={...})
 
-        Example usage with file path:
-        finish_subtask(result={"path": "final_report.pdf"}, metadata={...})
-
-        Example usage with directory path:
-        finish_subtask(result={"path": "analysis_results/"}, metadata={...})
+    Example usage with directory path (where "analysis_results/" is a directory at the workspace root created by a previous step):
+    finish_subtask(result={"path": "analysis_results/"}, metadata={...})
     """
 
     name: str = "finish_subtask"
     description: str = """
-    Finish a subtask by saving its final result. Provide content OR a file pointer
+    Finish a subtask by saving its final result. Provide a file pointer
     object {"path": "generated_file.ext"} in 'result'. The path must point to a file at the workspace root.
     Include 'metadata'. The result will be saved to the output_path defined in the subtask (must also be a root-level file).
+    The 'result' parameter MUST ALWAYS be a file pointer object like {"path": "your_subtask_output_file.ext"}.
     """
     input_schema: Dict[str, Any]  # Defined in __init__
 
@@ -709,76 +637,8 @@ class FinishSubTaskTool(Tool):
         super().__init__()  # Call parent constructor
         self.output_type: str = output_type  # Store output_type
 
-        # Determine the schema for the actual content result
-        content_schema: Optional[Dict[str, Any]] = None
-        # Check if the output type is binary
-        if is_binary_output_type(self.output_type):
-            content_schema = FILE_POINTER_SCHEMA
-        else:
-            # --- Start Refined Schema Logic ---
-            is_valid_schema = False
-            if output_schema:
-                loaded_schema_dict: Optional[Dict[str, Any]] = None
-                if isinstance(output_schema, str):
-                    try:
-                        # Attempt to load if it's a JSON string
-                        loaded_schema = json.loads(output_schema)
-                        if isinstance(loaded_schema, dict):
-                            loaded_schema_dict = loaded_schema
-                        else:
-                            logger.warning(
-                                f"Provided output schema string for FinishSubTaskTool did not parse to a dictionary: {output_schema}"
-                            )
-                    except json.JSONDecodeError as e:
-                        logger.warning(
-                            f"Error parsing provided output schema string for FinishSubTaskTool: {e}"
-                        )
-                    except (
-                        Exception
-                    ) as e:  # Catch other potential errors during loading
-                        logger.warning(
-                            f"Unexpected error loading output schema string for FinishSubTaskTool: {e}"
-                        )
-                elif isinstance(output_schema, dict):
-                    loaded_schema_dict = (
-                        output_schema  # Assume it's already a dict/schema
-                    )
-                else:
-                    logger.warning(
-                        f"Provided output schema for FinishSubTaskTool is not a string or dict: {type(output_schema)}"
-                    )
-
-                # Validate the loaded/provided dictionary schema
-                if loaded_schema_dict is not None:
-                    # Basic validation: Check if it's a dict and has a 'type' key which is a string
-                    if isinstance(loaded_schema_dict, dict) and isinstance(
-                        loaded_schema_dict.get("type"), str
-                    ):
-                        content_schema = loaded_schema_dict
-                        is_valid_schema = True
-                    else:
-                        logger.warning(
-                            f"Provided/loaded output schema for FinishSubTaskTool is not a valid schema dictionary (missing/invalid 'type'?): {loaded_schema_dict}"
-                        )
-
-            # Fallback if schema wasn't valid, provided, or properly loaded
-            if not is_valid_schema:
-                logger.warning(
-                    f"Output schema for FinishSubTaskTool was invalid or unusable. Falling back based on output_type '{self.output_type}'."
-                )
-                content_schema = json_schema_for_output_type(self.output_type)
-            # --- End Refined Schema Logic ---
-
-            # Ensure strictness before using
-            content_schema = SubTaskContext._enforce_strict_object_schema(
-                content_schema
-            )
-
-        if content_schema is None:  # Ensure content_schema is assigned (safety net)
-            logger.error(
-                f"Content schema for FinishSubTaskTool ended up as None for output_type '{self.output_type}'. Defaulting."
-            )
-            content_schema = {"type": "string"}
+        # Always use FILE_POINTER_SCHEMA regardless of output type
+        content_schema = FILE_POINTER_SCHEMA
 
         # Final input schema for the tool
         self.input_schema = {
@@ -854,7 +714,6 @@ class SubTaskContext:
         use_finish_task: bool = False,
         max_token_limit: int | None = None,
         max_iterations: int = DEFAULT_MAX_ITERATIONS,
-        save_output_to_file: bool = True,
     ):
         """
         Initialize a subtask execution context.
@@ -870,7 +729,6 @@ class SubTaskContext:
             use_finish_task (bool): Whether to use the finish_task tool
             max_token_limit (int): Maximum token limit before summarization
             max_iterations (int): Maximum iterations for the subtask
-            save_output_to_file (bool): Whether to save the output to a file
         """
         self.task = task
         self.subtask = subtask
@@ -880,9 +738,8 @@ class SubTaskContext:
         self.workspace_dir = processing_context.workspace_dir
         self.max_token_limit = max_token_limit or provider.get_max_token_limit(model)
         self.use_finish_task = use_finish_task
-        self.save_output_to_file = save_output_to_file
         self.message_compression_threshold = max(
-            self.max_token_limit // self.subtask.max_iterations // 2,
+            self.max_token_limit // self.subtask.max_iterations,
             MESSAGE_COMPRESSION_THRESHOLD,
         )
 
@@ -1481,9 +1338,10 @@ class SubTaskContext:
         raw_tool_result = await self._process_tool_execution(tool_call)
 
         # 2. Conditionally compress the tool result
-        processed_tool_result = await self._maybe_compress_tool_result(
-            raw_tool_result, tool_call
-        )
+        # processed_tool_result = await self._maybe_compress_tool_result(
+        #     raw_tool_result, tool_call
+        # )
+        processed_tool_result = raw_tool_result
 
         # 3. Handle binary artifacts (images, audio)
         if isinstance(processed_tool_result, dict):
@@ -1639,14 +1497,12 @@ class SubTaskContext:
         if tool_call.name == "finish_task":
             self.subtask.completed = True
             self.subtask.end_time = int(time.time())
-            if self.save_output_to_file:
-                self._save_to_output_file(cast(dict, tool_result))
+            self._save_to_output_file(cast(dict, tool_result))
 
         if tool_call.name == "finish_subtask":
             self.subtask.completed = True
             self.subtask.end_time = int(time.time())
-            if self.save_output_to_file:
-                self._save_to_output_file(cast(dict, tool_result))
+            self._save_to_output_file(cast(dict, tool_result))
 
     def _serialize_tool_result_for_history(
         self, tool_result: Any, tool_name: str
@@ -1686,8 +1542,7 @@ class SubTaskContext:
 
         # Save the structured result (which includes result and metadata keys)
         # _save_to_output_file expects the dict passed to finish_subtask/finish_task
-        if self.save_output_to_file:
-            self._save_to_output_file(structured_result)
+        self._save_to_output_file(structured_result)
         self.subtask.completed = True
         self.subtask.end_time = int(time.time())
 

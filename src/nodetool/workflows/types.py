@@ -19,6 +19,17 @@ class TaskUpdateEvent(str, Enum):
     TASK_COMPLETED = "task_completed"
 
 
+class SubTaskResult(BaseModel):
+    """
+    A message representing a result from a subtask.
+    """
+
+    type: Literal["subtask_result"] = "subtask_result"
+    subtask: SubTask
+    result: Any
+    error: str | None = None
+
+
 class PlanningUpdate(BaseModel):
     """
     A message representing a planning update from a node.

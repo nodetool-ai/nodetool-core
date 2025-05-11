@@ -21,7 +21,13 @@ import shutil
 from typing import AsyncGenerator, List, Sequence, Union, Any, Optional
 
 from nodetool.common.settings import get_log_path
-from nodetool.workflows.types import Chunk, PlanningUpdate, TaskUpdate, TaskUpdateEvent
+from nodetool.workflows.types import (
+    Chunk,
+    PlanningUpdate,
+    SubTaskResult,
+    TaskUpdate,
+    TaskUpdateEvent,
+)
 from nodetool.agents.task_executor import TaskExecutor
 from nodetool.chat.providers import ChatProvider
 from nodetool.agents.task_planner import TaskPlanner
@@ -32,6 +38,7 @@ from nodetool.metadata.types import (
 )
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.ui.console import AgentConsole
+from nodetool.agents.base_agent import BaseAgent
 
 
 def sanitize_file_path(file_path: str) -> str:
@@ -47,7 +54,7 @@ def sanitize_file_path(file_path: str) -> str:
     return file_path.replace(" ", "_").replace("/", "_").replace("\\", "_")
 
 
-class Agent:
+class Agent(BaseAgent):
     """
     🤖 Orchestrates AI-driven task execution using Language Models and Tools.
 
@@ -121,35 +128,38 @@ class Agent:
             task (Task, optional): Pre-defined task to execute, skipping planning
             verbose (bool, optional): Enable/disable console output (default: True)
         """
-        self.name = name
-        self.objective = objective
+        super().__init__(
+            name=name,
+            objective=objective,
+            provider=provider,
+            model=model,
+            tools=tools,
+            input_files=input_files,
+            system_prompt=system_prompt,
+            max_token_limit=max_token_limit,
+        )
         self.description = description
-        self.provider = provider
-        self.model = model
         self.planning_model = planning_model or model
         self.reasoning_model = reasoning_model or model
         self.max_steps = max_steps
         self.max_subtask_iterations = max_subtask_iterations
-        self.max_token_limit = max_token_limit or provider.get_max_token_limit(model)
-        self.tools = tools
-        self.input_files = input_files
         self.max_subtasks = max_subtasks
-        self.system_prompt = system_prompt or ""
-        self.results: Any = None
         self.output_schema = output_schema
         self.output_type = output_type
         self.enable_analysis_phase = enable_analysis_phase
         self.enable_data_contracts_phase = enable_data_contracts_phase
-        self.initial_task = task  # Store the initial task
-        self.verbose = verbose  # Store verbose flag
-        self.display_manager = AgentConsole(
-            verbose=self.verbose
-        )  # Initialize display manager
+        self.initial_task = task
+        if self.initial_task:
+            self.task = self.initial_task
+        self.verbose = verbose
+        self.display_manager = AgentConsole(verbose=self.verbose)
 
     async def execute(
         self,
         processing_context: ProcessingContext,
-    ) -> AsyncGenerator[Union[TaskUpdate, Chunk, ToolCall, PlanningUpdate], None]:
+    ) -> AsyncGenerator[
+        Union[TaskUpdate, Chunk, ToolCall, PlanningUpdate, SubTaskResult], None
+    ]:
         """
         Execute the agent using the task plan.
 
@@ -170,16 +180,20 @@ class Agent:
             input_files.append(os.path.basename(file_path))
 
         tools = list(self.tools)
-        task: Optional[Task] = None  # Initialize task
+        task_planner_instance: Optional[TaskPlanner] = (
+            None  # Keep track of planner instance
+        )
 
-        if self.initial_task:
-            task = self.initial_task
-            for subtask in task.subtasks:
-                if subtask.output_file and not os.path.isabs(subtask.output_file):
-                    subtask.output_file = os.path.join(
-                        processing_context.workspace_dir, subtask.output_file
-                    )
-
+        if self.task:  # If self.task is already set (e.g. by initial_task in __init__)
+            if self.initial_task:
+                for subtask in self.task.subtasks:
+                    if subtask.output_file and not os.path.isabs(subtask.output_file):
+                        subtask.output_file = os.path.join(
+                            processing_context.workspace_dir, subtask.output_file
+                        )
+            # If self.task was set by initial_task, we skip planning.
+            # We need to ensure it passes the None check for subsequent operations.
+            pass
         else:
             self.display_manager.print(
                 f"Agent '{self.name}' planning task for objective: {self.objective}"
@@ -192,7 +206,7 @@ class Agent:
                 )
             )
 
-            task_planner = TaskPlanner(
+            task_planner_instance = TaskPlanner(
                 provider=self.provider,
                 model=self.planning_model,
                 reasoning_model=self.reasoning_model,
@@ -204,46 +218,61 @@ class Agent:
                 enable_analysis_phase=self.enable_analysis_phase,
                 enable_data_contracts_phase=self.enable_data_contracts_phase,
                 use_structured_output=True,
-                verbose=self.verbose,  # Pass verbose flag
+                verbose=self.verbose,
             )
 
-            async for chunk in task_planner.create_task(
+            async for chunk in task_planner_instance.create_task(
                 processing_context, self.objective
             ):
                 yield chunk
 
-            task = task_planner.task_plan.tasks[0]
-            assert task is not None, "Task was not created by planner"
+            if (
+                task_planner_instance.task_plan
+                and task_planner_instance.task_plan.tasks
+            ):
+                self.task = task_planner_instance.task_plan.tasks[0]
+
+            assert (
+                self.task is not None
+            ), "Task was not created by planner and was not provided initially."
 
             yield TaskUpdate(
-                task=task,
+                task=self.task,
                 event=TaskUpdateEvent.TASK_CREATED,
             )
 
-        if self.output_type and len(task.subtasks) > 0:
-            task.subtasks[-1].output_type = self.output_type
+        # At this point, self.task should be non-None if execution is to proceed.
+        if not self.task:
+            # This case should ideally be caught by the assertion above or if initial_task was None
+            # and planning failed to produce a task.
+            # However, as a safeguard:
+            raise RuntimeError("Agent execution cannot proceed: Task is not defined.")
 
-        if self.output_schema and len(task.subtasks) > 0:
-            task.subtasks[-1].output_schema = json.dumps(self.output_schema)
+        if self.output_type and len(self.task.subtasks) > 0:
+            self.task.subtasks[-1].output_type = self.output_type
+
+        if self.output_schema and len(self.task.subtasks) > 0:
+            self.task.subtasks[-1].output_schema = json.dumps(self.output_schema)
 
         tool_calls: List[ToolCall] = []
 
         # Start live display managed by AgentConsole
         self.display_manager.start_live(
             self.display_manager.create_execution_table(
-                title=self.name, task=task, tool_calls=tool_calls
+                title=self.name, task=self.task, tool_calls=tool_calls
             )
         )
 
-        await task_planner.save_task_plan()
+        if task_planner_instance:  # Only save if planner was used
+            await task_planner_instance.save_task_plan()
 
         try:
             executor = TaskExecutor(
                 provider=self.provider,
                 model=self.model,
                 processing_context=processing_context,
-                tools=tools,
-                task=task,
+                tools=list(self.tools),  # Ensure it's a list of Tool
+                task=self.task,
                 system_prompt=self.system_prompt,
                 input_files=input_files,
                 max_steps=self.max_steps,
@@ -259,7 +288,9 @@ class Agent:
 
                 # Create the updated table and update the live display
                 new_table = self.display_manager.create_execution_table(
-                    title=f"Task:\n{self.objective}", task=task, tool_calls=tool_calls
+                    title=f"Task:\\n{self.objective}",
+                    task=self.task,
+                    tool_calls=tool_calls,
                 )
                 self.display_manager.update_live(new_table)
 
@@ -267,9 +298,22 @@ class Agent:
                 if isinstance(item, ToolCall) and item.name == "finish_task":
                     self.results = item.args["result"]
                     yield TaskUpdate(
-                        task=task,
+                        task=self.task,
                         event=TaskUpdateEvent.TASK_COMPLETED,
                     )
+                elif isinstance(item, ToolCall) and (
+                    item.name == "finish_subtask" or item.name == "finish_task"
+                ):
+                    for subtask in self.task.subtasks:
+                        if (
+                            subtask.id == item.subtask_id
+                            and not subtask.is_intermediate_result
+                            and "result" in item.args
+                        ):
+                            yield SubTaskResult(
+                                subtask=subtask,
+                                result=item.args["result"],
+                            )
                 elif isinstance(item, TaskUpdate):
                     yield item
                     # Update provider log file when a subtask starts/completes
@@ -280,29 +324,11 @@ class Agent:
                         timestamp = datetime.datetime.now().strftime(
                             "%Y-%m-%d_%H-%M-%S"
                         )
-                        subtask_title = item.subtask.content if item.subtask else ""
-                        subtask_title = subtask_title[:20].translate(
-                            str.maketrans(
-                                {
-                                    " ": "_",
-                                    "\n": "_",
-                                    ".": "_",
-                                    "/": "_",
-                                    "\\": "_",
-                                    ":": "_",
-                                    "-": "_",
-                                    "=": "_",
-                                    "+": "_",
-                                    "*": "_",
-                                    "?": "_",
-                                    "!": "_",
-                                }
-                            )
-                        )
+                        assert item.subtask is not None
                         self.provider.log_file = str(
                             get_log_path(
                                 sanitize_file_path(
-                                    f"{timestamp}__{self.name}__{item.task.title}__{subtask_title}.jsonl"
+                                    f"{timestamp}__{self.name}__{item.subtask.id}.jsonl"
                                 )
                             )
                         )
@@ -327,20 +353,3 @@ class Agent:
             List[Any]: Results with priority given to finish_task output
         """
         return self.results
-
-
-# Schema for the LLM to generate a single subtask definition
-SINGLE_SUBTASK_DEFINITION_SCHEMA = {
-    "type": "object",
-    "description": "Definition for a single subtask to achieve a specific objective.",
-    "properties": {
-        "content": {
-            "type": "string",
-            "description": "High-level natural language instructions for the agent executing this subtask.",
-        },
-    },
-    "additionalProperties": False,
-    "required": [
-        "content",
-    ],
-}

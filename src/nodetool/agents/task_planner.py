@@ -214,6 +214,10 @@ class CreateTaskTool(Tool):
                             "type": "string",
                             "description": "Specific LLM model to use for this subtask (e.g., 'gpt-4-turbo' or 'claude-3-opus-20240229'). Defaults to the planner's primary model if not specified or invalid.",
                         },
+                        "is_intermediate_result": {
+                            "type": "boolean",
+                            "description": "Whether the subtask is an intermediate result of a task",
+                        },
                     },
                     "required": [
                         "content",
@@ -223,6 +227,7 @@ class CreateTaskTool(Tool):
                         "input_files",
                         "max_iterations",
                         "model",
+                        "is_intermediate_result",
                     ],
                 },
             },
@@ -462,7 +467,7 @@ Your response MUST be structured as follows:
         flow (from Phase 1, including DOT graph and CSN strings if applicable) 
         into the specific arguments for the `create_task` tool.
     *   Detail your decisions for `content`, `input_files`, `output_file`, 
-        `output_type`, `output_schema`, `max_iterations`, and `model` for 
+        `output_type`, `output_schema`, `max_iterations`, `model`, and `is_intermediate_result` for 
         each subtask.
     *   Confirm how you ensured all validation criteria (see Warnings section) 
         were met, including dependency management (DAG), path correctness, 
@@ -514,6 +519,11 @@ Adhere strictly to the following when constructing the arguments for the
         *   Use `{{ reasoning_model }}` (reasoning model) for subtasks 
             requiring complex analysis, code generation, or significant reasoning.
     *   If unsure, default to `{{ model }}`.
+*   **`is_intermediate_result` (Boolean):**
+    *   Set to `true` if the subtask's `output_file` is primarily consumed by another subtask in the plan and is NOT a primary final output of the overall objective.
+    *   Set to `false` if the subtask's `output_file` represents a final deliverable for the user, or if it's a terminal output that directly contributes to the overall task goal (even if it's not the *only* final output).
+    *   **Crucially for multiple outputs:** If the objective requires several distinct final files (e.g., a text report and a separate image), ensure that each subtask producing one such final file has `is_intermediate_result: false`.
+    *   Consider the `Overall Task Output Requirements` when deciding this for terminal subtasks.
 
 **Plan-Wide Validation (Perform these checks *before* calling the tool):**
 *   **Path Correctness:** All file paths (`input_files`, `output_file`) 

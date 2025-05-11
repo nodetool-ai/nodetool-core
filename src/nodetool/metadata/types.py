@@ -995,6 +995,10 @@ class SubTask(BaseType):
         default="",
         description="The JSON schema of the output of the subtask",
     )
+    is_intermediate_result: bool = Field(
+        default=False,
+        description="Whether the subtask is an intermediate result of a task",
+    )
 
     def to_markdown(self) -> str:
         """Convert the subtask to markdown format."""
