@@ -175,50 +175,47 @@ def explorer(dir: str):
 
 
 @cli.command("codegen")
-@click.option(
-    "--source",
-    "-s",
-    default="nodetool.nodes",
-    help="Source root module containing node definitions (default: nodetool.nodes)",
-)
-def codegen_cmd(source: str):
+def codegen_cmd():
     """Generate DSL modules from node definitions."""
     # Add the src directory to the Python path to allow relative imports
     src_dir = os.path.abspath("src")
     if src_dir not in sys.path:
         sys.path.append(src_dir)
 
-    # Validate that source is within nodetool.nodes
-    if not source.startswith("nodetool.nodes"):
-        raise ValueError(
-            f"Source module must be within nodetool.nodes namespace. Got: {source}"
+    base_nodes_path = os.path.join("src", "nodetool", "nodes")
+    base_dsl_path = os.path.join("src", "nodetool", "dsl")
+
+    if not os.path.isdir(base_nodes_path):
+        click.echo(f"Error: Nodes directory not found at {base_nodes_path}", err=True)
+        return
+
+    namespaces = [
+        d
+        for d in os.listdir(base_nodes_path)
+        if os.path.isdir(os.path.join(base_nodes_path, d))
+    ]
+
+    if not namespaces:
+        click.echo(
+            f"No subdirectories found in {base_nodes_path} to treat as namespaces.",
+            err=True,
         )
+        return
 
-    # Infer output path and module name from source
-    source_parts = source.split(".")
+    for namespace in namespaces:
+        source_path = os.path.join(base_nodes_path, namespace)
+        output_path = os.path.join(base_dsl_path, namespace)
 
-    # Extract namespace from source module (everything after nodetool.nodes)
-    if len(source_parts) > 2:
-        namespace = ".".join(source_parts[2:])
-    else:
-        namespace = ""
+        # Ensure the output directory for the namespace exists
+        os.makedirs(output_path, exist_ok=True)
 
-    # Construct output path
-    output_path = os.path.join("src", "nodetool", "dsl")
-    if namespace:
-        output_path = os.path.join(output_path, namespace.replace(".", os.sep))
+        click.echo(
+            f"Generating DSL modules from {source_path} to {output_path} for namespace '{namespace}'..."
+        )
+        create_dsl_modules(source_path, output_path)
+        click.echo(f"✅ DSL module generation complete for namespace '{namespace}'!")
 
-    # Construct module name
-    module_name = "nodetool.dsl"
-    if namespace:
-        module_name = f"{module_name}.{namespace}"
-
-    click.echo(f"Generating DSL modules from {source} to {output_path}...")
-    click.echo(f"Using module name: {module_name}")
-
-    create_dsl_modules(source, output_path, module_name)
-
-    click.echo("✅ DSL module generation complete!")
+    click.echo("✅ All DSL module generation complete!")
 
 
 @cli.group()

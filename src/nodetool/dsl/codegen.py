@@ -9,6 +9,8 @@ import importlib
 import shutil
 import argparse
 import typing
+from pydantic import BaseModel
+import subprocess
 
 from nodetool.metadata.types import BaseType
 from nodetool.metadata.utils import is_enum_type
@@ -49,6 +51,17 @@ def create_python_module_file(filename: str, content: str) -> None:
     os.makedirs(os.path.dirname(filename), exist_ok=True)
     with open(filename, "w") as file:
         file.write(content)
+    try:
+        subprocess.run(["black", filename], check=True, capture_output=True)
+    except subprocess.CalledProcessError as e:
+        print(
+            f"Error running black on {filename}: {e.stderr.decode()}", file=sys.stderr
+        )
+    except FileNotFoundError:
+        print(
+            "black formatter not found. Please ensure it is installed and in your PATH.",
+            file=sys.stderr,
+        )
 
 
 def type_to_string(field_type: type | GenericAlias | UnionType) -> str:
@@ -104,37 +117,79 @@ def type_to_string(field_type: type | GenericAlias | UnionType) -> str:
     return field_type.__name__
 
 
-def field_default(default_value: Any, enum_name: str | None = None) -> str:
+def field_default(default_value: Any) -> str:
     """
     Returns a string representation of the default value for a field.
 
-    This function handles different types of default values, including None values
-    and enum values, converting them to their string representation for use in
+    This function handles different types of default values, including None, Enums,
+    Pydantic BaseModels (and nodetool's BaseType), lists, dicts, and other
+    primitive types, converting them to their string representation for use in
     generated code.
 
     Args:
         default_value (Any): The default value of the field.
-        enum_name (str | None, optional): The name of the enum type if the default
-                                         value is an enum. Defaults to None.
 
     Returns:
         str: The string representation of the default value that can be used in
              generated code.
-
-    Examples:
-        >>> field_default(None)
-        'None'
-        >>> field_default("test")
-        "'test'"
-        >>> field_default(42)
-        '42'
     """
     if default_value is None:
         return "None"
-    if enum_name is not None:
-        return f"{enum_name}({repr(default_value)})"
+
+    # 1. Handle Enum members
+    if isinstance(default_value, Enum):
+        enum_cls = type(default_value)
+        # Enums should be rendered as module.qualname.membername
+        # This relies on the necessary modules being imported in the generated file.
+        if enum_cls.__module__ == "__main__":
+            # Fallback for enums defined in __main__, may need specific handling
+            # or ensuring they are aliased/imported directly in generated code.
+            # For now, using qualname assuming it's available in the scope.
+            return f"{enum_cls.__qualname__}.{default_value.name}"
+        return f"{enum_cls.__module__}.{enum_cls.__qualname__}.{default_value.name}"
+
+    # 2. Handle Pydantic BaseModel / nodetool's BaseType
     if isinstance(default_value, BaseType):
-        return f"types.{repr(default_value)}"
+        model_cls = type(default_value)
+        args_strs = []
+
+        # Introspect fields if it's a Pydantic model
+        fields_iterator = None
+        if isinstance(default_value, BaseModel):  # Check if it's a Pydantic BaseModel
+            for field_name in default_value.model_fields.keys():
+                value = getattr(default_value, field_name)
+                value_str = field_default(value)  # Recursive call
+                args_strs.append(f"{field_name}={value_str}")
+            # BaseType instances are prefixed with "types." in generated code
+            return f"types.{model_cls.__name__}({', '.join(args_strs)})"
+
+    # 3. Handle basic Python types
+    if isinstance(default_value, str):
+        return repr(default_value)  # Handles quotes and escapes
+
+    if isinstance(default_value, (int, float, bool)):
+        return str(default_value)
+
+    # 4. Handle collections
+    if isinstance(default_value, list):
+        return f"[{', '.join(field_default(item) for item in default_value)}]"
+
+    if isinstance(default_value, tuple):
+        if not default_value:  # Empty tuple
+            return "()"
+        # Tuples with one item need a trailing comma
+        elements_str = ", ".join(field_default(item) for item in default_value)
+        return f"({elements_str}{',' if len(default_value) == 1 else ''})"
+
+    if isinstance(default_value, dict):
+        return f"{{{', '.join(f'{field_default(k)}: {field_default(v)}' for k, v in default_value.items())}}}"
+
+    if isinstance(default_value, set):
+        if not default_value:  # Empty set
+            return "set()"
+        return f"{{{', '.join(field_default(item) for item in default_value)}}}"
+
+    # 5. Fallback for any other types
     return repr(default_value)
 
 
@@ -204,7 +259,7 @@ def generate_class_source(node_cls: type[BaseNode]) -> str:
     return imports + "\n" + class_body
 
 
-def create_dsl_modules(source_root: str, target_path: str, target_module_name: str):
+def create_dsl_modules(source_path: str, target_path: str):
     """
     Generate DSL modules based on node classes found in the source module.
 
@@ -214,15 +269,15 @@ def create_dsl_modules(source_root: str, target_path: str, target_module_name: s
     hierarchy as the source.
 
     Args:
-        source_root (str): The source root module name (e.g., "nodetool.nodes").
+        source_path (str): The source path to the node classes (e.g., "nodetool/nodes/package").
         target_path (str): The filesystem path where the target modules should be generated.
-        target_module_name (str): The module name to use in imports within generated code.
 
     Example:
-        >>> create_dsl_modules("nodetool.nodes", "/path/to/output", "custom.dsl")
+        >>> create_dsl_modules("nodetool/nodes/package", "/path/to/output")
         # This will generate DSL modules in the specified output directory
     """
-    source_root_module = importlib.import_module(source_root)
+    source_module = source_path.replace("src/", "").replace("/", ".")
+    source_root_module = importlib.import_module(source_module)
 
     # Create the target directory if it doesn't exist
     os.makedirs(target_path, exist_ok=True)
@@ -231,7 +286,7 @@ def create_dsl_modules(source_root: str, target_path: str, target_module_name: s
         source_root_module.__path__, prefix=source_root_module.__name__ + "."
     ):
         # Get the relative part of the module path
-        relative_module = module_name[len(source_root) + 1 :]
+        relative_module = module_name[len(source_module) + 1 :]
         # Convert to filesystem path
         relative_path = relative_module.replace(".", "/")
 
@@ -265,6 +320,7 @@ def create_dsl_modules(source_root: str, target_path: str, target_module_name: s
             "from pydantic import BaseModel, Field\n"
             "import typing\n"
             "from typing import Any\n"
+            "import nodetool.metadata.types\n"
             "import nodetool.metadata.types as types\n"
             "from nodetool.dsl.graph import GraphNode\n\n"
         ) + source_code
