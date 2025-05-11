@@ -11,7 +11,7 @@
     "start"
   ],
   "thumbnail": null,
-  "thumbnail_url": null,
+  "thumbnail_url": "/examples/audio_to_spectrogram.jpg",
   "graph": {
     "nodes": [
       {

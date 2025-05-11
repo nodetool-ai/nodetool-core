@@ -1,4 +1,8 @@
+from typing import Any, Dict
 from nodetool.metadata.types import ColumnDef, RecordType
+
+from nodetool.agents.tools import Tool
+from nodetool.workflows.processing_context import ProcessingContext
 
 
 def json_schema_for_column(column: ColumnDef) -> dict:
@@ -47,6 +51,46 @@ def json_schema_for_dictionary(fields: RecordType) -> dict:
         "required": [field.name for field in fields.columns],
         "additionalProperties": False,
     }
+
+
+class GenerateStringTool(Tool):
+    name: str = "generate_string"
+    input_schema: dict = {
+        "type": "object",
+        "properties": {
+            "string": {
+                "type": "string",
+                "description": "The generated string",
+            }
+        },
+        "required": ["string"],
+        "additionalProperties": False,
+    }
+
+    def __init__(self, description: str):
+        self.description = description
+
+    async def process(self, context: ProcessingContext, params: Dict[str, Any]) -> Any:
+        return params
+
+
+class GenerateDataTool(Tool):
+    name: str = "create_record"
+
+    def __init__(self, description: str, columns: list[ColumnDef]):
+        self.description = description
+        self.columns = columns
+        self.input_schema = {
+            "type": "object",
+            "properties": {
+                column.name: json_schema_for_column(column) for column in columns
+            },
+            "required": [column.name for column in columns],
+            "additionalProperties": False,
+        }
+
+    async def process(self, context: ProcessingContext, params: Dict[str, Any]) -> Any:
+        return params
 
 
 def json_schema_for_dataframe(columns: list[ColumnDef]) -> dict:
