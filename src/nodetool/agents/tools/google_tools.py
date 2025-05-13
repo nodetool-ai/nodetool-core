@@ -172,8 +172,12 @@ class GoogleImageGenerationTool(Tool):
                     "type": "string",
                     "description": "The text prompt describing the image to generate",
                 },
+                "output_file": {
+                    "type": "string",
+                    "description": "The path to save the generated image as png file.",
+                },
             },
-            "required": ["prompt"],
+            "required": ["prompt", "output_file"],
         }
 
     async def process(
@@ -190,8 +194,11 @@ class GoogleImageGenerationTool(Tool):
             Dict containing generated text and base64 encoded image data
         """
         prompt = params.get("prompt")
+        output_file = params.get("output_file")
         if not prompt:
             raise ValueError("Image generation prompt is required")
+        if not output_file:
+            raise ValueError("Output file is required")
 
         response = await self.client.models.generate_images(
             model="imagen-3.0-generate-002",
@@ -206,17 +213,20 @@ class GoogleImageGenerationTool(Tool):
         for generated_image in response.generated_images:
             assert generated_image.image, "No image"
             assert generated_image.image.image_bytes, "No image bytes"
-            base64_image = base64.b64encode(generated_image.image.image_bytes).decode(
-                "utf-8"
-            )
-            # Only returning the first image for now
+            image_bytes = generated_image.image.image_bytes
             break
 
-        return {
-            "image_base64": base64_image,
-            "generated_prompt": response.generated_prompt,
+        file_path = context.resolve_workspace_path(output_file)
+        with open(file_path, "wb") as f:
+            f.write(image_bytes)
+
+        formatted_results = {
+            "type": "image",
+            "prompt": prompt,
+            "output_file": output_file,
             "status": "success",
         }
+        return formatted_results
 
     def user_message(self, params: dict) -> str:
         prompt = params.get("prompt", "an image")
