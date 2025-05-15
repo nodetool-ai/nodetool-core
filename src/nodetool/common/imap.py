@@ -62,6 +62,50 @@ def decode_bytes_with_fallback(
     return ""
 
 
+def fetch_email(imap: imaplib.IMAP4_SSL, message_id: str) -> Email | None:
+    """
+    Fetches a single email by message ID.
+
+    Args:
+        imap: IMAP connection object
+        message_id: Email message ID to fetch
+
+    Returns:
+        Email object or None if the message cannot be retrieved
+    """
+    result, data = imap.fetch(message_id, "(RFC822)")
+    if result != "OK" or not data[0] or not isinstance(data[0], tuple):
+        return None
+
+    email_body = data[0][1]
+    email_message = email.message_from_bytes(email_body)
+
+    subject = decode_header(email_message["Subject"])[0][0]
+    subject = (
+        decode_bytes_with_fallback(subject)
+        if isinstance(subject, bytes)
+        else str(subject)
+    )
+
+    from_addr = decode_header(email_message["From"])[0][0]
+    from_addr = (
+        decode_bytes_with_fallback(from_addr)
+        if isinstance(from_addr, bytes)
+        else str(from_addr)
+    )
+
+    date_str = email_message["Date"]
+    date = parsedate_to_datetime(date_str) if date_str else None
+
+    return Email(
+        id=message_id,
+        subject=subject,
+        sender=from_addr,
+        date=(Datetime.from_datetime(date) if date else Datetime()),
+        body=get_email_body(email_message),
+    )
+
+
 def fetch_emails(imap, message_ids: List[str], batch_size: int = 100) -> List[Email]:
     """
     Fetches email details for the given message IDs in batches.
@@ -82,39 +126,9 @@ def fetch_emails(imap, message_ids: List[str], batch_size: int = 100) -> List[Em
 
         # Fetch batch of messages
         for message_id in batch:
-            result, data = imap.fetch(message_id, "(RFC822)")
-            if result != "OK" or not data[0] or not isinstance(data[0], tuple):
-                continue
-
-            email_body = data[0][1]
-            email_message = email.message_from_bytes(email_body)
-
-            subject = decode_header(email_message["Subject"])[0][0]
-            subject = (
-                decode_bytes_with_fallback(subject)
-                if isinstance(subject, bytes)
-                else str(subject)
-            )
-
-            from_addr = decode_header(email_message["From"])[0][0]
-            from_addr = (
-                decode_bytes_with_fallback(from_addr)
-                if isinstance(from_addr, bytes)
-                else str(from_addr)
-            )
-
-            date_str = email_message["Date"]
-            date = parsedate_to_datetime(date_str) if date_str else None
-
-            emails.append(
-                Email(
-                    id=message_id,
-                    subject=subject,
-                    sender=from_addr,
-                    date=(Datetime.from_datetime(date) if date else Datetime()),
-                    body=get_email_body(email_message),
-                )
-            )
+            email_obj = fetch_email(imap, message_id)
+            if email_obj:
+                emails.append(email_obj)
 
     return emails
 
@@ -201,8 +215,8 @@ def build_imap_query(criteria: EmailSearchCriteria) -> str:
 
 
 def search_emails(
-    connection: IMAPConnection, criteria: EmailSearchCriteria, max_results: int = 50
-) -> List[Email]:
+    imap: imaplib.IMAP4_SSL, criteria: EmailSearchCriteria, max_results: int = 50
+) -> List[str]:
     """
     Searches emails using IMAP search criteria.
 
@@ -212,29 +226,23 @@ def search_emails(
         max_results: Maximum number of results to return
 
     Returns:
-        List of matching emails
+        List of matching email message IDs
 
     Raises:
         ValueError: If search fails
     """
-    imap = imaplib.IMAP4_SSL(connection.host, connection.port)
-    try:
-        imap.login(connection.username, connection.password)
+    # Select folder if specified, otherwise use INBOX
+    folder = criteria.folder or "INBOX"
+    imap.select(folder)
 
-        # Select folder if specified, otherwise use INBOX
-        folder = criteria.folder or "INBOX"
-        imap.select(folder)
+    query = build_imap_query(criteria)
+    result, data = imap.search(None, query)
 
-        query = build_imap_query(criteria)
-        result, data = imap.search(None, query)
+    if result != "OK":
+        raise ValueError(f"Search failed: {result}")
 
-        if result != "OK":
-            raise ValueError(f"Search failed: {result}")
+    message_ids = data[0].decode().split()
+    message_ids.reverse()  # Newest first
+    message_ids = message_ids[:max_results]
 
-        message_ids = data[0].decode().split()
-        message_ids.reverse()  # Newest first
-        message_ids = message_ids[:max_results]
-
-        return fetch_emails(imap, message_ids)
-    finally:
-        imap.logout()
+    return message_ids

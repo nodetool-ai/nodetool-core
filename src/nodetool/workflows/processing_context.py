@@ -3,6 +3,7 @@ from chunk import Chunk
 from collections.abc import Sequence
 from datetime import datetime
 from enum import Enum
+import imaplib
 from urllib.parse import urlparse
 from playwright.async_api import async_playwright, Browser
 import io
@@ -37,7 +38,13 @@ from nodetool.types.prediction import (
 from nodetool.types.workflow import Workflow
 from nodetool.chat.workspace_manager import WorkspaceManager
 from nodetool.common.nodetool_api_client import NodetoolAPIClient
-from nodetool.metadata.types import ComfyModel, Message, Provider, ToolCall
+from nodetool.metadata.types import (
+    ComfyModel,
+    IMAPConnection,
+    Message,
+    Provider,
+    ToolCall,
+)
 from nodetool.workflows.graph import Graph
 from nodetool.workflows.types import (
     NodeProgress,
@@ -157,6 +164,40 @@ class ProcessingContext:
                 follow_redirects=True, timeout=600, verify=False
             )
         return self.http_client
+
+    def get_gmail_connection(self) -> imaplib.IMAP4_SSL:
+        """
+        Creates a Gmail connection configuration.
+
+        Args:
+            email_address: Gmail address to connect to
+            app_password: Google App Password for authentication
+
+        Returns:
+            IMAPConnection configured for Gmail
+
+        Raises:
+            ValueError: If email_address or app_password is empty
+        """
+        if hasattr(self, "_gmail_connection"):
+            return self._gmail_connection
+
+        email_address = self.environment.get("GOOGLE_MAIL_USER")
+        app_password = self.environment.get("GOOGLE_APP_PASSWORD")
+        if not email_address:
+            raise ValueError("GOOGLE_MAIL_USER is not set")
+        if not app_password:
+            raise ValueError("GOOGLE_APP_PASSWORD is not set")
+
+        if not email_address:
+            raise ValueError("Email address is required")
+        if not app_password:
+            raise ValueError("App password is required")
+
+        imap = imaplib.IMAP4_SSL("imap.gmail.com", 993)
+        imap.login(email_address, app_password)
+        self._gmail_connection = imap
+        return imap
 
     def copy(self):
         """
