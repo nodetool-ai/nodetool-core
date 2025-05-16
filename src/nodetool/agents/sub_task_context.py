@@ -1215,6 +1215,127 @@ class SubTaskContext:
                 f"Token limit approaching. Transitioning subtask '{self.subtask.content}' to conclusion stage."
             )
 
+    async def _optimize_context_window(self) -> None:
+        """
+        Optimize the context window by cleaning up the message history using several strategies:
+        1. Remove "thinking" sections in messages
+        2. Summarize long tool results
+        3. Remove/summarize less relevant history
+        4. Keep only the most recent interactions
+        5. Ensure system and task messages are preserved
+        """
+        logger.warning(
+            f"Optimizing context window for subtask '{self.subtask.content}'"
+        )
+
+        # Make sure we have at least 3 messages (system, user, and 1+ exchanges)
+        if len(self.history) < 3:
+            logger.warning("History too short to optimize, nothing to do")
+            return
+
+        # Step 1: Never touch the system prompt (index 0) and the task prompt (index 1)
+        preserved_messages = self.history[:2]  # System and task prompt
+        working_history = self.history[2:]
+
+        # Step 2: Calculate token counts for each message to identify largest ones
+        message_sizes = [
+            (i + 2, msg, self._count_single_message_tokens(msg))
+            for i, msg in enumerate(working_history)
+        ]
+
+        # Step 3: Find the largest tool responses (typically file reads, web fetches)
+        large_tool_responses = []
+        for idx, msg, tokens in message_sizes:
+            if msg.role == "tool" and tokens > MESSAGE_COMPRESSION_THRESHOLD:
+                large_tool_responses.append((idx, msg, tokens))
+
+        # Step 4: Compress large tool responses
+        for idx, msg, tokens in large_tool_responses:
+            try:
+                # Check if it's JSON content that we can parse and compress
+                if msg.content and isinstance(msg.content, str):
+                    try:
+                        content_data = json.loads(msg.content)
+                        # If it's a read_file result, extract the essential metadata
+                        if msg.name == "read_file" and isinstance(content_data, dict):
+                            path = content_data.get("path", "unknown")
+                            # Keep line info and token info if available
+                            line_info = content_data.get("line_info", {})
+                            token_info = content_data.get("token_info", {})
+                            content_size = len(content_data.get("content", ""))
+                            # Create a compact summary instead of full content
+                            summary = {
+                                "success": content_data.get("success", False),
+                                "path": path,
+                                "action": "read_file",
+                                "content_summary": f"[File content ({content_size} chars, {token_info.get('count', 0)} tokens) removed to save context space]"
+                                f" File had {line_info.get('total_lines', 0)} lines.",
+                            }
+                            # Replace the content with our summary
+                            self.history[idx].content = json.dumps(summary)
+
+                        # Summarize other large tool results (like web fetches)
+                        elif msg.name in [
+                            "browser",
+                            "search",
+                            "web_fetch",
+                        ] and isinstance(content_data, dict):
+                            # Create a compact summary for web results
+                            summary = {
+                                "action": msg.name,
+                                "content_summary": f"[Web content ({tokens} tokens) removed to save context space]",
+                            }
+                            if "url" in content_data:
+                                summary["url"] = content_data.get("url")
+                            if "title" in content_data:
+                                summary["title"] = content_data.get("title")
+                            self.history[idx].content = json.dumps(summary)
+                    except json.JSONDecodeError:
+                        # Not valid JSON, use a simple text truncation approach
+                        if len(msg.content) > 500:
+                            self.history[idx].content = (
+                                f"{msg.content[:500]}... [Content truncated to save context space]"
+                            )
+            except Exception as e:
+                logger.error(f"Error optimizing message {idx}: {e}")
+
+        # Step 5: If we're still over limit, keep only the most recent interactions
+        # First count tokens again after the optimizations above
+        current_token_count = self._count_tokens(self.history)
+        if (
+            current_token_count > self.max_token_limit * 0.85
+        ):  # If still using >85% of limit
+            # Keep system message, task message, and the most recent exchanges
+            # The most important part is the system message and recent context
+            essential_count = len(preserved_messages)  # System + task messages
+            recent_count = min(
+                4, len(working_history)
+            )  # Keep at least 4 recent messages if available
+            oldest_to_remove = len(working_history) - recent_count
+
+            if oldest_to_remove > 0:
+                # Keep only the most recent exchanges
+                self.history = preserved_messages + working_history[-recent_count:]
+                # Insert a marker message to show history was truncated
+                self.history.insert(
+                    2,
+                    Message(
+                        role="system",
+                        content=f"[Context window optimized: {oldest_to_remove} older messages removed to stay within token limits]",
+                    ),
+                )
+                logger.info(
+                    f"Removed {oldest_to_remove} older messages to optimize context window"
+                )
+
+        # Log the final optimization results
+        original_tokens = current_token_count
+        optimized_tokens = self._count_tokens(self.history)
+        reduction = original_tokens - optimized_tokens
+        logger.info(
+            f"Context window optimization complete: {reduction} tokens removed ({int(reduction/original_tokens*100)}% reduction)"
+        )
+
     async def _process_iteration(
         self,
     ) -> Message:
@@ -1236,14 +1357,23 @@ class SubTaskContext:
         unique_tools = {tool.name: tool for tool in tools_for_iteration}
         final_tools = list(unique_tools.values())
 
-        for i, msg in enumerate(self.history):
-            msg_token_count = self._count_single_message_tokens(msg)
-
-        message = await self.provider.generate_message(
-            messages=self.history,
-            model=self.model,
-            tools=final_tools,
-        )
+        try:
+            message = await self.provider.generate_message(
+                messages=self.history,
+                model=self.model,
+                tools=final_tools,
+            )
+        except Exception as e:
+            # TODO: find for all LLM providers
+            if "context length" in str(e):
+                await self._optimize_context_window()
+                message = await self.provider.generate_message(
+                    messages=self.history,
+                    model=self.model,
+                    tools=final_tools,
+                )
+            else:
+                raise e
 
         # Clean assistant message content
         if isinstance(message.content, str):

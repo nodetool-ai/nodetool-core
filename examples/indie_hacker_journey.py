@@ -100,7 +100,7 @@ if __name__ == "__main__":
                 Provider.OpenAI
             ),  # Or Provider.Gemini, Provider.Anthropic
             model="gpt-4o-mini",
-            planning_model="o4-mini",
-            reasoning_model="o4-mini",
+            planning_model="gpt-4o-mini",
+            reasoning_model="gpt-4o-mini",
         )
     )

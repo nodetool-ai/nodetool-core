@@ -3,12 +3,14 @@ UI Console for displaying Agent progress using Rich.
 """
 
 import os
-from typing import List, Optional, Union, TYPE_CHECKING
+from typing import List, Optional, Union, TYPE_CHECKING, Dict, Any
 
 from rich.console import Console
 from rich.live import Live
 from rich.table import Table
 from rich.text import Text
+from rich.tree import Tree
+from rich.style import Style
 
 # Use TYPE_CHECKING to avoid circular imports at runtime
 if TYPE_CHECKING:
@@ -31,19 +33,29 @@ class AgentConsole:
         self.console: Optional[Console] = Console() if verbose else None
         self.live: Optional[Live] = None
         self.current_table: Optional[Table] = None
+        self.current_tree: Optional[Tree] = None
+        self.phase_nodes: Dict[str, Any] = {}
+        self.subtask_nodes: Dict[str, Any] = {}
 
-    def start_live(self, initial_table: Table) -> None:
+    def start_live(self, initial_content: Union[Table, Tree]) -> None:
         """
-        Start the Rich Live display with an initial table.
+        Start the Rich Live display with initial content (table or tree).
 
         Args:
-            initial_table (Table): The table to display initially.
+            initial_content (Union[Table, Tree]): The content to display initially.
         """
         if not self.verbose or self.live or not self.console:
             return
-        self.current_table = initial_table
+
+        if isinstance(initial_content, Table):
+            self.current_table = initial_content
+            self.current_tree = None
+        else:  # Tree
+            self.current_tree = initial_content
+            self.current_table = None
+
         self.live = Live(
-            self.current_table,
+            initial_content,
             console=self.console,
             refresh_per_second=4,
             vertical_overflow="visible",
@@ -56,39 +68,40 @@ class AgentConsole:
             self.live.stop()
         self.live = None
         self.current_table = None
+        self.current_tree = None
+        self.phase_nodes = {}
+        self.subtask_nodes = {}
 
-    def update_live(self, new_table: Table) -> None:
+    def update_live(self, new_content: Union[Table, Tree]) -> None:
         """
-        Update the Rich Live display with a new table.
+        Update the Rich Live display with new content.
 
         Args:
-            new_table (Table): The new table to display.
+            new_content (Union[Table, Tree]): The new content to display.
         """
         if self.live and self.live.is_started:
-            self.current_table = new_table  # Update the reference
-            self.live.update(self.current_table)
+            if isinstance(new_content, Table):
+                self.current_table = new_content
+                self.current_tree = None
+            else:  # Tree
+                self.current_tree = new_content
+                self.current_table = None
 
-    def create_planning_table(self, title: str) -> Table:
+            self.live.update(new_content)
+
+    def create_planning_table(self, title: str) -> Tree:
         """
-        Create a Rich Table configured for displaying planning phases.
+        Create a Rich Tree configured for displaying planning phases.
 
         Args:
-            title (str): The title for the table.
+            title (str): The title for the tree.
 
         Returns:
-            Table: The configured Rich table.
+            Tree: The configured Rich tree.
         """
-        table = Table(
-            title=title,
-            show_header=True,
-            header_style="bold magenta",
-            show_lines=True,
-            title_justify="left",
-        )
-        table.add_column("Phase", style="cyan", ratio=1)
-        table.add_column("Status", style="white", ratio=1)
-        table.add_column("Details", style="green", ratio=8)
-        return table
+        tree = Tree(f"[bold magenta]{title}[/]", guide_style="dim")
+        self.phase_nodes = {}
+        return tree
 
     def update_planning_display(
         self,
@@ -98,7 +111,7 @@ class AgentConsole:
         is_error: bool = False,
     ) -> None:
         """
-        Add a row to the current planning table in the live display.
+        Add a node to the current planning tree in the live display.
 
         Args:
             phase_name (str): Name of the planning phase.
@@ -106,34 +119,52 @@ class AgentConsole:
             content (Union[str, Text]): Details or output for the phase.
             is_error (bool): Flag indicating if the status represents an error.
         """
-        if self.live and self.current_table and self.live.is_started:
+        if self.live and self.current_tree and self.live.is_started:
             status_style = (
                 "bold red"
                 if is_error
                 else "bold green" if status == "Success" else "bold yellow"
             )
-            # Truncate long content for better table display
+            # Truncate long content for better display
             content_str = str(content)
             if len(content_str) > 1000:
                 content_str = content_str[:1000] + "..."
-            status_text = Text(status, style=status_style)
-            # Use Text object if already Text, otherwise create one
-            content_text = content if isinstance(content, Text) else Text(content_str)
-            # Add row to the table object that Live is referencing
-            self.current_table.add_row(phase_name, status_text, content_text)
+
+            # Create the node label with phase and status
+            status_icon = "❌" if is_error else "✓" if status == "Success" else "⏳"
+            node_label = (
+                f"[cyan]{phase_name}[/] [{status_style}]{status_icon} {status}[/]"
+            )
+
+            # Check if we already have a node for this phase
+            if phase_name in self.phase_nodes:
+                # Update existing node
+                node = self.phase_nodes[phase_name]
+                node.label = node_label
+
+                # Replace or add the content as a child node
+                if len(node.children) > 0:
+                    # Remove the old content child node
+                    node.children.clear()
+
+                # Add the new content
+                node.add(f"[dim]{content_str}[/]")
+            else:
+                # Create a new node
+                node = self.current_tree.add(node_label)
+                node.add(f"[dim]{content_str}[/]")
+                self.phase_nodes[phase_name] = node
 
     def create_execution_table(
         self, title: str, task: "Task", tool_calls: List["ToolCall"]
-    ) -> Table:
-        """Create a rich table for displaying subtasks and their tool calls."""
-        table = Table(title=title, title_justify="left")
-        table.add_column("Status", style="cyan", no_wrap=True, ratio=1)
-        table.add_column("Content", style="green", ratio=7)
-        table.add_column("Files", style="white", ratio=2)
+    ) -> Tree:
+        """Create a rich tree for displaying subtasks and their tool calls."""
+        tree = Tree(f"[bold magenta]{title}[/]", guide_style="dim")
+        self.subtask_nodes = {}
 
         # Guard against task or subtasks being None
         if not task or not task.subtasks:
-            return table
+            return tree
 
         for subtask in task.subtasks:
             status_symbol = (
@@ -149,20 +180,8 @@ class AgentConsole:
                 call for call in (tool_calls or []) if call.subtask_id == subtask.id
             ]
 
-            # Combine inputs and outputs with color coding
-            files_str_parts = []
-            if subtask.input_files:
-                input_str = ", ".join(subtask.input_files)
-                files_str_parts.append(f"[blue]Inputs:[/] {input_str}")
-            if subtask.output_file:
-                # Display only the basename for cleaner output
-                output_basename = os.path.basename(subtask.output_file)
-                files_str_parts.append(f"[yellow]Output:[/] {output_basename}")
-
-            files_str = "\n".join(files_str_parts) if files_str_parts else "none"
-
             # Prepare status display
-            status_display = f"[{status_style}]{status_symbol}[/]"
+            status_text = f"[{status_style}]{status_symbol}[/]"
             if status_symbol == "▶":  # If running
                 relevant_tool_calls = [
                     call
@@ -174,15 +193,47 @@ class AgentConsole:
                     # Truncate long messages
                     if len(last_tool_message) > 50:
                         last_tool_message = last_tool_message[:47] + "..."
-                    status_display += f" [dim]({last_tool_message})[/]"
+                    status_text += f" [dim]({last_tool_message})[/]"
 
-            table.add_row(
-                status_display,  # Use the combined status display
-                subtask.content,
-                files_str,
-            )
+            # Create subtask node with status and content
+            node_label = f"{status_text} [green]{subtask.content}[/]"
+            subtask_node = tree.add(node_label)
+            self.subtask_nodes[subtask.id] = subtask_node
 
-        return table
+            # Add files information as child nodes
+            if subtask.input_files:
+                input_str = ", ".join(subtask.input_files)
+                subtask_node.add(f"[blue]📁 Inputs:[/] {input_str}")
+
+            if subtask.output_file:
+                # Display only the basename for cleaner output
+                output_basename = os.path.basename(subtask.output_file)
+                subtask_node.add(f"[yellow]📂 Output:[/] {output_basename}")
+
+            # Add tool calls as child nodes if there are any relevant ones
+            relevant_tool_calls = [
+                call
+                for call in subtask_tool_calls
+                if call.name not in ["finish_task", "finish_subtask"]
+            ]
+
+            if relevant_tool_calls:
+                tool_node = subtask_node.add("[cyan]🔧 Tools[/]")
+                for i, call in enumerate(
+                    relevant_tool_calls[-3:]
+                ):  # Show last 3 tool calls
+                    tool_name = call.name
+                    message = str(call.message)
+                    if len(message) > 70:
+                        message = message[:67] + "..."
+                    tool_node.add(f"[dim]{tool_name}: {message}[/]")
+
+                if len(relevant_tool_calls) > 3:
+                    tool_node.add(
+                        f"[dim]+ {len(relevant_tool_calls) - 3} more tool calls[/]"
+                    )
+
+        return tree
 
     def print(self, message: object, style: Optional[str] = None) -> None:
         """

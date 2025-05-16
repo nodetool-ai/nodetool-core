@@ -124,7 +124,7 @@ class BrowserTool(Tool):
     def user_message(self, params: dict) -> str:
         url = params.get("url", "a specific URL")
         msg = f"Browsing {url}..."
-        if len(msg) > 80:
+        if len(msg) > 160:
             msg = "Browsing a specified URL..."
         return msg
 
@@ -238,10 +238,8 @@ class ScreenshotTool(Tool):
         url = params.get("url", "a page")
         output = params.get("output_file", "screenshot.png")
         msg = f"Taking screenshot of {url} and saving to {output}."
-        if len(msg) > 80:
+        if len(msg) > 160:
             msg = f"Taking screenshot of a page and saving to {output}."
-        if len(msg) > 80:
-            msg = "Taking screenshot of a page."
         return msg
 
     async def process(self, context: ProcessingContext, params: dict) -> Any:

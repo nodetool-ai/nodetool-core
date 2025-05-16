@@ -134,6 +134,11 @@ gemini_models = [
 
 openai_models = [
     LanguageModel(
+        id="codex-mini-latest",
+        name="Codex Mini",
+        provider=Provider.OpenAI,
+    ),
+    LanguageModel(
         id="gpt-4o",
         name="GPT-4o",
         provider=Provider.OpenAI,
