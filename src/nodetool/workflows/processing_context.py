@@ -159,11 +159,11 @@ class ProcessingContext:
         self.workspace_dir = workspace_dir or WorkspaceManager().get_current_directory()
 
     def get_http_client(self):
-        if self.http_client is None:
-            self.http_client = httpx.AsyncClient(
+        if not hasattr(self, "_http_client"):
+            self._http_client = httpx.AsyncClient(
                 follow_redirects=True, timeout=600, verify=False
             )
-        return self.http_client
+        return self._http_client
 
     def get_gmail_connection(self) -> imaplib.IMAP4_SSL:
         """

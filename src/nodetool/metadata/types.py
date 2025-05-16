@@ -259,8 +259,6 @@ class VideoRef(AssetRef):
 
 
 class TextRef(AssetRef):
-    """A reference to a plain text asset."""
-
     type: Literal["text"] = "text"
 
 
@@ -293,6 +291,11 @@ class WorkflowRef(BaseType):
 class NodeRef(BaseType):
     type: Literal["node"] = "node"
     id: str = ""
+
+
+class FontRef(BaseType):
+    type: Literal["font"] = "font"
+    name: str = ""
 
 
 class Provider(str, enum.Enum):

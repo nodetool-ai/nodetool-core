@@ -23,6 +23,7 @@ from nodetool.metadata.types import (
     AudioRef,
     DataframeRef,
     FolderRef,
+    FontRef,
     ImageRef,
     ModelRef,
     NPArray,
@@ -95,11 +96,13 @@ UnionType = (
     | VideoRef
     | ModelRef
     | DocumentRef
+    | FontRef
     | TextRef
     | WorkflowRef
     | NodeRef
     | Prediction
     | JobUpdate
+    | LanguageModel
     | HuggingFaceModel
     | HFImageTextToText
     | HFVisualQuestionAnswering
