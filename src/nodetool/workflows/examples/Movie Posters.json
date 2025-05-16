@@ -1,8 +1,8 @@
 {
-  "id": "87855cca124511f0b9a00000339d202b",
+  "id": "47e37dda329e11f0ad8c00006cc4fca1",
   "access": "public",
-  "created_at": "2025-04-05T19:48:55.466396",
-  "updated_at": "2025-04-05T19:48:55.466408",
+  "created_at": "2025-05-17T00:04:35.438243",
+  "updated_at": "2025-05-17T00:04:35.438254",
   "name": "Movie Posters",
   "description": "Create cinematic movie posters using AI image generation",
   "tags": [
@@ -14,80 +14,218 @@
   "graph": {
     "nodes": [
       {
-        "id": "2",
+        "id": "19246f0f-d23a-42dd-aa10-cf5d4f0f7a5f",
         "parent_id": null,
-        "type": "nodetool.group.Loop",
-        "data": {},
-        "ui_properties": {
-          "position": {
-            "x": 627,
-            "y": 50
-          },
-          "zIndex": -10,
-          "width": 849,
-          "height": 330,
-          "selectable": false
-        },
-        "dynamic_properties": {}
-      },
-      {
-        "id": "7",
-        "parent_id": "2",
-        "type": "nodetool.text.Template",
+        "type": "nodetool.llms.LLM",
         "data": {
-          "string": "shot from the motion picture {title}, {character}: {description}, detailed, sharp focus, clear composition, dramatic, award winning, perfect lighting, film grain, bokeh, depth of field"
+          "model": {
+            "type": "language_model",
+            "id": "gpt-4.1",
+            "provider": "openai"
+          },
+          "system": "You are a friendly assistant.",
+          "image": {},
+          "audio": {},
+          "voice": "none",
+          "tools": [],
+          "messages": [],
+          "max_tokens": 4096,
+          "context_window": 4096
         },
         "ui_properties": {
           "selected": false,
           "position": {
-            "x": 180,
-            "y": 70
+            "x": 688,
+            "y": 501
           },
           "zIndex": 0,
-          "width": 200,
-          "color": "#cb4b16",
+          "width": 265,
           "selectable": true
         },
         "dynamic_properties": {}
       },
       {
-        "id": "8",
-        "parent_id": "2",
+        "id": "34d8d87d-de45-46c0-b021-faace0d40884",
+        "parent_id": null,
+        "type": "nodetool.constant.String",
+        "data": {
+          "value": "You are a senior movie-poster design strategist.\n\nDesign a poster for the movie \"{{MOVIE_TITLE}}\".  \nGenre: {{GENRE}}  \n\nDeliver a structured report with these sections (use H2 headings):\n\n1. **Goal & Positioning** \u2013 Purpose of the poster within the marketing mix.  \n2. **Audience Insight** \u2013 Motivations, visual tastes, and likely touchpoints for the audience: \"{{PRIMARY_AUDIENCE}}\"\n3. **Core Visual Concept** \u2013 1-2 sentence \u201cbig idea\u201d with rationale tied to genre conventions and audience triggers.  \n4. **Design System**  \n   - Color Palette \u2013 name each hue (e.g., \u201cAstral Blue #1B314F\u201d) and its emotional intent.  \n   - Typography \u2013 display face, supporting face, hierarchy rules.  \n   - Imagery \u2013 subject focus, composition style, lighting approach.  \n\n\nReturn **only** the strategy document\u2014no preambles, no disclaimers."
+        },
+        "ui_properties": {
+          "selected": false,
+          "position": {
+            "x": 50,
+            "y": 570
+          },
+          "zIndex": 0,
+          "width": 338,
+          "selectable": true
+        },
+        "dynamic_properties": {}
+      },
+      {
+        "id": "a899e2c6-116a-4fd5-abc8-95e020bad540",
+        "parent_id": null,
+        "type": "nodetool.workflows.base_node.Preview",
+        "data": {
+          "name": "str_text"
+        },
+        "ui_properties": {
+          "selected": false,
+          "position": {
+            "x": 1013,
+            "y": 50
+          },
+          "zIndex": 0,
+          "width": 505,
+          "height": 630,
+          "selectable": true
+        },
+        "dynamic_properties": {}
+      },
+      {
+        "id": "63b65389-e19b-4c94-b70d-49aeae4573f7",
+        "parent_id": null,
+        "type": "nodetool.text.FormatText",
+        "data": {},
+        "ui_properties": {
+          "selected": false,
+          "position": {
+            "x": 458,
+            "y": 703
+          },
+          "zIndex": 0,
+          "width": 200,
+          "selectable": true
+        },
+        "dynamic_properties": {
+          "MOVIE_TITLE": "",
+          "GENRE": "",
+          "PRIMARY_AUDIENCE": ""
+        }
+      },
+      {
+        "id": "c01e8d5c-79fc-4d74-9452-d799c9eb8499",
+        "parent_id": null,
+        "type": "nodetool.input.StringInput",
+        "data": {
+          "value": "The Wizard",
+          "name": ""
+        },
+        "ui_properties": {
+          "selected": false,
+          "position": {
+            "x": 188,
+            "y": 1066
+          },
+          "zIndex": 0,
+          "width": 200,
+          "selectable": true
+        },
+        "dynamic_properties": {}
+      },
+      {
+        "id": "850f0b74-df9a-432f-81ff-3dc7774e8d01",
+        "parent_id": null,
+        "type": "nodetool.input.StringInput",
+        "data": {
+          "value": "Fantasy",
+          "name": ""
+        },
+        "ui_properties": {
+          "selected": false,
+          "position": {
+            "x": 188,
+            "y": 1276
+          },
+          "zIndex": 0,
+          "width": 200,
+          "selectable": true
+        },
+        "dynamic_properties": {}
+      },
+      {
+        "id": "3261ad7d-79c5-49a5-ad1e-8e185c4f46e9",
+        "parent_id": null,
+        "type": "nodetool.input.StringInput",
+        "data": {
+          "value": "Age 8-12",
+          "name": ""
+        },
+        "ui_properties": {
+          "selected": false,
+          "position": {
+            "x": 188,
+            "y": 360
+          },
+          "zIndex": 0,
+          "width": 200,
+          "selectable": true
+        },
+        "dynamic_properties": {}
+      },
+      {
+        "id": "4708ad59-8b30-412b-964a-b034fbdee6e3",
+        "parent_id": null,
+        "type": "nodetool.llms.LLM",
+        "data": {
+          "model": {
+            "type": "language_model",
+            "id": "gpt-4.1",
+            "provider": "openai"
+          },
+          "system": "You convert strategies into short prompts for a Stable Diffusion model. Optimize for best image output.",
+          "image": {},
+          "audio": {},
+          "voice": "none",
+          "tools": [],
+          "messages": [],
+          "max_tokens": 4096,
+          "context_window": 4096
+        },
+        "ui_properties": {
+          "selected": false,
+          "position": {
+            "x": 1133.5,
+            "y": 730
+          },
+          "zIndex": 0,
+          "width": 264,
+          "selectable": true
+        },
+        "dynamic_properties": {}
+      },
+      {
+        "id": "2942aa37-5b30-4626-bfba-26e1d3b73c2c",
+        "parent_id": null,
         "type": "huggingface.text_to_image.StableDiffusion",
         "data": {
           "model": {
             "type": "hf.stable_diffusion",
-            "repo_id": "SG161222/Realistic_Vision_V5.1_noVAE",
-            "path": "Realistic_Vision_V5.1_fp16-no-ema.safetensors"
+            "repo_id": "Lykon/DreamShaper",
+            "path": "DreamShaper_4BakedVae_fp16.safetensors"
           },
-          "negative_prompt": "blurry, low quality, deformed, mutated, bad anatomy, extra limbs, bad proportions, text, watermark, grainy, pixelated, disfigured face, missing fingers, cropped image, bad lighting",
+          "negative_prompt": "(blurry, low quality, deformed, mutated, bad anatomy, extra limbs, bad proportions, text, watermark, grainy, pixelated, disfigured face, missing fingers, cropped image, bad lighting",
           "seed": -1,
-          "num_inference_steps": 20,
+          "num_inference_steps": 25,
           "guidance_scale": 7.5,
           "scheduler": "EulerDiscreteScheduler",
-          "lora_model": {
-            "type": "hf.lora_sd",
-            "repo_id": ""
-          },
-          "lora_scale": 0,
-          "ip_adapter_model": "",
-          "ip_adapter_image": {
-            "type": "image",
-            "uri": "",
-            "asset_id": null,
-            "data": null
-          },
+          "loras": [],
+          "ip_adapter_model": {},
+          "ip_adapter_image": {},
           "ip_adapter_scale": 0.5,
+          "detail_level": 0.5,
+          "enable_tiling": false,
+          "enable_cpu_offload": false,
+          "upscaler": "None",
           "width": 512,
-          "height": 768,
-          "hires": true,
-          "detail_level": 0.96,
-          "preserve_composition": 0.61
+          "height": 512
         },
         "ui_properties": {
+          "selected": false,
           "position": {
-            "x": 410,
-            "y": 50
+            "x": 1548,
+            "y": 796
           },
           "zIndex": 0,
           "width": 200,
@@ -96,195 +234,21 @@
         "dynamic_properties": {}
       },
       {
-        "id": "9",
-        "parent_id": "2",
-        "type": "nodetool.input.GroupInput",
-        "data": {},
-        "ui_properties": {
-          "position": {
-            "x": 50,
-            "y": 144
-          },
-          "zIndex": 0,
-          "width": 100,
-          "selectable": true
-        },
-        "dynamic_properties": {}
-      },
-      {
-        "id": "12",
+        "id": "8545c43e-9a37-4d5f-af02-86cfc9ec4565",
         "parent_id": null,
-        "type": "nodetool.workflows.base_node.Comment",
+        "type": "nodetool.workflows.base_node.Preview",
         "data": {
-          "comment": [
-            {
-              "type": "paragraph",
-              "children": [
-                {
-                  "text": "Movie Scene Generator Workflow",
-                  "bold": true,
-                  "size": "+"
-                }
-              ]
-            },
-            {
-              "type": "paragraph",
-              "children": [
-                {
-                  "text": "- DataGenerator to create 3 movie elements per row: title, character, and description"
-                }
-              ]
-            },
-            {
-              "type": "paragraph",
-              "children": [
-                {
-                  "text": "- The Loop iterates through each data frame row to process individual movie scenes"
-                }
-              ]
-            },
-            {
-              "type": "paragraph",
-              "children": [
-                {
-                  "text": "- Each generated image uses a stable diffusion model (512x768)"
-                }
-              ]
-            },
-            {
-              "type": "paragraph",
-              "children": [
-                {
-                  "text": "- Image outputs are streamed directly to the mini app interface"
-                }
-              ]
-            },
-            {
-              "type": "paragraph",
-              "children": [
-                {
-                  "text": "- Use RUN APP button to execute the pipeline and view results"
-                }
-              ]
-            },
-            {
-              "type": "paragraph",
-              "children": [
-                {
-                  "text": "- Template format: \"shot from the motion picture {title}, {character}, {description}, detailed, sharp focus, clear composition, dramatic, award winning, perfect lighting, film grain, bokeh, depth of field\""
-                }
-              ]
-            }
-          ]
+          "name": "image_output"
         },
         "ui_properties": {
           "selected": false,
           "position": {
-            "x": 1,
-            "y": -120
+            "x": 1778,
+            "y": 684
           },
           "zIndex": 0,
-          "width": 674,
-          "height": 160,
-          "selectable": true
-        },
-        "dynamic_properties": {}
-      },
-      {
-        "id": "15",
-        "parent_id": null,
-        "type": "nodetool.input.StringInput",
-        "data": {
-          "name": "genre",
-          "description": "",
-          "value": ""
-        },
-        "ui_properties": {
-          "position": {
-            "x": 50,
-            "y": 135
-          },
-          "zIndex": 0,
-          "width": 159,
-          "selectable": true
-        },
-        "dynamic_properties": {}
-      },
-      {
-        "id": "16",
-        "parent_id": null,
-        "type": "nodetool.text.Concat",
-        "data": {
-          "b": ": list 3 iconic movies with their main characters"
-        },
-        "ui_properties": {
-          "position": {
-            "x": 239,
-            "y": 154
-          },
-          "zIndex": 0,
-          "width": 159,
-          "selectable": true
-        },
-        "dynamic_properties": {}
-      },
-      {
-        "id": "17",
-        "parent_id": "2",
-        "type": "nodetool.output.ImageOutput",
-        "data": {
-          "name": "image",
-          "description": ""
-        },
-        "ui_properties": {
-          "selected": false,
-          "position": {
-            "x": 640,
-            "y": 101
-          },
-          "zIndex": 0,
-          "width": 159,
-          "selectable": true
-        },
-        "dynamic_properties": {}
-      },
-      {
-        "id": "5debb16b-129c-4351-9acc-85a8aecedc0e",
-        "parent_id": null,
-        "type": "nodetool.generators.DataGenerator",
-        "data": {
-          "model": "gemma3:1b",
-          "input_text": "",
-          "max_tokens": 4096,
-          "columns": {
-            "type": "record_type",
-            "columns": [
-              {
-                "name": "title",
-                "data_type": "string",
-                "description": ""
-              },
-              {
-                "name": "character",
-                "data_type": "string",
-                "description": ""
-              },
-              {
-                "name": "description",
-                "data_type": "string",
-                "description": ""
-              }
-            ]
-          }
-        },
-        "ui_properties": {
-          "selected": false,
-          "position": {
-            "x": 428,
-            "y": 97
-          },
-          "zIndex": 0,
-          "width": 169,
+          "width": 410,
+          "height": 471,
           "selectable": true
         },
         "dynamic_properties": {}
@@ -292,60 +256,86 @@
     ],
     "edges": [
       {
-        "id": "e54387f3-a238-4a31-a561-fb4e42bb4a6b",
-        "source": "7",
-        "sourceHandle": "output",
-        "target": "8",
-        "targetHandle": "prompt",
-        "ui_properties": {
-          "className": "union"
-        }
-      },
-      {
-        "id": "b84719fd-c2aa-4fff-8fd2-c682f5280d7b",
-        "source": "15",
-        "sourceHandle": "output",
-        "target": "16",
-        "targetHandle": "a",
+        "id": "24947fe6-d750-4bac-839c-5c25769c021c",
+        "source": "19246f0f-d23a-42dd-aa10-cf5d4f0f7a5f",
+        "sourceHandle": "text",
+        "target": "a899e2c6-116a-4fd5-abc8-95e020bad540",
+        "targetHandle": "value",
         "ui_properties": {
           "className": "str"
         }
       },
       {
-        "id": "75bd0163-a00f-4342-a1a0-32d285f4bfd3",
-        "source": "9",
+        "id": "5ada5828-b7b9-4a21-a0e7-04c315fa8d07",
+        "source": "34d8d87d-de45-46c0-b021-faace0d40884",
         "sourceHandle": "output",
-        "target": "7",
-        "targetHandle": "values",
+        "target": "63b65389-e19b-4c94-b70d-49aeae4573f7",
+        "targetHandle": "template",
+        "ui_properties": null
+      },
+      {
+        "id": "7edc31da-44ce-4989-b069-fa4a3c30549e",
+        "source": "c01e8d5c-79fc-4d74-9452-d799c9eb8499",
+        "sourceHandle": "output",
+        "target": "63b65389-e19b-4c94-b70d-49aeae4573f7",
+        "targetHandle": "MOVIE_TITLE",
         "ui_properties": {
-          "className": "any"
+          "className": "str"
         }
       },
       {
-        "id": "19754675-eb40-4998-aab8-04120a77090f",
-        "source": "8",
+        "id": "4f147958-a846-4c29-ba2d-b8ca2d59cca3",
+        "source": "850f0b74-df9a-432f-81ff-3dc7774e8d01",
         "sourceHandle": "output",
-        "target": "17",
-        "targetHandle": "value",
+        "target": "63b65389-e19b-4c94-b70d-49aeae4573f7",
+        "targetHandle": "GENRE",
         "ui_properties": {
-          "className": "image"
+          "className": "str"
         }
       },
       {
-        "id": "6e150953-c9f1-4c97-b0f2-93787ddadfb7",
-        "source": "16",
+        "id": "1969cb42-6775-48f1-8a04-93559b564c82",
+        "source": "3261ad7d-79c5-49a5-ad1e-8e185c4f46e9",
         "sourceHandle": "output",
-        "target": "5debb16b-129c-4351-9acc-85a8aecedc0e",
+        "target": "63b65389-e19b-4c94-b70d-49aeae4573f7",
+        "targetHandle": "PRIMARY_AUDIENCE",
+        "ui_properties": {
+          "className": "str"
+        }
+      },
+      {
+        "id": "ed372108-44fe-4325-a615-c98f19282ade",
+        "source": "63b65389-e19b-4c94-b70d-49aeae4573f7",
+        "sourceHandle": "output",
+        "target": "19246f0f-d23a-42dd-aa10-cf5d4f0f7a5f",
         "targetHandle": "prompt",
         "ui_properties": null
       },
       {
-        "id": "bd3a3224-883b-48b0-841c-781a060b8c10",
-        "source": "5debb16b-129c-4351-9acc-85a8aecedc0e",
-        "sourceHandle": "output",
-        "target": "2",
-        "targetHandle": "input",
+        "id": "cb3578a9-5013-40f1-8274-7027435363e8",
+        "source": "19246f0f-d23a-42dd-aa10-cf5d4f0f7a5f",
+        "sourceHandle": "text",
+        "target": "4708ad59-8b30-412b-964a-b034fbdee6e3",
+        "targetHandle": "prompt",
         "ui_properties": null
+      },
+      {
+        "id": "01274a4a-f9ef-4fdd-b257-989a6166463c",
+        "source": "4708ad59-8b30-412b-964a-b034fbdee6e3",
+        "sourceHandle": "text",
+        "target": "2942aa37-5b30-4626-bfba-26e1d3b73c2c",
+        "targetHandle": "prompt",
+        "ui_properties": null
+      },
+      {
+        "id": "c804718c-4c5e-459f-a892-db116813f93e",
+        "source": "2942aa37-5b30-4626-bfba-26e1d3b73c2c",
+        "sourceHandle": "output",
+        "target": "8545c43e-9a37-4d5f-af02-86cfc9ec4565",
+        "targetHandle": "value",
+        "ui_properties": {
+          "className": "image"
+        }
       }
     ]
   },
