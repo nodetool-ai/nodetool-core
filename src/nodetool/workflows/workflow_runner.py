@@ -1025,7 +1025,13 @@ class WorkflowRunner:
         generator, initial_config_properties = self.active_generators[node._id]
 
         try:
-            slot_name, value = await anext(generator)
+            item = await anext(generator)
+            if isinstance(item, tuple):
+                slot_name, value = item
+            else:
+                slot_name = "output"
+                value = item
+
             self.send_messages(node, {slot_name: value}, context)
             log.debug(
                 f"Streaming node {node.get_title()} ({node._id}) yielded item for slot: {slot_name}"
