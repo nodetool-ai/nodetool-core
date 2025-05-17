@@ -11,7 +11,6 @@ from nodetool.types.workflow import WorkflowList, Workflow, WorkflowRequest
 from nodetool.api.utils import current_user
 from nodetool.common.environment import Environment
 from typing import Any, Optional
-from nodetool.workflows.examples import load_examples, save_example
 from nodetool.workflows.read_graph import read_graph
 from nodetool.models.workflow import Workflow as WorkflowModel
 import base64
@@ -19,7 +18,7 @@ from nodetool.workflows.http_stream_runner import HTTPStreamRunner
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.run_workflow import run_workflow
 from nodetool.types.graph import Graph, get_input_schema, get_output_schema
-from nodetool.packages.registry import Registry
+from nodetool.packages.registry import Registry, ExampleRegistry
 from nodetool.chat.providers import get_provider
 from nodetool.metadata.types import Provider
 from nodetool.chat.workspace_manager import WorkspaceManager
@@ -146,7 +145,8 @@ async def get_public_workflow(id: str) -> Workflow:
 
 @router.get("/examples")
 async def examples() -> WorkflowList:
-    return WorkflowList(workflows=load_examples(), next=None)
+    example_registry = ExampleRegistry()
+    return WorkflowList(workflows=example_registry.list_examples(), next=None)
 
 
 @router.get("/{id}")
@@ -216,7 +216,8 @@ async def save_example_workflow(
     if workflow_request.graph is None:
         raise HTTPException(status_code=400, detail="Invalid workflow")
 
-    examples = load_examples()
+    example_registry = ExampleRegistry()
+    examples = example_registry.list_examples()
     for example in examples:
         if example.name == workflow_request.name:
             workflow_request.thumbnail_url = example.thumbnail_url
@@ -240,8 +241,12 @@ async def save_example_workflow(
         updated_at=datetime.now().isoformat(),
     )
 
-    saved_workflow = save_example(id, workflow)
-    return saved_workflow
+    try:
+        package_name = "nodetool-base"
+        saved_workflow = example_registry.save_example(id, workflow, package_name)
+        return saved_workflow
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 class RunWorkflowRequest(BaseModel):

@@ -41,8 +41,10 @@ import tomli
 import re
 import importlib
 import importlib.metadata
+import logging
+from datetime import datetime
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Tuple, Set
+from typing import List, Dict, Any, Optional, Tuple, Set, Union
 from pydantic import BaseModel, Field
 from urllib.parse import urlparse
 import httpx
@@ -50,6 +52,8 @@ import asyncio
 
 from nodetool.common.settings import get_system_file_path
 from nodetool.metadata.node_metadata import PackageModel
+from nodetool.types.workflow import Workflow
+from nodetool.types.graph import Graph
 
 
 # Constants
@@ -506,6 +510,242 @@ def get_nodetool_package_source_folders() -> List[Path]:
     return source_folders
 
 
+class ExampleWorkflow(BaseModel):
+    """
+    Represents an example workflow with metadata about its source.
+    """
+
+    workflow: Workflow
+    package_id: str  # ID of the package providing this example
+    path: str
+
+
+class ExampleRegistry:
+    """
+    Registry for example workflows from installed packages.
+
+    This class provides functionality to:
+    - Discover example workflows from all installed packages
+    - Cache examples for better performance
+    - Load specific examples by ID or name
+    - Save new examples
+
+    Each nodetool package can provide examples in an 'examples' folder at a
+    standard location. The registry scans and aggregates these examples.
+    """
+
+    def __init__(self):
+        # Set up logging
+        self.logger = logging.getLogger(__name__)
+
+        # Cache of all examples
+        self._examples_cache: Optional[List[ExampleWorkflow]] = None
+
+    def _load_example_from_file(
+        self, file_path: str, package_id: str
+    ) -> ExampleWorkflow:
+        """
+        Load a single example workflow from a JSON file.
+
+        Args:
+            file_path: The full path to the example workflow JSON file
+            package_id: ID of the package providing this example
+
+        Returns:
+            ExampleWorkflow: The loaded example workflow with metadata
+        """
+        try:
+            with open(file_path, "r") as f:
+                props = json.load(f)
+                workflow = Workflow(**props)
+                return ExampleWorkflow(
+                    workflow=workflow, package_id=package_id, path=file_path
+                )
+        except json.JSONDecodeError as e:
+            self.logger.error(
+                f"Error decoding JSON for example workflow {file_path}: {e}"
+            )
+            # Return an empty Workflow with the name indicating it is broken
+            now_str = datetime.now().isoformat()
+            return ExampleWorkflow(
+                workflow=Workflow(
+                    id="",
+                    name=f"[ERROR] {os.path.basename(file_path)}",
+                    tags=[],
+                    graph=Graph(nodes=[], edges=[]),
+                    access="",
+                    created_at=now_str,
+                    updated_at=now_str,
+                    description=f"Error loading this workflow: {str(e)}",
+                ),
+                package_id=package_id,
+                path=file_path,
+            )
+
+    def _load_examples_from_directory(
+        self, directory: str, package_id: str
+    ) -> List[ExampleWorkflow]:
+        """
+        Load all example workflows from a directory.
+
+        Args:
+            directory: The directory containing example workflow JSON files
+            package_id: ID of the package providing these examples
+
+        Returns:
+            List[ExampleWorkflow]: A list of all loaded example workflows from the directory
+        """
+        if not os.path.exists(directory):
+            self.logger.warning(f"Examples directory does not exist: {directory}")
+            return []
+
+        examples = []
+        for name in os.listdir(directory):
+            # Skip files starting with underscore (_) and non-JSON files
+            if name.startswith("_") or not name.endswith(".json"):
+                continue
+
+            file_path = os.path.join(directory, name)
+            examples.append(self._load_example_from_file(file_path, package_id))
+
+        return examples
+
+    def discover_all_examples(self) -> List[ExampleWorkflow]:
+        """
+        Discover and load all example workflows from installed packages.
+
+        This method:
+        1. Scans all installed packages for examples directories
+        2. Caches the results for subsequent calls
+
+        Returns:
+            List[ExampleWorkflow]: A list of all discovered example workflows
+        """
+        # Return cached examples if available
+        if self._examples_cache is not None:
+            return self._examples_cache
+
+        examples = []
+
+        # Load examples from installed packages
+        source_folders = get_nodetool_package_source_folders()
+        for folder in source_folders:
+            # Look for examples directory in standard location
+            examples_dir = folder / "nodetool" / "examples"
+            if examples_dir.exists():
+                # Extract package ID from folder path
+                package_name = folder.name
+                if package_name.startswith("nodetool-"):
+                    package_name = package_name[len("nodetool-") :]
+
+                # Use the repository/package convention for package_id
+                # This is an approximation - better would be to read from package metadata
+                package_id = f"nodetool/{package_name}"
+
+                # Load examples from this package
+                package_examples = self._load_examples_from_directory(
+                    str(examples_dir), package_id
+                )
+                examples.extend(package_examples)
+
+        # Cache the results
+        self._examples_cache = examples
+        return examples
+
+    def clear_cache(self) -> None:
+        """Clear the examples cache to force rediscovery on next call."""
+        self._examples_cache = None
+
+    def list_examples(self) -> List[Workflow]:
+        """
+        List all example workflows from installed packages.
+
+        Returns:
+            List[Workflow]: A list of all example workflows
+        """
+        examples = self.discover_all_examples()
+        return [example.workflow for example in examples]
+
+    def find_example_by_id(self, id: str) -> Optional[Workflow]:
+        """
+        Find an example workflow by its ID.
+
+        Args:
+            id: The ID of the workflow to find
+
+        Returns:
+            Optional[Workflow]: The found workflow or None if not found
+        """
+        examples = self.discover_all_examples()
+        example = next((ex for ex in examples if ex.workflow.id == id), None)
+        return example.workflow if example else None
+
+    def find_example_by_name(self, name: str) -> Optional[Workflow]:
+        """
+        Find an example workflow by its name.
+
+        Args:
+            name: The name of the workflow to find
+
+        Returns:
+            Optional[Workflow]: The found workflow or None if not found
+        """
+        examples = self.discover_all_examples()
+        example = next((ex for ex in examples if ex.workflow.name == name), None)
+        return example.workflow if example else None
+
+    def save_example(self, id: str, workflow: Workflow, package_name: str) -> Workflow:
+        """
+        Save a workflow as an example in the specified package.
+
+        Args:
+            id: The ID of the workflow to save
+            workflow: The workflow object to save
+            package_name: The name of the package to save the example to
+
+        Returns:
+            Workflow: The saved workflow
+
+        Raises:
+            ValueError: If the package_name is invalid or the package is not found
+
+        Note:
+            This function removes the user_id field before saving and
+            invalidates the cached examples.
+        """
+        # Find the package folder
+        source_folders = get_nodetool_package_source_folders()
+        package_folder = None
+
+        # Look for matching package folder
+        for folder in source_folders:
+            if package_name in folder.name:
+                package_folder = folder
+                break
+
+        if not package_folder:
+            raise ValueError(f"Package {package_name} not found")
+
+        # Ensure the examples directory exists
+        examples_dir = package_folder / "examples"
+        os.makedirs(examples_dir, exist_ok=True)
+
+        workflow_dict = workflow.model_dump()
+
+        # Remove unnecessary fields
+        workflow_dict.pop("user_id", None)
+
+        # Save the workflow
+        example_path = os.path.join(examples_dir, f"{workflow.name}.json")
+        with open(example_path, "w") as f:
+            json.dump(workflow_dict, f, indent=2)
+
+        # Invalidate the cached examples
+        self.clear_cache()
+
+        return workflow
+
+
 async def main():
     """
     Main function to run smoke tests for the registry module.
@@ -571,6 +811,43 @@ async def main():
         print(
             f"No package found for node type '{sample_node_type}' (this is expected if cache is empty, node type doesn't exist, or due to prior network issues)."
         )
+
+    # Test ExampleRegistry
+    print("\n--- Testing ExampleRegistry ---")
+    example_registry = ExampleRegistry()
+
+    # Test discover_all_examples
+    print("\n--- Testing ExampleRegistry.discover_all_examples ---")
+    discovered_examples = example_registry.discover_all_examples()
+    print(f"Discovered {len(discovered_examples)} example workflows.")
+    if discovered_examples:
+        for example in discovered_examples[:3]:  # Show first few examples
+            print(f"  - {example.workflow.name} (from package: {example.package_id})")
+
+    # Test list_examples
+    print("\n--- Testing ExampleRegistry.list_examples ---")
+    examples = example_registry.list_examples()
+    print(f"Listed {len(examples)} example workflows.")
+    if examples:
+        for example in examples[:3]:  # Show first few examples
+            print(f"  - {example.name}")
+
+    # Test find_example_by_name
+    if examples:
+        example_name = examples[0].name
+        print(
+            f"\n--- Testing ExampleRegistry.find_example_by_name with '{example_name}' ---"
+        )
+        found_example = example_registry.find_example_by_name(example_name)
+        if found_example:
+            print(f"Found example: {found_example.name}")
+        else:
+            print(f"Example '{example_name}' not found.")
+
+    # Test cache clearing
+    print("\n--- Testing ExampleRegistry.clear_cache ---")
+    example_registry.clear_cache()
+    print("Example cache cleared successfully.")
 
 
 if __name__ == "__main__":
