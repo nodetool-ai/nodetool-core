@@ -7,11 +7,13 @@ It handles:
 - Uninstalling packages
 - Listing installed and available packages
 - Updating packages to their latest versions
+- Managing example workflows from installed packages
 
 Key components:
 - PackageInfo: Model for package information in the registry index
 - PackageModel: Package metadata model imported from nodetool.metadata.node_metadata
 - Registry: Package registry manager that handles all package operations
+- ExampleRegistry: Registry for managing example workflows from installed packages
 - Helper functions:
   - validate_repo_id: Validates repository IDs in owner/project format
   - get_package_metadata_from_github: Extracts metadata from GitHub repository
@@ -24,18 +26,30 @@ Package management:
 - Package metadata is retrieved from pyproject.toml files and nodes.json
 - Available packages are listed from a central registry at REGISTRY_URL
 
+Example workflow management:
+- ExampleRegistry provides functionality to discover, load, and manage example workflows
+- Examples are stored in an 'examples' directory within each package
+- Supports caching of examples for better performance
+- Allows searching examples by ID or name
+- Provides ability to save new examples (in development mode only)
+
 Usage:
     registry = Registry()
     packages = registry.list_installed_packages()
     registry.install_package("owner/project")
     registry.uninstall_package("owner/project")
     registry.update_package("owner/project")
+
+    example_registry = ExampleRegistry()
+    examples = example_registry.list_examples()
+    example = example_registry.find_example_by_name("example_name")
 """
 
 from enum import Enum
 import json
 import os
 import subprocess
+import tomllib
 import requests
 import tomli
 import re
@@ -50,6 +64,7 @@ from urllib.parse import urlparse
 import httpx
 import asyncio
 
+from nodetool.common.environment import Environment
 from nodetool.common.settings import get_system_file_path
 from nodetool.metadata.node_metadata import PackageModel
 from nodetool.types.workflow import Workflow
@@ -510,16 +525,6 @@ def get_nodetool_package_source_folders() -> List[Path]:
     return source_folders
 
 
-class ExampleWorkflow(BaseModel):
-    """
-    Represents an example workflow with metadata about its source.
-    """
-
-    workflow: Workflow
-    package_id: str  # ID of the package providing this example
-    path: str
-
-
 class ExampleRegistry:
     """
     Registry for example workflows from installed packages.
@@ -539,11 +544,9 @@ class ExampleRegistry:
         self.logger = logging.getLogger(__name__)
 
         # Cache of all examples
-        self._examples_cache: Optional[List[ExampleWorkflow]] = None
+        self._examples_cache: Optional[List[Workflow]] = None
 
-    def _load_example_from_file(
-        self, file_path: str, package_id: str
-    ) -> ExampleWorkflow:
+    def _load_example_from_file(self, file_path: str, package_name: str) -> Workflow:
         """
         Load a single example workflow from a JSON file.
 
@@ -557,43 +560,42 @@ class ExampleRegistry:
         try:
             with open(file_path, "r") as f:
                 props = json.load(f)
+                props["package_name"] = package_name
+                if not Environment.is_production():
+                    props["path"] = file_path
                 workflow = Workflow(**props)
-                return ExampleWorkflow(
-                    workflow=workflow, package_id=package_id, path=file_path
-                )
+                return workflow
         except json.JSONDecodeError as e:
             self.logger.error(
                 f"Error decoding JSON for example workflow {file_path}: {e}"
             )
             # Return an empty Workflow with the name indicating it is broken
             now_str = datetime.now().isoformat()
-            return ExampleWorkflow(
-                workflow=Workflow(
-                    id="",
-                    name=f"[ERROR] {os.path.basename(file_path)}",
-                    tags=[],
-                    graph=Graph(nodes=[], edges=[]),
-                    access="",
-                    created_at=now_str,
-                    updated_at=now_str,
-                    description=f"Error loading this workflow: {str(e)}",
-                ),
-                package_id=package_id,
+            return Workflow(
+                id="",
+                name=f"[ERROR] {os.path.basename(file_path)}",
+                tags=[],
+                graph=Graph(nodes=[], edges=[]),
+                access="",
+                created_at=now_str,
+                updated_at=now_str,
+                description=f"Error loading this workflow: {str(e)}",
+                package_name=package_name,
                 path=file_path,
             )
 
     def _load_examples_from_directory(
-        self, directory: str, package_id: str
-    ) -> List[ExampleWorkflow]:
+        self, directory: str, package_name: str
+    ) -> List[Workflow]:
         """
         Load all example workflows from a directory.
 
         Args:
             directory: The directory containing example workflow JSON files
-            package_id: ID of the package providing these examples
+            package_name: Name of the package providing these examples
 
         Returns:
-            List[ExampleWorkflow]: A list of all loaded example workflows from the directory
+            List[Workflow]: A list of all loaded example workflows from the directory
         """
         if not os.path.exists(directory):
             self.logger.warning(f"Examples directory does not exist: {directory}")
@@ -606,11 +608,11 @@ class ExampleRegistry:
                 continue
 
             file_path = os.path.join(directory, name)
-            examples.append(self._load_example_from_file(file_path, package_id))
+            examples.append(self._load_example_from_file(file_path, package_name))
 
         return examples
 
-    def discover_all_examples(self) -> List[ExampleWorkflow]:
+    def discover_all_examples(self) -> List[Workflow]:
         """
         Discover and load all example workflows from installed packages.
 
@@ -633,18 +635,18 @@ class ExampleRegistry:
             # Look for examples directory in standard location
             examples_dir = folder / "nodetool" / "examples"
             if examples_dir.exists():
-                # Extract package ID from folder path
-                package_name = folder.name
-                if package_name.startswith("nodetool-"):
-                    package_name = package_name[len("nodetool-") :]
-
-                # Use the repository/package convention for package_id
-                # This is an approximation - better would be to read from package metadata
-                package_id = f"nodetool/{package_name}"
+                # Extract package name from folder path
+                project_toml = folder.parent / "pyproject.toml"
+                if project_toml.exists():
+                    with open(project_toml, "rb") as f:
+                        project_metadata = tomllib.load(f)
+                        package_name = project_metadata["tool"]["poetry"]["name"]
+                else:
+                    package_name = folder.name
 
                 # Load examples from this package
                 package_examples = self._load_examples_from_directory(
-                    str(examples_dir), package_id
+                    str(examples_dir), package_name
                 )
                 examples.extend(package_examples)
 
@@ -663,8 +665,7 @@ class ExampleRegistry:
         Returns:
             List[Workflow]: A list of all example workflows
         """
-        examples = self.discover_all_examples()
-        return [example.workflow for example in examples]
+        return self.discover_all_examples()
 
     def find_example_by_id(self, id: str) -> Optional[Workflow]:
         """
@@ -677,8 +678,8 @@ class ExampleRegistry:
             Optional[Workflow]: The found workflow or None if not found
         """
         examples = self.discover_all_examples()
-        example = next((ex for ex in examples if ex.workflow.id == id), None)
-        return example.workflow if example else None
+        example = next((ex for ex in examples if ex.id == id), None)
+        return example if example else None
 
     def find_example_by_name(self, name: str) -> Optional[Workflow]:
         """
@@ -691,17 +692,15 @@ class ExampleRegistry:
             Optional[Workflow]: The found workflow or None if not found
         """
         examples = self.discover_all_examples()
-        example = next((ex for ex in examples if ex.workflow.name == name), None)
-        return example.workflow if example else None
+        example = next((ex for ex in examples if ex.name == name), None)
+        return example if example else None
 
-    def save_example(self, id: str, workflow: Workflow, package_name: str) -> Workflow:
+    def save_example(self, workflow: Workflow) -> Workflow:
         """
         Save a workflow as an example in the specified package.
 
         Args:
-            id: The ID of the workflow to save
             workflow: The workflow object to save
-            package_name: The name of the package to save the example to
 
         Returns:
             Workflow: The saved workflow
@@ -713,32 +712,15 @@ class ExampleRegistry:
             This function removes the user_id field before saving and
             invalidates the cached examples.
         """
+        if Environment.is_production():
+            raise ValueError("Saving examples is only allowed in dev mode")
+
+        if not workflow.path:
+            raise ValueError("Workflow path is required")
+
         # Find the package folder
-        source_folders = get_nodetool_package_source_folders()
-        package_folder = None
-
-        # Look for matching package folder
-        for folder in source_folders:
-            if package_name in folder.name:
-                package_folder = folder
-                break
-
-        if not package_folder:
-            raise ValueError(f"Package {package_name} not found")
-
-        # Ensure the examples directory exists
-        examples_dir = package_folder / "examples"
-        os.makedirs(examples_dir, exist_ok=True)
-
-        workflow_dict = workflow.model_dump()
-
-        # Remove unnecessary fields
-        workflow_dict.pop("user_id", None)
-
-        # Save the workflow
-        example_path = os.path.join(examples_dir, f"{workflow.name}.json")
-        with open(example_path, "w") as f:
-            json.dump(workflow_dict, f, indent=2)
+        with open(workflow.path, "w") as f:
+            json.dump(workflow.model_dump(), f, indent=2)
 
         # Invalidate the cached examples
         self.clear_cache()
@@ -822,7 +804,9 @@ async def main():
     print(f"Discovered {len(discovered_examples)} example workflows.")
     if discovered_examples:
         for example in discovered_examples[:3]:  # Show first few examples
-            print(f"  - {example.workflow.name} (from package: {example.package_id})")
+            print(
+                f"  - {example.name} (from package: {example.package_name} in {example.path})"
+            )
 
     # Test list_examples
     print("\n--- Testing ExampleRegistry.list_examples ---")
@@ -830,7 +814,7 @@ async def main():
     print(f"Listed {len(examples)} example workflows.")
     if examples:
         for example in examples[:3]:  # Show first few examples
-            print(f"  - {example.name}")
+            print(f"  - {example.name} from {example.package_name} in {example.path}")
 
     # Test find_example_by_name
     if examples:

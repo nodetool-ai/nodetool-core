@@ -217,11 +217,6 @@ async def save_example_workflow(
         raise HTTPException(status_code=400, detail="Invalid workflow")
 
     example_registry = ExampleRegistry()
-    examples = example_registry.list_examples()
-    for example in examples:
-        if example.name == workflow_request.name:
-            workflow_request.thumbnail_url = example.thumbnail_url
-            break
 
     # remove "example" from tags
     if workflow_request.tags:
@@ -234,6 +229,8 @@ async def save_example_workflow(
         name=workflow_request.name,
         description=workflow_request.description or "",
         tags=workflow_request.tags,
+        package_name=workflow_request.package_name,
+        path=workflow_request.path,
         thumbnail_url=workflow_request.thumbnail_url,
         access="public",
         graph=remove_connected_slots(workflow_request.graph),
@@ -243,7 +240,7 @@ async def save_example_workflow(
 
     try:
         package_name = "nodetool-base"
-        saved_workflow = example_registry.save_example(id, workflow, package_name)
+        saved_workflow = example_registry.save_example(workflow)
         return saved_workflow
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

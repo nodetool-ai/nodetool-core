@@ -18,10 +18,14 @@ class Workflow(BaseModel):
     input_schema: dict[str, Any] | None = None
     output_schema: dict[str, Any] | None = None
     settings: dict[str, str | bool | int | float | None] | None = None
+    package_name: str | None = None
+    path: str | None = None
 
 
 class WorkflowRequest(BaseModel):
     name: str
+    package_name: str | None = None
+    path: str | None = None
     tags: list[str] | None = None
     description: str | None = None
     thumbnail: str | None = None
