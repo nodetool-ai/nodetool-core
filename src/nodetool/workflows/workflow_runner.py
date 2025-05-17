@@ -56,16 +56,12 @@ from typing import Any, AsyncGenerator, Optional
 from collections import deque
 import random
 
-from pydantic import BaseModel
 
 from nodetool.common.model_manager import ModelManager
-from nodetool.metadata.types import DataframeRef
 from nodetool.types.job import JobUpdate
 from nodetool.workflows.base_node import (
-    GroupNode,
     BaseNode,
     InputNode,
-    IteratorNode,
     OutputNode,
 )
 from nodetool.workflows.types import NodeProgress, NodeUpdate, OutputUpdate
@@ -675,6 +671,35 @@ class WorkflowRunner:
             messages_consumed_for_this_node = False
 
             if required_input_slots:  # Only try to consume if there are slots to fill
+                # First check if we can satisfy all required input slots in this run
+                all_slots_can_be_satisfied = True
+
+                for slot_name in required_input_slots:
+                    slot_has_available_data = False
+                    for edge in graph.edges:
+                        if edge.target == node._id and edge.targetHandle == slot_name:
+                            edge_key = (
+                                edge.source,
+                                edge.sourceHandle,
+                                edge.target,
+                                edge.targetHandle,
+                            )
+                            if (
+                                edge_key in self.edge_queues
+                                and self.edge_queues[edge_key]
+                            ):
+                                slot_has_available_data = True
+                                break
+
+                    if not slot_has_available_data:
+                        all_slots_can_be_satisfied = False
+                        break
+
+                # Only consume if ALL required slots can be satisfied
+                if not all_slots_can_be_satisfied:
+                    continue
+
+                # Now actually consume the inputs
                 for slot_name in required_input_slots:
                     value_consumed_for_slot = False
                     for edge in graph.edges:
@@ -817,6 +842,8 @@ class WorkflowRunner:
                 f"System has been idle for {iterations_without_progress} iterations (no new tasks scheduled, "
                 f"no tasks completed, no tasks in-flight). Checking for termination."
             )
+            log.debug(f"Active processing node IDs: {self.active_processing_node_ids}")
+            log.debug(f"Current edge queues: {self.edge_queues}")
             # Check if there's any pending data in any edge queue. If so, it might be a stall.
             # Otherwise, it's a clean completion.
             pending_data_in_queues = False
@@ -1026,15 +1053,52 @@ class WorkflowRunner:
 
         try:
             item = await anext(generator)
-            if isinstance(item, tuple):
-                slot_name, value = item
-            else:
+
+            # Validate the format of the yielded item from the generator
+            # Based on `AsyncGenerator[tuple[str, Any], None]` type hint for gen_process.
+            if not isinstance(item, tuple):
                 slot_name = "output"
                 value = item
+            else:
+                if not (len(item) == 2 and isinstance(item[0], str)):
+                    error_message = (
+                        f"Streaming node {node.get_title()} ({node._id}) yielded item with invalid format. "
+                        f"Expected (str, Any) tuple, got {type(item)} with value resembling: {str(item)[:100]}."
+                    )
+                    log.error(error_message)  # Log here for immediate specific context
+                    # Let the generic exception handler below handle send_update, cleanup, and re-raise.
+                    raise ValueError(error_message)
+
+                slot_name: str = item[0]
+                value: Any = item[1]
+
+            # Check if the yielded slot_name is a declared output for the node.
+            # This assumes BaseNode has a method get_output_fields() -> list[str].
+            # If this method doesn't exist or has a different signature on BaseNode,
+            # this part will need adaptation based on how output fields are actually defined/retrieved.
+            return_type = node.return_type()
+            if return_type is None:
+                raise ValueError(
+                    f"Streaming node {node.get_title()} ({node._id}) has no return type."
+                )
+            if not isinstance(return_type, dict):
+                raise ValueError(
+                    f"Streaming node {node.get_title()} ({node._id}) has invalid return type: {type(return_type)}"
+                )
+
+            declared_outputs = list(return_type.keys())
+            if slot_name not in declared_outputs:
+                error_message = (
+                    f"Streaming node {node.get_title()} ({node._id}) yielded for undeclared output slot: '{slot_name}'. "
+                    f"Declared outputs: {declared_outputs}. Input properties during init: {list(initial_config_properties.keys())}."
+                )
+                log.error(error_message)  # Log here for immediate specific context
+                # Let the generic exception handler below handle send_update, cleanup, and re-raise.
+                raise ValueError(error_message)
 
             self.send_messages(node, {slot_name: value}, context)
             log.debug(
-                f"Streaming node {node.get_title()} ({node._id}) yielded item for slot: {slot_name}"
+                f"Streaming node {node.get_title()} ({node._id}) yielded item for slot: '{slot_name}'"
             )
         except StopAsyncIteration:
             log.info(
