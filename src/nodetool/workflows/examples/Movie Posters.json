@@ -1,8 +1,8 @@
 {
-  "id": "47e37dda329e11f0ad8c00006cc4fca1",
+  "id": "6e96807232a211f0a8870000194fbf00",
   "access": "public",
-  "created_at": "2025-05-17T00:04:35.438243",
-  "updated_at": "2025-05-17T00:04:35.438254",
+  "created_at": "2025-05-17T17:20:18.702228",
+  "updated_at": "2025-05-17T17:20:18.702234",
   "name": "Movie Posters",
   "description": "Create cinematic movie posters using AI image generation",
   "tags": [
@@ -20,7 +20,7 @@
         "data": {
           "model": {
             "type": "language_model",
-            "id": "gpt-4.1",
+            "id": "gpt-4o-mini",
             "provider": "openai"
           },
           "system": "You are a friendly assistant.",
@@ -33,10 +33,9 @@
           "context_window": 4096
         },
         "ui_properties": {
-          "selected": false,
           "position": {
             "x": 688,
-            "y": 501
+            "y": 244
           },
           "zIndex": 0,
           "width": 265,
@@ -49,13 +48,13 @@
         "parent_id": null,
         "type": "nodetool.constant.String",
         "data": {
-          "value": "You are a senior movie-poster design strategist.\n\nDesign a poster for the movie \"{{MOVIE_TITLE}}\".  \nGenre: {{GENRE}}  \n\nDeliver a structured report with these sections (use H2 headings):\n\n1. **Goal & Positioning** \u2013 Purpose of the poster within the marketing mix.  \n2. **Audience Insight** \u2013 Motivations, visual tastes, and likely touchpoints for the audience: \"{{PRIMARY_AUDIENCE}}\"\n3. **Core Visual Concept** \u2013 1-2 sentence \u201cbig idea\u201d with rationale tied to genre conventions and audience triggers.  \n4. **Design System**  \n   - Color Palette \u2013 name each hue (e.g., \u201cAstral Blue #1B314F\u201d) and its emotional intent.  \n   - Typography \u2013 display face, supporting face, hierarchy rules.  \n   - Imagery \u2013 subject focus, composition style, lighting approach.  \n\n\nReturn **only** the strategy document\u2014no preambles, no disclaimers."
+          "value": "You are a senior movie-poster strategist.  \nProduce a concise strategy doc (H2 headings, no extra text) for the film **\u201c{{MOVIE_TITLE}}\u201d** \u2014 Genre: **{{GENRE}}** \u2014 Audience: **\u201c{{PRIMARY_AUDIENCE}}\u201d.**\n\n## Goal & Positioning  \n1-2 lines on the poster\u2019s job in the marketing mix.\n\n## Audience Insight  \nBulleted motivations, visual tastes, key touchpoints.\n\n## Core Visual Concept  \nOne sharp sentence capturing the \u201cbig idea\u201d; link to genre tropes and audience triggers.\n\n## Design System  \n- **Color Palette** \u2013 up to 5 swatches: *Name* + Hex + intended emotion.  \n- **Imagery** \u2013 subject focus, composition style, lighting approach (\u2264 10 words).\n\nReturn **only** this document."
         },
         "ui_properties": {
           "selected": false,
           "position": {
             "x": 50,
-            "y": 570
+            "y": 215
           },
           "zIndex": 0,
           "width": 338,
@@ -71,14 +70,13 @@
           "name": "str_text"
         },
         "ui_properties": {
-          "selected": false,
           "position": {
             "x": 1013,
-            "y": 50
+            "y": 531
           },
           "zIndex": 0,
-          "width": 505,
-          "height": 630,
+          "width": 214,
+          "height": 379,
           "selectable": true
         },
         "dynamic_properties": {}
@@ -89,10 +87,9 @@
         "type": "nodetool.text.FormatText",
         "data": {},
         "ui_properties": {
-          "selected": false,
           "position": {
             "x": 458,
-            "y": 703
+            "y": 344
           },
           "zIndex": 0,
           "width": 200,
@@ -109,14 +106,13 @@
         "parent_id": null,
         "type": "nodetool.input.StringInput",
         "data": {
-          "value": "The Wizard",
+          "value": "Minecraft, The Movie",
           "name": ""
         },
         "ui_properties": {
-          "selected": false,
           "position": {
             "x": 188,
-            "y": 1066
+            "y": 666
           },
           "zIndex": 0,
           "width": 200,
@@ -133,10 +129,9 @@
           "name": ""
         },
         "ui_properties": {
-          "selected": false,
           "position": {
             "x": 188,
-            "y": 1276
+            "y": 831
           },
           "zIndex": 0,
           "width": 200,
@@ -149,48 +144,16 @@
         "parent_id": null,
         "type": "nodetool.input.StringInput",
         "data": {
-          "value": "Age 8-12",
+          "value": "Boys, Age 8-12, Gamers",
           "name": ""
         },
         "ui_properties": {
-          "selected": false,
           "position": {
             "x": 188,
-            "y": 360
+            "y": 50
           },
           "zIndex": 0,
           "width": 200,
-          "selectable": true
-        },
-        "dynamic_properties": {}
-      },
-      {
-        "id": "4708ad59-8b30-412b-964a-b034fbdee6e3",
-        "parent_id": null,
-        "type": "nodetool.llms.LLM",
-        "data": {
-          "model": {
-            "type": "language_model",
-            "id": "gpt-4.1",
-            "provider": "openai"
-          },
-          "system": "You convert strategies into short prompts for a Stable Diffusion model. Optimize for best image output.",
-          "image": {},
-          "audio": {},
-          "voice": "none",
-          "tools": [],
-          "messages": [],
-          "max_tokens": 4096,
-          "context_window": 4096
-        },
-        "ui_properties": {
-          "selected": false,
-          "position": {
-            "x": 1133.5,
-            "y": 730
-          },
-          "zIndex": 0,
-          "width": 264,
           "selectable": true
         },
         "dynamic_properties": {}
@@ -219,13 +182,12 @@
           "enable_cpu_offload": false,
           "upscaler": "None",
           "width": 512,
-          "height": 512
+          "height": 768
         },
         "ui_properties": {
-          "selected": false,
           "position": {
-            "x": 1548,
-            "y": 796
+            "x": 1290.5,
+            "y": 575
           },
           "zIndex": 0,
           "width": 200,
@@ -241,14 +203,154 @@
           "name": "image_output"
         },
         "ui_properties": {
-          "selected": false,
           "position": {
-            "x": 1778,
-            "y": 684
+            "x": 1524,
+            "y": 465
           },
           "zIndex": 0,
-          "width": 410,
-          "height": 471,
+          "width": 445,
+          "height": 468,
+          "selectable": true
+        },
+        "dynamic_properties": {}
+      },
+      {
+        "id": "83dcbd5d-8ca3-4d53-967d-ec2ca2a1d878",
+        "parent_id": null,
+        "type": "nodetool.generators.ListGenerator",
+        "data": {
+          "model": {
+            "type": "language_model",
+            "id": "gpt-4o-mini",
+            "provider": "openai"
+          },
+          "max_tokens": 4096
+        },
+        "ui_properties": {
+          "position": {
+            "x": 1021,
+            "y": 227
+          },
+          "zIndex": 0,
+          "width": 200,
+          "selectable": true
+        },
+        "dynamic_properties": {}
+      },
+      {
+        "id": "490b32c5-412b-427a-a288-8aee85728262",
+        "parent_id": null,
+        "type": "nodetool.workflows.base_node.Preview",
+        "data": {
+          "name": "str_item"
+        },
+        "ui_properties": {
+          "position": {
+            "x": 1287,
+            "y": 141
+          },
+          "zIndex": 0,
+          "width": 207,
+          "height": 384,
+          "selectable": true
+        },
+        "dynamic_properties": {}
+      },
+      {
+        "id": "30a58664-e0d9-4368-96b3-b5080da387b5",
+        "parent_id": null,
+        "type": "nodetool.constant.String",
+        "data": {
+          "value": "You are a senior movie-poster designer.\nYou transform a strategy into prompts for a movie poster.\nOptimize for Stable Diffusion.  \n\nUse following strategy to create each prompt:"
+        },
+        "ui_properties": {
+          "position": {
+            "x": 634,
+            "y": 58
+          },
+          "zIndex": 0,
+          "width": 338,
+          "selectable": true
+        },
+        "dynamic_properties": {}
+      },
+      {
+        "id": "256056be-48da-4224-b46e-c4995794b921",
+        "parent_id": null,
+        "type": "nodetool.workflows.base_node.Comment",
+        "data": {
+          "comment": [
+            {
+              "type": "paragraph",
+              "children": [
+                {
+                  "text": "AI-Assisted Movie-Poster Generator",
+                  "bold": true,
+                  "size": "+"
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "children": [
+                {
+                  "bold": true,
+                  "size": "+",
+                  "text": ""
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "children": [
+                {
+                  "text": "\t\u2022\tTakes title, genre, and primary audience as inputs."
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "children": [
+                {
+                  "text": "\t\u2022\tLLM #1 produces a brief poster-marketing strategy."
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "children": [
+                {
+                  "text": "\t\u2022\tLLM #2 converts that strategy into multiple Stable-Diffusion prompts."
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "children": [
+                {
+                  "text": "\t\u2022\tStable Diffusion node renders 512 \u00d7 768 px poster concepts."
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "children": [
+                {
+                  "text": "\t\u2022\tPreview panels display the strategy and a gallery of generated images."
+                }
+              ]
+            }
+          ]
+        },
+        "ui_properties": {
+          "selected": false,
+          "position": {
+            "x": 373,
+            "y": -192
+          },
+          "zIndex": 0,
+          "width": 567,
+          "height": 210,
           "selectable": true
         },
         "dynamic_properties": {}
@@ -312,22 +414,6 @@
         "ui_properties": null
       },
       {
-        "id": "cb3578a9-5013-40f1-8274-7027435363e8",
-        "source": "19246f0f-d23a-42dd-aa10-cf5d4f0f7a5f",
-        "sourceHandle": "text",
-        "target": "4708ad59-8b30-412b-964a-b034fbdee6e3",
-        "targetHandle": "prompt",
-        "ui_properties": null
-      },
-      {
-        "id": "01274a4a-f9ef-4fdd-b257-989a6166463c",
-        "source": "4708ad59-8b30-412b-964a-b034fbdee6e3",
-        "sourceHandle": "text",
-        "target": "2942aa37-5b30-4626-bfba-26e1d3b73c2c",
-        "targetHandle": "prompt",
-        "ui_properties": null
-      },
-      {
         "id": "c804718c-4c5e-459f-a892-db116813f93e",
         "source": "2942aa37-5b30-4626-bfba-26e1d3b73c2c",
         "sourceHandle": "output",
@@ -336,6 +422,40 @@
         "ui_properties": {
           "className": "image"
         }
+      },
+      {
+        "id": "4f7df337-3a31-411d-9ec1-1af5ed3fbe1c",
+        "source": "19246f0f-d23a-42dd-aa10-cf5d4f0f7a5f",
+        "sourceHandle": "text",
+        "target": "83dcbd5d-8ca3-4d53-967d-ec2ca2a1d878",
+        "targetHandle": "input_text",
+        "ui_properties": null
+      },
+      {
+        "id": "7d27dcd8-ef2d-40e8-917e-646cf1de618b",
+        "source": "83dcbd5d-8ca3-4d53-967d-ec2ca2a1d878",
+        "sourceHandle": "item",
+        "target": "2942aa37-5b30-4626-bfba-26e1d3b73c2c",
+        "targetHandle": "prompt",
+        "ui_properties": null
+      },
+      {
+        "id": "6ec65eca-ba73-4bb4-83f1-c8d98be6eb1e",
+        "source": "83dcbd5d-8ca3-4d53-967d-ec2ca2a1d878",
+        "sourceHandle": "item",
+        "target": "490b32c5-412b-427a-a288-8aee85728262",
+        "targetHandle": "value",
+        "ui_properties": {
+          "className": "str"
+        }
+      },
+      {
+        "id": "7dd2c9a0-81c3-4c18-a8d8-b02b9cb82c2e",
+        "source": "30a58664-e0d9-4368-96b3-b5080da387b5",
+        "sourceHandle": "output",
+        "target": "83dcbd5d-8ca3-4d53-967d-ec2ca2a1d878",
+        "targetHandle": "prompt",
+        "ui_properties": null
       }
     ]
   },
