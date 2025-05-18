@@ -410,105 +410,35 @@ def list_packages(available):
 )
 def scan(verbose):
     """Scan current directory for nodes and create package metadata."""
-    import os
     import sys
-    import tomli
-    import json
     import traceback
-    from nodetool.metadata.node_metadata import (
-        EnumEncoder,
-        PackageModel,
-        get_node_classes_from_module,
-    )
-
-    sys.path.append(os.path.abspath("src"))
+    from nodetool.packages.registry import scan_for_package_nodes, save_package_metadata
 
     try:
-        # Check for pyproject.toml in current directory
-        if not os.path.exists("pyproject.toml"):
-            click.echo("Error: No pyproject.toml found in current directory", err=True)
-            sys.exit(1)
+        with click.progressbar(
+            length=100,
+            label="Scanning for nodes",
+            show_eta=False,
+            show_percent=True,
+        ) as bar:
+            bar.update(10)
+            # Scan for nodes and create package model
+            package = scan_for_package_nodes(verbose=verbose)
+            bar.update(80)
 
-        # Read pyproject.toml
-        with open("pyproject.toml", "rb") as f:
-            pyproject_data = tomli.loads(f.read().decode())
+            # Save package metadata
+            save_package_metadata(package, verbose=verbose)
+            bar.update(10)
 
-        # Extract metadata
-        project_data = pyproject_data.get("project", {})
-        if not project_data:
-            project_data = pyproject_data.get("tool", {}).get("poetry", {})
-
-        if not project_data:
-            click.echo("Error: No project metadata found in pyproject.toml", err=True)
-            sys.exit(1)
-
-        repo_id = project_data.get("repository", "").split("/")[-2:]
-        repo_id = "/".join(repo_id)
-
-        # Create package model
-        package = PackageModel(
-            name=project_data.get("name", ""),
-            description=project_data.get("description", ""),
-            version=project_data.get("version", "0.1.0"),
-            authors=project_data.get("authors", []),
-            repo_id=repo_id,
-        )
-
-        # Add src directory to Python path temporarily
-        src_path = os.path.abspath("src/nodetool/nodes")
-        if os.path.exists(src_path):
-            with click.progressbar(
-                length=100,
-                label="Scanning for nodes",
-                show_eta=False,
-                show_percent=True,
-            ) as bar:
-                bar.update(10)
-
-                # Discover nodes
-                for root, _, files in os.walk(src_path):
-                    for file in files:
-                        if file.endswith(".py"):
-                            module_path = os.path.join(root, file)
-                            rel_path = os.path.relpath(module_path, src_path)
-                            module_name = os.path.splitext(rel_path)[0].replace(
-                                os.sep, "."
-                            )
-
-                            if verbose:
-                                click.echo(f"Scanning module: {module_name}")
-
-                            try:
-                                full_module_name = f"nodetool.nodes.{module_name}"
-                                node_classes = get_node_classes_from_module(
-                                    full_module_name, verbose
-                                )
-                                if node_classes:
-                                    assert package.nodes is not None
-                                    package.nodes.extend(
-                                        node_class.metadata()
-                                        for node_class in node_classes
-                                    )
-                            except Exception as e:
-                                if verbose:
-                                    click.echo(
-                                        f"Error processing {module_name}: {e}", err=True
-                                    )
-
-                bar.update(90)
-
-            # Write the single nodes.json file in the root directory
-            os.makedirs("src/nodetool/package_metadata", exist_ok=True)
-            with open(f"src/nodetool/package_metadata/{package.name}.json", "w") as f:
-                json.dump(
-                    package.model_dump(exclude_defaults=True),
-                    f,
-                    indent=2,
-                    cls=EnumEncoder,
-                )
-
+        node_count = len(package.nodes or [])
+        example_count = len(package.examples or [])
+        asset_count = len(package.assets or [])
+        
         click.echo(
-            f"✅ Successfully created package metadata for {package.name} with {len(package.nodes or [])} total nodes"
+            f"✅ Successfully created package metadata for {package.name} with:\n"
+            f"  - {node_count} nodes\n"
+            f"  - {example_count} examples\n"
+            f"  - {asset_count} assets"
         )
 
     except Exception as e:

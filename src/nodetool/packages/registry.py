@@ -8,12 +8,14 @@ It handles:
 - Listing installed and available packages
 - Updating packages to their latest versions
 - Managing example workflows from installed packages
+- Managing package-provided assets from installed packages
 
 Key components:
 - PackageInfo: Model for package information in the registry index
 - PackageModel: Package metadata model imported from nodetool.metadata.node_metadata
 - Registry: Package registry manager that handles all package operations
-- ExampleRegistry: Registry for managing example workflows from installed packages
+- AssetInfo: Model for asset information from package-provided assets
+- ExampleRegistry: Registry for managing example workflows and assets from installed packages
 - Helper functions:
   - validate_repo_id: Validates repository IDs in owner/project format
   - get_package_metadata_from_github: Extracts metadata from GitHub repository
@@ -26,11 +28,11 @@ Package management:
 - Package metadata is retrieved from pyproject.toml files and nodes.json
 - Available packages are listed from a central registry at REGISTRY_URL
 
-Example workflow management:
-- ExampleRegistry provides functionality to discover, load, and manage example workflows
-- Examples are stored in an 'examples' directory within each package
-- Supports caching of examples for better performance
-- Allows searching examples by ID or name
+Example and asset management:
+- ExampleRegistry provides functionality to discover, load, and manage example workflows and assets
+- Examples and assets are stored in 'examples' and 'assets' directories within each package, respectively
+- Supports caching of examples and assets for better performance
+- Allows searching examples by ID or name, and assets by file name
 - Provides ability to save new examples (in development mode only)
 
 Usage:
@@ -59,7 +61,7 @@ import logging
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple, Set, Union
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from urllib.parse import urlparse
 import httpx
 import asyncio
@@ -67,6 +69,7 @@ import asyncio
 from nodetool.common.environment import Environment
 from nodetool.common.settings import get_system_file_path
 from nodetool.metadata.node_metadata import PackageModel
+from nodetool.packages.types import AssetInfo, PackageInfo
 from nodetool.types.workflow import Workflow
 from nodetool.types.graph import Graph
 
@@ -204,20 +207,6 @@ def get_package_manager_command() -> List[str]:
         return ["uv", "pip"]
     except FileNotFoundError:
         return ["pip"]
-
-
-class PackageInfo(BaseModel):
-    """
-    Package information model for nodetool.
-    This is the model for the package index in the registry.
-    """
-
-    name: str
-    description: str
-    repo_id: str = Field(description="Repository ID in the format <owner>/<project>")
-    namespaces: List[str] = Field(
-        default_factory=list, description="Namespaces provided by this package"
-    )
 
 
 class Registry:
@@ -527,16 +516,18 @@ def get_nodetool_package_source_folders() -> List[Path]:
 
 class ExampleRegistry:
     """
-    Registry for example workflows from installed packages.
+    Registry for example workflows and assets from installed packages.
 
     This class provides functionality to:
     - Discover example workflows from all installed packages
-    - Cache examples for better performance
-    - Load specific examples by ID or name
+    - Discover asset files from all installed packages
+    - Cache examples and assets for better performance
+    - Load specific examples or assets by ID, name, or file name
     - Save new examples
 
-    Each nodetool package can provide examples in an 'examples' folder at a
-    standard location. The registry scans and aggregates these examples.
+    Each nodetool package can provide examples in an 'examples' folder and assets
+    in an 'assets' folder at a standard location. The registry scans and aggregates
+    these examples and assets.
     """
 
     def __init__(self):
@@ -545,6 +536,8 @@ class ExampleRegistry:
 
         # Cache of all examples
         self._examples_cache: Optional[List[Workflow]] = None
+        # Cache of all assets
+        self._assets_cache: Optional[List[AssetInfo]] = None
 
     def _load_example_from_file(self, file_path: str, package_name: str) -> Workflow:
         """
@@ -600,14 +593,22 @@ class ExampleRegistry:
         if not os.path.exists(directory):
             self.logger.warning(f"Examples directory does not exist: {directory}")
             return []
+            
+        # Define the package-specific examples directory
+        package_dir = os.path.join(directory, package_name)
+        os.makedirs(package_dir, exist_ok=True)
+        
+        if not os.path.exists(package_dir):
+            self.logger.warning(f"Package examples directory does not exist: {package_dir}")
+            return []
 
         examples = []
-        for name in os.listdir(directory):
+        for name in os.listdir(package_dir):
             # Skip files starting with underscore (_) and non-JSON files
             if name.startswith("_") or not name.endswith(".json"):
                 continue
 
-            file_path = os.path.join(directory, name)
+            file_path = os.path.join(package_dir, name)
             examples.append(self._load_example_from_file(file_path, package_name))
 
         return examples
@@ -727,6 +728,124 @@ class ExampleRegistry:
 
         return workflow
 
+    def _load_assets_from_directory(
+        self, directory: str, package_name: str
+    ) -> List[AssetInfo]:
+        """
+        Load all asset files from a directory.
+
+        Args:
+            directory: The directory containing asset files
+            package_name: Name of the package providing these assets
+
+        Returns:
+            List[AssetInfo]: A list of asset information objects
+        """
+        if not os.path.exists(directory):
+            self.logger.warning(f"Assets directory does not exist: {directory}")
+            return []
+            
+        # Define the package-specific assets directory
+        package_dir = os.path.join(directory, package_name)
+        os.makedirs(package_dir, exist_ok=True)
+        
+        if not os.path.exists(package_dir):
+            self.logger.warning(f"Package assets directory does not exist: {package_dir}")
+            return []
+
+        assets: List[AssetInfo] = []
+        for name in os.listdir(package_dir):
+            if name.startswith("_"):
+                continue
+
+            path = os.path.join(package_dir, name)
+            if os.path.isdir(path):
+                continue
+
+            assets.append(
+                AssetInfo(
+                    package_name=package_name,
+                    name=name,
+                    path=path,
+                )
+            )
+
+        return assets
+
+    def discover_all_assets(self) -> List[AssetInfo]:
+        """
+        Discover and load all asset files from installed packages.
+
+        This method:
+        1. Scans all installed packages for assets directories
+        2. Caches the results for subsequent calls
+
+        Returns:
+            List[AssetInfo]: A list of all discovered asset files
+        """
+        if self._assets_cache is not None:
+            return self._assets_cache
+
+        assets: List[AssetInfo] = []
+        source_folders = get_nodetool_package_source_folders()
+        for folder in source_folders:
+            assets_dir = folder / "nodetool" / "assets"
+            if not assets_dir.exists():
+                continue
+
+            project_toml = folder.parent / "pyproject.toml"
+            if project_toml.exists():
+                with open(project_toml, "rb") as f:
+                    project_metadata = tomllib.load(f)
+                    package_name = project_metadata["tool"]["poetry"]["name"]
+            else:
+                package_name = folder.name
+
+            assets.extend(
+                self._load_assets_from_directory(str(assets_dir), package_name)
+            )
+
+        self._assets_cache = assets
+        return assets
+
+    def clear_assets_cache(self) -> None:
+        """
+        Clear the assets cache to force rediscovery on next call.
+        """
+        self._assets_cache = None
+
+    def list_assets(self) -> List[AssetInfo]:
+        """
+        List all asset files from installed packages.
+
+        Returns:
+            List[AssetInfo]: A list of all asset files
+        """
+        return self.discover_all_assets()
+
+    def find_asset_by_name(self, name: str, package_name: Optional[str] = None) -> Optional[AssetInfo]:
+        """
+        Find an asset file by its file name, optionally filtering by package name.
+
+        Args:
+            name: The file name of the asset to find
+            package_name: Optional package name to filter by
+
+        Returns:
+            Optional[AssetInfo]: The found asset or None if not found
+        """
+        if package_name:
+            return next(
+                (asset for asset in self.discover_all_assets() 
+                 if asset.name == name and asset.package_name == package_name), 
+                None
+            )
+        else:
+            return next(
+                (asset for asset in self.discover_all_assets() if asset.name == name), 
+                None
+            )
+
 
 async def main():
     """
@@ -832,6 +951,247 @@ async def main():
     print("\n--- Testing ExampleRegistry.clear_cache ---")
     example_registry.clear_cache()
     print("Example cache cleared successfully.")
+
+    # Test discover_all_assets
+    print("\n--- Testing ExampleRegistry.discover_all_assets ---")
+    discovered_assets = example_registry.discover_all_assets()
+    print(f"Discovered {len(discovered_assets)} asset files.")
+    if discovered_assets:
+        for asset in discovered_assets[:3]:  # Show first few assets
+            print(
+                f"  - {asset.name} (from package: {asset.package_name} in {asset.path})"
+            )
+
+    # Test list_assets
+    print("\n--- Testing ExampleRegistry.list_assets ---")
+    assets = example_registry.list_assets()
+    print(f"Listed {len(assets)} asset files.")
+    if assets:
+        for asset in assets[:3]:  # Show first few assets
+            print(f"  - {asset.name} from {asset.package_name} in {asset.path}")
+
+    # Test find_asset_by_name
+    if assets:
+        asset_name = assets[0].name
+        print(
+            f"\n--- Testing ExampleRegistry.find_asset_by_name with '{asset_name}' ---"
+        )
+        found_asset = example_registry.find_asset_by_name(asset_name)
+        if found_asset:
+            print(f"Found asset: {found_asset.name}")
+        else:
+            print(f"Asset '{asset_name}' not found.")
+
+    # Test cache clearing for assets
+    print("\n--- Testing ExampleRegistry.clear_assets_cache ---")
+    example_registry.clear_assets_cache()
+    print("Asset cache cleared successfully.")
+
+
+def scan_for_package_nodes(verbose: bool = False) -> PackageModel:
+    """
+    Create package metadata from a JSON package specification file.
+
+    This function:
+    1. Looks for pyproject.toml in the current directory
+    2. Extracts package metadata from it
+    3. Loads the src/nodetool/package.json file for component information
+    4. Creates and returns a PackageModel with all components from the package.json file
+
+    Args:
+        verbose: Whether to print verbose output during scanning
+
+    Returns:
+        PackageModel: The created package model with all components
+
+    Raises:
+        ValueError: If no pyproject.toml is found or required metadata is missing
+        FileNotFoundError: If package.json file is not found
+    """
+    import os
+    import sys
+    import json
+    import tomli
+    import traceback
+    from nodetool.metadata.node_metadata import (
+        PackageModel,
+        ExampleMetadata,
+        NodeMetadata
+    )
+    from pathlib import Path
+
+    if verbose:
+        print("Starting package metadata scan")
+    
+    sys.path.append(os.path.abspath("src"))
+
+    # Check for pyproject.toml in current directory
+    if not os.path.exists("pyproject.toml"):
+        raise ValueError("No pyproject.toml found in current directory")
+
+    # Read pyproject.toml
+    with open("pyproject.toml", "rb") as f:
+        pyproject_data = tomli.loads(f.read().decode())
+
+    # Extract metadata
+    project_data = pyproject_data.get("project", {})
+    if not project_data:
+        project_data = pyproject_data.get("tool", {}).get("poetry", {})
+
+    if not project_data:
+        raise ValueError("No project metadata found in pyproject.toml")
+
+    repo_id = project_data.get("repository", "").split("/")[-2:]
+    repo_id = "/".join(repo_id)
+
+    # Find package.json file
+    package_json_path = os.path.join(os.path.abspath("src"), "nodetool", "package.json")
+    if not os.path.exists(package_json_path):
+        if verbose:
+            print(f"Package JSON file not found at {package_json_path}, creating a new package")
+            
+        # Create package model with basic metadata
+        package = PackageModel(
+            name=project_data.get("name", ""),
+            description=project_data.get("description", ""),
+            version=project_data.get("version", "0.1.0"),
+            authors=project_data.get("authors", []),
+            repo_id=repo_id,
+            nodes=[],
+            examples=[],
+            assets=[],
+        )
+    else:
+        # Load component information from package.json
+        if verbose:
+            print(f"Loading package information from {package_json_path}")
+            
+        try:
+            with open(package_json_path, 'r') as f:
+                package_json = json.load(f)
+                
+            # Create package model from package.json
+            package = PackageModel(
+                name=project_data.get("name", ""),
+                description=project_data.get("description", ""),
+                version=project_data.get("version", "0.1.0"),
+                authors=project_data.get("authors", []),
+                repo_id=repo_id,
+                # Load any existing components from package.json
+                nodes=package_json.get("nodes", []),
+                examples=package_json.get("examples", []),
+                assets=package_json.get("assets", []),
+                git_hash=package_json.get("git_hash", None),
+                namespaces=package_json.get("namespaces", []),
+            )
+            
+            if verbose:
+                print(f"Successfully loaded package with {len(package.nodes or [])} nodes, " 
+                      f"{len(package.examples or [])} examples, and {len(package.assets or [])} assets")
+                
+        except Exception as e:
+            if verbose:
+                print(f"Error loading package.json: {e}")
+                traceback.print_exc()
+            # Create a new package model if loading fails
+            package = PackageModel(
+                name=project_data.get("name", ""),
+                description=project_data.get("description", ""),
+                version=project_data.get("version", "0.1.0"),
+                authors=project_data.get("authors", []),
+                repo_id=repo_id,
+                nodes=[],
+                examples=[],
+                assets=[],
+            )
+            
+    # Ensure empty lists are properly initialized
+    if package.nodes is None:
+        package.nodes = []
+    if package.examples is None:
+        package.examples = []
+    if package.assets is None:
+        package.assets = []
+    
+    return package
+
+
+def save_package_metadata(package: PackageModel, verbose: bool = False):
+    """
+    Save the package metadata to JSON files.
+
+    This function saves all package components (nodes, examples, and assets)
+    to both a package specification file and a metadata file:
+    1. src/nodetool/package.json - Main package specification file used for runtime
+    2. src/nodetool/package_metadata/{package.name}.json - Legacy metadata file for compatibility
+
+    Args:
+        package: The package model to save
+        verbose: Whether to print verbose output during saving
+
+    Returns:
+        str: The path to the saved metadata file
+    """
+    import os
+    import json
+    import git
+    from nodetool.metadata.node_metadata import EnumEncoder
+
+    # Create metadata directory if it doesn't exist
+    os.makedirs("src/nodetool/package_metadata", exist_ok=True)
+    os.makedirs("src/nodetool", exist_ok=True)
+
+    # Generate the package metadata
+    metadata = package.model_dump(exclude_defaults=True)
+    
+    # Try to get git hash if not already set
+    if not package.git_hash:
+        try:
+            repo = git.Repo(os.getcwd())
+            git_hash = repo.head.object.hexsha
+            metadata["git_hash"] = git_hash
+            if verbose:
+                print(f"Added git hash: {git_hash}")
+        except Exception as e:
+            if verbose:
+                print(f"Could not get git hash: {e}")
+    
+    # 1. Save to main package.json specification file
+    package_json_path = os.path.join("src", "nodetool", "package.json")
+    if verbose:
+        print(f"Saving package definition to {package_json_path}")
+        
+    with open(package_json_path, "w") as f:
+        json.dump(
+            metadata,
+            f,
+            indent=2,
+            cls=EnumEncoder,
+        )
+    
+    # 2. Save to package_metadata directory for compatibility
+    metadata_path = f"src/nodetool/package_metadata/{package.name}.json"
+    if verbose:
+        print(f"Saving package metadata to {metadata_path}")
+        
+    with open(metadata_path, "w") as f:
+        json.dump(
+            metadata,
+            f,
+            indent=2,
+            cls=EnumEncoder,
+        )
+
+    # Log the component counts
+    node_count = len(package.nodes or [])
+    example_count = len(package.examples or [])
+    asset_count = len(package.assets or [])
+
+    print(
+        f"Saved metadata with {node_count} nodes, {example_count} examples, and {asset_count} assets"
+    )
+
+    return [package_json_path, metadata_path]
 
 
 if __name__ == "__main__":

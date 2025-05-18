@@ -2,6 +2,7 @@
 
 from datetime import datetime
 import time
+import traceback
 import uuid
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Header, Request
 from fastapi.responses import StreamingResponse
@@ -216,14 +217,6 @@ async def save_example_workflow(
     if workflow_request.graph is None:
         raise HTTPException(status_code=400, detail="Invalid workflow")
 
-    example_registry = ExampleRegistry()
-
-    # remove "example" from tags
-    if workflow_request.tags:
-        workflow_request.tags = [
-            tag for tag in workflow_request.tags if tag != "example"
-        ]
-
     workflow = Workflow(
         id=id,
         name=workflow_request.name,
@@ -237,12 +230,25 @@ async def save_example_workflow(
         created_at=datetime.now().isoformat(),
         updated_at=datetime.now().isoformat(),
     )
+    example_registry = ExampleRegistry()
+
+    for example in example_registry.list_examples():
+        if example.name == workflow_request.name:
+            workflow.id = example.id
+            workflow.thumbnail_url = example.thumbnail_url
+            workflow.package_name = example.package_name
+            workflow.path = example.path
+
+    # remove "example" from tags
+    if workflow.tags:
+        workflow.tags = [tag for tag in workflow.tags if tag != "example"]
 
     try:
-        package_name = "nodetool-base"
         saved_workflow = example_registry.save_example(workflow)
         return saved_workflow
     except ValueError as e:
+        log.error(f"Error saving example workflow: {str(e)}")
+        traceback.print_exc()
         raise HTTPException(status_code=400, detail=str(e))
 
 

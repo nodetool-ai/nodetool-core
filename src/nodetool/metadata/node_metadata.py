@@ -10,6 +10,7 @@ import logging
 from functools import lru_cache
 from pydantic import BaseModel, Field
 from nodetool.common.environment import Environment
+from nodetool.packages.types import AssetInfo
 from nodetool.workflows.property import Property
 from nodetool.metadata.types import OutputSlot, HuggingFaceModel
 from pydantic import BaseModel
@@ -49,6 +50,16 @@ class NodeMetadata(BaseModel):
     is_dynamic: bool
 
 
+class ExampleMetadata(BaseModel):
+    """Metadata for an example workflow."""
+
+    id: str
+    name: str
+    description: str
+    tags: list[str]
+    thumbnail_url: str
+
+
 class PackageModel(BaseModel):
     """Metadata model for a node package."""
 
@@ -69,6 +80,12 @@ class PackageModel(BaseModel):
     )
     git_hash: str | None = Field(
         default=None, description="Git commit hash of the package"
+    )
+    assets: List[AssetInfo] | None = Field(
+        default_factory=list, description="List of assets provided by this package"
+    )
+    examples: List[ExampleMetadata] | None = Field(
+        default_factory=list, description="List of examples provided by this package"
     )
 
 

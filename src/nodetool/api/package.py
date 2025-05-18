@@ -4,12 +4,12 @@ from pydantic import BaseModel, Field
 
 from nodetool.packages.registry import (
     Registry,
-    PackageInfo,
     PackageModel,
     validate_repo_id,
 )
 
 from nodetool.api.utils import current_user
+from nodetool.packages.types import PackageInfo
 
 router = APIRouter(prefix="/api/packages", tags=["packages"])
 

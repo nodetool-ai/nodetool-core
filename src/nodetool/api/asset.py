@@ -2,12 +2,14 @@
 
 import asyncio
 import datetime
+import os
 from io import BytesIO
 import re
 from uuid import uuid4
 import zipfile
-from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile
-from fastapi.responses import StreamingResponse
+import mimetypes
+from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile, Response
+from fastapi.responses import StreamingResponse, FileResponse
 from nodetool.models.condition_builder import Field
 from nodetool.types.asset import (
     Asset,
@@ -22,8 +24,8 @@ from nodetool.common.environment import Environment
 from typing import Dict, List, Optional, Tuple, Union
 from nodetool.models.asset import Asset as AssetModel
 from nodetool.models.workflow import Workflow
-
-from nodetool.common.environment import Environment
+from nodetool.packages.registry import ExampleRegistry
+from pydantic import BaseModel, Field as PydanticField
 from nodetool.common.media_utils import (
     create_image_thumbnail,
     create_video_thumbnail,
@@ -59,6 +61,16 @@ def from_model(asset: AssetModel):
     )
 
 
+# Define Pydantic models for package assets
+class PackageAsset(BaseModel):
+    id: str
+    name: str
+    package_name: str
+    virtual_path: str = PydanticField(..., description="Virtual path to access the asset")
+
+class PackageAssetList(BaseModel):
+    assets: List[PackageAsset]
+
 log = Environment.get_logger()
 router = APIRouter(prefix="/api/assets", tags=["assets"])
 
@@ -92,6 +104,119 @@ async def index(
     assets = [from_model(asset) for asset in assets]
 
     return AssetList(next=next_cursor, assets=assets)
+
+
+# Routes for package assets
+@router.get("/packages", response_model=PackageAssetList)
+async def list_package_assets():
+    """
+    List all assets from installed nodetool packages.
+    """
+    try:
+        # Create an instance of ExampleRegistry
+        registry = ExampleRegistry()
+
+        # Get all assets from installed packages
+        assets = registry.list_assets()
+
+        # Convert to Pydantic models
+        formatted_assets = [
+            PackageAsset(
+                id=f"pkg:{asset.package_name}/{asset.name}",
+                name=asset.name,
+                package_name=asset.package_name,
+                virtual_path=f"/api/assets/packages/{asset.package_name}/{asset.name}"
+            )
+            for asset in assets
+        ]
+
+        return PackageAssetList(assets=formatted_assets)
+    except Exception as e:
+        log.exception(f"Error listing package assets: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Error listing package assets: {str(e)}"
+        )
+
+
+@router.get("/packages/{package_name}", response_model=PackageAssetList)
+async def list_package_assets_by_package(package_name: str):
+    """
+    List all assets from a specific nodetool package.
+    """
+    try:
+        # Create an instance of ExampleRegistry
+        registry = ExampleRegistry()
+
+        # Get all assets from installed packages
+        all_assets = registry.list_assets()
+
+        # Filter assets by package name
+        package_assets = [
+            asset for asset in all_assets if asset.package_name == package_name
+        ]
+
+        # Convert to Pydantic models
+        formatted_assets = [
+            PackageAsset(
+                id=f"pkg:{asset.package_name}/{asset.name}",
+                name=asset.name,
+                package_name=asset.package_name,
+                virtual_path=f"/api/assets/packages/{asset.package_name}/{asset.name}"
+            )
+            for asset in package_assets
+        ]
+
+        return PackageAssetList(assets=formatted_assets)
+    except Exception as e:
+        log.exception(f"Error listing assets for package {package_name}: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error listing assets for package {package_name}: {str(e)}",
+        )
+
+
+@router.get("/packages/{package_name}/{asset_name}")
+async def get_package_asset(package_name: str, asset_name: str):
+    """
+    Serve a specific asset file from a nodetool package.
+    """
+    try:
+        # Create an instance of ExampleRegistry
+        registry = ExampleRegistry()
+
+        # Find the asset by name and package name
+        asset = registry.find_asset_by_name(asset_name, package_name)
+
+        # Verify the asset exists
+        if not asset:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Asset '{asset_name}' not found in package '{package_name}'",
+            )
+
+        # Get the physical path to the asset file
+        if not os.path.exists(asset.path):
+            raise HTTPException(
+                status_code=404, detail=f"Asset file not found at path: {asset.path}"
+            )
+
+        # Determine the content type based on file extension
+        content_type, _ = mimetypes.guess_type(asset.path)
+        if not content_type:
+            # Default to binary if content type can't be determined
+            content_type = "application/octet-stream"
+
+        # Return the file
+        return FileResponse(
+            path=asset.path, media_type=content_type, filename=asset.name
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        log.exception(
+            f"Error serving asset {asset_name} from package {package_name}: {str(e)}"
+        )
+        raise HTTPException(status_code=500, detail=f"Error serving asset: {str(e)}")
 
 
 @router.get("/{id}")
