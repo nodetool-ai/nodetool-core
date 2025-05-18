@@ -694,18 +694,7 @@ class Registry:
         for name in os.listdir(package_dir):
             if name.startswith("_"):
                 continue
-
-            path = os.path.join(package_dir, name)
-            if os.path.isdir(path):
-                continue
-
-            assets.append(
-                AssetInfo(
-                    package_name=package_name,
-                    name=name,
-                    path=path,
-                )
-            )
+            assets.append(AssetInfo(package_name=package_name, name=name, path=""))
 
         return assets
 
@@ -782,6 +771,7 @@ def discover_node_packages() -> list[PackageModel]:
                 try:
                     with open(metadata_file) as f:
                         metadata = json.load(f)
+                        metadata["source_folder"] = str(path)
                         packages.append(PackageModel(**metadata))
                 except Exception as e:
                     print(f"Error processing {metadata_file}: {e}")
@@ -804,6 +794,7 @@ def discover_node_packages() -> list[PackageModel]:
             with open(metadata_file) as f:
                 try:
                     metadata = json.load(f)
+                    metadata["source_folder"] = str(Path(base_path).parent.parent)
                     packages.append(PackageModel(**metadata))
                 except Exception as e:
                     print(f"Error processing {metadata_file}: {e}")

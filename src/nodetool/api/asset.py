@@ -66,10 +66,14 @@ class PackageAsset(BaseModel):
     id: str
     name: str
     package_name: str
-    virtual_path: str = PydanticField(..., description="Virtual path to access the asset")
+    virtual_path: str = PydanticField(
+        ..., description="Virtual path to access the asset"
+    )
+
 
 class PackageAssetList(BaseModel):
     assets: List[PackageAsset]
+
 
 log = Environment.get_logger()
 router = APIRouter(prefix="/api/assets", tags=["assets"])
@@ -125,7 +129,7 @@ async def list_package_assets():
                 id=f"pkg:{asset.package_name}/{asset.name}",
                 name=asset.name,
                 package_name=asset.package_name,
-                virtual_path=f"/api/assets/packages/{asset.package_name}/{asset.name}"
+                virtual_path=f"/api/assets/packages/{asset.package_name}/{asset.name}",
             )
             for asset in assets
         ]
@@ -161,7 +165,7 @@ async def list_package_assets_by_package(package_name: str):
                 id=f"pkg:{asset.package_name}/{asset.name}",
                 name=asset.name,
                 package_name=asset.package_name,
-                virtual_path=f"/api/assets/packages/{asset.package_name}/{asset.name}"
+                virtual_path=f"/api/assets/packages/{asset.package_name}/{asset.name}",
             )
             for asset in package_assets
         ]
@@ -184,6 +188,13 @@ async def get_package_asset(package_name: str, asset_name: str):
         # Create an instance of Registry
         registry = Registry()
 
+        package = registry.find_package_by_name(package_name)
+        if not package:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Package '{package_name}' not found",
+            )
+
         # Find the asset by name and package name
         asset = registry.find_asset_by_name(asset_name, package_name)
 
@@ -194,21 +205,25 @@ async def get_package_asset(package_name: str, asset_name: str):
                 detail=f"Asset '{asset_name}' not found in package '{package_name}'",
             )
 
+        asset_path = os.path.join(
+            str(package.source_folder), "nodetool", "assets", package_name, asset_name
+        )
+
         # Get the physical path to the asset file
-        if not os.path.exists(asset.path):
+        if not os.path.exists(asset_path):
             raise HTTPException(
-                status_code=404, detail=f"Asset file not found at path: {asset.path}"
+                status_code=404, detail=f"Asset file not found at path: {asset_path}"
             )
 
         # Determine the content type based on file extension
-        content_type, _ = mimetypes.guess_type(asset.path)
+        content_type, _ = mimetypes.guess_type(asset_path)
         if not content_type:
             # Default to binary if content type can't be determined
             content_type = "application/octet-stream"
 
         # Return the file
         return FileResponse(
-            path=asset.path, media_type=content_type, filename=asset.name
+            path=asset_path, media_type=content_type, filename=asset_name
         )
     except HTTPException:
         raise

@@ -85,6 +85,9 @@ class PackageModel(BaseModel):
     examples: List[ExampleMetadata] | None = Field(
         default_factory=list, description="List of examples provided by this package"
     )
+    source_folder: str | None = Field(
+        default=None, description="Source folder of the package"
+    )
 
 
 class EnumEncoder(json.JSONEncoder):
