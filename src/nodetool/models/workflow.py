@@ -47,6 +47,7 @@ class Workflow(DBModel):
     name: str = DBField(default="")
     tags: list[str] | None = DBField(default_factory=list)
     description: str | None = DBField(default="")
+    package_name: str | None = DBField(default="")
     thumbnail: str | None = DBField(default=None)
     graph: dict = DBField(default_factory=dict)
     settings: dict[str, Any] | None = DBField(default_factory=dict)
@@ -68,6 +69,7 @@ class Workflow(DBModel):
             created_at=data.get("created_at", datetime.now()),
             updated_at=data.get("updated_at", datetime.now()),
             name=data.get("name", ""),
+            package_name=data.get("package_name", ""),
             tags=data.get("tags", []),
             description=data.get("description", ""),
             thumbnail=data.get("thumbnail", None),

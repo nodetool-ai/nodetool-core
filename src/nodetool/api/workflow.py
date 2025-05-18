@@ -24,7 +24,6 @@ from nodetool.chat.providers import get_provider
 from nodetool.metadata.types import Provider
 from nodetool.chat.workspace_manager import WorkspaceManager
 from nodetool.agents.workflow_planner import WorkflowPlanner
-import asyncio
 
 log = Environment.get_logger()
 router = APIRouter(prefix="/api/workflows", tags=["workflows"])
@@ -46,6 +45,7 @@ def from_model(workflow: WorkflowModel):
         created_at=workflow.created_at.isoformat(),
         updated_at=workflow.updated_at.isoformat(),
         name=workflow.name,
+        package_name=workflow.package_name,
         tags=workflow.tags,
         description=workflow.description or "",
         thumbnail=workflow.thumbnail or "",
@@ -177,6 +177,7 @@ async def update_workflow(
     workflow.name = workflow_request.name
     workflow.description = workflow_request.description
     workflow.tags = workflow_request.tags
+    workflow.package_name = workflow_request.package_name
     if workflow_request.thumbnail is not None:
         workflow.thumbnail = workflow_request.thumbnail
     workflow.access = workflow_request.access
@@ -231,13 +232,6 @@ async def save_example_workflow(
         updated_at=datetime.now().isoformat(),
     )
     example_registry = Registry()
-
-    for example in example_registry.list_examples():
-        if example.name == workflow_request.name:
-            workflow.id = example.id
-            workflow.thumbnail_url = example.thumbnail_url
-            workflow.package_name = example.package_name
-            workflow.path = example.path
 
     # remove "example" from tags
     if workflow.tags:

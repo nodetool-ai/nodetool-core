@@ -481,7 +481,7 @@ class Registry:
 
     def _load_examples_from_directory(
         self, directory: str, package_name: str
-    ) -> List[Workflow]:
+    ) -> List[ExampleMetadata]:
         """
         Load all example workflows from a directory.
 
@@ -513,51 +513,17 @@ class Registry:
                 continue
 
             file_path = os.path.join(package_dir, name)
-            examples.append(self._load_example_from_file(file_path, package_name))
+            workflow = self._load_example_from_file(file_path, package_name)
+            examples.append(
+                ExampleMetadata(
+                    id=workflow.id,
+                    name=workflow.name,
+                    description=workflow.description,
+                    tags=workflow.tags or [],
+                )
+            )
 
         return examples
-
-    def discover_all_examples(self) -> List[Workflow]:
-        """
-        Discover and load all example workflows from installed packages.
-
-        This method:
-        1. Scans all installed packages for examples directories
-
-        Returns:
-            List[ExampleWorkflow]: A list of all discovered example workflows
-        """
-        examples = []
-
-        # Load examples from installed packages
-        source_folders = get_nodetool_package_source_folders()
-        for folder in source_folders:
-            # Look for examples directory in standard location
-            examples_dir = folder / "nodetool" / "examples"
-            if examples_dir.exists():
-                # Extract package name from folder path
-                project_toml = folder.parent / "pyproject.toml"
-                if project_toml.exists():
-                    with open(project_toml, "rb") as f:
-                        project_metadata = tomllib.load(f)
-                        package_name = project_metadata["tool"]["poetry"]["name"]
-                else:
-                    package_name = folder.name
-
-                # Load examples from this package
-                package_examples = self._load_examples_from_directory(
-                    str(examples_dir), package_name
-                )
-                examples.extend(package_examples)
-
-        # Ensure uniqueness based on example ID
-        unique_examples = []
-        seen_example_ids = set()
-        for example in examples:
-            if example.id not in seen_example_ids:
-                unique_examples.append(example)
-                seen_example_ids.add(example.id)
-        return unique_examples
 
     def clear_cache(self) -> None:
         """Clear the examples cache to force re-loading from metadata on next call."""
@@ -590,7 +556,6 @@ class Registry:
                         name=example_meta.name,
                         description=example_meta.description,
                         tags=example_meta.tags or [],
-                        thumbnail_url=example_meta.thumbnail_url,
                         graph=Graph(
                             nodes=[], edges=[]
                         ),  # Empty graph as we don't load the full workflow
@@ -651,11 +616,12 @@ class Registry:
         if Environment.is_production():
             raise ValueError("Saving examples is only allowed in dev mode")
 
-        if not workflow.path:
-            raise ValueError("Workflow path is required")
+        package_folder = get_nodetool_package_source_folders()[0]
+
+        path = package_folder / "nodetool" / "examples" / workflow.id
 
         # Find the package folder
-        with open(workflow.path, "w") as f:
+        with open(path, "w") as f:
             json.dump(workflow.model_dump(), f, indent=2)
 
         # Invalidate the cached examples
@@ -677,7 +643,6 @@ class Registry:
             List[AssetInfo]: A list of asset information objects
         """
         if not os.path.exists(directory):
-            self.logger.warning(f"Assets directory does not exist: {directory}")
             return []
 
         # Define the package-specific assets directory
@@ -685,9 +650,6 @@ class Registry:
         os.makedirs(package_dir, exist_ok=True)
 
         if not os.path.exists(package_dir):
-            self.logger.warning(
-                f"Package assets directory does not exist: {package_dir}"
-            )
             return []
 
         assets: List[AssetInfo] = []
@@ -708,64 +670,6 @@ class Registry:
             )
 
         return assets
-
-    def discover_all_assets(self) -> List[AssetInfo]:
-        """
-        Discover and load all asset files from installed packages.
-
-        This method:
-        1. Scans all installed packages for assets directories
-
-        Returns:
-            List[AssetInfo]: A list of all discovered asset files
-        """
-        assets = []
-
-        # Load assets from installed packages
-        source_folders = get_nodetool_package_source_folders()
-        for folder in source_folders:
-            # Look for assets directory in standard location
-            assets_dir = folder / "nodetool" / "assets"
-            if assets_dir.exists():
-                # Extract package name from folder path
-                project_toml = folder.parent / "pyproject.toml"
-                package_name = folder.name  # Default to folder name
-                if project_toml.exists():
-                    with open(project_toml, "rb") as f:
-                        try:
-                            project_metadata = tomllib.load(f)
-                            # Try to get the name from poetry, then project
-                            pkg_meta_name = (
-                                project_metadata.get("tool", {})
-                                .get("poetry", {})
-                                .get("name")
-                            )
-                            if not pkg_meta_name:
-                                pkg_meta_name = project_metadata.get("project", {}).get(
-                                    "name"
-                                )
-                            if pkg_meta_name:
-                                package_name = pkg_meta_name
-                        except tomllib.TOMLDecodeError:
-                            self.logger.warning(
-                                f"Could not parse pyproject.toml in {folder.parent}"
-                            )
-
-                # Load assets from this package
-                package_assets = self._load_assets_from_directory(
-                    str(assets_dir), package_name
-                )
-                assets.extend(package_assets)
-
-        # Ensure uniqueness based on (package_name, asset_name)
-        unique_assets = []
-        seen_assets = set()
-        for asset in assets:
-            asset_key = (asset.package_name, asset.name)
-            if asset_key not in seen_assets:
-                unique_assets.append(asset)
-                seen_assets.add(asset_key)
-        return unique_assets
 
     def list_assets(self) -> List[AssetInfo]:
         """
@@ -963,16 +867,6 @@ async def main():
     # Test unified example and asset functionality
     print("\n--- Testing unified Registry (formerly ExampleRegistry) ---")
 
-    # Test discover_all_examples
-    print("\n--- Testing Registry.discover_all_examples ---")
-    discovered_examples = registry.discover_all_examples()
-    print(f"Discovered {len(discovered_examples)} example workflows.")
-    if discovered_examples:
-        for example in discovered_examples[:3]:  # Show first few examples
-            print(
-                f"  - {example.name} (from package: {example.package_name} in {example.path})"
-            )
-
     # Test list_examples
     print("\n--- Testing Registry.list_examples ---")
     examples = registry.list_examples()
@@ -995,16 +889,6 @@ async def main():
     print("\n--- Testing Registry.clear_cache ---")
     registry.clear_cache()
     print("Example cache cleared successfully.")
-
-    # Test discover_all_assets
-    print("\n--- Testing Registry.discover_all_assets ---")
-    discovered_assets = registry.discover_all_assets()
-    print(f"Discovered {len(discovered_assets)} asset files.")
-    if discovered_assets:
-        for asset in discovered_assets[:3]:  # Show first few assets
-            print(
-                f"  - {asset.name} (from package: {asset.package_name} in {asset.path})"
-            )
 
     # Test list_assets
     print("\n--- Testing Registry.list_assets ---")
@@ -1031,7 +915,6 @@ def scan_for_package_nodes(verbose: bool = False) -> PackageModel:
     import sys
     import tomli
     import json
-    import traceback
     from nodetool.metadata.node_metadata import (
         EnumEncoder,
         PackageModel,
@@ -1060,42 +943,26 @@ def scan_for_package_nodes(verbose: bool = False) -> PackageModel:
 
     repo_id = project_data.get("repository", "").split("/")[-2:]
     repo_id = "/".join(repo_id)
+    package_name = project_data.get("name", "")
+
+    # Discover examples and assets using unified Registry
+    registry = Registry()
 
     # Create package model
     package = PackageModel(
-        name=project_data.get("name", ""),
+        name=package_name,
         description=project_data.get("description", ""),
         version=project_data.get("version", "0.1.0"),
         authors=project_data.get("authors", []),
         repo_id=repo_id,
         nodes=[],
-        examples=[],
-        assets=[],
+        examples=registry._load_examples_from_directory(
+            "src/nodetool/examples", package_name
+        ),
+        assets=registry._load_assets_from_directory(
+            "src/nodetool/assets", package_name
+        ),
     )
-
-    # Discover examples and assets using unified Registry
-    registry = Registry()
-    all_examples = registry.discover_all_examples()
-    all_assets = registry.discover_all_assets()
-
-    if package.examples is not None:
-        package.examples.extend(
-            [
-                ExampleMetadata(
-                    id=ex.id,
-                    name=ex.name,
-                    description=ex.description or "",
-                    tags=ex.tags or [],
-                    thumbnail_url="",  # Or some default/logic to get thumbnail
-                )
-                for ex in all_examples
-                if ex.package_name == package.name
-            ]
-        )
-    if package.assets is not None:
-        package.assets.extend(
-            [asset for asset in all_assets if asset.package_name == package.name]
-        )
 
     # Add src directory to Python path temporarily
     src_path = os.path.abspath("src/nodetool/nodes")

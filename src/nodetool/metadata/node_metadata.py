@@ -17,7 +17,6 @@ from pydantic import BaseModel
 from enum import Enum
 from nodetool.workflows.base_node import (
     BaseNode,
-    NODE_BY_TYPE,
 )
 import yaml
 from pathlib import Path
@@ -57,7 +56,6 @@ class ExampleMetadata(BaseModel):
     name: str
     description: str
     tags: list[str]
-    thumbnail_url: str
 
 
 class PackageModel(BaseModel):
