@@ -65,6 +65,7 @@ from nodetool.workflows.base_node import (
     OutputNode,
 )
 from nodetool.workflows.types import NodeProgress, NodeUpdate, OutputUpdate
+from nodetool.metadata.types import Event
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.common.environment import Environment
@@ -470,8 +471,9 @@ class WorkflowRunner:
         Sends messages from a completed node's output slots to connected target nodes.
 
         For each key-value pair in the `result` dictionary (representing an output slot
-        and its value), this method finds all outgoing edges from that slot and appends
-        the value to the `deque` in `self.edge_queues` corresponding to that edge.
+        and its value), this method finds all outgoing edges from that slot. If the value
+        is an Event object, it is handled specially to trigger immediate processing.
+        Otherwise, the value is appended to the `deque` in `self.edge_queues`.
 
         Args:
             node (BaseNode): The source node that has produced the results.
@@ -485,26 +487,25 @@ class WorkflowRunner:
             # find edges from node.id and this specific output slot (key)
             outgoing_edges = context.graph.find_edges(node.id, key)
             for edge in outgoing_edges:
-                # The target_node check is implicitly handled by graph structure;
-                # an edge should always have a valid target_id and targetHandle.
                 edge_key = (
                     edge.source,
                     edge.sourceHandle,
                     edge.target,
                     edge.targetHandle,
                 )
-                if edge_key in self.edge_queues:
-                    self.edge_queues[edge_key].append(value_to_send)
-                    log.debug(
-                        f"Sent message from {node.get_title()} ({node.id}) output '{key}' "
-                        f"to {edge.target} input '{edge.targetHandle}' via edge_queue. Value: {str(value_to_send)[:50]}"
-                    )
-                else:
-                    # This case should ideally not happen if edge_queues are initialized correctly for all graph edges.
+
+                if edge_key not in self.edge_queues:
                     log.warning(
                         f"Edge key {edge_key} not found in self.edge_queues. "
                         f"Message from {node.get_title()} ({node.id}) for slot '{key}' not sent."
                     )
+                    continue
+
+                self.edge_queues[edge_key].append(value_to_send)
+                log.debug(
+                    f"Sent message from {node.get_title()} ({node.id}) output '{key}' "
+                    f"to {edge.target} input '{edge.targetHandle}' via edge_queue. Value: {str(value_to_send)[:50]}"
+                )
 
     async def _process_trigger_nodes(
         self,
@@ -577,10 +578,12 @@ class WorkflowRunner:
            a. It's a streaming node and `node._id` is in `self.active_generators` (already initialized).
            b. All its required input slots (defined by incoming edges)
               have messages available in the `self.edge_queues`.
+           c. An event message is available for any of its input slots (for event handling).
 
         Nodes identified as ready are added to `self.active_processing_node_ids`.
         For non-streaming nodes, inputs are consumed from `edge_queues`.
         For active streaming nodes, input dict is empty as they self-drive or use stored config.
+        For event-driven processing, the event is passed specially.
 
         Args:
             context (ProcessingContext): The execution context for the workflow.
@@ -590,7 +593,8 @@ class WorkflowRunner:
             tuple[list[tuple[BaseNode, dict[str, Any]]], list[asyncio.Task], bool]:
                 A tuple containing:
                 - `ready_node_task_details_list`: List of `(BaseNode, dict_of_inputs_for_run)`
-                  tuples. For active generator nodes, dict is empty.
+                  tuples. For active generator nodes, dict is empty. For event processing,
+                  dict contains special event marker.
                 - `tasks_to_run_this_iteration`: List of `asyncio.Task` objects.
                 - `any_progress_potential`: Boolean indicating if any node was scheduled
                                           (either an active generator or a node with inputs).
@@ -622,7 +626,91 @@ class WorkflowRunner:
                 any_progress_potential = True
                 continue
 
-            # Case 2: Node depends on inputs from edge queues (could be initial run for a streaming node or any run for non-streaming)
+            # --- NEW: Event Check and Processing ---
+            # Check if any input slot has an Event. If so, process immediately with available inputs.
+            node_input_handles = {
+                edge.targetHandle for edge in graph.edges if edge.target == node._id
+            }
+            event_detected_on_handle: Optional[str] = None
+
+            for handle_name in node_input_handles:
+                for (
+                    edge
+                ) in (
+                    graph.edges
+                ):  # Iterate through edges to find the one for current handle_name
+                    if edge.target == node._id and edge.targetHandle == handle_name:
+                        edge_key = (
+                            edge.source,
+                            edge.sourceHandle,
+                            edge.target,
+                            edge.targetHandle,
+                        )
+                        if edge_key in self.edge_queues and self.edge_queues[edge_key]:
+                            # Peek at the first item in the deque for this edge
+                            if isinstance(self.edge_queues[edge_key][0], Event):  # type: ignore
+                                event_detected_on_handle = handle_name
+                                break  # Found an event on this handle for this edge
+                if event_detected_on_handle:
+                    break  # Found an event for the node (across all its handles)
+
+            if event_detected_on_handle:
+                log.info(
+                    f"Event detected for node {node.get_title()} on input handle '{event_detected_on_handle}'. Preparing for immediate processing."
+                )
+                inputs_for_event_node_run: dict[str, Any] = {}
+
+                # Consume the event and any other currently available messages for this node's input handles
+                for handle_to_fill in node_input_handles:
+                    for (
+                        edge_iter
+                    ) in (
+                        graph.edges
+                    ):  # Iterate edges to find those matching current handle_to_fill
+                        if (
+                            edge_iter.target == node._id
+                            and edge_iter.targetHandle == handle_to_fill
+                        ):
+                            edge_key_consume = (
+                                edge_iter.source,
+                                edge_iter.sourceHandle,
+                                edge_iter.target,
+                                edge_iter.targetHandle,
+                            )
+                            if (
+                                edge_key_consume in self.edge_queues
+                                and self.edge_queues[edge_key_consume]
+                            ):
+                                # Message available, consume it
+                                item = self.edge_queues[edge_key_consume].popleft()
+                                inputs_for_event_node_run[handle_to_fill] = item
+                                log.debug(
+                                    f"Consumed message for event-triggered node {node.get_title()} input '{handle_to_fill}'. "
+                                    f"Queue for edge {edge_key_consume} now has {len(self.edge_queues[edge_key_consume])} items."
+                                )
+                                break  # Consumed one message for this handle_to_fill, move to next handle_to_fill
+
+                if not inputs_for_event_node_run:
+                    # This case implies an event was peeked but not consumed, which shouldn't happen with this logic.
+                    log.warning(
+                        f"Event was detected for {node.get_title()} on handle '{event_detected_on_handle}', "
+                        "but no inputs were consumed. This might indicate an internal logic issue. Skipping node for this cycle."
+                    )
+                    continue
+
+                tasks_to_run_this_iteration.append(
+                    self.process_node(context, node, inputs_for_event_node_run)
+                )
+                ready_node_task_details_list.append((node, inputs_for_event_node_run))
+                self.active_processing_node_ids.add(node._id)
+                any_progress_potential = True
+                log.debug(
+                    f"Node {node.get_title()} ({node._id}) scheduled for event-triggered processing. "
+                    f"Inputs provided: {list(inputs_for_event_node_run.keys())}"
+                )
+                continue  # Crucial: Move to the next node, skipping regular input checks for this one
+
+            # Case 3: Check for regular messages (if not an active streamer or event-triggered)
             required_input_slots = {
                 edge.targetHandle for edge in graph.edges if edge.target == node._id
             }
@@ -635,36 +723,7 @@ class WorkflowRunner:
             ):
                 continue
 
-            # --- Peek Phase: Check if all inputs are available for non-active-streaming nodes ---
-            can_satisfy_all_inputs = True
-            if (
-                not required_input_slots
-            ):  # No edge inputs needed (e.g. trigger streaming node for its init run)
-                pass  # Proceeds to consumption phase, which will yield empty inputs_for_this_run
-            else:
-                for slot_name in required_input_slots:
-                    slot_data_available_on_any_edge = False
-                    for edge in graph.edges:
-                        if edge.target == node._id and edge.targetHandle == slot_name:
-                            edge_key = (
-                                edge.source,
-                                edge.sourceHandle,
-                                edge.target,
-                                edge.targetHandle,
-                            )
-                            if (
-                                edge_key in self.edge_queues
-                                and self.edge_queues[edge_key]
-                            ):
-                                slot_data_available_on_any_edge = True
-                                break
-
-                    if not slot_data_available_on_any_edge:
-                        can_satisfy_all_inputs = False
-                        break
-
-            if not can_satisfy_all_inputs:
-                continue
+            # --- Peek Phase: Check if all inputs are available ---
 
             # --- Consume Phase: If all inputs can be satisfied, now consume them ---
             inputs_for_this_run: dict[str, Any] = {}
@@ -701,7 +760,6 @@ class WorkflowRunner:
 
                 # Now actually consume the inputs
                 for slot_name in required_input_slots:
-                    value_consumed_for_slot = False
                     for edge in graph.edges:
                         if edge.target == node._id and edge.targetHandle == slot_name:
                             edge_key = (
@@ -714,28 +772,14 @@ class WorkflowRunner:
                                 edge_key in self.edge_queues
                                 and self.edge_queues[edge_key]
                             ):
-                                value = self.edge_queues[edge_key].popleft()
-                                inputs_for_this_run[slot_name] = value
+                                item = self.edge_queues[edge_key].popleft()
+                                inputs_for_this_run[slot_name] = item
                                 messages_consumed_for_this_node = True
-                                value_consumed_for_slot = True
                                 log.debug(
-                                    f"Consumed message for {node.get_title()} slot '{slot_name}' from edge {edge_key}"
+                                    f"Consumed message for {node.get_title()} slot '{slot_name}' from edge {edge_key}. "
+                                    f"Queue for edge {edge_key} now has {len(self.edge_queues[edge_key])} items."
                                 )
-                                break
-
-                    if not value_consumed_for_slot:
-                        # This should not happen if peek phase was correct and no race conditions.
-                        # If it does, indicates an issue. For robustness, we might need to requeue
-                        # already popped inputs for *this specific node* and skip it.
-                        log.error(
-                            f"CRITICAL: Peek/Consume mismatch for node {node.get_title()} slot '{slot_name}'. Input previously thought available was not. Skipping node."
-                        )
-                        # To prevent partial processing, clear inputs_for_this_run and break from slot loop for this node.
-                        inputs_for_this_run.clear()
-                        messages_consumed_for_this_node = (
-                            False  # No messages effectively consumed for this node
-                        )
-                        break  # Break from iterating slots for this node
+                                break  # Found an edge and consumed for this slot_name, move to next slot_name
 
                 if (
                     not messages_consumed_for_this_node and required_input_slots
@@ -1137,7 +1181,7 @@ class WorkflowRunner:
         """
         Processes a single node in the workflow graph.
         Orchestrates initialization and item pulling for streaming nodes,
-        or standard processing for other nodes.
+        event handling for reactive nodes, or standard processing for other nodes.
         """
         log.debug(
             f"Processing node: {node.get_title()} ({node._id}) with inputs: {list(inputs_from_edges.keys())}"
@@ -1145,7 +1189,48 @@ class WorkflowRunner:
         self.current_node = node._id
 
         try:
-            if node.is_streaming_output():
+            # Attempt to identify if this invocation is primarily for an event
+            event_value_for_handling = None
+            event_slot_for_handling = None
+
+            if hasattr(node, "handle_event"):  # Only consider if node has handle_event
+                for slot_name, value in inputs_from_edges.items():
+                    if isinstance(value, Event):
+                        event_value_for_handling = value
+                        event_slot_for_handling = slot_name
+                        # Found an event for a node that can handle events.
+                        # Prioritize this path. Take the first event found.
+                        break
+
+            if event_value_for_handling and event_slot_for_handling:
+                # An event is present and node is capable of handling it via handle_event.
+                # We need to ensure ALL inputs_from_edges are assigned as properties before calling process_event_node,
+                # because handle_event might rely on other properties being set.
+                log.debug(
+                    f"Node {node.get_title()} has an Event on slot '{event_slot_for_handling}'. Assigning all inputs and routing to event processing."
+                )
+                for key, val in inputs_from_edges.items():
+                    try:
+                        node.assign_property(key, val)
+                    except Exception as e:
+                        # Log and potentially raise, as this might be critical
+                        log.error(
+                            f"Error assigning property {key} to node {node.id} before event handling: {str(e)}"
+                        )
+                        raise ValueError(
+                            f"Error assigning property {key} to node {node.id} for event context: {str(e)}"
+                        ) from e
+
+                # Now call process_event_node. It will re-assign the event to event_slot (harmless if already done)
+                # and then call node.handle_event(context, event_value_for_handling).
+                await self.process_event_node(
+                    context, node, event_value_for_handling, event_slot_for_handling
+                )
+
+            # Existing logic for other node types
+            elif node.is_streaming_output():
+                # inputs_from_edges are used as initial_config_properties for _init_streaming_node
+                # _init_streaming_node assigns these.
                 if node._id not in self.active_generators:
                     # First time processing this streaming node instance in this run.
                     # `inputs_from_edges` contains its initial configuration if it's not a trigger node.
@@ -1160,9 +1245,26 @@ class WorkflowRunner:
                     await self._pull_from_streaming_node(context, node)
 
             elif isinstance(node, OutputNode):
+                # OutputNode processing relies on inputs being passed to it,
+                # and its 'process' method might use properties set from these inputs.
+                # Ensure properties are assigned for OutputNode here.
+                log.debug(
+                    f"Node {node.get_title()} is OutputNode. Assigning inputs as properties."
+                )
+                for key, val in inputs_from_edges.items():
+                    try:
+                        node.assign_property(key, val)
+                    except Exception as e:
+                        log.error(
+                            f"Error assigning property {key} to OutputNode {node.id}: {str(e)}"
+                        )
+                        raise ValueError(
+                            f"Error assigning property {key} to OutputNode {node.id}: {str(e)}"
+                        ) from e
                 await self.process_output_node(context, node, inputs_from_edges)
             else:
                 # Regular, non-streaming, non-output node.
+                # process_node_with_inputs handles assigning properties from inputs_from_edges.
                 await self.process_node_with_inputs(context, node, inputs_from_edges)
 
         except StopAsyncIteration:
@@ -1186,6 +1288,59 @@ class WorkflowRunner:
                 # An error update should have been sent by _pull_from_streaming_node or other specific handlers.
 
             # Re-raise so _execute_node_batch can see the exception and halt graph if necessary.
+            raise
+
+    async def process_event_node(
+        self, context: ProcessingContext, node: BaseNode, event: Event, event_slot: str
+    ):
+        """
+        Processes a node in response to an event.
+
+        This method calls the node's handle_event method, which is an async generator
+        that can yield more outputs (including additional events).
+
+        Args:
+            context (ProcessingContext): The processing context.
+            node (BaseNode): The node to process.
+            event (Event): The event that triggered this processing.
+            event_slot (str): The input slot that received the event.
+        """
+        log.info(
+            f"Processing EVENT {event.name} for node {node.get_title()} ({node._id}) on slot '{event_slot}'"
+        )
+
+        # Assign event to the appropriate slot
+        node.assign_property(event_slot, event)
+
+        # Send running update
+        node.send_update(context, "running", properties=[event_slot])
+
+        try:
+            # Call handle_event which returns an async generator
+            async for slot_name, value in node.handle_event(context, event):
+                # Each yielded value gets sent as a message
+                self.send_messages(node, {slot_name: value}, context)
+                log.debug(
+                    f"Event handler for {node.get_title()} ({node._id}) yielded output for slot '{slot_name}'"
+                )
+
+            # Send completed update
+            node.send_update(
+                context,
+                "completed",
+                result={},
+                properties=[event_slot],
+            )
+        except Exception as e:
+            log.error(
+                f"Error handling event for node {node.get_title()} ({node._id}): {str(e)}"
+            )
+            node.send_update(
+                context,
+                "error",
+                result={"error": str(e)[:1000]},
+                properties=[event_slot],
+            )
             raise
 
     async def process_node_with_inputs(
@@ -1524,163 +1679,101 @@ async def main():
         async def process(self, context: ProcessingContext) -> float:
             return self.a + self.b
 
-    # input_a = {
-    #     "id": "1",
-    #     "data": {"name": "input_1"},
-    #     "type": IntegerInput.get_node_type(),
-    # }
-    # input_b = {
-    #     "id": "2",
-    #     "data": {"name": "input_2"},
-    #     "type": IntegerInput.get_node_type(),
-    # }
-    # add_node = {"id": "3", "type": Add.get_node_type()}
-    # out_node = {
-    #     "id": "4",
-    #     "data": {"name": "output"},
-    #     "type": IntegerOutput.get_node_type(),
-    # }
+    # Test 3: Event-based Communication
+    print("\n--- Starting Event-based Communication Test ---")
 
-    # nodes = [
-    #     input_a,
-    #     input_b,
-    #     add_node,
-    #     out_node,
-    # ]
+    class EventProducer(BaseNode):
+        message_prefix: str = "Event"
 
-    # edges = [
-    #     {
-    #         "id": "1",
-    #         "source": "1",
-    #         "target": "3",
-    #         "sourceHandle": "output",
-    #         "targetHandle": "a",
-    #         "ui_properties": {},
-    #     },
-    #     {
-    #         "id": "2",
-    #         "source": "2",
-    #         "target": "3",
-    #         "sourceHandle": "output",
-    #         "targetHandle": "b",
-    #         "ui_properties": {},
-    #     },
-    #     {
-    #         "id": "3",
-    #         "source": "3",
-    #         "target": "4",
-    #         "sourceHandle": "output",
-    #         "targetHandle": "value",
-    #         "ui_properties": {},
-    #     },
-    # ]
+        @classmethod
+        def return_type(cls):
+            return {"event_out": Event}
 
-    # graph = APIGraph(nodes=[Node(**n) for n in nodes], edges=[Edge(**e) for e in edges])
-    # params = {"input_1": 1, "input_2": 2}
+        async def gen_process(
+            self, context: ProcessingContext
+        ) -> AsyncGenerator[tuple[str, Any], None]:
+            for i in range(3):
+                event = Event(name=f"{self.message_prefix}_{i}", payload={"index": i})
+                yield "event_out", event
+                await asyncio.sleep(0.01)
 
-    # req = RunJobRequest(
-    #     user_id="1",
-    #     workflow_id="",
-    #     job_type="",
-    #     params=params,
-    #     graph=graph,
-    # )
-    # context = ProcessingContext(
-    #     user_id="1",
-    #     auth_token="local_token",
-    # )
-    # workflow_runner = WorkflowRunner(job_id="1")
+    class EventConsumer(BaseNode):
+        event_in: Event | None = None
+        messages_received: list[str] = []
 
-    # await workflow_runner.run(req, context)
+        @classmethod
+        def return_type(cls):
+            return {"response": str}
 
-    # print("--------------------------------")
-    # print("Outputs from Add test:")
-    # print(workflow_runner.outputs)
+        async def handle_event(self, context: ProcessingContext, event: Event):
+            self.messages_received.append(event.name)
+            yield "response", f"Handled: {event.name}"
 
-    # # Test 2: Generator node with String inputs
-    # print("\n--- Starting Generator Test ---")
+    event_producer_def = {
+        "id": "event_producer",
+        "type": EventProducer.get_node_type(),
+        "data": {"message_prefix": "TestEvent"},
+    }
 
-    # string_node_first_def = {
-    #     "id": "s1_gen_test",
-    #     "type": String.get_node_type(),
-    #     "data": {"value": "Nodetool"},
-    # }
-    # string_node_last_def = {
-    #     "id": "s2_gen_test",
-    #     "type": String.get_node_type(),
-    #     "data": {"value": "Streamer"},
-    # }
-    # generator_node_def = {
-    #     "id": "g1_gen_test",
-    #     "type": Generator.get_node_type(),
-    # }
-    # # Using IntegerOutput, as it appends any value to the output list.
-    # # The 'name' in data will be the key in workflow_runner.outputs.
-    # gen_output_node_def = {
-    #     "id": "o1_gen_test",
-    #     "type": StringOutput.get_node_type(),
-    #     "data": {"name": "generated_strings_output"},
-    # }
+    event_consumer_def = {
+        "id": "event_consumer",
+        "type": EventConsumer.get_node_type(),
+    }
 
-    # gen_nodes_list = [
-    #     string_node_first_def,
-    #     string_node_last_def,
-    #     generator_node_def,
-    #     gen_output_node_def,
-    # ]
+    event_output_def = {
+        "id": "event_output",
+        "type": StringOutput.get_node_type(),
+        "data": {"name": "event_responses"},
+    }
 
-    # gen_edges_list = [
-    #     {
-    #         "id": "e1_s1_g1",
-    #         "source": "s1_gen_test",
-    #         "sourceHandle": "output",
-    #         "target": "g1_gen_test",
-    #         "targetHandle": "first_name",
-    #         "ui_properties": {},
-    #     },
-    #     {
-    #         "id": "e2_s2_g1",
-    #         "source": "s2_gen_test",
-    #         "sourceHandle": "output",
-    #         "target": "g1_gen_test",
-    #         "targetHandle": "last_name",
-    #         "ui_properties": {},
-    #     },
-    #     {
-    #         "id": "e3_g1_o1",
-    #         "source": "g1_gen_test",
-    #         "sourceHandle": "output",
-    #         "target": "o1_gen_test",
-    #         "targetHandle": "value",
-    #         "ui_properties": {},
-    #     },
-    # ]
+    event_nodes = [event_producer_def, event_consumer_def, event_output_def]
 
-    # gen_graph = APIGraph(
-    #     nodes=[Node(**n) for n in gen_nodes_list],
-    #     edges=[Edge(**e) for e in gen_edges_list],
-    # )
+    event_edges = [
+        {
+            "id": "e1",
+            "source": "event_producer",
+            "sourceHandle": "event_out",
+            "target": "event_consumer",
+            "targetHandle": "event_in",
+            "ui_properties": {},
+        },
+        {
+            "id": "e2",
+            "source": "event_consumer",
+            "sourceHandle": "response",
+            "target": "event_output",
+            "targetHandle": "value",
+            "ui_properties": {},
+        },
+    ]
 
-    # gen_req = RunJobRequest(
-    #     user_id="user_gen_test",
-    #     workflow_id="wf_gen_test",
-    #     job_type="generator_test",
-    #     params={},  # Values are in node data for String nodes
-    #     graph=gen_graph,
-    # )
-    # gen_context = ProcessingContext(
-    #     user_id="user_gen_test",
-    #     auth_token="local_token_gen",
-    # )
-    # gen_workflow_runner = WorkflowRunner(job_id="gen_job_1")
+    event_graph = APIGraph(
+        nodes=[Node(**n) for n in event_nodes],
+        edges=[Edge(**e) for e in event_edges],
+    )
 
-    # await gen_workflow_runner.run(gen_req, gen_context)
+    event_req = RunJobRequest(
+        user_id="user_event_test",
+        workflow_id="wf_event_test",
+        job_type="event_communication_test",
+        params={},
+        graph=event_graph,
+    )
 
-    # print("--------------------------------")
-    # print("Outputs from Generator test:")
-    # print(gen_workflow_runner.outputs)
+    event_context = ProcessingContext(
+        user_id="user_event_test",
+        auth_token="local_token_event",
+    )
 
-    # Test 3: Direct Generator to Consumer (OutputNode)
+    event_workflow_runner = WorkflowRunner(job_id="event_job_1")
+
+    await event_workflow_runner.run(event_req, event_context)
+
+    print("--------------------------------")
+    print("Outputs from Event Communication test:")
+    print(event_workflow_runner.outputs)
+
+    # Test 4: Direct Generator to Consumer (OutputNode)
     print("\n--- Starting Direct Generator to Consumer Test ---")
 
     # Node definitions

@@ -46,6 +46,7 @@ from nodetool.metadata.types import (
     AssetRef,
     ComfyData,
     ComfyModel,
+    Event,
     HuggingFaceModel,
     NPArray,
     NameToType,
@@ -945,6 +946,16 @@ class BaseNode(BaseModel):
         """
         # This construct ensures this is a generator function template.
         # It will not yield anything unless overridden by a subclass.
+        if False:
+            yield "", None  # type: ignore
+
+    async def handle_event(
+        self, context: Any, event: Event
+    ) -> AsyncGenerator[tuple[str, Any], None]:
+        """
+        Handle an incoming event async.
+        May dispatch output or events.
+        """
         if False:
             yield "", None  # type: ignore
 
