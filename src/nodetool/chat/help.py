@@ -759,7 +759,7 @@ def convert_results_to_json(obj: Any) -> str:
 
 async def create_help_answer(
     provider: ChatProvider, messages: List[Message], model: str
-) -> AsyncGenerator[str, None]:
+) -> AsyncGenerator[Chunk | ToolCall, None]:
     """
     Generates help answers using a ChatProvider and a set of help-specific tools.
     Streams text chunks of the answer.
@@ -786,103 +786,58 @@ async def create_help_answer(
         tool_messages_generated_this_iteration: List[Message] = []
         made_tool_call_this_iteration = False
 
-        try:
-            async for item in provider.generate_messages(
-                messages=effective_messages_for_provider,
-                model=model,
-                tools=help_tools_instances,
-            ):  # type: ignore
-                if isinstance(item, Chunk):
-                    if item.content:
-                        yield item.content
-                elif isinstance(item, ToolCall):
-                    log.info(
-                        f"Help system received tool call: {item.name} with args {item.args}"
-                    )
-                    yield f"Executing: {item.name}({json.dumps(item.args)})\n"
+        async for item in provider.generate_messages(
+            messages=effective_messages_for_provider,
+            model=model,
+            tools=help_tools_instances,
+        ):  # type: ignore
+            if isinstance(item, Chunk):
+                yield item
+            elif isinstance(item, ToolCall):
+                log.info(
+                    f"Help system received tool call: {item.name} with args {item.args}"
+                )
+                yield item
 
-                    found_tool_instance = next(
-                        (t for t in help_tools_instances if t.name == item.name), None
-                    )
+                found_tool_instance = next(
+                    (t for t in help_tools_instances if t.name == item.name), None
+                )
 
-                    tool_call_id = item.id or str(uuid.uuid4())
+                tool_call_id = item.id or str(uuid.uuid4())
 
-                    if found_tool_instance and isinstance(
-                        found_tool_instance, BaseHelpTool
-                    ):
-                        try:
-                            tool_args_dict = (
-                                item.args if isinstance(item.args, dict) else {}
-                            )
-                            if not isinstance(item.args, dict):
-                                log.warning(
-                                    f"Tool call arguments for {item.name} is not a dict: {item.args}. Attempting to use empty dict."
-                                )
-
-                            # The process method of BaseHelpTool will handle Pydantic parsing internally
-                            tool_result_data = await found_tool_instance.process(
-                                context=dummy_processing_context,  # Pass dummy context
-                                params=tool_args_dict,  # Pass raw dict as params
-                            )
-
-                            assistant_tool_call_msg = Message(
-                                role="assistant", tool_calls=[item]
-                            )
-
-                            tool_result_msg = Message(
-                                role="tool",
-                                tool_call_id=tool_call_id,
-                                name=item.name,
-                                content=tool_result_data,
-                            )
-                            tool_messages_generated_this_iteration.extend(
-                                [assistant_tool_call_msg, tool_result_msg]
-                            )
-                            made_tool_call_this_iteration = True
-                        except Exception as e:
-                            log.error(f"Error processing tool {item.name}: {e}")
-                            error_content = (
-                                f"Error executing tool {item.name}: {str(e)}"
-                            )
-                            yield f"[ERROR] {error_content}\n"
-                            tool_messages_generated_this_iteration.append(
-                                Message(
-                                    role="tool",
-                                    tool_call_id=tool_call_id,
-                                    name=item.name,
-                                    content=json.dumps(
-                                        {"error": error_content, "status": "failed"}
-                                    ),
-                                )
-                            )
-                            made_tool_call_this_iteration = True
-                    else:
-                        error_content = f"Tool '{item.name}' not found or not a BaseHelpTool instance."
-                        log.error(error_content)
-                        yield f"[ERROR] {error_content}\n"
-                        tool_messages_generated_this_iteration.append(
-                            Message(
-                                role="tool",
-                                tool_call_id=tool_call_id,
-                                name=item.name,
-                                content=json.dumps(
-                                    {"error": error_content, "status": "not_found"}
-                                ),
-                            )
+                if found_tool_instance and isinstance(
+                    found_tool_instance, BaseHelpTool
+                ):
+                    tool_args_dict = item.args if isinstance(item.args, dict) else {}
+                    if not isinstance(item.args, dict):
+                        log.warning(
+                            f"Tool call arguments for {item.name} is not a dict: {item.args}. Attempting to use empty dict."
                         )
-                        made_tool_call_this_iteration = True
 
-        except Exception as e:
-            log.error(f"Error during provider.generate_messages in help system: {e}")
-            err_str = str(e).lower()
-            if any(
-                phrase in err_str
-                for phrase in ["does not support tools", "tool calls are not supported"]
-            ):
-                yield "This help model does not support advanced tool usage. Please select a different model or ask a simpler question."
-            else:
-                yield "An unexpected error occurred while trying to get help. Please try again."
-            return
+                    # The process method of BaseHelpTool will handle Pydantic parsing internally
+                    tool_result_data = await found_tool_instance.process(
+                        context=dummy_processing_context,  # Pass dummy context
+                        params=tool_args_dict,  # Pass raw dict as params
+                    )
+
+                    assistant_tool_call_msg = Message(
+                        role="assistant", tool_calls=[item]
+                    )
+
+                    tool_result_msg = Message(
+                        role="tool",
+                        tool_call_id=tool_call_id,
+                        name=item.name,
+                        content=tool_result_data,
+                    )
+                    tool_messages_generated_this_iteration.extend(
+                        [assistant_tool_call_msg, tool_result_msg]
+                    )
+                    made_tool_call_this_iteration = True
+                else:
+                    raise ValueError(
+                        f"Tool '{item.name}' not found or not a BaseHelpTool instance."
+                    )
 
         if made_tool_call_this_iteration:
             effective_messages_for_provider.extend(

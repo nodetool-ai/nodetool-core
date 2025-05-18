@@ -248,9 +248,9 @@ class OllamaProvider(ChatProvider):
 
             return message_dict
         elif message.role == "assistant":
-            return {
+            assert message.content is not None, "Content must not be None"
+            message_dict = {
                 "role": "assistant",
-                "content": message.content or "",
                 "tool_calls": [
                     {
                         "function": {
@@ -261,6 +261,18 @@ class OllamaProvider(ChatProvider):
                     for tool_call in message.tool_calls or []
                 ],
             }
+
+            if isinstance(message.content, str):
+                message_dict["content"] = message.content
+            else:
+                text_parts = [
+                    part.text
+                    for part in message.content
+                    if isinstance(part, MessageTextContent)
+                ]
+                message_dict["content"] = "\n".join(text_parts)
+
+            return message_dict
         else:
             raise ValueError(f"Unknown message role {message.role}")
 

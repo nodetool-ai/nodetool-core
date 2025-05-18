@@ -74,6 +74,7 @@ from enum import Enum
 
 from fastapi import WebSocket
 
+from nodetool.chat.ollama_service import get_ollama_models
 from nodetool.chat.providers import get_provider
 from nodetool.agents.tools.base import Tool, get_tool_by_name
 from nodetool.chat.providers.base import ChatProvider
@@ -95,17 +96,32 @@ from nodetool.workflows.types import Chunk
 from nodetool.workflows.workflow_runner import WorkflowRunner
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.chat.help import create_help_answer
+from nodetool.chat.providers.base import ChatProvider
 
 log = logging.getLogger(__name__)
 
+ollama_models: list[str] = []
 
-def provider_from_model(model: str) -> ChatProvider:
+
+async def cached_ollama_models() -> list[str]:
+    global ollama_models
+    if ollama_models:
+        return ollama_models
+
+    models = await get_ollama_models()
+    ollama_models = [model.name for model in models]
+    return ollama_models
+
+
+async def provider_from_model(model: str) -> ChatProvider:
     if model.startswith("claude"):
         return get_provider(Provider.Anthropic)
     elif model.startswith("gpt"):
         return get_provider(Provider.OpenAI)
     elif model.startswith("gemini"):
         return get_provider(Provider.Gemini)
+    elif model in await cached_ollama_models():
+        return get_provider(Provider.Ollama)
     else:
         raise ValueError(f"Unsupported model: {model}")
 
@@ -306,17 +322,25 @@ class ChatWebSocketRunner:
         Returns:
             Message: An assistant message containing the aggregated help content.
         """
-        provider = provider_from_model(model)
+        provider = await provider_from_model(model)
         accumulated_content = ""
-        async for help_text_chunk in create_help_answer(
+        async for item in create_help_answer(
             provider=provider,
             messages=self.chat_history,
             model=model,
         ):
-            accumulated_content += help_text_chunk
-            await self.send_message(
-                {"type": "chunk", "content": help_text_chunk, "done": False}
-            )
+            if isinstance(item, Chunk):
+                accumulated_content += item.content
+                await self.send_message(
+                    {"type": "chunk", "content": item.content, "done": False}
+                )
+            elif isinstance(item, ToolCall):
+                await self.send_message(
+                    {"type": "tool_call", "tool_call": item.model_dump()}
+                )
+            else:
+                print("WARNING: not a chunk or tool call")
+                print(item)
 
         # Signal the end of the help stream
         await self.send_message({"type": "chunk", "content": "", "done": True})
@@ -369,7 +393,7 @@ class ChatWebSocketRunner:
 
             assert last_message.model, "Model is required"
 
-            provider = provider_from_model(last_message.model)
+            provider = await provider_from_model(last_message.model)
 
             # Stream the response chunks
             while True:
