@@ -433,7 +433,7 @@ def scan(verbose):
         node_count = len(package.nodes or [])
         example_count = len(package.examples or [])
         asset_count = len(package.assets or [])
-        
+
         click.echo(
             f"✅ Successfully created package metadata for {package.name} with:\n"
             f"  - {node_count} nodes\n"

@@ -24,7 +24,7 @@ from nodetool.common.environment import Environment
 from typing import Dict, List, Optional, Tuple, Union
 from nodetool.models.asset import Asset as AssetModel
 from nodetool.models.workflow import Workflow
-from nodetool.packages.registry import ExampleRegistry
+from nodetool.packages.registry import Registry
 from pydantic import BaseModel, Field as PydanticField
 from nodetool.common.media_utils import (
     create_image_thumbnail,
@@ -113,8 +113,8 @@ async def list_package_assets():
     List all assets from installed nodetool packages.
     """
     try:
-        # Create an instance of ExampleRegistry
-        registry = ExampleRegistry()
+        # Create an instance of Registry
+        registry = Registry()
 
         # Get all assets from installed packages
         assets = registry.list_assets()
@@ -144,8 +144,8 @@ async def list_package_assets_by_package(package_name: str):
     List all assets from a specific nodetool package.
     """
     try:
-        # Create an instance of ExampleRegistry
-        registry = ExampleRegistry()
+        # Create an instance of Registry
+        registry = Registry()
 
         # Get all assets from installed packages
         all_assets = registry.list_assets()
@@ -181,8 +181,8 @@ async def get_package_asset(package_name: str, asset_name: str):
     Serve a specific asset file from a nodetool package.
     """
     try:
-        # Create an instance of ExampleRegistry
-        registry = ExampleRegistry()
+        # Create an instance of Registry
+        registry = Registry()
 
         # Find the asset by name and package name
         asset = registry.find_asset_by_name(asset_name, package_name)

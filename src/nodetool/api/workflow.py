@@ -19,7 +19,7 @@ from nodetool.workflows.http_stream_runner import HTTPStreamRunner
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.run_workflow import run_workflow
 from nodetool.types.graph import Graph, get_input_schema, get_output_schema
-from nodetool.packages.registry import Registry, ExampleRegistry
+from nodetool.packages.registry import Registry
 from nodetool.chat.providers import get_provider
 from nodetool.metadata.types import Provider
 from nodetool.chat.workspace_manager import WorkspaceManager
@@ -146,7 +146,7 @@ async def get_public_workflow(id: str) -> Workflow:
 
 @router.get("/examples")
 async def examples() -> WorkflowList:
-    example_registry = ExampleRegistry()
+    example_registry = Registry()
     return WorkflowList(workflows=example_registry.list_examples(), next=None)
 
 
@@ -230,7 +230,7 @@ async def save_example_workflow(
         created_at=datetime.now().isoformat(),
         updated_at=datetime.now().isoformat(),
     )
-    example_registry = ExampleRegistry()
+    example_registry = Registry()
 
     for example in example_registry.list_examples():
         if example.name == workflow_request.name:

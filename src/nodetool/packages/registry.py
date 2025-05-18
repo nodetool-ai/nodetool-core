@@ -13,9 +13,9 @@ It handles:
 Key components:
 - PackageInfo: Model for package information in the registry index
 - PackageModel: Package metadata model imported from nodetool.metadata.node_metadata
-- Registry: Package registry manager that handles all package operations
+- Registry: Unified package registry manager that handles all package operations, 
+  including examples and assets
 - AssetInfo: Model for asset information from package-provided assets
-- ExampleRegistry: Registry for managing example workflows and assets from installed packages
 - Helper functions:
   - validate_repo_id: Validates repository IDs in owner/project format
   - get_package_metadata_from_github: Extracts metadata from GitHub repository
@@ -29,7 +29,7 @@ Package management:
 - Available packages are listed from a central registry at REGISTRY_URL
 
 Example and asset management:
-- ExampleRegistry provides functionality to discover, load, and manage example workflows and assets
+- Registry provides functionality to discover, load, and manage example workflows and assets
 - Examples and assets are stored in 'examples' and 'assets' directories within each package, respectively
 - Supports caching of examples and assets for better performance
 - Allows searching examples by ID or name, and assets by file name
@@ -41,10 +41,9 @@ Usage:
     registry.install_package("owner/project")
     registry.uninstall_package("owner/project")
     registry.update_package("owner/project")
-
-    example_registry = ExampleRegistry()
-    examples = example_registry.list_examples()
-    example = example_registry.find_example_by_name("example_name")
+    
+    examples = registry.list_examples()
+    example = registry.find_example_by_name("example_name")
 """
 
 from enum import Enum
@@ -65,10 +64,11 @@ from pydantic import BaseModel
 from urllib.parse import urlparse
 import httpx
 import asyncio
+import click
 
 from nodetool.common.environment import Environment
 from nodetool.common.settings import get_system_file_path
-from nodetool.metadata.node_metadata import PackageModel
+from nodetool.metadata.node_metadata import PackageModel, ExampleMetadata
 from nodetool.packages.types import AssetInfo, PackageInfo
 from nodetool.types.workflow import Workflow
 from nodetool.types.graph import Graph
@@ -211,8 +211,9 @@ def get_package_manager_command() -> List[str]:
 
 class Registry:
     """
-    Simplified package registry manager that works with Python's package system.
+    Unified package registry manager that works with Python's package system.
 
+    This class combines functionality for managing packages, examples, and assets.
     Packages are discovered through the nodetool.nodes namespace and metadata
     is stored in nodes.json files within each package.
     """
@@ -220,6 +221,11 @@ class Registry:
     def __init__(self):
         self.pkg_mgr = get_package_manager_command()
         self._node_cache = None  # Cache for node metadata
+        self.logger = logging.getLogger(__name__)
+        
+        # Caches from ExampleRegistry
+        self._examples_cache: Optional[List[Workflow]] = None
+        self._assets_cache: Optional[List[AssetInfo]] = None
 
     def pip_install(
         self, install_path: str, editable: bool = False, upgrade: bool = False
@@ -438,6 +444,342 @@ class Registry:
         """
         self._node_cache = None
 
+    # Example registry methods (previously in ExampleRegistry)
+    def _load_example_from_file(self, file_path: str, package_name: str) -> Workflow:
+        """
+        Load a single example workflow from a JSON file.
+
+        Args:
+            file_path: The full path to the example workflow JSON file
+            package_id: ID of the package providing this example
+
+        Returns:
+            ExampleWorkflow: The loaded example workflow with metadata
+        """
+        try:
+            with open(file_path, "r") as f:
+                props = json.load(f)
+                props["package_name"] = package_name
+                if not Environment.is_production():
+                    props["path"] = file_path
+                workflow = Workflow(**props)
+                return workflow
+        except json.JSONDecodeError as e:
+            self.logger.error(
+                f"Error decoding JSON for example workflow {file_path}: {e}"
+            )
+            # Return an empty Workflow with the name indicating it is broken
+            now_str = datetime.now().isoformat()
+            return Workflow(
+                id="",
+                name=f"[ERROR] {os.path.basename(file_path)}",
+                tags=[],
+                graph=Graph(nodes=[], edges=[]),
+                access="",
+                created_at=now_str,
+                updated_at=now_str,
+                description=f"Error loading this workflow: {str(e)}",
+                package_name=package_name,
+                path=file_path,
+            )
+
+    def _load_examples_from_directory(
+        self, directory: str, package_name: str
+    ) -> List[Workflow]:
+        """
+        Load all example workflows from a directory.
+
+        Args:
+            directory: The directory containing example workflow JSON files
+            package_name: Name of the package providing these examples
+
+        Returns:
+            List[Workflow]: A list of all loaded example workflows from the directory
+        """
+        if not os.path.exists(directory):
+            self.logger.warning(f"Examples directory does not exist: {directory}")
+            return []
+
+        # Define the package-specific examples directory
+        package_dir = os.path.join(directory, package_name)
+        os.makedirs(package_dir, exist_ok=True)
+
+        if not os.path.exists(package_dir):
+            self.logger.warning(
+                f"Package examples directory does not exist: {package_dir}"
+            )
+            return []
+
+        examples = []
+        for name in os.listdir(package_dir):
+            # Skip files starting with underscore (_) and non-JSON files
+            if name.startswith("_") or not name.endswith(".json"):
+                continue
+
+            file_path = os.path.join(package_dir, name)
+            examples.append(self._load_example_from_file(file_path, package_name))
+
+        return examples
+
+    def discover_all_examples(self) -> List[Workflow]:
+        """
+        Discover and load all example workflows from installed packages.
+
+        This method:
+        1. Scans all installed packages for examples directories
+        2. Caches the results for subsequent calls
+
+        Returns:
+            List[ExampleWorkflow]: A list of all discovered example workflows
+        """
+        # Return cached examples if available
+        if self._examples_cache is not None:
+            return self._examples_cache
+
+        examples = []
+
+        # Load examples from installed packages
+        source_folders = get_nodetool_package_source_folders()
+        for folder in source_folders:
+            # Look for examples directory in standard location
+            examples_dir = folder / "nodetool" / "examples"
+            if examples_dir.exists():
+                # Extract package name from folder path
+                project_toml = folder.parent / "pyproject.toml"
+                if project_toml.exists():
+                    with open(project_toml, "rb") as f:
+                        project_metadata = tomllib.load(f)
+                        package_name = project_metadata["tool"]["poetry"]["name"]
+                else:
+                    package_name = folder.name
+
+                # Load examples from this package
+                package_examples = self._load_examples_from_directory(
+                    str(examples_dir), package_name
+                )
+                examples.extend(package_examples)
+
+        # Cache the results
+        self._examples_cache = examples
+        return examples
+
+    def clear_cache(self) -> None:
+        """Clear the examples cache to force re-loading from metadata on next call."""
+        self._examples_cache = None
+
+    def list_examples(self) -> List[Workflow]:
+        """
+        List all example workflows from installed packages.
+
+        This method retrieves example metadata from installed packages and 
+        converts them to Workflow objects without scanning the filesystem.
+
+        Returns:
+            List[Workflow]: A list of all example workflows
+        """
+        if self._examples_cache is not None:
+            return self._examples_cache
+        
+        examples = []
+        packages = self.list_installed_packages()
+        
+        for package in packages:
+            if package.examples:
+                for example_meta in package.examples:
+                    # Create Workflow from ExampleMetadata
+                    now_str = datetime.now().isoformat()
+                    workflow = Workflow(
+                        id=example_meta.id,
+                        name=example_meta.name,
+                        description=example_meta.description,
+                        tags=example_meta.tags or [],
+                        thumbnail_url=example_meta.thumbnail_url,
+                        graph=Graph(nodes=[], edges=[]),  # Empty graph as we don't load the full workflow
+                        access="public",
+                        created_at=now_str,
+                        updated_at=now_str,
+                        package_name=package.name,
+                        path=None  # Path not available from metadata
+                    )
+                    examples.append(workflow)
+        
+        self._examples_cache = examples
+        return examples
+
+    def find_example_by_id(self, id: str) -> Optional[Workflow]:
+        """
+        Find an example workflow by its ID.
+
+        Args:
+            id: The ID of the workflow to find
+
+        Returns:
+            Optional[Workflow]: The found workflow or None if not found
+        """
+        examples = self.list_examples()
+        example = next((ex for ex in examples if ex.id == id), None)
+        return example if example else None
+
+    def find_example_by_name(self, name: str) -> Optional[Workflow]:
+        """
+        Find an example workflow by its name.
+
+        Args:
+            name: The name of the workflow to find
+
+        Returns:
+            Optional[Workflow]: The found workflow or None if not found
+        """
+        examples = self.list_examples()
+        example = next((ex for ex in examples if ex.name == name), None)
+        return example if example else None
+
+    def save_example(self, workflow: Workflow) -> Workflow:
+        """
+        Save a workflow as an example in the specified package.
+
+        Args:
+            workflow: The workflow object to save
+
+        Returns:
+            Workflow: The saved workflow
+
+        Raises:
+            ValueError: If the package_name is invalid or the package is not found
+
+        Note:
+            This function removes the user_id field before saving and
+            invalidates the cached examples.
+        """
+        if Environment.is_production():
+            raise ValueError("Saving examples is only allowed in dev mode")
+
+        if not workflow.path:
+            raise ValueError("Workflow path is required")
+
+        # Find the package folder
+        with open(workflow.path, "w") as f:
+            json.dump(workflow.model_dump(), f, indent=2)
+
+        # Invalidate the cached examples
+        self.clear_cache()
+
+        return workflow
+
+    def _load_assets_from_directory(
+        self, directory: str, package_name: str
+    ) -> List[AssetInfo]:
+        """
+        Load all asset files from a directory.
+
+        Args:
+            directory: The directory containing asset files
+            package_name: Name of the package providing these assets
+
+        Returns:
+            List[AssetInfo]: A list of asset information objects
+        """
+        if not os.path.exists(directory):
+            self.logger.warning(f"Assets directory does not exist: {directory}")
+            return []
+
+        # Define the package-specific assets directory
+        package_dir = os.path.join(directory, package_name)
+        os.makedirs(package_dir, exist_ok=True)
+
+        if not os.path.exists(package_dir):
+            self.logger.warning(
+                f"Package assets directory does not exist: {package_dir}"
+            )
+            return []
+
+        assets: List[AssetInfo] = []
+        for name in os.listdir(package_dir):
+            if name.startswith("_"):
+                continue
+
+            path = os.path.join(package_dir, name)
+            if os.path.isdir(path):
+                continue
+
+            assets.append(
+                AssetInfo(
+                    package_name=package_name,
+                    name=name,
+                    path=path,
+                )
+            )
+
+        return assets
+
+    def discover_all_assets(self) -> List[AssetInfo]:
+        """
+        Discover and load all asset files from installed packages.
+
+        This method now delegates to list_assets() which uses package metadata.
+
+        Returns:
+            List[AssetInfo]: A list of all discovered asset files
+        """
+        return self.list_assets()
+
+    def clear_assets_cache(self) -> None:
+        """
+        Clear the assets cache to force re-loading from metadata on next call.
+        """
+        self._assets_cache = None
+
+    def list_assets(self) -> List[AssetInfo]:
+        """
+        List all asset files from installed packages.
+
+        This method retrieves asset metadata from installed packages
+        without scanning the filesystem.
+
+        Returns:
+            List[AssetInfo]: A list of all asset files
+        """
+        if self._assets_cache is not None:
+            return self._assets_cache
+        
+        assets = []
+        packages = self.list_installed_packages()
+        
+        for package in packages:
+            if package.assets:
+                assets.extend(package.assets)
+        
+        self._assets_cache = assets
+        return assets
+
+    def find_asset_by_name(
+        self, name: str, package_name: Optional[str] = None
+    ) -> Optional[AssetInfo]:
+        """
+        Find an asset file by its file name, optionally filtering by package name.
+
+        Args:
+            name: The file name of the asset to find
+            package_name: Optional package name to filter by
+
+        Returns:
+            Optional[AssetInfo]: The found asset or None if not found
+        """
+        if package_name:
+            return next(
+                (
+                    asset
+                    for asset in self.list_assets()
+                    if asset.name == name and asset.package_name == package_name
+                ),
+                None,
+            )
+        else:
+            return next(
+                (asset for asset in self.list_assets() if asset.name == name),
+                None,
+            )
+
 
 def discover_node_packages() -> list[PackageModel]:
     """
@@ -514,337 +856,8 @@ def get_nodetool_package_source_folders() -> List[Path]:
     return source_folders
 
 
-class ExampleRegistry:
-    """
-    Registry for example workflows and assets from installed packages.
-
-    This class provides functionality to:
-    - Discover example workflows from all installed packages
-    - Discover asset files from all installed packages
-    - Cache examples and assets for better performance
-    - Load specific examples or assets by ID, name, or file name
-    - Save new examples
-
-    Each nodetool package can provide examples in an 'examples' folder and assets
-    in an 'assets' folder at a standard location. The registry scans and aggregates
-    these examples and assets.
-    """
-
-    def __init__(self):
-        # Set up logging
-        self.logger = logging.getLogger(__name__)
-
-        # Cache of all examples
-        self._examples_cache: Optional[List[Workflow]] = None
-        # Cache of all assets
-        self._assets_cache: Optional[List[AssetInfo]] = None
-
-    def _load_example_from_file(self, file_path: str, package_name: str) -> Workflow:
-        """
-        Load a single example workflow from a JSON file.
-
-        Args:
-            file_path: The full path to the example workflow JSON file
-            package_id: ID of the package providing this example
-
-        Returns:
-            ExampleWorkflow: The loaded example workflow with metadata
-        """
-        try:
-            with open(file_path, "r") as f:
-                props = json.load(f)
-                props["package_name"] = package_name
-                if not Environment.is_production():
-                    props["path"] = file_path
-                workflow = Workflow(**props)
-                return workflow
-        except json.JSONDecodeError as e:
-            self.logger.error(
-                f"Error decoding JSON for example workflow {file_path}: {e}"
-            )
-            # Return an empty Workflow with the name indicating it is broken
-            now_str = datetime.now().isoformat()
-            return Workflow(
-                id="",
-                name=f"[ERROR] {os.path.basename(file_path)}",
-                tags=[],
-                graph=Graph(nodes=[], edges=[]),
-                access="",
-                created_at=now_str,
-                updated_at=now_str,
-                description=f"Error loading this workflow: {str(e)}",
-                package_name=package_name,
-                path=file_path,
-            )
-
-    def _load_examples_from_directory(
-        self, directory: str, package_name: str
-    ) -> List[Workflow]:
-        """
-        Load all example workflows from a directory.
-
-        Args:
-            directory: The directory containing example workflow JSON files
-            package_name: Name of the package providing these examples
-
-        Returns:
-            List[Workflow]: A list of all loaded example workflows from the directory
-        """
-        if not os.path.exists(directory):
-            self.logger.warning(f"Examples directory does not exist: {directory}")
-            return []
-            
-        # Define the package-specific examples directory
-        package_dir = os.path.join(directory, package_name)
-        os.makedirs(package_dir, exist_ok=True)
-        
-        if not os.path.exists(package_dir):
-            self.logger.warning(f"Package examples directory does not exist: {package_dir}")
-            return []
-
-        examples = []
-        for name in os.listdir(package_dir):
-            # Skip files starting with underscore (_) and non-JSON files
-            if name.startswith("_") or not name.endswith(".json"):
-                continue
-
-            file_path = os.path.join(package_dir, name)
-            examples.append(self._load_example_from_file(file_path, package_name))
-
-        return examples
-
-    def discover_all_examples(self) -> List[Workflow]:
-        """
-        Discover and load all example workflows from installed packages.
-
-        This method:
-        1. Scans all installed packages for examples directories
-        2. Caches the results for subsequent calls
-
-        Returns:
-            List[ExampleWorkflow]: A list of all discovered example workflows
-        """
-        # Return cached examples if available
-        if self._examples_cache is not None:
-            return self._examples_cache
-
-        examples = []
-
-        # Load examples from installed packages
-        source_folders = get_nodetool_package_source_folders()
-        for folder in source_folders:
-            # Look for examples directory in standard location
-            examples_dir = folder / "nodetool" / "examples"
-            if examples_dir.exists():
-                # Extract package name from folder path
-                project_toml = folder.parent / "pyproject.toml"
-                if project_toml.exists():
-                    with open(project_toml, "rb") as f:
-                        project_metadata = tomllib.load(f)
-                        package_name = project_metadata["tool"]["poetry"]["name"]
-                else:
-                    package_name = folder.name
-
-                # Load examples from this package
-                package_examples = self._load_examples_from_directory(
-                    str(examples_dir), package_name
-                )
-                examples.extend(package_examples)
-
-        # Cache the results
-        self._examples_cache = examples
-        return examples
-
-    def clear_cache(self) -> None:
-        """Clear the examples cache to force rediscovery on next call."""
-        self._examples_cache = None
-
-    def list_examples(self) -> List[Workflow]:
-        """
-        List all example workflows from installed packages.
-
-        Returns:
-            List[Workflow]: A list of all example workflows
-        """
-        return self.discover_all_examples()
-
-    def find_example_by_id(self, id: str) -> Optional[Workflow]:
-        """
-        Find an example workflow by its ID.
-
-        Args:
-            id: The ID of the workflow to find
-
-        Returns:
-            Optional[Workflow]: The found workflow or None if not found
-        """
-        examples = self.discover_all_examples()
-        example = next((ex for ex in examples if ex.id == id), None)
-        return example if example else None
-
-    def find_example_by_name(self, name: str) -> Optional[Workflow]:
-        """
-        Find an example workflow by its name.
-
-        Args:
-            name: The name of the workflow to find
-
-        Returns:
-            Optional[Workflow]: The found workflow or None if not found
-        """
-        examples = self.discover_all_examples()
-        example = next((ex for ex in examples if ex.name == name), None)
-        return example if example else None
-
-    def save_example(self, workflow: Workflow) -> Workflow:
-        """
-        Save a workflow as an example in the specified package.
-
-        Args:
-            workflow: The workflow object to save
-
-        Returns:
-            Workflow: The saved workflow
-
-        Raises:
-            ValueError: If the package_name is invalid or the package is not found
-
-        Note:
-            This function removes the user_id field before saving and
-            invalidates the cached examples.
-        """
-        if Environment.is_production():
-            raise ValueError("Saving examples is only allowed in dev mode")
-
-        if not workflow.path:
-            raise ValueError("Workflow path is required")
-
-        # Find the package folder
-        with open(workflow.path, "w") as f:
-            json.dump(workflow.model_dump(), f, indent=2)
-
-        # Invalidate the cached examples
-        self.clear_cache()
-
-        return workflow
-
-    def _load_assets_from_directory(
-        self, directory: str, package_name: str
-    ) -> List[AssetInfo]:
-        """
-        Load all asset files from a directory.
-
-        Args:
-            directory: The directory containing asset files
-            package_name: Name of the package providing these assets
-
-        Returns:
-            List[AssetInfo]: A list of asset information objects
-        """
-        if not os.path.exists(directory):
-            self.logger.warning(f"Assets directory does not exist: {directory}")
-            return []
-            
-        # Define the package-specific assets directory
-        package_dir = os.path.join(directory, package_name)
-        os.makedirs(package_dir, exist_ok=True)
-        
-        if not os.path.exists(package_dir):
-            self.logger.warning(f"Package assets directory does not exist: {package_dir}")
-            return []
-
-        assets: List[AssetInfo] = []
-        for name in os.listdir(package_dir):
-            if name.startswith("_"):
-                continue
-
-            path = os.path.join(package_dir, name)
-            if os.path.isdir(path):
-                continue
-
-            assets.append(
-                AssetInfo(
-                    package_name=package_name,
-                    name=name,
-                    path=path,
-                )
-            )
-
-        return assets
-
-    def discover_all_assets(self) -> List[AssetInfo]:
-        """
-        Discover and load all asset files from installed packages.
-
-        This method:
-        1. Scans all installed packages for assets directories
-        2. Caches the results for subsequent calls
-
-        Returns:
-            List[AssetInfo]: A list of all discovered asset files
-        """
-        if self._assets_cache is not None:
-            return self._assets_cache
-
-        assets: List[AssetInfo] = []
-        source_folders = get_nodetool_package_source_folders()
-        for folder in source_folders:
-            assets_dir = folder / "nodetool" / "assets"
-            if not assets_dir.exists():
-                continue
-
-            project_toml = folder.parent / "pyproject.toml"
-            if project_toml.exists():
-                with open(project_toml, "rb") as f:
-                    project_metadata = tomllib.load(f)
-                    package_name = project_metadata["tool"]["poetry"]["name"]
-            else:
-                package_name = folder.name
-
-            assets.extend(
-                self._load_assets_from_directory(str(assets_dir), package_name)
-            )
-
-        self._assets_cache = assets
-        return assets
-
-    def clear_assets_cache(self) -> None:
-        """
-        Clear the assets cache to force rediscovery on next call.
-        """
-        self._assets_cache = None
-
-    def list_assets(self) -> List[AssetInfo]:
-        """
-        List all asset files from installed packages.
-
-        Returns:
-            List[AssetInfo]: A list of all asset files
-        """
-        return self.discover_all_assets()
-
-    def find_asset_by_name(self, name: str, package_name: Optional[str] = None) -> Optional[AssetInfo]:
-        """
-        Find an asset file by its file name, optionally filtering by package name.
-
-        Args:
-            name: The file name of the asset to find
-            package_name: Optional package name to filter by
-
-        Returns:
-            Optional[AssetInfo]: The found asset or None if not found
-        """
-        if package_name:
-            return next(
-                (asset for asset in self.discover_all_assets() 
-                 if asset.name == name and asset.package_name == package_name), 
-                None
-            )
-        else:
-            return next(
-                (asset for asset in self.discover_all_assets() if asset.name == name), 
-                None
-            )
+# Example compatibility alias
+ExampleRegistry = Registry
 
 
 async def main():
@@ -913,13 +926,12 @@ async def main():
             f"No package found for node type '{sample_node_type}' (this is expected if cache is empty, node type doesn't exist, or due to prior network issues)."
         )
 
-    # Test ExampleRegistry
-    print("\n--- Testing ExampleRegistry ---")
-    example_registry = ExampleRegistry()
+    # Test unified example and asset functionality
+    print("\n--- Testing unified Registry (formerly ExampleRegistry) ---")
 
     # Test discover_all_examples
-    print("\n--- Testing ExampleRegistry.discover_all_examples ---")
-    discovered_examples = example_registry.discover_all_examples()
+    print("\n--- Testing Registry.discover_all_examples ---")
+    discovered_examples = registry.discover_all_examples()
     print(f"Discovered {len(discovered_examples)} example workflows.")
     if discovered_examples:
         for example in discovered_examples[:3]:  # Show first few examples
@@ -928,8 +940,8 @@ async def main():
             )
 
     # Test list_examples
-    print("\n--- Testing ExampleRegistry.list_examples ---")
-    examples = example_registry.list_examples()
+    print("\n--- Testing Registry.list_examples ---")
+    examples = registry.list_examples()
     print(f"Listed {len(examples)} example workflows.")
     if examples:
         for example in examples[:3]:  # Show first few examples
@@ -939,22 +951,22 @@ async def main():
     if examples:
         example_name = examples[0].name
         print(
-            f"\n--- Testing ExampleRegistry.find_example_by_name with '{example_name}' ---"
+            f"\n--- Testing Registry.find_example_by_name with '{example_name}' ---"
         )
-        found_example = example_registry.find_example_by_name(example_name)
+        found_example = registry.find_example_by_name(example_name)
         if found_example:
             print(f"Found example: {found_example.name}")
         else:
             print(f"Example '{example_name}' not found.")
 
     # Test cache clearing
-    print("\n--- Testing ExampleRegistry.clear_cache ---")
-    example_registry.clear_cache()
+    print("\n--- Testing Registry.clear_cache ---")
+    registry.clear_cache()
     print("Example cache cleared successfully.")
 
     # Test discover_all_assets
-    print("\n--- Testing ExampleRegistry.discover_all_assets ---")
-    discovered_assets = example_registry.discover_all_assets()
+    print("\n--- Testing Registry.discover_all_assets ---")
+    discovered_assets = registry.discover_all_assets()
     print(f"Discovered {len(discovered_assets)} asset files.")
     if discovered_assets:
         for asset in discovered_assets[:3]:  # Show first few assets
@@ -963,8 +975,8 @@ async def main():
             )
 
     # Test list_assets
-    print("\n--- Testing ExampleRegistry.list_assets ---")
-    assets = example_registry.list_assets()
+    print("\n--- Testing Registry.list_assets ---")
+    assets = registry.list_assets()
     print(f"Listed {len(assets)} asset files.")
     if assets:
         for asset in assets[:3]:  # Show first few assets
@@ -974,60 +986,39 @@ async def main():
     if assets:
         asset_name = assets[0].name
         print(
-            f"\n--- Testing ExampleRegistry.find_asset_by_name with '{asset_name}' ---"
+            f"\n--- Testing Registry.find_asset_by_name with '{asset_name}' ---"
         )
-        found_asset = example_registry.find_asset_by_name(asset_name)
+        found_asset = registry.find_asset_by_name(asset_name)
         if found_asset:
             print(f"Found asset: {found_asset.name}")
         else:
             print(f"Asset '{asset_name}' not found.")
 
     # Test cache clearing for assets
-    print("\n--- Testing ExampleRegistry.clear_assets_cache ---")
-    example_registry.clear_assets_cache()
+    print("\n--- Testing Registry.clear_assets_cache ---")
+    registry.clear_assets_cache()
     print("Asset cache cleared successfully.")
 
 
 def scan_for_package_nodes(verbose: bool = False) -> PackageModel:
-    """
-    Create package metadata from a JSON package specification file.
-
-    This function:
-    1. Looks for pyproject.toml in the current directory
-    2. Extracts package metadata from it
-    3. Loads the src/nodetool/package.json file for component information
-    4. Creates and returns a PackageModel with all components from the package.json file
-
-    Args:
-        verbose: Whether to print verbose output during scanning
-
-    Returns:
-        PackageModel: The created package model with all components
-
-    Raises:
-        ValueError: If no pyproject.toml is found or required metadata is missing
-        FileNotFoundError: If package.json file is not found
-    """
+    """Scan current directory for nodes and create package metadata."""
     import os
     import sys
-    import json
     import tomli
+    import json
     import traceback
     from nodetool.metadata.node_metadata import (
+        EnumEncoder,
         PackageModel,
-        ExampleMetadata,
-        NodeMetadata
+        get_node_classes_from_module,
     )
-    from pathlib import Path
 
-    if verbose:
-        print("Starting package metadata scan")
-    
     sys.path.append(os.path.abspath("src"))
 
     # Check for pyproject.toml in current directory
     if not os.path.exists("pyproject.toml"):
-        raise ValueError("No pyproject.toml found in current directory")
+        print("Error: No pyproject.toml found in current directory")
+        sys.exit(1)
 
     # Read pyproject.toml
     with open("pyproject.toml", "rb") as f:
@@ -1039,81 +1030,93 @@ def scan_for_package_nodes(verbose: bool = False) -> PackageModel:
         project_data = pyproject_data.get("tool", {}).get("poetry", {})
 
     if not project_data:
-        raise ValueError("No project metadata found in pyproject.toml")
+        print("Error: No project metadata found in pyproject.toml")
+        sys.exit(1)
 
     repo_id = project_data.get("repository", "").split("/")[-2:]
     repo_id = "/".join(repo_id)
 
-    # Find package.json file
-    package_json_path = os.path.join(os.path.abspath("src"), "nodetool", "package.json")
-    if not os.path.exists(package_json_path):
-        if verbose:
-            print(f"Package JSON file not found at {package_json_path}, creating a new package")
-            
-        # Create package model with basic metadata
-        package = PackageModel(
-            name=project_data.get("name", ""),
-            description=project_data.get("description", ""),
-            version=project_data.get("version", "0.1.0"),
-            authors=project_data.get("authors", []),
-            repo_id=repo_id,
-            nodes=[],
-            examples=[],
-            assets=[],
+    # Create package model
+    package = PackageModel(
+        name=project_data.get("name", ""),
+        description=project_data.get("description", ""),
+        version=project_data.get("version", "0.1.0"),
+        authors=project_data.get("authors", []),
+        repo_id=repo_id,
+        nodes=[],
+        examples=[],
+        assets=[],
+    )
+
+    # Discover examples and assets using unified Registry
+    registry = Registry()
+    all_examples = registry.discover_all_examples()
+    all_assets = registry.discover_all_assets()
+
+    if package.examples is not None:
+        package.examples.extend(
+            [
+                ExampleMetadata(
+                    id=ex.id,
+                    name=ex.name,
+                    description=ex.description or "",
+                    tags=ex.tags or [],
+                    thumbnail_url="",  # Or some default/logic to get thumbnail
+                )
+                for ex in all_examples
+                if ex.package_name == package.name
+            ]
         )
-    else:
-        # Load component information from package.json
-        if verbose:
-            print(f"Loading package information from {package_json_path}")
-            
-        try:
-            with open(package_json_path, 'r') as f:
-                package_json = json.load(f)
-                
-            # Create package model from package.json
-            package = PackageModel(
-                name=project_data.get("name", ""),
-                description=project_data.get("description", ""),
-                version=project_data.get("version", "0.1.0"),
-                authors=project_data.get("authors", []),
-                repo_id=repo_id,
-                # Load any existing components from package.json
-                nodes=package_json.get("nodes", []),
-                examples=package_json.get("examples", []),
-                assets=package_json.get("assets", []),
-                git_hash=package_json.get("git_hash", None),
-                namespaces=package_json.get("namespaces", []),
+    if package.assets is not None:
+        package.assets.extend(
+            [asset for asset in all_assets if asset.package_name == package.name]
+        )
+
+    # Add src directory to Python path temporarily
+    src_path = os.path.abspath("src/nodetool/nodes")
+    if os.path.exists(src_path):
+        # Discover nodes
+        for root, _, files in os.walk(src_path):
+            for file in files:
+                if file.endswith(".py"):
+                    module_path = os.path.join(root, file)
+                    rel_path = os.path.relpath(module_path, src_path)
+                    module_name = os.path.splitext(rel_path)[0].replace(os.sep, ".")
+
+                    if verbose:
+                        click.echo(f"Scanning module: {module_name}")
+
+                    try:
+                        full_module_name = f"nodetool.nodes.{module_name}"
+                        node_classes = get_node_classes_from_module(
+                            full_module_name, verbose
+                        )
+                        if node_classes:
+                            assert package.nodes is not None
+                            package.nodes.extend(
+                                node_class.metadata() for node_class in node_classes
+                            )
+                    except Exception as e:
+                        if verbose:
+                            click.echo(f"Error processing {module_name}: {e}", err=True)
+
+        # Write the single nodes.json file in the root directory
+        os.makedirs("src/nodetool/package_metadata", exist_ok=True)
+        # Construct the metadata file path using package.name
+        metadata_file_path = f"src/nodetool/package_metadata/{package.name}.json"
+        with open(metadata_file_path, "w") as f:
+            json.dump(
+                package.model_dump(exclude_defaults=True),
+                f,
+                indent=2,
+                cls=EnumEncoder,
             )
-            
-            if verbose:
-                print(f"Successfully loaded package with {len(package.nodes or [])} nodes, " 
-                      f"{len(package.examples or [])} examples, and {len(package.assets or [])} assets")
-                
-        except Exception as e:
-            if verbose:
-                print(f"Error loading package.json: {e}")
-                traceback.print_exc()
-            # Create a new package model if loading fails
-            package = PackageModel(
-                name=project_data.get("name", ""),
-                description=project_data.get("description", ""),
-                version=project_data.get("version", "0.1.0"),
-                authors=project_data.get("authors", []),
-                repo_id=repo_id,
-                nodes=[],
-                examples=[],
-                assets=[],
-            )
-            
-    # Ensure empty lists are properly initialized
-    if package.nodes is None:
-        package.nodes = []
-    if package.examples is None:
-        package.examples = []
-    if package.assets is None:
-        package.assets = []
-    
-    return package
+
+    print(
+        f"✅ Successfully created package metadata for {package.name} with {len(package.nodes or [])} total nodes, {len(package.examples or [])} examples, and {len(package.assets or [])} assets"
+    )
+
+    return package  # Return the package model
 
 
 def save_package_metadata(package: PackageModel, verbose: bool = False):
@@ -1134,7 +1137,6 @@ def save_package_metadata(package: PackageModel, verbose: bool = False):
     """
     import os
     import json
-    import git
     from nodetool.metadata.node_metadata import EnumEncoder
 
     # Create metadata directory if it doesn't exist
@@ -1143,24 +1145,12 @@ def save_package_metadata(package: PackageModel, verbose: bool = False):
 
     # Generate the package metadata
     metadata = package.model_dump(exclude_defaults=True)
-    
-    # Try to get git hash if not already set
-    if not package.git_hash:
-        try:
-            repo = git.Repo(os.getcwd())
-            git_hash = repo.head.object.hexsha
-            metadata["git_hash"] = git_hash
-            if verbose:
-                print(f"Added git hash: {git_hash}")
-        except Exception as e:
-            if verbose:
-                print(f"Could not get git hash: {e}")
-    
+
     # 1. Save to main package.json specification file
     package_json_path = os.path.join("src", "nodetool", "package.json")
     if verbose:
         print(f"Saving package definition to {package_json_path}")
-        
+
     with open(package_json_path, "w") as f:
         json.dump(
             metadata,
@@ -1168,12 +1158,12 @@ def save_package_metadata(package: PackageModel, verbose: bool = False):
             indent=2,
             cls=EnumEncoder,
         )
-    
+
     # 2. Save to package_metadata directory for compatibility
     metadata_path = f"src/nodetool/package_metadata/{package.name}.json"
     if verbose:
         print(f"Saving package metadata to {metadata_path}")
-        
+
     with open(metadata_path, "w") as f:
         json.dump(
             metadata,
