@@ -99,7 +99,7 @@ def validate_repo_id(repo_id: str) -> Tuple[bool, Optional[str]]:
 
     Returns:
         Tuple[bool, Optional[str]]: A tuple containing:
-            - Boolean indicating if the repo_id is valid
+            - Booleae indicating if the repo_id is valid
             - Error message if invalid, None otherwise
     """
     if not repo_id:
@@ -458,7 +458,7 @@ class Registry:
 
         Args:
             file_path: The full path to the example workflow JSON file
-            package_id: ID of the package providing this example
+            package_name: Name of the package providing this example
 
         Returns:
             ExampleWorkflow: The loaded example workflow with metadata
@@ -744,6 +744,38 @@ class Registry:
                 (asset for asset in self.list_assets() if asset.name == name),
                 None,
             )
+
+    def load_example(self, package_name: str, example_name: str) -> Optional[Workflow]:
+        """
+        Load a single example workflow from disk given package name and example name.
+
+        This method uses the package's source folder to construct the path to the example file.
+
+        Args:
+            package_name: The name of the package containing the example
+            example_name: The name of the example workflow to load
+
+        Returns:
+            Optional[Workflow]: The loaded workflow with full data, or None if not found
+
+        Raises:
+            ValueError: If the package is not found
+        """
+        package = self.find_package_by_name(package_name)
+        if not package:
+            raise ValueError(f"Package {package_name} not found")
+
+        if not package.source_folder:
+            raise ValueError(f"Package {package_name} does not have a source folder")
+
+        # Construct the path to the example file
+        # Examples are stored in: source_folder/nodetool/examples/package_name/example_name.json
+        example_path = Path(package.source_folder) / "nodetool" / "examples" / package_name / f"{example_name}.json"
+        
+        if not example_path.exists():
+            return None
+
+        return self._load_example_from_file(str(example_path), package_name)
 
 
 def discover_node_packages() -> list[PackageModel]:

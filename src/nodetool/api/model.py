@@ -14,7 +14,6 @@ from nodetool.metadata.types import (
     ModelFile,
     HuggingFaceModel,
     LlamaModel,
-    OpenAIModel,
     Provider,
     comfy_model_to_folder,
 )
