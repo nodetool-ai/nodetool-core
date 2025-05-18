@@ -79,6 +79,7 @@ async def create(
             workflow = from_model(
                 WorkflowModel.create(
                     name=workflow_request.name,
+                    package_name=workflow_request.package_name,
                     description=workflow_request.description or example_workflow.description,
                     thumbnail=workflow_request.thumbnail,
                     thumbnail_url=workflow_request.thumbnail_url or example_workflow.thumbnail_url,
@@ -94,6 +95,7 @@ async def create(
         workflow = from_model(
             WorkflowModel.create(
                 name=workflow_request.name,
+                package_name=workflow_request.package_name,
                 description=workflow_request.description,
                 thumbnail=workflow_request.thumbnail,
                 thumbnail_url=workflow_request.thumbnail_url,
