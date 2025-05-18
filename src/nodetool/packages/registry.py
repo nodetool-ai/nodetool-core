@@ -247,6 +247,17 @@ class Registry:
         """List all installed node packages."""
         return discover_node_packages()
 
+    def find_package_by_name(self, name: str) -> Optional[PackageModel]:
+        """Find a package by name."""
+        return next(
+            (
+                package
+                for package in self.list_installed_packages()
+                if package.name == name
+            ),
+            None,
+        )
+
     def list_available_packages(self) -> List[PackageInfo]:
         """
         List all available packages from the registry.
@@ -616,9 +627,36 @@ class Registry:
         if Environment.is_production():
             raise ValueError("Saving examples is only allowed in dev mode")
 
-        package_folder = get_nodetool_package_source_folders()[0]
+        assert workflow.package_name is not None
 
-        path = package_folder / "nodetool" / "examples" / workflow.id
+        package = self.find_package_by_name(workflow.package_name)
+        if not package:
+            raise ValueError(f"Package {workflow.package_name} not found")
+
+        src_folders = get_nodetool_package_source_folders()
+
+        package_folder = next(
+            (
+                src_folder
+                for src_folder in src_folders
+                if package.name in str(src_folder)
+            ),
+            None,
+        )
+
+        if not package_folder:
+            raise ValueError(
+                f"Package {workflow.package_name} not found in source editable folders"
+            )
+
+        path = (
+            package_folder
+            / "nodetool"
+            / "examples"
+            / package.name
+            / f"{workflow.name}.json"
+        )
+        os.makedirs(path.parent, exist_ok=True)
 
         # Find the package folder
         with open(path, "w") as f:
