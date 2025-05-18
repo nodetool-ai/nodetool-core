@@ -13,7 +13,7 @@ It handles:
 Key components:
 - PackageInfo: Model for package information in the registry index
 - PackageModel: Package metadata model imported from nodetool.metadata.node_metadata
-- Registry: Unified package registry manager that handles all package operations, 
+- Registry: Unified package registry manager that handles all package operations,
   including examples and assets
 - AssetInfo: Model for asset information from package-provided assets
 - Helper functions:
@@ -41,7 +41,7 @@ Usage:
     registry.install_package("owner/project")
     registry.uninstall_package("owner/project")
     registry.update_package("owner/project")
-    
+
     examples = registry.list_examples()
     example = registry.find_example_by_name("example_name")
 """
@@ -222,10 +222,6 @@ class Registry:
         self.pkg_mgr = get_package_manager_command()
         self._node_cache = None  # Cache for node metadata
         self.logger = logging.getLogger(__name__)
-        
-        # Caches from ExampleRegistry
-        self._examples_cache: Optional[List[Workflow]] = None
-        self._assets_cache: Optional[List[AssetInfo]] = None
 
     def pip_install(
         self, install_path: str, editable: bool = False, upgrade: bool = False
@@ -527,15 +523,10 @@ class Registry:
 
         This method:
         1. Scans all installed packages for examples directories
-        2. Caches the results for subsequent calls
 
         Returns:
             List[ExampleWorkflow]: A list of all discovered example workflows
         """
-        # Return cached examples if available
-        if self._examples_cache is not None:
-            return self._examples_cache
-
         examples = []
 
         # Load examples from installed packages
@@ -559,30 +550,36 @@ class Registry:
                 )
                 examples.extend(package_examples)
 
-        # Cache the results
-        self._examples_cache = examples
-        return examples
+        # Ensure uniqueness based on example ID
+        unique_examples = []
+        seen_example_ids = set()
+        for example in examples:
+            if example.id not in seen_example_ids:
+                unique_examples.append(example)
+                seen_example_ids.add(example.id)
+        return unique_examples
 
     def clear_cache(self) -> None:
         """Clear the examples cache to force re-loading from metadata on next call."""
-        self._examples_cache = None
+        # This method originally cleared _examples_cache.
+        # Since _examples_cache is removed, this method might be redundant
+        # or could be repurposed if other non-node caches are added later.
+        # For now, it does nothing related to examples.
+        pass
 
     def list_examples(self) -> List[Workflow]:
         """
         List all example workflows from installed packages.
 
-        This method retrieves example metadata from installed packages and 
+        This method retrieves example metadata from installed packages and
         converts them to Workflow objects without scanning the filesystem.
 
         Returns:
             List[Workflow]: A list of all example workflows
         """
-        if self._examples_cache is not None:
-            return self._examples_cache
-        
         examples = []
         packages = self.list_installed_packages()
-        
+
         for package in packages:
             if package.examples:
                 for example_meta in package.examples:
@@ -594,16 +591,16 @@ class Registry:
                         description=example_meta.description,
                         tags=example_meta.tags or [],
                         thumbnail_url=example_meta.thumbnail_url,
-                        graph=Graph(nodes=[], edges=[]),  # Empty graph as we don't load the full workflow
+                        graph=Graph(
+                            nodes=[], edges=[]
+                        ),  # Empty graph as we don't load the full workflow
                         access="public",
                         created_at=now_str,
                         updated_at=now_str,
                         package_name=package.name,
-                        path=None  # Path not available from metadata
+                        path=None,  # Path not available from metadata
                     )
                     examples.append(workflow)
-        
-        self._examples_cache = examples
         return examples
 
     def find_example_by_id(self, id: str) -> Optional[Workflow]:
@@ -716,18 +713,59 @@ class Registry:
         """
         Discover and load all asset files from installed packages.
 
-        This method now delegates to list_assets() which uses package metadata.
+        This method:
+        1. Scans all installed packages for assets directories
 
         Returns:
             List[AssetInfo]: A list of all discovered asset files
         """
-        return self.list_assets()
+        assets = []
 
-    def clear_assets_cache(self) -> None:
-        """
-        Clear the assets cache to force re-loading from metadata on next call.
-        """
-        self._assets_cache = None
+        # Load assets from installed packages
+        source_folders = get_nodetool_package_source_folders()
+        for folder in source_folders:
+            # Look for assets directory in standard location
+            assets_dir = folder / "nodetool" / "assets"
+            if assets_dir.exists():
+                # Extract package name from folder path
+                project_toml = folder.parent / "pyproject.toml"
+                package_name = folder.name  # Default to folder name
+                if project_toml.exists():
+                    with open(project_toml, "rb") as f:
+                        try:
+                            project_metadata = tomllib.load(f)
+                            # Try to get the name from poetry, then project
+                            pkg_meta_name = (
+                                project_metadata.get("tool", {})
+                                .get("poetry", {})
+                                .get("name")
+                            )
+                            if not pkg_meta_name:
+                                pkg_meta_name = project_metadata.get("project", {}).get(
+                                    "name"
+                                )
+                            if pkg_meta_name:
+                                package_name = pkg_meta_name
+                        except tomllib.TOMLDecodeError:
+                            self.logger.warning(
+                                f"Could not parse pyproject.toml in {folder.parent}"
+                            )
+
+                # Load assets from this package
+                package_assets = self._load_assets_from_directory(
+                    str(assets_dir), package_name
+                )
+                assets.extend(package_assets)
+
+        # Ensure uniqueness based on (package_name, asset_name)
+        unique_assets = []
+        seen_assets = set()
+        for asset in assets:
+            asset_key = (asset.package_name, asset.name)
+            if asset_key not in seen_assets:
+                unique_assets.append(asset)
+                seen_assets.add(asset_key)
+        return unique_assets
 
     def list_assets(self) -> List[AssetInfo]:
         """
@@ -739,17 +777,13 @@ class Registry:
         Returns:
             List[AssetInfo]: A list of all asset files
         """
-        if self._assets_cache is not None:
-            return self._assets_cache
-        
         assets = []
         packages = self.list_installed_packages()
-        
+
         for package in packages:
             if package.assets:
                 assets.extend(package.assets)
-        
-        self._assets_cache = assets
+
         return assets
 
     def find_asset_by_name(
@@ -944,15 +978,13 @@ async def main():
     examples = registry.list_examples()
     print(f"Listed {len(examples)} example workflows.")
     if examples:
-        for example in examples[:3]:  # Show first few examples
+        for example in examples:  # Show first few examples
             print(f"  - {example.name} from {example.package_name} in {example.path}")
 
     # Test find_example_by_name
     if examples:
         example_name = examples[0].name
-        print(
-            f"\n--- Testing Registry.find_example_by_name with '{example_name}' ---"
-        )
+        print(f"\n--- Testing Registry.find_example_by_name with '{example_name}' ---")
         found_example = registry.find_example_by_name(example_name)
         if found_example:
             print(f"Found example: {found_example.name}")
@@ -985,19 +1017,12 @@ async def main():
     # Test find_asset_by_name
     if assets:
         asset_name = assets[0].name
-        print(
-            f"\n--- Testing Registry.find_asset_by_name with '{asset_name}' ---"
-        )
+        print(f"\n--- Testing Registry.find_asset_by_name with '{asset_name}' ---")
         found_asset = registry.find_asset_by_name(asset_name)
         if found_asset:
             print(f"Found asset: {found_asset.name}")
         else:
             print(f"Asset '{asset_name}' not found.")
-
-    # Test cache clearing for assets
-    print("\n--- Testing Registry.clear_assets_cache ---")
-    registry.clear_assets_cache()
-    print("Asset cache cleared successfully.")
 
 
 def scan_for_package_nodes(verbose: bool = False) -> PackageModel:
