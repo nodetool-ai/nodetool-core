@@ -221,6 +221,8 @@ class Registry:
     def __init__(self):
         self.pkg_mgr = get_package_manager_command()
         self._node_cache = None  # Cache for node metadata
+        self._packages_cache = None  # Cache for installed packages
+        self._examples_cache = {}  # Cache for loaded examples by package_name:example_name
         self.logger = logging.getLogger(__name__)
 
     def pip_install(
@@ -245,7 +247,9 @@ class Registry:
 
     def list_installed_packages(self) -> List[PackageModel]:
         """List all installed node packages."""
-        return discover_node_packages()
+        if self._packages_cache is None:
+            self._packages_cache = discover_node_packages()
+        return self._packages_cache
 
     def find_package_by_name(self, name: str) -> Optional[PackageModel]:
         """Find a package by name."""
@@ -285,6 +289,8 @@ class Registry:
         else:
             install_path = f"git+https://github.com/{repo_id}"
             self.pip_install(install_path)
+        # Clear the cache since we've installed a new package
+        self.clear_packages_cache()
 
     def uninstall_package(self, repo_id: str) -> bool:
         """Uninstall a package by repository ID."""
@@ -296,6 +302,8 @@ class Registry:
         try:
             self.pip_uninstall(project)
             print(f"Successfully uninstalled package {repo_id}")
+            # Clear the cache since we've uninstalled a package
+            self.clear_packages_cache()
             return True
         except subprocess.CalledProcessError as e:
             print(f"Error uninstalling package {repo_id}: {e}")
@@ -311,6 +319,8 @@ class Registry:
             install_url = f"git+https://github.com/{repo_id}"
             self.pip_install(install_url, upgrade=True)
             print(f"Successfully updated package {repo_id}")
+            # Clear the cache since we've updated a package
+            self.clear_packages_cache()
             return True
         except subprocess.CalledProcessError as e:
             print(f"Error updating package {repo_id}: {e}")
@@ -451,6 +461,22 @@ class Registry:
         """
         self._node_cache = None
 
+    def clear_packages_cache(self) -> None:
+        """
+        Clear the installed packages cache.
+
+        This forces the next call to list_installed_packages to re-discover packages.
+        """
+        self._packages_cache = None
+
+    def clear_examples_cache(self) -> None:
+        """
+        Clear the loaded examples cache.
+
+        This forces the next call to load_example to re-load from disk.
+        """
+        self._examples_cache = {}
+
     # Example registry methods (previously in ExampleRegistry)
     def _load_example_from_file(self, file_path: str, package_name: str) -> Workflow:
         """
@@ -537,12 +563,10 @@ class Registry:
         return examples
 
     def clear_cache(self) -> None:
-        """Clear the examples cache to force re-loading from metadata on next call."""
-        # This method originally cleared _examples_cache.
-        # Since _examples_cache is removed, this method might be redundant
-        # or could be repurposed if other non-node caches are added later.
-        # For now, it does nothing related to examples.
-        pass
+        """Clear all caches (packages, nodes, and examples) to force fresh data on next calls."""
+        self.clear_packages_cache()
+        self.clear_node_cache()
+        self.clear_examples_cache()
 
     def list_examples(self) -> List[Workflow]:
         """
@@ -663,7 +687,7 @@ class Registry:
             json.dump(workflow.model_dump(), f, indent=2)
 
         # Invalidate the cached examples
-        self.clear_cache()
+        self.clear_examples_cache()
 
         return workflow
 
@@ -750,6 +774,7 @@ class Registry:
         Load a single example workflow from disk given package name and example name.
 
         This method uses the package's source folder to construct the path to the example file.
+        Results are cached for performance.
 
         Args:
             package_name: The name of the package containing the example
@@ -761,6 +786,11 @@ class Registry:
         Raises:
             ValueError: If the package is not found
         """
+        # Check cache first
+        cache_key = f"{package_name}:{example_name}"
+        if cache_key in self._examples_cache:
+            return self._examples_cache[cache_key]
+        
         package = self.find_package_by_name(package_name)
         if not package:
             raise ValueError(f"Package {package_name} not found")
@@ -773,9 +803,93 @@ class Registry:
         example_path = Path(package.source_folder) / "nodetool" / "examples" / package_name / f"{example_name}.json"
         
         if not example_path.exists():
+            self._examples_cache[cache_key] = None  # Cache the None result too
             return None
 
-        return self._load_example_from_file(str(example_path), package_name)
+        workflow = self._load_example_from_file(str(example_path), package_name)
+        self._examples_cache[cache_key] = workflow
+        return workflow
+
+    def search_example_workflows(self, query: str = "") -> List[Workflow]:
+        """
+        Search for example workflows by searching through node titles, descriptions, and types.
+        
+        This method loads all example workflows including their graphs and searches for
+        matches in:
+        - Node title (from ui_properties.title or data.title)
+        - Node description (from data.description)
+        - Node type
+        
+        Args:
+            query: The search string to find in node properties
+            
+        Returns:
+            List[Workflow]: A list of workflows that contain nodes matching the query
+        """
+        matching_workflows = []
+        
+        # If empty query, return all examples
+        if not query:
+            return self.list_examples()
+        
+        query = query.lower()
+        packages = self.list_installed_packages()
+        
+        for package in packages:
+            if not package.examples:
+                continue
+                
+            for example_meta in package.examples:
+                try:
+                    # Load the full workflow with graph
+                    workflow = self.load_example(package.name, example_meta.name)
+                    if not workflow or not workflow.graph:
+                        continue
+                    
+                    # Search through nodes in the graph
+                    found_match = False
+                    for node in workflow.graph.nodes:
+                        # Check node type
+                        if query in node.type.lower():
+                            found_match = True
+                            break
+                        
+                        # Check title from ui_properties or data
+                        title = ""
+                        # Handle dict-like ui_properties
+                        if isinstance(node.ui_properties, dict) and "title" in node.ui_properties:
+                            title = node.ui_properties["title"]
+                        elif hasattr(node.ui_properties, "title") and node.ui_properties.title:
+                            title = node.ui_properties.title
+                        # Handle dict-like data
+                        elif isinstance(node.data, dict) and "title" in node.data:
+                            title = node.data["title"]
+                        elif hasattr(node.data, "title") and node.data.title:
+                            title = node.data.title
+                        
+                        if title and query in str(title).lower():
+                            found_match = True
+                            break
+                        
+                        # Check description from data
+                        description = ""
+                        if isinstance(node.data, dict) and "description" in node.data:
+                            description = node.data["description"]
+                        elif hasattr(node.data, "description") and node.data.description:
+                            description = node.data.description
+                            
+                        if description and query in str(description).lower():
+                            found_match = True
+                            break
+                    
+                    if found_match:
+                        matching_workflows.append(workflow)
+                        
+                except Exception as e:
+                    self.logger.warning(f"Error searching workflow {example_meta.name}: {e}")
+                    continue
+        
+        return matching_workflows
 
 
 def discover_node_packages() -> list[PackageModel]:
@@ -853,121 +967,6 @@ def get_nodetool_package_source_folders() -> List[Path]:
                 source_folders.append(source_path)
 
     return source_folders
-
-
-# Example compatibility alias
-ExampleRegistry = Registry
-
-
-async def main():
-    """
-    Main function to run smoke tests for the registry module.
-    """
-    print("--- Running Smoke Tests for nodetool.packages.registry ---")
-
-    print("\n--- Testing get_packages_dir ---")
-    packages_dir = get_packages_dir()
-    print(f"Packages directory: {packages_dir}")
-
-    print("\n--- Testing get_package_manager_command ---")
-    pkg_mgr_cmd = get_package_manager_command()
-    print(f"Package manager command: {pkg_mgr_cmd}")
-
-    print("\n--- Testing discover_node_packages ---")
-    installed_discovered_packages = discover_node_packages()
-    print(
-        f"Discovered {len(installed_discovered_packages)} installed node packages (via discover_node_packages)."
-    )
-    for pkg in installed_discovered_packages:
-        print(f"  - {pkg.name} ({pkg.repo_id if hasattr(pkg, 'repo_id') else 'N/A'})")
-
-    print("\n--- Testing get_nodetool_package_source_folders ---")
-    source_folders = get_nodetool_package_source_folders()
-    print(f"Found {len(source_folders)} nodetool package source folders.")
-    for folder in source_folders:
-        print(f"  - {folder}")
-
-    # Initialize Registry
-    registry = Registry()
-
-    print("\n--- Testing registry.list_installed_packages ---")
-    installed_packages = registry.list_installed_packages()
-    print(f"Found {len(installed_packages)} installed packages (via registry).")
-    for pkg in installed_packages:
-        print(f"  - {pkg.name} ({pkg.repo_id if hasattr(pkg, 'repo_id') else 'N/A'})")
-
-    # Test list_available_packages
-    print("\n--- Testing registry.list_available_packages ---")
-    available_packages = registry.list_available_packages()
-    print(f"Found {len(available_packages)} available packages from registry.")
-    if available_packages:
-        print(f"  First few: {[pkg.name for pkg in available_packages[:3]]}")
-
-    # Test search_nodes
-    print("\n--- Testing registry.search_nodes ---")
-    print("Searching for all nodes (empty query)...")
-    all_nodes = await registry.search_nodes("huggingface")
-    print(f"Found {len(all_nodes)} nodes in total.")
-    if all_nodes:
-        print(f"  Sample node name: {all_nodes[0].get('name') if all_nodes else 'N/A'}")
-
-    # Test get_package_for_node_type
-    print("\n--- Testing registry.get_package_for_node_type ---")
-    # This test depends on search_nodes populating the cache.
-    sample_node_type = "huggingface.text_to_image.StableDiffusion"
-    await registry.search_nodes()  # This might repopulate or confirm emptiness due to prior errors
-
-    package_repo_id = await registry.get_package_for_node_type(sample_node_type)
-    if package_repo_id:
-        print(f"Package for node type '{sample_node_type}': {package_repo_id}")
-    else:
-        print(
-            f"No package found for node type '{sample_node_type}' (this is expected if cache is empty, node type doesn't exist, or due to prior network issues)."
-        )
-
-    # Test unified example and asset functionality
-    print("\n--- Testing unified Registry (formerly ExampleRegistry) ---")
-
-    # Test list_examples
-    print("\n--- Testing Registry.list_examples ---")
-    examples = registry.list_examples()
-    print(f"Listed {len(examples)} example workflows.")
-    if examples:
-        for example in examples:  # Show first few examples
-            print(f"  - {example.name} from {example.package_name} in {example.path}")
-
-    # Test find_example_by_name
-    if examples:
-        example_name = examples[0].name
-        print(f"\n--- Testing Registry.find_example_by_name with '{example_name}' ---")
-        found_example = registry.find_example_by_name(example_name)
-        if found_example:
-            print(f"Found example: {found_example.name}")
-        else:
-            print(f"Example '{example_name}' not found.")
-
-    # Test cache clearing
-    print("\n--- Testing Registry.clear_cache ---")
-    registry.clear_cache()
-    print("Example cache cleared successfully.")
-
-    # Test list_assets
-    print("\n--- Testing Registry.list_assets ---")
-    assets = registry.list_assets()
-    print(f"Listed {len(assets)} asset files.")
-    if assets:
-        for asset in assets[:3]:  # Show first few assets
-            print(f"  - {asset.name} from {asset.package_name} in {asset.path}")
-
-    # Test find_asset_by_name
-    if assets:
-        asset_name = assets[0].name
-        print(f"\n--- Testing Registry.find_asset_by_name with '{asset_name}' ---")
-        found_asset = registry.find_asset_by_name(asset_name)
-        if found_asset:
-            print(f"Found asset: {found_asset.name}")
-        else:
-            print(f"Asset '{asset_name}' not found.")
 
 
 def scan_for_package_nodes(verbose: bool = False) -> PackageModel:
@@ -1120,6 +1119,186 @@ def save_package_metadata(package: PackageModel, verbose: bool = False):
 
     return metadata_path
 
+
+
+
+async def main():
+    """
+    Main function to run smoke tests for the registry module.
+    """
+    print("--- Running Smoke Tests for nodetool.packages.registry ---")
+
+    print("\n--- Testing get_packages_dir ---")
+    packages_dir = get_packages_dir()
+    print(f"Packages directory: {packages_dir}")
+
+    print("\n--- Testing get_package_manager_command ---")
+    pkg_mgr_cmd = get_package_manager_command()
+    print(f"Package manager command: {pkg_mgr_cmd}")
+
+    print("\n--- Testing discover_node_packages ---")
+    installed_discovered_packages = discover_node_packages()
+    print(
+        f"Discovered {len(installed_discovered_packages)} installed node packages (via discover_node_packages)."
+    )
+    for pkg in installed_discovered_packages:
+        print(f"  - {pkg.name} ({pkg.repo_id if hasattr(pkg, 'repo_id') else 'N/A'})")
+
+    print("\n--- Testing get_nodetool_package_source_folders ---")
+    source_folders = get_nodetool_package_source_folders()
+    print(f"Found {len(source_folders)} nodetool package source folders.")
+    for folder in source_folders:
+        print(f"  - {folder}")
+
+    # Initialize Registry
+    registry = Registry()
+
+    print("\n--- Testing registry.list_installed_packages ---")
+    installed_packages = registry.list_installed_packages()
+    print(f"Found {len(installed_packages)} installed packages (via registry).")
+    for pkg in installed_packages:
+        print(f"  - {pkg.name} ({pkg.repo_id if hasattr(pkg, 'repo_id') else 'N/A'})")
+
+    # Test list_available_packages
+    print("\n--- Testing registry.list_available_packages ---")
+    available_packages = registry.list_available_packages()
+    print(f"Found {len(available_packages)} available packages from registry.")
+    if available_packages:
+        print(f"  First few: {[pkg.name for pkg in available_packages[:3]]}")
+
+    # Test search_nodes
+    print("\n--- Testing registry.search_nodes ---")
+    print("Searching for all nodes (empty query)...")
+    all_nodes = await registry.search_nodes("huggingface")
+    print(f"Found {len(all_nodes)} nodes in total.")
+    if all_nodes:
+        print(f"  Sample node name: {all_nodes[0].get('name') if all_nodes else 'N/A'}")
+
+    # Test get_package_for_node_type
+    print("\n--- Testing registry.get_package_for_node_type ---")
+    # This test depends on search_nodes populating the cache.
+    sample_node_type = "huggingface.text_to_image.StableDiffusion"
+    await registry.search_nodes()  # This might repopulate or confirm emptiness due to prior errors
+
+    package_repo_id = await registry.get_package_for_node_type(sample_node_type)
+    if package_repo_id:
+        print(f"Package for node type '{sample_node_type}': {package_repo_id}")
+    else:
+        print(
+            f"No package found for node type '{sample_node_type}' (this is expected if cache is empty, node type doesn't exist, or due to prior network issues)."
+        )
+
+    # Test unified example and asset functionality
+    print("\n--- Testing unified Registry (formerly ExampleRegistry) ---")
+
+    # Test list_examples
+    print("\n--- Testing Registry.list_examples ---")
+    examples = registry.list_examples()
+    print(f"Listed {len(examples)} example workflows.")
+    if examples:
+        for example in examples:  # Show first few examples
+            print(f"  - {example.name} from {example.package_name} in {example.path}")
+
+    # Test find_example_by_name
+    if examples:
+        example_name = examples[0].name
+        print(f"\n--- Testing Registry.find_example_by_name with '{example_name}' ---")
+        found_example = registry.find_example_by_name(example_name)
+        if found_example:
+            print(f"Found example: {found_example.name}")
+        else:
+            print(f"Example '{example_name}' not found.")
+
+    # Test cache clearing
+    print("\n--- Testing Registry.clear_cache ---")
+    registry.clear_cache()
+    print("Example cache cleared successfully.")
+
+    # Test list_assets
+    print("\n--- Testing Registry.list_assets ---")
+    assets = registry.list_assets()
+    print(f"Listed {len(assets)} asset files.")
+    if assets:
+        for asset in assets[:3]:  # Show first few assets
+            print(f"  - {asset.name} from {asset.package_name} in {asset.path}")
+
+    # Test find_asset_by_name
+    if assets:
+        asset_name = assets[0].name
+        print(f"\n--- Testing Registry.find_asset_by_name with '{asset_name}' ---")
+        found_asset = registry.find_asset_by_name(asset_name)
+        if found_asset:
+            print(f"Found asset: {found_asset.name}")
+        else:
+            print(f"Asset '{asset_name}' not found.")
+
+
+    print("=== Testing Example Workflow Search ===\n")
+    
+    # Test 1: Empty query (should return all examples)
+    print("Test 1: Empty query (return all examples)")
+    all_examples = registry.search_example_workflows("")
+    print(f"Found {len(all_examples)} examples")
+    print()
+    
+    # Test 2: Search for specific node type (RealESRGAN)
+    print("Test 2: Search for 'Chat' in node types")
+    results = registry.search_example_workflows("Chat")
+    print(f"Found {len(results)} workflows with 'Chat' nodes")
+    for workflow in results:
+        print(f"  - {workflow.name}: {workflow.description[:60]}...")
+    print()
+    
+    # Test 3: Search for node title (upscaler)
+    print("Test 3: Search for 'LLM' in node titles")
+    results = registry.search_example_workflows("LLM")
+    print(f"Found {len(results)} workflows with 'LLM' in node titles")
+    for workflow in results:
+        print(f"  - {workflow.name}: {workflow.description[:60]}...")
+    print()
+    
+    # Test 4: Search for word in node description
+    print("Test 4: Search for 'upscaled' in node descriptions")
+    results = registry.search_example_workflows("upscaled")
+    print(f"Found {len(results)} workflows with 'upscaled' in node descriptions")
+    for workflow in results:
+        print(f"  - {workflow.name}: {workflow.description[:60]}...")
+    print()
+    
+    # Test 5: Search for huggingface
+    print("Test 5: Search for 'huggingface' in all node properties")
+    results = registry.search_example_workflows("huggingface")
+    print(f"Found {len(results)} workflows with 'huggingface' nodes")
+    for workflow in results:
+        print(f"  - {workflow.name}")
+        # Show which nodes matched
+        for node in workflow.graph.nodes:
+            if "huggingface" in node.type.lower():
+                print(f"    Node type: {node.type}")
+                
+    print()
+    
+    # Test 6: Search for "image" in descriptions
+    print("Test 6: Search for 'image' in node fields")
+    results = registry.search_example_workflows("image")
+    print(f"Found {len(results)} workflows with 'image' in node properties")
+    for workflow in results:
+        print(f"  - {workflow.name}")
+    print()
+    
+    # Test 7: Case insensitive search
+    print("Test 7: Case insensitive search for 'REALESRGAN'")
+    results = registry.search_example_workflows("REALESRGAN")
+    print(f"Found {len(results)} workflows (case insensitive)")
+    print()
+    
+    # Test 8: Non-matching query
+    print("Test 8: Non-matching query")
+    results = registry.search_example_workflows("xyz_nonexistent_query")
+    print(f"Found {len(results)} workflows (should be 0)")
+    print()
+    
+    print("=== Tests Complete ===")
 
 if __name__ == "__main__":
     asyncio.run(main())

@@ -180,6 +180,22 @@ async def examples() -> WorkflowList:
     return WorkflowList(workflows=example_registry.list_examples(), next=None)
 
 
+@router.get("/examples/search")
+async def search_examples(query: str) -> WorkflowList:
+    """
+    Search for example workflows by searching through node titles, descriptions, and types.
+    
+    Args:
+        query: The search string to find in node properties
+        
+    Returns:
+        WorkflowList: A list of workflows that contain nodes matching the query
+    """
+    example_registry = Registry()
+    matching_workflows = example_registry.search_example_workflows(query)
+    return WorkflowList(workflows=matching_workflows, next=None)
+
+
 @router.get("/examples/{package_name}/{example_name}")
 async def get_example(package_name: str, example_name: str) -> Workflow:
     """

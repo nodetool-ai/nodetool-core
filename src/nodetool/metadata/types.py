@@ -114,6 +114,18 @@ class Collection(BaseType):
     name: str = ""
 
 
+
+class Event(BaseType):
+    """
+    An event is a special object in Nodetool.
+    It can be dispatched by a node async.
+    Nodes can received events async.
+    """
+    type: Literal["event"] = "event"
+    name: str = ""
+    payload: dict[str, Any] = {}
+
+
 #######################
 # Date and Time Types
 #######################
