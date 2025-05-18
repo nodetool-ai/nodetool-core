@@ -1121,12 +1121,10 @@ def scan_for_package_nodes(verbose: bool = False) -> PackageModel:
 
 def save_package_metadata(package: PackageModel, verbose: bool = False):
     """
-    Save the package metadata to JSON files.
+    Save the package metadata to a JSON file.
 
     This function saves all package components (nodes, examples, and assets)
-    to both a package specification file and a metadata file:
-    1. src/nodetool/package.json - Main package specification file used for runtime
-    2. src/nodetool/package_metadata/{package.name}.json - Legacy metadata file for compatibility
+    to the metadata file at: src/nodetool/package_metadata/{package.name}.json
 
     Args:
         package: The package model to save
@@ -1141,25 +1139,11 @@ def save_package_metadata(package: PackageModel, verbose: bool = False):
 
     # Create metadata directory if it doesn't exist
     os.makedirs("src/nodetool/package_metadata", exist_ok=True)
-    os.makedirs("src/nodetool", exist_ok=True)
 
     # Generate the package metadata
     metadata = package.model_dump(exclude_defaults=True)
 
-    # 1. Save to main package.json specification file
-    package_json_path = os.path.join("src", "nodetool", "package.json")
-    if verbose:
-        print(f"Saving package definition to {package_json_path}")
-
-    with open(package_json_path, "w") as f:
-        json.dump(
-            metadata,
-            f,
-            indent=2,
-            cls=EnumEncoder,
-        )
-
-    # 2. Save to package_metadata directory for compatibility
+    # Save to package_metadata directory
     metadata_path = f"src/nodetool/package_metadata/{package.name}.json"
     if verbose:
         print(f"Saving package metadata to {metadata_path}")
@@ -1181,7 +1165,7 @@ def save_package_metadata(package: PackageModel, verbose: bool = False):
         f"Saved metadata with {node_count} nodes, {example_count} examples, and {asset_count} assets"
     )
 
-    return [package_json_path, metadata_path]
+    return metadata_path
 
 
 if __name__ == "__main__":
