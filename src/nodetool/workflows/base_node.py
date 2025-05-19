@@ -1078,43 +1078,6 @@ class Preview(BaseNode):
         return self.result_for_all_outputs(result)
 
 
-class IteratorNode(BaseNode):
-    """
-    Iterates over a list of items and triggers downstream execution for each item
-    by yielding them one by one using `gen_process`.
-    """
-
-    input_list: list[Any] = Field(
-        default_factory=list, description="The list of items to iterate over."
-    )
-
-    @classmethod
-    def get_title(cls) -> str:
-        return "Iterator"
-
-    @classmethod
-    def return_type(cls):
-        return {"output": Any, "index": int}
-
-    async def gen_process(self, context: Any) -> AsyncGenerator[tuple[str, Any], None]:
-        """Iterate over `self.input_list` and yield each item and its index.
-
-        For each item in the `self.input_list`, this generator yields two tuples:
-        first, the item itself associated with the 'output' slot, and second,
-        the index of the item associated with the 'index' slot.
-
-        Args:
-            context: The execution context for the node. (Currently unused).
-
-        Yields:
-            Tuples of (slot_name, value), where `slot_name` is either
-            'output' or 'index'.
-        """
-        for index, item in enumerate(self.input_list):
-            yield "output", item
-            yield "index", index
-
-
 def get_comfy_class_by_name(class_name: str) -> type[BaseNode] | None:
     """Retrieve a ComfyUI node class by its registered name.
 

@@ -149,30 +149,21 @@ class Asset(DBModel):
         Returns a tuple of a list of Assets and the last evaluated key for pagination.
         Last key is "" if there are no more items to be returned.
         """
+
+        condition = Field("user_id").equals(user_id)
+
         if parent_id:
-            condition = (
-                Field("user_id")
-                .equals(user_id)
-                .and_(Field("parent_id").equals(parent_id))
-                .and_(Field("id").greater_than(start_key or ""))
+            condition = condition.and_(Field("parent_id").equals(parent_id))
+        if workflow_id:
+            condition = condition.and_(Field("workflow_id").equals(workflow_id))
+        if start_key:
+            condition = condition.and_(Field("id").greater_than(start_key))
+        if content_type:
+            condition = condition.and_(
+                Field("content_type").like((content_type or "") + "%")
             )
-            return cls.query(condition, limit)
-        elif workflow_id:
-            condition = (
-                Field("user_id")
-                .equals(user_id)
-                .and_(Field("workflow_id").equals(workflow_id))
-                .and_(Field("id").greater_than(start_key or ""))
-            )
-            return cls.query(condition, limit)
-        else:
-            condition = (
-                Field("user_id")
-                .equals(user_id)
-                .and_(Field("content_type").like((content_type or "") + "%"))
-                .and_(Field("id").greater_than(start_key or ""))
-            )
-            return cls.query(condition, limit, reverse)
+
+        return cls.query(condition, limit, reverse)
 
     @classmethod
     def get_children(cls, parent_id: str) -> Sequence["Asset"]:

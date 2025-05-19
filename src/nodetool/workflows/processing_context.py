@@ -393,7 +393,7 @@ class ProcessingContext:
         self,
         parent_id: str | None = None,
         recursive: bool = False,
-        mime_type: str | None = None,
+        content_type: str | None = None,
     ):
         """
         Lists assets.
@@ -403,7 +403,7 @@ class ProcessingContext:
             params={
                 "parent_id": parent_id,
                 "recursive": recursive,
-                "mime_type": mime_type,
+                "content_type": content_type,
             },
         )
         return AssetList(**res.json())

@@ -1347,7 +1347,7 @@ class WorkflowRunner:
         self, context: ProcessingContext, node: BaseNode, inputs: dict[str, Any]
     ):
         """
-        Processes a regular `BaseNode` (i.e., not an `IteratorNode` or `OutputNode`)
+        Processes a regular `BaseNode` (i.e., not an `OutputNode`)
         with its resolved inputs.
 
         This method handles the core execution lifecycle for a standard node:
