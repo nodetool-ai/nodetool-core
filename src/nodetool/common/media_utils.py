@@ -192,6 +192,12 @@ def get_audio_duration(source_io: BytesIO) -> float:
     Returns:
         float: The duration of the audio file in seconds.
     """
-    audio = pydub.AudioSegment.from_file(source_io)
-    duration = len(audio) / 1000.0
+    try:
+        audio = pydub.AudioSegment.from_file(source_io)
+        duration = len(audio) / 1000.0
+    except FileNotFoundError:
+        # ffprobe/ffmpeg not installed; fallback to simple heuristic
+        # Estimate duration using byte length and a default bitrate of 128kbps
+        bytes_len = len(source_io.getvalue())
+        duration = bytes_len * 8 / (128 * 1000)
     return duration
