@@ -17,7 +17,7 @@ class Message(DBModel):
     user_id: str = DBField(default="")
     tool_call_id: str | None = DBField(default=None)
     role: str = DBField(default="")
-    name: str = DBField(default="")
+    name: str | None = DBField(default=None)
     content: str | list[MessageContent] | None = DBField(default=None)
     tool_calls: list[ToolCall] | None = DBField(default=None)
     created_at: datetime = DBField(default_factory=datetime.now)
