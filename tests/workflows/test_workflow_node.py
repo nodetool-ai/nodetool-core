@@ -61,4 +61,4 @@ async def test_process(context: ProcessingContext):
 
     output = await workflow_node.process(context)
 
-    assert output == {"output": 3}
+    assert output == {"output": [3]}
