@@ -7,7 +7,7 @@ class MessageCreateRequest(BaseModel):
     user_id: str | None = None
     tool_call_id: str | None = None
     role: str = ""
-    name: str = ""
+    name: str | None = None
     content: str | list[MessageContent] | None = None
     tool_calls: list[ToolCall] | None = None
     created_at: str | None = None

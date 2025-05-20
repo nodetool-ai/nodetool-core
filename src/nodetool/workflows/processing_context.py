@@ -139,6 +139,7 @@ class ProcessingContext:
         upload_assets_to_s3: bool = False,
         chroma_client: ClientAPI | None = None,
         workspace_dir: str | None = None,
+        http_client: httpx.AsyncClient | None = None,
     ):
         self.user_id = user_id or "1"
         self.auth_token = auth_token or "local_token"
@@ -156,6 +157,8 @@ class ProcessingContext:
         self.encode_assets_as_base64 = encode_assets_as_base64
         self.upload_assets_to_s3 = upload_assets_to_s3
         self.chroma_client = chroma_client
+        if http_client is not None:
+            self._http_client = http_client
         self.workspace_dir = workspace_dir or WorkspaceManager().get_current_directory()
 
     def get_http_client(self):

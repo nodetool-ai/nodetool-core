@@ -81,6 +81,9 @@ class Prediction(DBModel):
         Returns:
             The newly created and saved Prediction instance.
         """
+        if created_at is None:
+            created_at = datetime.now()
+
         prediction = cls(
             id=create_time_ordered_uuid(),
             user_id=user_id,
