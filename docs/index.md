@@ -33,6 +33,7 @@ The documentation is organized into the following sections:
 - [**Concepts**](concepts/index.md) - Core concepts and architecture
 - [**API Reference**](api-reference/index.md) - Detailed API documentation
 - [**CLI Reference**](cli.md) - Command line usage
+- [**Chat CLI**](chat-cli.md) - Interactive chat application
 - [**Examples**](../examples/README.md) - Example workflows
 
 ## Community
