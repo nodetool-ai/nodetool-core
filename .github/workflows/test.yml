@@ -11,6 +11,8 @@ jobs:
         id: setup-ffmpeg
         with:
           ffmpeg-version: release
+          linking-type: static
+          github-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
