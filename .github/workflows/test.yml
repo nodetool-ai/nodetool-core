@@ -7,12 +7,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      - uses: FedericoCarboni/setup-ffmpeg@v3.1
-        id: setup-ffmpeg
-        with:
-          ffmpeg-version: release
-          linking-type: static
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Download and setup FFmpeg
+        run: |
+          mkdir -p $HOME/ffmpeg
+          wget -q https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz
+          tar xf ffmpeg-release-amd64-static.tar.xz -C $HOME/ffmpeg --strip-components=1
+          echo "$HOME/ffmpeg" >> $GITHUB_PATH
+          echo "FFmpeg version:"
+          $HOME/ffmpeg/ffmpeg -version
+          
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
