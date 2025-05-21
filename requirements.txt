@@ -860,9 +860,9 @@ greenlet==3.1.1 ; python_version >= "3.11" and python_version < "4.0" \
 griffe==1.7.3 ; python_version >= "3.11" and python_version < "4.0" \
     --hash=sha256:52ee893c6a3a968b639ace8015bec9d36594961e156e23315c8e8e51401fa50b \
     --hash=sha256:c6b3ee30c2f0f17f30bcdef5068d6ab7a2a4f1b8bf1a3e74b56fffd21e1c5f75
-grpcio-status==1.48.2 ; python_version >= "3.11" and python_version < "4.0" \
-    --hash=sha256:2c33bbdbe20188b2953f46f31af669263b6ee2a9b2d38fa0d36ee091532e21bf \
-    --hash=sha256:53695f45da07437b7c344ee4ef60d370fd2850179f5a28bb26d8e2aa1102ec11
+grpcio-status==1.68.1 ; python_version >= "3.11" and python_version < "4.0" \
+    --hash=sha256:66f3d8847f665acfd56221333d66f7ad8927903d87242a482996bdb45e8d28fd \
+    --hash=sha256:e1378d036c81a1610d7b4c7a146cd663dd13fcc915cf4d7d053929dba5bbb6e1
 grpcio==1.70.0 ; python_version >= "3.11" and python_version < "4.0" \
     --hash=sha256:0495c86a55a04a874c7627fd33e5beaee771917d92c0e6d9d797628ac40e7655 \
     --hash=sha256:07269ff4940f6fb6710951116a04cd70284da86d0a4368fd5a3b552744511f5a \
