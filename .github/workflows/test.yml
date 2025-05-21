@@ -11,14 +11,12 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       
-      - name: Download and setup FFmpeg
+      - name: Install FFmpeg via apt-get
         run: |
-          mkdir -p $HOME/ffmpeg
-          wget -q https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz
-          tar xf ffmpeg-release-amd64-static.tar.xz -C $HOME/ffmpeg --strip-components=1
-          echo "$HOME/ffmpeg" >> $GITHUB_PATH
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
           echo "FFmpeg version:"
-          $HOME/ffmpeg/ffmpeg -version
+          ffmpeg -version
           
       - name: Set up Python
         uses: actions/setup-python@v4
