@@ -61,6 +61,13 @@ g = ChatCompletion(
 result = asyncio.run(run_graph(graph(g)))
 print(result)
 ```
+### CLI Usage
+
+```bash
+python -m nodetool.cli --help
+```
+See [docs/cli.md](docs/cli.md) for all commands.
+
 
 ## 📖 Documentation
 
