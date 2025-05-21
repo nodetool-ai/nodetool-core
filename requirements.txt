@@ -2587,9 +2587,9 @@ python-multipart==0.0.17 ; python_version >= "3.11" and python_version < "4.0" \
 python-pptx==1.0.2 ; python_version >= "3.11" and python_version < "4.0" \
     --hash=sha256:160838e0b8565a8b1f67947675886e9fea18aa5e795db7ae531606d68e785cba \
     --hash=sha256:479a8af0eaf0f0d76b6f00b0887732874ad2e3188230315290cd1f9dd9cc7095
-pytz==2025.1 ; python_version >= "3.11" and python_version < "4.0" \
-    --hash=sha256:89dd22dca55b46eac6eda23b2d72721bf1bdfef212645d81513ef5d03038de57 \
-    --hash=sha256:c2db42be2a2518b28e65f9207c4d05e6ff547d1efa4086469ef855e4ab70178e
+pytz==2025.2 ; python_version >= "3.11" and python_version < "4.0" \
+    --hash=sha256:360b9e3dbb49a209c21ad61809c7fb453643e048b38924c765813546746e81c3 \
+    --hash=sha256:5ddf76296dd8c44c26eb8f4b6f35488f3ccbf6fbbd7adee0b7262d43f0ec2f00
 pywin32==308 ; python_version >= "3.11" and python_version < "4.0" and platform_system == "Windows" \
     --hash=sha256:00b3e11ef09ede56c6a43c71f2d31857cf7c54b0ab6e78ac659497abd2834f47 \
     --hash=sha256:100a5442b7332070983c4cd03f2e906a5648a5104b8a7f50175f7906efd16bb6 \
