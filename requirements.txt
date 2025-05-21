@@ -2514,9 +2514,9 @@ pydantic==2.10.4 ; python_version >= "3.11" and python_version < "4.0" \
 pydub==0.25.1 ; python_version >= "3.11" and python_version < "4.0" \
     --hash=sha256:65617e33033874b59d87db603aa1ed450633288aefead953b30bded59cb599a6 \
     --hash=sha256:980a33ce9949cab2a569606b65674d748ecbca4f0796887fd6f46173a7b0d30f
-pyee==12.1.1 ; python_version >= "3.11" and python_version < "4.0" \
-    --hash=sha256:18a19c650556bb6b32b406d7f017c8f513aceed1ef7ca618fb65de7bd2d347ef \
-    --hash=sha256:bbc33c09e2ff827f74191e3e5bbc6be7da02f627b7ec30d86f5ce1a6fb2424a3
+pyee==13.0.0 ; python_version >= "3.11" and python_version < "4.0" \
+    --hash=sha256:48195a3cddb3b1515ce0695ed76036b5ccc2ef3a9f963ff9f77aec0139845498 \
+    --hash=sha256:b391e3c5a434d1f5118a25615001dbc8f669cf410ab67d04c4d4e07c55481c37
 pygments==2.19.1 ; python_version >= "3.11" and python_version < "4.0" \
     --hash=sha256:61c16d2a8576dc0649d9f39e089b5f02bcd27fba10d8fb4dcc28173f7a45151f \
     --hash=sha256:9ea1544ad55cecf4b8242fab6dd35a93bbce657034b0611ee383099054ab6d8c
