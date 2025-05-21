@@ -477,6 +477,19 @@ socket.send(msgpack.encode({ command: "get_status" }));
 poetry install
 ```
 
+## Configuration
+
+### Environment Variables
+
+The following environment variables can be used to configure the library:
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `FFMPEG_PATH` | Path to the ffmpeg executable | `ffmpeg` |
+| `FFPROBE_PATH` | Path to the ffprobe executable | `ffprobe` |
+
+These variables are useful when you need to specify custom binary paths for media processing tools, especially in Docker containers or CI/CD environments.
+
 ## Development
 
 ### Setup

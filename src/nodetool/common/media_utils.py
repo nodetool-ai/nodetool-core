@@ -24,8 +24,17 @@ Functions:
 The module relies on external libraries such as PIL, OpenCV, pydub, and ffmpeg for media processing tasks.
 It includes both synchronous and asynchronous functions to handle different types of media operations efficiently.
 
-Note: Some functions require external command-line tools like ffmpeg and ffprobe to be installed and accessible in the system path.
+Note: Some functions require external command-line tools like ffmpeg and ffprobe to be installed and accessible.
+      Use environment variables FFMPEG_PATH and FFPROBE_PATH to specify custom binary paths if needed.
 """
+
+# Default to 'ffmpeg' in PATH, but allow overriding with environment variable
+FFMPEG_PATH = os.environ.get("FFMPEG_PATH", "ffmpeg")
+FFPROBE_PATH = os.environ.get("FFPROBE_PATH", "ffprobe")
+
+# Configure pydub to use our FFMPEG_PATH and FFPROBE_PATH
+pydub.AudioSegment.converter = FFMPEG_PATH
+pydub.AudioSegment.ffprobe = FFPROBE_PATH
 
 
 def create_empty_video(fps: int, width: int, height: int, duration: int, filename: str):
@@ -99,7 +108,7 @@ async def create_video_thumbnail(input_io: IO, width: int, height: int) -> Bytes
         # select the most representative frame in a given sequence of consecutive frames
         # automatically from the video.
         cmd = [
-            "ffmpeg",
+            FFMPEG_PATH,
             "-i",
             temp_file_path,
             "-vf",
@@ -122,7 +131,7 @@ async def create_video_thumbnail(input_io: IO, width: int, height: int) -> Bytes
         if process.returncode == 0:
             return BytesIO(output)
         else:
-            raise Exception(f"ffmpeg error: {errors.decode()}")
+            raise Exception(f"ffmpeg error (using {FFMPEG_PATH}): {errors.decode()}")
     finally:
         os.remove(temp_file_path)  # Ensure the temporary file is deleted
 
@@ -147,7 +156,7 @@ async def get_video_duration(input_io: BytesIO) -> Union[float, None]:
 
     try:
         cmd = [
-            "ffprobe",
+            FFPROBE_PATH,
             "-v",
             "error",  # Set error log level
             "-show_entries",
@@ -176,7 +185,7 @@ async def get_video_duration(input_io: BytesIO) -> Union[float, None]:
                     return None
             return None
         else:
-            print(f"ffprobe error: {errors.decode()}")
+            print(f"ffprobe error (using {FFPROBE_PATH}): {errors.decode()}")
             return None
     finally:
         os.remove(temp_file_path)
@@ -196,7 +205,7 @@ def get_audio_duration(source_io: BytesIO) -> float:
         audio = pydub.AudioSegment.from_file(source_io)
         duration = len(audio) / 1000.0
     except FileNotFoundError:
-        # ffprobe/ffmpeg not installed; fallback to simple heuristic
+        # ffprobe/ffmpeg not found at specified path; fallback to simple heuristic
         # Estimate duration using byte length and a default bitrate of 128kbps
         bytes_len = len(source_io.getvalue())
         duration = bytes_len * 8 / (128 * 1000)
