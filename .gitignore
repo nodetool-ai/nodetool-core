@@ -129,3 +129,4 @@ Thumbs.db
 *.csr
 *.csr.pem
 *.csr.pem.crt
+ffmpeg-release-amd64-static.tar.xz
