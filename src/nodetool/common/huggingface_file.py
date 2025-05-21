@@ -1,3 +1,5 @@
+"""Helpers for retrieving information about individual Hugging Face files."""
+
 from pydantic import BaseModel
 from huggingface_hub import HfFileSystem
 
@@ -14,6 +16,19 @@ class HFFileRequest(BaseModel):
 
 
 def get_huggingface_file_infos(requests: list[HFFileRequest]) -> list[HFFileInfo]:
+    """Return file metadata for a list of ``repo_id``/``path`` pairs.
+
+    Parameters
+    ----------
+    requests:
+        A list of :class:`HFFileRequest` describing the files to query.
+
+    Returns
+    -------
+    list[HFFileInfo]
+        Metadata for each requested file, including its size in bytes.
+    """
+
     fs = HfFileSystem()
     file_infos = []
 
