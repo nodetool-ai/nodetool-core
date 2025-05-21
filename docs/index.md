@@ -32,6 +32,7 @@ The documentation is organized into the following sections:
 - [**Getting Started**](getting-started/index.md) - Guides for new users
 - [**Concepts**](concepts/index.md) - Core concepts and architecture
 - [**API Reference**](api-reference/index.md) - Detailed API documentation
+- [**Workflow API**](workflow-api.md) - How to call workflows programmatically
 - [**CLI Reference**](cli.md) - Command line usage
 - [**Examples**](../examples/README.md) - Example workflows
 
