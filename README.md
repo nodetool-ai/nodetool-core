@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <b>Agentic Workflows/b>
+  <b>Agentic Workflows</b>
 </p>
 
 ## 📚 Overview
