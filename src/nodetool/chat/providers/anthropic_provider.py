@@ -104,10 +104,10 @@ class AnthropicProvider(ChatProvider):
         """Initialize the Anthropic provider with client credentials."""
         super().__init__()
         env = Environment.get_environment()
-        api_key = env.get("ANTHROPIC_API_KEY")
-        assert api_key, "ANTHROPIC_API_KEY is not set"
+        self.api_key = env.get("ANTHROPIC_API_KEY")
+        assert self.api_key, "ANTHROPIC_API_KEY is not set"
         self.client = anthropic.AsyncAnthropic(
-            api_key=api_key,
+            api_key=self.api_key,
         )
         # Initialize usage tracking
         self.usage = {
@@ -117,6 +117,9 @@ class AnthropicProvider(ChatProvider):
             "cache_read_input_tokens": 0,
         }
         self.cost = 0.0
+
+    def get_container_env(self) -> dict[str, str]:
+        return {"ANTHROPIC_API_KEY": self.api_key} if self.api_key else {}
 
     def get_max_token_limit(self, model: str) -> int:
         """Get the maximum token limit for a given model."""

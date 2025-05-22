@@ -45,6 +45,14 @@ class GoogleGroundedSearchTool(Tool):
             "required": ["query"],
         }
 
+    def get_container_env(self) -> dict[str, str]:
+        key = Environment.get_environment().get("GEMINI_API_KEY")
+        return {"GEMINI_API_KEY": key} if key else {}
+
+    def get_container_env(self) -> dict[str, str]:
+        key = Environment.get_environment().get("GEMINI_API_KEY")
+        return {"GEMINI_API_KEY": key} if key else {}
+
     async def process(
         self, context: ProcessingContext, params: Dict[str, Any]
     ) -> Dict[str, Any]:

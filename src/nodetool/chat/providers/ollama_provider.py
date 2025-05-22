@@ -110,6 +110,9 @@ class OllamaProvider(ChatProvider):
                 If None, no logging will be performed.
         """
         super().__init__()
+        env = Environment.get_environment()
+        self.api_url = env.get("OLLAMA_API_URL")
+        self.api_key = env.get("OLLAMA_API_KEY")
         self.usage = {
             "prompt_tokens": 0,
             "completion_tokens": 0,
@@ -117,6 +120,14 @@ class OllamaProvider(ChatProvider):
         }
         self.encoding = tiktoken.get_encoding("cl100k_base")
         self.log_file = log_file
+
+    def get_container_env(self) -> dict[str, str]:
+        env_vars = {}
+        if self.api_url:
+            env_vars["OLLAMA_API_URL"] = self.api_url
+        if self.api_key:
+            env_vars["OLLAMA_API_KEY"] = self.api_key
+        return env_vars
 
     def get_max_token_limit(self, model: str) -> int:
         """Get the maximum token limit for a given model."""

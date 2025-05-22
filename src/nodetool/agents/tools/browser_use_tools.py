@@ -55,6 +55,16 @@ class BrowserUseTool(Tool):
     )
     """
 
+    def get_container_env(self) -> dict[str, str]:
+        env_vars = {}
+        api_key = Environment.get("OPENAI_API_KEY")
+        if api_key:
+            env_vars["OPENAI_API_KEY"] = api_key
+        endpoint = Environment.get("BRIGHTDATA_SCRAPING_BROWSER_ENDPOINT")
+        if endpoint:
+            env_vars["BRIGHTDATA_SCRAPING_BROWSER_ENDPOINT"] = endpoint
+        return env_vars
+
     def user_message(self, params: dict) -> str:
         task = params.get("task", "a browser task")
         msg = f"Running browser agent for task: '{task}'..."

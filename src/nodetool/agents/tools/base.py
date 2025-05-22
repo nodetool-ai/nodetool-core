@@ -132,3 +132,7 @@ class Tool:
         # else:
         #      if cls.__name__ != "Tool": # Don't warn for the base class itself
         #          logger.debug(f"Skipping registration for class {cls.__name__} (missing or default name).")
+
+    def get_container_env(self) -> Dict[str, str]:
+        """Return environment variables needed when running inside Docker."""
+        return {}

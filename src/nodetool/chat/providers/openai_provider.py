@@ -106,6 +106,9 @@ class OpenAIProvider(ChatProvider):
             "reasoning_tokens": 0,
         }
 
+    def get_container_env(self) -> dict[str, str]:
+        return {"OPENAI_API_KEY": self.api_key} if self.api_key else {}
+
     def get_client(
         self,
     ) -> openai.AsyncClient:

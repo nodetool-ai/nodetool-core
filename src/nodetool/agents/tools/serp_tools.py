@@ -33,6 +33,16 @@ def _remove_base64_images(data: T) -> T:
     return data
 
 
+def _serp_env_vars() -> Dict[str, str]:
+    env = Environment.get_environment()
+    result: Dict[str, str] = {}
+    for key in ["DATA_FOR_SEO_LOGIN", "DATA_FOR_SEO_PASSWORD", "SERPAPI_API_KEY"]:
+        val = env.get(key)
+        if val:
+            result[key] = val
+    return result
+
+
 class DataForSEOProvider(SerpProvider):
     """
     A SERP provider that uses the DataForSEO API.
@@ -396,6 +406,9 @@ class GoogleSearchTool(Tool):
     )
     """
 
+    def get_container_env(self) -> Dict[str, str]:
+        return _serp_env_vars()
+
     async def process(self, context: ProcessingContext, params: dict) -> Any:
         keyword = params.get("keyword")
         if not keyword:
@@ -453,6 +466,9 @@ class GoogleNewsTool(Tool):
         num_results=5
     )
     """
+
+    def get_container_env(self) -> Dict[str, str]:
+        return _serp_env_vars()
 
     async def process(self, context: ProcessingContext, params: dict) -> Any:
         keyword = params.get("keyword")
@@ -512,6 +528,9 @@ class GoogleImagesTool(Tool):
         num_results=10
     )
     """
+
+    def get_container_env(self) -> Dict[str, str]:
+        return _serp_env_vars()
 
     async def process(self, context: ProcessingContext, params: dict) -> Any:
         keyword = params.get("keyword")
@@ -576,6 +595,9 @@ class GoogleFinanceTool(Tool):
     )
     """
 
+    def get_container_env(self) -> Dict[str, str]:
+        return _serp_env_vars()
+
     async def process(self, context: ProcessingContext, params: dict) -> Any:
         query = params.get("query")
         if not query:
@@ -636,6 +658,9 @@ class GoogleJobsTool(Tool):
     )
     """
 
+    def get_container_env(self) -> Dict[str, str]:
+        return _serp_env_vars()
+
     async def process(self, context: ProcessingContext, params: dict) -> Any:
         query = params.get("query")
         if not query:
@@ -694,6 +719,9 @@ class GoogleLensTool(Tool):
         num_results=5
     )
     """
+
+    def get_container_env(self) -> Dict[str, str]:
+        return _serp_env_vars()
 
     async def process(self, context: ProcessingContext, params: dict) -> Any:
         image_url = params.get("image_url")
@@ -762,6 +790,9 @@ class GoogleMapsTool(Tool):
         data_id="0x89c2589a018531e3:0xb9df1f7387a94119"
     )
     """
+
+    def get_container_env(self) -> Dict[str, str]:
+        return _serp_env_vars()
 
     async def process(self, context: ProcessingContext, params: dict) -> Any:
         query = params.get("query")
@@ -855,6 +886,9 @@ class GoogleShoppingTool(Tool):
         num_results=15
     )
     """
+
+    def get_container_env(self) -> Dict[str, str]:
+        return _serp_env_vars()
 
     async def process(self, context: ProcessingContext, params: dict) -> Any:
         query = params.get("query")
