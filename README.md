@@ -1,35 +1,24 @@
-# NodeTool Core <img src="https://img.shields.io/badge/version-1.0.0-blue.svg" alt="Version Badge">
+# NodeTool Core - Agentic Workflows
 
 <p align="center">
   <img src="https://img.shields.io/badge/Python-3.11%2B-blue.svg" alt="Python Version Badge">
   <img src="https://img.shields.io/github/actions/workflow/status/nodetool-ai/nodetool-core/test.yml?branch=main" alt="Build Status">
   <img src="https://img.shields.io/badge/License-AGPL%20v3-blue.svg" alt="License Badge">
   <img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg" alt="PRs Welcome Badge">
-  <img src="https://img.shields.io/discord/26m5xBwe?logo=discord" alt="Discord">
-</p>
-
-<p align="center">
-  <b>Powerful, Flexible Node-Based Workflows for AI Applications</b>
-</p>
-
-<p align="center">
-  <img src="https://via.placeholder.com/800x400?text=NodeTool+Core+Workflow+Example" alt="NodeTool Core Example" width="800">
 </p>
 
 ## 📚 Overview
 
-NodeTool Core is a powerful Python library for building and running AI workflows using a modular, node-based approach. It provides the foundation for the [NodeTool Platform](https://github.com/nodetool-ai/nodetool), enabling developers to create sophisticated AI applications with minimal code.
+NodeTool Core is the Python library behind [NodeTool App](https://github.com/nodetool-ai/nodetool) for building and running agentic workflows using a modular, node-based approach.
 
 ### ✨ Key Features
 
 - 🔄 **Node-based workflow system** - Compose complex workflows from simple building blocks
+- 🧠 **Advanced agent system** - Create intelligent agents with specialized capabilities
 - 🤖 **Multi-provider AI support** - Seamless integration with OpenAI, Anthropic, Ollama, and more
 - 🧩 **Modular architecture** - Easily extend with custom nodes and functionality
-- ⚡ **High-performance execution engine** - Run workflows efficiently on CPU or GPU
-- 🔄 **Workflow streaming API** - Get real-time updates on workflow progress
-- 🧠 **Advanced agent system** - Create intelligent agents with specialized capabilities
-- 💾 **Storage and persistence** - Save and manage workflows and results
-- 📊 **Type system** - Strong typing for workflow validation and documentation
+- ⚡ **Workflow execution engine** - Run workflows efficiently on CPU or GPU
+- 📊 **RAG Support** -- Integrates with Chroma for vector storage
 
 ## 🚀 Quick Start
 
@@ -61,10 +50,15 @@ g = ChatCompletion(
 result = asyncio.run(run_graph(graph(g)))
 print(result)
 ```
+### CLI Usage
+
+```bash
+python -m nodetool.cli --help
+```
+See [docs/cli.md](docs/cli.md) for all commands.
+
 
 ## 📖 Documentation
-
-Comprehensive documentation is available at [docs.nodetool.ai](https://docs.nodetool.ai).
 
 - [Concepts and Architecture](https://docs.nodetool.ai/concepts/)
 - [Getting Started Guide](https://docs.nodetool.ai/getting-started/)
@@ -183,17 +177,6 @@ This setup is for developing the `nodetool-core` library itself using Poetry. If
 
    ```bash
    poetry install
-   ```
-
-3. Install pre-commit hooks
-
-   ```bash
-   pre-commit install
-   ```
-
-4. Run tests
-   ```bash
-   poetry run pytest
    ```
 
 ## 📄 License
