@@ -1,4 +1,4 @@
-# NodeTool Core <img src="https://img.shields.io/badge/version-1.0.0-blue.svg" alt="Version Badge">
+# NodeTool Core - Agentic Workflows
 
 <p align="center">
   <img src="https://img.shields.io/badge/Python-3.11%2B-blue.svg" alt="Python Version Badge">
@@ -6,10 +6,6 @@
   <img src="https://img.shields.io/badge/License-AGPL%20v3-blue.svg" alt="License Badge">
   <img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg" alt="PRs Welcome Badge">
   <img src="https://img.shields.io/discord/26m5xBwe?logo=discord" alt="Discord">
-</p>
-
-<p align="center">
-  <b>Agentic Workflows</b>
 </p>
 
 ## 📚 Overview
