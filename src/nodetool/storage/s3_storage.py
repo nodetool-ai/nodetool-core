@@ -52,6 +52,12 @@ class S3Storage(AbstractStorage):
         )
         return response["LastModified"]
 
+    async def get_size(self, key: str) -> int:
+        response = await asyncio.to_thread(
+            self.s3.head_object, Bucket=self.bucket_name, Key=key
+        )
+        return response["ContentLength"]
+
     async def download(self, key: str, stream: IO):
         """
         Downloads a blob from the bucket.

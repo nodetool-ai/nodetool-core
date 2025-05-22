@@ -130,3 +130,6 @@ Thumbs.db
 *.csr.pem
 *.csr.pem.crt
 ffmpeg-release-amd64-static.tar.xz
+
+# Temporary local files
+tmp/
