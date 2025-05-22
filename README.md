@@ -177,17 +177,6 @@ This setup is for developing the `nodetool-core` library itself using Poetry. If
    poetry install
    ```
 
-3. Install pre-commit hooks
-
-   ```bash
-   pre-commit install
-   ```
-
-4. Run tests
-   ```bash
-   poetry run pytest
-   ```
-
 ## 📄 License
 
 [AGPL License](./LICENSE)
