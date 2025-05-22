@@ -33,6 +33,7 @@ The documentation is organized into the following sections:
 - [**Concepts**](concepts/index.md) - Core concepts and architecture
 - [**API Reference**](api-reference/index.md) - Detailed API documentation
 - [**Workflow API**](workflow-api.md) - How to call workflows programmatically
+- [**Chat WebSocket API**](chat-api.md) - Real time chat endpoint
 - [**CLI Reference**](cli.md) - Command line usage
 - [**Chat CLI**](chat-cli.md) - Interactive chat application
 - [**Examples**](../examples/README.md) - Example workflows
