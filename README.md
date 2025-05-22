@@ -5,7 +5,6 @@
   <img src="https://img.shields.io/github/actions/workflow/status/nodetool-ai/nodetool-core/test.yml?branch=main" alt="Build Status">
   <img src="https://img.shields.io/badge/License-AGPL%20v3-blue.svg" alt="License Badge">
   <img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg" alt="PRs Welcome Badge">
-  <img src="https://img.shields.io/discord/26m5xBwe?logo=discord" alt="Discord">
 </p>
 
 ## 📚 Overview
