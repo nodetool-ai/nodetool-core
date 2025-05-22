@@ -874,6 +874,22 @@ class SubTaskContext:
         """Checks if the provided data matches the file pointer structure."""
         return isinstance(data, dict) and isinstance(data.get("path"), str)
 
+    @staticmethod
+    def _is_context_length_error(error: Exception) -> bool:
+        """Detect if an exception is related to context window limits."""
+        msg = str(error).lower()
+        keywords = [
+            "context length",
+            "context_length",
+            "context window",
+            "maximum context",
+            "token limit",
+            "too many tokens",
+            "prompt is too long",
+            "max_tokens",
+        ]
+        return any(kw in msg for kw in keywords)
+
     def _find_unique_summary_path(self, base_dir: str, base_name: str, ext: str) -> str:
         """Finds a unique path for a summary file, avoiding collisions."""
         summary_path = os.path.join(base_dir, f"{base_name}{ext}")
@@ -1364,8 +1380,7 @@ class SubTaskContext:
                 tools=final_tools,
             )
         except Exception as e:
-            # TODO: find for all LLM providers
-            if "context length" in str(e):
+            if SubTaskContext._is_context_length_error(e):
                 await self._optimize_context_window()
                 message = await self.provider.generate_message(
                     messages=self.history,

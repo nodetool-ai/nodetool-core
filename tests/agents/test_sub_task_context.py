@@ -94,3 +94,13 @@ def test_write_content_md(tmp_path):
         content = f.read()
     assert "title: My Note" in content
     assert "hello" in content
+
+
+def test_is_context_length_error_detection():
+    err1 = Exception("maximum context length is 4096 tokens")
+    err2 = Exception("Exceeded the token limit in context window")
+    err3 = Exception("some other error")
+
+    assert SubTaskContext._is_context_length_error(err1)
+    assert SubTaskContext._is_context_length_error(err2)
+    assert not SubTaskContext._is_context_length_error(err3)
