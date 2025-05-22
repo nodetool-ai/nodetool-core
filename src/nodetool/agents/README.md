@@ -173,6 +173,13 @@ async def run_agent():
 asyncio.run(run_agent())
 ```
 
+### Running in Docker
+
+Set the `docker_image` parameter when creating an `Agent` to execute the
+entire plan inside a Docker container. The workspace will be mounted at
+`/workspace` inside the container and input files are copied there
+automatically. Results are written back to the same workspace on the host.
+
 ## Limitations and Considerations
 
 - **Token Limits**: Complex tasks may hit token limits, requiring careful management within each `SubTaskContext`.

@@ -18,6 +18,7 @@ import datetime
 import json
 import os
 import shutil
+import asyncio
 from typing import AsyncGenerator, List, Sequence, Union, Any, Optional
 
 from nodetool.common.settings import get_log_path
@@ -102,6 +103,7 @@ class Agent(BaseAgent):
         enable_data_contracts_phase: bool = True,
         task: Task | None = None,  # Add optional task parameter
         verbose: bool = True,  # Add verbose flag
+        docker_image: str | None = None,
     ):
         """
         Initialize the base agent.
@@ -127,6 +129,7 @@ class Agent(BaseAgent):
             enable_data_contracts_phase (bool, optional): Whether to run the data contracts phase (PHASE 3)
             task (Task, optional): Pre-defined task to execute, skipping planning
             verbose (bool, optional): Enable/disable console output (default: True)
+            docker_image (str, optional): If set, execute the agent inside this Docker image.
         """
         super().__init__(
             name=name,
@@ -152,6 +155,7 @@ class Agent(BaseAgent):
         if self.initial_task:
             self.task = self.initial_task
         self.verbose = verbose
+        self.docker_image = docker_image
         self.display_manager = AgentConsole(verbose=self.verbose)
 
     async def execute(
@@ -178,6 +182,11 @@ class Agent(BaseAgent):
             )
             shutil.copy(file_path, destination_path)
             input_files.append(os.path.basename(file_path))
+
+        if self.docker_image:
+            async for item in self._execute_in_docker(processing_context, input_files):
+                yield item
+            return
 
         tools = list(self.tools)
         task_planner_instance: Optional[TaskPlanner] = (
@@ -353,3 +362,70 @@ class Agent(BaseAgent):
             List[Any]: Results with priority given to finish_task output
         """
         return self.results
+
+    async def _execute_in_docker(
+        self,
+        processing_context: ProcessingContext,
+        input_files: list[str],
+    ) -> AsyncGenerator[Chunk, None]:
+        """Run the agent inside a Docker container."""
+
+        workspace = processing_context.workspace_dir
+        config = {
+            "name": self.name,
+            "objective": self.objective,
+            "provider": self.provider.provider.name if hasattr(self.provider, "provider") else "OpenAI",
+            "model": self.model,
+            "planning_model": self.planning_model,
+            "reasoning_model": self.reasoning_model,
+            "tools": [t.__class__.name for t in self.tools],
+            "description": self.description,
+            "input_files": input_files,
+            "system_prompt": self.system_prompt,
+            "max_subtasks": self.max_subtasks,
+            "max_steps": self.max_steps,
+            "max_subtask_iterations": self.max_subtask_iterations,
+            "max_token_limit": self.max_token_limit,
+            "output_schema": self.output_schema,
+            "output_type": self.output_type,
+            "enable_analysis_phase": self.enable_analysis_phase,
+            "enable_data_contracts_phase": self.enable_data_contracts_phase,
+            "verbose": self.verbose,
+            "workspace_dir": "/workspace",
+            "result_path": "/workspace/docker_result.json",
+        }
+
+        host_config = os.path.join(workspace, "docker_agent_config.json")
+        with open(host_config, "w") as f:
+            json.dump(config, f)
+
+        cmd = [
+            "docker",
+            "run",
+            "--rm",
+            "-v",
+            f"{workspace}:/workspace",
+            self.docker_image,
+            "python",
+            "-m",
+            "nodetool.agents.docker_runner",
+            "/workspace/docker_agent_config.json",
+        ]
+
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+        )
+        assert proc.stdout
+        async for line in proc.stdout:
+            yield Chunk(content=line.decode())
+        await proc.wait()
+        if proc.returncode != 0:
+            raise RuntimeError(f"Docker run failed with code {proc.returncode}")
+
+        result_file = os.path.join(workspace, "docker_result.json")
+        if os.path.exists(result_file):
+            with open(result_file) as f:
+                self.results = json.load(f)
+        yield Chunk(content="\n[docker completed]\n", done=True)
