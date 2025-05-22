@@ -1,4 +1,5 @@
-# NodeTool Core - Agentic Workflows
+# NodeTool Core <img src="https://img.shields.io/badge/version-0.6.0-blue.svg" alt="Version Badge">
+<h3>Agentic Workflows</h3>
 
 <p align="center">
   <img src="https://img.shields.io/badge/Python-3.11%2B-blue.svg" alt="Python Version Badge">
