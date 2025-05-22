@@ -62,6 +62,17 @@ print(result)
 ## 🧩 Examples
 
 ```python
+import asyncio
+
+from nodetool.agents.agent import Agent
+from nodetool.agents.tools import BrowserTool, GoogleSearchTool
+from nodetool.chat.providers import get_provider
+from nodetool.metadata.types import Provider
+from nodetool.workflows.processing_context import ProcessingContext
+from nodetool.workflows.types import Chunk
+
+
+async def main() -> None:
     context = ProcessingContext()
 
     provider = get_provider(Provider.OpenAI)
@@ -109,12 +120,17 @@ print(result)
             },
         },
     )
+
     async for item in agent.execute(context):
         if isinstance(item, Chunk):
             print(item.content, end="", flush=True)
 
     print(f"\nWorkspace: {context.workspace_dir}")
     print(f"Results: {agent.results}")
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
 
 ```
 
