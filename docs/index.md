@@ -34,6 +34,7 @@ The documentation is organized into the following sections:
 - [**API Reference**](api-reference/index.md) - Detailed API documentation
 - [**Workflow API**](workflow-api.md) - How to call workflows programmatically
 - [**CLI Reference**](cli.md) - Command line usage
+- [**Chat CLI**](chat-cli.md) - Interactive chat application
 - [**Examples**](../examples/README.md) - Example workflows
 
 ## Community

@@ -5,7 +5,7 @@ Available commands:
 - **serve**: Serve the Nodetool API server.
 - **worker**: Start a Nodetool worker instance.
 - **run**: Run a workflow from a file.
-- **chat**: Start a nodetool chat.
+- **chat**: Start a nodetool chat. See [Chat CLI](chat-cli.md) for usage.
 - **explorer**: Explore files in an interactive text UI.
 - **codegen**: Generate DSL modules from node definitions.
 - **settings**: Commands for managing NodeTool settings and secrets.
