@@ -86,13 +86,3 @@ Initialize a new Nodetool project.
 `nodetool package docs [--output-dir DIR] [--compact] [--verbose]`
 
 Generate documentation for the package nodes.
-
-## Worker CLI
-
-A separate worker CLI is available via `python -m nodetool.worker_cli` with the
-following commands:
-
-- `list-models` – display installed and recommended models
-- `download-missing` – download recommended models that are not yet installed
-- `send-job WORKFLOW_FILE` – send a workflow job to the worker
-- `chat [SYSTEM_PROMPT]` – start an interactive chat with the worker
