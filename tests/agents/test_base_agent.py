@@ -22,6 +22,9 @@ class DummyProvider(ChatProvider):
         if False:
             yield
 
+    def is_context_length_error(self, error: Exception) -> bool:
+        return False
+
 
 class DummyAgent(BaseAgent):
     async def execute(self, processing_context: ProcessingContext):

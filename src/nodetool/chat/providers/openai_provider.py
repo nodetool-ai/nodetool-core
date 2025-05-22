@@ -39,7 +39,6 @@ from nodetool.metadata.types import (
     MessageImageContent,
     MessageTextContent,
     MessageAudioContent,
-    AudioRef,
 )
 from nodetool.common.environment import Environment
 from nodetool.workflows.types import Chunk
@@ -582,3 +581,8 @@ class OpenAIProvider(ChatProvider):
     def reset_usage(self) -> None:
         """Reset the usage counters to zero."""
         self.usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+
+    def is_context_length_error(self, error: Exception) -> bool:
+        """Detect OpenAI context window errors."""
+        msg = str(error).lower()
+        return "context length" in msg or "maximum context" in msg

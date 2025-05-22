@@ -5,10 +5,8 @@ This module implements the ChatProvider interface for Anthropic Claude models,
 handling message conversion, streaming, and tool integration.
 """
 
-import asyncio
 import json
 from typing import Any, AsyncGenerator, Sequence
-import random
 import anthropic
 from anthropic.types.message_param import MessageParam
 from anthropic.types.image_block_param import ImageBlockParam
@@ -18,20 +16,15 @@ from nodetool.chat.providers.openai_prediction import calculate_chat_cost
 from nodetool.metadata.types import (
     Message,
     ToolCall,
-    MessageContent,
     MessageImageContent,
     MessageTextContent,
 )
 from nodetool.common.environment import Environment
 from nodetool.workflows.types import Chunk
-
-"""
-Tool definition for forcing JSON output via Anthropic's tool mechanism.
-"""
-
-from typing import Any
 from nodetool.agents.tools.base import Tool
 from nodetool.workflows.processing_context import ProcessingContext
+
+"""Tool definition for forcing JSON output via Anthropic's tool mechanism."""
 
 
 class JsonOutputTool(Tool):
@@ -414,4 +407,10 @@ class AnthropicProvider(ChatProvider):
             role="assistant",
             content="\n".join(content),
             tool_calls=tool_calls,
+        )
+
+    def is_context_length_error(self, error: Exception) -> bool:
+        msg = str(error).lower()
+        return (
+            "context length" in msg or "context window" in msg or "token limit" in msg
         )

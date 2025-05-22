@@ -25,7 +25,6 @@ from nodetool.metadata.types import (
     MessageTextContent,
     ImageRef,
 )
-from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import Chunk
 
 
@@ -378,7 +377,7 @@ class OllamaProvider(ChatProvider):
                 and "json_schema" in response_format
             ):
                 schema = response_format["json_schema"]
-                if not "schema" in schema:
+                if "schema" not in schema:
                     raise ValueError(
                         "schema is required in json_schema response format"
                     )
@@ -644,7 +643,7 @@ Following functions are available:
                                 args=data["parameters"],
                             )
                         )
-                except json.JSONDecodeError as e:
+                except json.JSONDecodeError:
                     pass
             # Look for the next potential JSON object
             start_idx = text.find("{", end_idx)
@@ -801,6 +800,12 @@ Following functions are available:
 
         # If all processing attempts fail, return an empty string rather than a data URI
         return "" if not image.uri else image.uri
+
+    def is_context_length_error(self, error: Exception) -> bool:
+        msg = str(error).lower()
+        return (
+            "context length" in msg or "context window" in msg or "token limit" in msg
+        )
 
 
 async def run_smoke_test():

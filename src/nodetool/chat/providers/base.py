@@ -9,7 +9,7 @@ from abc import ABC, abstractmethod
 from typing import Any, AsyncGenerator, Sequence
 
 from nodetool.agents.tools.base import Tool
-from nodetool.metadata.types import Message, ToolCall, MessageFile
+from nodetool.metadata.types import Message, ToolCall
 from nodetool.workflows.types import Chunk
 
 import json
@@ -41,6 +41,24 @@ class ChatProvider(ABC):
     def get_max_token_limit(self, model: str) -> int:
         """Get the maximum token limit for a given model."""
         return 8192
+
+    def is_context_length_error(self, error: Exception) -> bool:
+        """Return True if the given error indicates a context window overflow.
+
+        Subclasses can override this method for provider specific logic.
+        The default implementation checks for common substrings in the error
+        message that typically appear when the prompt exceeds the model's
+        context length.
+        """
+        msg = str(error).lower()
+        keywords = [
+            "context length",
+            "maximum context",
+            "context window",
+            "token limit",
+            "too many tokens",
+        ]
+        return any(k in msg for k in keywords)
 
     def _log_api_request(
         self,
