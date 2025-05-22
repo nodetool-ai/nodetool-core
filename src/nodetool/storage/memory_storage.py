@@ -24,6 +24,12 @@ class MemoryStorage(AbstractStorage):
     async def get_mtime(self, key: str):
         return self.mtimes.get(key, datetime.now())
 
+    async def get_size(self, key: str) -> int:
+        if key in self.storage:
+            return len(self.storage[key])
+        else:
+            raise FileNotFoundError(f"File {key} not found")
+
     def download_stream(self, key: str) -> AsyncIterator[bytes]:
         if key in self.storage:
             return AsyncByteStream(self.storage[key])
