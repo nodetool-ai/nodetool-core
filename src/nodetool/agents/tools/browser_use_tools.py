@@ -1,11 +1,14 @@
 import asyncio
+import os
 from typing import Any
 
 from langchain_openai import ChatOpenAI
 from nodetool.agents.tools.base import Tool
 from nodetool.common.environment import Environment
 from nodetool.workflows.processing_context import ProcessingContext
-from browser_use import Agent, Browser as BrowserUse, BrowserConfig
+
+# Browseer Use
+os.environ["ANONYMIZED_TELEMETRY"] = "false"
 
 
 class BrowserUseTool(Tool):
@@ -41,7 +44,7 @@ class BrowserUseTool(Tool):
             },
             "use_remote_browser": {
                 "type": "boolean",
-                "description": "Use a remote browser (BrightData) instead of a local one. Requires BRIGHTDATA_SCRAPING_BROWSER_ENDPOINT.",
+                "description": "Use a remote browser instead of a local one. Requires BROWSER_URL.",
                 "default": True,
             },
         },
@@ -60,9 +63,9 @@ class BrowserUseTool(Tool):
         api_key = Environment.get("OPENAI_API_KEY")
         if api_key:
             env_vars["OPENAI_API_KEY"] = api_key
-        endpoint = Environment.get("BRIGHTDATA_SCRAPING_BROWSER_ENDPOINT")
+        endpoint = Environment.get("BROWSER_URL")
         if endpoint:
-            env_vars["BRIGHTDATA_SCRAPING_BROWSER_ENDPOINT"] = endpoint
+            env_vars["BROWSER_URL"] = endpoint
         return env_vars
 
     def user_message(self, params: dict) -> str:
@@ -76,6 +79,8 @@ class BrowserUseTool(Tool):
         """
         Execute a browser agent task using browser_use.
         """
+        from browser_use import Agent, Browser as BrowserUse, BrowserConfig
+
         task = params.get("task")
         if not task:
             return {"success": False, "task": task, "error": "Task is required"}
@@ -97,17 +102,15 @@ class BrowserUseTool(Tool):
         browser_instance = None
         try:
             if use_remote_browser:
-                browser_endpoint = Environment.get(
-                    "BRIGHTDATA_SCRAPING_BROWSER_ENDPOINT"
-                )
+                browser_endpoint = Environment.get("BROWSER_URL")
                 if not browser_endpoint:
                     raise ValueError(
-                        "BrightData scraping browser endpoint not found in environment variables (BRIGHTDATA_SCRAPING_BROWSER_ENDPOINT)."
+                        "Browser endpoint not found in environment variables (BROWSER_URL)."
                     )
                 browser_instance = BrowserUse(
                     config=BrowserConfig(
                         headless=True,
-                        cdp_url=browser_endpoint,
+                        wss_url=browser_endpoint,
                         # Removed browser_timeout
                     )
                 )
@@ -169,7 +172,7 @@ class BrowserUseTool(Tool):
 
 # Example usage for testing
 async def main():
-    # Load environment variables (ensure OPENAI_API_KEY and potentially BRIGHTDATA_SCRAPING_BROWSER_ENDPOINT are set)
+    # Load environment variables (ensure OPENAI_API_KEY and potentially BROWSER_URL are set)
     # Environment.load_env() # Removed this line as it caused a linter error
 
     tool = BrowserUseTool()

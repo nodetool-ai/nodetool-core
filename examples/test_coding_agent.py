@@ -57,6 +57,7 @@ async def test_coding_agent(
         reasoning_model=reasoning_model,
         tools=code_tools,
         output_type="markdown",
+        docker_image="nodetool",
     )
 
     async for item in agent.execute(context):

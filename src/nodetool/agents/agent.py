@@ -16,11 +16,13 @@ The implementation provides:
 
 import datetime
 import json
+from lib2to3.fixes.fix_input import context
 import os
 import shutil
 import asyncio
 from typing import AsyncGenerator, List, Sequence, Union, Any, Optional
 
+from nodetool.agents.tools.code_tools import ExecutePythonTool
 from nodetool.common.settings import get_log_path
 from nodetool.workflows.types import (
     Chunk,
@@ -374,7 +376,11 @@ class Agent(BaseAgent):
         config = {
             "name": self.name,
             "objective": self.objective,
-            "provider": self.provider.provider.name if hasattr(self.provider, "provider") else "OpenAI",
+            "provider": (
+                self.provider.provider.name
+                if hasattr(self.provider, "provider")
+                else "OpenAI"
+            ),
             "model": self.model,
             "planning_model": self.planning_model,
             "reasoning_model": self.reasoning_model,
@@ -415,6 +421,7 @@ class Agent(BaseAgent):
         for k, v in env_vars.items():
             cmd.extend(["-e", f"{k}={v}"])
 
+        assert self.docker_image is not None, "Docker image is not set"
         cmd.extend(
             [
                 self.docker_image,
@@ -442,3 +449,41 @@ class Agent(BaseAgent):
             with open(result_file) as f:
                 self.results = json.load(f)
         yield Chunk(content="\n[docker completed]\n", done=True)
+
+
+async def test_docker_feature():
+    """
+    Smoke test for the Docker feature in Agent.
+    Tests that an Agent can be initialized with a docker_image parameter.
+    """
+    from nodetool.chat.providers.openai_provider import OpenAIProvider
+
+    # Create a mock provider
+    provider = OpenAIProvider()
+
+    # Test that Agent can be initialized with docker_image parameter
+    agent = Agent(
+        name="test-docker-agent",
+        objective="Write python code to ",
+        provider=provider,
+        model="gpt-4o-mini",
+        enable_analysis_phase=False,
+        enable_data_contracts_phase=False,
+        docker_image="nodetool",
+        tools=[ExecutePythonTool()],
+    )
+
+    context = ProcessingContext()
+
+    async for item in agent.execute(context):
+        if isinstance(item, Chunk):
+            print(item.content, end="", flush=True)
+
+    print(f"\nWorkspace: {context.workspace_dir}")
+    print(f"Results: {agent.results}")
+    print("✓ Docker feature smoke test passed")
+
+
+if __name__ == "__main__":
+    # Run the smoke test when the module is executed directly
+    asyncio.run(test_docker_feature())

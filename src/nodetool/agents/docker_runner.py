@@ -4,8 +4,11 @@ import sys
 import os
 
 from nodetool.agents.agent import Agent
-from nodetool.chat.providers import get_provider, Provider
-from nodetool.agents.tools.base import get_tool_by_name
+from nodetool.chat.providers import get_provider
+from nodetool.agents.tools import get_tool_by_name
+# Import tools modules to ensure registration happens
+import nodetool.agents.tools
+from nodetool.metadata.types import Provider
 from nodetool.workflows.processing_context import ProcessingContext
 
 

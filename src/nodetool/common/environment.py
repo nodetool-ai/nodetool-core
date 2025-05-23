@@ -579,6 +579,10 @@ class Environment(object):
             # Prevent propagation to parent loggers
             cls.logger.propagate = False
 
+            # Disable httpx and httpcore logging
+            logging.getLogger("httpx").setLevel(logging.WARNING)
+            logging.getLogger("httpcore").setLevel(logging.WARNING)
+
         return cls.logger
 
     @classmethod
