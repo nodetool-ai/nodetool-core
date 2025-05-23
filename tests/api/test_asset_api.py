@@ -1,4 +1,3 @@
-import json
 import os
 from fastapi.testclient import TestClient
 import pytest
@@ -49,7 +48,7 @@ def test_pagination(client: TestClient, headers: dict[str, str], user_id: str):
     assert len(response.json()["assets"]) == 3
     next_cursor = response.json()["next"]
     response = client.get(
-        f"/api/assets", params={"cursor": next_cursor, "page_size": 3}, headers=headers
+        "/api/assets", params={"cursor": next_cursor, "page_size": 3}, headers=headers
     )
     assert response.status_code == 200
     assert len(response.json()["assets"]) == 2
@@ -104,3 +103,13 @@ def test_create(client: TestClient, headers: dict[str, str], user_id: str):
     image_reloaded = Asset.find(user_id, response.json()["id"])
     assert image_reloaded is not None
     assert image_reloaded.name == "bild.jpeg"
+
+
+def test_storage_stream_content_length(client: TestClient, user_id: str):
+    image = make_image(user_id)
+    storage = Environment.get_asset_storage()
+    expected_size = len(storage.storage[image.file_name])
+
+    response = client.get(f"/api/storage/{image.file_name}")
+    assert response.status_code == 200
+    assert response.headers.get("Content-Length") == str(expected_size)

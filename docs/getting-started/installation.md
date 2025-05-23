@@ -57,33 +57,6 @@ print(nodetool.__version__)
 
 This should print the version of NodeTool Core that you have installed.
 
-## Installing Optional Dependencies
-
-NodeTool Core comes with various optional dependencies for specific features:
-
-### GPU Support
-
-To use NodeTool Core with GPU acceleration:
-
-```bash
-pip install nodetool-core[gpu]
-```
-
-### Web Development
-
-For web development features:
-
-```bash
-pip install nodetool-core[web]
-```
-
-### All Features
-
-To install all optional dependencies:
-
-```bash
-pip install nodetool-core[all]
-```
 
 ## Configuration
 

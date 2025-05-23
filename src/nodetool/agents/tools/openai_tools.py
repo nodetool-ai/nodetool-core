@@ -30,6 +30,14 @@ class OpenAIWebSearchTool(Tool):
             "required": ["query"],
         }
 
+    def get_container_env(self) -> dict[str, str]:
+        key = Environment.get("OPENAI_API_KEY")
+        return {"OPENAI_API_KEY": key} if key else {}
+
+    def get_container_env(self) -> dict[str, str]:
+        key = Environment.get("OPENAI_API_KEY")
+        return {"OPENAI_API_KEY": key} if key else {}
+
     async def process(
         self, context: ProcessingContext, params: Dict[str, Any]
     ) -> Dict[str, Any]:
@@ -197,6 +205,10 @@ class OpenAITextToSpeechTool(Tool):
             },
             "required": ["input", "voice", "output_file"],
         }
+
+    def get_container_env(self) -> dict[str, str]:
+        key = Environment.get("OPENAI_API_KEY")
+        return {"OPENAI_API_KEY": key} if key else {}
 
     async def process(
         self, context: ProcessingContext, params: Dict[str, Any]

@@ -1,8 +1,7 @@
 from datetime import datetime
 import os
-import shutil
 import aiofiles
-from typing import IO, AsyncIterator, Iterator
+from typing import IO, AsyncIterator
 
 from nodetool.storage.abstract_storage import AbstractStorage
 
@@ -33,6 +32,9 @@ class FileStorage(AbstractStorage):
             return datetime.fromtimestamp(mtime, tz=datetime.now().astimezone().tzinfo)
         except FileNotFoundError:
             return None
+
+    async def get_size(self, key: str) -> int:
+        return os.path.getsize(os.path.join(self.base_path, key))
 
     async def download_stream(self, key: str) -> AsyncIterator[bytes]:
         with open(os.path.join(self.base_path, key), "rb") as f:
