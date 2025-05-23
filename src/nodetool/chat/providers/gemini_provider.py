@@ -150,12 +150,17 @@ def get_genai_client() -> AsyncClient:
 
 
 class GeminiProvider(ChatProvider):
-    provider_name = Provider.Gemini
+    provider: Provider = Provider.Gemini
 
     def __init__(self):
         super().__init__()
+        env = Environment.get_environment()
+        self.api_key = env.get("GEMINI_API_KEY")
         self.usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
         self.cost = 0.0
+
+    def get_container_env(self) -> dict[str, str]:
+        return {"GEMINI_API_KEY": self.api_key} if self.api_key else {}
 
     def get_max_token_limit(self, model: str) -> int:
         """Get the maximum token limit for a given model."""

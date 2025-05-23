@@ -9,7 +9,7 @@ from abc import ABC, abstractmethod
 from typing import Any, AsyncGenerator, Sequence
 
 from nodetool.agents.tools.base import Tool
-from nodetool.metadata.types import Message, ToolCall, MessageFile
+from nodetool.metadata.types import Message, Provider, ToolCall, MessageFile
 from nodetool.workflows.types import Chunk
 
 import json
@@ -28,6 +28,7 @@ class ChatProvider(ABC):
     log_file: str | None = None
     cost: float = 0.0
     usage: dict[str, int] = {}
+    provider: Provider = Provider.Empty
 
     def __init__(self):
         self.usage = {
@@ -37,6 +38,10 @@ class ChatProvider(ABC):
             "cached_prompt_tokens": 0,
             "reasoning_tokens": 0,
         }
+
+    def get_container_env(self) -> dict[str, str]:
+        """Return environment variables needed when running inside Docker."""
+        return {}
 
     def get_max_token_limit(self, model: str) -> int:
         """Get the maximum token limit for a given model."""
