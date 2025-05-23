@@ -37,6 +37,7 @@ async def test_google_agent(provider: ChatProvider, model: str):
 
     agent = Agent(
         name="Research Agent",
+        docker_image="nodetool",
         enable_analysis_phase=True,
         enable_data_contracts_phase=True,
         objective="""

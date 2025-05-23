@@ -184,17 +184,16 @@ class Agent(BaseAgent):
             shutil.copy(file_path, destination_path)
             input_files.append(os.path.basename(file_path))
 
-        if self.docker_image:
-            async for item in self._execute_in_docker(processing_context, input_files):
-                yield item
-            return
-
         tools = list(self.tools)
         task_planner_instance: Optional[TaskPlanner] = (
             None  # Keep track of planner instance
         )
 
+        # Planning phase always happens outside of Docker
         if self.task:  # If self.task is already set (e.g. by initial_task in __init__)
+            self.display_manager.print(
+                f"Agent '{self.name}' using pre-planned task with {len(self.task.subtasks)} subtasks"
+            )
             if self.initial_task:
                 for subtask in self.task.subtasks:
                     if subtask.output_file and not os.path.isabs(subtask.output_file):
@@ -250,6 +249,12 @@ class Agent(BaseAgent):
                 task=self.task,
                 event=TaskUpdateEvent.TASK_CREATED,
             )
+
+        # If Docker image is specified, execute the planned task in Docker
+        if self.docker_image:
+            async for item in self._execute_in_docker(processing_context, input_files):
+                yield item
+            return
 
         # At this point, self.task should be non-None if execution is to proceed.
         if not self.task:
@@ -388,11 +393,14 @@ class Agent(BaseAgent):
             "max_token_limit": self.max_token_limit,
             "output_schema": self.output_schema,
             "output_type": self.output_type,
-            "enable_analysis_phase": self.enable_analysis_phase,
-            "enable_data_contracts_phase": self.enable_data_contracts_phase,
+            # When passing a pre-planned task, disable planning phases
+            "enable_analysis_phase": False if self.task else self.enable_analysis_phase,
+            "enable_data_contracts_phase": False if self.task else self.enable_data_contracts_phase,
             "verbose": self.verbose,
             "workspace_dir": "/workspace",
             "result_path": "/workspace/docker_result.json",
+            # Pass the pre-planned task to Docker
+            "task": self.task.model_dump() if self.task else None,
         }
 
         host_config = os.path.join(workspace, "docker_agent_config.json")
@@ -403,11 +411,16 @@ class Agent(BaseAgent):
         env_vars.update(self.provider.get_container_env())
         for tool in self.tools:
             env_vars.update(tool.get_container_env())
+        
+        # Add TERM environment variable to preserve colors
+        if "TERM" in os.environ:
+            env_vars["TERM"] = os.environ["TERM"]
 
         cmd = [
             "docker",
             "run",
             "--rm",
+            "-t",  # Allocate a pseudo-TTY to preserve colors
             "-v",
             f"{workspace}:/workspace",
         ]

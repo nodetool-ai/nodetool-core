@@ -8,7 +8,7 @@ from nodetool.chat.providers import get_provider
 from nodetool.agents.tools import get_tool_by_name
 # Import tools modules to ensure registration happens
 import nodetool.agents.tools
-from nodetool.metadata.types import Provider
+from nodetool.metadata.types import Provider, Task
 from nodetool.workflows.processing_context import ProcessingContext
 
 
@@ -20,6 +20,14 @@ async def _run(cfg: dict) -> None:
         if not tool_cls:
             raise ValueError(f"Unknown tool: {name}")
         tools.append(tool_cls())
+
+    # Check if a pre-planned task was provided
+    task = None
+    if cfg.get("task"):
+        task = Task(**cfg["task"])
+        print(f"[Docker Runner] Using pre-planned task with {len(task.subtasks)} subtasks")
+    else:
+        print("[Docker Runner] No pre-planned task provided, will run planning phase")
 
     agent = Agent(
         name=cfg["name"],
@@ -41,6 +49,7 @@ async def _run(cfg: dict) -> None:
         enable_analysis_phase=cfg.get("enable_analysis_phase", True),
         enable_data_contracts_phase=cfg.get("enable_data_contracts_phase", True),
         verbose=cfg.get("verbose", True),
+        task=task,  # Pass the pre-planned task if available
     )
 
     context = ProcessingContext(workspace_dir=cfg["workspace_dir"])
