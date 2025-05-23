@@ -17,6 +17,7 @@ from nodetool.chat.providers.base import ChatProvider
 from nodetool.chat.providers.openai_prediction import calculate_chat_cost
 from nodetool.metadata.types import (
     Message,
+    Provider,
     ToolCall,
     MessageContent,
     MessageImageContent,
@@ -99,6 +100,8 @@ class AnthropicProvider(ChatProvider):
 
     For more details, see: https://docs.anthropic.com/claude/reference/messages_post
     """
+
+    provider: Provider = Provider.Anthropic
 
     def __init__(self):
         """Initialize the Anthropic provider with client credentials."""

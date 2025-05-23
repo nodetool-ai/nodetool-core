@@ -20,6 +20,7 @@ from nodetool.agents.tools.base import Tool
 from nodetool.common.environment import Environment
 from nodetool.metadata.types import (
     Message,
+    Provider,
     ToolCall,
     MessageImageContent,
     MessageTextContent,
@@ -101,6 +102,8 @@ class OllamaProvider(ChatProvider):
     For more details, see: https://ollama.com/blog/tool-support
 
     """
+
+    provider: Provider = Provider.Ollama
 
     def __init__(self, log_file=None):
         """Initialize the Ollama provider.

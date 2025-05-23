@@ -371,16 +371,11 @@ class Agent(BaseAgent):
         input_files: list[str],
     ) -> AsyncGenerator[Chunk, None]:
         """Run the agent inside a Docker container."""
-
         workspace = processing_context.workspace_dir
         config = {
             "name": self.name,
             "objective": self.objective,
-            "provider": (
-                self.provider.provider.name
-                if hasattr(self.provider, "provider")
-                else "OpenAI"
-            ),
+            "provider": self.provider.provider.name,
             "model": self.model,
             "planning_model": self.planning_model,
             "reasoning_model": self.reasoning_model,

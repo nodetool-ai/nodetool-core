@@ -150,7 +150,7 @@ def get_genai_client() -> AsyncClient:
 
 
 class GeminiProvider(ChatProvider):
-    provider_name = Provider.Gemini
+    provider: Provider = Provider.Gemini
 
     def __init__(self):
         super().__init__()

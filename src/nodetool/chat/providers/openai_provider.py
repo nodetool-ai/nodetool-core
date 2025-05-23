@@ -34,6 +34,7 @@ from nodetool.agents.tools.base import Tool
 from nodetool.chat.providers.openai_prediction import calculate_chat_cost
 from nodetool.metadata.types import (
     Message,
+    Provider,
     ToolCall,
     MessageContent,
     MessageImageContent,
@@ -89,6 +90,7 @@ class OpenAIProvider(ChatProvider):
     """
 
     has_code_interpreter: bool = False
+    provider: Provider = Provider.OpenAI
 
     def __init__(self):
         """Initialize the OpenAI provider with client credentials."""
