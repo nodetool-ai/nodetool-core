@@ -25,6 +25,7 @@ from . import asset, job, message, node, storage, workflow, model, settings
 import mimetypes
 
 from nodetool.common.websocket_updates import websocket_updates
+from multiprocessing import Process
 
 # FIX: Windows: mimetypes.guess_type() returns None for some files
 # See:
@@ -100,6 +101,22 @@ if not Environment.is_production():
     DEFAULT_ROUTERS.append(package.router)
 
 
+def _index_docs_and_examples() -> None:
+    """Index documentation and examples collections."""
+    from nodetool.chat.help import index_documentation, index_examples
+    from nodetool.common.chroma_client import get_collection
+
+    log = Environment.get_logger()
+
+    try:
+        log.info("Indexing documentation collections...")
+        index_documentation(get_collection("docs"))
+        index_examples(get_collection("examples"))
+        log.info("Documentation indexing completed")
+    except Exception as e:  # noqa: BLE001
+        log.warning(f"Documentation indexing failed: {e}")
+
+
 def create_app(
     origins: list[str] = ["*"],
     routers: list[APIRouter] = DEFAULT_ROUTERS,
@@ -152,10 +169,8 @@ def create_app(
 
     worker_url = Environment.get_worker_url()
 
-    # TODO: run this in a subprocess
-    # if Environment.is_production():
-    #     index_documentation(get_collection("docs"))
-    #     index_examples(get_collection("examples"))
+    if Environment.is_production():
+        Process(target=_index_docs_and_examples, daemon=True).start()
 
     if not Environment.is_production():
         app.add_websocket_route("/hf/download", huggingface_download_endpoint)
