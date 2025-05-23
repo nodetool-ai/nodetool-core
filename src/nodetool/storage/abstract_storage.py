@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import IO, AsyncIterator, Iterator
+from typing import IO, AsyncIterator
 from datetime import datetime
 
 
@@ -15,6 +15,10 @@ class AbstractStorage(ABC):
 
     @abstractmethod
     async def get_mtime(self, key: str) -> datetime:
+        pass
+
+    @abstractmethod
+    async def get_size(self, key: str) -> int:
         pass
 
     @abstractmethod

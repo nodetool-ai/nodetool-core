@@ -1,4 +1,5 @@
-# NodeTool Core - Agentic Workflows
+# NodeTool Core <img src="https://img.shields.io/badge/version-0.6.0-blue.svg" alt="Version Badge">
+<h3>Agentic Workflows</h3>
 
 <p align="center">
   <img src="https://img.shields.io/badge/Python-3.11%2B-blue.svg" alt="Python Version Badge">
@@ -50,6 +51,13 @@ g = ChatCompletion(
 result = asyncio.run(run_graph(graph(g)))
 print(result)
 ```
+### CLI Usage
+
+```bash
+python -m nodetool.cli --help
+```
+See [docs/cli.md](docs/cli.md) for all commands.
+
 
 ## 📖 Documentation
 
@@ -62,6 +70,17 @@ print(result)
 ## 🧩 Examples
 
 ```python
+import asyncio
+
+from nodetool.agents.agent import Agent
+from nodetool.agents.tools import BrowserTool, GoogleSearchTool
+from nodetool.chat.providers import get_provider
+from nodetool.metadata.types import Provider
+from nodetool.workflows.processing_context import ProcessingContext
+from nodetool.workflows.types import Chunk
+
+
+async def main() -> None:
     context = ProcessingContext()
 
     provider = get_provider(Provider.OpenAI)
@@ -109,12 +128,17 @@ print(result)
             },
         },
     )
+
     async for item in agent.execute(context):
         if isinstance(item, Chunk):
             print(item.content, end="", flush=True)
 
     print(f"\nWorkspace: {context.workspace_dir}")
     print(f"Results: {agent.results}")
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
 
 ```
 

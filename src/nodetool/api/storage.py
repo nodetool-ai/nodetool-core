@@ -10,7 +10,6 @@ from fastapi import HTTPException
 from email.utils import parsedate_to_datetime
 from fastapi.responses import StreamingResponse
 from nodetool.api.utils import current_user
-from nodetool.storage.abstract_storage import AbstractStorage
 from nodetool.common.content_types import EXTENSION_TO_CONTENT_TYPE
 from nodetool.common.environment import Environment
 
@@ -97,7 +96,8 @@ async def get(key: str, request: Request):
             # If range is invalid, ignore it and return full content
             pass
 
-    # TODO: Add Content-Length header
+    size = await storage.get_size(key)
+    headers["Content-Length"] = str(size)
 
     return StreamingResponse(
         content=storage.download_stream(key),
