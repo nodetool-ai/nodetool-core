@@ -8,7 +8,20 @@ services:
       - "./key.pem:/app/key.pem"
       - "./cert.pem:/app/cert.pem"
       - ${HF_HOME}:/app/huggingface
-    command: [ "uvicorn", "nodetool.api.app:app", "--host", "0.0.0.0", "--port", "443", "--ssl-keyfile", "/app/key.pem", "--ssl-certfile", "/app/cert.pem" ]
+      - /var/run/docker.sock:/var/run/docker.sock
+    command:
+      [
+        "uvicorn",
+        "nodetool.api.app:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "443",
+        "--ssl-keyfile",
+        "/app/key.pem",
+        "--ssl-certfile",
+        "/app/cert.pem",
+      ]
     ports:
       - "443:443"
     environment:
@@ -40,7 +53,7 @@ services:
           devices:
             - driver: nvidia
               count: all
-              capabilities: [ gpu ]
+              capabilities: [gpu]
   memcached:
     image: memcached:bookworm
     restart: unless-stopped
@@ -51,7 +64,17 @@ services:
       dockerfile: Dockerfile
     volumes:
       - ${CHROMA_PATH}:/chroma-data
-    command: [ "chroma", "run", "--host", "0.0.0.0", "--port", "9000", "--path", "/chroma-data" ]
+    command:
+      [
+        "chroma",
+        "run",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "9000",
+        "--path",
+        "/chroma-data",
+      ]
     environment:
       CHROMA_SERVER_AUTHN_CREDENTIALS: ${CHROMA_TOKEN}
       CHROMA_SERVER_AUTHN_PROVIDER: chromadb.auth.token_authn.TokenAuthenticationServerProvider
@@ -74,4 +97,13 @@ services:
           devices:
             - driver: nvidia
               count: all
-              capabilities: [ gpu ]
+              capabilities: [gpu]
+
+  # Build the nodetool image for the api service to use
+  nodetool:
+    build:
+      context: .
+      dockerfile: Dockerfile.agent
+    image: nodetool
+    profiles:
+      - build-only
