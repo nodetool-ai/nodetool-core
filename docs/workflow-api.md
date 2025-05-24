@@ -151,6 +151,23 @@ socket.send(msgpack.encode({ command: "cancel_job" }));
 socket.send(msgpack.encode({ command: "get_status" }));
 ```
 
+### Running Workflows in Docker
+
+Set the `docker_image` field in `RunJobRequest` to execute a workflow inside a
+Docker container. The workspace directory is mounted at `/workspace` inside the
+container and the final results are written back to the host.
+All values from your local `settings.yaml` and `secrets.yaml` are injected as
+environment variables inside the container.
+
+```python
+req = RunJobRequest(
+    workflow_id="<workflow>",
+    docker_image="nodetool",
+)
+async for msg in run_workflow(req):
+    print(msg)
+```
+
 ## API Demo
 
 - Download the [html file](<(api-demo.html)>)

@@ -1,16 +1,85 @@
 import asyncio
-from asyncio.queues import Queue as AsyncQueue
-from queue import Queue
 from typing import AsyncGenerator, Any
 from uuid import uuid4
+import json
+import os
 from nodetool.common.environment import Environment
-from nodetool.types.job import JobUpdate, Job
+from nodetool.types.job import JobUpdate
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.workflow_runner import WorkflowRunner
-from nodetool.workflows.types import Error
+from nodetool.workflows.types import Chunk
 from nodetool.workflows.threaded_event_loop import ThreadedEventLoop
 from nodetool.common.websocket_runner import process_workflow_messages
+
+
+async def _execute_in_docker(
+    req: RunJobRequest,
+    context: ProcessingContext,
+    runner: WorkflowRunner,
+    docker_image: str,
+) -> AsyncGenerator[Chunk, None]:
+    """Run the workflow inside a Docker container."""
+    workspace = context.workspace_dir
+    config = {
+        "request": req.model_dump(),
+        "workspace_dir": "/workspace",
+        "result_path": "/workspace/docker_result.json",
+    }
+
+    host_config = os.path.join(workspace, "docker_workflow_config.json")
+    with open(host_config, "w") as f:
+        json.dump(config, f)
+
+    env_vars: dict[str, Any] = {}
+    # Start with variables from the settings and secrets files
+    env_vars.update(Environment.get_settings().model_dump(exclude_none=True))
+    env_vars.update(Environment.get_secrets().model_dump(exclude_none=True))
+    # Include any variables already present in the processing context
+    env_vars.update(context.environment)
+    # Include per-request environment overrides
+    if req.env:
+        env_vars.update({k: str(v) for k, v in req.env.items()})
+
+    cmd = [
+        "docker",
+        "run",
+        "--rm",
+        "-v",
+        f"{workspace}:/workspace",
+    ]
+
+    for k, v in env_vars.items():
+        cmd.extend(["-e", f"{k}={v}"])
+
+    cmd.extend(
+        [
+            docker_image,
+            "python",
+            "-m",
+            "nodetool.workflows.docker_runner",
+            "/workspace/docker_workflow_config.json",
+        ]
+    )
+
+    proc = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.STDOUT,
+    )
+    assert proc.stdout
+    async for line in proc.stdout:
+        yield Chunk(content=line.decode())
+    await proc.wait()
+    if proc.returncode != 0:
+        raise RuntimeError(f"Docker run failed with code {proc.returncode}")
+
+    result_file = os.path.join(workspace, "docker_result.json")
+    if os.path.exists(result_file):
+        with open(result_file) as f:
+            runner.outputs = json.load(f)
+    yield Chunk(content="\n[docker completed]\n", done=True)
+
 
 log = Environment.get_logger()
 
@@ -48,6 +117,14 @@ async def run_workflow(
 
     if runner is None:
         runner = WorkflowRunner(job_id=uuid4().hex)
+
+    if req.env:
+        context.environment.update({k: str(v) for k, v in req.env.items()})
+
+    if req.docker_image:
+        async for item in _execute_in_docker(req, context, runner, req.docker_image):
+            yield item
+        return
 
     async def run():
         try:
