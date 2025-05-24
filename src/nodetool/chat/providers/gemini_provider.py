@@ -1,5 +1,3 @@
-import asyncio
-import base64
 import json
 import traceback
 import mimetypes
@@ -483,3 +481,9 @@ class GeminiProvider(ChatProvider):
     def reset_usage(self) -> None:
         """Reset the usage counters to zero."""
         self.usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+
+    def is_context_length_error(self, error: Exception) -> bool:
+        msg = str(error).lower()
+        return (
+            "context length" in msg or "context window" in msg or "token limit" in msg
+        )

@@ -186,7 +186,7 @@ import mimetypes
 import re
 from nodetool.chat.providers import ChatProvider
 from nodetool.agents.tools.base import Tool
-from nodetool.metadata.types import Message, MessageFile, SubTask, Task, ToolCall
+from nodetool.metadata.types import Message, SubTask, Task, ToolCall
 from nodetool.workflows.types import Chunk, TaskUpdate, TaskUpdateEvent
 from nodetool.workflows.processing_context import ProcessingContext
 
@@ -206,11 +206,9 @@ from typing import (
     Union,
     Dict,
     Optional,
-    Tuple,
     cast,
 )
 import logging
-from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.agents.tools.workspace_tools import (
     ReadFileTool,
     WriteFileTool,
@@ -1307,7 +1305,6 @@ class SubTaskContext:
         ):  # If still using >85% of limit
             # Keep system message, task message, and the most recent exchanges
             # The most important part is the system message and recent context
-            essential_count = len(preserved_messages)  # System + task messages
             recent_count = min(
                 4, len(working_history)
             )  # Keep at least 4 recent messages if available
@@ -1364,8 +1361,7 @@ class SubTaskContext:
                 tools=final_tools,
             )
         except Exception as e:
-            # TODO: find for all LLM providers
-            if "context length" in str(e):
+            if self.provider.is_context_length_error(e):
                 await self._optimize_context_window()
                 message = await self.provider.generate_message(
                     messages=self.history,
@@ -1851,7 +1847,6 @@ class SubTaskContext:
             original_content_str = json.dumps(
                 result_content, indent=2, ensure_ascii=False
             )
-            original_token_count = len(self.encoding.encode(original_content_str))
         except Exception as e:
             logger.error(f"Failed to serialize result content for compression: {e}")
             return {
