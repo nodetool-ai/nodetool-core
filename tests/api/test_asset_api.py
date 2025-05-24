@@ -1,4 +1,6 @@
 import os
+import zipfile
+from io import BytesIO
 from fastapi.testclient import TestClient
 import pytest
 from nodetool.common.environment import Environment
@@ -113,3 +115,24 @@ def test_storage_stream_content_length(client: TestClient, user_id: str):
     response = client.get(f"/api/storage/{image.file_name}")
     assert response.status_code == 200
     assert response.headers.get("Content-Length") == str(expected_size)
+
+
+def test_download_deduplicated_names(
+    client: TestClient, headers: dict[str, str], user_id: str
+):
+    """Ensure duplicate asset names are uniquified in zip downloads."""
+    img1 = make_image(user_id)
+    img2 = make_image(user_id)
+
+    response = client.post(
+        "/api/assets/download",
+        json={"asset_ids": [img1.id, img2.id]},
+        headers=headers,
+    )
+    assert response.status_code == 200
+
+    with zipfile.ZipFile(BytesIO(response.content)) as zf:
+        names = zf.namelist()
+
+    assert len(names) == 2
+    assert len(set(names)) == 2

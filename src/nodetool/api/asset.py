@@ -4,11 +4,9 @@ import asyncio
 import datetime
 import os
 from io import BytesIO
-import re
-from uuid import uuid4
 import zipfile
 import mimetypes
-from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile, Response
+from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse, FileResponse
 from nodetool.models.condition_builder import Field
 from nodetool.types.asset import (
@@ -17,7 +15,6 @@ from nodetool.types.asset import (
     AssetDownloadRequest,
     AssetList,
     AssetUpdateRequest,
-    TempAsset,
 )
 from nodetool.api.utils import current_user
 from nodetool.common.environment import Environment
@@ -30,7 +27,6 @@ from nodetool.common.media_utils import (
     create_image_thumbnail,
     create_video_thumbnail,
     get_audio_duration,
-    get_video_duration,
 )
 
 
@@ -499,10 +495,26 @@ async def download_assets(
         *[fetch_asset_content(asset) for asset in all_assets.values()]
     )
 
+    used_paths: Dict[str, int] = {}
     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
         for file_path, content in asset_contents:
             if file_path and content is not None:
-                zip_file.writestr(file_path, content.getvalue())
+                unique_path = file_path
+                if file_path in used_paths:
+                    name, ext = os.path.splitext(file_path)
+                    index = used_paths[file_path]
+                    while True:
+                        dedup_path = f"{name}_{index}{ext}"
+                        if dedup_path not in used_paths:
+                            unique_path = dedup_path
+                            break
+                        index += 1
+                    used_paths[file_path] = index + 1
+                    used_paths[unique_path] = 1
+                else:
+                    used_paths[file_path] = 1
+
+                zip_file.writestr(unique_path, content.getvalue())
 
     zip_buffer.seek(0)
 
