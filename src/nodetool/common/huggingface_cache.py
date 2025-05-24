@@ -373,6 +373,17 @@ class CustomTqdm(huggingface_hub.file_download.tqdm):
 # Replace the tqdm used by huggingface_hub
 huggingface_hub.file_download.tqdm = CustomTqdm
 
+# `huggingface_hub.utils.tqdm` is a class exported at package import time which
+# also needs to be replaced so that `_get_progress_bar_context` uses our custom
+# implementation. Importing the submodule through `importlib` bypasses the alias
+# defined in `huggingface_hub.utils` and gives access to the actual module
+# object.
+import importlib
+
+tqdm_module = importlib.import_module("huggingface_hub.utils.tqdm")
+tqdm_module.tqdm = CustomTqdm
+huggingface_hub.utils.tqdm = CustomTqdm
+
 
 async def huggingface_download_endpoint(websocket: WebSocket):
     download_manager = DownloadManager()
