@@ -1,4 +1,5 @@
 # NodeTool Core <img src="https://img.shields.io/badge/version-0.6.0-blue.svg" alt="Version Badge">
+
 <h3>Agentic Workflows</h3>
 
 <p align="center">
@@ -51,13 +52,14 @@ g = ChatCompletion(
 result = asyncio.run(run_graph(graph(g)))
 print(result)
 ```
+
 ### CLI Usage
 
 ```bash
 python -m nodetool.cli --help
 ```
-See [docs/cli.md](docs/cli.md) for all commands.
 
+See [docs/cli.md](docs/cli.md) for all commands.
 
 ## 📖 Documentation
 
@@ -215,8 +217,8 @@ import os
 from nodetool.dsl.graph import graph, run_graph
 from nodetool.dsl.chroma.collections import Collection
 from nodetool.dsl.chroma.index import IndexTextChunks
-from nodetool.dsl.lib.data.langchain import SentenceSplitter
-from nodetool.dsl.lib.file.pymupdf import ExtractText
+from nodetool.dsl.lib.langchain import SentenceSplitter
+from nodetool.dsl.lib.pymupdf import ExtractText
 from nodetool.dsl.nodetool.os import LoadDocumentFile
 from nodetool.metadata.types import FilePath, LlamaModel
 
@@ -483,9 +485,9 @@ poetry install
 
 The following environment variables can be used to configure the library:
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `FFMPEG_PATH` | Path to the ffmpeg executable | `ffmpeg` |
+| Variable       | Description                    | Default   |
+| -------------- | ------------------------------ | --------- |
+| `FFMPEG_PATH`  | Path to the ffmpeg executable  | `ffmpeg`  |
 | `FFPROBE_PATH` | Path to the ffprobe executable | `ffprobe` |
 
 These variables are useful when you need to specify custom binary paths for media processing tools, especially in Docker containers or CI/CD environments.

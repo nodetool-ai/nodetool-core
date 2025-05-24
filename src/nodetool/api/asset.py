@@ -33,6 +33,9 @@ from nodetool.common.media_utils import (
 def from_model(asset: AssetModel):
     storage = Environment.get_asset_storage()
     if asset.content_type != "folder":
+        # Note: Pre-signed URLs from storage providers (S3, etc.) typically
+        # include their own cache headers. If using file storage, consider
+        # implementing a separate endpoint with proper cache headers.
         get_url = storage.get_url(asset.file_name)
     else:
         get_url = None
@@ -217,9 +220,16 @@ async def get_package_asset(package_name: str, asset_name: str):
             # Default to binary if content type can't be determined
             content_type = "application/octet-stream"
 
-        # Return the file
+        # Return the file with caching headers
+        # Package assets are immutable, so we can cache them for a long time
         return FileResponse(
-            path=asset_path, media_type=content_type, filename=asset_name
+            path=asset_path, 
+            media_type=content_type, 
+            filename=asset_name,
+            headers={
+                "Cache-Control": "public, max-age=31536000, immutable",  # 1 year
+                "ETag": f'"{package_name}-{asset_name}"'
+            }
         )
     except HTTPException:
         raise
@@ -524,7 +534,12 @@ async def download_assets(
     return StreamingResponse(
         zip_buffer,
         media_type="application/zip",
-        headers={"Content-Disposition": f"attachment; filename={filename}"},
+        headers={
+            "Content-Disposition": f"attachment; filename={filename}",
+            "Cache-Control": "no-cache, no-store, must-revalidate",  # Don't cache downloads
+            "Pragma": "no-cache",
+            "Expires": "0"
+        },
     )
 
 

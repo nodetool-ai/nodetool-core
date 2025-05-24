@@ -9,9 +9,9 @@
 # from nodetool.metadata.types import FolderRef
 # from nodetool.common.environment import Environment
 
-# from nodetool.nodes.lib.image.pillow import Blend, Composite
+# from nodetool.nodes.lib.pillow import Blend, Composite
 # from nodetool.nodes.lib.audio import SaveAudio
-# from nodetool.nodes.lib.image.pillow.enhance import (
+# from nodetool.nodes.lib.pillow.enhance import (
 #     AutoContrast,
 #     Brightness,
 #     Color,
@@ -25,7 +25,7 @@
 #     UnsharpMask,
 # )
 # from nodetool.nodes.nodetool.image import Resize, Scale, Fit
-# from nodetool.nodes.lib.data.numpy import SaveArray
+# from nodetool.nodes.lib.numpy import SaveArray
 # from nodetool.workflows.graph import Graph
 # from nodetool.metadata.types import ImageRef
 # from nodetool.workflows.processing_context import ProcessingContext
@@ -33,8 +33,8 @@
 # from nodetool.nodes.nodetool.constant import Image
 # from nodetool.nodes.nodetool.data import SaveDataframe
 # from nodetool.nodes.nodetool.image import SaveImage
-# from nodetool.nodes.lib.image.pillow.draw import Background
-# from nodetool.nodes.lib.image.pillow.filter import (
+# from nodetool.nodes.lib.pillow.draw import Background
+# from nodetool.nodes.lib.pillow.filter import (
 #     Blur,
 #     Contour,
 #     Emboss,

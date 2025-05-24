@@ -1,5 +1,6 @@
 import os
 import sys
+import shutil
 import click
 from nodetool.common.environment import Environment
 from nodetool.dsl.codegen import create_dsl_modules
@@ -207,6 +208,7 @@ def codegen_cmd():
         output_path = os.path.join(base_dsl_path, namespace)
 
         # Ensure the output directory for the namespace exists
+        shutil.rmtree(output_path, ignore_errors=True)
         os.makedirs(output_path, exist_ok=True)
 
         click.echo(
