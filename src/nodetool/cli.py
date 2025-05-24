@@ -231,13 +231,13 @@ def settings():
 @click.option("--mask", is_flag=True, help="Mask secret values with ****.")
 def show_settings(secrets: bool, mask: bool):
     """Show current settings or secrets."""
-    from nodetool.common.settings import load_settings
+    from nodetool.common.settings import load_settings, ALL_DESCRIPTIONS
 
     # Load settings and secrets
     settings_obj, secrets_obj = load_settings()
 
     # Choose which model to display
-    data = secrets_obj.model_dump() if secrets else settings_obj.model_dump()
+    data = secrets_obj if secrets else settings_obj
 
     # Mask secret values if requested
     if secrets and mask:
@@ -250,10 +250,7 @@ def show_settings(secrets: bool, mask: bool):
         data = masked_data
 
     # Create a rich table
-    settings_class = secrets_obj.__class__ if secrets else settings_obj.__class__
-    table = Table(
-        title=f"{'Secrets' if secrets else 'Settings'} from {settings_class.__name__}"
-    )
+    table = Table(title="Secrets" if secrets else "Settings")
 
     # Add columns
     table.add_column("Setting", style="cyan")
@@ -262,10 +259,7 @@ def show_settings(secrets: bool, mask: bool):
 
     for key, value in data.items():
         # Get field description from the model
-        field_info = settings_class.model_fields.get(key)
-        description = (
-            field_info.description if field_info and field_info.description else ""
-        )
+        description = ALL_DESCRIPTIONS.get(key, "")
         table.add_row(key, str(value), description)
 
     # Display the table
@@ -284,8 +278,11 @@ def edit_settings(
         load_settings,
         save_settings,
         get_system_file_path,
+        SETTINGS_FILE,
+        SECRETS_FILE,
+        SETTING_DESCRIPTIONS,
+        SECRET_DESCRIPTIONS,
     )
-    from nodetool.common.settings import SETTINGS_FILE, SECRETS_FILE
     import tempfile
     import subprocess
     import yaml
@@ -297,17 +294,15 @@ def edit_settings(
     # If specific key and value are provided, update directly
     if key and value is not None:
         if secrets:
-            # Check if the key exists in SecretsModel
-            if key in secrets_obj.model_fields:
-                setattr(secrets_obj, key, value)
+            if key in SECRET_DESCRIPTIONS:
+                secrets_obj[key] = value
                 click.echo(f"Updated secret: {key}")
             else:
                 click.echo(f"Error: {key} is not a valid secret", err=True)
                 return
         else:
-            # Check if the key exists in SettingsModel
-            if key in settings_obj.model_fields:
-                setattr(settings_obj, key, value)
+            if key in SETTING_DESCRIPTIONS:
+                settings_obj[key] = value
                 click.echo(f"Updated setting: {key}")
             else:
                 click.echo(f"Error: {key} is not a valid setting", err=True)
@@ -325,9 +320,9 @@ def edit_settings(
         os.makedirs(os.path.dirname(file_path), exist_ok=True)
         with open(file_path, "w") as f:
             if secrets:
-                yaml.dump(secrets_obj.model_dump(), f)
+                yaml.dump(secrets_obj, f)
             else:
-                yaml.dump(settings_obj.model_dump(), f)
+                yaml.dump(settings_obj, f)
 
     # Open the file in the default editor
     click.echo(f"Opening {file_path} in your default editor...")

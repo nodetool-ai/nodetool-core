@@ -1,25 +1,21 @@
 from fastapi import APIRouter, HTTPException
 from nodetool.common.environment import Environment
-from nodetool.common.settings import (
-    load_settings,
-    save_settings,
-    SettingsModel,
-    SecretsModel,
-)
+from nodetool.common.settings import load_settings, save_settings
 from pydantic import BaseModel
+from typing import Any, Dict
 
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
 
 class SettingsResponse(BaseModel):
-    settings: SettingsModel
-    secrets: SecretsModel
+    settings: Dict[str, Any]
+    secrets: Dict[str, Any]
 
 
 class SettingsUpdateRequest(BaseModel):
-    settings: SettingsModel
-    secrets: SecretsModel
+    settings: Dict[str, Any]
+    secrets: Dict[str, Any]
 
 
 @router.get("/")
@@ -45,11 +41,8 @@ async def update_settings(
 
     settings, secrets = load_settings()
 
-    for key, value in req.settings.model_dump().items():
-        setattr(settings, key, value)
-
-    for key, value in req.secrets.model_dump().items():
-        setattr(secrets, key, value)
+    settings.update(req.settings)
+    secrets.update(req.secrets)
 
     save_settings(settings, secrets)
 
