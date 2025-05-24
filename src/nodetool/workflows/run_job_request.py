@@ -37,3 +37,4 @@ class RunJobRequest(BaseModel):
     env: dict[str, Any] | None = None
     graph: Graph | None = None
     explicit_types: bool | None = False
+    docker_image: str | None = None
