@@ -258,7 +258,7 @@
       },
       {
         "id": "11",
-        "type": "nodetool.group.Loop",
+        "type": "nodetool.workflows.base_node.Group",
         "data": {},
         "ui_properties": {
           "selected": false,

@@ -58,7 +58,7 @@
       {
         "id": "3",
         "parent_id": null,
-        "type": "nodetool.group.Loop",
+        "type": "nodetool.workflows.base_node.Group",
         "data": {},
         "ui_properties": {
           "position": {

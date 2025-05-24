@@ -10,7 +10,7 @@
 # from nodetool.common.environment import Environment
 
 # from nodetool.nodes.lib.image.pillow import Blend, Composite
-# from nodetool.nodes.nodetool.audio import SaveAudio
+# from nodetool.nodes.lib.audio import SaveAudio
 # from nodetool.nodes.lib.image.pillow.enhance import (
 #     AutoContrast,
 #     Brightness,
@@ -31,7 +31,7 @@
 # from nodetool.workflows.processing_context import ProcessingContext
 # import PIL.Image
 # from nodetool.nodes.nodetool.constant import Image
-# from nodetool.nodes.lib.data.pandas.dataframe import SaveDataframe
+# from nodetool.nodes.nodetool.data import SaveDataframe
 # from nodetool.nodes.nodetool.image import SaveImage
 # from nodetool.nodes.lib.image.pillow.draw import Background
 # from nodetool.nodes.lib.image.pillow.filter import (

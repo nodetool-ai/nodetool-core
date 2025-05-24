@@ -71,7 +71,8 @@ from nodetool.common.settings import get_system_file_path
 from nodetool.metadata.node_metadata import PackageModel, ExampleMetadata
 from nodetool.packages.types import AssetInfo, PackageInfo
 from nodetool.types.workflow import Workflow
-from nodetool.types.graph import Graph
+from nodetool.workflows.graph import Graph
+from nodetool.types.graph import Graph as APIGraph
 
 
 # Constants
@@ -222,7 +223,9 @@ class Registry:
         self.pkg_mgr = get_package_manager_command()
         self._node_cache = None  # Cache for node metadata
         self._packages_cache = None  # Cache for installed packages
-        self._examples_cache = {}  # Cache for loaded examples by package_name:example_name
+        self._examples_cache = (
+            {}
+        )  # Cache for loaded examples by package_name:example_name
         self.logger = logging.getLogger(__name__)
 
     def pip_install(
@@ -507,7 +510,7 @@ class Registry:
                 id="",
                 name=f"[ERROR] {os.path.basename(file_path)}",
                 tags=[],
-                graph=Graph(nodes=[], edges=[]),
+                graph=APIGraph(nodes=[], edges=[]),
                 access="",
                 created_at=now_str,
                 updated_at=now_str,
@@ -591,7 +594,7 @@ class Registry:
                         name=example_meta.name,
                         description=example_meta.description,
                         tags=example_meta.tags or [],
-                        graph=Graph(
+                        graph=APIGraph(
                             nodes=[], edges=[]
                         ),  # Empty graph as we don't load the full workflow
                         access="public",
@@ -790,7 +793,7 @@ class Registry:
         cache_key = f"{package_name}:{example_name}"
         if cache_key in self._examples_cache:
             return self._examples_cache[cache_key]
-        
+
         package = self.find_package_by_name(package_name)
         if not package:
             raise ValueError(f"Package {package_name} not found")
@@ -800,8 +803,14 @@ class Registry:
 
         # Construct the path to the example file
         # Examples are stored in: source_folder/nodetool/examples/package_name/example_name.json
-        example_path = Path(package.source_folder) / "nodetool" / "examples" / package_name / f"{example_name}.json"
-        
+        example_path = (
+            Path(package.source_folder)
+            / "nodetool"
+            / "examples"
+            / package_name
+            / f"{example_name}.json"
+        )
+
         if not example_path.exists():
             self._examples_cache[cache_key] = None  # Cache the None result too
             return None
@@ -813,82 +822,64 @@ class Registry:
     def search_example_workflows(self, query: str = "") -> List[Workflow]:
         """
         Search for example workflows by searching through node titles, descriptions, and types.
-        
+
         This method loads all example workflows including their graphs and searches for
         matches in:
         - Node title (from ui_properties.title or data.title)
         - Node description (from data.description)
         - Node type
-        
+
         Args:
             query: The search string to find in node properties
-            
+
         Returns:
             List[Workflow]: A list of workflows that contain nodes matching the query
         """
         matching_workflows = []
-        
+
         # If empty query, return all examples
         if not query:
             return self.list_examples()
-        
+
         query = query.lower()
         packages = self.list_installed_packages()
-        
+
         for package in packages:
             if not package.examples:
                 continue
-                
+
             for example_meta in package.examples:
-                try:
-                    # Load the full workflow with graph
-                    workflow = self.load_example(package.name, example_meta.name)
-                    if not workflow or not workflow.graph:
-                        continue
-                    
-                    # Search through nodes in the graph
-                    found_match = False
-                    for node in workflow.graph.nodes:
-                        # Check node type
-                        if query in node.type.lower():
-                            found_match = True
-                            break
-                        
-                        # Check title from ui_properties or data
-                        title = ""
-                        # Handle dict-like ui_properties
-                        if isinstance(node.ui_properties, dict) and "title" in node.ui_properties:
-                            title = node.ui_properties["title"]
-                        elif hasattr(node.ui_properties, "title") and node.ui_properties.title:
-                            title = node.ui_properties.title
-                        # Handle dict-like data
-                        elif isinstance(node.data, dict) and "title" in node.data:
-                            title = node.data["title"]
-                        elif hasattr(node.data, "title") and node.data.title:
-                            title = node.data.title
-                        
-                        if title and query in str(title).lower():
-                            found_match = True
-                            break
-                        
-                        # Check description from data
-                        description = ""
-                        if isinstance(node.data, dict) and "description" in node.data:
-                            description = node.data["description"]
-                        elif hasattr(node.data, "description") and node.data.description:
-                            description = node.data.description
-                            
-                        if description and query in str(description).lower():
-                            found_match = True
-                            break
-                    
-                    if found_match:
-                        matching_workflows.append(workflow)
-                        
-                except Exception as e:
-                    self.logger.warning(f"Error searching workflow {example_meta.name}: {e}")
+                # Load the full workflow with graph
+                workflow = self.load_example(package.name, example_meta.name)
+                if not workflow or not workflow.graph:
                     continue
-        
+
+                graph = Graph.from_dict(
+                    {
+                        "nodes": [node.model_dump() for node in workflow.graph.nodes],
+                        "edges": [edge.model_dump() for edge in workflow.graph.edges],
+                    }
+                )
+
+                # Search through nodes in the graph
+                found_match = False
+                for node in graph.nodes:
+                    # Check node type
+                    if query in node.get_node_type().lower():
+                        found_match = True
+                        break
+
+                    if query in str(node.get_title()).lower():
+                        found_match = True
+                        break
+
+                    if query in str(node.get_description()).lower():
+                        found_match = True
+                        break
+
+                if found_match:
+                    matching_workflows.append(workflow)
+
         return matching_workflows
 
 
@@ -1120,8 +1111,6 @@ def save_package_metadata(package: PackageModel, verbose: bool = False):
     return metadata_path
 
 
-
-
 async def main():
     """
     Main function to run smoke tests for the registry module.
@@ -1232,15 +1221,14 @@ async def main():
         else:
             print(f"Asset '{asset_name}' not found.")
 
-
     print("=== Testing Example Workflow Search ===\n")
-    
+
     # Test 1: Empty query (should return all examples)
     print("Test 1: Empty query (return all examples)")
     all_examples = registry.search_example_workflows("")
     print(f"Found {len(all_examples)} examples")
     print()
-    
+
     # Test 2: Search for specific node type (RealESRGAN)
     print("Test 2: Search for 'Chat' in node types")
     results = registry.search_example_workflows("Chat")
@@ -1248,7 +1236,7 @@ async def main():
     for workflow in results:
         print(f"  - {workflow.name}: {workflow.description[:60]}...")
     print()
-    
+
     # Test 3: Search for node title (upscaler)
     print("Test 3: Search for 'LLM' in node titles")
     results = registry.search_example_workflows("LLM")
@@ -1256,7 +1244,7 @@ async def main():
     for workflow in results:
         print(f"  - {workflow.name}: {workflow.description[:60]}...")
     print()
-    
+
     # Test 4: Search for word in node description
     print("Test 4: Search for 'upscaled' in node descriptions")
     results = registry.search_example_workflows("upscaled")
@@ -1264,7 +1252,7 @@ async def main():
     for workflow in results:
         print(f"  - {workflow.name}: {workflow.description[:60]}...")
     print()
-    
+
     # Test 5: Search for huggingface
     print("Test 5: Search for 'huggingface' in all node properties")
     results = registry.search_example_workflows("huggingface")
@@ -1275,9 +1263,9 @@ async def main():
         for node in workflow.graph.nodes:
             if "huggingface" in node.type.lower():
                 print(f"    Node type: {node.type}")
-                
+
     print()
-    
+
     # Test 6: Search for "image" in descriptions
     print("Test 6: Search for 'image' in node fields")
     results = registry.search_example_workflows("image")
@@ -1285,20 +1273,21 @@ async def main():
     for workflow in results:
         print(f"  - {workflow.name}")
     print()
-    
+
     # Test 7: Case insensitive search
     print("Test 7: Case insensitive search for 'REALESRGAN'")
     results = registry.search_example_workflows("REALESRGAN")
     print(f"Found {len(results)} workflows (case insensitive)")
     print()
-    
+
     # Test 8: Non-matching query
     print("Test 8: Non-matching query")
     results = registry.search_example_workflows("xyz_nonexistent_query")
     print(f"Found {len(results)} workflows (should be 0)")
     print()
-    
+
     print("=== Tests Complete ===")
+
 
 if __name__ == "__main__":
     asyncio.run(main())
