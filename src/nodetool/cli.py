@@ -412,7 +412,11 @@ def scan(verbose):
     """Scan current directory for nodes and create package metadata."""
     import sys
     import traceback
-    from nodetool.packages.registry import scan_for_package_nodes, save_package_metadata
+    from nodetool.packages.registry import (
+        scan_for_package_nodes,
+        save_package_metadata,
+        update_pyproject_include,
+    )
 
     try:
         with click.progressbar(
@@ -428,6 +432,8 @@ def scan(verbose):
 
             # Save package metadata
             save_package_metadata(package, verbose=verbose)
+            # Update pyproject.toml with asset files
+            update_pyproject_include(package, verbose=verbose)
             bar.update(10)
 
         node_count = len(package.nodes or [])

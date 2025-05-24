@@ -1111,6 +1111,72 @@ def save_package_metadata(package: PackageModel, verbose: bool = False):
     return metadata_path
 
 
+def update_pyproject_include(package: PackageModel, verbose: bool = False) -> None:
+    """Ensure package assets are listed in pyproject.toml's include section."""
+    import json
+    import tomli
+
+    pyproject_path = "pyproject.toml"
+    if not os.path.exists(pyproject_path):
+        if verbose:
+            print("pyproject.toml not found, skipping update")
+        return
+
+    with open(pyproject_path, "rb") as f:
+        content = f.read().decode()
+
+    data = tomli.loads(content)
+
+    poetry = data.get("tool", {}).get("poetry", {})
+    include_list = poetry.get("include", [])
+    if not isinstance(include_list, list):
+        include_list = [str(include_list)]
+
+    metadata_path = f"src/nodetool/package_metadata/{package.name}.json"
+    asset_paths = [
+        f"src/nodetool/assets/{package.name}/{asset.name}"
+        for asset in package.assets or []
+    ]
+
+    for p in [metadata_path, *asset_paths]:
+        if p not in include_list:
+            include_list.append(p)
+
+    lines = content.splitlines(keepends=True)
+    start = None
+    end = len(lines)
+    for i, line in enumerate(lines):
+        if line.strip() == "[tool.poetry]":
+            start = i
+            continue
+        if start is not None and i > start and line.startswith("["):
+            end = i
+            break
+
+    if start is None:
+        if verbose:
+            print("[tool.poetry] section not found in pyproject.toml")
+        return
+
+    include_idx = None
+    for i in range(start + 1, end):
+        if lines[i].strip().startswith("include"):
+            include_idx = i
+            break
+
+    new_line = "include = " + json.dumps(include_list) + "\n"
+    if include_idx is not None:
+        lines[include_idx] = new_line
+    else:
+        lines.insert(end, new_line)
+
+    with open(pyproject_path, "w") as f:
+        f.writelines(lines)
+
+    if verbose:
+        print(f"Updated {pyproject_path} include section with asset files")
+
+
 async def main():
     """
     Main function to run smoke tests for the registry module.
