@@ -7,7 +7,6 @@ from fastapi.testclient import TestClient
 import httpx
 import pytest
 from nodetool.api.server import create_app
-from nodetool.common.settings import SettingsModel
 from nodetool.storage.memory_storage import MemoryStorage
 from nodetool.types.graph import Node, Edge
 from nodetool.common.environment import Environment
