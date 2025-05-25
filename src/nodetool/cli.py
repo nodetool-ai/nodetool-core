@@ -2,6 +2,7 @@ import os
 import sys
 import shutil
 import click
+from nodetool.common.configuration import get_settings_registry
 from nodetool.common.environment import Environment
 from nodetool.dsl.codegen import create_dsl_modules
 
@@ -231,23 +232,13 @@ def settings():
 @click.option("--mask", is_flag=True, help="Mask secret values with ****.")
 def show_settings(secrets: bool, mask: bool):
     """Show current settings or secrets."""
-    from nodetool.common.settings import load_settings, ALL_DESCRIPTIONS
+    from nodetool.common.settings import load_settings
 
     # Load settings and secrets
     settings_obj, secrets_obj = load_settings()
 
     # Choose which model to display
     data = secrets_obj if secrets else settings_obj
-
-    # Mask secret values if requested
-    if secrets and mask:
-        masked_data = {}
-        for key, value in data.items():
-            if value is not None and value != "":
-                masked_data[key] = "****"
-            else:
-                masked_data[key] = value
-        data = masked_data
 
     # Create a rich table
     table = Table(title="Secrets" if secrets else "Settings")
@@ -257,10 +248,12 @@ def show_settings(secrets: bool, mask: bool):
     table.add_column("Value", style="green")
     table.add_column("Description", style="yellow")
 
-    for key, value in data.items():
+    settings_registry = get_settings_registry()
+    for setting in settings_registry:
         # Get field description from the model
-        description = ALL_DESCRIPTIONS.get(key, "")
-        table.add_row(key, str(value), description)
+        description = setting.description
+        masked_value = "****" if setting.is_secret else data.get(setting.env_var, "")
+        table.add_row(setting.env_var, masked_value, description)
 
     # Display the table
     console.print(table)
@@ -268,49 +261,21 @@ def show_settings(secrets: bool, mask: bool):
 
 @settings.command("edit")
 @click.option("--secrets", is_flag=True, help="Edit secrets instead of settings.")
-@click.option("--key", help="Specific setting/secret key to edit.")
-@click.option("--value", help="New value for the specified key.")
-def edit_settings(
-    secrets: bool = False, key: str | None = None, value: str | None = None
-):
+def edit_settings(secrets: bool = False):
     """Edit settings or secrets."""
     from nodetool.common.settings import (
         load_settings,
-        save_settings,
         get_system_file_path,
         SETTINGS_FILE,
         SECRETS_FILE,
-        SETTING_DESCRIPTIONS,
-        SECRET_DESCRIPTIONS,
     )
-    import tempfile
     import subprocess
     import yaml
     import os
 
     # Load current settings and secrets
     settings_obj, secrets_obj = load_settings()
-
-    # If specific key and value are provided, update directly
-    if key and value is not None:
-        if secrets:
-            if key in SECRET_DESCRIPTIONS:
-                secrets_obj[key] = value
-                click.echo(f"Updated secret: {key}")
-            else:
-                click.echo(f"Error: {key} is not a valid secret", err=True)
-                return
-        else:
-            if key in SETTING_DESCRIPTIONS:
-                settings_obj[key] = value
-                click.echo(f"Updated setting: {key}")
-            else:
-                click.echo(f"Error: {key} is not a valid setting", err=True)
-                return
-
-        # Save the updated settings/secrets
-        save_settings(settings_obj, secrets_obj)
-        return
+    settings_registry = get_settings_registry()
 
     # If no specific key/value, open the file in an editor
     file_path = get_system_file_path(SECRETS_FILE if secrets else SETTINGS_FILE)
@@ -333,16 +298,6 @@ def edit_settings(
     try:
         subprocess.run([editor, file_path], check=True)
         click.echo(f"Settings saved to {file_path}")
-
-        # Reload settings to see changes
-        updated_settings, updated_secrets = load_settings()
-
-        # Show what changed
-        click.echo("\nUpdated values:")
-        if secrets:
-            show_settings(secrets=True, mask=False)
-        else:
-            show_settings(secrets=False, mask=False)
 
     except subprocess.CalledProcessError:
         click.echo("Error: Failed to edit the file", err=True)

@@ -23,7 +23,7 @@ NOT_GIVEN = object()
 register_setting(
     package_name="nodetool",
     env_var="FONT_PATH",
-    group="settings",
+    group="Folders",
     description=(
         "Location of font folder used by image processing nodes like RenderText. "
         "This should point to a directory containing TrueType (.ttf) or OpenType (.otf) fonts. "
@@ -34,7 +34,7 @@ register_setting(
 register_setting(
     package_name="nodetool",
     env_var="COMFY_FOLDER",
-    group="settings",
+    group="Folders",
     description=(
         "Location of ComfyUI folder for integration with ComfyUI models and workflows. "
         "Set this to use models from your existing ComfyUI installation. "
@@ -45,7 +45,7 @@ register_setting(
 register_setting(
     package_name="nodetool",
     env_var="CHROMA_PATH",
-    group="settings",
+    group="Folders",
     description=(
         "Location of ChromaDB folder for vector database storage. "
         "ChromaDB is used to store and retrieve embeddings for semantic search and RAG applications. "
@@ -58,139 +58,114 @@ register_setting(
 register_setting(
     package_name="nodetool",
     env_var="OPENAI_API_KEY",
-    group="secrets",
+    group="LLM",
     description="OpenAI API key for accessing GPT models, DALL-E, and other OpenAI services",
     is_secret=True,
 )
 register_setting(
     package_name="nodetool",
     env_var="ANTHROPIC_API_KEY",
-    group="secrets",
+    group="LLM",
     description="Anthropic API key for accessing Claude models and other Anthropic services",
     is_secret=True,
 )
 register_setting(
     package_name="nodetool",
+    env_var="GEMINI_API_KEY",
+    group="LLM",
+    description="Gemini API key for accessing Google's Gemini AI models",
+    is_secret=True,
+)
+register_setting(
+    package_name="nodetool",
     env_var="HF_TOKEN",
-    group="secrets",
+    group="Hugging Face",
     description="Hugging Face Token for accessing gated or private models on the Hugging Face Hub",
     is_secret=True,
 )
 register_setting(
     package_name="nodetool",
     env_var="REPLICATE_API_TOKEN",
-    group="secrets",
+    group="Replicate",
     description="Replicate API Token for running models on Replicate's cloud infrastructure",
     is_secret=True,
 )
 register_setting(
     package_name="nodetool",
     env_var="AIME_USER",
-    group="secrets",
+    group="Aime",
     description="Aime user credential for authentication with Aime services",
     is_secret=True,
 )
 register_setting(
     package_name="nodetool",
     env_var="AIME_API_KEY",
-    group="secrets",
+    group="Aime",
     description="Aime API key for accessing Aime AI services",
     is_secret=True,
 )
 register_setting(
     package_name="nodetool",
     env_var="GOOGLE_MAIL_USER",
-    group="secrets",
+    group="Google",
     description="Google mail user for email integration features",
     is_secret=True,
 )
 register_setting(
     package_name="nodetool",
     env_var="GOOGLE_APP_PASSWORD",
-    group="secrets",
+    group="Google",
     description="Google app password for secure authentication with Google services",
     is_secret=True,
 )
 register_setting(
     package_name="nodetool",
-    env_var="GEMINI_API_KEY",
-    group="secrets",
-    description="Gemini API key for accessing Google's Gemini AI models",
-    is_secret=True,
-)
-register_setting(
-    package_name="nodetool",
     env_var="ELEVENLABS_API_KEY",
-    group="secrets",
+    group="ElevenLabs",
     description="ElevenLabs API key for high-quality text-to-speech services",
     is_secret=True,
 )
 register_setting(
     package_name="nodetool",
     env_var="FAL_API_KEY",
-    group="secrets",
+    group="FAL",
     description="FAL API key for accessing FAL.ai's serverless AI infrastructure",
     is_secret=True,
 )
 register_setting(
     package_name="nodetool",
     env_var="SERPAPI_API_KEY",
-    group="secrets",
+    group="SerpAPI",
     description="API key for accessing SerpAPI scraping infrastructure",
     is_secret=True,
 )
 register_setting(
     package_name="nodetool",
     env_var="BROWSER_URL",
-    group="secrets",
+    group="Browser",
     description="Browser URL for accessing a browser instance",
     is_secret=True,
 )
 register_setting(
     package_name="nodetool",
     env_var="DATA_FOR_SEO_LOGIN",
-    group="secrets",
+    group="DataForSEO",
     description="DataForSEO login for accessing DataForSEO's API",
     is_secret=True,
 )
 register_setting(
     package_name="nodetool",
     env_var="DATA_FOR_SEO_PASSWORD",
-    group="secrets",
+    group="DataForSEO",
     description="DataForSEO password for accessing DataForSEO's API",
     is_secret=True,
 )
 
 
-# Mapping of all descriptions for CLI display
-SETTING_DESCRIPTIONS = {
-    "FONT_PATH": "Location of font folder used by image processing nodes like RenderText. This should point to a directory containing TrueType (.ttf) or OpenType (.otf) fonts. If not specified, the system will use default fonts.",
-    "COMFY_FOLDER": "Location of ComfyUI folder for integration with ComfyUI models and workflows. Set this to use models from your existing ComfyUI installation. This allows nodetool to access resources from your ComfyUI setup without duplicating files.",
-    "CHROMA_PATH": "Location of ChromaDB folder for vector database storage. ChromaDB is used to store and retrieve embeddings for semantic search and RAG applications. In Docker deployments, this path is mounted as a volume to persist data between container restarts.",
-}
-SECRET_DESCRIPTIONS = {
-    "OPENAI_API_KEY": "OpenAI API key for accessing GPT models, DALL-E, and other OpenAI services",
-    "ANTHROPIC_API_KEY": "Anthropic API key for accessing Claude models and other Anthropic services",
-    "HF_TOKEN": "Hugging Face Token for accessing gated or private models on the Hugging Face Hub",
-    "REPLICATE_API_TOKEN": "Replicate API Token for running models on Replicate's cloud infrastructure",
-    "AIME_USER": "Aime user credential for authentication with Aime services",
-    "AIME_API_KEY": "Aime API key for accessing Aime AI services",
-    "GOOGLE_MAIL_USER": "Google mail user for email integration features",
-    "GOOGLE_APP_PASSWORD": "Google app password for secure authentication with Google services",
-    "GEMINI_API_KEY": "Gemini API key for accessing Google's Gemini AI models",
-    "ELEVENLABS_API_KEY": "ElevenLabs API key for high-quality text-to-speech services",
-    "FAL_API_KEY": "FAL API key for accessing FAL.ai's serverless AI infrastructure",
-    "SERPAPI_API_KEY": "API key for accessing SerpAPI scraping infrastructure",
-    "BROWSER_URL": "Browser URL for accessing a browser instance",
-    "DATA_FOR_SEO_LOGIN": "DataForSEO login for accessing DataForSEO's API",
-    "DATA_FOR_SEO_PASSWORD": "DataForSEO password for accessing DataForSEO's API",
-}
-ALL_DESCRIPTIONS = {**SETTING_DESCRIPTIONS, **SECRET_DESCRIPTIONS}
-
-
 # ---------------------------------------------------------------------------
 # Path helpers
 # ---------------------------------------------------------------------------
+
 
 def get_system_file_path(filename: str) -> Path:
     """Return the path to the configuration file for the current OS."""
@@ -233,6 +208,7 @@ def get_log_path(filename: str) -> Path:
 # ---------------------------------------------------------------------------
 # Settings helpers
 # ---------------------------------------------------------------------------
+
 
 def load_settings() -> Tuple[Dict[str, Any], Dict[str, Any]]:
     """Load settings and secrets from YAML files."""
@@ -286,4 +262,3 @@ def get_value(
     if value is not NOT_GIVEN:
         return value
     raise Exception(MISSING_MESSAGE.format(key))
-
