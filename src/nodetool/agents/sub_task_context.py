@@ -1122,8 +1122,8 @@ class SubTaskContext:
 
         # verbose check removed
         logger.debug(
-                f"Starting execution of subtask {self.subtask.id} at {current_time}"
-            )
+            f"Starting execution of subtask {self.subtask.id} at {current_time}"
+        )
 
         # --- LLM-based Execution Logic ---
         prompt_parts = [
@@ -1171,24 +1171,18 @@ class SubTaskContext:
             self.iterations += 1
 
             # verbose check removed
-            logger.debug(
-                    f"Starting iteration {self.iterations}/{self.max_iterations}"
-                )
+            logger.debug(f"Starting iteration {self.iterations}/{self.max_iterations}")
 
             # Calculate total token count AFTER potential compression
             token_count = self._count_tokens(self.history)
 
             # verbose check removed
-            logger.debug(
-                    f"Current token count: {token_count}/{self.max_token_limit}"
-                )
+            logger.debug(f"Current token count: {token_count}/{self.max_token_limit}")
 
             # Check if we need to transition to conclusion stage
             if (token_count > self.max_token_limit) and not self.in_conclusion_stage:
                 # verbose check removed
-                logger.debug(
-                        "Token limit exceeded, transitioning to conclusion stage"
-                    )
+                logger.debug("Token limit exceeded, transitioning to conclusion stage")
                 await self._transition_to_conclusion_stage()
                 # Yield the event after transitioning
                 yield TaskUpdate(
@@ -1207,8 +1201,8 @@ class SubTaskContext:
                 for tool_call in message.tool_calls:
                     # verbose check removed
                     logger.debug(
-                            f"Processing tool call: {tool_call.name} with args: {tool_call.args}"
-                        )
+                        f"Processing tool call: {tool_call.name} with args: {tool_call.args}"
+                    )
                     message = self._generate_tool_call_message(tool_call)
                     yield ToolCall(
                         id=tool_call.id,
@@ -1245,10 +1239,10 @@ class SubTaskContext:
 
         # verbose check removed
         logger.debug(
-                f"Subtask {self.subtask.id} execution completed. Status: {'completed' if self.subtask.completed else 'incomplete'}"
-            )
-logger.debug(f"Total iterations: {self.iterations}")
-logger.debug(f"Total messages in history: {len(self.history)}")
+            f"Subtask {self.subtask.id} execution completed. Status: {'completed' if self.subtask.completed else 'incomplete'}"
+        )
+        logger.debug(f"Total iterations: {self.iterations}")
+        logger.debug(f"Total messages in history: {len(self.history)}")
 
     async def _transition_to_conclusion_stage(self) -> None:
         """
@@ -1426,9 +1420,7 @@ logger.debug(f"Total messages in history: {len(self.history)}")
 
         try:
             # verbose check removed
-            logger.debug(
-                    f"Calling LLM with {len(self.history)} messages in history"
-                )
+            logger.debug(f"Calling LLM with {len(self.history)} messages in history")
             message = await self.provider.generate_message(
                 messages=self.history,
                 model=self.model,
