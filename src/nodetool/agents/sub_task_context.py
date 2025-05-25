@@ -218,9 +218,10 @@ import shutil
 
 from jinja2 import Environment, BaseLoader
 
-# Setup basic logging
-logging.basicConfig(level=logging.INFO)
+# Setup logging
 logger = logging.getLogger(__name__)
+
+logger.setLevel(logging.DEBUG)
 
 
 DEFAULT_MAX_TOKEN_LIMIT: int = 4096
@@ -741,6 +742,15 @@ class SubTaskContext:
             MESSAGE_COMPRESSION_THRESHOLD,
         )
 
+        logger.debug(f"Initializing SubTaskContext for subtask: {subtask.id}")
+        logger.debug(f"Task: {task.title}")
+        logger.debug(f"Subtask content: {subtask.content}")
+        logger.debug(f"Model: {model}, Provider: {provider.__class__.__name__}")
+        logger.debug(f"Max token limit: {self.max_token_limit}")
+        logger.debug(f"Max iterations: {max_iterations}")
+        logger.debug(f"Use finish task: {use_finish_task}")
+        logger.debug(f"Available tools: {[tool.name for tool in tools]}")
+
         # --- Prepare prompt templates ---
         self.jinja_env = Environment(loader=BaseLoader())
 
@@ -827,6 +837,9 @@ class SubTaskContext:
         token_count = 0
         for msg in messages:
             token_count += self._count_single_message_tokens(msg)
+
+        logger.debug(f"Token count for {len(messages)} messages: {token_count}")
+
         return token_count
 
     def _count_single_message_tokens(self, msg: Message) -> int:
@@ -1020,12 +1033,19 @@ class SubTaskContext:
         Handles results that are direct content or a file/directory pointer object.
         If the output path is a directory, content is saved to a summary file inside it.
         """
+        # verbose check removed
+        logger.debug(f"Saving output to file for subtask {self.subtask.id}")
+        logger.debug(f"Finish params: {finish_params}")
+
         metadata = finish_params.get("metadata", {})
         result_value = finish_params.get("result")
         output_path_rel = self.subtask.output_file
         output_path_abs = self.processing_context.resolve_workspace_path(
             output_path_rel
         )
+
+        # verbose check removed
+        logger.debug(f"Output path: {output_path_abs}")
 
         # Add tracked sources to metadata
         if self.sources:
@@ -1038,6 +1058,8 @@ class SubTaskContext:
 
         # --- Handle File Pointer Case ---
         if self._is_file_pointer(result_value):
+            # verbose check removed
+            logger.debug(f"Result is a file pointer: {result_value}")
             assert isinstance(result_value, dict)
             source_path_rel_raw = result_value["path"]
             source_path_rel = os.path.normpath(source_path_rel_raw)
@@ -1045,11 +1067,16 @@ class SubTaskContext:
                 source_path_rel
             )
 
+            # verbose check removed
+            logger.debug(f"Source path: {source_path_abs}")
+
             if source_path_abs != output_path_abs:
                 shutil.copy2(source_path_abs, output_path_abs)
                 logger.info(
                     f"Successfully copied file '{source_path_abs}' to '{output_path_abs}'."
                 )
+            # verbose check removed
+            logger.debug("Source and output paths are the same, no copy needed")
 
         # --- Handle Direct Content Case ---
         elif result_value is not None:
@@ -1093,6 +1120,11 @@ class SubTaskContext:
         current_time = int(time.time())
         self.subtask.start_time = current_time
 
+        # verbose check removed
+        logger.debug(
+                f"Starting execution of subtask {self.subtask.id} at {current_time}"
+            )
+
         # --- LLM-based Execution Logic ---
         prompt_parts = [
             f"**Overall Task:**\nTitle: {self.task.title}\nDescription: {self.task.description}\n",
@@ -1124,6 +1156,9 @@ class SubTaskContext:
         # Add the task prompt to this subtask's history
         self.history.append(Message(role="user", content=task_prompt))
 
+        # verbose check removed
+        logger.debug(f"Task prompt added to history: {task_prompt[:200]}...")
+
         # Yield task update for subtask start
         yield TaskUpdate(
             task=self.task,
@@ -1135,11 +1170,25 @@ class SubTaskContext:
         while not self.subtask.completed and self.iterations < self.max_iterations:
             self.iterations += 1
 
+            # verbose check removed
+            logger.debug(
+                    f"Starting iteration {self.iterations}/{self.max_iterations}"
+                )
+
             # Calculate total token count AFTER potential compression
             token_count = self._count_tokens(self.history)
 
+            # verbose check removed
+            logger.debug(
+                    f"Current token count: {token_count}/{self.max_token_limit}"
+                )
+
             # Check if we need to transition to conclusion stage
             if (token_count > self.max_token_limit) and not self.in_conclusion_stage:
+                # verbose check removed
+                logger.debug(
+                        "Token limit exceeded, transitioning to conclusion stage"
+                    )
                 await self._transition_to_conclusion_stage()
                 # Yield the event after transitioning
                 yield TaskUpdate(
@@ -1151,9 +1200,15 @@ class SubTaskContext:
             # Process current iteration
             message = await self._process_iteration()
             if message.tool_calls:
+                # verbose check removed
+                logger.debug(f"LLM returned {len(message.tool_calls)} tool calls")
                 if message.content:
                     yield Chunk(content=str(message.content))
                 for tool_call in message.tool_calls:
+                    # verbose check removed
+                    logger.debug(
+                            f"Processing tool call: {tool_call.name} with args: {tool_call.args}"
+                        )
                     message = self._generate_tool_call_message(tool_call)
                     yield ToolCall(
                         id=tool_call.id,
@@ -1166,6 +1221,8 @@ class SubTaskContext:
                         tool_call.name == "finish_subtask"
                         or tool_call.name == "finish_task"
                     ):
+                        # verbose check removed
+                        logger.debug(f"Subtask completed via {tool_call.name}")
                         yield TaskUpdate(
                             task=self.task,
                             subtask=self.subtask,
@@ -1185,6 +1242,13 @@ class SubTaskContext:
                 event=TaskUpdateEvent.MAX_ITERATIONS_REACHED,
             )
             yield tool_call
+
+        # verbose check removed
+        logger.debug(
+                f"Subtask {self.subtask.id} execution completed. Status: {'completed' if self.subtask.completed else 'incomplete'}"
+            )
+logger.debug(f"Total iterations: {self.iterations}")
+logger.debug(f"Total messages in history: {len(self.history)}")
 
     async def _transition_to_conclusion_stage(self) -> None:
         """
@@ -1339,12 +1403,18 @@ class SubTaskContext:
         """
         Process a single iteration of the task.
         """
+        # verbose check removed
+        logger.debug("Processing iteration")
 
         tools_for_iteration = (
             [self.finish_tool]  # Only allow finish tool in conclusion stage
             if self.in_conclusion_stage
             else self.tools  # Allow all tools otherwise
         )
+
+        # verbose check removed
+        logger.debug(f"Conclusion stage: {self.in_conclusion_stage}")
+        logger.debug(f"Tools available: {[t.name for t in tools_for_iteration]}")
 
         # Ensure ReadFileTool is always available if not already included
         if not any(isinstance(t, ReadFileTool) for t in tools_for_iteration):
@@ -1355,13 +1425,27 @@ class SubTaskContext:
         final_tools = list(unique_tools.values())
 
         try:
+            # verbose check removed
+            logger.debug(
+                    f"Calling LLM with {len(self.history)} messages in history"
+                )
             message = await self.provider.generate_message(
                 messages=self.history,
                 model=self.model,
                 tools=final_tools,
             )
+            # verbose check removed
+            logger.debug(
+                f"LLM response received - content length: {len(str(message.content)) if message.content else 0}"
+            )
+            if message.tool_calls:
+                logger.debug(
+                    f"LLM requested tool calls: {[tc.name for tc in message.tool_calls]}"
+                )
         except Exception as e:
             if self.provider.is_context_length_error(e):
+                # verbose check removed
+                logger.debug(f"Context length error encountered: {e}")
                 await self._optimize_context_window()
                 message = await self.provider.generate_message(
                     messages=self.history,
@@ -1369,6 +1453,8 @@ class SubTaskContext:
                     tools=final_tools,
                 )
             else:
+                # verbose check removed
+                logger.debug(f"Error generating message: {e}")
                 raise e
 
         # Clean assistant message content
@@ -1423,6 +1509,8 @@ class SubTaskContext:
                 )  # Allow all tools if not in conclusion stage
 
             if valid_tool_calls:
+                # verbose check removed
+                logger.debug(f"Processing {len(valid_tool_calls)} valid tool calls")
                 tool_results = await asyncio.gather(
                     *[
                         self._handle_tool_call(tool_call)
@@ -1430,6 +1518,8 @@ class SubTaskContext:
                     ]
                 )
                 self.history.extend(tool_results)
+                # verbose check removed
+                logger.debug(f"Added {len(tool_results)} tool results to history")
             elif self.in_conclusion_stage and not valid_tool_calls:
                 # If in conclusion stage and LLM didn't call finish_tool, add a nudge?
                 # Or handle it in the max_iterations logic? For now, let loop continue.
@@ -1460,8 +1550,14 @@ class SubTaskContext:
         Returns:
             Message: A message object with role 'tool' containing the processed and serialized result.
         """
+        # verbose check removed
+        logger.debug(f"Handling tool call: {tool_call.name} (ID: {tool_call.id})")
+
         # 1. Execute the tool
         raw_tool_result = await self._process_tool_execution(tool_call)
+
+        # verbose check removed
+        logger.debug(f"Tool {tool_call.name} execution completed")
 
         # 2. Conditionally compress the tool result
         # processed_tool_result = await self._maybe_compress_tool_result(
@@ -1613,19 +1709,28 @@ class SubTaskContext:
 
     def _process_special_tool_side_effects(self, tool_result: Any, tool_call: ToolCall):
         """Handles side effects for specific tools, like 'browser' or 'finish_*'."""
+        # verbose check removed
+        logger.debug(f"Processing special side effects for tool: {tool_call.name}")
+
         if tool_call.name == "browser" and isinstance(tool_call.args, dict):
             action = tool_call.args.get("action", "")
             url = tool_call.args.get("url", "")
             if action == "navigate" and url:
                 if url not in self.sources:  # Avoid duplicates
                     self.sources.append(url)
+                    # verbose check removed
+                    logger.debug(f"Added browser source: {url}")
 
         if tool_call.name == "finish_task":
+            # verbose check removed
+            logger.debug("Processing finish_task - marking subtask as completed")
             self.subtask.completed = True
             self.subtask.end_time = int(time.time())
             self._save_to_output_file(cast(dict, tool_result))
 
         if tool_call.name == "finish_subtask":
+            # verbose check removed
+            logger.debug("Processing finish_subtask - marking subtask as completed")
             self.subtask.completed = True
             self.subtask.end_time = int(time.time())
             self._save_to_output_file(cast(dict, tool_result))
@@ -1655,6 +1760,10 @@ class SubTaskContext:
         logger.warning(
             f"Subtask '{self.subtask.content}' reached max iterations ({self.max_iterations}). Forcing completion."
         )
+
+        # verbose check removed
+        logger.debug(f"Max iterations reached for subtask {self.subtask.id}")
+        logger.debug("Forcing completion with structured output request")
         # --- Determine schema and tool name dynamically ---
         tool_name = "finish_task" if self.use_finish_task else "finish_subtask"
         # The finish_tool already has the correct schema based on __init__

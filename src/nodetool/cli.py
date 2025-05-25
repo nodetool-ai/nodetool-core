@@ -485,7 +485,7 @@ readme = "README.md"
 authors = ["{author}"]
 packages = [{{ include = "nodetool", from = "src" }}]
 package-mode = true
-include = ["src/nodetool/package-metadata/{name}.json"]
+include = []
 
 [tool.poetry.dependencies]
 python = "{python_version}"
