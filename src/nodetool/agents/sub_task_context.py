@@ -738,7 +738,7 @@ class SubTaskContext:
         self.max_token_limit = max_token_limit or provider.get_max_token_limit(model)
         self.use_finish_task = use_finish_task
         self.message_compression_threshold = max(
-            self.max_token_limit // self.subtask.max_iterations,
+            self.max_token_limit // 4,
             MESSAGE_COMPRESSION_THRESHOLD,
         )
 
@@ -750,6 +750,19 @@ class SubTaskContext:
         logger.debug(f"Max iterations: {max_iterations}")
         logger.debug(f"Use finish task: {use_finish_task}")
         logger.debug(f"Available tools: {[tool.name for tool in tools]}")
+
+        # Detect batch processing configuration from subtask FIRST
+        self.batch_processing_config = getattr(self.subtask, "batch_processing", None)
+        self.is_batch_processing = (
+            self.batch_processing_config is not None
+            and isinstance(self.batch_processing_config, dict)
+            and self.batch_processing_config.get("enabled", False)
+        )
+
+        if self.is_batch_processing:
+            logger.debug(
+                f"Batch processing enabled for subtask {subtask.id}: {self.batch_processing_config}"
+            )
 
         # --- Prepare prompt templates ---
         self.jinja_env = Environment(loader=BaseLoader())
@@ -775,7 +788,9 @@ class SubTaskContext:
             finish_tool_output_schema = self.subtask.output_schema
             finish_tool_class = FinishSubTaskTool
 
-        self.system_prompt = self._render_prompt(base_system_prompt, prompt_context)
+        rendered_prompt = self._render_prompt(base_system_prompt, prompt_context)
+        # Apply batch processing optimizations if enabled
+        self.system_prompt = self._get_batch_optimized_system_prompt(rendered_prompt)
 
         # Initialize finish tool based on context (class determined above)
         self.finish_tool = finish_tool_class(
@@ -818,6 +833,10 @@ class SubTaskContext:
 
         # Flag to track which stage we're in - normal execution flow for all tasks
         self.in_conclusion_stage = False
+
+        # Initialize progressive result file for batch processing if enabled
+        if self.is_batch_processing:
+            self._init_batch_processing_file()
 
     def _render_prompt(self, template_string: str, context: dict) -> str:
         """Renders a prompt template using Jinja2."""
@@ -1383,6 +1402,10 @@ class SubTaskContext:
                     f"Removed {oldest_to_remove} older messages to optimize context window"
                 )
 
+        # Apply batch processing specific optimizations
+        if self.is_batch_processing:
+            await self._apply_batch_context_optimizations()
+
         # Log the final optimization results
         original_tokens = current_token_count
         optimized_tokens = self._count_tokens(self.history)
@@ -1390,6 +1413,48 @@ class SubTaskContext:
         logger.info(
             f"Context window optimization complete: {reduction} tokens removed ({int(reduction/original_tokens*100)}% reduction)"
         )
+
+    async def _apply_batch_context_optimizations(self) -> None:
+        """Apply additional context optimizations specific to batch processing."""
+        logger.debug("Applying batch processing context optimizations")
+
+        # First, remove old processed tool results that are no longer needed
+        self._remove_old_tool_results()
+
+        # More aggressive trimming for batch processing since we focus on current item
+        if len(self.history) > 6:  # Keep system, task, and last 4 messages only
+            preserved_messages = self.history[:2]  # System and task prompt
+            recent_messages = self.history[-4:]  # Last 4 exchanges
+
+            # Insert a batch processing marker
+            batch_marker = Message(
+                role="system",
+                content="[Batch processing: Earlier context removed to optimize for current item processing]",
+            )
+
+            self.history = preserved_messages + [batch_marker] + recent_messages
+            logger.debug(
+                f"Trimmed history for batch processing: kept {len(self.history)} messages"
+            )
+
+        # Remove any large file content that's not immediately relevant
+        for i, msg in enumerate(self.history):
+            if msg.role == "tool" and msg.name == "read_file":
+                try:
+                    content_data = json.loads(str(msg.content))
+                    if isinstance(content_data, dict) and "content" in content_data:
+                        content_size = len(content_data.get("content", ""))
+                        if content_size > 1000:  # More aggressive for batch processing
+                            # Replace with minimal summary
+                            summary = {
+                                "success": content_data.get("success", False),
+                                "path": content_data.get("path", "unknown"),
+                                "action": "read_file",
+                                "content_summary": f"[Large file content ({content_size} chars) removed for batch optimization]",
+                            }
+                            self.history[i].content = json.dumps(summary)
+                except (json.JSONDecodeError, KeyError):
+                    continue
 
     async def _process_iteration(
         self,
@@ -1503,15 +1568,26 @@ class SubTaskContext:
             if valid_tool_calls:
                 # verbose check removed
                 logger.debug(f"Processing {len(valid_tool_calls)} valid tool calls")
-                tool_results = await asyncio.gather(
-                    *[
-                        self._handle_tool_call(tool_call)
-                        for tool_call in valid_tool_calls
-                    ]
-                )
-                self.history.extend(tool_results)
-                # verbose check removed
-                logger.debug(f"Added {len(tool_results)} tool results to history")
+
+                # For batch processing, handle tool results more intelligently
+                if self.is_batch_processing and len(valid_tool_calls) > 2:
+                    # Process tool calls with token-aware batching
+                    tool_results = await self._handle_batch_tool_calls(valid_tool_calls)
+                    # In batch mode, don't keep all tool results in history
+                    # Only keep the most recent or most important ones
+                    filtered_results = self._filter_batch_tool_results(tool_results)
+                    self.history.extend(filtered_results)
+                    logger.debug(f"Added {len(filtered_results)} filtered tool results to history (batch mode)")
+                else:
+                    # Standard parallel processing for non-batch or small number of calls
+                    tool_results = await asyncio.gather(
+                        *[
+                            self._handle_tool_call(tool_call)
+                            for tool_call in valid_tool_calls
+                        ]
+                    )
+                    self.history.extend(tool_results)
+                    logger.debug(f"Added {len(tool_results)} tool results to history")
             elif self.in_conclusion_stage and not valid_tool_calls:
                 # If in conclusion stage and LLM didn't call finish_tool, add a nudge?
                 # Or handle it in the max_iterations logic? For now, let loop continue.
@@ -1552,10 +1628,13 @@ class SubTaskContext:
         logger.debug(f"Tool {tool_call.name} execution completed")
 
         # 2. Conditionally compress the tool result
-        # processed_tool_result = await self._maybe_compress_tool_result(
-        #     raw_tool_result, tool_call
-        # )
-        processed_tool_result = raw_tool_result
+        if self.is_batch_processing:
+            # Always compress large results in batch mode
+            processed_tool_result = await self._maybe_compress_tool_result(
+                raw_tool_result, tool_call
+            )
+        else:
+            processed_tool_result = raw_tool_result
 
         # 3. Handle binary artifacts (images, audio)
         if isinstance(processed_tool_result, dict):
@@ -1604,10 +1683,13 @@ class SubTaskContext:
             result_str_for_size_check = json.dumps(tool_result, ensure_ascii=False)
             result_token_count = len(self.encoding.encode(result_str_for_size_check))
 
-            if result_token_count > self.message_compression_threshold:
+            # More aggressive compression for batch processing
+            compression_threshold = self.message_compression_threshold
+
+            if result_token_count > compression_threshold:
                 logger.info(
                     f"Tool result for '{tool_call.name}' ({result_token_count} tokens) "
-                    f"exceeds threshold ({self.message_compression_threshold}). Compressing..."
+                    f"exceeds threshold ({compression_threshold}). Compressing..."
                 )
                 compressed_result = await self._compress_tool_result(
                     tool_result, tool_call.name, tool_call.args
@@ -2081,5 +2163,366 @@ class SubTaskContext:
             ]
 
         return schema
+
+    def _init_batch_processing_file(self) -> None:
+        """Initialize the progressive result file for batch processing."""
+        if not self.is_batch_processing:
+            return
+
+        output_path = self.processing_context.resolve_workspace_path(
+            self.subtask.output_file
+        )
+
+        # Determine file format based on output type
+        if self.subtask.output_type in ["json", "jsonl"]:
+            # Initialize with empty array for JSON or prepare for JSONL
+            if self.subtask.output_type == "json":
+                with open(output_path, "w", encoding="utf-8") as f:
+                    json.dump([], f)
+            # For JSONL, just ensure file exists (will append items as they're processed)
+            else:
+                with open(output_path, "w", encoding="utf-8") as f:
+                    pass  # Create empty file
+        else:
+            # For other formats, create with metadata header
+            assert self.batch_processing_config is not None
+            with open(output_path, "w", encoding="utf-8") as f:
+                f.write("# Batch Processing Results\n")
+                f.write(
+                    f"# Batch size: {self.batch_processing_config.get('batch_size', 'unknown')}\n"
+                )
+                f.write(
+                    f"# Start index: {self.batch_processing_config.get('start_index', 0)}\n"
+                )
+                f.write(
+                    f"# End index: {self.batch_processing_config.get('end_index', 'unknown')}\n\n"
+                )
+
+        logger.debug(f"Initialized batch processing file: {output_path}")
+
+    def _append_batch_result(self, item_result: Any, item_index: int = None) -> None:
+        """Append a single item result to the batch processing file."""
+        if not self.is_batch_processing:
+            return
+
+        output_path = self.processing_context.resolve_workspace_path(
+            self.subtask.output_file
+        )
+
+        try:
+            if self.subtask.output_type == "json":
+                # Read current array, append item, write back
+                with open(output_path, "r", encoding="utf-8") as f:
+                    current_data = json.load(f)
+                current_data.append(item_result)
+                with open(output_path, "w", encoding="utf-8") as f:
+                    json.dump(current_data, f, indent=2, ensure_ascii=False)
+            elif self.subtask.output_type == "jsonl":
+                # Append as new line
+                with open(output_path, "a", encoding="utf-8") as f:
+                    json.dump(item_result, f, ensure_ascii=False)
+                    f.write("\n")
+            else:
+                # Append as text with separator
+                with open(output_path, "a", encoding="utf-8") as f:
+                    if item_index is not None:
+                        f.write(f"\n--- Item {item_index} ---\n")
+                    f.write(str(item_result))
+                    f.write("\n")
+
+            logger.debug(f"Appended batch result {item_index} to {output_path}")
+        except Exception as e:
+            logger.error(f"Failed to append batch result to {output_path}: {e}")
+
+    def _get_batch_optimized_system_prompt(self, base_prompt: str) -> str:
+        """Modify system prompt for batch processing optimization."""
+        if not self.is_batch_processing:
+            return base_prompt
+
+        batch_optimization = f"""
+
+BATCH PROCESSING MODE:
+You are processing items {self.batch_processing_config.get('start_index', 0)} to {self.batch_processing_config.get('end_index', 'N')} in a batch of {self.batch_processing_config.get('total_items', 'unknown')} total items.
+
+BATCH OPTIMIZATION GUIDELINES:
+1. Process items PROGRESSIVELY - don't try to load everything into memory at once
+2. Use read_file with line ranges when possible to avoid loading entire large files
+3. Write results INCREMENTALLY using write_file in append mode
+4. Focus on one item at a time to minimize context window usage
+5. Use file pointers instead of including large content directly in tool calls
+6. When reading input files, prefer extracting specific items/ranges rather than full content
+7. The output file has been pre-initialized for progressive writing
+8. IMPORTANT: Process at most 2-3 items at a time to avoid context overflow
+
+Your goal is to process the assigned batch efficiently while maintaining low memory usage.
+"""
+        return base_prompt + batch_optimization
+
+    async def _handle_batch_tool_calls(
+        self, tool_calls: List[ToolCall]
+    ) -> List[Message]:
+        """
+        Handle multiple tool calls intelligently for batch processing.
+        This method processes tool calls in smaller batches to prevent context window overflow.
+        """
+        logger.info(
+            f"Batch processing {len(tool_calls)} tool calls to prevent context overflow"
+        )
+
+        all_results = []
+        current_history_tokens = self._count_tokens(self.history)
+
+        # Group tool calls by estimated result size
+        browser_calls = [tc for tc in tool_calls if tc.name == "browser"]
+        read_file_calls = [tc for tc in tool_calls if tc.name == "read_file"]
+        other_calls = [
+            tc for tc in tool_calls if tc.name not in ["browser", "read_file"]
+        ]
+
+        # Process in order of expected size: other calls first, then files, then browser
+        ordered_calls = other_calls + read_file_calls + browser_calls
+
+        # Process in chunks to avoid overwhelming the context
+        chunk_size = 2  # Process at most 2 browser/file calls at a time
+
+        for i in range(0, len(ordered_calls), chunk_size):
+            chunk = ordered_calls[i : i + chunk_size]
+
+            # Check if we're approaching token limit before processing
+            if current_history_tokens > self.max_token_limit * 0.7:
+                logger.warning(
+                    "Approaching token limit, compressing history before processing more tools"
+                )
+                await self._optimize_context_window()
+                current_history_tokens = self._count_tokens(self.history)
+
+            # Process this chunk
+            chunk_results = await asyncio.gather(
+                *[self._handle_tool_call(tool_call) for tool_call in chunk]
+            )
+
+            # For batch processing, immediately write results to file and create summaries
+            for j, (tool_call, result_msg) in enumerate(zip(chunk, chunk_results)):
+                if tool_call.name in ["browser", "read_file"]:
+                    # Save full result to file and create a summary message
+                    summary_msg = await self._create_summary_message(
+                        tool_call, result_msg
+                    )
+                    all_results.append(summary_msg)
+
+                    # If this is a browser result for batch processing, save it immediately
+                    if self.is_batch_processing and tool_call.name == "browser":
+                        await self._save_browser_result_to_batch(
+                            tool_call, result_msg, i + j
+                        )
+                else:
+                    all_results.append(result_msg)
+
+            # Update token count estimate
+            for msg in chunk_results:
+                current_history_tokens += self._count_single_message_tokens(msg)
+
+        return all_results
+
+    async def _create_summary_message(
+        self, tool_call: ToolCall, result_msg: Message
+    ) -> Message:
+        """Create a summarized version of a tool result for batch processing."""
+        try:
+            result_data = json.loads(str(result_msg.content))
+
+            if tool_call.name == "browser":
+                # Create a concise summary for browser results
+                summary = {
+                    "tool": "browser",
+                    "action": tool_call.args.get("action", "unknown"),
+                    "url": tool_call.args.get("url", ""),
+                    "success": result_data.get("success", False),
+                    "title": result_data.get("title", ""),
+                    "content_summary": f"[Full content saved to batch file - {len(str(result_data.get('content', '')))} chars]",
+                    "timestamp": result_data.get("timestamp", ""),
+                }
+            elif tool_call.name == "read_file":
+                # Create a summary for file reads
+                summary = {
+                    "tool": "read_file",
+                    "path": tool_call.args.get("path", ""),
+                    "success": result_data.get("success", False),
+                    "content_summary": f"[File content {len(str(result_data.get('content', '')))} chars - available in workspace]",
+                    "line_count": result_data.get("line_info", {}).get(
+                        "total_lines", 0
+                    ),
+                }
+            else:
+                # For other tools, return as-is
+                return result_msg
+
+            # Create a new message with the summary
+            return Message(
+                role="tool",
+                tool_call_id=result_msg.tool_call_id,
+                name=result_msg.name,
+                content=json.dumps(summary),
+            )
+        except Exception as e:
+            logger.error(f"Failed to create summary for {tool_call.name}: {e}")
+            return result_msg
+
+    async def _save_browser_result_to_batch(
+        self, tool_call: ToolCall, result_msg: Message, index: int
+    ):
+        """Save browser result immediately to batch processing file."""
+        if not self.is_batch_processing:
+            return
+
+        try:
+            result_data = json.loads(str(result_msg.content))
+
+            # Create a batch result entry
+            batch_entry = {
+                "index": index,
+                "url": tool_call.args.get("url", ""),
+                "title": result_data.get("title", ""),
+                "description": result_data.get("description", ""),
+                "content_preview": (
+                    result_data.get("content", "")[:200]
+                    if result_data.get("content")
+                    else ""
+                ),
+                "success": result_data.get("success", False),
+                "error": result_data.get("error", ""),
+                "timestamp": result_data.get("timestamp", ""),
+                "full_content_available": True,
+            }
+
+            # Append to batch file
+            self._append_batch_result(batch_entry, index)
+
+        except Exception as e:
+            logger.error(f"Failed to save browser result to batch: {e}")
+
+    def _filter_batch_tool_results(self, tool_results: List[Message]) -> List[Message]:
+        """
+        Filter tool results for batch processing to prevent context overflow.
+        
+        In batch processing mode, we want to remove processed tool results from history
+        to keep the context window clean. This method:
+        1. Keeps only the most recent tool results
+        2. Prioritizes error messages and important status updates
+        3. Removes large content-heavy results that have already been saved
+        
+        Args:
+            tool_results: List of tool result messages
+            
+        Returns:
+            List of filtered messages to keep in history
+        """
+        if not self.is_batch_processing:
+            return tool_results
+            
+        filtered = []
+        
+        # Keep track of how many results we're filtering
+        total_results = len(tool_results)
+        
+        for msg in tool_results:
+            try:
+                # Always keep error messages
+                if msg.content and "error" in str(msg.content).lower():
+                    filtered.append(msg)
+                    continue
+                    
+                # Always keep finish_task/finish_subtask results
+                if msg.name in ["finish_task", "finish_subtask"]:
+                    filtered.append(msg)
+                    continue
+                
+                # For browser and read_file results, check if they're summaries
+                if msg.name in ["browser", "read_file"]:
+                    content_str = str(msg.content)
+                    # If it's already a summary (contains "content_summary"), keep it
+                    if "content_summary" in content_str:
+                        filtered.append(msg)
+                    # Otherwise, create a minimal placeholder
+                    else:
+                        try:
+                            json.loads(content_str)  # Validate it's JSON
+                            minimal_msg = Message(
+                                role=msg.role,
+                                tool_call_id=msg.tool_call_id,
+                                name=msg.name,
+                                content=json.dumps({
+                                    "status": "processed",
+                                    "tool": msg.name,
+                                    "note": "Full result saved to workspace"
+                                })
+                            )
+                            filtered.append(minimal_msg)
+                        except (json.JSONDecodeError, TypeError):
+                            # If we can't parse, just skip this result
+                            pass
+                else:
+                    # Keep other tool results as they're typically smaller
+                    filtered.append(msg)
+                    
+            except Exception as e:
+                logger.warning(f"Error filtering tool result: {e}")
+                # On error, keep the original message
+                filtered.append(msg)
+        
+        removed_count = total_results - len(filtered)
+        if removed_count > 0:
+            logger.info(f"Filtered out {removed_count} tool results in batch mode to save context space")
+            
+        return filtered
+
+    def _remove_old_tool_results(self) -> None:
+        """
+        Remove old processed tool results from history in batch processing mode.
+        
+        This method scans through the history and removes tool result messages that:
+        1. Are older than the last assistant message
+        2. Are not error messages
+        3. Have already been processed and saved to workspace
+        """
+        if not self.is_batch_processing:
+            return
+            
+        # Find the index of the last assistant message
+        last_assistant_idx = -1
+        for i in range(len(self.history) - 1, -1, -1):
+            if self.history[i].role == "assistant":
+                last_assistant_idx = i
+                break
+                
+        if last_assistant_idx < 0:
+            return  # No assistant messages yet
+            
+        # Collect indices of tool results to remove
+        indices_to_remove = []
+        
+        for i in range(2, last_assistant_idx):  # Skip system and task prompts
+            msg = self.history[i]
+            if msg.role == "tool":
+                # Check if it's a large result that can be removed
+                if msg.name in ["browser", "read_file", "search", "web_fetch"]:
+                    try:
+                        content_str = str(msg.content)
+                        # Don't remove if it's an error or already a summary
+                        if "error" not in content_str.lower() and "content_summary" not in content_str:
+                            # Check token size
+                            tokens = self._count_single_message_tokens(msg)
+                            if tokens > 100:  # Remove if larger than 100 tokens
+                                indices_to_remove.append(i)
+                    except Exception:
+                        pass
+                        
+        # Remove messages in reverse order to maintain indices
+        for i in reversed(indices_to_remove):
+            removed_msg = self.history.pop(i)
+            logger.debug(f"Removed old {removed_msg.name} tool result from history (batch mode)")
+            
+        if indices_to_remove:
+            logger.info(f"Removed {len(indices_to_remove)} old tool results from history in batch mode")
 
     # --- End Helper Function ---

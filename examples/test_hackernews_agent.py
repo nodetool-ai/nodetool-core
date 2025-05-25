@@ -36,9 +36,8 @@ async def main():
     agent = Agent(
         name="Hacker News Agent",
         objective="""
-        Browse http://news.ycombinator.com/ and fetch the top posts.
-        Fetch the comments of each post.
-        Return a summary of the top posts and the comments in the given schema.
+        Scrape top 5 posts from news.ycombinator.com with their top 3 comments each.
+        Focus on post titles, URLs, and comment content with authors.
         """,
         provider=provider,
         model=model,

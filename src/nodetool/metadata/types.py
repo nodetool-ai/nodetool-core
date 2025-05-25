@@ -989,6 +989,10 @@ class SubTask(BaseType):
         default=10,
         description="The maximum number of iterations for the subtask",
     )
+    batch_processing: dict[str, Any] | None = Field(
+        default=None,
+        description="Configuration for batch processing of list items. Contains fields like enabled, batch_size, start_index, end_index, total_items",
+    )
     completed: bool = Field(
         default=False, description="Whether the subtask is completed"
     )

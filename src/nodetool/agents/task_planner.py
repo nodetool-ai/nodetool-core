@@ -14,6 +14,7 @@ ensure the generated plan is robust and executable.
 """
 
 import asyncio
+import logging
 import traceback
 from nodetool.chat.providers import ChatProvider
 from nodetool.agents.sub_task_context import (
@@ -59,6 +60,10 @@ from rich.text import Text  # Re-add Text import
 from jinja2 import Environment, BaseLoader
 
 from nodetool.workflows.types import Chunk, PlanningUpdate
+
+# Set up logger for this module
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
 
 COMPACT_SUBTASK_NOTATION_DESCRIPTION = """
 --- Data Flow Representation (DOT/Graphviz Syntax) ---
@@ -217,6 +222,25 @@ class CreateTaskTool(Tool):
                             "type": "boolean",
                             "description": "Whether the subtask is an intermediate result of a task",
                         },
+                        "batch_processing": {
+                            "type": "object",
+                            "description": "Configuration for batch processing of list items",
+                            "properties": {
+                                "enabled": {"type": "boolean"},
+                                "batch_size": {"type": "integer"},
+                                "start_index": {"type": "integer"},
+                                "end_index": {"type": "integer"},
+                                "total_items": {"type": "integer"},
+                            },
+                            "required": [
+                                "enabled",
+                                "batch_size",
+                                "start_index",
+                                "end_index",
+                                "total_items",
+                            ],
+                            "additionalProperties": False,
+                        },
                     },
                     "required": [
                         "content",
@@ -227,6 +251,7 @@ class CreateTaskTool(Tool):
                         "max_iterations",
                         "model",
                         "is_intermediate_result",
+                        "batch_processing",
                     ],
                 },
             },
@@ -760,6 +785,14 @@ class TaskPlanner:
             use_structured_output (bool, optional): Whether to use structured output for plan creation
             verbose (bool, optional): Whether to print planning progress table (default: True)
         """
+        logger.debug(
+            f"Initializing TaskPlanner with model={model}, reasoning_model={reasoning_model}, "
+            f"objective='{objective[:100]}...', workspace_dir={workspace_dir}, "
+            f"enable_analysis_phase={enable_analysis_phase}, "
+            f"enable_data_contracts_phase={enable_data_contracts_phase}, "
+            f"use_structured_output={use_structured_output}, verbose={verbose}"
+        )
+
         self.provider: ChatProvider = provider
         self.model: str = model
         self.reasoning_model: str = reasoning_model or model
@@ -767,12 +800,22 @@ class TaskPlanner:
         self.workspace_dir: str = workspace_dir
         self.task_plan: TaskPlan = TaskPlan()
         # Clean and validate initial input files relative to workspace
+        logger.debug(f"Processing {len(input_files)} initial input files")
         self.input_files: List[str] = [
             self._clean_and_validate_path(f, "initial input files") for f in input_files
         ]
+        logger.debug(f"Cleaned input files: {self.input_files}")
+
         self.system_prompt: str = self._customize_system_prompt(system_prompt)
+        logger.debug(
+            f"System prompt customized, length: {len(self.system_prompt)} chars"
+        )
 
         self.execution_tools: Sequence[Tool] = execution_tools or []
+        logger.debug(
+            f"Available execution tools: {[tool.name for tool in self.execution_tools]}"
+        )
+
         self.output_schema: Optional[dict] = output_schema
         self.output_type: Optional[str] = output_type
         self.enable_analysis_phase: bool = enable_analysis_phase
@@ -785,6 +828,8 @@ class TaskPlanner:
 
         # Initialize Jinja2 environment
         self.jinja_env: Environment = Environment(loader=BaseLoader())
+
+        logger.debug("TaskPlanner initialization completed successfully")
 
     def _clean_and_validate_path(self, path: Any, context: str) -> str:
         """Clean and validate a path relative to the workspace directory.
@@ -802,7 +847,10 @@ class TaskPlanner:
         Raises:
             ValueError: If the path is invalid.
         """
-        return clean_and_validate_path(self.workspace_dir, path, context)
+        logger.debug(f"Cleaning and validating path '{path}' in context: {context}")
+        result = clean_and_validate_path(self.workspace_dir, path, context)
+        logger.debug(f"Path validation result: '{result}'")
+        return result
 
     def _customize_system_prompt(self, system_prompt: str | None) -> str:
         """Customize the system prompt based on provider capabilities.
@@ -1039,41 +1087,67 @@ class TaskPlanner:
             describing a validation failure. An empty list indicates
             all dependency checks passed.
         """
+        logger.debug(f"Starting dependency validation for {len(subtasks)} subtasks")
         validation_errors: List[str] = []
 
         # 1. Check for output file conflicts
+        logger.debug("Checking for output file conflicts")
         output_conflict_errors, all_generated_files = self._check_output_file_conflicts(
             subtasks
         )
         validation_errors.extend(output_conflict_errors)
+        logger.debug(
+            f"Output conflict check found {len(output_conflict_errors)} errors"
+        )
 
         # 2. Build dependency graph
+        logger.debug("Building dependency graph")
         G = self._build_dependency_graph(subtasks)
+        logger.debug(
+            f"Dependency graph built with {G.number_of_nodes()} nodes and {G.number_of_edges()} edges"
+        )
 
         # 3. Check for cycles
+        logger.debug("Checking for circular dependencies")
         try:
             cycle = nx.find_cycle(G)
-            validation_errors.append(f"Circular dependency detected: {cycle}")
+            cycle_error = f"Circular dependency detected: {cycle}"
+            validation_errors.append(cycle_error)
+            logger.warning(f"Circular dependency found: {cycle}")
         except nx.NetworkXNoCycle:
+            logger.debug("No circular dependencies found")
             pass  # No cycles found, which is good
 
         # 4. Validate all input files exist before their use
+        logger.debug("Checking input file availability")
         input_availability_errors = self._check_input_file_availability(
             subtasks, all_generated_files
         )
         validation_errors.extend(input_availability_errors)
+        logger.debug(
+            f"Input availability check found {len(input_availability_errors)} errors"
+        )
 
         # 5. Check if a valid execution order exists (topological sort)
         if not validation_errors:  # Only check if no other critical errors found
+            logger.debug("Checking topological sort feasibility")
             try:
-                list(nx.topological_sort(G))
+                topo_order = list(nx.topological_sort(G))
+                logger.debug(f"Valid execution order found: {topo_order}")
             except nx.NetworkXUnfeasible:
                 # This might be redundant if cycle check or input availability check failed,
                 # but provides an extra layer of verification.
-                validation_errors.append(
-                    "Cannot determine valid execution order due to unresolved dependency issues (potentially complex cycle or missing input)."
-                )
+                error_msg = "Cannot determine valid execution order due to unresolved dependency issues (potentially complex cycle or missing input)."
+                validation_errors.append(error_msg)
+                logger.error(f"Topological sort failed: {error_msg}")
+        else:
+            logger.debug(
+                "Skipping topological sort check due to existing validation errors"
+            )
 
+        logger.debug(
+            f"Dependency validation completed with {len(validation_errors)} total errors"
+        )
         return validation_errors
 
     async def _run_self_reflection_phase(
@@ -1098,8 +1172,11 @@ class TaskPlanner:
                 - A `PlanningUpdate` object summarizing the outcome of this phase,
                   or None if an error occurs that prevents update generation.
         """
+        logger.debug("Starting self-reflection phase")
+
         # Skip self-reflection if data contracts phase is disabled globally
         if not self.enable_data_contracts_phase:
+            logger.debug("Skipping self-reflection: data contracts phase disabled")
             self.display_manager.update_planning_display(
                 "-1. Self-Reflection",
                 "Skipped",
@@ -1118,6 +1195,10 @@ class TaskPlanner:
         reflection_prompt_content: str = self._render_prompt(
             SELF_REFLECTION_PROMPT_TEMPLATE
         )
+        logger.debug(
+            f"Generated reflection prompt, length: {len(reflection_prompt_content)} chars"
+        )
+
         # We don't add the prompt to history for this special call,
         # as it's a meta-instruction for the planner itself.
         # However, the response from the LLM (the tier) can be logged.
@@ -1127,6 +1208,9 @@ class TaskPlanner:
         )
 
         try:
+            logger.debug(
+                f"Calling LLM for self-reflection using model: {self.reasoning_model}"
+            )
             # Use a separate call, not part of the main history chain for planning
             # Use the reasoning_model for this critical decision.
             reflection_message: Message = await self.provider.generate_message(
@@ -1137,8 +1221,10 @@ class TaskPlanner:
             )
 
             tier_response_content = str(reflection_message.content).strip()
+            logger.debug(f"LLM self-reflection response: '{tier_response_content}'")
 
             self.current_planning_tier = PlanningTier.from_string(tier_response_content)
+            logger.debug(f"Determined planning tier: {self.current_planning_tier}")
 
             phase_status = "Completed"
             phase_content = f"Determined Planning Tier: {self.current_planning_tier}"
@@ -1152,14 +1238,19 @@ class TaskPlanner:
             ):
                 phase_status = "Warning"
                 phase_content += f" (LLM response: '{tier_response_content}', defaulted to {PlanningTier.DEFAULT})"
+                logger.warning(
+                    f"Unexpected tier response, defaulted: {tier_response_content}"
+                )
 
         except Exception as e:
+            logger.error(f"Error during self-reflection: {e}", exc_info=True)
             self.current_planning_tier = PlanningTier.DEFAULT
             phase_status = "Failed"
             phase_content = f"Error during self-reflection: {e}. Defaulting to {self.current_planning_tier}"
             # Log the error if verbose or always for critical failures
             self.display_manager.print(f"[red]Self-reflection error: {e}[/red]")
 
+        logger.debug(f"Self-reflection phase completed with status: {phase_status}")
         self.display_manager.update_planning_display(
             "-1. Self-Reflection", phase_status, Text(str(phase_content))
         )
@@ -1193,7 +1284,10 @@ class TaskPlanner:
                 - The updated history with messages from this phase.
                 - A `PlanningUpdate` object summarizing the outcome, or None if skipped.
         """
+        logger.debug("Starting analysis phase")
+
         if not self.enable_analysis_phase:
+            logger.debug("Skipping analysis phase: disabled by global flag")
             self.display_manager.update_planning_display(
                 "0. Analysis", "Skipped", "Phase disabled by global flag."
             )
@@ -1204,7 +1298,11 @@ class TaskPlanner:
         # so tier-based skipping is removed from here.
         # It is only skipped if self.enable_analysis_phase is False (handled above).
 
+        logger.debug("Generating analysis prompt")
         analysis_prompt_content: str = self._render_prompt(ANALYSIS_PHASE_TEMPLATE)
+        logger.debug(
+            f"Analysis prompt generated, length: {len(analysis_prompt_content)} chars"
+        )
         history.append(Message(role="user", content=analysis_prompt_content))
 
         # Update display before LLM call
@@ -1212,13 +1310,19 @@ class TaskPlanner:
             "0. Analysis", "Running", "Generating analysis..."
         )
 
+        logger.debug(f"Calling LLM for analysis using model: {self.model}")
         analysis_message: Message = await self.provider.generate_message(
             messages=history, model=self.model, tools=[]  # Explicitly empty list
         )
         history.append(analysis_message)
+        logger.debug(
+            f"Analysis phase LLM response received, content length: {len(str(analysis_message.content)) if analysis_message.content else 0} chars"
+        )
 
         phase_status: str = "Completed"
         phase_content: str | Text = self._format_message_content(analysis_message)
+        logger.debug(f"Analysis phase completed with status: {phase_status}")
+
         self.display_manager.update_planning_display(
             "0. Analysis", phase_status, phase_content
         )
@@ -1255,7 +1359,10 @@ class TaskPlanner:
                 - The updated history with messages from this phase.
                 - A `PlanningUpdate` object summarizing the outcome, or None if skipped.
         """
+        logger.debug("Starting data flow phase")
+
         if not self.enable_data_contracts_phase:
+            logger.debug("Skipping data flow phase: disabled by global flag")
             self.display_manager.update_planning_display(
                 "1. Data Contracts", "Skipped", "Phase disabled by global flag."
             )
@@ -1263,6 +1370,9 @@ class TaskPlanner:
 
         # Skip based on determined tier
         if self.current_planning_tier == PlanningTier.TIER_LOW_COMPLEXITY:
+            logger.debug(
+                f"Skipping data flow phase: tier is {self.current_planning_tier}"
+            )
             self.display_manager.update_planning_display(
                 "1. Data Contracts",
                 "Skipped",
@@ -1270,7 +1380,11 @@ class TaskPlanner:
             )
             return history, None
 
+        logger.debug("Generating data flow prompt")
         data_flow_prompt_content: str = self._render_prompt(DATA_FLOW_ANALYSIS_TEMPLATE)
+        logger.debug(
+            f"Data flow prompt generated, length: {len(data_flow_prompt_content)} chars"
+        )
         history.append(Message(role="user", content=data_flow_prompt_content))
 
         # Update display before LLM call
@@ -1278,13 +1392,19 @@ class TaskPlanner:
             "1. Data Contracts", "Running", "Generating data flow..."
         )
 
+        logger.debug(f"Calling LLM for data flow analysis using model: {self.model}")
         data_contracts_message: Message = await self.provider.generate_message(
             messages=history, model=self.model, tools=[]  # Explicitly empty list
         )
         history.append(data_contracts_message)
+        logger.debug(
+            f"Data flow phase LLM response received, content length: {len(str(data_contracts_message.content)) if data_contracts_message.content else 0} chars"
+        )
 
         phase_status: str = "Completed"
         phase_content: str | Text = self._format_message_content(data_contracts_message)
+        logger.debug(f"Data flow phase completed with status: {phase_status}")
+
         self.display_manager.update_planning_display(
             "1. Data Contracts", phase_status, phase_content
         )
@@ -1332,6 +1452,10 @@ class TaskPlanner:
                   otherwise None.
                 - A `PlanningUpdate` object summarizing the outcome of this phase.
         """
+        logger.debug(
+            f"Starting plan creation phase with max_retries={max_retries}, use_structured_output={self.use_structured_output}"
+        )
+
         task: Optional[Task] = None
         final_message: Optional[Message] = None
         plan_creation_error: Optional[Exception] = None
@@ -1345,6 +1469,7 @@ class TaskPlanner:
         # The main effect of Tier 1 will be the lack of Analysis and Data Flow history.
 
         if self.use_structured_output:
+            logger.debug("Using structured output for plan creation")
             self.display_manager.update_planning_display(
                 current_phase_name,
                 "Running",
@@ -1356,15 +1481,29 @@ class TaskPlanner:
                 )
                 phase_status = "Success"
                 phase_content = f"Plan created with {len(task.subtasks)} subtasks using structured output."
+                logger.debug(
+                    f"Structured output plan creation successful: {len(task.subtasks)} subtasks"
+                )
                 final_message = None  # Not applicable for structured output path
             except Exception as e:
+                logger.error(
+                    f"Structured output plan creation failed: {e}", exc_info=True
+                )
                 plan_creation_error = e
                 phase_status = "Failed"
                 phase_content = f"Structured output failed: {str(e)}\n{traceback.format_exc()}"  # Keep traceback for display
 
         else:  # Use tool-based generation
+            logger.debug("Using tool-based generation for plan creation")
             plan_creation_prompt_content = self._render_prompt(PLAN_CREATION_TEMPLATE)
             agent_task_prompt_content = await self._build_agent_task_prompt_content()
+            logger.debug(
+                f"Plan creation prompt length: {len(plan_creation_prompt_content)} chars"
+            )
+            logger.debug(
+                f"Agent task prompt length: {len(agent_task_prompt_content)} chars"
+            )
+
             history.append(
                 Message(
                     role="user",
@@ -1377,6 +1516,7 @@ class TaskPlanner:
                 "Attempting plan creation using the 'create_task' tool...",
             )
             try:
+                logger.debug("Starting tool-based plan generation with retry logic")
                 task, final_message = await self._generate_with_retry(
                     history,
                     tools=[CreateTaskTool()],
@@ -1389,6 +1529,9 @@ class TaskPlanner:
                         self._format_message_content(final_message)
                         if final_message
                         else "Plan created using tool calls."
+                    )
+                    logger.debug(
+                        f"Tool-based plan creation successful: {len(task.subtasks)} subtasks"
                     )
                 else:
                     failure_reason = "Unknown failure after retries."
@@ -1410,17 +1553,20 @@ class TaskPlanner:
                     ):  # Check if _generate_with_retry raised an error internally
                         failure_reason = f"Tool call generation failed internally: {plan_creation_error}"
 
+                    logger.warning(f"Tool-based plan creation failed: {failure_reason}")
                     plan_creation_error = ValueError(
                         f"Tool call generation failed: {failure_reason}"
                     )
                     phase_content = f"Tool call generation failed: {failure_reason}"
                     phase_status = "Failed"
             except Exception as e:
+                logger.error(f"Tool-based plan creation failed: {e}", exc_info=True)
                 plan_creation_error = e
                 phase_status = "Failed"
                 phase_content = f"Tool call generation failed: {str(e)}\n{traceback.format_exc()}"  # Keep traceback for display
 
         # Update Table for Phase 2
+        logger.debug(f"Plan creation phase completed with status: {phase_status}")
         self.display_manager.update_planning_display(
             current_phase_name,
             phase_status,
@@ -1450,6 +1596,10 @@ class TaskPlanner:
         Yields PlanningUpdate events during the process.
         Displays a live table summarizing the planning process if verbose mode is enabled.
         """
+        logger.info(
+            f"Starting task creation for objective: '{objective[:100]}...' with max_retries={max_retries}"
+        )
+
         # Start the live display using the display manager
         self.display_manager.start_live(
             self.display_manager.create_planning_table("Task Planner")
@@ -1465,8 +1615,11 @@ class TaskPlanner:
         current_phase = "Initialization"
 
         try:
+            logger.debug("Starting planning phases")
+
             # Phase -1: Self-Reflection
             current_phase = "Self-Reflection"
+            logger.debug(f"Entering phase: {current_phase}")
             yield PlanningUpdate(phase=current_phase, status="Starting", content=None)
             # Run self-reflection. Note: history is not modified by this special phase call.
             _, planning_update = await self._run_self_reflection_phase(history)
@@ -1475,6 +1628,7 @@ class TaskPlanner:
 
             # Phase 0: Analysis
             current_phase = "Analysis"
+            logger.debug(f"Entering phase: {current_phase}")
             yield PlanningUpdate(phase=current_phase, status="Starting", content=None)
             history, planning_update = await self._run_analysis_phase(history)
             if planning_update:
@@ -1482,6 +1636,7 @@ class TaskPlanner:
 
             # Phase 1: Data Flow Analysis
             current_phase = "Data Flow"
+            logger.debug(f"Entering phase: {current_phase}")
             yield PlanningUpdate(phase=current_phase, status="Starting", content=None)
             history, planning_update = await self._run_data_flow_phase(history)
             if planning_update:
@@ -1489,6 +1644,7 @@ class TaskPlanner:
 
             # Phase 2: Plan Creation
             current_phase = "Plan Creation"
+            logger.debug(f"Entering phase: {current_phase}")
             yield PlanningUpdate(phase=current_phase, status="Starting", content=None)
             task, plan_creation_error, planning_update = (
                 await self._run_plan_creation_phase(history, objective, max_retries)
@@ -1498,6 +1654,9 @@ class TaskPlanner:
 
             # --- Final Outcome ---
             if task:
+                logger.info(
+                    f"Plan created successfully with {len(task.subtasks)} subtasks"
+                )
                 self.display_manager.print(  # Use display manager print
                     "[bold green]Plan created successfully.[/bold green]"
                 )
@@ -1511,6 +1670,7 @@ class TaskPlanner:
                         if self.verbose
                         else error_message
                     )
+                    logger.error(f"Task creation failed: {error_message}")
                     # Yield failure update before raising
                     yield PlanningUpdate(
                         phase=current_phase, status="Failed", content=error_message
@@ -1525,6 +1685,7 @@ class TaskPlanner:
                     raise ValueError(full_error_message) from plan_creation_error
                 else:
                     error_message = "Failed to create valid task after maximum retries in Plan Creation phase for an unknown reason."
+                    logger.error(f"Task creation failed: {error_message}")
                     # Yield failure update before raising
                     yield PlanningUpdate(
                         phase=current_phase, status="Failed", content=error_message
@@ -1541,6 +1702,10 @@ class TaskPlanner:
         except Exception as e:
             # Capture the original exception type and message
             error_message = f"Planning failed during phase '{current_phase}': {type(e).__name__}: {str(e)}"
+            logger.error(
+                f"Task creation failed during {current_phase}: {e}", exc_info=True
+            )
+
             # Log traceback if verbose
             if self.verbose:
                 self.display_manager.print_exception(show_locals=False)
@@ -1568,6 +1733,7 @@ class TaskPlanner:
             raise  # Re-raise the caught exception
 
         finally:
+            logger.debug("Stopping live display and completing task creation")
             # Stop the live display using the display manager
             self.display_manager.stop_live()
 
@@ -1802,6 +1968,7 @@ class TaskPlanner:
                   or None if a fatal error occurred.
                 - A list of string error messages encountered.
         """
+        logger.debug(f"{sub_context}: Starting schema processing")
         validation_errors: List[str] = []
         output_type: str = subtask_data.get("output_type", "string")
         current_schema_str: Any = subtask_data.get("output_schema")
@@ -1809,59 +1976,87 @@ class TaskPlanner:
         schema_dict: Optional[dict] = None
 
         # Add logging for the input schema string
+        logger.debug(
+            f"{sub_context}: output_type='{output_type}', schema_input='{current_schema_str}' (type: {type(current_schema_str)})"
+        )
         self.display_manager.print(
             f"{sub_context}: Attempting to process output_schema: '{current_schema_str}' of type {type(current_schema_str)}"
         )
 
         if is_binary_output_type(output_type):
+            logger.debug(
+                f"{sub_context}: Using FILE_POINTER_SCHEMA for binary output type"
+            )
             final_schema_str = json.dumps(FILE_POINTER_SCHEMA)
         else:
             try:
                 if isinstance(current_schema_str, str) and current_schema_str.strip():
+                    logger.debug(f"{sub_context}: Parsing string schema")
                     self.display_manager.print(
                         f"{sub_context}: Parsing string schema: '{current_schema_str}'"
                     )  # Log before loads
                     schema_dict = json.loads(current_schema_str)
+                    logger.debug(f"{sub_context}: Successfully parsed schema dict")
                 elif current_schema_str is None or (
                     isinstance(current_schema_str, str)
                     and not current_schema_str.strip()
                 ):
                     # If schema is None or empty string, generate default based on type
-                    schema_dict = json_schema_for_output_type(output_type)
-                else:  # Invalid type for schema string
-                    raise ValueError(
-                        f"Output schema must be a JSON string or None, got {type(current_schema_str)}"
+                    logger.debug(
+                        f"{sub_context}: Generating default schema for type '{output_type}'"
                     )
+                    schema_dict = json_schema_for_output_type(output_type)
+                    logger.debug(f"{sub_context}: Generated default schema")
+                else:  # Invalid type for schema string
+                    error_msg = f"Output schema must be a JSON string or None, got {type(current_schema_str)}"
+                    logger.error(f"{sub_context}: {error_msg}")
+                    raise ValueError(error_msg)
 
                 # Apply defaults if schema_dict was successfully loaded or generated
                 if schema_dict is not None:
+                    logger.debug(
+                        f"{sub_context}: Applying additionalProperties constraints"
+                    )
                     schema_dict = self._ensure_additional_properties_false(schema_dict)
                     final_schema_str = json.dumps(schema_dict)
+                    logger.debug(
+                        f"{sub_context}: Final schema prepared, length={len(final_schema_str)}"
+                    )
                 # If schema_dict is still None here, it means default generation failed (unlikely with current json_schema_for_output_type)
                 # or input was invalid type that didn't parse
 
             except (ValueError, json.JSONDecodeError) as e:
-                validation_errors.append(
-                    f"{sub_context}: Invalid output_schema provided: '{current_schema_str}'. Error: {e}. Using default for type '{output_type}'."
-                )
+                error_msg = f"Invalid output_schema provided: '{current_schema_str}'. Error: {e}. Using default for type '{output_type}'."
+                validation_errors.append(f"{sub_context}: {error_msg}")
+                logger.warning(f"{sub_context}: Schema parsing failed: {e}")
                 # Log the specific error
                 self.display_manager.print(
                     f"{sub_context}: JSONDecodeError or ValueError for schema '{current_schema_str}': {e}"
                 )
                 # Attempt to generate default schema as fallback
                 try:
+                    logger.debug(f"{sub_context}: Generating fallback default schema")
                     schema_dict = json_schema_for_output_type(output_type)
                     schema_dict = self._ensure_additional_properties_false(schema_dict)
                     final_schema_str = json.dumps(schema_dict)
+                    logger.debug(
+                        f"{sub_context}: Fallback schema generated successfully"
+                    )
                 except Exception as default_e:
-                    validation_errors.append(
-                        f"{sub_context}: Failed to generate default schema for type '{output_type}' after error. Defaulting to string schema. Error: {default_e}"
+                    fallback_error = f"Failed to generate default schema for type '{output_type}' after error. Defaulting to string schema. Error: {default_e}"
+                    validation_errors.append(f"{sub_context}: {fallback_error}")
+                    logger.error(
+                        f"{sub_context}: Fallback schema generation failed: {default_e}"
                     )
                     # Final fallback: simple string schema
                     final_schema_str = json.dumps(
                         {"type": "string", "additionalProperties": False}
                     )
+                    logger.debug(f"{sub_context}: Using final fallback string schema")
 
+        logger.debug(
+            f"{sub_context}: Schema processing completed, errors={len(validation_errors)}"
+        )
         return final_schema_str, validation_errors
 
     def _prepare_subtask_data(
@@ -1994,6 +2189,7 @@ class TaskPlanner:
         Processes and validates data for a single subtask by delegating steps.
         """
         sub_context = f"{context_prefix} subtask {index}"
+        logger.debug(f"Processing {sub_context}")
         all_validation_errors: List[str] = []
         parsed_tool_content: Optional[dict] = (
             None  # To store parsed JSON for tool tasks
@@ -2003,9 +2199,13 @@ class TaskPlanner:
             # --- Validate Tool Call vs Agent Instruction ---
             tool_name = subtask_data.get("tool_name")
             content = subtask_data.get("content")
+            logger.debug(
+                f"{sub_context}: tool_name='{tool_name}', content_length={len(str(content)) if content else 0}"
+            )
 
             if tool_name:
                 # --- Deterministic Tool Task Validation ---
+                logger.debug(f"{sub_context}: Validating as tool task")
                 parsed_tool_content, tool_errors = self._validate_tool_task(
                     subtask_data,
                     tool_name,
@@ -2017,15 +2217,27 @@ class TaskPlanner:
                 if (
                     parsed_tool_content is None and tool_errors
                 ):  # Fatal error during tool validation
+                    logger.error(
+                        f"{sub_context}: Tool validation failed with {len(tool_errors)} errors"
+                    )
                     return None, all_validation_errors
+                else:
+                    logger.debug(f"{sub_context}: Tool validation successful")
             else:
                 # --- Probabilistic Agent Task Validation ---
+                logger.debug(f"{sub_context}: Validating as agent task")
                 agent_errors = self._validate_agent_task(content, sub_context)
                 all_validation_errors.extend(agent_errors)
                 if agent_errors:  # Fatal error during agent validation
+                    logger.error(
+                        f"{sub_context}: Agent validation failed with {len(agent_errors)} errors"
+                    )
                     return None, all_validation_errors
+                else:
+                    logger.debug(f"{sub_context}: Agent validation successful")
 
             # --- Process schema ---
+            logger.debug(f"{sub_context}: Processing output schema")
             final_schema_str, schema_errors = self._process_subtask_schema(
                 subtask_data, sub_context
             )
@@ -2033,36 +2245,51 @@ class TaskPlanner:
             # Continue even if there were schema errors, as a default might be used.
             # Need final_schema_str for data preparation. If None, indicates a fatal schema issue.
             if final_schema_str is None:
+                logger.error(f"{sub_context}: Fatal schema processing error")
                 all_validation_errors.append(
                     f"{sub_context}: Fatal error processing output schema."
                 )
                 return None, all_validation_errors
+            else:
+                logger.debug(f"{sub_context}: Schema processing successful")
 
             # --- Prepare data for SubTask creation (Paths, Filtering, Stringify Tool Args) ---
+            logger.debug(f"{sub_context}: Preparing data for SubTask creation")
             filtered_data, preparation_errors = self._prepare_subtask_data(
                 subtask_data, final_schema_str, parsed_tool_content, sub_context
             )
             all_validation_errors.extend(preparation_errors)
             if filtered_data is None:  # Fatal error during data preparation
+                logger.error(
+                    f"{sub_context}: Data preparation failed with {len(preparation_errors)} errors"
+                )
                 return None, all_validation_errors
+            else:
+                logger.debug(f"{sub_context}: Data preparation successful")
 
             # --- Create SubTask object ---
             # Pydantic validation happens here
+            logger.debug(f"{sub_context}: Creating SubTask object")
             subtask = SubTask(**filtered_data)
+            logger.debug(
+                f"{sub_context}: SubTask created successfully with output_file='{subtask.output_file}'"
+            )
             # Return successful subtask and any *non-fatal* validation errors collected
             return subtask, all_validation_errors
 
         except (
             ValidationError
         ) as e:  # Catch Pydantic validation errors during SubTask(**filtered_data)
-            all_validation_errors.append(
-                f"{sub_context}: Invalid data for SubTask model: {e}"
-            )
+            error_msg = f"{sub_context}: Invalid data for SubTask model: {e}"
+            logger.error(f"{sub_context}: Pydantic validation error: {e}")
+            all_validation_errors.append(error_msg)
             return None, all_validation_errors
         except Exception as e:  # Catch any other unexpected errors
-            all_validation_errors.append(
-                f"{sub_context}: Unexpected error processing subtask: {e}\n{traceback.format_exc()}"
+            error_msg = f"{sub_context}: Unexpected error processing subtask: {e}\n{traceback.format_exc()}"
+            logger.error(
+                f"{sub_context}: Unexpected processing error: {e}", exc_info=True
             )
+            all_validation_errors.append(error_msg)
             return None, all_validation_errors
 
     async def _process_subtask_list(
@@ -2130,6 +2357,9 @@ class TaskPlanner:
             task_data.get("subtasks", []), "structured output"
         )
         all_validation_errors.extend(subtask_validation_errors)
+
+        logger.debug(f"Subtasks processed: {subtasks}")
+        logger.debug(f"Subtask validation errors: {subtask_validation_errors}")
 
         # If subtask processing had fatal errors, don't proceed to dependency check
         if not subtasks and task_data.get(
@@ -2448,12 +2678,18 @@ class TaskPlanner:
         """
         Generates response, processes tool calls with validation and retry logic.
         """
+        logger.debug(
+            f"Starting generation with retry, max_retries={max_retries}, tools={[t.name for t in tools]}"
+        )
         current_retry: int = 0
         last_message: Optional[Message] = None
 
         while current_retry < max_retries:
             attempt = current_retry + 1
+            logger.debug(f"Generation attempt {attempt}/{max_retries}")
+
             # Generate response using current history
+            logger.debug(f"Calling LLM with {len(history)} messages in history")
             message = await self.provider.generate_message(
                 messages=history,
                 model=self.model,
@@ -2463,20 +2699,30 @@ class TaskPlanner:
                 message
             )  # Add assistant's response to history *before* processing
             last_message = message
+            logger.debug(
+                f"LLM response received, has_tool_calls={bool(message.tool_calls)}"
+            )
 
             if not message.tool_calls:
                 # LLM didn't use the expected tool
+                logger.warning(f"LLM did not use required tools on attempt {attempt}")
                 if tools and current_retry < max_retries - 1:
                     current_retry += 1
                     tool_names = ", ".join([t.name for t in tools])
                     retry_prompt = f"Please use one of the available tools ({tool_names}) to define the task based on the previous analysis and requirements."
                     history.append(Message(role="user", content=retry_prompt))
+                    logger.debug(
+                        f"Added retry prompt for tool usage, attempt {current_retry + 1}"
+                    )
                     self.display_manager.print(  # Use display manager print
                         f"[yellow]Retry {attempt}/{max_retries}: Asking LLM to use required tool(s).[/yellow]"
                     )
                     continue  # Go to next iteration
                 else:
                     # Max retries reached without tool use
+                    logger.error(
+                        f"Max retries reached without tool usage after {max_retries} attempts"
+                    )
                     self.display_manager.print(  # Use display manager print
                         f"[red]Failed after {max_retries} retries: LLM did not use the required tool(s). Last message: {self._format_message_content(message)}[/red]"
                     )
@@ -2484,10 +2730,14 @@ class TaskPlanner:
 
             # Tool call exists, try to process it
             try:
+                logger.debug(f"Processing {len(message.tool_calls)} tool call(s)")
                 # Process the tool call(s). This adds 'tool' role messages to history
                 # and raises ValueError on validation failure.
                 task = await self._process_tool_calls(message, history)
                 # If _process_tool_calls returns without error, success!
+                logger.info(
+                    f"Tool calls processed successfully, created task with {len(task.subtasks)} subtasks"
+                )
                 self.display_manager.print(  # Use display manager print
                     "[green]Tool call processed successfully.[/green]"
                 )
@@ -2496,6 +2746,7 @@ class TaskPlanner:
                     last_message,
                 )  # Return created task and the assistant message
             except ValueError as e:  # Catch validation errors from _process_tool_calls
+                logger.warning(f"Tool call validation failed on attempt {attempt}: {e}")
                 self.display_manager.print(  # Use display manager print
                     f"[yellow]Validation Error (Retry {attempt}/{max_retries}):[/yellow]\n{str(e)}"
                 )
@@ -2505,6 +2756,9 @@ class TaskPlanner:
                     # should already be in history from _process_tool_calls failing.
                     retry_prompt = f"The previous attempt failed validation. Please review the errors detailed in the tool response and call the tool again correctly:\n{str(e)}"
                     history.append(Message(role="user", content=retry_prompt))
+                    logger.debug(
+                        f"Added validation error retry prompt, attempt {current_retry + 1}"
+                    )
                     self.display_manager.print(  # Use display manager print
                         f"[yellow]Retry {attempt + 1}/{max_retries}: Asking LLM to fix validation errors.[/yellow]"
                     )
@@ -2513,6 +2767,9 @@ class TaskPlanner:
                     continue  # Go to next iteration
                 else:
                     # Max retries reached after validation errors
+                    logger.error(
+                        f"Max retries reached due to persistent validation errors after {max_retries} attempts"
+                    )
                     self.display_manager.print(  # Use display manager print
                         f"[red]Failed after {max_retries} retries due to persistent validation errors.[/red]"
                     )
@@ -2522,6 +2779,7 @@ class TaskPlanner:
                     )  # Return no task and the last assistant message
 
         # Should only be reached if max_retries is 0 or loop finishes unexpectedly
+        logger.error("Generation with retry exited unexpectedly")
         return None, last_message
 
     async def save_task_plan(self) -> None:
@@ -2531,10 +2789,14 @@ class TaskPlanner:
         The plan is serialized to YAML format. Errors during saving are
         printed to the display manager.
         """
+        logger.debug(f"Attempting to save task plan to {self.tasks_file_path}")
         if self.task_plan:
             task_dict: dict = self.task_plan.model_dump(
                 exclude_none=True
             )  # Use exclude_none
+            logger.debug(
+                f"Task plan serialized to dict with {len(task_dict.get('tasks', []))} tasks"
+            )
             try:
                 with open(self.tasks_file_path, "w") as f:
                     yaml.dump(
@@ -2544,19 +2806,24 @@ class TaskPlanner:
                         sort_keys=False,
                         default_flow_style=False,
                     )  # Improve formatting
+                logger.info(f"Task plan saved successfully to {self.tasks_file_path}")
                 self.display_manager.print(  # Use display manager print
                     f"[cyan]Task plan saved to {self.tasks_file_path}[/cyan]"
                 )
             except IOError as e:
+                logger.error(f"IO error saving task plan: {e}")
                 self.display_manager.print(  # Use display manager print
                     f"[red]Error saving task plan to {self.tasks_file_path}: {e}[/red]"
                 )
             except (
                 Exception
             ) as e:  # Catch other potential errors (e.g., yaml serialization)
+                logger.error(f"Unexpected error saving task plan: {e}", exc_info=True)
                 self.display_manager.print(  # Use display manager print
                     f"[red]Unexpected error saving task plan: {e}[/red]"
                 )
+        else:
+            logger.warning("Attempted to save task plan but no plan exists")
 
     def _get_execution_tools_info(self) -> str:
         """
@@ -2607,6 +2874,171 @@ class TaskPlanner:
         for file_path in self.input_files:
             input_files_info += f"- {file_path}\n"
         return input_files_info.strip()  # Remove trailing newline
+
+    def _detect_list_processing(
+        self, objective: str, input_files: List[str]
+    ) -> tuple[bool, int]:
+        """
+        Detects if the objective involves processing a list of items.
+
+        Args:
+            objective: The user's objective
+            input_files: List of input files
+
+        Returns:
+            Tuple of (is_list_processing, estimated_item_count)
+        """
+        # List processing indicators
+        list_indicators = [
+            "for each",
+            "all items",
+            "every",
+            "multiple",
+            "list of",
+            "batch",
+            "process all",
+            "analyze each",
+            "extract from all",
+            "urls",
+            "documents",
+            "files",
+            "entries",
+            "records",
+        ]
+
+        objective_lower = objective.lower()
+        is_list = any(indicator in objective_lower for indicator in list_indicators)
+
+        # Try to estimate count from objective
+        estimated_count = 0
+        numbers = re.findall(r"\b(\d+)\b", objective)
+        if numbers:
+            # Take the largest number as potential item count
+            estimated_count = max(int(n) for n in numbers)
+
+        # Check if input files suggest list processing
+        if not is_list and input_files:
+            for file in input_files:
+                if any(
+                    ext in file.lower() for ext in [".csv", ".jsonl", "list", "urls"]
+                ):
+                    is_list = True
+                    if estimated_count == 0:
+                        estimated_count = 50  # Default assumption
+                    break
+
+        return is_list, estimated_count
+
+    def _generate_batch_subtask_instructions(
+        self, base_content: str, batch_info: dict
+    ) -> dict:
+        """
+        Generate instructions for a batch processing subtask.
+
+        Args:
+            base_content: The base subtask content
+            batch_info: Dictionary with batch details (start_idx, end_idx, items)
+
+        Returns:
+            Modified subtask data for batch processing
+        """
+        batch_content = f"""
+{base_content}
+
+BATCH PROCESSING INSTRUCTIONS:
+1. Process items {batch_info['start_idx']} to {batch_info['end_idx']} from the input
+2. Write results progressively to the output file using WriteFileTool in append mode
+3. For each item processed:
+   - Write the result as a JSON object on a single line (JSONL format)
+   - Include item index/id for tracking
+   - Flush the file after each write to prevent data loss
+4. If an item fails, log the error but continue with remaining items
+5. At the end, write a summary line with batch statistics
+6. Use minimal memory - process one item at a time
+7. Do NOT keep all results in memory
+"""
+
+        return {
+            "content": batch_content,
+            "batch_processing": {
+                "enabled": True,
+                "batch_size": batch_info["end_idx"] - batch_info["start_idx"] + 1,
+                "start_index": batch_info["start_idx"],
+                "end_index": batch_info["end_idx"],
+                "total_items": batch_info.get("total_items", 0),
+            },
+        }
+
+    def _generate_aggregation_subtask(
+        self, batch_outputs: List[str], final_output: dict
+    ) -> dict:
+        """
+        Generate the aggregation subtask for combining batch results.
+
+        Args:
+            batch_outputs: List of output files from batch subtasks
+            final_output: Final output requirements
+
+        Returns:
+            Subtask data for aggregation
+        """
+        return {
+            "content": f"""
+Aggregate results from all batch processing subtasks into the final output.
+
+AGGREGATION INSTRUCTIONS:
+1. Read each batch result file line by line (JSONL format)
+2. Process results progressively to minimize memory usage:
+   - Use ReadFileTool to read one line at a time
+   - Extract relevant data from each line
+   - Update aggregated statistics/results
+3. Combine results according to the output schema
+4. Generate final summary and metadata
+5. Handle any batch processing errors gracefully
+6. Ensure the final output matches the required schema and format
+7. Use file pointers {"path": "filename"} when passing data between tools
+""",
+            "input_files": batch_outputs,
+            "output_file": final_output["file"],
+            "output_type": final_output["type"],
+            "output_schema": final_output["schema"],
+            "max_iterations": 5,  # Aggregation typically needs fewer iterations
+            "is_intermediate_result": False,
+            "batch_processing": {
+                "enabled": False  # Aggregation is not batch processing
+            },
+        }
+
+    def _prepare_list_processing_plan(
+        self, objective: str, item_count: int, batch_size: int = 15
+    ) -> dict:
+        """
+        Prepare a plan structure for list processing with batching.
+
+        Args:
+            objective: The processing objective
+            item_count: Estimated number of items
+            batch_size: Items per batch (default 15)
+
+        Returns:
+            Dictionary with plan structure hints
+        """
+        num_batches = (item_count + batch_size - 1) // batch_size
+
+        return {
+            "processing_type": "batch",
+            "estimated_items": item_count,
+            "batch_size": batch_size,
+            "num_batches": num_batches,
+            "parallel_capable": True,
+            "requires_aggregation": True,
+            "context_optimization": {
+                "use_streaming": True,
+                "use_file_pointers": True,
+                "progressive_writes": True,
+                "minimal_memory": True,
+            },
+        }
 
     def _ensure_additional_properties_false(self, schema: dict) -> dict:
         """

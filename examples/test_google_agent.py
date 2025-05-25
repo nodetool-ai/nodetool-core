@@ -36,8 +36,8 @@ async def test_google_agent(provider: ChatProvider, model: str):
 
     agent = Agent(
         name="Research Agent",
-        enable_analysis_phase=True,
-        enable_data_contracts_phase=True,
+        enable_analysis_phase=False,
+        enable_data_contracts_phase=False,
         objective="""
         1. Identify a list of chicken wing recipe websites during planning phase
         2. Crawl one website per subtask
