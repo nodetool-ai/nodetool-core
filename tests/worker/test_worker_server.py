@@ -45,8 +45,12 @@ def test_system_stats(client: TestClient):
 
 def test_run_simple_workflow(client: TestClient):
     nodes = [
-        Node(id="1", type=FloatInput.get_node_type(), data={"name": "in1", "value": 1.0}),
-        Node(id="2", type=FloatInput.get_node_type(), data={"name": "in2", "value": 2.0}),
+        Node(
+            id="1", type=FloatInput.get_node_type(), data={"name": "in1", "value": 1.0}
+        ),
+        Node(
+            id="2", type=FloatInput.get_node_type(), data={"name": "in2", "value": 2.0}
+        ),
         Node(id="3", type=Add.get_node_type(), data={}),
         Node(id="4", type=FloatOutput.get_node_type(), data={"name": "output"}),
     ]

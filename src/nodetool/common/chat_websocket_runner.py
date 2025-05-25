@@ -436,9 +436,7 @@ class ChatWebSocketRunner:
                                 "done": chunk.done,
                             }
                         )
-                        log.debug(
-                            f"Sent chunk to client (done={chunk.done})"
-                        )
+                        log.debug(f"Sent chunk to client (done={chunk.done})")
                     elif isinstance(chunk, ToolCall):
                         # Send tool call to client
                         await self.send_message(

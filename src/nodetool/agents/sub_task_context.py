@@ -1577,7 +1577,9 @@ class SubTaskContext:
                     # Only keep the most recent or most important ones
                     filtered_results = self._filter_batch_tool_results(tool_results)
                     self.history.extend(filtered_results)
-                    logger.debug(f"Added {len(filtered_results)} filtered tool results to history (batch mode)")
+                    logger.debug(
+                        f"Added {len(filtered_results)} filtered tool results to history (batch mode)"
+                    )
                 else:
                     # Standard parallel processing for non-batch or small number of calls
                     tool_results = await asyncio.gather(
@@ -2404,39 +2406,39 @@ Your goal is to process the assigned batch efficiently while maintaining low mem
     def _filter_batch_tool_results(self, tool_results: List[Message]) -> List[Message]:
         """
         Filter tool results for batch processing to prevent context overflow.
-        
+
         In batch processing mode, we want to remove processed tool results from history
         to keep the context window clean. This method:
         1. Keeps only the most recent tool results
         2. Prioritizes error messages and important status updates
         3. Removes large content-heavy results that have already been saved
-        
+
         Args:
             tool_results: List of tool result messages
-            
+
         Returns:
             List of filtered messages to keep in history
         """
         if not self.is_batch_processing:
             return tool_results
-            
+
         filtered = []
-        
+
         # Keep track of how many results we're filtering
         total_results = len(tool_results)
-        
+
         for msg in tool_results:
             try:
                 # Always keep error messages
                 if msg.content and "error" in str(msg.content).lower():
                     filtered.append(msg)
                     continue
-                    
+
                 # Always keep finish_task/finish_subtask results
                 if msg.name in ["finish_task", "finish_subtask"]:
                     filtered.append(msg)
                     continue
-                
+
                 # For browser and read_file results, check if they're summaries
                 if msg.name in ["browser", "read_file"]:
                     content_str = str(msg.content)
@@ -2451,11 +2453,13 @@ Your goal is to process the assigned batch efficiently while maintaining low mem
                                 role=msg.role,
                                 tool_call_id=msg.tool_call_id,
                                 name=msg.name,
-                                content=json.dumps({
-                                    "status": "processed",
-                                    "tool": msg.name,
-                                    "note": "Full result saved to workspace"
-                                })
+                                content=json.dumps(
+                                    {
+                                        "status": "processed",
+                                        "tool": msg.name,
+                                        "note": "Full result saved to workspace",
+                                    }
+                                ),
                             )
                             filtered.append(minimal_msg)
                         except (json.JSONDecodeError, TypeError):
@@ -2464,22 +2468,24 @@ Your goal is to process the assigned batch efficiently while maintaining low mem
                 else:
                     # Keep other tool results as they're typically smaller
                     filtered.append(msg)
-                    
+
             except Exception as e:
                 logger.warning(f"Error filtering tool result: {e}")
                 # On error, keep the original message
                 filtered.append(msg)
-        
+
         removed_count = total_results - len(filtered)
         if removed_count > 0:
-            logger.info(f"Filtered out {removed_count} tool results in batch mode to save context space")
-            
+            logger.info(
+                f"Filtered out {removed_count} tool results in batch mode to save context space"
+            )
+
         return filtered
 
     def _remove_old_tool_results(self) -> None:
         """
         Remove old processed tool results from history in batch processing mode.
-        
+
         This method scans through the history and removes tool result messages that:
         1. Are older than the last assistant message
         2. Are not error messages
@@ -2487,20 +2493,20 @@ Your goal is to process the assigned batch efficiently while maintaining low mem
         """
         if not self.is_batch_processing:
             return
-            
+
         # Find the index of the last assistant message
         last_assistant_idx = -1
         for i in range(len(self.history) - 1, -1, -1):
             if self.history[i].role == "assistant":
                 last_assistant_idx = i
                 break
-                
+
         if last_assistant_idx < 0:
             return  # No assistant messages yet
-            
+
         # Collect indices of tool results to remove
         indices_to_remove = []
-        
+
         for i in range(2, last_assistant_idx):  # Skip system and task prompts
             msg = self.history[i]
             if msg.role == "tool":
@@ -2509,20 +2515,27 @@ Your goal is to process the assigned batch efficiently while maintaining low mem
                     try:
                         content_str = str(msg.content)
                         # Don't remove if it's an error or already a summary
-                        if "error" not in content_str.lower() and "content_summary" not in content_str:
+                        if (
+                            "error" not in content_str.lower()
+                            and "content_summary" not in content_str
+                        ):
                             # Check token size
                             tokens = self._count_single_message_tokens(msg)
                             if tokens > 100:  # Remove if larger than 100 tokens
                                 indices_to_remove.append(i)
                     except Exception:
                         pass
-                        
+
         # Remove messages in reverse order to maintain indices
         for i in reversed(indices_to_remove):
             removed_msg = self.history.pop(i)
-            logger.debug(f"Removed old {removed_msg.name} tool result from history (batch mode)")
-            
+            logger.debug(
+                f"Removed old {removed_msg.name} tool result from history (batch mode)"
+            )
+
         if indices_to_remove:
-            logger.info(f"Removed {len(indices_to_remove)} old tool results from history in batch mode")
+            logger.info(
+                f"Removed {len(indices_to_remove)} old tool results from history in batch mode"
+            )
 
     # --- End Helper Function ---

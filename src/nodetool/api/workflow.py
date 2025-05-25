@@ -3,7 +3,7 @@
 from datetime import datetime
 import traceback
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Header, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, PlainTextResponse
 from pydantic import BaseModel, Field
 from nodetool.types.graph import Edge, Node, remove_connected_slots
 from nodetool.types.workflow import WorkflowList, Workflow, WorkflowRequest
@@ -22,6 +22,7 @@ from nodetool.chat.providers import get_provider
 from nodetool.metadata.types import Provider
 from nodetool.chat.workspace_manager import WorkspaceManager
 from nodetool.agents.workflow_planner import WorkflowPlanner
+from nodetool.workflows.export_dsl import workflow_to_dsl
 
 log = Environment.get_logger()
 router = APIRouter(prefix="/api/workflows", tags=["workflows"])
@@ -234,6 +235,20 @@ async def get_workflow(id: str, user: str = Depends(current_user)) -> Workflow:
     if workflow.access != "public" and workflow.user_id != user:
         raise HTTPException(status_code=404, detail="Workflow not found")
     return from_model(workflow)
+
+
+@router.get("/{id}/dsl")
+async def export_workflow_dsl(
+    id: str, user: str = Depends(current_user)
+) -> PlainTextResponse:
+    """Return the workflow as executable DSL code."""
+    workflow = WorkflowModel.get(id)
+    if not workflow:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    if workflow.access != "public" and workflow.user_id != user:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    code = workflow_to_dsl(workflow)
+    return PlainTextResponse(code)
 
 
 @router.put("/{id}")
