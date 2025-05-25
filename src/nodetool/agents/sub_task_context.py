@@ -1245,10 +1245,10 @@ class SubTaskContext:
 
         # verbose check removed
         logger.debug(
-                f"Subtask {self.subtask.id} execution completed. Status: {'completed' if self.subtask.completed else 'incomplete'}"
-            )
-logger.debug(f"Total iterations: {self.iterations}")
-logger.debug(f"Total messages in history: {len(self.history)}")
+            f"Subtask {self.subtask.id} execution completed. Status: {'completed' if self.subtask.completed else 'incomplete'}"
+        )
+        logger.debug(f"Total iterations: {self.iterations}")
+        logger.debug(f"Total messages in history: {len(self.history)}")
 
     async def _transition_to_conclusion_stage(self) -> None:
         """
