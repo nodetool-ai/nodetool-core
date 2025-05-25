@@ -27,11 +27,9 @@ in the workflow system. It handles the registration, validation, and execution o
 nodes, as well as providing utilities for type checking and metadata generation.
 """
 
-from enum import Enum
 import functools
 import importlib
 import re
-import sys
 from types import UnionType
 from weakref import WeakKeyDictionary
 from pydantic import BaseModel, Field
@@ -1098,9 +1096,9 @@ def get_comfy_class_by_name(class_name: str) -> type[BaseNode] | None:
         return Preview
     # TODO: handle more comfy special nodes
 
-    if not class_name in COMFY_NODE_CLASSES:
+    if class_name not in COMFY_NODE_CLASSES:
         class_name = class_name.replace("-", "")
-    if not class_name in COMFY_NODE_CLASSES:
+    if class_name not in COMFY_NODE_CLASSES:
         return None
     return COMFY_NODE_CLASSES[class_name]
 

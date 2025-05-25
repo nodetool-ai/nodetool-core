@@ -63,7 +63,7 @@ async def test_download(storage):
 async def test_upload(storage):
     # Upload a file
     url = await storage.upload(file_name, io.BytesIO(data))
-    assert url.startswith(f"https://nodetool.test")
+    assert url.startswith("https://nodetool.test")
 
     # Verify the file was uploaded
     assert await storage.file_exists(file_name)

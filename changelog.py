@@ -1,6 +1,5 @@
 import subprocess
 import os
-import requests
 from datetime import datetime, timedelta
 import anthropic
 import dotenv
@@ -47,7 +46,7 @@ def get_last_changelog_date(changelog):
 def update_changelog_with_anthropic(git_log, existing_changelog):
     client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
-    system_prompt = f"""
+    system_prompt = """
     You are a helpful assistant that creates and updates CHANGELOG.md files.
     """
 

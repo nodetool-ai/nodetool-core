@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Tuple, Type
+from typing import Any, Dict, List
 
-from nodetool.models.condition_builder import ConditionBuilder, ConditionGroup
+from nodetool.models.condition_builder import ConditionBuilder
 from pydantic.fields import FieldInfo
 
 

@@ -1,6 +1,5 @@
 from typing import Any, List
 from nodetool.types.graph import Graph
-from nodetool.common.environment import Environment
 from pydantic import BaseModel
 
 

@@ -6,10 +6,6 @@ from typing import Callable, Coroutine, Any, Optional, TypeVar
 import logging  # Use logging instead of print for library code
 
 
-import asyncio
-from typing import Any
-
-
 T = TypeVar("T")
 log = logging.getLogger(__name__)  # Setup logger
 

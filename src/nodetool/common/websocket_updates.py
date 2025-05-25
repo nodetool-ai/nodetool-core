@@ -11,7 +11,6 @@ from pydantic import BaseModel
 
 from nodetool.common.environment import Environment
 from nodetool.common.system_stats import SystemStats
-from nodetool.types.workflow import Workflow
 from nodetool.common.system_stats import get_system_stats
 
 
@@ -122,7 +121,7 @@ class WebSocketUpdates:
         async with self._lock:
             for websocket in self.active_connections:
                 await websocket.send_text(json_message)
-                self.log.debug(f"WebSocketUpdates: Successfully sent message to client")
+                self.log.debug("WebSocketUpdates: Successfully sent message to client")
 
     async def handle_client(self, websocket: WebSocket):
         """

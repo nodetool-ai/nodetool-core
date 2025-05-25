@@ -1,7 +1,7 @@
 from pydantic import BaseModel
 from enum import Enum
 
-from typing import Any, Callable, Literal
+from typing import Any, Literal
 from nodetool.metadata.types import Task, SubTask
 from nodetool.types.job import JobUpdate
 from nodetool.types.prediction import Prediction

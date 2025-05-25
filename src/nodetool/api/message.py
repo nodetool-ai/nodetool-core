@@ -15,7 +15,6 @@ from nodetool.types.chat import MessageCreateRequest, MessageList
 
 
 from fastapi.responses import StreamingResponse
-import json
 
 log = Environment.get_logger()
 router = APIRouter(prefix="/api/messages", tags=["messages"])

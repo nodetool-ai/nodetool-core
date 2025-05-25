@@ -1,7 +1,5 @@
 import os
-import pytest
 from fastapi.testclient import TestClient
-
 
 
 def test_list_files_excludes_hidden(tmp_path, client: TestClient):

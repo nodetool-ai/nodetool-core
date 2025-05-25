@@ -5,16 +5,13 @@ This module provides tools for interacting with web browsers and web pages.
 """
 
 import os
-from typing import Any, Tuple
+from typing import Any
 import html2text
 
-from nodetool.common.environment import Environment
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.agents.tools.base import Tool
 from playwright.async_api import Page
 
-import os
-from typing import Any
 import asyncio
 
 
@@ -195,7 +192,7 @@ class BrowserTool(Tool):
             if browser_context:
                 try:
                     await browser_context.close()
-                except Exception as e:
+                except Exception:
                     pass
 
 
@@ -253,7 +250,6 @@ class ScreenshotTool(Tool):
         full_path = context.resolve_workspace_path(output_file)
         os.makedirs(os.path.dirname(full_path), exist_ok=True)
 
-        playwright_instance = None
         browser_context = None
 
         try:
@@ -277,7 +273,7 @@ class ScreenshotTool(Tool):
             if browser_context:
                 try:
                     await browser_context.close()
-                except Exception as e:
+                except Exception:
                     pass
 
 

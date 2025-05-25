@@ -2,25 +2,19 @@ import enum
 import os
 from typing import Optional, Union
 import pytest
-from nodetool.types.graph import Edge, Graph, Node
 from nodetool.metadata.node_metadata import NodeMetadata
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.property import Property
 from nodetool.metadata.type_metadata import TypeMetadata
-from nodetool.workflows.processing_context import ProcessingContext
 
 from nodetool.workflows.base_node import (
     NODE_BY_TYPE,
-    COMFY_NODE_CLASSES,
     BaseNode,
-    GroupNode,
     add_node_type,
     get_node_class,
-    get_comfy_class_by_name,
     type_metadata,
 )
 from nodetool.metadata.types import OutputSlot
-from nodetool.workflows.run_job_request import RunJobRequest
 
 
 current_dir = os.path.dirname(os.path.realpath(__file__))
@@ -86,7 +80,7 @@ def test_node_assign_property_fail():
 
 def test_node_is_assignable_method():
     node = DummyClass()
-    assert node.is_assignable("prop", 456) == True
+    assert node.is_assignable("prop", 456) is True
 
 
 def test_node_output_type():

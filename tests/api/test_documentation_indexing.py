@@ -1,4 +1,3 @@
-import os
 from unittest.mock import patch
 
 from nodetool.api.server import create_app
@@ -16,4 +15,3 @@ def test_create_app_starts_indexing_process():
             mock_process.return_value.start.assert_called_once()
     finally:
         Environment.set_env(prev_env or "development")
-

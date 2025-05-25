@@ -246,7 +246,7 @@ class ReadFileTool(Tool):
         path = params.get("path")
         msg = f"Reading content from {path}..."
         if len(msg) > 80:
-            msg = f"Reading content from a path..."
+            msg = "Reading content from a path..."
         return msg
 
 
@@ -333,5 +333,5 @@ class ListDirectoryTool(Tool):
         path = params.get("path")
         msg = f"Listing contents of directory {path}..."
         if len(msg) > 80:
-            msg = f"Listing directory contents..."
+            msg = "Listing directory contents..."
         return msg

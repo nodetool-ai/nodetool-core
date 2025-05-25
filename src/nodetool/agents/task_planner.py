@@ -33,7 +33,6 @@ from nodetool.metadata.types import (
 import json
 
 # Add jsonschema import for validation
-import jsonschema
 from jsonschema import validate, ValidationError
 import yaml
 import os
@@ -1460,7 +1459,6 @@ class TaskPlanner:
             Message(role="system", content=self.system_prompt),
         ]
 
-        last_message: Optional[Message] = None
         error_message: Optional[str] = None
         plan_creation_error: Optional[Exception] = None
         task: Optional[Task] = None
@@ -1526,7 +1524,7 @@ class TaskPlanner:
                     )
                     raise ValueError(full_error_message) from plan_creation_error
                 else:
-                    error_message = f"Failed to create valid task after maximum retries in Plan Creation phase for an unknown reason."
+                    error_message = "Failed to create valid task after maximum retries in Plan Creation phase for an unknown reason."
                     # Yield failure update before raising
                     yield PlanningUpdate(
                         phase=current_phase, status="Failed", content=error_message

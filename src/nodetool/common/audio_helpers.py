@@ -1,9 +1,8 @@
-import io
 import numpy as np
 import pydub
 from pydub import AudioSegment
 import pydub.effects
-from typing import List, Tuple, cast
+from typing import List, cast
 from pydub.silence import detect_nonsilent
 from pydub.silence import split_on_silence
 

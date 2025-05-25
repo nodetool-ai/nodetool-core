@@ -5,7 +5,7 @@ from nodetool.agents.tools import GoogleSearchTool, BrowserTool
 from nodetool.chat.providers.base import ChatProvider
 from nodetool.metadata.types import Provider, ToolCall, SubTask
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.workflows.types import Chunk, TaskUpdate, TaskUpdateEvent
+from nodetool.workflows.types import Chunk, TaskUpdate
 import dotenv
 
 dotenv.load_dotenv()

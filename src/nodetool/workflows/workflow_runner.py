@@ -50,11 +50,18 @@ Dependencies:
 import asyncio
 from contextlib import contextmanager
 import gc
-import logging
 import time
 from typing import Any, AsyncGenerator, Optional
 from collections import deque
 import random
+
+# Import anext for Python 3.10+ async generator support
+try:
+    anext
+except NameError:
+    # For Python < 3.10, define anext
+    async def anext(async_gen):
+        return await async_gen.__anext__()
 
 
 from nodetool.common.model_manager import ModelManager
@@ -70,7 +77,6 @@ from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.common.environment import Environment
 from nodetool.workflows.graph import Graph
-from nodetool.common.environment import Environment
 from nodetool.types.graph import (
     Graph as APIGraph,
 )

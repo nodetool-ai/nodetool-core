@@ -1,4 +1,3 @@
-import re
 import dotenv
 from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
@@ -132,6 +131,5 @@ async def metadata() -> list[NodeMetadata]:
     """
     Returns a list of all node metadata.
     """
-    import nodetool.nodes
 
     return [node_class.metadata() for node_class in get_registered_node_classes()]

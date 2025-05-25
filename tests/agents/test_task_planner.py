@@ -67,7 +67,11 @@ def test_build_dependency_graph(tmp_path):
     s2 = SubTask(content="b", output_file="b.txt", input_files=["a.txt"])
     s3 = SubTask(content="c", output_file="c.txt", input_files=["b.txt", "a.txt"])
     graph = planner._build_dependency_graph([s1, s2, s3])
-    assert set(graph.edges()) == {("a.txt", "b.txt"), ("b.txt", "c.txt"), ("a.txt", "c.txt")}
+    assert set(graph.edges()) == {
+        ("a.txt", "b.txt"),
+        ("b.txt", "c.txt"),
+        ("a.txt", "c.txt"),
+    }
 
 
 def test_validate_dependencies_cycle(tmp_path):

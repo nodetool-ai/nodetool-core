@@ -147,13 +147,13 @@ class TypeMetadata(BaseModel):
         from nodetool.metadata.types import NameToType
 
         if self.is_enum_type():
-            if not self.type_name in NameToType:
+            if self.type_name not in NameToType:
                 raise ValueError(
                     f"Unknown enum type: {self.type_name}. Types must derive from BaseType"
                 )
             return NameToType[self.type_name]
         else:
-            if not self.type in NameToType:
+            if self.type not in NameToType:
                 raise ValueError(
                     f"Unknown type: {self.type}. Types must derive from BaseType"
                 )

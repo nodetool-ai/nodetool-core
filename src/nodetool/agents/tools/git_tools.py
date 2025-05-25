@@ -1,4 +1,3 @@
-import os
 import subprocess
 import shlex
 import asyncio  # Added for running async functions

@@ -1,10 +1,4 @@
-import io
 import os
-import pytest
-from unittest.mock import AsyncMock, patch
-from nodetool.metadata.types import AssetRef
-from nodetool.types.asset import Asset
-from nodetool.workflows.processing_context import ProcessingContext
 
 mp3_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), "test.mp3")
 

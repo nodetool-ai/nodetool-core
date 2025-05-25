@@ -6,10 +6,9 @@ It processes user input, generates responses, and handles tool calls and their r
 """
 
 import json
-from typing import List, Optional, Sequence
+from typing import List, Sequence
 
 from nodetool.agents.tools.base import Tool
-from nodetool.ui import console
 from nodetool.workflows.types import Chunk
 from nodetool.chat.providers.base import ChatProvider
 from nodetool.chat.chat import default_serializer

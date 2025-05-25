@@ -13,7 +13,6 @@ This example shows how to:
 """
 
 import asyncio
-import datetime
 from nodetool.agents.agent import Agent
 from nodetool.chat.providers import get_provider
 from nodetool.agents.tools import GoogleSearchTool, BrowserTool

@@ -7,10 +7,9 @@ This module provides tools for working with email (Gmail):
 - AddLabelTool: Add labels to Gmail messages
 """
 
-import asyncio
 import imaplib
 from datetime import datetime, timedelta
-from typing import Any, Dict, Tuple
+from typing import Any, Dict
 
 import html2text
 

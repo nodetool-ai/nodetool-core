@@ -4,7 +4,7 @@ import json
 import uuid
 from fastapi.websockets import WebSocketState
 import msgpack
-from typing import Any, AsyncGenerator, Callable
+from typing import AsyncGenerator
 from pydantic import BaseModel
 from fastapi import WebSocket, WebSocketDisconnect
 from nodetool.common.environment import Environment

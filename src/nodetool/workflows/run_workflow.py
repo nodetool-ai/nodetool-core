@@ -1,14 +1,11 @@
 import asyncio
-from asyncio.queues import Queue as AsyncQueue
-from queue import Queue
 from typing import AsyncGenerator, Any
 from uuid import uuid4
 from nodetool.common.environment import Environment
-from nodetool.types.job import JobUpdate, Job
+from nodetool.types.job import JobUpdate
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.workflow_runner import WorkflowRunner
-from nodetool.workflows.types import Error
 from nodetool.workflows.threaded_event_loop import ThreadedEventLoop
 from nodetool.common.websocket_runner import process_workflow_messages
 

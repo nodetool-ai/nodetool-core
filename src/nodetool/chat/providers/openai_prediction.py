@@ -661,7 +661,7 @@ if __name__ == "__main__":
             try:
                 # run_openai returns an async generator
                 async for result in run_openai(prediction_request, env_vars):
-                    print(f"  Status: SUCCESS")
+                    print("  Status: SUCCESS")
                     # Cost is now in credits, format accordingly
                     cost_display = f"{result.prediction.cost:.4f} credits"
                     # Add warning if model_name is valid but seems unmapped or cost is zero unexpectedly
@@ -737,11 +737,11 @@ if __name__ == "__main__":
                         )
 
             except openai.APIError as e:
-                print(f"  Status: FAILED (OpenAI API Error)")
+                print("  Status: FAILED (OpenAI API Error)")
                 print(f"  Error: {e}")
                 traceback.print_exc()
             except Exception as e:
-                print(f"  Status: FAILED (Other Error)")
+                print("  Status: FAILED (Other Error)")
                 print(f"  Error: {e}")
                 traceback.print_exc()
         print("\n=============================================")

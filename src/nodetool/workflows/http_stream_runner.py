@@ -2,7 +2,7 @@ import asyncio
 import json
 import time
 import uuid
-from typing import Any, AsyncGenerator
+from typing import AsyncGenerator
 from nodetool.common.environment import Environment
 from nodetool.common.wrap_primitive_types import wrap_primitive_types
 from nodetool.workflows.processing_context import ProcessingContext

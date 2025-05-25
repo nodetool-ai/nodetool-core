@@ -96,7 +96,6 @@ from nodetool.workflows.types import Chunk
 from nodetool.workflows.workflow_runner import WorkflowRunner
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.chat.help import create_help_answer
-from nodetool.chat.providers.base import ChatProvider
 
 log = logging.getLogger(__name__)
 
@@ -555,9 +554,9 @@ class ChatWebSocketRunner:
             if self.mode == WebSocketMode.BINARY:
                 packed_message = msgpack.packb(message, use_bin_type=True)
                 await self.websocket.send_bytes(packed_message)  # type: ignore
-                log.debug(f"Sent binary message")
+                log.debug("Sent binary message")
             else:
                 await self.websocket.send_text(json.dumps(message))
-                log.debug(f"Sent text message")
+                log.debug("Sent text message")
         except Exception as e:
             log.error(f"Error sending message: {e}")

@@ -9,7 +9,7 @@ from abc import ABC, abstractmethod
 from typing import Any, AsyncGenerator, Sequence
 
 from nodetool.agents.tools.base import Tool
-from nodetool.metadata.types import Message, Provider, ToolCall, MessageFile
+from nodetool.metadata.types import Message, Provider, ToolCall
 from nodetool.workflows.types import Chunk
 
 import json

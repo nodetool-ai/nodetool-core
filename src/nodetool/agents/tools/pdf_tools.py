@@ -14,8 +14,6 @@ from typing import Any
 
 import pymupdf
 import pymupdf4llm
-import subprocess
-from pathlib import Path
 
 import pypandoc
 

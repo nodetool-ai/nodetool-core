@@ -2,8 +2,6 @@ import pytest
 from nodetool.common.environment import Environment
 
 
-import pytest
-from datetime import datetime
 from nodetool.models.base_model import (
     DBModel,
     DBField,

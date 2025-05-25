@@ -7,11 +7,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ### Setup and Installation
 
 ```bash
-# Install dependencies using Poetry
-poetry install
-
-# Install pre-commit hooks
-pre-commit install
+# Install dependencies
+pip install .
 
 # Install development dependencies 
 pip install -r requirements-dev.txt
@@ -21,28 +18,21 @@ pip install -r requirements-dev.txt
 
 ```bash
 # Run all tests
-poetry run pytest
+pytest -q
 
 # Run a specific test file
-poetry run pytest tests/path/to/test_file.py
+pytest tests/path/to/test_file.py
 
 # Run tests with coverage report
-poetry run pytest --cov=src
+pytest --cov=src
 
 # Lint code
-poetry run ruff .
-poetry run black --check .
-poetry run mypy .
+ruff check .
+black --check .
+mypy .
 
 # Format code
-poetry run black .
-
-# Run the CLI
-poetry run nodetool
-
-# Configure settings
-poetry run nodetool settings edit
-```
+black .
 
 ## Project Architecture
 
@@ -95,7 +85,7 @@ NodeTool Core is a Python library for building and running AI workflows using a 
 ### Key Design Patterns
 
 1. **Dependency Injection** - Components receive their dependencies through constructors
-2. **Asynchronous Processing** - Heavy use of Python's asyncio for non-blocking operations
+2. **Asynchronous Processing** - Heavy use of Pythons asyncio for non-blocking operations
 3. **Factory Pattern** - Provider factories create appropriate implementation instances
 4. **Strategy Pattern** - Different storage/database backends implement common interfaces
 5. **Observer Pattern** - WebSocket updates provide real-time progress tracking
@@ -119,7 +109,7 @@ NodeTool Core is a Python library for building and running AI workflows using a 
 
 ## Debugging Tips
 
-1. Use `poetry run pytest -v` for more verbose test output
+1. Use `pytest -v` for more verbose test output
 2. For debugging workflows, enable debug logging:
    ```python
    import logging

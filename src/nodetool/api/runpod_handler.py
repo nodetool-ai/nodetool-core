@@ -1,11 +1,5 @@
-import os
-import dotenv
-
-from nodetool.workflows.examples import load_example
-
-dotenv.load_dotenv()
-
 import asyncio
+import dotenv
 import runpod
 from nodetool.common.environment import Environment
 from nodetool.types.job import JobUpdate
@@ -13,7 +7,9 @@ from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.workflow_runner import WorkflowRunner
 from nodetool.workflows.threaded_event_loop import ThreadedEventLoop
-from nodetool.workflows.types import Error, NodeUpdate
+from nodetool.workflows.types import Error
+
+dotenv.load_dotenv()
 
 
 log = Environment.get_logger()

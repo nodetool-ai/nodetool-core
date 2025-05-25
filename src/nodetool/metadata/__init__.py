@@ -52,12 +52,12 @@ def is_assignable(type_meta: TypeMetadata, value: Any) -> bool:
         return True
 
     # Handle dictionary values
-    if python_type == dict and "type" in value:
+    if python_type is dict and "type" in value:
         return value["type"] == type_meta.type
 
     # Handle list types.
     if type_meta.type == "list":
-        if python_type == list:
+        if python_type is list:
             t = (
                 type_meta.type_args[0]
                 if len(type_meta.type_args) > 0
@@ -67,9 +67,9 @@ def is_assignable(type_meta: TypeMetadata, value: Any) -> bool:
         # Handle ImageRef containing a list.
         if python_type == ImageRef:
             assert isinstance(value, ImageRef)
-            return type(value.data) == list
+            return type(value.data) is list
     # Handle dictionary types.
-    if type_meta.type == "dict" and python_type == dict:
+    if type_meta.type == "dict" and python_type is dict:
         if len(type_meta.type_args) != 2:
             # If type args aren't specified, assume any dict is valid.
             return True

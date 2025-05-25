@@ -2,7 +2,7 @@ import json
 import os
 import logging
 from datetime import datetime
-from typing import Any, List
+from typing import List
 from nodetool.types.workflow import Workflow
 from nodetool.types.graph import Graph
 
@@ -94,7 +94,6 @@ def save_example(id: str, workflow: Workflow) -> Workflow:
         This function removes the user_id field before saving and
         invalidates the cached examples.
     """
-    example = find_example(id)
     workflow_dict = workflow.model_dump()
 
     # Remove unnecessary fields

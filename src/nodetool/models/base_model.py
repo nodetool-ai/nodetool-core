@@ -5,7 +5,7 @@ from nodetool.common.environment import Environment
 from uuid import uuid1
 from random import randint
 
-from nodetool.models.condition_builder import ConditionBuilder, ConditionGroup
+from nodetool.models.condition_builder import ConditionBuilder
 from nodetool.models.database_adapter import DatabaseAdapter
 
 """

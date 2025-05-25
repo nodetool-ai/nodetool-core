@@ -1,7 +1,5 @@
 from datetime import datetime
 from typing import Any, Optional
-from nodetool.common.content_types import CONTENT_TYPE_TO_EXTENSION
-from nodetool.models.asset import Asset
 from nodetool.models.condition_builder import (
     ConditionBuilder,
     ConditionGroup,

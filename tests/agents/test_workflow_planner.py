@@ -7,7 +7,9 @@ from nodetool.metadata.types import OutputSlot
 from nodetool.workflows.property import Property
 
 
-def make_node_metadata(node_type: str, namespace: str, props: list[Property], outputs: list[OutputSlot]):
+def make_node_metadata(
+    node_type: str, namespace: str, props: list[Property], outputs: list[OutputSlot]
+):
     return NodeMetadata(
         title=node_type,
         description=node_type,

@@ -15,9 +15,7 @@ def generate_cli_docs(output_path: str) -> None:
         lines.append(f"- **{cmd_name}**: {cmd.help}")
         if hasattr(cmd, "commands"):
             for sub_name, sub_cmd in cmd.commands.items():
-                lines.append(
-                    f"  - **{cmd_name} {sub_name}**: {sub_cmd.help}"
-                )
+                lines.append(f"  - **{cmd_name} {sub_name}**: {sub_cmd.help}")
     with open(output_path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines))
 

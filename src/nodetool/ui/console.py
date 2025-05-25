@@ -10,7 +10,6 @@ from rich.live import Live
 from rich.table import Table
 from rich.text import Text
 from rich.tree import Tree
-from rich.style import Style
 
 # Use TYPE_CHECKING to avoid circular imports at runtime
 if TYPE_CHECKING:

@@ -1,5 +1,5 @@
 import pytest
-from nodetool.types.graph import Node, Edge
+from nodetool.types.graph import Node
 from nodetool.workflows.base_node import BaseNode, GroupNode, InputNode
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.read_graph import read_graph, GraphParsingError

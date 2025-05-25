@@ -3,7 +3,7 @@ Adapter for interacting with a Supabase backend (PostgreSQL with PostgREST).
 """
 
 import logging
-from typing import Any, Dict, List, Tuple, Type, Union, get_origin, get_args
+from typing import Any, Dict, List, Type, Union, get_origin, get_args
 from pydantic.fields import FieldInfo
 from datetime import datetime
 from enum import EnumMeta as EnumType
@@ -20,7 +20,6 @@ from nodetool.models.condition_builder import (
     Operator,
     LogicalOperator,
 )
-from nodetool.common.environment import Environment
 
 log = logging.getLogger(__name__)
 
@@ -154,7 +153,7 @@ class SupabaseAdapter(DatabaseAdapter):
 
     def save(self, item: Dict[str, Any]) -> None:
         """Saves (inserts or updates) an item in the Supabase table using upsert."""
-        pk = self._get_primary_key()
+        self._get_primary_key()
         # Prepare item data, converting types if necessary
         supabase_item = {
             key: convert_to_supabase_format(value, self.fields[key].annotation)

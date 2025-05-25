@@ -1,5 +1,4 @@
 import json
-import asyncio
 import pytest
 
 from nodetool.agents.simple_agent import SimpleAgent
@@ -34,11 +33,13 @@ async def test_get_execution_tools_info():
 async def test_plan_single_subtask_success(tmp_path):
     response = Message(
         role="assistant",
-        content=json.dumps({
-            "content": "do it",
-            "output_type": "json",
-            "output_schema": "{\"type\": \"string\"}",
-        }),
+        content=json.dumps(
+            {
+                "content": "do it",
+                "output_type": "json",
+                "output_schema": '{"type": "string"}',
+            }
+        ),
     )
     provider = MockProvider([response])
     agent = SimpleAgent(
@@ -88,6 +89,7 @@ async def test_execute_yields_results(monkeypatch, tmp_path):
         output_type="json",
         output_schema={"type": "string"},
     )
+
     async def fake_plan(self, ctx, max_retries=3):
         self.subtask = SubTask(
             content="task",
@@ -97,14 +99,17 @@ async def test_execute_yields_results(monkeypatch, tmp_path):
             output_schema="{}",
         )
         self.task = Task(title=self.objective, subtasks=[self.subtask])
+
     monkeypatch.setattr(SimpleAgent, "_plan_single_subtask", fake_plan)
 
     class FakeSubTaskContext:
         def __init__(self, *args, **kwargs):
             pass
+
         async def execute(self):
             yield Chunk(content="hello")
             yield ToolCall(id="1", name="finish_subtask", args={"result": "42"})
+
     monkeypatch.setattr(
         "nodetool.agents.simple_agent.SubTaskContext", FakeSubTaskContext
     )

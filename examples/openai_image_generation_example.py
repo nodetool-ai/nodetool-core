@@ -8,10 +8,7 @@ generated image to the workspace directory.
 """
 
 import asyncio
-import base64
 import os
-import json  # For pretty printing the results
-import binascii  # For catching b64decode errors
 
 from nodetool.agents.agent import Agent
 from nodetool.chat.providers import get_provider

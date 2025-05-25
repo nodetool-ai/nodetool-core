@@ -11,7 +11,6 @@ This script creates a Reddit agent that:
 """
 
 import asyncio
-import json  # For potentially more structured output if desired later
 
 from nodetool.agents.agent import Agent
 from nodetool.chat.providers import get_provider
@@ -20,6 +19,25 @@ from nodetool.chat.providers.base import ChatProvider
 from nodetool.metadata.types import Provider
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import Chunk
+
+objective = """
+Find and analyze indie hacker success stories from Reddit to extract actionable insights.
+
+Tasks:
+1. Search Reddit (r/indiehackers, r/SideProject, r/startups, etc.) for posts about:
+   - Product launches and growth stories
+   - Revenue milestones ($1, $100 MRR, $1k MRR+)
+   - Success strategies and failures
+
+2. For each relevant post:
+   - Read the post and top comments
+   - Extract key details: product type, timeline, strategies, tools used, outcomes
+
+3. Output results as a markdown table with these columns:
+   | Product | Strategy | Tools | Results | URL |
+   
+   Each row should contain one indie hacker story with concise, actionable information in each column.
+"""
 
 
 async def test_reddit_journey_deconstructor_agent(  # Renamed for clarity
@@ -31,36 +49,7 @@ async def test_reddit_journey_deconstructor_agent(  # Renamed for clarity
     context = ProcessingContext()
     search_agent = Agent(
         name="Reddit Indie Hacker Journey Deconstructor",  # New Agent Name
-        objective="""
-        You are an expert research analyst focused on the indie hacker and startup ecosystem on Reddit.
-        Your mission is to:
-        1. Use Google Search to discover posts on subreddits like r/indiehackers, r/SideProject, r/startups, r/EntrepreneurRideAlong, and r/SaaS where users share their:
-            a. Product development journeys from idea to launch.
-            b. Stories of acquiring their first users or achieving growth milestones.
-            c. Detailed accounts of successes, including strategies and tools used.
-            d. Candid reflections on failures and lessons learned.
-            e. Revenue milestones (e.g., first $1, $100 MRR, $1k MRR, etc.).
-        2. For each relevant post identified:
-            a. Browse the post and its most insightful comments to gather comprehensive details.
-            b. Extract the core narrative, key decisions, strategies implemented, tools/technologies mentioned, challenges faced, and outcomes (both positive and negative).
-        3. Analyze the gathered information to deconstruct each journey by identifying:
-            a. The type of product or service.
-            b. Key timeline markers or phases (e.g., idea validation, MVP development, launch, scaling).
-            c. Specific marketing or growth tactics employed.
-            d. Pivotal moments or decisions.
-            e. Quantifiable results if shared (e.g., revenue, user numbers, time to X).
-            f. Explicitly stated lessons learned or advice offered.
-            g. Tools, software, or platforms mentioned that were critical to their journey.
-        4. Generate a structured Markdown report. Each journey deconstruction should be a distinct section, containing:
-            - Title: (e.g., "Deconstruction: [Original Post Title/Product Name]")
-            - Source URL: [Link to Reddit Post]
-            - Product Niche: [e.g., SaaS, Mobile App, E-commerce, AI Tool]
-            - Journey Summary: [Brief overview of the story]
-            - Key Strategies/Tactics: [Bulleted list]
-            - Tools Mentioned: [Bulleted list]
-            - Key Learnings/Takeaways: [Bulleted list of insights from the post]
-            - Reported Outcomes/Metrics: [e.g., Reached $1K MRR in 6 months, Acquired 500 users post-launch, Failed to find product-market fit]
-        """,
+        objective=objective,
         provider=provider,
         model=model,
         reasoning_model=reasoning_model,
@@ -86,7 +75,7 @@ async def test_reddit_journey_deconstructor_agent(  # Renamed for clarity
         print("\n\n--- FINAL COMPILED REPORT ---")
         print(final_report)
 
-    print(f"\n\n--- Workspace Directory for artifacts ---")
+    print("\n\n--- Workspace Directory for artifacts ---")
     print(context.workspace_dir)
     # You would typically find the full report or structured data in the workspace directory.
 

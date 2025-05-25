@@ -1,14 +1,12 @@
 #!/usr/bin/env python
 
-from typing import Dict, List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Header, UploadFile, File
+from typing import List, Optional
+from fastapi import APIRouter, HTTPException, Header, UploadFile, File
 from langchain_text_splitters import (
     ExperimentalMarkdownSyntaxTextSplitter,
     RecursiveCharacterTextSplitter,
-    SentenceTransformersTokenTextSplitter,
 )
 from pydantic import BaseModel
-from nodetool.api.utils import current_user
 from nodetool.common.chroma_client import (
     get_chroma_client,
     get_collection,

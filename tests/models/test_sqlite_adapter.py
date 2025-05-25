@@ -1,9 +1,8 @@
 import pytest
 from datetime import datetime
 from enum import Enum
-from pydantic import BaseModel
 from typing import Dict, List, Optional
-from nodetool.models.condition_builder import ConditionBuilder, Field
+from nodetool.models.condition_builder import Field
 from nodetool.models.sqlite_adapter import (
     SQLiteAdapter,
     convert_to_sqlite_format,

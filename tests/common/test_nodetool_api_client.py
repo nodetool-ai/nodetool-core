@@ -1,11 +1,9 @@
-from unittest.mock import MagicMock
 import httpx
 import pytest
 from httpx import AsyncClient, ASGITransport
 
 from nodetool.api.server import create_app
 from nodetool.common.nodetool_api_client import NodetoolAPIClient
-from nodetool.metadata.types import ImageRef
 from nodetool.models.asset import Asset
 
 

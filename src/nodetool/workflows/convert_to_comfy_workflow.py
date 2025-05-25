@@ -1,4 +1,3 @@
-from typing import Any
 from nodetool.types.graph import Edge
 from nodetool.workflows.base_node import BaseNode
 

@@ -23,7 +23,6 @@ import json
 import os
 import re
 from typing import Any, AsyncGenerator, Mapping, List, Type, Dict, cast
-import ollama
 import readline
 import uuid
 from pydantic import BaseModel
@@ -33,7 +32,6 @@ from chromadb.api.types import IncludeEnum, WhereDocument, Metadata
 from jsonschema import validators
 from nodetool.chat.providers.base import ChatProvider
 from nodetool.common.settings import get_system_data_path
-from nodetool.chat.ollama_service import get_ollama_client
 from nodetool.common.environment import Environment
 from nodetool.metadata.types import (
     Message,
@@ -579,9 +577,6 @@ HOW TO ANSWER QUESTIONS:
 - DO NOT OVERTHINK
 - BE CONCISE
 """
-
-
-import PIL.Image
 
 
 async def create_message(message: Message) -> Mapping[str, str | list[str]]:

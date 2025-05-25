@@ -1,8 +1,7 @@
 import inspect
 import json
 import os
-from typing import IO, Any, Type, Union
-import importlib
+from typing import Any, Type, Union
 from pydantic import BaseModel
 import dotenv
 import logging
@@ -65,23 +64,23 @@ def type_to_str(tp: Type[Any]) -> str:
     """
     if tp == inspect.Parameter.empty:
         return "Any"
-    if tp == int:
+    if tp is int:
         return "int"
-    if tp == float:
+    if tp is float:
         return "float"
-    if tp == str:
+    if tp is str:
         return "str"
-    if tp == bool:
+    if tp is bool:
         return "bool"
-    if tp == list:
+    if tp is list:
         return "list"
-    if tp == dict:
+    if tp is dict:
         return "dict"
-    if tp == tuple:
+    if tp is tuple:
         return "tuple"
-    if tp == set:
+    if tp is set:
         return "set"
-    if tp == type(None):
+    if tp is type(None):
         return "None"
     if isinstance(tp, type):
         return tp.__name__

@@ -1,9 +1,7 @@
-import json
-from unittest.mock import patch
 import pytest
 from fastapi.testclient import TestClient
 from nodetool.metadata.types import Provider
-from nodetool.types.prediction import PredictionCreateRequest, PredictionResult
+from nodetool.types.prediction import PredictionCreateRequest
 from nodetool.models.prediction import Prediction as PredictionModel
 
 

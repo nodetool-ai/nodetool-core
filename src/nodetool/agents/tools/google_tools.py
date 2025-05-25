@@ -1,12 +1,10 @@
-import base64
-from typing import Dict, Any, List
+from typing import Dict, Any
 from google.genai import Client
 from google.genai.client import AsyncClient
 from google.genai.types import (
     Tool as GenAITool,
     GenerateContentConfig,
     GoogleSearch,
-    Modality,
     GenerateImagesConfig,
 )
 from nodetool.agents.tools.base import Tool
@@ -44,10 +42,6 @@ class GoogleGroundedSearchTool(Tool):
             },
             "required": ["query"],
         }
-
-    def get_container_env(self) -> dict[str, str]:
-        key = Environment.get_environment().get("GEMINI_API_KEY")
-        return {"GEMINI_API_KEY": key} if key else {}
 
     def get_container_env(self) -> dict[str, str]:
         key = Environment.get_environment().get("GEMINI_API_KEY")
@@ -217,7 +211,6 @@ class GoogleImageGenerationTool(Tool):
         )
         assert response.generated_images, "No images generated"
 
-        base64_image = None
         for generated_image in response.generated_images:
             assert generated_image.image, "No image"
             assert generated_image.image.image_bytes, "No image bytes"
@@ -246,7 +239,6 @@ class GoogleImageGenerationTool(Tool):
 
 if __name__ == "__main__":
     import asyncio
-    import os
     from nodetool.workflows.processing_context import ProcessingContext
 
     async def main():

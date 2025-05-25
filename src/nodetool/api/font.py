@@ -21,16 +21,16 @@ async def get_system_fonts() -> FontResponse:
     """
     fonts = []
     system = platform.system()
-    
+
     if system == "Darwin":  # macOS
         try:
             # Use the macOS-specific font list command
             font_dirs = [
                 "/Library/Fonts/",
                 "/System/Library/Fonts/",
-                os.path.expanduser("~/Library/Fonts/")
+                os.path.expanduser("~/Library/Fonts/"),
             ]
-            
+
             for font_dir in font_dirs:
                 if os.path.exists(font_dir):
                     for font_file in os.listdir(font_dir):
@@ -40,7 +40,7 @@ async def get_system_fonts() -> FontResponse:
                             fonts.append(font_name)
         except Exception as e:
             print(f"Error getting macOS fonts: {e}")
-    
+
     elif system == "Windows":
         try:
             # Windows font directory
@@ -53,22 +53,32 @@ async def get_system_fonts() -> FontResponse:
                         fonts.append(font_name)
         except Exception as e:
             print(f"Error getting Windows fonts: {e}")
-    
+
     elif system == "Linux":
         try:
             # Common Linux font directories
             font_dirs = [
                 "/usr/share/fonts/",
                 "/usr/local/share/fonts/",
-                os.path.expanduser("~/.fonts/")
+                os.path.expanduser("~/.fonts/"),
             ]
-            
+
             for font_dir in font_dirs:
                 if os.path.exists(font_dir):
                     # Use find to recursively list font files
-                    cmd = ["find", font_dir, "-type", "f", "-name", "*.ttf", "-o", "-name", "*.otf"]
+                    cmd = [
+                        "find",
+                        font_dir,
+                        "-type",
+                        "f",
+                        "-name",
+                        "*.ttf",
+                        "-o",
+                        "-name",
+                        "*.otf",
+                    ]
                     result = subprocess.run(cmd, capture_output=True, text=True)
-                    
+
                     if result.returncode == 0:
                         for line in result.stdout.splitlines():
                             if line.strip():
@@ -77,8 +87,8 @@ async def get_system_fonts() -> FontResponse:
                                 fonts.append(font_name)
         except Exception as e:
             print(f"Error getting Linux fonts: {e}")
-    
+
     # Remove duplicates and sort
     fonts = sorted(list(set(fonts)))
-    
+
     return FontResponse(fonts=fonts)

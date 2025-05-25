@@ -1,4 +1,3 @@
-import datetime
 from conftest import make_job
 from nodetool.models.job import Job
 

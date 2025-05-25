@@ -13,7 +13,6 @@ This example shows how to:
 """
 
 import asyncio
-import datetime
 import json
 from nodetool.agents.agent import Agent
 from nodetool.chat.providers import get_provider
@@ -88,7 +87,7 @@ async def test_google_news_agent(provider: ChatProvider, model: str):
         if isinstance(item, Chunk):
             print(item.content, end="", flush=True)
 
-    print(f"=== Agent Execution Complete ===")
+    print("=== Agent Execution Complete ===")
     print(f"Workspace: {context.workspace_dir}")
 
     # Pretty print the results if available

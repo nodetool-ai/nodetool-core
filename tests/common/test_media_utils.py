@@ -1,9 +1,7 @@
 from io import BytesIO
 import os
-import tempfile
 import cv2
 import numpy as np
-from pydub import AudioSegment
 import pytest
 
 from nodetool.common.media_utils import (
