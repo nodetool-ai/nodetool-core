@@ -7,8 +7,6 @@ from nodetool.common.nodetool_api_client import (
 )
 from nodetool.storage.abstract_node_cache import AbstractNodeCache
 from nodetool.common.settings import (
-    SecretsModel,
-    SettingsModel,
     get_system_data_path,
     load_settings,
     get_value,
@@ -86,8 +84,8 @@ class Environment(object):
     development purposes.
     """
 
-    settings: SettingsModel | None = None
-    secrets: SecretsModel | None = None
+    settings: dict[str, Any] | None = None
+    secrets: dict[str, Any] | None = None
     remote_auth: bool = True
 
     @classmethod
@@ -116,10 +114,10 @@ class Environment(object):
         env = DEFAULT_ENV.copy()
         env.update(os.environ)
 
-        for k, v in settings.model_dump().items():
+        for k, v in settings.items():
             if v is not None:
                 env[k] = v
-        for k, v in secrets.model_dump().items():
+        for k, v in secrets.items():
             if v is not None:
                 env[k] = v
 

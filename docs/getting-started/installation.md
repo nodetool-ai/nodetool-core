@@ -57,7 +57,6 @@ print(nodetool.__version__)
 
 This should print the version of NodeTool Core that you have installed.
 
-
 ## Configuration
 
 After installation, you might want to configure some aspects of NodeTool Core:
