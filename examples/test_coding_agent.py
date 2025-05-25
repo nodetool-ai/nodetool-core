@@ -16,10 +16,13 @@ The agent is capable of:
 - Automated testing and validation
 
 Usage:
-    python test_coding_agent.py
-    
-The agent will download data, perform analysis, create visualizations,
-and generate a comprehensive report with all findings.
+    python test_coding_agent.py [--docker-image DOCKER_IMAGE]
+
+By default the agent runs directly on your machine.  Provide a Docker image via
+``--docker-image`` to execute the agent inside a container.
+
+The agent will download data, perform analysis, create visualizations, and
+generate a comprehensive report with all findings.
 """
 
 import asyncio
@@ -45,6 +48,7 @@ async def run_data_analysis_agent(
     planning_model: str,
     reasoning_model: str,
     analysis_type: str = "comprehensive",
+    docker_image: str | None = None,
 ):
     context = ProcessingContext()
 
@@ -169,7 +173,7 @@ async def run_data_analysis_agent(
         reasoning_model=reasoning_model,
         tools=code_tools,
         output_type="markdown",
-        docker_image="nodetool",
+        docker_image=docker_image,
         output_schema={
             "type": "string",
             "description": "A comprehensive markdown report with embedded visualizations and code snippets",
@@ -226,14 +230,27 @@ async def run_data_analysis_agent(
 
 
 if __name__ == "__main__":
-    # Choose analysis type: "comprehensive", "quick", or "ml_focused"
-    ANALYSIS_TYPE = "comprehensive"
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Run the data analysis agent example")
+    parser.add_argument(
+        "--analysis-type",
+        choices=["comprehensive", "quick", "ml_focused"],
+        default="comprehensive",
+        help="Type of analysis to perform",
+    )
+    parser.add_argument(
+        "--docker-image",
+        default=None,
+        help="Run the agent inside this Docker image (optional)",
+    )
+
+    args = parser.parse_args()
 
     print("🚀 Starting Data Analysis Agent")
-    print(f"📊 Analysis Type: {ANALYSIS_TYPE}")
+    print(f"📊 Analysis Type: {args.analysis_type}")
     print("-" * 60)
 
-    # Example: Run comprehensive analysis with OpenAI
     try:
         asyncio.run(
             run_data_analysis_agent(
@@ -241,7 +258,8 @@ if __name__ == "__main__":
                 model="gpt-4o-mini",
                 planning_model="o4-mini",
                 reasoning_model="o4-mini",
-                analysis_type=ANALYSIS_TYPE,
+                analysis_type=args.analysis_type,
+                docker_image=args.docker_image,
             )
         )
     except Exception as e:
