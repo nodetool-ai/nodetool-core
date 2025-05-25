@@ -40,6 +40,7 @@ The documentation is organized into the following sections:
 - [**Agents**](agents.md) - Multi-step agent framework
 - [**Chat Module**](chat.md) - Conversational interface
 - [**Chat Providers**](chat-providers.md) - Supported LLM backends
+- [**AWS Lambda Example**](aws-lambda.md) - Deploy workflows to Lambda
 - [**Examples**](../examples/README.md) - Example workflows
 
 ## Community
