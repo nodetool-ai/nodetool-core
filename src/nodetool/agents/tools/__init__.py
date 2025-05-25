@@ -44,6 +44,9 @@ from .openai_tools import (
     OpenAIWebSearchTool,
 )
 
+# MCP tools
+from .mcp_tools import MCPTool
+
 # PDF tools
 from .pdf_tools import (
     ConvertPDFToMarkdownTool,
@@ -96,6 +99,7 @@ __all__ = [
     "OpenAIImageGenerationTool",
     "OpenAITextToSpeechTool",
     "OpenAIWebSearchTool",
+    "MCPTool",
     "ReadAssetTool",
     "ReadFileTool",
     "SaveAssetTool",
