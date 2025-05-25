@@ -32,10 +32,14 @@ The documentation is organized into the following sections:
 - [**Getting Started**](getting-started/index.md) - Guides for new users
 - [**Concepts**](concepts/index.md) - Core concepts and architecture
 - [**API Reference**](api-reference/index.md) - Detailed API documentation
+- [**API Server**](api-server.md) - Overview of the FastAPI backend
 - [**Workflow API**](workflow-api.md) - How to call workflows programmatically
 - [**Chat WebSocket API**](chat-api.md) - Real time chat endpoint
 - [**CLI Reference**](cli.md) - Command line usage
 - [**Chat CLI**](chat-cli.md) - Interactive chat application
+- [**Agents**](agents.md) - Multi-step agent framework
+- [**Chat Module**](chat.md) - Conversational interface
+- [**Chat Providers**](chat-providers.md) - Supported LLM backends
 - [**Examples**](../examples/README.md) - Example workflows
 
 ## Community
