@@ -1,7 +1,3 @@
-import os
-from io import BytesIO
-import asyncio
-
 import pytest
 
 from nodetool.common.async_iterators import AsyncByteStream
@@ -22,7 +18,16 @@ def test_wrap_primitive_types_basic():
 def test_wrap_primitive_types_nested():
     data = {"a": 1, "b": ["x", 2]}
     result = wrap_primitive_types(data)
-    assert result == {"a": {"type": "integer", "value": 1}, "b": {"type": "list", "value": [{"type": "string", "value": "x"}, {"type": "integer", "value": 2}]}}
+    assert result == {
+        "a": {"type": "integer", "value": 1},
+        "b": {
+            "type": "list",
+            "value": [
+                {"type": "string", "value": "x"},
+                {"type": "integer", "value": 2},
+            ],
+        },
+    }
 
 
 @pytest.mark.asyncio

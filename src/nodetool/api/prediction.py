@@ -1,10 +1,7 @@
 #!/usr/bin/env python
 
-import base64
 from datetime import datetime
-import json
-from fastapi import APIRouter, Depends, HTTPException, Response
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, Depends, HTTPException
 from nodetool.types.prediction import (
     PredictionCreateRequest,
     Prediction,
@@ -16,7 +13,6 @@ from typing import Optional
 from nodetool.models.prediction import (
     Prediction as PredictionModel,
 )
-from nodetool.models.workflow import Workflow
 
 log = Environment.get_logger()
 router = APIRouter(prefix="/api/predictions", tags=["predictions"])

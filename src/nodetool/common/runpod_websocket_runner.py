@@ -26,7 +26,7 @@ import aiohttp
 import msgpack
 from pydantic import BaseModel
 from fastapi import WebSocket, WebSocketDisconnect
-from typing import Any, Optional
+from typing import Optional
 from nodetool.common.environment import Environment
 from nodetool.workflows.run_job_request import RunJobRequest
 

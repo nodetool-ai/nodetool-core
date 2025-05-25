@@ -1,26 +1,16 @@
 import asyncio
-from chunk import Chunk
-import os
-import json
-from pathlib import Path
 from rich.console import Console
 
-from nodetool.chat.providers.anthropic_provider import AnthropicProvider
 from nodetool.chat.providers.base import ChatProvider
-from nodetool.chat.providers.gemini_provider import GeminiProvider
 from nodetool.chat.providers.ollama_provider import OllamaProvider
-from nodetool.chat.providers.openai_provider import OpenAIProvider
 from nodetool.agents.task_planner import TaskPlanner
-from nodetool.agents.tools.base import Tool
 from nodetool.agents.tools import (
     BrowserTool,
     GoogleSearchTool,
-    GoogleGroundedSearchTool,
 )
 from nodetool.workflows.processing_context import ProcessingContext
 import dotenv
 
-from nodetool.workflows.types import PlanningUpdate
 
 dotenv.load_dotenv()
 

@@ -36,7 +36,7 @@ from langchain_text_splitters import (
     RecursiveCharacterTextSplitter,
 )
 from langchain_core.documents import Document
-from typing import List, Dict, Any
+from typing import List
 
 from nodetool.metadata.types import TextChunk
 
@@ -76,7 +76,7 @@ def get_chroma_client(
             tenant = f"tenant_{user_id}"
             try:
                 admin.get_tenant(tenant)
-            except Exception as e:
+            except Exception:
                 log.info(f"Creating tenant {tenant}")
                 admin.create_tenant(tenant)
                 log.info(f"Creating database {DEFAULT_DATABASE}")

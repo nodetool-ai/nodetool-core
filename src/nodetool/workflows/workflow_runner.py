@@ -50,11 +50,18 @@ Dependencies:
 import asyncio
 from contextlib import contextmanager
 import gc
-import logging
 import time
 from typing import Any, AsyncGenerator, Optional
 from collections import deque
 import random
+
+# Import anext for Python 3.10+ async generator support
+try:
+    anext
+except NameError:
+    # For Python < 3.10, define anext
+    async def anext(async_gen):
+        return await async_gen.__anext__()
 
 
 from nodetool.common.model_manager import ModelManager
@@ -70,7 +77,6 @@ from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.common.environment import Environment
 from nodetool.workflows.graph import Graph
-from nodetool.common.environment import Environment
 from nodetool.types.graph import (
     Graph as APIGraph,
 )
@@ -227,6 +233,7 @@ class WorkflowRunner:
         return self.status == "running"
 
     def _initialize_edge_queues(self, graph: Graph):
+        log.debug("Initializing edge queues for graph with %d edges", len(graph.edges))
         for edge in graph.edges:
             edge_key = (
                 edge.source,
@@ -235,6 +242,8 @@ class WorkflowRunner:
                 edge.targetHandle,
             )
             self.edge_queues[edge_key] = deque()
+            log.debug("Initialized queue for edge %s", edge_key)
+        log.debug("Edge queues initialized: %s", list(self.edge_queues.keys()))
 
     async def run(
         self,
@@ -269,6 +278,7 @@ class WorkflowRunner:
             - Posts a final JobUpdate message with results or error information.
         """
         log.info(f"Starting workflow execution for job_id: {self.job_id}")
+        log.debug("Run parameters: params=%s messages=%s", req.params, req.messages)
 
         Environment.load_settings()
 
@@ -278,6 +288,7 @@ class WorkflowRunner:
 
         # Load node instances using the context
         loaded_node_instances = context.load_nodes(req.graph.nodes)
+        log.debug("Loaded %d node instances", len(loaded_node_instances))
 
         # Create the internal Graph object with these loaded instances
         graph = Graph(
@@ -286,6 +297,7 @@ class WorkflowRunner:
         )
         context.graph = graph
         self._initialize_edge_queues(graph)
+        log.debug("Edge queues after initialization: %s", self.edge_queues)
         self.context = context
         context.device = self.device
 
@@ -367,6 +379,7 @@ class WorkflowRunner:
                 log.info(
                     f"Cleared active_generators for job {self.job_id} in finally block"
                 )
+                log.debug("Final edge queue state: %s", self.edge_queues)
 
             # This part is reached ONLY IF no exception propagated from the try-except block.
             # If an exception was raised and re-thrown by the 'except' block, execution does not reach here.
@@ -394,6 +407,7 @@ class WorkflowRunner:
         log.info(
             f"WorkflowRunner.run for job_id: {self.job_id} method ending with status: {self.status}"
         )
+        log.debug("Workflow outputs: %s", self.outputs)
 
     async def validate_graph(self, context: ProcessingContext, graph: Graph):
         """
@@ -410,10 +424,12 @@ class WorkflowRunner:
             ValueError: If the graph contains validation errors. The error message will
                         summarize the issues found.
         """
+        log.debug("Validating graph with %d nodes", len(graph.nodes))
         is_valid = True
 
         for node in graph.nodes:
             input_edges = [edge for edge in graph.edges if edge.target == node.id]
+            log.debug("Validating node %s", node.get_title())
             errors = node.validate(input_edges)
             if len(errors) > 0:
                 is_valid = False
@@ -427,7 +443,9 @@ class WorkflowRunner:
                         )
                     )
         if not is_valid:
+            log.debug("Graph validation failed")
             raise ValueError("Graph contains errors: " + "\n".join(errors))
+        log.debug("Graph validation successful")
 
     async def initialize_graph(self, context: ProcessingContext, graph: Graph):
         """
@@ -446,6 +464,7 @@ class WorkflowRunner:
                        logged, reported via a `NodeUpdate`, and then re-raised to halt
                        graph processing.
         """
+        log.debug("Initializing graph with %d nodes", len(graph.nodes))
         for node in graph.nodes:
             try:
                 log.debug(f"Initializing node: {node.get_title()} ({node.id})")
@@ -463,6 +482,7 @@ class WorkflowRunner:
                     )
                 )
                 raise
+        log.debug("Graph initialization completed")
 
     def send_messages(
         self, node: BaseNode, result: dict[str, Any], context: ProcessingContext
@@ -506,6 +526,7 @@ class WorkflowRunner:
                     f"Sent message from {node.get_title()} ({node.id}) output '{key}' "
                     f"to {edge.target} input '{edge.targetHandle}' via edge_queue. Value: {str(value_to_send)[:50]}"
                 )
+        log.debug("Edge queue state after sending messages: %s", self.edge_queues)
 
     async def _process_trigger_nodes(
         self,
@@ -528,6 +549,7 @@ class WorkflowRunner:
                        re-raised after logging and posting error messages.
                        The job status is also set to "error".
         """
+        log.debug("Processing trigger nodes")
         initial_processing_tasks = []
         initial_nodes_for_tasks = []
 
@@ -563,6 +585,7 @@ class WorkflowRunner:
                         )
                     )
                     raise result_or_exc
+        log.debug("Trigger node processing complete")
 
     def _get_ready_nodes_and_prepare_tasks(
         self,
@@ -599,6 +622,7 @@ class WorkflowRunner:
                 - `any_progress_potential`: Boolean indicating if any node was scheduled
                                           (either an active generator or a node with inputs).
         """
+        log.debug("Scanning graph for ready nodes")
         tasks_to_run_this_iteration = []
         ready_node_task_details_list: list[tuple[BaseNode, dict[str, Any]]] = []
         any_progress_potential = False
@@ -804,6 +828,7 @@ class WorkflowRunner:
             self.active_processing_node_ids.add(node._id)
             any_progress_potential = True
 
+        log.debug("Found %d ready nodes", len(ready_node_task_details_list))
         return (
             ready_node_task_details_list,
             tasks_to_run_this_iteration,
@@ -842,6 +867,7 @@ class WorkflowRunner:
             bool: True if any tasks were dispatched and processed (i.e., `tasks_to_run` was not empty),
                   False otherwise.
         """
+        log.debug("Executing node batch of size %d", len(tasks_to_run))
         if not tasks_to_run:
             return False
 
@@ -870,6 +896,7 @@ class WorkflowRunner:
                 )
                 raise results[i]  # Propagate the error to halt graph processing
 
+        log.debug("Batch execution completed. Success=%s", executed_something)
         return executed_something
 
     def _check_loop_termination_conditions(
@@ -933,6 +960,9 @@ class WorkflowRunner:
             parent_id (str | None): Optional ID of a parent group node, used primarily for
                                     contextual logging if this is a subgraph execution.
         """
+        log.debug(
+            "Starting main processing loop for graph with %d nodes", len(graph.nodes)
+        )
         iterations_without_progress = 0
         # Heuristic limit: N*3 (3 passes per node for complex message patterns) + buffer
         max_iterations_limit = len(graph.nodes) * 3 + 10
@@ -977,6 +1007,8 @@ class WorkflowRunner:
             ):
                 break
 
+        log.debug("Main processing loop complete")
+
     async def process_graph(
         self, context: ProcessingContext, graph: Graph, parent_id: str | None = None
     ):
@@ -1002,6 +1034,11 @@ class WorkflowRunner:
                                     logging and contextual information.
         """
         log.info(f"Processing graph (parent_id: {parent_id})")
+        log.debug(
+            "Graph has %d nodes and %d edges",
+            len(graph.nodes),
+            len(graph.edges),
+        )
 
         await self._process_trigger_nodes(context, graph)
 
@@ -1009,6 +1046,7 @@ class WorkflowRunner:
         # This loop handles message passing and sequential/parallel execution of nodes
         # based on their dependencies.
         await self._main_processing_loop(context, graph, parent_id)
+        log.debug("Graph processing finished for parent_id: %s", parent_id)
 
     async def _init_streaming_node(
         self,

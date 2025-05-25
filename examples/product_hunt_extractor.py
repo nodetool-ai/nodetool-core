@@ -111,7 +111,7 @@ async def test_product_hunt_ai_extractor_agent(
 
     print(ai_product_extractor_agent.get_results())
 
-    print(f"\n\n--- Agent execution finished ---")
+    print("\n\n--- Agent execution finished ---")
     print(
         f"Workspace Directory for any artifacts (logs, intermediate files): {context.workspace_dir}"
     )

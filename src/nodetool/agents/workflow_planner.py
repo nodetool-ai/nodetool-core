@@ -804,9 +804,6 @@ class WorkflowPlanner:
         - Select a complete set of nodes that together can accomplish the objective
         """
 
-        # Include all available node types in the prompt
-        all_node_types = self._get_available_node_types_list()
-
         agent_prompt = f"""
         Objective: {self.objective}
         
@@ -1585,7 +1582,7 @@ class WorkflowPlanner:
                 if nx.nx_agraph.graphviz_layout
                 else nx.spring_layout(G)
             )
-        except:
+        except Exception:
             # Fall back to spring layout if graphviz is not available
             pos = nx.spring_layout(G, seed=42)
 

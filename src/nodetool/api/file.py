@@ -1,9 +1,8 @@
 #!/usr/bin/env python
 
 import os
-import asyncio
 from datetime import datetime, timezone
-from typing import List, Optional
+from typing import List
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel

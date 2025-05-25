@@ -16,9 +16,8 @@ This example shows how to:
 """
 
 import asyncio
-import os
 from nodetool.agents.agent import Agent
-from nodetool.agents.tools.git_tools import GitStatusTool, GitCommitTool, GitDiffTool
+from nodetool.agents.tools.git_tools import GitCommitTool, GitDiffTool
 from nodetool.chat.providers.base import ChatProvider
 from nodetool.chat.providers.openai_provider import OpenAIProvider
 from nodetool.workflows.processing_context import ProcessingContext

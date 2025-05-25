@@ -1,3 +1,22 @@
+#!/usr/bin/env python3
+"""
+Instagram Trends Analysis Task
+
+This script demonstrates using the SubTaskContext to analyze Instagram trends,
+viral content, and emerging patterns. It uses search and browser tools to gather
+comprehensive data about current Instagram trends, including hashtags, content themes,
+and engagement patterns.
+
+The task outputs structured JSON data that can be used for:
+- Content strategy planning
+- Social media marketing insights
+- Trend analysis and reporting
+- Competitive intelligence
+
+Usage:
+    python instagram_scraper_task.py
+"""
+
 import asyncio
 from nodetool.chat.providers import get_provider
 from nodetool.agents.tools import BrowserTool, GoogleSearchTool

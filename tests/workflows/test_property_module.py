@@ -1,4 +1,3 @@
-import json
 from pydantic import Field
 from nodetool.workflows.property import Property
 from nodetool.metadata.type_metadata import TypeMetadata

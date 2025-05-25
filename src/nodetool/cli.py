@@ -15,7 +15,6 @@ from rich.table import Table
 from rich.panel import Panel
 from rich.text import Text
 
-from nodetool.common.settings import get_log_path
 
 # Create console instance
 console = Console()
@@ -76,7 +75,7 @@ def serve(
         Environment.set_worker_url(worker_url)
 
     if Environment.is_production():
-        Environment.set_nodetool_api_url(f"https://api.nodetool.ai")
+        Environment.set_nodetool_api_url("https://api.nodetool.ai")
     else:
         Environment.set_nodetool_api_url(f"http://127.0.0.1:{port}")
 
@@ -269,6 +268,7 @@ def edit_settings(secrets: bool = False):
         SETTINGS_FILE,
         SECRETS_FILE,
     )
+    from nodetool.common.settings import SETTINGS_FILE, SECRETS_FILE
     import subprocess
     import yaml
     import os
@@ -437,7 +437,7 @@ readme = "README.md"
 authors = ["{author}"]
 packages = [{{ include = "nodetool", from = "src" }}]
 package-mode = true
-include = ["src/nodetool/package-metadata/{name}.json"]
+include = []
 
 [tool.poetry.dependencies]
 python = "{python_version}"
@@ -524,7 +524,7 @@ def docs(output_dir: str, compact: bool, verbose: bool):
             click.echo("Error: No repository found in pyproject.toml", err=True)
             sys.exit(1)
 
-        owner = repository.split("/")[-2]
+        repository.split("/")[-2]
 
         # Discover node classes by scanning the directory
         node_classes = []

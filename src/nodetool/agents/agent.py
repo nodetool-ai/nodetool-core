@@ -353,7 +353,7 @@ class Agent(BaseAgent):
 
         self.display_manager.print(self.provider.usage)
 
-    def get_results(self) -> List[Any]:
+    def get_results(self) -> Any:
         """
         Get the results produced by this agent.
         If a final result exists from finish_task, return that.

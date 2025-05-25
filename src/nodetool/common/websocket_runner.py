@@ -4,7 +4,7 @@ import json
 import uuid
 from fastapi.websockets import WebSocketState
 import msgpack
-from typing import Any, AsyncGenerator, Callable
+from typing import AsyncGenerator
 from pydantic import BaseModel
 from fastapi import WebSocket, WebSocketDisconnect
 from nodetool.common.environment import Environment
@@ -86,6 +86,8 @@ async def process_message(context: ProcessingContext, explicit_types: bool = Fal
         if explicit_types and "result" in msg_dict:
             msg_dict["result"] = wrap_primitive_types(msg_dict["result"])
 
+        log.debug(f"Processing workflow message: {msg_dict.get('type', msg_dict)}")
+
         yield msg_dict
 
 
@@ -106,6 +108,7 @@ async def process_workflow_messages(
         explicit_types (bool): Whether to wrap primitive types in explicit types
     """
     try:
+        log.debug("Starting workflow message processing")
         while runner.is_running():
             if context.has_messages():
                 async for msg in process_message(context, explicit_types):
@@ -118,6 +121,7 @@ async def process_workflow_messages(
             async for msg in process_message(context, explicit_types):
                 yield msg
 
+        log.debug("Finished processing workflow messages")
     except Exception as e:
         log.exception(e)
         raise
@@ -188,12 +192,14 @@ class WebSocketRunner:
         await websocket.accept()
         self.websocket = websocket
         log.info("WebSocket connection established")
+        log.debug(f"Client connected: {websocket.client}")
 
     async def disconnect(self):
         """
         Closes the WebSocket connection and cancels any active job.
         """
         log.info("WebSocketRunner: Disconnecting")
+        log.debug(f"Active event loop: {self.event_loop is not None}")
         if self.event_loop:
             try:
                 self.event_loop.stop()
@@ -214,12 +220,15 @@ class WebSocketRunner:
         self.websocket = None
         self.event_loop = None
         self.job_id = None
+        log.debug("WebSocket connection and resources cleared")
         log.info("WebSocketRunner: Disconnected and resources cleaned up")
 
     async def run_job(self, req: RunJobRequest):
         try:
             if not self.websocket:
                 raise ValueError("WebSocket is not connected")
+
+            log.debug(f"Run job request: {req.model_dump(exclude={'graph'})}")
 
             self.job_id = uuid.uuid4().hex
             self.runner = WorkflowRunner(job_id=self.job_id)
@@ -233,7 +242,9 @@ class WebSocketRunner:
                     endpoint_url=self.websocket.url,
                     encode_assets_as_base64=self.mode == WebSocketMode.TEXT,
                 )
+                log.debug("Processing context created")
             self.event_loop = ThreadedEventLoop()
+            log.debug("Threaded event loop started")
 
             with self.event_loop as tel:
                 run_future = tel.run_coroutine(
@@ -257,6 +268,8 @@ class WebSocketRunner:
                 except Exception as e:
                     log.error(f"An error occurred during workflow execution: {e}")
                     await self.send_job_update("failed", str(e))
+                else:
+                    log.debug("Workflow execution completed")
 
         except Exception as e:
             log.exception(f"Error in job {self.job_id}: {e}")
@@ -265,6 +278,7 @@ class WebSocketRunner:
         self.active_job = None
         self.job_id = None
         log.info(f"Job {self.job_id} resources cleaned up")
+        log.debug("Event loop closed")
 
     async def send_message(self, message: dict):
         """Send a message using the current mode."""
@@ -287,6 +301,7 @@ class WebSocketRunner:
             "error": error,
             "job_id": self.job_id,
         }
+        log.debug(f"Sending job update: {msg}")
         await self.send_message(msg)
 
     async def cancel_job(self):
@@ -301,6 +316,7 @@ class WebSocketRunner:
             if self.event_loop:
                 self.event_loop.stop()
                 log.info(f"Cancelled event loop for job: {self.job_id}")
+            log.debug("Job cancellation event loop stopped")
 
             await self.send_job_update("cancelled")
             self.event_loop = None
@@ -354,6 +370,7 @@ class WebSocketRunner:
             log.info(f"Starting workflow: {req.workflow_id}")
             self.active_job = req
             asyncio.create_task(self.run_job(req))
+            log.debug("Run job command scheduled")
             return {"message": "Job started"}
         elif command.command == CommandType.CANCEL_JOB:
             return await self.cancel_job()
@@ -379,6 +396,7 @@ class WebSocketRunner:
         """
         try:
             await self.connect(websocket)
+            log.debug("WebSocketRunner loop started")
             while True:
                 assert self.websocket, "WebSocket is not connected"
                 try:
@@ -399,6 +417,7 @@ class WebSocketRunner:
                     command = WebSocketCommand(**data)
                     response = await self.handle_command(command)
                     await self.send_message(response)
+                    log.debug(f"Handled command {command.command}")
                 except WebSocketDisconnect:
                     log.info("WebSocket disconnected")
                     break
@@ -407,3 +426,4 @@ class WebSocketRunner:
             log.exception(e)
         finally:
             await self.disconnect()
+            log.debug("WebSocketRunner loop finished")

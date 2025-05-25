@@ -1,6 +1,5 @@
 import pytest
-import os
-from nodetool.workflows.base_node import BaseNode, InputNode, OutputNode, type_metadata
+from nodetool.workflows.base_node import BaseNode, InputNode, OutputNode
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.workflow_node import WorkflowNode
 

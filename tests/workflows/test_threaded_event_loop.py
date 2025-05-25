@@ -1,6 +1,7 @@
 import asyncio
 from nodetool.workflows.threaded_event_loop import ThreadedEventLoop
 
+
 async def add_one(x: int) -> int:
     await asyncio.sleep(0)
     return x + 1

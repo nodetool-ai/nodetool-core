@@ -1,5 +1,4 @@
 import json
-import os
 from typing import AsyncGenerator
 from nodetool.common.environment import Environment
 from nodetool.metadata.types import LlamaModel

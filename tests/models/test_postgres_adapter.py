@@ -1,10 +1,10 @@
 import pytest
 from datetime import datetime
 from enum import Enum
-from pydantic import BaseModel
 from typing import Dict, List, Optional
 from unittest.mock import MagicMock, patch
-from nodetool.models.condition_builder import ConditionBuilder, Field
+from psycopg2.extras import Json
+from nodetool.models.condition_builder import Field
 from nodetool.models.postgres_adapter import (
     PostgresAdapter,
     convert_to_postgres_format,
@@ -157,10 +157,6 @@ def test_query(mock_db_adapter):
     )  # Youngest person should be 30
     assert max(result["age"] for result in results) == 33  # Oldest person should be 33
     assert last_key == ""
-
-
-import json
-from psycopg2.extras import Json
 
 
 def test_convert_to_postgres_format():

@@ -15,9 +15,7 @@ def test_show_settings(monkeypatch):
     def fake_load_settings():
         return {"FONT_PATH": "/fonts"}, {}
 
-    monkeypatch.setattr(
-        "nodetool.common.settings.load_settings", fake_load_settings
-    )
+    monkeypatch.setattr("nodetool.common.settings.load_settings", fake_load_settings)
     runner = CliRunner()
     result = runner.invoke(cli, ["settings", "show"])
     assert result.exit_code == 0
@@ -29,9 +27,7 @@ def test_show_secrets_mask(monkeypatch):
     def fake_load_settings():
         return {}, {"OPENAI_API_KEY": "secret"}
 
-    monkeypatch.setattr(
-        "nodetool.common.settings.load_settings", fake_load_settings
-    )
+    monkeypatch.setattr("nodetool.common.settings.load_settings", fake_load_settings)
     runner = CliRunner()
     result = runner.invoke(cli, ["settings", "show", "--secrets", "--mask"])
     assert result.exit_code == 0
@@ -55,9 +51,7 @@ def test_package_list(monkeypatch):
         def list_installed_packages(self):
             return [dummy_package]
 
-    monkeypatch.setattr(
-        "nodetool.packages.registry.Registry", DummyRegistry
-    )
+    monkeypatch.setattr("nodetool.packages.registry.Registry", DummyRegistry)
     runner = CliRunner()
     result = runner.invoke(cli, ["package", "list"])
     assert result.exit_code == 0

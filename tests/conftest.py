@@ -1,5 +1,4 @@
 import asyncio
-import os
 from typing import Any
 from unittest.mock import Mock
 from pydantic import Field
@@ -19,11 +18,9 @@ from nodetool.models.schema import create_all_tables, drop_all_tables
 import PIL.ImageChops
 from nodetool.workflows.base_node import BaseNode, InputNode
 from nodetool.workflows.processing_context import ProcessingContext
-from datetime import datetime, timedelta
 import io
 import uuid
 import PIL.Image
-from nodetool.common.environment import DEFAULT_ENV
 
 
 @pytest.fixture(autouse=True, scope="function")

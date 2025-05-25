@@ -1,14 +1,13 @@
-import asyncio
 from chunk import Chunk
 from collections.abc import Sequence
 from datetime import datetime
 from enum import Enum
 import imaplib
+from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 from playwright.async_api import async_playwright, Browser
 import io
 import json
-import multiprocessing
 import os
 import queue
 import urllib.parse
@@ -21,6 +20,9 @@ import numpy as np
 import pandas as pd
 from pydub import AudioSegment
 from starlette.datastructures import URL
+
+if TYPE_CHECKING:
+    from sklearn.base import BaseEstimator
 
 from huggingface_hub.file_download import try_to_load_from_cache
 from nodetool.metadata.type_metadata import TypeMetadata
@@ -39,8 +41,6 @@ from nodetool.types.workflow import Workflow
 from nodetool.chat.workspace_manager import WorkspaceManager
 from nodetool.common.nodetool_api_client import NodetoolAPIClient
 from nodetool.metadata.types import (
-    ComfyModel,
-    IMAPConnection,
     Message,
     Provider,
     ToolCall,
@@ -66,13 +66,11 @@ from nodetool.metadata.types import (
 from nodetool.common.environment import Environment
 from nodetool.workflows.base_node import BaseNode
 from nodetool.workflows.property import Property
-from nodetool.metadata.types import ImageRef
-from nodetool.common.environment import Environment
 from nodetool.common.chroma_client import get_chroma_client
 
 
 from io import BytesIO
-from typing import IO, Any, AsyncGenerator, Literal, Union, Callable
+from typing import IO, Any, AsyncGenerator, Union, Callable
 from chromadb.api import ClientAPI
 from pickle import dumps, loads
 import platform
@@ -402,7 +400,7 @@ class ProcessingContext:
         Lists assets.
         """
         res = await self.api_client.get(
-            f"api/assets/",
+            "api/assets/",
             params={
                 "parent_id": parent_id,
                 "recursive": recursive,
@@ -2119,7 +2117,7 @@ class ProcessingContext:
         Returns:
             A Playwright browser instance.
         """
-        from urllib.parse import urlparse, urlunparse, parse_qs, urlencode
+        from urllib.parse import urlunparse, parse_qs, urlencode
 
         if getattr(self, "_browser", None):
             return self._browser  # type: ignore

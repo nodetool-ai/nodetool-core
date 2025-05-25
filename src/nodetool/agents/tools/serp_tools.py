@@ -1,8 +1,6 @@
 import json
-import os
 from typing import Any, List, Dict, Optional, Union, TypeVar
 import base64
-from datetime import datetime
 import time
 
 from nodetool.agents.tools.base import Tool
@@ -1498,15 +1496,9 @@ class SerpApiProvider(SerpProvider):
                 tbs_parts.insert(0, "mr:1")
 
         if condition:
-            condition_map = {
-                "new": "c",
-                "used": "u",
-                "refurbished": "r",
-            }  # Example mapping
             # SerpApi docs also mention tbs=condition:new directly
             # Let's use the direct approach first if it aligns with their tbs builder. Example: &tbs=condition:new
             # For now, I will use condition directly, as SerpApi might handle it.
-            # Or, more robustly for tbs: tbs_parts.append(f"condition:{condition_map.get(condition.lower())}")
             # Based on https://serpapi.com/google-shopping-filters, &tbs=p_cond:new or &tbs=p_cond:used
             # Let's go with p_cond for now as it seems more specific for shopping products.
             if condition.lower() == "new":

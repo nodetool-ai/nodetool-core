@@ -5,8 +5,7 @@ This module includes the fundamental Tool class that all tools inherit from,
 and utility functions used by multiple tools.
 """
 
-from typing import Any, Dict, Optional, Type, Dict, cast
-import os
+from typing import Any, Optional, Type, Dict
 import logging
 from nodetool.workflows.processing_context import ProcessingContext
 

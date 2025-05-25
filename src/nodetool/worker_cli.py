@@ -18,7 +18,6 @@ import os
 
 from nodetool.api.model import RepoPath
 from nodetool.common.huggingface_models import CachedModel
-from nodetool.common.worker_api_client import WorkerAPIClient
 from nodetool.metadata.types import HuggingFaceModel
 
 WORKER_URL = os.getenv("WORKER_URL", "http://localhost:5000")

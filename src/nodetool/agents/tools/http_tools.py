@@ -60,7 +60,6 @@ class DownloadFileTool(Tool):
             timeout = params.get("timeout", 60)
 
             # Create a semaphore to limit concurrent downloads
-            import asyncio
 
             # Ensure the directory exists
             full_path = context.resolve_workspace_path(output_file)

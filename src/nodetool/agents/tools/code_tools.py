@@ -57,7 +57,7 @@ class ExecutePythonTool(Tool):
 
     def user_message(self, params: dict):
         code = params.get("code")
-        msg = f"Executing Python code..."
+        msg = "Executing Python code..."
         if code and len(code) < 50:
             msg = f"Executing Python: '{code[:40]}...'"
         return msg

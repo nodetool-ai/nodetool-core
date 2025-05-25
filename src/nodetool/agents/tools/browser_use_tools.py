@@ -72,7 +72,7 @@ class BrowserUseTool(Tool):
         task = params.get("task", "a browser task")
         msg = f"Running browser agent for task: '{task}'..."
         if len(msg) > 80:
-            msg = f"Running browser agent..."
+            msg = "Running browser agent..."
         return msg
 
     async def process(self, context: ProcessingContext, params: dict) -> Any:

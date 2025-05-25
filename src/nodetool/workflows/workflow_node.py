@@ -1,19 +1,13 @@
-from nodetool.metadata.types import OutputSlot
-from nodetool.types.job import JobUpdate
-from nodetool.workflows.base_node import BaseNode, type_metadata
-from nodetool.workflows.property import Property
+from nodetool.workflows.base_node import BaseNode
 from nodetool.workflows.read_graph import read_graph
 from nodetool.types.graph import Graph as APIGraph
-import json
 from nodetool.workflows.run_workflow import run_workflow
 from nodetool.workflows.run_job_request import RunJobRequest
-from nodetool.common.environment import Environment
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.workflows.base_node import InputNode, OutputNode
 from nodetool.workflows.graph import Graph
-from typing import Any, Type
+from typing import Any
 
-from nodetool.workflows.types import Chunk, Error, NodeProgress, NodeUpdate
+from nodetool.workflows.types import Chunk, NodeProgress
 
 
 class WorkflowNode(BaseNode):
@@ -44,8 +38,6 @@ class WorkflowNode(BaseNode):
         return APIGraph(edges=edges, nodes=nodes)
 
     async def process(self, context: ProcessingContext) -> dict[str, Any]:
-        logs = ""
-
         req = RunJobRequest(
             user_id=context.user_id,
             auth_token=context.auth_token,

@@ -1,8 +1,5 @@
 from typing import List
-from pydantic import Field
 from nodetool.common.convert_html import convert_html_to_text
-from nodetool.workflows.base_node import BaseNode
-from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.metadata.types import Datetime, Email, IMAPConnection, EmailSearchCriteria
 import imaplib
 import email

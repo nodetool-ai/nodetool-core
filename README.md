@@ -146,6 +146,20 @@ if __name__ == "__main__":
 
 More examples can be found in the [examples](./examples) directory.
 
+### Coding Agent Example
+
+Run the advanced coding agent directly on your machine:
+
+```bash
+python examples/test_coding_agent.py
+```
+
+To execute the agent inside a container, pass a Docker image:
+
+```bash
+python examples/test_coding_agent.py --docker-image nodetool
+```
+
 ## 🏗️ Architecture
 
 NodeTool's architecture is designed to be flexible and extensible.

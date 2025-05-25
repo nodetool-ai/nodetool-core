@@ -14,7 +14,6 @@ This example shows how to:
 
 import asyncio
 import json
-import os  # Import os for environment variables if needed directly
 
 from nodetool.agents.tools import (
     GoogleSearchTool,
@@ -59,6 +58,20 @@ async def generate_learning_path(provider: ChatProvider, model: str, topic: str)
         "type": "object",
         "properties": {
             "topic": {"type": "string", "description": "The learning topic."},
+            "overview": {
+                "type": "string",
+                "description": "A brief overview (2-3 sentences) of what the learner will achieve after completing this learning path.",
+            },
+            "estimated_total_time": {
+                "type": "string",
+                "description": "Total estimated time to complete the entire learning path (e.g., '4-6 weeks', '40-60 hours')",
+            },
+            "prerequisites": {
+                "type": "array",
+                "description": "List of prerequisites or recommended background knowledge",
+                "items": {"type": "string"},
+                "minItems": 0,
+            },
             "learning_path": {
                 "type": "array",
                 "description": "An array of modules or steps in the learning path.",
@@ -71,11 +84,18 @@ async def generate_learning_path(provider: ChatProvider, model: str, topic: str)
                         },
                         "title": {
                             "type": "string",
-                            "description": "Concise title for the learning module/step.",
+                            "description": "Clear, descriptive title for the learning module.",
                         },
                         "description": {
                             "type": "string",
-                            "description": "Detailed description of what to learn in this module.",
+                            "description": "Comprehensive description (100-200 words) of what to learn in this module.",
+                        },
+                        "learning_objectives": {
+                            "type": "array",
+                            "description": "Specific learning objectives for this module",
+                            "items": {"type": "string"},
+                            "minItems": 2,
+                            "maxItems": 5,
                         },
                         "resources": {
                             "type": "array",
@@ -83,8 +103,15 @@ async def generate_learning_path(provider: ChatProvider, model: str, topic: str)
                             "items": {
                                 "type": "object",
                                 "properties": {
-                                    "resource_title": {"type": "string"},
-                                    "link": {"type": "string", "format": "uri"},
+                                    "resource_title": {
+                                        "type": "string",
+                                        "description": "Clear, descriptive title of the resource",
+                                    },
+                                    "link": {
+                                        "type": "string",
+                                        "format": "uri",
+                                        "description": "Direct URL to the resource",
+                                    },
                                     "type": {
                                         "type": "string",
                                         "enum": [
@@ -96,19 +123,64 @@ async def generate_learning_path(provider: ChatProvider, model: str, topic: str)
                                             "documentation",
                                             "other",
                                         ],
+                                        "description": "Type of learning resource",
+                                    },
+                                    "description": {
+                                        "type": "string",
+                                        "description": "Brief description (1-2 sentences) of what this resource covers and why it's valuable for this module",
+                                    },
+                                    "difficulty": {
+                                        "type": "string",
+                                        "enum": [
+                                            "beginner",
+                                            "intermediate",
+                                            "advanced",
+                                        ],
+                                        "description": "Difficulty level of the resource",
+                                    },
+                                    "estimated_time": {
+                                        "type": "string",
+                                        "description": "Estimated time to complete (e.g., '30 minutes', '2 hours', '1 week')",
                                     },
                                 },
-                                "required": ["resource_title", "link", "type"],
+                                "required": [
+                                    "resource_title",
+                                    "link",
+                                    "type",
+                                    "description",
+                                ],
                             },
-                            # Allow steps with no specific resources found
-                            "minItems": 0,
+                            "minItems": 2,
+                            "maxItems": 4,
+                        },
+                        "practice_exercises": {
+                            "type": "array",
+                            "description": "Suggested practice exercises or mini-projects for this module",
+                            "items": {"type": "string"},
+                            "minItems": 1,
+                            "maxItems": 3,
                         },
                     },
-                    "required": ["module_number", "title", "description", "resources"],
+                    "required": [
+                        "module_number",
+                        "title",
+                        "description",
+                        "learning_objectives",
+                        "resources",
+                        "practice_exercises",
+                    ],
                 },
+                "minItems": 5,
+                "maxItems": 8,
             },
         },
-        "required": ["topic", "learning_path"],
+        "required": [
+            "topic",
+            "overview",
+            "estimated_total_time",
+            "prerequisites",
+            "learning_path",
+        ],
     }
 
     # Configure the agent
@@ -117,11 +189,46 @@ async def generate_learning_path(provider: ChatProvider, model: str, topic: str)
         enable_analysis_phase=True,  # Analysis helps break down the topic
         enable_data_contracts_phase=True,  # Enforce the structured output
         objective=f"""
-        Generate a structured, step-by-step learning path for the topic: '{topic}'.
-        1. Break the topic down into logical modules or learning steps, ordered sequentially.
-        2. For each module, provide a clear title and a detailed description of the concepts to cover.
-        3. For each module, use the GoogleSearchTool to find 1-3 relevant and high-quality online learning resources (like articles, tutorials, videos, documentation). Include the resource title, a valid URL link, and the type of resource (article, video, etc.). Prioritize official documentation or well-regarded educational platforms if possible.
-        4. Ensure the final output strictly adheres to the provided JSON schema.
+        Create a comprehensive, structured learning path for mastering '{topic}'. 
+
+        Your task is to design a progressive curriculum that takes a learner from beginner to proficient level. Follow these guidelines:
+
+        1. **Topic Analysis**: First, thoroughly research '{topic}' using GoogleSearchTool to understand:
+           - Core concepts and prerequisites
+           - Common learning progressions
+           - Industry best practices and standards
+           - Typical challenges learners face
+
+        2. **Learning Path Structure**: Design 5-8 sequential modules that:
+           - Start with foundational concepts (no prior knowledge assumed)
+           - Build progressively in complexity
+           - Include practical, hands-on components
+           - Cover both theoretical understanding and practical application
+           - End with advanced topics or real-world project ideas
+
+        3. **Module Design**: For each module, provide:
+           - A clear, descriptive title (not just "Module 1")
+           - A comprehensive description (100-200 words) explaining:
+             * What concepts will be covered
+             * Why this module is important
+             * What the learner will be able to do after completing it
+             * Any prerequisites from previous modules
+
+        4. **Resource Curation**: For each module, use GoogleSearchTool and BrowserTool to find 2-4 high-quality resources:
+           - Prioritize: official documentation, reputable educational platforms (Coursera, edX, freeCodeCamp), well-known tech blogs, and video tutorials
+           - Verify links are accessible and content matches the module's objectives
+           - Include a mix of resource types (articles for theory, videos for visual learning, tutorials for hands-on practice)
+           - Focus on free or freely accessible resources when possible
+
+        5. **Quality Standards**:
+           - Ensure logical flow between modules
+           - Balance theory with practical application
+           - Include both quick wins (early modules) and challenging content (later modules)
+           - Consider different learning styles (visual, textual, hands-on)
+
+        6. **Output Requirements**: Structure your response according to the provided JSON schema, ensuring all required fields are populated with meaningful, detailed content.
+
+        Remember: You're creating a learning roadmap that someone could follow independently to gain real competency in '{topic}'.
         """,
         provider=provider,
         model=model,
@@ -139,7 +246,7 @@ async def generate_learning_path(provider: ChatProvider, model: str, topic: str)
             print(item.content, end="", flush=True)
 
     print("\n" + "-" * 30)
-    print(f"=== Agent Execution Complete ===")
+    print("=== Agent Execution Complete ===")
     print(f"Workspace: {context.workspace_dir}")
 
     # Display the final structured results

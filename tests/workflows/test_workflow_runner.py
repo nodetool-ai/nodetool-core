@@ -1,12 +1,9 @@
 from collections import deque
-import PIL.Image
-import PIL.ImageChops
 import pytest
 from nodetool.metadata.types import ImageRef
 from nodetool.types.graph import Node, Edge
 from nodetool.types.job import JobUpdate
 from nodetool.workflows.base_node import BaseNode, InputNode, OutputNode
-from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.workflow_runner import WorkflowRunner
@@ -298,7 +295,6 @@ async def test_initialize_node_error(workflow_runner: WorkflowRunner):
         messages.append(await context.pop_message_async())
 
     node_updates = [m for m in messages if isinstance(m, NodeUpdate)]
-    job_updates = [m for m in messages if isinstance(m, JobUpdate)]
 
     assert any(
         update.node_id == "1" and update.status == "error" and "Node initialization error" in update.error  # type: ignore

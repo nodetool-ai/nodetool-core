@@ -15,9 +15,8 @@ from nodetool.models.condition_builder import (
 )
 from contextlib import contextmanager
 from .database_adapter import DatabaseAdapter
-from typing import Any, Type, Union, get_origin, get_args
+from typing import Type, Union, get_origin
 from psycopg2.extras import Json
-from psycopg2.extras import RealDictCursor
 from psycopg2.sql import SQL, Identifier, Placeholder, Composed
 from enum import EnumMeta as EnumType
 
@@ -44,7 +43,7 @@ def convert_to_postgres_format(
 
     origin = get_origin(py_type)
     if origin is Union or origin is UnionType:
-        args = [t for t in py_type.__args__ if t != type(None)]
+        args = [t for t in py_type.__args__ if t is not type(None)]
         if len(args) == 1:
             return convert_to_postgres_format(value, args[0])
         else:
@@ -54,7 +53,7 @@ def convert_to_postgres_format(
         return value
     elif py_type in (list, dict, set) or origin in (list, dict, set):
         return Json(value)
-    elif py_type == bytes:
+    elif py_type is bytes:
         return psycopg2.Binary(value)
     elif py_type is Any:
         return Json(value)
@@ -81,7 +80,7 @@ def convert_from_postgres_format(value: Any, py_type: Type | None) -> Any:
 
     origin = get_origin(py_type)
     if origin is Union or origin is UnionType:
-        args = [t for t in py_type.__args__ if t != type(None)]
+        args = [t for t in py_type.__args__ if t is not type(None)]
         if len(args) == 1:
             return convert_from_postgres_format(value, args[0])
         else:
@@ -275,7 +274,7 @@ class PostgresAdapter(DatabaseAdapter):
         """Retrieves the current schema (column names) of the table from the database."""
         with self.connection.cursor() as cursor:
             cursor.execute(
-                f"SELECT column_name FROM information_schema.columns WHERE table_name = %s",
+                "SELECT column_name FROM information_schema.columns WHERE table_name = %s",
                 (self.table_name,),
             )
             current_schema = {row[0] for row in cursor.fetchall()}

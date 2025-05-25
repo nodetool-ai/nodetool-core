@@ -1,4 +1,3 @@
-import json
 from typing import Any
 from pymemcache import Client
 from pymemcache.serde import PickleSerde

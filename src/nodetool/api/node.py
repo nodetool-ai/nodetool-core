@@ -74,7 +74,7 @@ from nodetool.metadata.types import (
     HFZeroShotAudioClassification,
     HFVoiceActivityDetection,
 )
-from nodetool.workflows.base_node import get_node_class, get_registered_node_classes
+from nodetool.workflows.base_node import get_node_class
 from nodetool.common.environment import Environment
 from nodetool.workflows.types import ProcessingMessage
 from nodetool.packages.registry import Registry

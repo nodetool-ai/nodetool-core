@@ -1,4 +1,4 @@
-from enum import Enum, EnumMeta
+from enum import Enum
 import os
 import sys
 import inspect
@@ -7,7 +7,6 @@ from types import GenericAlias, UnionType
 from typing import Any, Union
 import importlib
 import shutil
-import argparse
 import typing
 from pydantic import BaseModel
 import subprocess
@@ -88,13 +87,13 @@ def type_to_string(field_type: type | GenericAlias | UnionType) -> str:
         return str(field_type)
     if isinstance(field_type, GenericAlias):
         args = [type_to_string(arg) for arg in field_type.__args__]
-        if field_type.__origin__ == list:
+        if field_type.__origin__ is list:
             return f"list[{args[0]}]"
-        elif field_type.__origin__ == dict:
+        elif field_type.__origin__ is dict:
             return f"dict[{args[0]}, {args[1]}]"
-        elif field_type.__origin__ == set:
+        elif field_type.__origin__ is set:
             return f"set[{args[0]}]"
-        elif field_type.__origin__ == tuple:
+        elif field_type.__origin__ is tuple:
             return f"tuple[{', '.join(args)}]"
 
     if isinstance(field_type, typing._UnionGenericAlias):  # type: ignore
@@ -154,7 +153,6 @@ def field_default(default_value: Any) -> str:
         args_strs = []
 
         # Introspect fields if it's a Pydantic model
-        fields_iterator = None
         if isinstance(default_value, BaseModel):  # Check if it's a Pydantic BaseModel
             for field_name in default_value.model_fields.keys():
                 value = getattr(default_value, field_name)
@@ -226,7 +224,7 @@ def generate_class_source(node_cls: type[BaseNode]) -> str:
 
     # First, add enum types as class attributes
     for field_name, field_type in node_cls.field_types().items():
-        if not field_name in fields:
+        if field_name not in fields:
             continue
         if is_enum_type(field_type):
             imports += f"import {field_type.__module__}\n"
@@ -235,7 +233,7 @@ def generate_class_source(node_cls: type[BaseNode]) -> str:
     # Then add the fields
     for field_name, field_type in node_cls.field_types().items():
         try:
-            if not field_name in fields:
+            if field_name not in fields:
                 continue
             field = fields[field_name]
             if is_enum_type(field_type):

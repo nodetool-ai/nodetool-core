@@ -1,5 +1,4 @@
 import os
-from pathlib import Path
 
 from nodetool.metadata.node_metadata import PackageModel
 from nodetool.packages.types import AssetInfo
@@ -29,7 +28,13 @@ package-mode = true
         repo_id="owner/demo",
         nodes=[],
         examples=[],
-        assets=[AssetInfo(package_name="demo", name="image.png", path=str(assets_dir / "image.png"))],
+        assets=[
+            AssetInfo(
+                package_name="demo",
+                name="image.png",
+                path=str(assets_dir / "image.png"),
+            )
+        ],
     )
 
     cwd = os.getcwd()
@@ -42,4 +47,3 @@ package-mode = true
     content = pyproject.read_text()
     assert "src/nodetool/package_metadata/demo.json" in content
     assert "src/nodetool/assets/demo/image.png" in content
-

@@ -1,6 +1,3 @@
-from typing import AsyncIterator
-
-
 class AsyncByteStream:
     """
     An asynchronous iterator that iterates over a byte sequence in chunks.

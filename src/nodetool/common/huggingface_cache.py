@@ -22,6 +22,7 @@ Main Components:
 import asyncio
 from dataclasses import dataclass, field
 from fnmatch import fnmatch
+import importlib
 import logging
 import traceback
 from typing import Literal
@@ -277,7 +278,7 @@ class DownloadManager:
                 pass
             except BrokenPipeError:
                 pass
-            except Exception as e:
+            except Exception:
                 import traceback
 
                 traceback.print_exc()
@@ -378,8 +379,6 @@ huggingface_hub.file_download.tqdm = CustomTqdm
 # implementation. Importing the submodule through `importlib` bypasses the alias
 # defined in `huggingface_hub.utils` and gives access to the actual module
 # object.
-import importlib
-
 tqdm_module = importlib.import_module("huggingface_hub.utils.tqdm")
 tqdm_module.tqdm = CustomTqdm
 huggingface_hub.utils.tqdm = CustomTqdm

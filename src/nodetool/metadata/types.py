@@ -1,16 +1,11 @@
 from datetime import date, datetime, timedelta, timezone
 from enum import Enum
 import enum
-from pathlib import Path
 from types import NoneType
 import numpy as np
 from pydantic import BaseModel, Field
-from typing import Any, Literal, Optional, Type, Union, List
-from typing import Literal
+from typing import Any, Literal, Optional, Type, Union
 import base64
-from datetime import datetime
-from typing import Optional, Union
-from pydantic import BaseModel, Field
 import uuid
 
 from nodetool.metadata.type_metadata import TypeMetadata
@@ -114,13 +109,13 @@ class Collection(BaseType):
     name: str = ""
 
 
-
 class Event(BaseType):
     """
     An event is a special object in Nodetool.
     It can be dispatched by a node async.
     Nodes can received events async.
     """
+
     type: Literal["event"] = "event"
     name: str = ""
     payload: dict[str, Any] = {}
@@ -994,6 +989,10 @@ class SubTask(BaseType):
         default=10,
         description="The maximum number of iterations for the subtask",
     )
+    batch_processing: dict[str, Any] | None = Field(
+        default=None,
+        description="Configuration for batch processing of list items. Contains fields like enabled, batch_size, start_index, end_index, total_items",
+    )
     completed: bool = Field(
         default=False, description="Whether the subtask is completed"
     )
@@ -1122,7 +1121,7 @@ class NPArray(BaseType):
 def to_numpy(num: float | int | NPArray) -> np.ndarray:
     if type(num) in (float, int, list):
         return np.array(num)
-    elif type(num) == NPArray:
+    elif type(num) is NPArray:
         return num.to_numpy()
     else:
         raise ValueError()
@@ -1235,7 +1234,7 @@ class SVGRef(AssetRef):
 def is_output_type(type):
     try:
         return issubclass(type, OutputType)
-    except:
+    except Exception:
         return False
 
 

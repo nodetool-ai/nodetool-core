@@ -1,7 +1,6 @@
 import os
 from typing import Any, List
 import dotenv
-import warnings
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -16,7 +15,6 @@ from nodetool.common.chat_websocket_runner import ChatWebSocketRunner
 
 from fastapi import APIRouter, FastAPI, Request, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
-from starlette.middleware.base import BaseHTTPMiddleware
 from uvicorn import run as uvicorn
 
 from nodetool.packages.registry import get_nodetool_package_source_folders

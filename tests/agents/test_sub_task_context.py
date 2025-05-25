@@ -1,8 +1,5 @@
 import os
 import json
-import tempfile
-import yaml
-import pytest
 from nodetool.agents.sub_task_context import (
     _remove_think_tags,
     is_binary_output_type,
@@ -10,7 +7,7 @@ from nodetool.agents.sub_task_context import (
     json_schema_for_output_type,
     SubTaskContext,
 )
-from nodetool.metadata.types import Task, SubTask, Message
+from nodetool.metadata.types import Task, SubTask
 from nodetool.chat.providers.base import MockProvider
 from nodetool.workflows.processing_context import ProcessingContext
 import tiktoken

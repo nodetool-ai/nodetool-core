@@ -13,9 +13,7 @@ import chromadb
 from chromadb.api.types import IncludeEnum
 from nodetool.workflows.processing_context import ProcessingContext
 from .base import Tool
-from pydantic import Field
 from nodetool.metadata.types import TextChunk
-from typing import Literal
 
 
 class ChromaTextSearchTool(Tool):

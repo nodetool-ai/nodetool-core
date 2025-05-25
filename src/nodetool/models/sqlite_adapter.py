@@ -14,7 +14,7 @@ from nodetool.models.condition_builder import (
 )
 
 from .database_adapter import DatabaseAdapter
-from typing import Any, Type, Union, get_origin, get_args
+from typing import Type, Union, get_origin
 import json
 from enum import EnumMeta as EnumType
 from enum import Enum
@@ -39,7 +39,7 @@ def convert_to_sqlite_format(
 
     origin = get_origin(py_type)
     if origin is Union or origin is UnionType:
-        args = [t for t in py_type.__args__ if t != type(None)]
+        args = [t for t in py_type.__args__ if t is not type(None)]
         if len(args) == 1:
             return convert_to_sqlite_format(value, args[0])
         else:
@@ -51,7 +51,7 @@ def convert_to_sqlite_format(
         return json.dumps(list(value))
     elif py_type in (dict, list) or origin in (dict, list):
         return json.dumps(value)
-    elif py_type == bytes:
+    elif py_type is bytes:
         return value
     elif py_type is Any:
         return json.dumps(value)
@@ -79,7 +79,7 @@ def convert_from_sqlite_format(value: Any, py_type: Type) -> Any:
 
     origin = get_origin(py_type)
     if origin is Union or origin is UnionType:
-        args = [t for t in py_type.__args__ if t != type(None)]
+        args = [t for t in py_type.__args__ if t is not type(None)]
         if len(args) == 1:
             return convert_from_sqlite_format(value, args[0])
         else:
@@ -89,11 +89,11 @@ def convert_from_sqlite_format(value: Any, py_type: Type) -> Any:
         return value
     elif py_type is Any:
         return json.loads(value)
-    elif py_type == set or origin == set:
+    elif py_type is set or origin is set:
         return set(json.loads(value))
     elif py_type in (list, dict) or origin in (list, dict):
         return json.loads(value)
-    elif py_type == bytes:
+    elif py_type is bytes:
         return value
     elif py_type is datetime:
         return datetime.fromisoformat(value)
@@ -580,7 +580,7 @@ class SQLiteAdapter(DatabaseAdapter):
             raise e
 
     def list_indexes(self) -> List[Dict[str, Any]]:
-        sql = f"SELECT * FROM sqlite_master WHERE type='index' AND tbl_name=?"
+        sql = "SELECT * FROM sqlite_master WHERE type='index' AND tbl_name=?"
 
         try:
             cursor = self.connection.execute(sql, (self.table_name,))

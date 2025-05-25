@@ -20,22 +20,15 @@ Key components:
 - Interactive CLI with command history and tab completion
 """
 
-import asyncio
-from typing import Any, Sequence
+from typing import Any
 
 import openai
 from pydantic import BaseModel
-from rich.console import Console
 
-from nodetool.agents.tools.base import Tool
 from nodetool.common.environment import Environment
 from nodetool.metadata.types import (
-    Message,
     OpenAIModel,
-    ToolCall,
 )
-from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.workflows.types import Chunk
 
 
 async def get_openai_models():

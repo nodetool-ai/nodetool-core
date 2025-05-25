@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 
 from fastapi.responses import StreamingResponse
-import openai
 from nodetool.common.huggingface_cache import has_cached_files
 from nodetool.common.huggingface_file import (
     HFFileInfo,
@@ -20,15 +19,13 @@ from nodetool.metadata.types import (
 from huggingface_hub import try_to_load_from_cache
 from nodetool.api.utils import current_user
 from fastapi import APIRouter, Depends
-from nodetool.metadata.types import LlamaModel
 from nodetool.common.huggingface_models import (
     CachedModel,
     delete_cached_hf_model,
     read_cached_hf_models,
 )
 from nodetool.workflows.base_node import get_recommended_models
-from pydantic import BaseModel, Field
-from nodetool.common.system_stats import SystemStats, get_system_stats
+from pydantic import BaseModel
 from nodetool.chat.ollama_service import (
     get_ollama_models,
     get_ollama_model_info,

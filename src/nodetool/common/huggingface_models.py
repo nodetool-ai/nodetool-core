@@ -17,7 +17,6 @@ from pydantic import Field
 from huggingface_hub import scan_cache_dir
 from typing import Any, List, Optional
 from pydantic import BaseModel
-import sys
 import os
 import shutil
 from fastapi import FastAPI
@@ -105,7 +104,7 @@ async def fetch_model_info(model_id: str) -> ModelInfo | None:
     async with httpx.AsyncClient() as client:
         try:
             response = await client.get(f"https://huggingface.co/api/models/{model_id}")
-        except httpx.ConnectError as e:
+        except httpx.ConnectError:
             log.info("Huggingface not reachable")
             return None
 

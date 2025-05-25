@@ -44,7 +44,7 @@ from nodetool.agents.agent import Agent
 from nodetool.api.model import get_language_models
 from nodetool.chat.providers import get_provider
 from nodetool.chat.regular_chat import process_regular_chat
-from nodetool.metadata.types import Provider, Message, ToolCall, LanguageModel
+from nodetool.metadata.types import Message, ToolCall, LanguageModel
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.agents.tools import (
     AddLabelTool,
@@ -197,7 +197,7 @@ class ModelsCommand(Command):
 
     async def execute(self, cli: "ChatCLI", args: List[str]) -> bool:
         try:
-            table = Table(title=f"Available Models", show_header=True)
+            table = Table(title="Available Models", show_header=True)
             table.add_column("Provider", style="cyan")
             table.add_column("Model Name", style="cyan")
             table.add_column("Model ID", style="cyan")
@@ -281,11 +281,6 @@ class DebugCommand(Command):
 
         if new_state is not None and new_state != cli.debug_mode:
             cli.debug_mode = new_state
-            status = (
-                "[bold green]ON[/bold green]"
-                if cli.debug_mode
-                else "[bold red]OFF[/bold red]"
-            )
             message = (
                 "Debug mode turned ON - Will display tool calls and results"
                 if cli.debug_mode
@@ -1057,7 +1052,7 @@ class ChatCLI:
                 # Prevent copying directory onto itself or file onto itself
                 if src_path == dest_path:
                     self.console.print(
-                        f"[bold red]Error:[/bold red] Source and destination are the same."
+                        "[bold red]Error:[/bold red] Source and destination are the same."
                     )
                     return
 
@@ -1106,7 +1101,7 @@ class ChatCLI:
                 # Prevent moving onto itself
                 if src_path == dest_path:
                     self.console.print(
-                        f"[bold red]Error:[/bold red] Source and destination are the same."
+                        "[bold red]Error:[/bold red] Source and destination are the same."
                     )
                     return
 

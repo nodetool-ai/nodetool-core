@@ -6,7 +6,7 @@ Includes metadata like name, content type, user association, parent folder (for 
 and optional workflow association.
 """
 
-from typing import Dict, List, Optional, Literal, Sequence
+from typing import Dict, Optional, Literal, Sequence
 from datetime import datetime
 from nodetool.common.content_types import CONTENT_TYPE_TO_EXTENSION
 from nodetool.common.environment import Environment
@@ -17,7 +17,7 @@ from nodetool.models.base_model import (
     create_time_ordered_uuid,
     DBIndex,
 )
-from nodetool.models.condition_builder import ConditionBuilder, Field
+from nodetool.models.condition_builder import Field
 
 log = Environment.get_logger()
 

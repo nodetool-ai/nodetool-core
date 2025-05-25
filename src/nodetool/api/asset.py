@@ -223,13 +223,13 @@ async def get_package_asset(package_name: str, asset_name: str):
         # Return the file with caching headers
         # Package assets are immutable, so we can cache them for a long time
         return FileResponse(
-            path=asset_path, 
-            media_type=content_type, 
+            path=asset_path,
+            media_type=content_type,
             filename=asset_name,
             headers={
                 "Cache-Control": "public, max-age=31536000, immutable",  # 1 year
-                "ETag": f'"{package_name}-{asset_name}"'
-            }
+                "ETag": f'"{package_name}-{asset_name}"',
+            },
         )
     except HTTPException:
         raise
@@ -538,7 +538,7 @@ async def download_assets(
             "Content-Disposition": f"attachment; filename={filename}",
             "Cache-Control": "no-cache, no-store, must-revalidate",  # Don't cache downloads
             "Pragma": "no-cache",
-            "Expires": "0"
+            "Expires": "0",
         },
     )
 

@@ -44,7 +44,6 @@ class GraphNodeConverter:
           BaseNode: The created node instance.
         """
         # make sure all node types are imported
-        import nodetool.nodes
 
         if graph_node.id in self.nodes:
             return self.nodes[graph_node.id]

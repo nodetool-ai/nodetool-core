@@ -2,7 +2,12 @@ import os
 from types import SimpleNamespace
 import pytest
 
-from nodetool.agents.tools.base import Tool, sanitize_node_name, get_tool_by_name, _tool_registry
+from nodetool.agents.tools.base import (
+    Tool,
+    sanitize_node_name,
+    get_tool_by_name,
+    _tool_registry,
+)
 from nodetool.agents.tools.workspace_tools import WriteFileTool, ReadFileTool
 from nodetool.agents.tools.http_tools import DownloadFileTool
 from nodetool.agents.tools.asset_tools import SaveAssetTool, ReadAssetTool
@@ -52,7 +57,10 @@ async def test_write_and_read_file(context: ProcessingContext, monkeypatch):
 class DummyResponse:
     def __init__(self, content=b"data"):
         self.status = 200
-        self.headers = {"Content-Type": "text/plain", "Content-Length": str(len(content))}
+        self.headers = {
+            "Content-Type": "text/plain",
+            "Content-Length": str(len(content)),
+        }
         self._content = content
 
     async def read(self):
@@ -86,7 +94,9 @@ async def test_download_file(monkeypatch, context: ProcessingContext):
     monkeypatch.setattr("aiohttp.ClientSession", lambda: session)
 
     tool = DownloadFileTool()
-    result = await tool.process(context, {"url": "http://example.com/file", "output_file": "file.txt"})
+    result = await tool.process(
+        context, {"url": "http://example.com/file", "output_file": "file.txt"}
+    )
     assert result["success"] is True
     full_path = context.resolve_workspace_path("file.txt")
     with open(full_path, "rb") as f:
@@ -103,11 +113,14 @@ async def test_save_and_read_asset(monkeypatch):
 
     async def find_asset_by_filename(name):
         if name in saved:
-            return SimpleNamespace(id="asset123", file_name=name, content_type="text/plain")
+            return SimpleNamespace(
+                id="asset123", file_name=name, content_type="text/plain"
+            )
         return None
 
     async def download_asset(asset_id):
         from io import BytesIO
+
         return BytesIO(saved["test.txt"])
 
     context = SimpleNamespace(

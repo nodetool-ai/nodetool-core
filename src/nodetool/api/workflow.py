@@ -1,9 +1,7 @@
 #!/usr/bin/env python
 
 from datetime import datetime
-import time
 import traceback
-import uuid
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Header, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
@@ -18,7 +16,7 @@ import base64
 from nodetool.workflows.http_stream_runner import HTTPStreamRunner
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.run_workflow import run_workflow
-from nodetool.types.graph import Graph, get_input_schema, get_output_schema
+from nodetool.types.graph import get_input_schema, get_output_schema
 from nodetool.packages.registry import Registry
 from nodetool.chat.providers import get_provider
 from nodetool.metadata.types import Provider
@@ -68,21 +66,25 @@ async def create(
     if from_example_package and from_example_name:
         example_registry = Registry()
         try:
-            example_workflow = example_registry.load_example(from_example_package, from_example_name)
+            example_workflow = example_registry.load_example(
+                from_example_package, from_example_name
+            )
             if not example_workflow:
                 raise HTTPException(
-                    status_code=404, 
-                    detail=f"Example '{from_example_name}' not found in package '{from_example_package}'"
+                    status_code=404,
+                    detail=f"Example '{from_example_name}' not found in package '{from_example_package}'",
                 )
-            
+
             # Create a new workflow based on the example
             workflow = from_model(
                 WorkflowModel.create(
                     name=workflow_request.name,
                     package_name=workflow_request.package_name,
-                    description=workflow_request.description or example_workflow.description,
+                    description=workflow_request.description
+                    or example_workflow.description,
                     thumbnail=workflow_request.thumbnail,
-                    thumbnail_url=workflow_request.thumbnail_url or example_workflow.thumbnail_url,
+                    thumbnail_url=workflow_request.thumbnail_url
+                    or example_workflow.thumbnail_url,
                     tags=workflow_request.tags or example_workflow.tags,
                     access=workflow_request.access,
                     graph=example_workflow.graph.model_dump(),
@@ -184,10 +186,10 @@ async def examples() -> WorkflowList:
 async def search_examples(query: str) -> WorkflowList:
     """
     Search for example workflows by searching through node titles, descriptions, and types.
-    
+
     Args:
         query: The search string to find in node properties
-        
+
     Returns:
         WorkflowList: A list of workflows that contain nodes matching the query
     """
@@ -200,14 +202,14 @@ async def search_examples(query: str) -> WorkflowList:
 async def get_example(package_name: str, example_name: str) -> Workflow:
     """
     Load a specific example workflow from disk by package name and example name.
-    
+
     Args:
         package_name: The name of the package containing the example
         example_name: The name of the example workflow to load
-        
+
     Returns:
         Workflow: The loaded example workflow with full graph data
-        
+
     Raises:
         HTTPException: If the package or example is not found
     """
@@ -216,8 +218,8 @@ async def get_example(package_name: str, example_name: str) -> Workflow:
         workflow = example_registry.load_example(package_name, example_name)
         if not workflow:
             raise HTTPException(
-                status_code=404, 
-                detail=f"Example '{example_name}' not found in package '{package_name}'"
+                status_code=404,
+                detail=f"Example '{example_name}' not found in package '{package_name}'",
             )
         return workflow
     except ValueError as e:

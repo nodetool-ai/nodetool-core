@@ -8,9 +8,7 @@ based on the research objective, allowing for comprehensive research on the pdf.
 """
 
 import os
-import shutil
 import asyncio
-import chromadb
 from nodetool.agents.agent import Agent
 from nodetool.chat.providers import get_provider
 from nodetool.chat.providers.base import ChatProvider
@@ -22,7 +20,7 @@ from nodetool.agents.tools.chroma_tools import (
     ChromaHybridSearchTool,
     ChromaMarkdownSplitAndIndexTool,
 )
-from nodetool.common.chroma_client import get_chroma_client, get_collection
+from nodetool.common.chroma_client import get_chroma_client
 
 
 async def test_chromadb_research_agent(provider: ChatProvider, model: str):

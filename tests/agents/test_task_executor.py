@@ -30,14 +30,17 @@ def make_executor(tmp_path, parallel=False):
     context = ProcessingContext(workspace_dir=str(tmp_path))
     task = Task(title="t", subtasks=[])
     provider = MagicMock()
-    return TaskExecutor(
-        provider=provider,
-        model="model",
-        processing_context=context,
-        tools=[],
-        task=task,
-        parallel_execution=parallel,
-    ), context
+    return (
+        TaskExecutor(
+            provider=provider,
+            model="model",
+            processing_context=context,
+            tools=[],
+            task=task,
+            parallel_execution=parallel,
+        ),
+        context,
+    )
 
 
 def test_check_input_files(tmp_path):
@@ -73,7 +76,9 @@ def test_all_tasks_complete(tmp_path):
     s1 = SubTask(content="a", output_file="a.txt")
     s2 = SubTask(content="b", output_file="b.txt", completed=True)
     task = Task(title="t", subtasks=[s1, s2])
-    executor = TaskExecutor(MagicMock(), "m", ProcessingContext(workspace_dir=str(tmp_path)), [], task)
+    executor = TaskExecutor(
+        MagicMock(), "m", ProcessingContext(workspace_dir=str(tmp_path)), [], task
+    )
 
     assert not executor._all_tasks_complete()
     s1.completed = True
@@ -86,7 +91,9 @@ async def test_execute_tasks_sequential(monkeypatch, tmp_path):
     sub2 = SubTask(content="b", output_file="b.txt")
     task = Task(title="t", subtasks=[sub1, sub2])
     context = ProcessingContext(workspace_dir=str(tmp_path))
-    executor = TaskExecutor(MagicMock(), "m", context, [], task, parallel_execution=False)
+    executor = TaskExecutor(
+        MagicMock(), "m", context, [], task, parallel_execution=False
+    )
 
     monkeypatch.setattr(task_executor, "SubTaskContext", DummySubTaskContext)
 
@@ -104,10 +111,14 @@ async def test_execute_tasks_parallel(monkeypatch, tmp_path):
     sub2 = SubTask(content="b", output_file="b.txt")
     task = Task(title="t", subtasks=[sub1, sub2])
     context = ProcessingContext(workspace_dir=str(tmp_path))
-    executor = TaskExecutor(MagicMock(), "m", context, [], task, parallel_execution=True)
+    executor = TaskExecutor(
+        MagicMock(), "m", context, [], task, parallel_execution=True
+    )
 
     monkeypatch.setattr(task_executor, "SubTaskContext", DummySubTaskContext)
-    monkeypatch.setattr(task_executor, "wrap_generators_parallel", dummy_wrap_generators_parallel)
+    monkeypatch.setattr(
+        task_executor, "wrap_generators_parallel", dummy_wrap_generators_parallel
+    )
 
     called = []
 
@@ -116,4 +127,3 @@ async def test_execute_tasks_parallel(monkeypatch, tmp_path):
 
     assert sub1.completed and sub2.completed
     assert len(called) == 2
-

@@ -534,13 +534,13 @@ class Environment(object):
             if cls.is_test():
                 from nodetool.storage.memory_storage import MemoryStorage
 
-                cls.get_logger().info(f"Using memory storage for asset storage")
+                cls.get_logger().info("Using memory storage for asset storage")
 
                 cls.asset_storage = MemoryStorage(base_url=cls.get_storage_api_url())
             elif (
                 cls.is_production() or cls.get_s3_access_key_id() is not None or use_s3
             ):
-                cls.get_logger().info(f"Using S3 storage for asset storage")
+                cls.get_logger().info("Using S3 storage for asset storage")
                 cls.asset_storage = cls.get_s3_storage(
                     cls.get_asset_bucket(), cls.get_asset_domain()
                 )
@@ -591,7 +591,7 @@ class Environment(object):
         """
         try:
             import torch
-        except:
+        except Exception:
             return None
 
         try:
@@ -599,7 +599,7 @@ class Environment(object):
                 import torch.mps
 
                 return torch.device("mps")
-        except:
+        except Exception:
             pass
 
         try:
@@ -607,7 +607,7 @@ class Environment(object):
 
             if torch.cuda.device_count() > 0:
                 return torch.device("cuda")
-        except:
+        except Exception:
             return torch.device("cpu")
 
     @classmethod
@@ -654,7 +654,7 @@ class Environment(object):
             if not cls.is_production():
                 from nodetool.storage.memory_storage import MemoryStorage
 
-                cls.get_logger().info(f"Using memory storage for temp asset storage")
+                cls.get_logger().info("Using memory storage for temp asset storage")
                 cls.asset_temp_storage = MemoryStorage(
                     base_url=cls.get_storage_api_url()
                 )
@@ -668,7 +668,7 @@ class Environment(object):
                 assert (
                     cls.get_asset_temp_domain() is not None
                 ), "Asset temp domain is required"
-                cls.get_logger().info(f"Using S3 storage for temp asset storage")
+                cls.get_logger().info("Using S3 storage for temp asset storage")
                 cls.asset_temp_storage = cls.get_s3_storage(
                     cls.get_asset_temp_bucket(), cls.get_asset_temp_domain()
                 )
