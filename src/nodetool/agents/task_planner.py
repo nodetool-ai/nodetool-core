@@ -757,7 +757,7 @@ class TaskPlanner:
         workspace_dir: str,
         execution_tools: Sequence[Tool],
         reasoning_model: str | None = None,
-        input_files: Sequence[str] = [],
+        input_files: Optional[Sequence[str]] = None,
         system_prompt: str | None = None,
         output_schema: dict | None = None,
         output_type: str | None = None,
@@ -800,9 +800,11 @@ class TaskPlanner:
         self.workspace_dir: str = workspace_dir
         self.task_plan: TaskPlan = TaskPlan()
         # Clean and validate initial input files relative to workspace
-        logger.debug(f"Processing {len(input_files)} initial input files")
+        cleaned_files = input_files or []
+        logger.debug(f"Processing {len(cleaned_files)} initial input files")
         self.input_files: List[str] = [
-            self._clean_and_validate_path(f, "initial input files") for f in input_files
+            self._clean_and_validate_path(f, "initial input files")
+            for f in cleaned_files
         ]
         logger.debug(f"Cleaned input files: {self.input_files}")
 

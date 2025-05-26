@@ -2,7 +2,7 @@ from datetime import datetime
 import re
 import sqlite3
 from types import UnionType
-from typing import Any, Dict, List, get_args
+from typing import Any, Dict, List, Optional, get_args
 from pydantic.fields import FieldInfo
 
 from nodetool.common.environment import Environment
@@ -533,7 +533,7 @@ class SQLiteAdapter(DatabaseAdapter):
         return res, last_evaluated_key
 
     def execute_sql(
-        self, sql: str, params: dict[str, Any] = {}
+        self, sql: str, params: Optional[dict[str, Any]] = None
     ) -> List[Dict[str, Any]]:
         """Executes a given SQL query with parameters and returns the results.
 
@@ -546,7 +546,7 @@ class SQLiteAdapter(DatabaseAdapter):
             returned by the query.
         """
         cursor = self.connection.cursor()
-        cursor.execute(sql, params)
+        cursor.execute(sql, params or {})
         if cursor.description:
             columns = [col[0] for col in cursor.description]
             return [

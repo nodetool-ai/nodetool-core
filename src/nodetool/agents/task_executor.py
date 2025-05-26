@@ -13,7 +13,7 @@ from nodetool.metadata.types import (
     ToolCall,
 )
 import os
-from typing import AsyncGenerator, List, Sequence, Union
+from typing import AsyncGenerator, List, Sequence, Union, Optional
 
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import Chunk
@@ -44,7 +44,7 @@ class TaskExecutor:
         tools: Sequence[Tool],
         task: Task,
         system_prompt: str | None = None,
-        input_files: List[str] = [],
+        input_files: Optional[List[str]] = None,
         max_steps: int = 50,
         max_subtask_iterations: int = 10,
         max_token_limit: int = 100000,
@@ -71,7 +71,7 @@ class TaskExecutor:
         self.tools = tools
         self.task = task
         self.processing_context = processing_context
-        self.input_files = input_files
+        self.input_files = input_files or []
         self.max_token_limit = max_token_limit
         self.system_prompt = system_prompt
         self.max_steps = max_steps
