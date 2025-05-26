@@ -15,15 +15,19 @@ from nodetool.common.chat_websocket_runner import ChatWebSocketRunner
 
 from fastapi import APIRouter, FastAPI, Request, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
+from nodetool.models.workflow import Workflow
 from uvicorn import run as uvicorn
 
 from nodetool.packages.registry import get_nodetool_package_source_folders
 
 from . import asset, job, message, node, storage, workflow, model, settings
+from .workflow import mcp
 import mimetypes
 
 from nodetool.common.websocket_updates import websocket_updates
 from multiprocessing import Process
+from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp.tools.base import Tool
 
 # FIX: Windows: mimetypes.guess_type() returns None for some files
 # See:
@@ -137,6 +141,9 @@ def create_app(
         expose_headers=["*"],
         max_age=3600,
     )
+
+    if not Environment.is_production():
+        app.mount("/mcp", mcp.sse_app())
 
     for router in routers:
         app.include_router(router)
