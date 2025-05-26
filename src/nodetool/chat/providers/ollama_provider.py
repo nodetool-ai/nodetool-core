@@ -261,7 +261,6 @@ class OllamaProvider(ChatProvider):
 
             return message_dict
         elif message.role == "assistant":
-            assert message.content is not None, "Content must not be None"
             message_dict = {
                 "role": "assistant",
                 "tool_calls": [
@@ -275,7 +274,10 @@ class OllamaProvider(ChatProvider):
                 ],
             }
 
-            if isinstance(message.content, str):
+            # Handle None content (common when only tool calls are present)
+            if message.content is None:
+                message_dict["content"] = ""
+            elif isinstance(message.content, str):
                 message_dict["content"] = message.content
             else:
                 text_parts = [
