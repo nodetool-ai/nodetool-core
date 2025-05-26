@@ -23,9 +23,16 @@ from nodetool.metadata.types import Provider
 from nodetool.chat.workspace_manager import WorkspaceManager
 from nodetool.agents.workflow_planner import WorkflowPlanner
 from nodetool.workflows.export_dsl import workflow_to_dsl
+from mcp.server.fastmcp import FastMCP
 
 log = Environment.get_logger()
 router = APIRouter(prefix="/api/workflows", tags=["workflows"])
+
+mcp = FastMCP(
+    name="nodetool",
+    version="0.6.0",
+    instructions="Nodetool is a tool for creating and running workflows.",
+)
 
 
 def find_thumbnail(workflow: WorkflowModel) -> str | None:
