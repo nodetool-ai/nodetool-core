@@ -65,6 +65,7 @@ tiktoken = "*"
 google-genai = "*"
 # replicate = "1.0.3"
 # runpod = "1.7.6"
+mcp = "*"
 
 
 # Media dependencies
