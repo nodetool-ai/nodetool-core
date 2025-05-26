@@ -249,6 +249,7 @@ class BaseNode(BaseModel):
     _visible: bool = True
     _layout: str = "default"
     _dynamic_properties: dict[str, Any] = {}
+    _dynamic_outputs: dict[str, TypeMetadata] = {}
     _is_dynamic: bool = False
     _requires_grad: bool = False
 
@@ -258,6 +259,7 @@ class BaseNode(BaseModel):
         parent_id: str | None = None,
         ui_properties: dict[str, Any] = {},
         dynamic_properties: dict[str, Any] = {},
+        dynamic_outputs: dict[str, TypeMetadata] = {},
         **data: Any,
     ):
         super().__init__(**data)
@@ -265,6 +267,14 @@ class BaseNode(BaseModel):
         self._parent_id = parent_id
         self._ui_properties = ui_properties
         self._dynamic_properties = dynamic_properties
+        self._dynamic_outputs = {
+            name: (
+                meta
+                if isinstance(meta, TypeMetadata)
+                else TypeMetadata.model_validate(meta)
+            )
+            for name, meta in dynamic_outputs.items()
+        }
 
     def required_inputs(self):
         return []
@@ -298,6 +308,13 @@ class BaseNode(BaseModel):
             "parent_id": self._parent_id,
             "type": self.get_node_type(),
             "data": self.node_properties(),
+            "dynamic_properties": self._dynamic_properties,
+            "dynamic_outputs": {
+                name: (
+                    output.model_dump() if isinstance(output, TypeMetadata) else output
+                )
+                for name, output in self._dynamic_outputs.items()
+            },
         }
 
     @classmethod
@@ -328,11 +345,16 @@ class BaseNode(BaseModel):
             raise ValueError(f"Invalid node type: {node['type']}")
         if "id" not in node:
             raise ValueError("Node must have an id")
+        dynamic_outputs = {
+            name: TypeMetadata.model_validate(output)
+            for name, output in node.get("dynamic_outputs", {}).items()
+        }
         n = node_type(
             id=node["id"],
             parent_id=node.get("parent_id"),
             ui_properties=node.get("ui_properties", {}),
             dynamic_properties=node.get("dynamic_properties", {}),
+            dynamic_outputs=dynamic_outputs,
         )
         data = node.get("data", {})
         n.set_node_properties(data, skip_errors=skip_errors)
@@ -411,7 +433,7 @@ class BaseNode(BaseModel):
             namespace=cls.get_namespace(),
             node_type=cls.get_node_type(),
             properties=cls.properties(),  # type: ignore
-            outputs=cls.outputs(),
+            outputs=cls.static_outputs(),
             the_model_info=cls.get_model_info(),
             layout=cls.layout(),
             recommended_models=cls.get_recommended_models(),
@@ -664,6 +686,17 @@ class BaseNode(BaseModel):
             for name, value in self._dynamic_properties.items()
         }
 
+    def get_dynamic_outputs(self):
+        return {
+            name: OutputSlot(type=meta, name=name)
+            for name, meta in self._dynamic_outputs.items()
+        }
+
+    def outputs(self) -> list[OutputSlot]:
+        return list(self.__class__.static_outputs()) + list(
+            self.get_dynamic_outputs().values()
+        )
+
     def find_property(self, name: str):
         """
         Find a property of the node by its name.
@@ -702,7 +735,7 @@ class BaseNode(BaseModel):
         Raises:
             ValueError: If no output with the given name exists.
         """
-        for output in cls.outputs():
+        for output in cls.static_outputs():
             if output.name == name:
                 return output
 
@@ -722,9 +755,9 @@ class BaseNode(BaseModel):
         Raises:
             ValueError: If the index is out of range for the node's outputs.
         """
-        if index < 0 or index >= len(cls.outputs()):
+        if index < 0 or index >= len(cls.static_outputs()):
             raise ValueError(f"Output index {index} does not exist for {cls}")
-        return cls.outputs()[index]
+        return cls.static_outputs()[index]
 
     @classmethod
     def is_streaming_output(cls):
@@ -751,7 +784,7 @@ class BaseNode(BaseModel):
         return type_hints["return"]
 
     @classmethod
-    def outputs(cls):
+    def static_outputs(cls):
         """
         Get the output slots of the node based on its return type.
 
