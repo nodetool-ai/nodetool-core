@@ -3,7 +3,7 @@ import re
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from types import UnionType
-from typing import Any, Dict, List, get_args
+from typing import Any, Dict, List, Optional, get_args
 from pydantic.fields import FieldInfo
 
 from nodetool.common.environment import Environment
@@ -514,7 +514,7 @@ class PostgresAdapter(DatabaseAdapter):
             yield cursor
 
     def execute_sql(
-        self, sql: str, params: Dict[str, Any] = {}
+        self, sql: str, params: Optional[Dict[str, Any]] = None
     ) -> List[Dict[str, Any]]:
         """Executes a given SQL query with parameters and returns the results.
 
@@ -528,7 +528,7 @@ class PostgresAdapter(DatabaseAdapter):
             A list of dictionaries, where each dictionary represents a row
             returned by the query.
         """
-        translated_sql, translated_params = translate_postgres_params(sql, params)
+        translated_sql, translated_params = translate_postgres_params(sql, params or {})
         with self.connection.cursor(cursor_factory=RealDictCursor) as cursor:
             cursor.execute(translated_sql, translated_params)
             if cursor.description:

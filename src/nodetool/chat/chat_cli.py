@@ -74,7 +74,9 @@ from nodetool.workflows.types import Chunk
 class Command:
     """Base class for CLI commands with documentation and execution logic."""
 
-    def __init__(self, name: str, description: str, aliases: List[str] = []):
+    def __init__(
+        self, name: str, description: str, aliases: Optional[List[str]] = None
+    ):
         self.name = name
         self.description = description
         self.aliases = aliases or []

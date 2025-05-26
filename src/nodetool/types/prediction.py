@@ -1,5 +1,5 @@
 from nodetool.metadata.types import Provider
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Any, List, Literal
 import base64
 
@@ -20,7 +20,7 @@ class Prediction(BaseModel):
     version: str | None = None
     node_type: str | None = None
     status: str
-    params: dict[str, Any] = {}
+    params: dict[str, Any] = Field(default_factory=dict)
     data: Any | None = None
     cost: float | None = None
     logs: str | None = None
@@ -44,7 +44,7 @@ class PredictionCreateRequest(BaseModel):
     provider: Provider
     model: str
     node_id: str
-    params: dict[str, Any] = {}
+    params: dict[str, Any] = Field(default_factory=dict)
     version: str | None = None
     workflow_id: str | None = None
 

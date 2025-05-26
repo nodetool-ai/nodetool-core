@@ -6,7 +6,7 @@ Chain of Thought (CoT) Agent implementation with tool calling capabilities.
 import asyncio
 import json
 import traceback
-from typing import AsyncGenerator, List, Sequence, Union, Any
+from typing import AsyncGenerator, List, Sequence, Union, Any, Optional
 
 from nodetool.agents.sub_task_context import SubTaskContext
 from nodetool.workflows.types import Chunk, TaskUpdate
@@ -69,7 +69,7 @@ class SimpleAgent(BaseAgent):
         tools: Sequence[Tool],
         output_type: str,
         output_schema: dict[str, Any],
-        input_files: List[str] = [],
+        input_files: Optional[List[str]] = None,
         system_prompt: str | None = None,  # System prompt for execution phase
         max_iterations: int = 20,
         max_token_limit: int | None = None,
@@ -96,7 +96,7 @@ class SimpleAgent(BaseAgent):
             provider=provider,
             model=model,
             tools=tools,
-            input_files=input_files,
+            input_files=input_files or [],
             system_prompt=system_prompt,
             max_token_limit=max_token_limit,
         )

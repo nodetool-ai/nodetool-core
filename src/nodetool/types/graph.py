@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 from typing import Any, List
@@ -8,9 +8,9 @@ class Node(BaseModel):
     id: str
     parent_id: str | None = None
     type: str = "default"
-    data: Any = {}
-    ui_properties: Any = {}
-    dynamic_properties: dict[str, Any] = {}
+    data: Any = Field(default_factory=dict)
+    ui_properties: Any = Field(default_factory=dict)
+    dynamic_properties: dict[str, Any] = Field(default_factory=dict)
 
 
 class Edge(BaseModel):
