@@ -89,6 +89,11 @@ async def get_ollama_models_endpoint(
 
 anthropic_models = [
     LanguageModel(
+        id="claude-3-5-haiku-latest",
+        name="Claude 3.5 Haiku",
+        provider=Provider.Anthropic,
+    ),
+    LanguageModel(
         id="claude-3-5-sonnet-latest",
         name="Claude 3.5 Sonnet",
         provider=Provider.Anthropic,
@@ -96,6 +101,16 @@ anthropic_models = [
     LanguageModel(
         id="claude-3-7-sonnet-latest",
         name="Claude 3.7 Sonnet",
+        provider=Provider.Anthropic,
+    ),
+    LanguageModel(
+        id="claude-sonnet-4-20250514",
+        name="Claude Sonnet 4",
+        provider=Provider.Anthropic,
+    ),
+    LanguageModel(
+        id="claude-opus-4-20250514",
+        name="Claude Opus 4",
         provider=Provider.Anthropic,
     ),
 ]

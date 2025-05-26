@@ -28,6 +28,7 @@ supabase = ">=2.15.0"
 psycopg2-binary = ">=2.9.10"
 
 # Utils dependencies
+aioconsole = "*"
 black = "24.10.0"
 click = "8.1.7"
 ftfy = "6.3.1"

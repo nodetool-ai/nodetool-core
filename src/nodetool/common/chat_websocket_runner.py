@@ -73,6 +73,7 @@ from typing import List, Sequence
 from enum import Enum
 
 from fastapi import WebSocket
+from supabase import create_async_client, AsyncClient
 
 from nodetool.chat.ollama_service import get_ollama_models
 from nodetool.chat.providers import get_provider
@@ -99,6 +100,9 @@ from nodetool.chat.help import create_help_answer
 
 log = logging.getLogger(__name__)
 
+# Enable debug logging for this module
+log.setLevel(logging.DEBUG)
+
 ollama_models: list[str] = []
 
 
@@ -115,14 +119,23 @@ async def cached_ollama_models() -> list[str]:
 async def provider_from_model(model: str) -> ChatProvider:
     log.debug(f"Selecting provider for model: {model}")
     if model.startswith("claude"):
-        return get_provider(Provider.Anthropic)
+        provider = get_provider(Provider.Anthropic)
+        log.debug(f"Selected Anthropic provider for model: {model}")
+        return provider
     elif model.startswith("gpt"):
-        return get_provider(Provider.OpenAI)
+        provider = get_provider(Provider.OpenAI)
+        log.debug(f"Selected OpenAI provider for model: {model}")
+        return provider
     elif model.startswith("gemini"):
-        return get_provider(Provider.Gemini)
+        provider = get_provider(Provider.Gemini)
+        log.debug(f"Selected Gemini provider for model: {model}")
+        return provider
     elif model in await cached_ollama_models():
-        return get_provider(Provider.Ollama)
+        provider = get_provider(Provider.Ollama)
+        log.debug(f"Selected Ollama provider for model: {model}")
+        return provider
     else:
+        log.error(f"Unsupported model: {model}")
         raise ValueError(f"Unsupported model: {model}")
 
 
@@ -195,6 +208,21 @@ class ChatWebSocketRunner:
         self.chat_history: List[Message] = []
         self.mode: WebSocketMode = WebSocketMode.BINARY
         self.auth_token = auth_token
+        self.user_id: str | None = None
+        self.supabase: AsyncClient | None = None
+
+    async def init_supabase(self):
+        if self.supabase:
+            return
+        supabase_url = Environment.get_supabase_url()
+        supabase_key = Environment.get_supabase_key()
+        if supabase_url and supabase_key:
+            self.supabase = await create_async_client(supabase_url, supabase_key)
+        else:
+            if Environment.is_production():
+                log.warning(
+                    "Supabase URL or Key not configured in production environment."
+                )
 
     async def connect(self, websocket: WebSocket):
         """
@@ -207,22 +235,27 @@ class ChatWebSocketRunner:
             WebSocketDisconnect: If authentication fails.
         """
         log.debug("Initializing WebSocket connection")
-        # Validate authentication if token is required in your environment
-        # This is where you would implement your authentication logic
-        if Environment.is_production() and not self.auth_token:
-            # Close connection with 401 Unauthorized status code
-            await websocket.close(code=1008, reason="Missing authentication")
-            log.warning("WebSocket connection rejected: Missing authentication")
-            return
 
-        if self.auth_token:
-            # Validate token (implementation depends on your auth system)
+        # Check if remote authentication is required
+        if Environment.use_remote_auth():
+            # In production or when remote auth is enabled, authentication is required
+            if not self.auth_token:
+                # Close connection with 401 Unauthorized status code
+                await websocket.close(code=1008, reason="Missing authentication")
+                log.warning("WebSocket connection rejected: Missing authentication")
+                return
+
+            # Validate token using Supabase
             log.debug("Validating provided auth token")
             is_valid = await self.validate_token(self.auth_token)
             if not is_valid:
                 await websocket.close(code=1008, reason="Invalid authentication")
                 log.warning("WebSocket connection rejected: Invalid authentication")
                 return
+        else:
+            # In local development without remote auth, set a default user ID
+            self.user_id = "1"
+            log.debug("Skipping authentication in local development mode")
 
         await websocket.accept()
         self.websocket = websocket
@@ -245,7 +278,29 @@ class ChatWebSocketRunner:
 
         # For demonstration purposes, we're returning True
         # In a real implementation, you would verify the token against your auth system
-        return True
+        await self.init_supabase()
+        assert self.supabase, "Supabase client not initialized"
+        try:
+            # Validate the token using Supabase
+            session: AuthSession = await self.supabase.auth.get_session()  # type: ignore
+            if session and session.access_token == token:
+                # verify the token
+                user_response = await self.supabase.auth.get_user(token)
+                if user_response and user_response.user:
+                    self.user_id = user_response.user.id
+                    log.debug(
+                        f"Token validated successfully for user: {user_response.user.id}"
+                    )
+                    return True
+                else:
+                    log.warning(f"Token validation failed: {user_response}")
+                    return False
+            log.warning("Token does not match current session or no active session.")
+            return False
+
+        except Exception as e:
+            log.error(f"Error during Supabase token validation: {e}")
+            return False
 
     async def disconnect(self):
         """
@@ -255,7 +310,6 @@ class ChatWebSocketRunner:
             await self.websocket.close()
         self.websocket = None
         log.info("WebSocket disconnected for chat")
-        log.debug("WebSocket connection closed")
 
     async def run(self, websocket: WebSocket):
         """
@@ -281,19 +335,26 @@ class ChatWebSocketRunner:
                     break
 
                 if "bytes" in message:
-                    data = msgpack.unpackb(message["bytes"])
+                    raw_bytes = message["bytes"]
+                    data = msgpack.unpackb(raw_bytes)
                     self.mode = WebSocketMode.BINARY
-                    log.debug("Received binary message")
                 elif "text" in message:
-                    data = json.loads(message["text"])
+                    raw_text = message["text"]
+                    data = json.loads(raw_text)
                     self.mode = WebSocketMode.TEXT
-                    log.debug("Received text message")
                 else:
-                    log.warning("Received message with unknown format")
+                    log.warning(f"Received message with unknown format: {message}")
                     continue
 
-                log.debug(f"Parsed message data: {data}")
-                message = Message(**data)
+                log.debug(f"Creating Message object from data: {data}")
+                try:
+                    message = Message(**data)
+                    log.debug(
+                        f"Created message - role: {message.role}, model: {message.model}, tools: {message.tools}, workflow_id: {message.workflow_id}"
+                    )
+                except Exception as e:
+                    log.error(f"Failed to create Message object: {e}")
+                    raise
 
                 # Add the new message to chat history
                 self.chat_history.append(message)
@@ -301,11 +362,19 @@ class ChatWebSocketRunner:
 
                 # Process the message through the workflow
                 if message.workflow_id:
-                    log.debug(f"Processing workflow {message.workflow_id}")
+                    log.debug(
+                        f"Processing workflow message with workflow_id: {message.workflow_id}"
+                    )
                     response_message = await self.process_messages_for_workflow()
                 else:
-                    log.debug("Processing chat message")
+                    log.debug(
+                        f"Processing regular chat message with model: {message.model}"
+                    )
                     response_message = await self.process_messages()
+
+                log.debug(
+                    f"Response message created - role: {response_message.role}, content length: {len(str(response_message.content or ''))}"
+                )
 
                 # Create a new message from the result
 
@@ -317,12 +386,11 @@ class ChatWebSocketRunner:
                 # await self.send_message(response_message.model_dump())
 
             except Exception as e:
-                log.error(f"Error processing message: {str(e)}")
-                traceback.print_exc()
+                log.error(f"Error processing message: {str(e)}", exc_info=True)
                 error_message = {"type": "error", "message": str(e)}
                 await self.send_message(error_message)
-                # Optionally, you can decide whether to break the loop or continue
-                # break
+                # Continue processing instead of breaking
+                continue
 
     async def _process_help_messages(self, model: str) -> Message:
         """
@@ -347,12 +415,10 @@ class ChatWebSocketRunner:
                 await self.send_message(
                     {"type": "chunk", "content": item.content, "done": False}
                 )
-                log.debug("Sent help chunk to client")
             elif isinstance(item, ToolCall):
                 await self.send_message(
                     {"type": "tool_call", "tool_call": item.model_dump()}
                 )
-                log.debug("Sent help tool call to client")
             else:
                 log.debug("Help response item was not chunk or tool call")
 
@@ -385,10 +451,13 @@ class ChatWebSocketRunner:
             parts = last_message.model.split(":", 1)
             if len(parts) > 1 and parts[1]:
                 actual_model_name = parts[1]
+            else:
+                actual_model_name = "gpt-4"  # Default model if not specified
+            log.debug(f"Processing help request with model: {actual_model_name}")
             return await self._process_help_messages(actual_model_name)
         else:
             # Existing logic for regular messages
-            processing_context = ProcessingContext()
+            processing_context = ProcessingContext(user_id=self.user_id)
 
             content = ""
             unprocessed_messages = []
@@ -414,31 +483,33 @@ class ChatWebSocketRunner:
             log.debug(
                 f"Using provider {provider.__class__.__name__} for model {last_message.model}"
             )
+            log.debug(f"Chat history length: {len(self.chat_history)} messages")
 
             # Stream the response chunks
             while True:
                 messages_to_send = self.chat_history + unprocessed_messages
                 unprocessed_messages = []
 
-                log.debug("Calling provider.generate_messages")
+                log.debug(
+                    f"Calling provider.generate_messages with {len(messages_to_send)} messages"
+                )
                 async for chunk in provider.generate_messages(
                     messages=messages_to_send,
                     model=last_message.model,
                     tools=selected_tools,
                 ):  # type: ignore
+                    log.debug(
+                        f"Received chunk from provider: type={type(chunk).__name__}"
+                    )
                     if isinstance(chunk, Chunk):
                         content += chunk.content
                         # Send intermediate chunks to client
-                        await self.send_message(
-                            {
-                                "type": "chunk",
-                                "content": chunk.content,
-                                "done": chunk.done,
-                            }
-                        )
-                        log.debug(
-                            f"Sent chunk to client (done={chunk.done})"
-                        )
+                        chunk_msg = {
+                            "type": "chunk",
+                            "content": chunk.content,
+                            "done": chunk.done,
+                        }
+                        await self.send_message(chunk_msg)
                     elif isinstance(chunk, ToolCall):
                         # Send tool call to client
                         await self.send_message(
@@ -454,16 +525,18 @@ class ChatWebSocketRunner:
                             f"Tool {chunk.name} execution complete, id={tool_result.id}"
                         )
                         # Add tool messages to unprocessed messages
-                        unprocessed_messages.append(
-                            Message(role="assistant", tool_calls=[chunk])
+                        # Note: Assistant message with tool calls typically has no content
+                        assistant_msg = Message(role="assistant", tool_calls=[chunk])
+                        log.debug(f"Creating assistant message with tool call, content={assistant_msg.content}")
+                        unprocessed_messages.append(assistant_msg)
+                        
+                        tool_msg = Message(
+                            role="tool",
+                            tool_call_id=tool_result.id,
+                            content=json.dumps(tool_result.result),
                         )
-                        unprocessed_messages.append(
-                            Message(
-                                role="tool",
-                                tool_call_id=tool_result.id,
-                                content=json.dumps(tool_result.result),
-                            )
-                        )
+                        log.debug(f"Creating tool message with result, content_length={len(tool_msg.content or '')}")
+                        unprocessed_messages.append(tool_msg)
 
                         # Send tool result to client
                         await self.send_message(
@@ -473,7 +546,10 @@ class ChatWebSocketRunner:
 
                 # If no more unprocessed messages, we're done
                 if not unprocessed_messages:
+                    log.debug("No more unprocessed messages, completing generation")
                     break
+                else:
+                    log.debug(f"Have {len(unprocessed_messages)} unprocessed messages, continuing loop")
 
             return Message(
                 role="assistant",
@@ -504,6 +580,7 @@ class ChatWebSocketRunner:
         )
 
         processing_context = ProcessingContext(
+            user_id=self.user_id,
             workflow_id=last_message.workflow_id,
         )
 
@@ -584,13 +661,22 @@ class ChatWebSocketRunner:
             Exception: If an error occurs during message sending.
         """
         assert self.websocket, "WebSocket is not connected"
+        log.debug(
+            f"Sending message type: {message.get('type', 'unknown')}, mode: {self.mode}"
+        )
         try:
             if self.mode == WebSocketMode.BINARY:
                 packed_message = msgpack.packb(message, use_bin_type=True)
+                assert packed_message is not None, "Packed message is None"
                 await self.websocket.send_bytes(packed_message)  # type: ignore
-                log.debug("Sent binary message")
+                log.debug(
+                    f"Sent binary message ({len(packed_message)} bytes): type={message.get('type')}"
+                )
             else:
-                await self.websocket.send_text(json.dumps(message))
-                log.debug("Sent text message")
+                json_text = json.dumps(message)
+                await self.websocket.send_text(json_text)
+                log.debug(
+                    f"Sent text message ({len(json_text)} chars): type={message.get('type')}"
+                )
         except Exception as e:
-            log.error(f"Error sending message: {e}")
+            log.error(f"Error sending message: {e}", exc_info=True)
