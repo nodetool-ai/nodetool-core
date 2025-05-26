@@ -100,7 +100,7 @@ pyngrok = "7.2.1"
 selenium = "4.26.1"
 playwright = ">1.40.0"
 browser-use = "*"
-readability-lxml = "0.8.1"
+readability-lxml = "0.8.4.1"
 lxml_html_clean = "0.4.1"
 
 # Authentication and security
