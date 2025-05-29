@@ -72,6 +72,7 @@ from nodetool.packages.types import AssetInfo, PackageInfo
 from nodetool.types.workflow import Workflow
 from nodetool.workflows.graph import Graph
 from nodetool.types.graph import Graph as APIGraph
+from nodetool.workflows.base_node import BaseNode
 
 
 # Constants
@@ -848,36 +849,54 @@ class Registry:
                 continue
 
             for example_meta in package.examples:
-                # Load the full workflow with graph
-                workflow = self.load_example(package.name, example_meta.name)
-                if not workflow or not workflow.graph:
+                try:
+                    # Load the full workflow with graph
+                    workflow = self.load_example(package.name, example_meta.name)
+                    if not workflow or not workflow.graph:
+                        continue
+
+                    # Safely build nodes and edges, skipping invalid ones
+                    nodes = []
+                    for node in workflow.graph.nodes:
+                        try:
+                            # Try to instantiate the node to check if it's valid
+                            BaseNode.from_dict(node.model_dump(), skip_errors=True)
+                            nodes.append(node.model_dump())
+                        except Exception as e:
+                            logging.warning(f"Skipping invalid node in example {example_meta.name} in package {package.name}: {e}")
+                    edges = []
+                    for edge in workflow.graph.edges:
+                        try:
+                            edges.append(edge.model_dump())
+                        except Exception as e:
+                            logging.warning(f"Skipping invalid edge in example {example_meta.name} in package {package.name}: {e}")
+
+                    if not nodes:
+                        logging.warning(f"All nodes invalid in example {example_meta.name} in package {package.name}, skipping workflow.")
+                        continue
+
+                    graph = Graph.from_dict({
+                        "nodes": nodes,
+                        "edges": edges,
+                    })
+
+                    # Search through nodes in the graph
+                    found_match = False
+                    for node in graph.nodes:
+                        # Check node type
+                        if query in node.get_node_type().lower():
+                            found_match = True
+                            break
+
+                        if query in str(node.get_title()).lower():
+                            found_match = True
+                            break
+
+                    if found_match:
+                        matching_workflows.append(workflow)
+                except Exception as e:
+                    logging.warning(f"Skipping invalid example workflow {example_meta.name} in package {package.name}: {e}")
                     continue
-
-                graph = Graph.from_dict(
-                    {
-                        "nodes": [node.model_dump() for node in workflow.graph.nodes],
-                        "edges": [edge.model_dump() for edge in workflow.graph.edges],
-                    }
-                )
-
-                # Search through nodes in the graph
-                found_match = False
-                for node in graph.nodes:
-                    # Check node type
-                    if query in node.get_node_type().lower():
-                        found_match = True
-                        break
-
-                    if query in str(node.get_title()).lower():
-                        found_match = True
-                        break
-
-                    if query in str(node.get_description()).lower():
-                        found_match = True
-                        break
-
-                if found_match:
-                    matching_workflows.append(workflow)
 
         return matching_workflows
 
