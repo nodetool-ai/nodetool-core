@@ -11,6 +11,7 @@ from nodetool.agents.tools.base import (
 from nodetool.agents.tools.workspace_tools import WriteFileTool, ReadFileTool
 from nodetool.agents.tools.http_tools import DownloadFileTool
 from nodetool.agents.tools.asset_tools import SaveAssetTool, ReadAssetTool
+from nodetool.agents.tools.mcp_tools import MCPTool
 from nodetool.workflows.processing_context import ProcessingContext
 
 
@@ -139,3 +140,26 @@ async def test_save_and_read_asset(monkeypatch):
     assert result["success"] is True
     assert result["content"] == b"hi"
     assert result["filename"] == "test.txt"
+
+
+class DummyHTTPResponse:
+    def __init__(self, data):
+        self._data = data
+
+    def json(self):
+        return self._data
+
+
+@pytest.mark.asyncio
+async def test_mcp_tool(monkeypatch, context: ProcessingContext):
+    async def fake_post(url, **kwargs):
+        assert url == "http://localhost:8000/tools/test"
+        assert kwargs["json"] == {"input": "hello"}
+        return DummyHTTPResponse({"result": "ok"})
+
+    monkeypatch.setattr(context, "http_post", fake_post)
+    tool = MCPTool(tool="test")
+    result = await tool.process(context, {"input": "hello"})
+    assert result == {"result": "ok"}
+    env = tool.get_container_env()
+    assert env["MCP_API_URL"] == "http://localhost:8000"
