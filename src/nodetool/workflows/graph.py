@@ -94,8 +94,10 @@ class Graph(BaseModel):
         raw_nodes = graph.get("nodes", [])
         for node_data in raw_nodes:
             try:
-                node = BaseNode.from_dict(node_data, skip_errors=True)
-                nodes_list.append(node)
+                node_instance, property_errors = BaseNode.from_dict(node_data, skip_errors=True)
+                # TODO: Decide if property_errors from here should be logged or collected by Graph.from_dict
+                # For now, they are handled by BaseNode.from_dict if it logs them, or collected by Registry if it calls it.
+                nodes_list.append(node_instance)
             except ValueError as e:
                 # Log the error and skip this node
                 logging.warning(f"Skipping invalid node during Graph.from_dict: {e}. Node data: {node_data}")
