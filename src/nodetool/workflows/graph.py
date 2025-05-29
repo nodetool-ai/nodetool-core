@@ -78,8 +78,17 @@ class Graph(BaseModel):
         Create a Graph object from a dictionary representation.
         The format is the same as the one used in the frontend.
 
+        Invalid nodes or edges in the input dictionary are skipped, and warnings are logged.
+        If all nodes in a workflow are invalid, or if the graph data leads to a Pydantic
+        validation error during final Graph instantiation, the resulting graph might be empty
+        or incomplete. The method attempts to construct a graph with as much valid data as possible.
+
         Args:
             graph (dict[str, Any]): The dictionary representing the Graph.
+        
+        Returns:
+            Graph: An instance of the Graph, potentially with fewer nodes/edges than specified
+                   in the input if errors were encountered.
         """
         nodes_list = []
         raw_nodes = graph.get("nodes", [])
