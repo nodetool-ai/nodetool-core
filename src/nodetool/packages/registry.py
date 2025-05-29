@@ -852,18 +852,22 @@ class Registry:
                 try:
                     # Load the full workflow with graph
                     workflow = self.load_example(package.name, example_meta.name)
-                    if not workflow or not workflow.graph:
+                    if not workflow or not workflow.graph or not workflow.graph.nodes:
                         continue
 
                     # Safely build nodes and edges, skipping invalid ones
                     nodes = []
                     for node in workflow.graph.nodes:
                         try:
+                            node_dict = node.model_dump()
                             # Try to instantiate the node to check if it's valid
-                            BaseNode.from_dict(node.model_dump(), skip_errors=True)
-                            nodes.append(node.model_dump())
+                            BaseNode.from_dict(node_dict, skip_errors=True)
+                            nodes.append(node_dict)
                         except Exception as e:
-                            logging.warning(f"Skipping invalid node in example {example_meta.name} in package {package.name}: {e}")
+                            logging.warning(
+                                f"Skipping invalid node in example {example_meta.name} "
+                                f"in package {package.name}: {e}"
+                            )
                     edges = []
                     for edge in workflow.graph.edges:
                         try:

@@ -1,8 +1,8 @@
-from typing import Any, List, Sequence
+from typing import Any, List, Sequence, Tuple, Optional
 from collections import deque
 import logging
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 from nodetool.types.graph import Edge
 from nodetool.workflows.base_node import (
     GroupNode,
@@ -99,7 +99,7 @@ class Graph(BaseModel):
                 # Assuming Edge can be instantiated directly from dict
                 # If Edge has its own from_dict or validation, use that
                 edges_list.append(Edge(**edge_data))
-            except Exception as e: # Catching a broader exception for edges if instantiation is complex
+            except (ValueError, TypeError, ValidationError) as e: # Catching a broader exception for edges if instantiation is complex
                 logging.warning(f"Skipping invalid edge during Graph.from_dict: {e}. Edge data: {edge_data}")
                 continue
 
