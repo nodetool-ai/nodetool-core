@@ -232,3 +232,19 @@ def test_base_node_get_json_schema():
     assert schema["type"] == "object"
     assert "properties" in schema
     assert "prop" in schema["properties"]
+
+
+class DynamicOutputNode(BaseNode):
+    value: int = 0
+
+    async def process(self, context: ProcessingContext):
+        return {"dynamic": self.value}
+
+
+def test_dynamic_outputs():
+    node = DynamicOutputNode(dynamic_outputs={"dynamic": TypeMetadata(type="int")})
+    outputs = node.outputs()
+    assert any(o.name == "dynamic" and o.type.type == "int" for o in outputs)
+    node_dict = node.to_dict()
+    node2 = DynamicOutputNode.from_dict(node_dict)
+    assert "dynamic" in node2._dynamic_outputs
