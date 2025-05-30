@@ -47,6 +47,7 @@ class Workflow(DBModel):
     description: str | None = DBField(default="")
     package_name: str | None = DBField(default="")
     thumbnail: str | None = DBField(default=None)
+    thumbnail_url: str | None = DBField(default=None)
     graph: dict = DBField(default_factory=dict)
     settings: dict[str, Any] | None = DBField(default_factory=dict)
     receive_clipboard: bool | None = DBField(default=False)
@@ -142,6 +143,7 @@ class Workflow(DBModel):
             "name",
             "description",
             "thumbnail",
+            "thumbnail_url",
             "access",
             "user_id",
             "created_at",
