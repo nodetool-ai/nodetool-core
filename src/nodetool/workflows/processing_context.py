@@ -600,8 +600,8 @@ class ProcessingContext:
         duration = (datetime.now() - start_time).total_seconds()
         cost = await calculate_chat_cost(
             model,
-            _provider.usage["prompt_tokens"],
-            _provider.usage["completion_tokens"],
+            _provider.usage.get("prompt_tokens", 0),
+            _provider.usage.get("completion_tokens", 0),
         )
         PredictionModel.create(
             user_id=self.user_id,
@@ -615,8 +615,8 @@ class ProcessingContext:
             started_at=start_time,
             completed_at=datetime.now(),
             cost=cost,
-            input_tokens=_provider.usage["prompt_tokens"],
-            output_tokens=_provider.usage["completion_tokens"],
+            input_tokens=_provider.usage.get("prompt_tokens", 0),
+            output_tokens=_provider.usage.get("completion_tokens", 0),
         )
 
     async def run_prediction(

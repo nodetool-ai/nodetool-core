@@ -216,6 +216,7 @@ class AnthropicProvider(ChatProvider):
         max_tokens: int = 8192,
         context_window: int = 4096,
         response_format: dict | None = None,
+        **kwargs,
     ) -> AsyncGenerator[Chunk | ToolCall, Any]:
         """Generate streaming completions from Anthropic."""
         # Handle response_format parameter

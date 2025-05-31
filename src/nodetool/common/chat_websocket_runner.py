@@ -93,7 +93,7 @@ from nodetool.metadata.types import (
 from nodetool.metadata.types import MessageImageContent, MessageTextContent
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.run_workflow import run_workflow
-from nodetool.workflows.types import Chunk
+from nodetool.workflows.types import Chunk, ToolCallUpdate
 from nodetool.workflows.workflow_runner import WorkflowRunner
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.chat.help import create_help_answer
@@ -137,51 +137,6 @@ async def provider_from_model(model: str) -> ChatProvider:
     else:
         log.error(f"Unsupported model: {model}")
         raise ValueError(f"Unsupported model: {model}")
-
-
-async def run_tool(
-    context: ProcessingContext,
-    tool_call: ToolCall,
-    tools: Sequence[Tool],
-) -> ToolCall:
-    """Execute a tool call requested by the chat model.
-
-    Locates the appropriate tool implementation by name from the available tools,
-    executes it with the provided arguments, and captures the result.
-
-    Args:
-        context (ProcessingContext): The processing context containing user information and state
-        tool_call (ToolCall): The tool call to execute, containing name, ID, and arguments
-        tools (Sequence[Tool]): Available tools that can be executed
-
-    Returns:
-        ToolCall: The original tool call object updated with the execution result
-
-    Raises:
-        AssertionError: If the specified tool is not found in the available tools
-    """
-
-    def find_tool(name):
-        for tool in tools:
-            if tool.name == name:
-                return tool
-        return None
-
-    tool = find_tool(tool_call.name)
-
-    assert tool is not None, f"Tool {tool_call.name} not found"
-    log.debug(
-        f"Executing tool {tool_call.name} (id={tool_call.id}) with args: {tool_call.args}"
-    )
-    result = await tool.process(context, tool_call.args)
-    log.debug(f"Tool {tool_call.name} returned: {result}")
-
-    return ToolCall(
-        id=tool_call.id,
-        name=tool_call.name,
-        args=tool_call.args,
-        result=result,
-    )
 
 
 class WebSocketMode(str, Enum):
@@ -503,22 +458,12 @@ class ChatWebSocketRunner:
                     )
                     if isinstance(chunk, Chunk):
                         content += chunk.content
-                        # Send intermediate chunks to client
-                        chunk_msg = {
-                            "type": "chunk",
-                            "content": chunk.content,
-                            "done": chunk.done,
-                        }
-                        await self.send_message(chunk_msg)
+                        await self.send_message(chunk.model_dump())
                     elif isinstance(chunk, ToolCall):
-                        # Send tool call to client
-                        await self.send_message(
-                            {"type": "tool_call", "tool_call": chunk.model_dump()}
-                        )
                         log.debug(f"Processing tool call: {chunk.name}")
 
                         # Process the tool call
-                        tool_result = await run_tool(
+                        tool_result = await self.run_tool(
                             processing_context, chunk, selected_tools
                         )
                         log.debug(
@@ -527,29 +472,29 @@ class ChatWebSocketRunner:
                         # Add tool messages to unprocessed messages
                         # Note: Assistant message with tool calls typically has no content
                         assistant_msg = Message(role="assistant", tool_calls=[chunk])
-                        log.debug(f"Creating assistant message with tool call, content={assistant_msg.content}")
+                        log.debug(
+                            f"Creating assistant message with tool call, content={assistant_msg.content}"
+                        )
                         unprocessed_messages.append(assistant_msg)
-                        
+
                         tool_msg = Message(
                             role="tool",
                             tool_call_id=tool_result.id,
                             content=json.dumps(tool_result.result),
                         )
-                        log.debug(f"Creating tool message with result, content_length={len(tool_msg.content or '')}")
-                        unprocessed_messages.append(tool_msg)
-
-                        # Send tool result to client
-                        await self.send_message(
-                            {"type": "tool_result", "result": tool_result.model_dump()}
+                        log.debug(
+                            f"Creating tool message with result, content_length={len(tool_msg.content or '')}"
                         )
-                        log.debug("Sent tool result to client")
+                        unprocessed_messages.append(tool_msg)
 
                 # If no more unprocessed messages, we're done
                 if not unprocessed_messages:
                     log.debug("No more unprocessed messages, completing generation")
                     break
                 else:
-                    log.debug(f"Have {len(unprocessed_messages)} unprocessed messages, continuing loop")
+                    log.debug(
+                        f"Have {len(unprocessed_messages)} unprocessed messages, continuing loop"
+                    )
 
             return Message(
                 role="assistant",
@@ -680,3 +625,56 @@ class ChatWebSocketRunner:
                 )
         except Exception as e:
             log.error(f"Error sending message: {e}", exc_info=True)
+
+    async def run_tool(
+        self,
+        context: ProcessingContext,
+        tool_call: ToolCall,
+        tools: Sequence[Tool],
+    ) -> ToolCall:
+        """Execute a tool call requested by the chat model.
+
+        Locates the appropriate tool implementation by name from the available tools,
+        executes it with the provided arguments, and captures the result.
+
+        Args:
+            context (ProcessingContext): The processing context containing user information and state
+            tool_call (ToolCall): The tool call to execute, containing name, ID, and arguments
+            tools (Sequence[Tool]): Available tools that can be executed
+
+        Returns:
+            ToolCall: The original tool call object updated with the execution result
+
+        Raises:
+            AssertionError: If the specified tool is not found in the available tools
+        """
+
+        def find_tool(name):
+            for tool in tools:
+                if tool.name == name:
+                    return tool
+            return None
+
+        tool = find_tool(tool_call.name)
+
+        assert tool is not None, f"Tool {tool_call.name} not found"
+        log.debug(
+            f"Executing tool {tool_call.name} (id={tool_call.id}) with args: {tool_call.args}"
+        )
+        # Send tool call to client
+        await self.send_message(
+            ToolCallUpdate(
+                name=tool_call.name,
+                args=tool_call.args,
+                message=tool.user_message(tool_call.args),
+            ).model_dump()
+        )
+        result = await tool.process(context, tool_call.args)
+        log.debug(f"Tool {tool_call.name} returned: {result}")
+
+        return ToolCall(
+            id=tool_call.id,
+            name=tool_call.name,
+            args=tool_call.args,
+            result=result,
+        )
