@@ -35,12 +35,36 @@ import subprocess
 import sys
 import os
 from pathlib import Path
+import shlex
 
 log = Environment.get_logger()
 router = APIRouter(prefix="/api/models", tags=["models"])
 
 # Simple module-level cache
 _cached_huggingface_models = None
+
+
+# Internal helper to get Ollama models directory
+def _get_ollama_models_dir() -> Path | None:
+    path = None
+    try:
+        if sys.platform == "win32":
+            path = Path(os.environ["USERPROFILE"]) / ".ollama" / "models"
+        elif sys.platform == "darwin":
+            path = Path.home() / ".ollama" / "models"
+        else:  # Linux and other UNIX-like
+            user_path = Path.home() / ".ollama" / "models"
+            if user_path.exists() and user_path.is_dir():
+                path = user_path
+            else:
+                path = Path("/usr/share/ollama/.ollama/models")
+        
+        if path and path.exists() and path.is_dir():
+            return path.resolve()
+        return None
+    except Exception as e:
+        log.error(f"Error determining Ollama models directory: {e}")
+        return None
 
 
 class RepoPath(BaseModel):
@@ -233,32 +257,13 @@ async def get_ollama_model_info_endpoint(
 
 @router.get("/ollama_base_path")
 async def get_ollama_base_path_endpoint(user: str = Depends(current_user)) -> dict:
-    path = None
-    try:
-        if sys.platform == "win32":
-            # Typical path, might need to confirm %USERPROFILE% part or make it more robust
-            path = Path(os.environ["USERPROFILE"]) / ".ollama" / "models"
-        elif sys.platform == "darwin":
-            path = Path.home() / ".ollama" / "models"
-        else:  # Linux and other UNIX-like
-            # Check standard user path first
-            user_path = Path.home() / ".ollama" / "models"
-            if user_path.exists() and user_path.is_dir():
-                path = user_path
-            else:
-                # Fallback to system-wide path if user path doesn't exist
-                # This path might require root to access or might not be where user models are
-                path = Path("/usr/share/ollama/.ollama/models")
-        
-        if path and path.exists() and path.is_dir():
-            return {"path": str(path)}
-        elif path: # Path was determined but doesn't exist or isn't a dir
-            return {"path": None, "error": f"Ollama models path determined as {str(path)} but it does not exist or is not a directory."}
-        else: # Should not happen if sys.platform is one of the above
-            return {"path": None, "error": "Could not determine Ollama models path for the operating system."}
-    except Exception as e:
-        log.error(f"Error getting Ollama base path: {e}")
-        return {"path": None, "error": str(e)}
+    ollama_path = _get_ollama_models_dir()
+    if ollama_path:
+        return {"path": str(ollama_path)}
+    else:
+        # _get_ollama_models_dir already logs the specific error.
+        # We return a user-friendly, non-exposing error message.
+        return {"path": None, "error": "Could not determine Ollama models path. Please check server logs for details."}
 
 
 @router.post("/huggingface/try_cache_files")
@@ -298,17 +303,51 @@ if not Environment.is_production():
 
     @router.post("/open_in_explorer")
     async def open_in_explorer(path: str, user: str = Depends(current_user)):
+        ollama_models_dir = _get_ollama_models_dir()
+
+        if not ollama_models_dir:
+            return {
+                "status": "error",
+                "message": "Cannot open path: Ollama models directory not found or configured.",
+            }
+
         try:
+            requested_path = Path(path).resolve()
+
+            if not requested_path.is_relative_to(ollama_models_dir):
+                log.warning(
+                    f"Path traversal attempt: User path {requested_path} is not within ollama models dir {ollama_models_dir}"
+                )
+                return {
+                    "status": "error",
+                    "message": "Access denied: Path is outside the allowed directory.",
+                }
+
+            path_to_open = str(requested_path)
+            sane_path_to_open = shlex.quote(path_to_open)
+
             if sys.platform == "win32":
-                subprocess.run(["explorer", path], check=True)
+                # For Windows, explorer itself handles paths safely, but quoting is still good practice if used in a shell context.
+                # However, subprocess.run with a list of args doesn't use a shell by default.
+                # If we were passing a single string to shell=True, shlex.quote would be critical.
+                # Here, it's less critical for `explorer` but harmless and good for consistency.
+                # The primary risk on Windows with `explorer` is more about what `explorer` can be made to *do* with a path,
+                # rather than shell injection in *this specific command construction*.
+                # The path traversal check is the more significant defense here.
+                # For `open` and `xdg-open` on other platforms, shell metacharacters in path could be an issue if the commands
+                # are implemented as shell scripts or pass paths to shells internally.
+                subprocess.run(["explorer", path_to_open], check=True) # Using original path_to_open for explorer as it expects a plain path
             elif sys.platform == "darwin":
-                subprocess.run(["open", path], check=True)
+                subprocess.run(["open", sane_path_to_open], check=True)
             else:
-                subprocess.run(["xdg-open", path], check=True)
-            return {"status": "success", "path": path}
+                subprocess.run(["xdg-open", sane_path_to_open], check=True)
+            return {"status": "success", "path": path_to_open}
         except Exception as e:
-            log.error(f"Failed to open path {path} in explorer: {e}")
-            return {"status": "error", "message": str(e)}
+            log.error(f"Failed to open path {path_to_open} in explorer: {e}")
+            return {
+                "status": "error",
+                "message": "An internal error occurred while attempting to open the path. Please check server logs for details.",
+            }
 
     @router.post("/huggingface/file_info")
     async def get_huggingface_file_info(
