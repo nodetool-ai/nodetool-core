@@ -125,6 +125,7 @@ app = FastAPI()
 class CachedModel(BaseModel):
     repo_id: str
     repo_type: str
+    path: str
     size_on_disk: int
     the_model_type: Optional[str] = None
     the_model_info: ModelInfo | None = None
@@ -177,6 +178,7 @@ async def read_cached_hf_models(
         CachedModel(
             repo_id=repo.repo_id,
             repo_type=repo.repo_type,
+            path=str(repo.repo_path),
             size_on_disk=repo.size_on_disk,
             the_model_info=model_info,
             the_model_type=model_type_from_model_info(

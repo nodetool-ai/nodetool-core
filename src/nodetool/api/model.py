@@ -31,6 +31,10 @@ from nodetool.chat.ollama_service import (
     get_ollama_model_info,
     stream_ollama_model_pull,
 )
+import subprocess
+import sys
+import os
+from pathlib import Path
 
 log = Environment.get_logger()
 router = APIRouter(prefix="/api/models", tags=["models"])
@@ -227,6 +231,36 @@ async def get_ollama_model_info_endpoint(
     return await get_ollama_model_info(model_name)
 
 
+@router.get("/ollama_base_path")
+async def get_ollama_base_path_endpoint(user: str = Depends(current_user)) -> dict:
+    path = None
+    try:
+        if sys.platform == "win32":
+            # Typical path, might need to confirm %USERPROFILE% part or make it more robust
+            path = Path(os.environ["USERPROFILE"]) / ".ollama" / "models"
+        elif sys.platform == "darwin":
+            path = Path.home() / ".ollama" / "models"
+        else:  # Linux and other UNIX-like
+            # Check standard user path first
+            user_path = Path.home() / ".ollama" / "models"
+            if user_path.exists() and user_path.is_dir():
+                path = user_path
+            else:
+                # Fallback to system-wide path if user path doesn't exist
+                # This path might require root to access or might not be where user models are
+                path = Path("/usr/share/ollama/.ollama/models")
+        
+        if path and path.exists() and path.is_dir():
+            return {"path": str(path)}
+        elif path: # Path was determined but doesn't exist or isn't a dir
+            return {"path": None, "error": f"Ollama models path determined as {str(path)} but it does not exist or is not a directory."}
+        else: # Should not happen if sys.platform is one of the above
+            return {"path": None, "error": "Could not determine Ollama models path for the operating system."}
+    except Exception as e:
+        log.error(f"Error getting Ollama base path: {e}")
+        return {"path": None, "error": str(e)}
+
+
 @router.post("/huggingface/try_cache_files")
 async def try_cache_files(
     paths: list[RepoPath],
@@ -261,6 +295,20 @@ if not Environment.is_production():
         return StreamingResponse(
             stream_ollama_model_pull(model_name), media_type="application/json"
         )
+
+    @router.post("/open_in_explorer")
+    async def open_in_explorer(path: str, user: str = Depends(current_user)):
+        try:
+            if sys.platform == "win32":
+                subprocess.run(["explorer", path], check=True)
+            elif sys.platform == "darwin":
+                subprocess.run(["open", path], check=True)
+            else:
+                subprocess.run(["xdg-open", path], check=True)
+            return {"status": "success", "path": path}
+        except Exception as e:
+            log.error(f"Failed to open path {path} in explorer: {e}")
+            return {"status": "error", "message": str(e)}
 
     @router.post("/huggingface/file_info")
     async def get_huggingface_file_info(
