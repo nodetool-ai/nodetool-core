@@ -17,6 +17,7 @@ from nodetool.metadata.types import (
     comfy_model_to_folder,
 )
 from huggingface_hub import try_to_load_from_cache
+from huggingface_hub.constants import HF_HUB_CACHE
 from nodetool.api.utils import current_user
 from fastapi import APIRouter, Depends
 from nodetool.common.huggingface_models import (
@@ -42,10 +43,24 @@ router = APIRouter(prefix="/api/models", tags=["models"])
 
 # Simple module-level cache
 _cached_huggingface_models = None
+_cached_ollama_models_dir_path: Path | None | object = object()  # Sentinel to distinguish from None result
 
 
 # Internal helper to get Ollama models directory
 def _get_ollama_models_dir() -> Path | None:
+    """Determines and caches the Ollama models directory path.
+
+    The path is determined based on the operating system and common Ollama conventions.
+    The result is cached in a module-level variable to avoid repeated lookups.
+
+    Returns:
+        Path | None: The resolved absolute path to the Ollama models directory if found
+                      and valid, otherwise None.
+    """
+    global _cached_ollama_models_dir_path
+    if _cached_ollama_models_dir_path is not object(): # Check if cache is populated
+        return _cached_ollama_models_dir_path # type: ignore
+
     path = None
     try:
         if sys.platform == "win32":
@@ -60,11 +75,44 @@ def _get_ollama_models_dir() -> Path | None:
                 path = Path("/usr/share/ollama/.ollama/models")
         
         if path and path.exists() and path.is_dir():
-            return path.resolve()
+            _cached_ollama_models_dir_path = path.resolve()
+            return _cached_ollama_models_dir_path
+        
+        _cached_ollama_models_dir_path = None # Cache that it wasn't found
         return None
     except Exception as e:
         log.error(f"Error determining Ollama models directory: {e}")
+        _cached_ollama_models_dir_path = None # Cache failure as None
         return None
+
+
+# Internal helper to get all safe directories for opening in explorer
+def _get_valid_explorable_roots() -> list[Path]:
+    """Determines and returns a list of valid root directories for file explorer operations.
+
+    Currently includes the Ollama models directory and the Hugging Face hub cache directory.
+    Paths are resolved to their absolute form.
+
+    Returns:
+        list[Path]: A list of Path objects representing safe explorable roots.
+    """
+    safe_roots = []
+    ollama_dir = _get_ollama_models_dir()
+    if ollama_dir:
+        safe_roots.append(ollama_dir)
+    
+    try:
+        # HF_HUB_CACHE is the path to the root of the Hugging Face cache directory
+        # e.g., ~/.cache/huggingface/hub or M:\HUGGINGFACE\hub if HF_HOME is M:\HUGGINGFACE
+        hf_cache_path = Path(HF_HUB_CACHE).resolve()
+        if hf_cache_path.exists() and hf_cache_path.is_dir():
+            safe_roots.append(hf_cache_path)
+        else:
+            log.warning(f"Hugging Face cache directory {hf_cache_path} does not exist or is not a directory.")
+    except Exception as e:
+        log.error(f"Error determining Hugging Face cache directory: {e}")
+        
+    return safe_roots
 
 
 class RepoPath(BaseModel):
@@ -257,13 +305,27 @@ async def get_ollama_model_info_endpoint(
 
 @router.get("/ollama_base_path")
 async def get_ollama_base_path_endpoint(user: str = Depends(current_user)) -> dict:
+    """Retrieves the Ollama models directory path.
+
+    The path is determined by the `_get_ollama_models_dir` helper function, which
+    includes OS-specific lookup and caching.
+
+    Args:
+        user (str): The current user, injected by FastAPI dependency.
+
+    Returns:
+        dict: A dictionary containing the path if found (e.g., {"path": "/path/to/ollama/models"}),
+              or an error message if not found (e.g., {"status": "error", "message": "..."}).
+    """
     ollama_path = _get_ollama_models_dir()
     if ollama_path:
         return {"path": str(ollama_path)}
     else:
         # _get_ollama_models_dir already logs the specific error.
-        # We return a user-friendly, non-exposing error message.
-        return {"path": None, "error": "Could not determine Ollama models path. Please check server logs for details."}
+        return {
+            "status": "error",
+            "message": "Could not determine Ollama models path. Please check server logs for details.",
+        }
 
 
 @router.post("/huggingface/try_cache_files")
@@ -303,40 +365,52 @@ if not Environment.is_production():
 
     @router.post("/open_in_explorer")
     async def open_in_explorer(path: str, user: str = Depends(current_user)):
-        ollama_models_dir = _get_ollama_models_dir()
+        """Opens the specified path in the system's default file explorer.
 
-        if not ollama_models_dir:
+        Security measures:
+        - The requested path must be within a pre-configured list of safe root directories
+          (e.g., Ollama models directory, Hugging Face cache).
+        - The input path is sanitized using `shlex.quote` for non-Windows platforms before
+          being passed to subprocess commands to prevent command injection.
+
+        Args:
+            path (str): The path to open in the file explorer.
+            user (str): The current user, injected by FastAPI dependency.
+
+        Returns:
+            dict: A dictionary indicating success (e.g., {"status": "success", "path": "/validated/path"})
+                  or an error (e.g., {"status": "error", "message": "..."}).
+        """
+        safe_roots = _get_valid_explorable_roots()
+
+        if not safe_roots:
             return {
                 "status": "error",
-                "message": "Cannot open path: Ollama models directory not found or configured.",
+                "message": "Cannot open path: No safe directories (like Ollama or Hugging Face cache) could be determined.",
             }
 
         try:
             requested_path = Path(path).resolve()
-
-            if not requested_path.is_relative_to(ollama_models_dir):
+            is_safe_path = False
+            for root_dir in safe_roots:
+                if requested_path.is_relative_to(root_dir):
+                    is_safe_path = True
+                    break
+            
+            if not is_safe_path:
                 log.warning(
-                    f"Path traversal attempt: User path {requested_path} is not within ollama models dir {ollama_models_dir}"
+                    f"Path traversal attempt: User path {requested_path} is not within any of the configured safe directories: {safe_roots}"
                 )
                 return {
                     "status": "error",
-                    "message": "Access denied: Path is outside the allowed directory.",
+                    "message": "Access denied: Path is outside the allowed directories.",
                 }
 
             path_to_open = str(requested_path)
             sane_path_to_open = shlex.quote(path_to_open)
 
             if sys.platform == "win32":
-                # For Windows, explorer itself handles paths safely, but quoting is still good practice if used in a shell context.
-                # However, subprocess.run with a list of args doesn't use a shell by default.
-                # If we were passing a single string to shell=True, shlex.quote would be critical.
-                # Here, it's less critical for `explorer` but harmless and good for consistency.
-                # The primary risk on Windows with `explorer` is more about what `explorer` can be made to *do* with a path,
-                # rather than shell injection in *this specific command construction*.
-                # The path traversal check is the more significant defense here.
-                # For `open` and `xdg-open` on other platforms, shell metacharacters in path could be an issue if the commands
-                # are implemented as shell scripts or pass paths to shells internally.
-                subprocess.run(["explorer", path_to_open], check=True) # Using original path_to_open for explorer as it expects a plain path
+                subprocess.run(["explorer", path_to_open], check=True)
             elif sys.platform == "darwin":
                 subprocess.run(["open", sane_path_to_open], check=True)
             else:
