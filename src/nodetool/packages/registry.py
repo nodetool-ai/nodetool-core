@@ -70,9 +70,8 @@ from nodetool.common.settings import get_system_file_path
 from nodetool.metadata.node_metadata import PackageModel, ExampleMetadata
 from nodetool.packages.types import AssetInfo, PackageInfo
 from nodetool.types.workflow import Workflow
-from nodetool.workflows.graph import Graph
 from nodetool.types.graph import Graph as APIGraph
-from nodetool.workflows.base_node import BaseNode, split_camel_case
+from nodetool.workflows.base_node import split_camel_case
 
 
 # Constants
@@ -868,16 +867,10 @@ class Registry:
                         # 2. Search in class name-derived title
                         type_parts = node_api_data.type.split('.')
                         class_name_from_type = type_parts[-1]
-                        # Replicate BaseNode.get_title() logic for class name part
-                        # Assumes node type strings (e.g., "namespace.MyNode") don't usually end with "Node"
-                        # or if they do, it's part of the actual name for search purposes.
-                        # BaseNode.get_node_type() often removes "Node" suffix before it becomes part of the type string.
-                        # BaseNode.get_title() then processes this ClassName.
-                        # For simplicity, we take the class name part as is from the type string.
                         class_derived_title = split_camel_case(class_name_from_type).lower()
                         if query in class_derived_title:
                             found_match = True
-                            break
+                            break # Found a match for this node, break from node property checks
 
                         # 3. Search in instance-specific title (from ui_properties or data)
                         instance_title = ""
@@ -888,18 +881,10 @@ class Registry:
                         
                         if instance_title and query in instance_title:
                             found_match = True
-                            break
+                            break # Found a match for this node, break from node property checks
                         
-                        # 4. Search in instance-specific description (from data)
-                        instance_description = ""
-                        if node_api_data.data and "description" in node_api_data.data:
-                            instance_description = str(node_api_data.data["description"]).lower()
-
-                        if instance_description and query in instance_description:
-                            found_match = True
-                            break
-                    
-                    if found_match:
+                    # After iterating all nodes in the workflow:
+                    if found_match: # If any node in this workflow matched
                         matching_workflows.append(workflow)
 
                 except Exception as e:
