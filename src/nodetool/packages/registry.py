@@ -72,7 +72,7 @@ from nodetool.packages.types import AssetInfo, PackageInfo
 from nodetool.types.workflow import Workflow
 from nodetool.workflows.graph import Graph
 from nodetool.types.graph import Graph as APIGraph
-from nodetool.workflows.base_node import BaseNode
+from nodetool.workflows.base_node import BaseNode, split_camel_case
 
 
 # Constants
@@ -825,22 +825,10 @@ class Registry:
 
         This method loads all example workflows including their graphs and searches for
         matches in:
-        - Node title (from ui_properties.title or data.title)
-        - Node description (from data.description)
-        - Node type
-
-        Error Handling:
-        - Invalid nodes or edges within an example are skipped. A summary of issues encountered
-          (e.g., property assignment errors, critical instantiation errors, edge processing errors)
-          for an example is logged as a single warning message if `skip_errors` is True during
-          node instantiation.
-        - If all nodes in an example are found to be invalid after processing, the example is skipped,
-          and a warning is logged.
-        - If an entire example workflow fails to load or encounters a critical error during its
-          processing (e.g., Pydantic validation error when constructing the final Graph object),
-          it is skipped, and a warning is logged.
-        - The method attempts to return partial results (workflows that were processed successfully
-          and matched the query) even if some examples encountered errors.
+        - Node type string
+        - Node class name (derived title)
+        - Node instance title (from ui_properties.title or data.title)
+        - Node instance description (from data.description)
 
         Args:
             query: The search string to find in node properties. If empty, all loadable
@@ -848,16 +836,13 @@ class Registry:
 
         Returns:
             List[Workflow]: A list of workflows that contain nodes matching the query.
-                          This list may be partial if errors were encountered during processing
-                          of some examples.
         """
         matching_workflows = []
 
-        # If empty query, return all examples
         if not query:
             return self.list_examples()
 
-        query = query.lower()
+        query = query.lower() # Query is already lowercased at the start
         packages = self.list_installed_packages()
 
         for package in packages:
@@ -865,92 +850,66 @@ class Registry:
                 continue
 
             for example_meta in package.examples:
-                example_error_messages = []
-                original_node_count = 0
-                original_edge_count = 0
-                processed_nodes_count = 0
-                processed_edges_count = 0
-
                 try:
-                    # Load the full workflow with graph
+                    # Load the full workflow with graph data (APIGraph)
                     workflow = self.load_example(package.name, example_meta.name)
                     if not workflow or not workflow.graph or not workflow.graph.nodes:
-                        # This 'continue' is fine, means the example itself is fundamentally broken or empty
-                        # A more specific log could be added here if desired, but it's not the main source of spam
+                        self.logger.debug(f"Skipping empty or unreadable example: {package.name}/{example_meta.name}")
                         continue
                     
-                    original_node_count = len(workflow.graph.nodes)
-                    original_edge_count = len(workflow.graph.edges)
-
-                    # Safely build nodes and edges, skipping invalid ones
-                    nodes = []
-                    for i, node_data_model in enumerate(workflow.graph.nodes):
-                        try:
-                            node_dict = node_data_model.model_dump()
-                            # Try to instantiate the node to check if it's valid
-                            # BaseNode.from_dict will now return property errors if skip_errors=True
-                            _, property_errors = BaseNode.from_dict(node_dict, skip_errors=True)
-                            if property_errors:
-                                for prop_err in property_errors:
-                                    example_error_messages.append(f"Node '{node_data_model.get_title() if hasattr(node_data_model, 'get_title') else node_data_model.id}' (Index {i}, Type: {node_data_model.type if hasattr(node_data_model, 'type') else 'N/A'}) property error: {prop_err}")
-                            nodes.append(node_dict)
-                            processed_nodes_count +=1
-                        except ValueError as ve: # Catch critical errors from from_dict (e.g. invalid type, missing id)
-                            err_msg = f"Node (Index {i}, ID: {node_data_model.id if hasattr(node_data_model, 'id') else 'N/A'}, Type: {node_data_model.type if hasattr(node_data_model, 'type') else 'N/A'}): Critical error during instantiation: {ve}"
-                            example_error_messages.append(err_msg)
-                        except Exception as e: # Catch other unexpected errors
-                            err_msg = f"Node (Index {i}, ID: {node_data_model.id if hasattr(node_data_model, 'id') else 'N/A'}, Type: {node_data_model.type if hasattr(node_data_model, 'type') else 'N/A'}): {e}"
-                            example_error_messages.append(f"Unexpected error processing node: {err_msg}")
-                    
-                    edges = []
-                    for i, edge_data_model in enumerate(workflow.graph.edges):
-                        try:
-                            edges.append(edge_data_model.model_dump())
-                            processed_edges_count += 1
-                        except Exception as e:
-                            err_msg = f"Edge {i} (ID: {edge_data_model.id if hasattr(edge_data_model, 'id') else 'N/A'}, Source: {edge_data_model.source if hasattr(edge_data_model, 'source') else 'N/A'}): {e}"
-                            example_error_messages.append(f"Error processing edge: {err_msg}")
-
-                    if not nodes:
-                        logging.warning(f"All nodes invalid in example '{example_meta.name}' in package '{package.name}', skipping workflow.")
-                        continue
-                    
-                    if example_error_messages:
-                        summary = (
-                            f"Encountered issues in example '{example_meta.name}' (package: {package.name}):\n"
-                            f"  Original node count: {original_node_count}, Processed: {processed_nodes_count}\n"
-                            f"  Original edge count: {original_edge_count}, Processed: {processed_edges_count}\n"
-                            f"  Errors ({len(example_error_messages)}):"
-                        )
-                        for msg in example_error_messages:
-                            summary += f"\n    - {msg}"
-                        logging.warning(summary)
-
-
-                    graph = Graph.from_dict({
-                        "nodes": nodes,
-                        "edges": edges,
-                    })
-
-                    # Search through nodes in the graph
                     found_match = False
-                    for node in graph.nodes:
-                        # Check node type
-                        if query in node.get_node_type().lower():
+                    # workflow.graph.nodes are nodetool.types.graph.Node instances
+                    for node_api_data in workflow.graph.nodes:
+                        # 1. Search in raw node type string
+                        if query in node_api_data.type.lower():
                             found_match = True
                             break
 
-                        if query in str(node.get_title()).lower():
+                        # 2. Search in class name-derived title
+                        type_parts = node_api_data.type.split('.')
+                        class_name_from_type = type_parts[-1]
+                        # Replicate BaseNode.get_title() logic for class name part
+                        # Assumes node type strings (e.g., "namespace.MyNode") don't usually end with "Node"
+                        # or if they do, it's part of the actual name for search purposes.
+                        # BaseNode.get_node_type() often removes "Node" suffix before it becomes part of the type string.
+                        # BaseNode.get_title() then processes this ClassName.
+                        # For simplicity, we take the class name part as is from the type string.
+                        class_derived_title = split_camel_case(class_name_from_type).lower()
+                        if query in class_derived_title:
                             found_match = True
                             break
 
+                        # 3. Search in instance-specific title (from ui_properties or data)
+                        instance_title = ""
+                        if node_api_data.ui_properties and "title" in node_api_data.ui_properties:
+                            instance_title = str(node_api_data.ui_properties["title"]).lower()
+                        elif node_api_data.data and "title" in node_api_data.data: # Fallback
+                            instance_title = str(node_api_data.data["title"]).lower()
+                        
+                        if instance_title and query in instance_title:
+                            found_match = True
+                            break
+                        
+                        # 4. Search in instance-specific description (from data)
+                        instance_description = ""
+                        if node_api_data.data and "description" in node_api_data.data:
+                            instance_description = str(node_api_data.data["description"]).lower()
+
+                        if instance_description and query in instance_description:
+                            found_match = True
+                            break
+                    
                     if found_match:
                         matching_workflows.append(workflow)
-                except Exception as e:
-                    # This top-level exception for the whole example loading/processing can remain a single log
-                    logging.warning(f"Skipping invalid example workflow '{example_meta.name}' in package '{package.name}': {e}")
-                    continue
 
+                except Exception as e:
+                    # Log general errors encountered during loading or basic processing of an example
+                    self.logger.warning(
+                        f"Skipping example workflow '{example_meta.name}' in package '{package.name}' due to an error during search processing: {e}",
+                        exc_info=True  # Add stack trace for better debugging
+                    )
+                    continue
+        
         return matching_workflows
 
 
