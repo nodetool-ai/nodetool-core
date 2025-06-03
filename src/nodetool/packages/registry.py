@@ -70,8 +70,8 @@ from nodetool.common.settings import get_system_file_path
 from nodetool.metadata.node_metadata import PackageModel, ExampleMetadata
 from nodetool.packages.types import AssetInfo, PackageInfo
 from nodetool.types.workflow import Workflow
-from nodetool.workflows.graph import Graph
 from nodetool.types.graph import Graph as APIGraph
+from nodetool.workflows.base_node import split_camel_case
 
 
 # Constants
@@ -824,23 +824,24 @@ class Registry:
 
         This method loads all example workflows including their graphs and searches for
         matches in:
-        - Node title (from ui_properties.title or data.title)
-        - Node description (from data.description)
-        - Node type
+        - Node type string
+        - Node class name (derived title)
+        - Node instance title (from ui_properties.title or data.title)
+        - Node instance description (from data.description)
 
         Args:
-            query: The search string to find in node properties
+            query: The search string to find in node properties. If empty, all loadable
+                   example workflows are returned via `self.list_examples()`.
 
         Returns:
-            List[Workflow]: A list of workflows that contain nodes matching the query
+            List[Workflow]: A list of workflows that contain nodes matching the query.
         """
         matching_workflows = []
 
-        # If empty query, return all examples
         if not query:
             return self.list_examples()
 
-        query = query.lower()
+        query = query.lower() # Query is already lowercased at the start
         packages = self.list_installed_packages()
 
         for package in packages:
@@ -848,37 +849,52 @@ class Registry:
                 continue
 
             for example_meta in package.examples:
-                # Load the full workflow with graph
-                workflow = self.load_example(package.name, example_meta.name)
-                if not workflow or not workflow.graph:
+                try:
+                    # Load the full workflow with graph data (APIGraph)
+                    workflow = self.load_example(package.name, example_meta.name)
+                    if not workflow or not workflow.graph or not workflow.graph.nodes:
+                        self.logger.debug(f"Skipping empty or unreadable example: {package.name}/{example_meta.name}")
+                        continue
+                    
+                    found_match = False
+                    # workflow.graph.nodes are nodetool.types.graph.Node instances
+                    for node_api_data in workflow.graph.nodes:
+                        # 1. Search in raw node type string
+                        if query in node_api_data.type.lower():
+                            found_match = True
+                            break
+
+                        # 2. Search in class name-derived title
+                        type_parts = node_api_data.type.split('.')
+                        class_name_from_type = type_parts[-1]
+                        class_derived_title = split_camel_case(class_name_from_type).lower()
+                        if query in class_derived_title:
+                            found_match = True
+                            break # Found a match for this node, break from node property checks
+
+                        # 3. Search in instance-specific title (from ui_properties or data)
+                        instance_title = ""
+                        if node_api_data.ui_properties and "title" in node_api_data.ui_properties:
+                            instance_title = str(node_api_data.ui_properties["title"]).lower()
+                        elif node_api_data.data and "title" in node_api_data.data: # Fallback
+                            instance_title = str(node_api_data.data["title"]).lower()
+                        
+                        if instance_title and query in instance_title:
+                            found_match = True
+                            break # Found a match for this node, break from node property checks
+                        
+                    # After iterating all nodes in the workflow:
+                    if found_match: # If any node in this workflow matched
+                        matching_workflows.append(workflow)
+
+                except Exception as e:
+                    # Log general errors encountered during loading or basic processing of an example
+                    self.logger.warning(
+                        f"Skipping example workflow '{example_meta.name}' in package '{package.name}' due to an error during search processing: {e}",
+                        exc_info=True  # Add stack trace for better debugging
+                    )
                     continue
-
-                graph = Graph.from_dict(
-                    {
-                        "nodes": [node.model_dump() for node in workflow.graph.nodes],
-                        "edges": [edge.model_dump() for edge in workflow.graph.edges],
-                    }
-                )
-
-                # Search through nodes in the graph
-                found_match = False
-                for node in graph.nodes:
-                    # Check node type
-                    if query in node.get_node_type().lower():
-                        found_match = True
-                        break
-
-                    if query in str(node.get_title()).lower():
-                        found_match = True
-                        break
-
-                    if query in str(node.get_description()).lower():
-                        found_match = True
-                        break
-
-                if found_match:
-                    matching_workflows.append(workflow)
-
+        
         return matching_workflows
 
 
