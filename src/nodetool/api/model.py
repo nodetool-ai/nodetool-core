@@ -303,31 +303,6 @@ async def get_ollama_model_info_endpoint(
     return await get_ollama_model_info(model_name)
 
 
-@router.get("/ollama_base_path")
-async def get_ollama_base_path_endpoint(user: str = Depends(current_user)) -> dict:
-    """Retrieves the Ollama models directory path.
-
-    The path is determined by the `_get_ollama_models_dir` helper function, which
-    includes OS-specific lookup and caching.
-
-    Args:
-        user (str): The current user, injected by FastAPI dependency.
-
-    Returns:
-        dict: A dictionary containing the path if found (e.g., {"path": "/path/to/ollama/models"}),
-              or an error message if not found (e.g., {"status": "error", "message": "..."}).
-    """
-    ollama_path = _get_ollama_models_dir()
-    if ollama_path:
-        return {"path": str(ollama_path)}
-    else:
-        # _get_ollama_models_dir already logs the specific error.
-        return {
-            "status": "error",
-            "message": "Could not determine Ollama models path. Please check server logs for details.",
-        }
-
-
 @router.post("/huggingface/try_cache_files")
 async def try_cache_files(
     paths: list[RepoPath],
@@ -356,6 +331,30 @@ async def try_cache_repos(
 
 
 if not Environment.is_production():
+
+    @router.get("/ollama_base_path")
+    async def get_ollama_base_path_endpoint(user: str = Depends(current_user)) -> dict:
+        """Retrieves the Ollama models directory path.
+
+        The path is determined by the `_get_ollama_models_dir` helper function, which
+        includes OS-specific lookup and caching.
+
+        Args:
+            user (str): The current user, injected by FastAPI dependency.
+
+        Returns:
+            dict: A dictionary containing the path if found (e.g., {"path": "/path/to/ollama/models"}),
+                  or an error message if not found (e.g., {"status": "error", "message": "..."}).
+        """
+        ollama_path = _get_ollama_models_dir()
+        if ollama_path:
+            return {"path": str(ollama_path)}
+        else:
+            # _get_ollama_models_dir already logs the specific error.
+            return {
+                "status": "error",
+                "message": "Could not determine Ollama models path. Please check server logs for details.",
+            }
 
     @router.post("/pull_ollama_model")
     async def pull_ollama_model(model_name: str, user: str = Depends(current_user)):
