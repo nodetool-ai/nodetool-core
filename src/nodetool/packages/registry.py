@@ -879,19 +879,17 @@ class Registry:
 
     def search_example_workflows(self, query: str = "") -> List[Workflow]:
         """
-        Search for example workflows by searching through node titles, descriptions, and types.
+        Search for example workflows that contain nodes matching the query.
 
-        This method loads all example workflows including their graphs and searches for
-        matches in:
-        - Node title (from ui_properties.title or data.title)
-        - Node description (from data.description)
-        - Node type
+        This method searches through node types to find workflows that use specific nodes.
+        The search is optimized using a lightweight in-memory cache that stores only
+        node types and workflow IDs.
 
         Args:
-            query: The search string to find in node properties
+            query: The search string to find in node types
 
         Returns:
-            List[Workflow]: A list of workflows that contain nodes matching the query
+            List[Workflow]: A list of workflows that contain nodes with types matching the query
         """
         if not query:
             return self.list_examples()

@@ -90,33 +90,12 @@ class Graph(BaseModel):
             Graph: An instance of the Graph, potentially with fewer nodes/edges than specified
                    in the input if errors were encountered.
         """
-        nodes_list = []
-        raw_nodes = graph.get("nodes", [])
-        for node_data in raw_nodes:
-            try:
-                node_instance, property_errors = BaseNode.from_dict(node_data, skip_errors=True)
-                # TODO: Decide if property_errors from here should be logged or collected by Graph.from_dict
-                # For now, they are handled by BaseNode.from_dict if it logs them, or collected by Registry if it calls it.
-                nodes_list.append(node_instance)
-            except ValueError as e:
-                # Log the error and skip this node
-                logging.warning(f"Skipping invalid node during Graph.from_dict: {e}. Node data: {node_data}")
-                continue
-        
-        edges_list = []
-        raw_edges = graph.get("edges", [])
-        for edge_data in raw_edges:
-            try:
-                # Assuming Edge can be instantiated directly from dict
-                # If Edge has its own from_dict or validation, use that
-                edges_list.append(Edge(**edge_data))
-            except (ValueError, TypeError, ValidationError) as e: # Catching a broader exception for edges if instantiation is complex
-                logging.warning(f"Skipping invalid edge during Graph.from_dict: {e}. Edge data: {edge_data}")
-                continue
-
         return cls(
-            nodes=nodes_list,
-            edges=edges_list,
+            nodes=[
+                BaseNode.from_dict(node, skip_errors=True)[0]
+                for node in graph["nodes"]
+            ],
+            edges=graph["edges"],
         )
 
     def inputs(self) -> List[InputNode]:
