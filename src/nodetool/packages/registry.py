@@ -72,6 +72,7 @@ from nodetool.packages.types import AssetInfo, PackageInfo
 from nodetool.types.workflow import Workflow
 from nodetool.workflows.graph import Graph
 from nodetool.types.graph import Graph as APIGraph
+from nodetool.workflows.base_node import get_node_class
 
 
 # Constants
@@ -225,6 +226,7 @@ class Registry:
         self._examples_cache = (
             {}
         )  # Cache for loaded examples by package_name:example_name
+        self._example_search_cache: Optional[Dict[str, Any]] = None
         self.logger = logging.getLogger(__name__)
 
     def pip_install(
@@ -478,8 +480,66 @@ class Registry:
         This forces the next call to load_example to re-load from disk.
         """
         self._examples_cache = {}
+        self._example_search_cache = None
 
-    # Example registry methods (previously in ExampleRegistry)
+    def _populate_example_search_cache(self) -> None:
+        """
+        Load necessary example data into an in-memory cache for searching.
+        """
+        if self._example_search_cache is not None:
+            return
+
+        self.logger.info("Populating example workflow search cache...")
+        self._example_search_cache = {}
+        packages = self.list_installed_packages()
+
+        for package in packages:
+            if not package.examples:
+                continue
+
+            for example_meta in package.examples:
+                if not package.source_folder:
+                    continue
+
+                example_path = (
+                    Path(package.source_folder)
+                    / "nodetool"
+                    / "examples"
+                    / package.name
+                    / f"{example_meta.name}.json"
+                )
+
+                if not example_path.exists():
+                    continue
+
+                with open(example_path, "r", encoding="utf-8") as f:
+                    try:
+                        workflow_data = json.load(f)
+
+                        # Extract and cache node types for search
+                        graph_data = workflow_data.get("graph", {})
+                        nodes = graph_data.get("nodes", [])
+                        node_types = [
+                            node.get("type", "").lower() for node in nodes
+                        ]
+
+                        # Store only essential data for search
+                        cached_item = {
+                            "id": workflow_data.get("id"),  # For deduplication
+                            "_node_types": node_types,      # For searching
+                        }
+
+                        cache_key = f"{package.name}:{example_meta.name}"
+                        self._example_search_cache[cache_key] = cached_item
+                    except json.JSONDecodeError:
+                        self.logger.warning(
+                            f"Skipping corrupted example JSON: {example_path}"
+                        )
+                        continue
+        self.logger.info(
+            f"Cached {len(self._example_search_cache)} example workflows for search."
+        )
+
     def _load_example_from_file(self, file_path: str, package_name: str) -> Workflow:
         """
         Load a single example workflow from a JSON file.
@@ -834,51 +894,41 @@ class Registry:
         Returns:
             List[Workflow]: A list of workflows that contain nodes matching the query
         """
-        matching_workflows = []
-
-        # If empty query, return all examples
         if not query:
             return self.list_examples()
 
-        query = query.lower()
-        packages = self.list_installed_packages()
+        self._populate_example_search_cache()
 
-        for package in packages:
-            if not package.examples:
+        matching_workflows = []
+        query = query.lower()
+
+        self.logger.info(f"Searching for query: '{query}'")
+
+        # To avoid adding the same workflow multiple times
+        matched_workflow_ids = set()
+
+        if self._example_search_cache is None:
+            self.logger.warning("Search cache is not populated.")
+            return []
+
+        for cache_key, workflow_data in self._example_search_cache.items():
+            workflow_id = workflow_data.get("id", "")
+            if workflow_id and workflow_id in matched_workflow_ids:
                 continue
 
-            for example_meta in package.examples:
-                # Load the full workflow with graph
-                workflow = self.load_example(package.name, example_meta.name)
-                if not workflow or not workflow.graph:
-                    continue
+            node_types = workflow_data.get("_node_types", [])
+            found_match = any(query in node_type for node_type in node_types)
 
-                graph = Graph.from_dict(
-                    {
-                        "nodes": [node.model_dump() for node in workflow.graph.nodes],
-                        "edges": [edge.model_dump() for edge in workflow.graph.edges],
-                    }
-                )
-
-                # Search through nodes in the graph
-                found_match = False
-                for node in graph.nodes:
-                    # Check node type
-                    if query in node.get_node_type().lower():
-                        found_match = True
-                        break
-
-                    if query in str(node.get_title()).lower():
-                        found_match = True
-                        break
-
-                    if query in str(node.get_description()).lower():
-                        found_match = True
-                        break
-
-                if found_match:
+            if found_match:
+                self.logger.info(f"Found match in workflow '{cache_key}'")
+                package_name, example_name = cache_key.split(":", 1)
+                workflow = self.load_example(package_name, example_name)
+                if workflow:
                     matching_workflows.append(workflow)
+                    if workflow.id:
+                        matched_workflow_ids.add(workflow.id)
 
+        self.logger.info(f"Found {len(matching_workflows)} matching workflows.")
         return matching_workflows
 
 
