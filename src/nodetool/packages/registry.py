@@ -71,7 +71,7 @@ from nodetool.metadata.node_metadata import PackageModel, ExampleMetadata
 from nodetool.packages.types import AssetInfo, PackageInfo
 from nodetool.types.workflow import Workflow
 from nodetool.types.graph import Graph as APIGraph
-from nodetool.workflows.base_node import split_camel_case
+from nodetool.workflows.base_node import get_node_class, split_camel_case
 
 
 # Constants
@@ -225,6 +225,7 @@ class Registry:
         self._examples_cache = (
             {}
         )  # Cache for loaded examples by package_name:example_name
+        self._example_search_cache: Optional[Dict[str, Any]] = None
         self.logger = logging.getLogger(__name__)
 
     def pip_install(
@@ -478,8 +479,66 @@ class Registry:
         This forces the next call to load_example to re-load from disk.
         """
         self._examples_cache = {}
+        self._example_search_cache = None
 
-    # Example registry methods (previously in ExampleRegistry)
+    def _populate_example_search_cache(self) -> None:
+        """
+        Load necessary example data into an in-memory cache for searching.
+        """
+        if self._example_search_cache is not None:
+            return
+
+        self.logger.info("Populating example workflow search cache...")
+        self._example_search_cache = {}
+        packages = self.list_installed_packages()
+
+        for package in packages:
+            if not package.examples:
+                continue
+
+            for example_meta in package.examples:
+                if not package.source_folder:
+                    continue
+
+                example_path = (
+                    Path(package.source_folder)
+                    / "nodetool"
+                    / "examples"
+                    / package.name
+                    / f"{example_meta.name}.json"
+                )
+
+                if not example_path.exists():
+                    continue
+
+                with open(example_path, "r", encoding="utf-8") as f:
+                    try:
+                        workflow_data = json.load(f)
+
+                        # Extract and cache node types for search
+                        graph_data = workflow_data.get("graph", {})
+                        nodes = graph_data.get("nodes", [])
+                        node_types = [
+                            node.get("type", "").lower() for node in nodes
+                        ]
+
+                        # Store only essential data for search
+                        cached_item = {
+                            "id": workflow_data.get("id"),  # For deduplication
+                            "_node_types": node_types,      # For searching
+                        }
+
+                        cache_key = f"{package.name}:{example_meta.name}"
+                        self._example_search_cache[cache_key] = cached_item
+                    except json.JSONDecodeError:
+                        self.logger.warning(
+                            f"Skipping corrupted example JSON: {example_path}"
+                        )
+                        continue
+        self.logger.info(
+            f"Cached {len(self._example_search_cache)} example workflows for search."
+        )
+
     def _load_example_from_file(self, file_path: str, package_name: str) -> Workflow:
         """
         Load a single example workflow from a JSON file.
@@ -776,7 +835,6 @@ class Registry:
         Load a single example workflow from disk given package name and example name.
 
         This method uses the package's source folder to construct the path to the example file.
-        Results are cached for performance.
 
         Args:
             package_name: The name of the package containing the example
@@ -788,11 +846,6 @@ class Registry:
         Raises:
             ValueError: If the package is not found
         """
-        # Check cache first
-        cache_key = f"{package_name}:{example_name}"
-        if cache_key in self._examples_cache:
-            return self._examples_cache[cache_key]
-
         package = self.find_package_by_name(package_name)
         if not package:
             raise ValueError(f"Package {package_name} not found")
@@ -811,11 +864,9 @@ class Registry:
         )
 
         if not example_path.exists():
-            self._examples_cache[cache_key] = None  # Cache the None result too
             return None
 
         workflow = self._load_example_from_file(str(example_path), package_name)
-        self._examples_cache[cache_key] = workflow
         return workflow
 
     def search_example_workflows(self, query: str = "") -> List[Workflow]:
@@ -824,77 +875,51 @@ class Registry:
 
         This method loads all example workflows including their graphs and searches for
         matches in:
-        - Node type string
-        - Node class name (derived title)
-        - Node instance title (from ui_properties.title or data.title)
-        - Node instance description (from data.description)
+        - Node title (from ui_properties.title or data.title)
+        - Node description (from data.description)
+        - Node type
 
         Args:
-            query: The search string to find in node properties. If empty, all loadable
-                   example workflows are returned via `self.list_examples()`.
+            query: The search string to find in node properties
 
         Returns:
-            List[Workflow]: A list of workflows that contain nodes matching the query.
+            List[Workflow]: A list of workflows that contain nodes matching the query
         """
-        matching_workflows = []
-
         if not query:
             return self.list_examples()
 
-        query = query.lower() # Query is already lowercased at the start
-        packages = self.list_installed_packages()
+        self._populate_example_search_cache()
 
-        for package in packages:
-            if not package.examples:
+        matching_workflows = []
+        query = query.lower()
+
+        self.logger.info(f"Searching for query: '{query}'")
+
+        # To avoid adding the same workflow multiple times
+        matched_workflow_ids = set()
+
+        if self._example_search_cache is None:
+            self.logger.warning("Search cache is not populated.")
+            return []
+
+        for cache_key, workflow_data in self._example_search_cache.items():
+            workflow_id = workflow_data.get("id", "")
+            if workflow_id and workflow_id in matched_workflow_ids:
                 continue
 
-            for example_meta in package.examples:
-                try:
-                    # Load the full workflow with graph data (APIGraph)
-                    workflow = self.load_example(package.name, example_meta.name)
-                    if not workflow or not workflow.graph or not workflow.graph.nodes:
-                        self.logger.debug(f"Skipping empty or unreadable example: {package.name}/{example_meta.name}")
-                        continue
-                    
-                    found_match = False
-                    # workflow.graph.nodes are nodetool.types.graph.Node instances
-                    for node_api_data in workflow.graph.nodes:
-                        # 1. Search in raw node type string
-                        if query in node_api_data.type.lower():
-                            found_match = True
-                            break
+            node_types = workflow_data.get("_node_types", [])
+            found_match = any(query in node_type for node_type in node_types)
 
-                        # 2. Search in class name-derived title
-                        type_parts = node_api_data.type.split('.')
-                        class_name_from_type = type_parts[-1]
-                        class_derived_title = split_camel_case(class_name_from_type).lower()
-                        if query in class_derived_title:
-                            found_match = True
-                            break # Found a match for this node, break from node property checks
+            if found_match:
+                self.logger.info(f"Found match in workflow '{cache_key}'")
+                package_name, example_name = cache_key.split(":", 1)
+                workflow = self.load_example(package_name, example_name)
+                if workflow:
+                    matching_workflows.append(workflow)
+                    if workflow.id:
+                        matched_workflow_ids.add(workflow.id)
 
-                        # 3. Search in instance-specific title (from ui_properties or data)
-                        instance_title = ""
-                        if node_api_data.ui_properties and "title" in node_api_data.ui_properties:
-                            instance_title = str(node_api_data.ui_properties["title"]).lower()
-                        elif node_api_data.data and "title" in node_api_data.data: # Fallback
-                            instance_title = str(node_api_data.data["title"]).lower()
-                        
-                        if instance_title and query in instance_title:
-                            found_match = True
-                            break # Found a match for this node, break from node property checks
-                        
-                    # After iterating all nodes in the workflow:
-                    if found_match: # If any node in this workflow matched
-                        matching_workflows.append(workflow)
-
-                except Exception as e:
-                    # Log general errors encountered during loading or basic processing of an example
-                    self.logger.warning(
-                        f"Skipping example workflow '{example_meta.name}' in package '{package.name}' due to an error during search processing: {e}",
-                        exc_info=True  # Add stack trace for better debugging
-                    )
-                    continue
-        
+        self.logger.info(f"Found {len(matching_workflows)} matching workflows.")
         return matching_workflows
 
 
