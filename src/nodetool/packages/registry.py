@@ -70,9 +70,8 @@ from nodetool.common.settings import get_system_file_path
 from nodetool.metadata.node_metadata import PackageModel, ExampleMetadata
 from nodetool.packages.types import AssetInfo, PackageInfo
 from nodetool.types.workflow import Workflow
-from nodetool.workflows.graph import Graph
 from nodetool.types.graph import Graph as APIGraph
-from nodetool.workflows.base_node import get_node_class
+from nodetool.workflows.base_node import get_node_class, split_camel_case
 
 
 # Constants
@@ -832,51 +831,51 @@ class Registry:
             )
 
     def load_example(self, package_name: str, example_name: str) -> Optional[Workflow]:
-        """
-        Load a single example workflow from disk given package name and example name.
+            """
+            Load a single example workflow from disk given package name and example name.
 
-        This method uses the package's source folder to construct the path to the example file.
-        Results are cached for performance.
+            This method uses the package's source folder to construct the path to the example file.
+            Results are cached for performance.
 
-        Args:
-            package_name: The name of the package containing the example
-            example_name: The name of the example workflow to load
+            Args:
+                package_name: The name of the package containing the example
+                example_name: The name of the example workflow to load
 
-        Returns:
-            Optional[Workflow]: The loaded workflow with full data, or None if not found
+            Returns:
+                Optional[Workflow]: The loaded workflow with full data, or None if not found
 
-        Raises:
-            ValueError: If the package is not found
-        """
-        # Check cache first
-        cache_key = f"{package_name}:{example_name}"
-        if cache_key in self._examples_cache:
-            return self._examples_cache[cache_key]
+            Raises:
+                ValueError: If the package is not found
+            """
+            # Check cache first
+            cache_key = f"{package_name}:{example_name}"
+            if cache_key in self._examples_cache:
+                return self._examples_cache[cache_key]
 
-        package = self.find_package_by_name(package_name)
-        if not package:
-            raise ValueError(f"Package {package_name} not found")
+            package = self.find_package_by_name(package_name)
+            if not package:
+                raise ValueError(f"Package {package_name} not found")
 
-        if not package.source_folder:
-            raise ValueError(f"Package {package_name} does not have a source folder")
+            if not package.source_folder:
+                raise ValueError(f"Package {package_name} does not have a source folder")
 
-        # Construct the path to the example file
-        # Examples are stored in: source_folder/nodetool/examples/package_name/example_name.json
-        example_path = (
-            Path(package.source_folder)
-            / "nodetool"
-            / "examples"
-            / package_name
-            / f"{example_name}.json"
-        )
+            # Construct the path to the example file
+            # Examples are stored in: source_folder/nodetool/examples/package_name/example_name.json
+            example_path = (
+                Path(package.source_folder)
+                / "nodetool"
+                / "examples"
+                / package_name
+                / f"{example_name}.json"
+            )
 
-        if not example_path.exists():
-            self._examples_cache[cache_key] = None  # Cache the None result too
-            return None
+            if not example_path.exists():
+                self._examples_cache[cache_key] = None  # Cache the None result too
+                return None
 
-        workflow = self._load_example_from_file(str(example_path), package_name)
-        self._examples_cache[cache_key] = workflow
-        return workflow
+            workflow = self._load_example_from_file(str(example_path), package_name)
+            self._examples_cache[cache_key] = workflow
+            return workflow
 
     def search_example_workflows(self, query: str = "") -> List[Workflow]:
         """
