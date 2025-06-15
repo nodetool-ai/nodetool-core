@@ -1,4 +1,5 @@
 import asyncio
+from nodetool.chat.providers.openai_provider import OpenAIProvider
 from rich.console import Console
 
 from nodetool.chat.providers.base import ChatProvider
@@ -22,9 +23,6 @@ async def test_task_planner(provider: ChatProvider, model: str):
     # Sample objective
     objective = "Search for the best recipes for chicken wings and extract the ingredients and instructions for each recipe"
 
-    # Sample input files (if any)
-    input_files = []
-
     # Optional: Create test tools if needed
     tools = [
         GoogleSearchTool(),
@@ -36,7 +34,6 @@ async def test_task_planner(provider: ChatProvider, model: str):
     )
     console.print("[bold]Configuration:[/bold]")
     console.print(f"  - Model: {model}")
-    console.print(f"  - Input files: {input_files}")
 
     context = ProcessingContext()
     # Create TaskPlanner instance with different configurations for testing
@@ -46,7 +43,6 @@ async def test_task_planner(provider: ChatProvider, model: str):
         objective=objective,
         workspace_dir=context.workspace_dir,
         execution_tools=tools,
-        input_files=input_files,
         use_structured_output=True,
         verbose=True,
         output_schema={
@@ -101,7 +97,7 @@ async def test_task_planner(provider: ChatProvider, model: str):
 
 # Run the test
 if __name__ == "__main__":
-    asyncio.run(test_task_planner(provider=OllamaProvider(), model="qwen3:4b"))
+    asyncio.run(test_task_planner(provider=OllamaProvider(), model="qwen3:0.6b"))
     # asyncio.run(test_task_planner(provider=OpenAIProvider(), model="gpt-4o-mini"))
     # asyncio.run(
     #     test_task_planner(

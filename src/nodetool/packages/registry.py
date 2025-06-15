@@ -64,10 +64,11 @@ from urllib.parse import urlparse
 import httpx
 import asyncio
 import click
+import tomlkit
 
 from nodetool.common.environment import Environment
 from nodetool.common.settings import get_system_file_path
-from nodetool.metadata.node_metadata import PackageModel, ExampleMetadata
+from nodetool.metadata.node_metadata import NodeMetadata, PackageModel, ExampleMetadata
 from nodetool.packages.types import AssetInfo, PackageInfo
 from nodetool.types.workflow import Workflow
 from nodetool.types.graph import Graph as APIGraph
@@ -463,6 +464,89 @@ class Registry:
         This forces the next search to fetch fresh node metadata.
         """
         self._node_cache = None
+
+    async def get_all_available_nodes(self) -> List[Dict[str, Any]]:
+        """
+        Get all available nodes from both installed and available packages.
+
+        This method combines nodes from:
+        1. All installed packages (discovered locally)
+        2. All available packages from the registry
+
+        Returns:
+            List[Dict[str, Any]]: A list of all node metadata dictionaries
+        """
+        all_nodes = []
+
+        # Get nodes from installed packages
+        installed_packages = self.list_installed_packages()
+        for package in installed_packages:
+            if package.nodes:
+                for node in package.nodes:
+                    node_dict = (
+                        node.model_dump() if hasattr(node, "model_dump") else dict(node)
+                    )
+                    node_dict["package"] = package.repo_id
+                    node_dict["installed"] = True
+                    all_nodes.append(node_dict)
+
+        # Get nodes from available packages (this fetches from registry)
+        available_nodes = await self.search_nodes("")  # Empty query returns all
+
+        # Mark available nodes and merge with installed
+        installed_types = {node.get("node_type") for node in all_nodes}
+        for node in available_nodes:
+            if node.get("node_type") not in installed_types:
+                node["installed"] = False
+                all_nodes.append(node)
+
+        return all_nodes
+
+    def get_all_installed_nodes(self) -> list[NodeMetadata]:
+        """
+        Get all nodes from installed packages only.
+
+        This is a synchronous method that only looks at locally installed packages
+        without making any network requests.
+
+        Returns:
+            List[Dict[str, Any]]: A list of node metadata dictionaries from installed packages
+        """
+        all_nodes = []
+        installed_packages = self.list_installed_packages()
+
+        for package in installed_packages:
+            if package.nodes:
+                all_nodes.extend(package.nodes)
+
+        return all_nodes
+
+    def find_node_by_type(self, node_type: str) -> Optional[Dict[str, Any]]:
+        """
+        Find a node by its type identifier from installed packages.
+
+        This is a synchronous method that searches through installed packages only.
+
+        Args:
+            node_type: The type identifier of the node (e.g., "namespace.ClassName")
+
+        Returns:
+            Optional[Dict[str, Any]]: The node metadata if found, None otherwise
+        """
+        installed_packages = self.list_installed_packages()
+
+        for package in installed_packages:
+            if package.nodes:
+                for node in package.nodes:
+                    node_dict = (
+                        node.model_dump() if hasattr(node, "model_dump") else dict(node)
+                    )
+                    if node_dict.get("node_type") == node_type:
+                        node_dict["package"] = package.repo_id
+                        node_dict["installed"] = True
+                        return node_dict
+
+        return None
 
     def clear_packages_cache(self) -> None:
         """
@@ -1083,7 +1167,7 @@ def scan_for_package_nodes(verbose: bool = False) -> PackageModel:
                         if node_classes:
                             assert package.nodes is not None
                             package.nodes.extend(
-                                node_class.metadata() for node_class in node_classes
+                                node_class.get_metadata() for node_class in node_classes
                             )
                     except Exception as e:
                         if verbose:
@@ -1159,65 +1243,60 @@ def save_package_metadata(package: PackageModel, verbose: bool = False):
 
 def update_pyproject_include(package: PackageModel, verbose: bool = False) -> None:
     """Ensure package assets are listed in pyproject.toml's include section."""
-    import json
-    import tomli
-
     pyproject_path = "pyproject.toml"
     if not os.path.exists(pyproject_path):
         if verbose:
             print("pyproject.toml not found, skipping update")
         return
 
-    with open(pyproject_path, "rb") as f:
-        content = f.read().decode()
+    # Read the pyproject.toml file
+    with open(pyproject_path, "r", encoding="utf-8") as f:
+        content = f.read()
 
-    data = tomli.loads(content)
+    # Parse with tomlkit to preserve formatting and comments
+    data = tomlkit.parse(content)
 
-    poetry = data.get("tool", {}).get("poetry", {})
-    include_list = poetry.get("include", [])
-    if not isinstance(include_list, list):
-        include_list = [str(include_list)]
+    # Navigate to [tool.poetry] section
+    if "tool" not in data:
+        data["tool"] = tomlkit.table()  # type: ignore
 
+    tool_section = data["tool"]  # type: ignore
+    if "poetry" not in tool_section:  # type: ignore
+        tool_section["poetry"] = tomlkit.table()  # type: ignore
+
+    poetry = tool_section["poetry"]  # type: ignore
+
+    # Get existing include list or create new one
+    if "include" not in poetry:  # type: ignore
+        poetry["include"] = tomlkit.array()  # type: ignore
+        include_list = poetry["include"]  # type: ignore
+    else:
+        include_item = poetry["include"]  # type: ignore
+        # Convert to list if it's a single string
+        if isinstance(include_item, str):
+            poetry["include"] = tomlkit.array()  # type: ignore
+            poetry["include"].append(include_item)  # type: ignore
+            include_list = poetry["include"]  # type: ignore
+        else:
+            include_list = include_item
+
+    # Prepare paths to include
     metadata_path = f"src/nodetool/package_metadata/{package.name}.json"
     asset_paths = [
         f"src/nodetool/assets/{package.name}/{asset.name}"
         for asset in package.assets or []
     ]
 
-    for p in [metadata_path, *asset_paths]:
-        if p not in include_list:
-            include_list.append(p)
+    # Add new paths that aren't already included
+    for path in [metadata_path, *asset_paths]:
+        if path not in include_list:  # type: ignore
+            include_list.append(path)  # type: ignore
+            if verbose:
+                print(f"Added {path} to include list")
 
-    lines = content.splitlines(keepends=True)
-    start = None
-    end = len(lines)
-    for i, line in enumerate(lines):
-        if line.strip() == "[tool.poetry]":
-            start = i
-            continue
-        if start is not None and i > start and line.startswith("["):
-            end = i
-            break
-
-    if start is None:
-        if verbose:
-            print("[tool.poetry] section not found in pyproject.toml")
-        return
-
-    include_idx = None
-    for i in range(start + 1, end):
-        if lines[i].strip().startswith("include"):
-            include_idx = i
-            break
-
-    new_line = "include = " + json.dumps(include_list) + "\n"
-    if include_idx is not None:
-        lines[include_idx] = new_line
-    else:
-        lines.insert(end, new_line)
-
-    with open(pyproject_path, "w") as f:
-        f.writelines(lines)
+    # Write back the file
+    with open(pyproject_path, "w", encoding="utf-8") as f:
+        f.write(tomlkit.dumps(data))
 
     if verbose:
         print(f"Updated {pyproject_path} include section with asset files")

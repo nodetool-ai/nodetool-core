@@ -563,7 +563,7 @@ class WorkflowPlanner:
 
                     # Check type compatibility
                     if source_output and target_property:
-                        from nodetool.metadata import typecheck
+                        from nodetool.metadata.typecheck import typecheck
 
                         if not typecheck(
                             source_output.type,

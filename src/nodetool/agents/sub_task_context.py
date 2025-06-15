@@ -2,7 +2,7 @@
 🧠 SubTask Execution Context: Orchestrating Focused Task Execution
 
 This module provides the `SubTaskContext` class, the dedicated engine for executing
-a single, isolated subtask within a larger Nodetool workflow. It manages the state,
+a single, isolated subtask within a larger agentic workflow. It manages the state,
 communication, and tool usage necessary to fulfill the subtask's objective, ensuring
 each step operates independently but contributes to the overall task goal.
 
@@ -15,11 +15,11 @@ Core Components:
 *   `FinishSubTaskTool` / `FinishTaskTool`: Special tools injected into the context.
     The LLM *must* call one of these tools (`finish_subtask` for regular subtasks,
     `finish_task` for the final aggregation task) to signify completion and provide
-    the final result as a file pointer `{"path": "..."}`. The referenced file must be
-    at the workspace root.
-*   Helper Functions (`is_binary_output_type`, `json_schema_for_output_type`, etc.):
+    the final result as an object. The result is stored directly in the processing
+    context and made available to downstream tasks.
+*   Helper Functions (`json_schema_for_output_type`, etc.):
     Utilities for determining output types, generating appropriate JSON schemas for
-    tools, and handling file operations.
+    tools, and handling object operations.
 
 Execution Algorithm:
 --------------------
@@ -39,11 +39,11 @@ Execution Algorithm:
           and not already in conclusion stage, the context transitions to
           `in_conclusion_stage` (see step 2.e).
     b.  **Prepare Prompt & LLM Call**: The overall task description, current subtask
-        instructions, input files, and the current message history form the prompt.
-        The LLM processes this history and generates a response. This response can
-        be text content or a request to use one or more available tools (LLM Tool Calls).
-        The LLM's text response (if any) is yielded externally as a `Chunk` and added
-        to the internal history as an assistant message.
+        instructions, input task results (directly injected), and the current message
+        history form the prompt. The LLM processes this history and generates a response.
+        This response can be text content or a request to use one or more available tools
+        (LLM Tool Calls). The LLM's text response (if any) is yielded externally as a
+        `Chunk` and added to the internal history as an assistant message.
     c.  **Handling LLM Tool Calls**: If the LLM response includes tool calls:
         i.   For each `ToolCall` requested by the LLM:
              - A user-friendly message describing the tool call is generated
@@ -56,9 +56,6 @@ Execution Algorithm:
         ii.  Internally, after being yielded, these LLM-generated tool calls are
              processed by `_handle_tool_call`. This method orchestrates:
              - **Execution**: Invokes the tool's logic (`_process_tool_execution`).
-             - **Result Compression**: Compresses large tool results via LLM-based
-               summarization if they exceed a token threshold
-               (`_maybe_compress_tool_result` calling `_compress_tool_result`).
              - **Binary Artifact Handling**: Saves base64 encoded binary data
                (images, audio) from the result to workspace files (in an 'artifacts'
                folder) and updates the result to point to these files
@@ -66,8 +63,8 @@ Execution Algorithm:
              - **Special Side-Effects**: Manages tool-specific actions
                (`_process_special_tool_side_effects`). For `browser` navigation,
                it logs sources. For `finish_subtask`/`finish_task`, it marks
-               the subtask complete and triggers result saving (step 3), expecting
-               the result to be a file pointer.
+               the subtask complete and stores the result object directly in the
+               processing context.
              - **Serialization**: Converts the processed tool result to a JSON
                string (`_serialize_tool_result_for_history`).
         iii. The serialized JSON string (tool output) is then added to the subtask's
@@ -77,28 +74,25 @@ Execution Algorithm:
     e.  **Conclusion Stage**: If the token limit is exceeded, the context enters a
         "conclusion stage". In this stage, available tools are restricted to only
         the `finish_...` tool, and the LLM is prompted to synthesize results and
-        conclude the subtask by providing a file pointer result.
+        conclude the subtask by providing an object result.
     f.  **Forced Completion (Max Iterations)**: If `max_iterations` is reached
         before `finish_...` is called, `_handle_max_iterations_reached` is invoked.
         This forces completion by:
         - Requesting a final structured output from the LLM, conforming to the
-          finish tool's schema (which mandates a file pointer for `result`)
+          finish tool's schema (which mandates an object result)
           (`request_structured_output`).
-        - Triggering result saving with this structured output (step 3).
+        - Storing the result object directly in the processing context.
         - Marking the subtask as complete.
         - Creating an assistant message with the `ToolCall` for record and adding
           it to history.
         - Yielding this record `ToolCall` externally.
         The subtask loop then terminates.
 
-3.  **Output Saving (`_save_to_output_file`)**: This method is called when a `finish_...`
-    tool is successfully processed (via `_process_special_tool_side_effects` during
-    `_handle_tool_call`) or when forced completion occurs (`_handle_max_iterations_reached`).
-    It handles saving the final subtask result.
-    - The result (from the `finish_...` tool's arguments) MUST be a file pointer
-      object `{"path": "..."}`. The referenced workspace file/directory is copied
-      to the `output_file` location.
-    - Handles cases where `output_file` itself is a directory (source copied into it).
+3.  **Object Storage**: When a `finish_...` tool is successfully processed (via
+    `_process_special_tool_side_effects` during `_handle_tool_call`) or when forced
+    completion occurs (`_handle_max_iterations_reached`), the result object is stored
+    directly in the processing context using the task/subtask ID as the key. This
+    makes the result available to downstream tasks via direct context access.
 
 4.  **Completion**: The subtask is marked as `completed` (either by a `finish_...`
     tool call or by reaching max iterations). Status updates reflecting completion
@@ -107,15 +101,15 @@ Execution Algorithm:
 Key Data Structures:
 --------------------
 *   `Task`: Represents the overall goal.
-*   `SubTask`: Defines a single step, including its objective (`content`), input/output
-    files, expected `output_type`, `output_schema`.
+*   `SubTask`: Defines a single step, including its objective (`content`), input task IDs,
+    and expected output schema.
 *   `Message`: Represents a single turn in the conversation history (system, user,
     assistant, tool).
 *   `ToolCall`: Represents the LLM's request to use a tool, including its arguments.
     It also includes a user-facing message string generated before execution, and
     eventually the tool's result (when part of an assistant message in history or
     processed internally).
-*   `ProcessingContext`: Holds shared workflow state like the workspace directory.
+*   `ProcessingContext`: Holds shared workflow state and stores task results as objects.
 *   `Tool`: Interface for tools the LLM can use.
 
 High-Level Execution Flow Diagram:
@@ -137,7 +131,7 @@ High-Level Execution Flow Diagram:
             |                                +-----------------------------------+
             +--(Max iters?)----------------->| `Handle Max Iters`                |
             | Yes                            |  - Req. structured output         |
-            V No                             |  - Save output                    |
+            V No                             |  - Store result object            |
 +--------------------------+                 |  - Mark complete                  |
 |   Check Tokens           |                 |  - Log ToolCall to history        |
 | (May enter Conclusion    |                 +-----------+-----------------------+
@@ -166,7 +160,7 @@ High-Level Execution Flow Diagram:
             |                               |   - Compress?                          |
             |                               |   - Save Binaries                      |
             |                               |   - Side Effects (finish_*, nav)       |
-            |                               |     - finish_*: Save, mark complete    |
+            |                               |     - finish_*: Store object directly  |
             |                               |   - Serialize Result (JSON)            |
             |                               +----------------------------------------+
             |                                            |
@@ -186,9 +180,10 @@ import mimetypes
 import re
 from nodetool.chat.providers import ChatProvider
 from nodetool.agents.tools.base import Tool
-from nodetool.metadata.types import Message, SubTask, Task, ToolCall
+from nodetool.metadata.types import Message, SubTask, Task, ToolCall, LogEntry
 from nodetool.workflows.types import Chunk, TaskUpdate, TaskUpdateEvent
 from nodetool.workflows.processing_context import ProcessingContext
+from nodetool.ui.console import AgentConsole
 
 import tiktoken
 import yaml
@@ -198,6 +193,7 @@ import json
 import os
 import time
 import uuid
+import warnings
 from typing import (
     Any,
     AsyncGenerator,
@@ -208,20 +204,8 @@ from typing import (
     Optional,
     cast,
 )
-import logging
-from nodetool.agents.tools.workspace_tools import (
-    ReadFileTool,
-    WriteFileTool,
-    ListDirectoryTool,
-)
-import shutil
 
 from jinja2 import Environment, BaseLoader
-
-# Setup logging
-logger = logging.getLogger(__name__)
-
-logger.setLevel(logging.DEBUG)
 
 
 DEFAULT_MAX_TOKEN_LIMIT: int = 4096
@@ -229,104 +213,37 @@ DEFAULT_MAX_ITERATIONS: int = 10
 MESSAGE_COMPRESSION_THRESHOLD: int = 4096
 
 DEFAULT_EXECUTION_SYSTEM_PROMPT: str = """
-You are a executing a single subtask from a larger task plan.
-YOUR GOAL IS TO PRODUCE THE INTENDED `output_file` FOR THIS SUBTASK.
+You are executing a single subtask from a larger task plan.
+YOUR GOAL IS TO PRODUCE THE INTENDED RESULT FOR THIS SUBTASK.
 
 EXECUTION PROTOCOL:
 1. Focus exclusively on the current subtask objective: {{ subtask_content }}.
-2. Use the provided input files efficiently:
-    - Read only the necessary parts of input files using available tools if possible.
-    - Avoid loading entire large files into your working context unless absolutely required.
-    - Prefer tools that process data directly (e.g., summarizing, extracting) over just reading content.
+2. Use the provided input data from upstream tasks efficiently:
+    - The results from upstream tasks are already provided in your context.
+    - Process the provided data directly rather than requesting additional information.
+    - Use tools that can work with the data structure directly.
 3. Perform the required steps to generate the result.
-4. Ensure the final result matches the expected `output_type` and `output_schema`.
-5. **Crucially**: Call `finish_subtask` ONCE at the end with the final result.
-    - If the result is content (text, JSON, etc.), provide it directly in the `result` parameter.
-    - If a tool directly generated the final `output_file` (e.g., download_file to `downloaded.pdf` at the root), provide `result` as `{"path": "downloaded.pdf"}`. The path MUST be to a file at the workspace root.
-    - Always include relevant `metadata` (title, description, sources). Sources should cite original inputs, not just intermediate files.
-6. Do NOT call `finish_subtask` multiple times. Structure your work to produce the final output, then call `finish_subtask`.
+4. Ensure the final result matches the expected structure defined in the subtask schema.
+5. **Tool Call Limit**: You have a maximum of {{ max_tool_calls }} tool calls for this subtask. Use them wisely and efficiently.
+6. **Crucially**: Call `finish_subtask` ONCE at the end with the final result.
+    - Provide the result directly as an object in the `result` parameter.
+    - The result will be stored as an object and made available to downstream tasks.
+    - Always include relevant `metadata` (title, description, sources). Sources should cite original inputs and any external sources used.
+7. Do NOT call `finish_subtask` multiple times. Structure your work to produce the final output, then call `finish_subtask`.
 """
 
 DEFAULT_FINISH_TASK_SYSTEM_PROMPT: str = """
 You are completing the final task and aggregating results from previous subtasks.
-The goal is to combine the information from the input files (outputs of previous subtasks) into a single, final result according to the overall task objective.
+The goal is to combine the information from upstream task results into a single, final result according to the overall task objective.
 
 FINISH_TASK PROTOCOL:
-1. Analyze the provided input files (likely outputs from previous subtasks).
-2. Use the `read_file` to read the content of necessary input files. Read efficiently - extract only the key information needed for aggregation if files are large.
+1. Use the provided results from previous subtasks that are already included in your context.
+2. Analyze the provided results efficiently - extract only the key information needed for aggregation.
 3. Synthesize and aggregate the information to create the final task result.
-4. Ensure the final result conforms to the required output schema: {{ output_schema }}.
-5. Call `finish_task` ONCE with the complete, aggregated `result` and relevant `metadata` (title, description, sources - citing original sources where possible).
+4. Ensure the final result conforms to the required structure defined in the task schema.
+5. **Tool Call Limit**: You have a maximum of {{ max_tool_calls }} tool calls for this task. Use them wisely and efficiently.
+6. Call `finish_task` ONCE with the complete, aggregated `result` and relevant `metadata` (title, description, sources - citing original sources where possible).
 """
-
-# Define common binary types/extensions
-_common_binary_types: set[str] = {
-    "pdf",
-    "png",
-    "jpg",
-    "jpeg",
-    "gif",
-    "bmp",
-    "tiff",
-    "webp",
-    "mp3",
-    "wav",
-    "ogg",
-    "flac",
-    "aac",
-    "mpeg",
-    "mpg",
-    "mp4",
-    "avi",
-    "mov",
-    "wmv",
-    "mkv",
-    "flv",
-    "zip",
-    "tar",
-    "gz",
-    "rar",
-    "7z",
-    "exe",
-    "dll",
-    "so",
-    "dylib",
-    "doc",
-    "docx",
-    "xls",
-    "xlsx",
-    "ppt",
-    "pptx",  # Often treated as binary blobs
-    "bin",
-    "dat",
-    "pickle",
-    "joblib",  # Generic binary data
-    "onnx",
-    "pt",
-    "pb",  # ML models
-}
-
-# Define known text types handled explicitly by json_schema_for_output_type or common usage
-_known_text_types: set[str] = {
-    "string",
-    "markdown",
-    "json",
-    "yaml",
-    "csv",
-    "html",
-    "python",
-    "javascript",
-    "typescript",
-    "shell",
-    "sql",
-    "css",
-    "svg",
-    "text",
-    "txt",
-    "log",
-    "xml",
-    "rst",  # Added more text types
-}
 
 
 def _remove_think_tags(text_content: Optional[str]) -> Optional[str]:
@@ -338,218 +255,72 @@ def _remove_think_tags(text_content: Optional[str]) -> Optional[str]:
     return re.sub(r"<think>.*?</think>", "", text_content, flags=re.DOTALL).strip()
 
 
-def is_binary_output_type(output_type: str) -> bool:
+def _validate_and_sanitize_schema(
+    schema: Any, default_description: str = "Result object"
+) -> Dict[str, Any]:
     """
-    Determines if an output type likely corresponds to a binary format.
-    Checks common types, known text types, and guesses mime type based on potential extension.
+    Validates and sanitizes a JSON schema to ensure it's compatible with OpenAI function calling.
 
     Args:
-        output_type: The output type string (e.g., 'pdf', 'json', 'png').
+        schema: The schema to validate and sanitize
+        default_description: Default description if none provided
 
     Returns:
-        True if the type is likely binary, False otherwise.
+        A valid JSON schema dict
     """
-    if not output_type or not isinstance(output_type, str):
-        return False  # Treat invalid input as non-binary
+    if schema is None:
+        raise ValueError("Schema is None")
 
-    output_type_lower = output_type.lower().strip()
+    if isinstance(schema, str):
+        schema = json.loads(schema)
 
-    if output_type_lower in _common_binary_types:
-        return True
-    if output_type_lower in _known_text_types:
-        return False
+    if not isinstance(schema, dict):
+        raise ValueError(f"Schema is not a dict (type: {type(schema)})")
 
-    # Try guessing mime type assuming output_type might be an extension
-    potential_extension = f".{output_type_lower}"
-    mime_type, _ = mimetypes.guess_type(f"dummy{potential_extension}")
+    # Make a deep copy to avoid modifying the original
+    try:
+        result_schema = json.loads(json.dumps(schema))
+    except (TypeError, ValueError) as e:
+        raise ValueError(f"Schema contains non-serializable data: {e}")
 
-    if mime_type:
-        # Check if the guessed mime type starts with 'text/' or is a known text-based application type
-        if mime_type.startswith("text/"):
-            return False
-        if mime_type in {
-            "application/json",
-            "application/xml",
-            "application/javascript",
-            "application/typescript",
-        }:
-            return False
-        # Otherwise, assume binary if mime type is known but not text
-        return True
-    else:
-        # Fallback: If it's not explicitly known as text or binary, and mime guess failed,
-        # we conservatively assume it might be binary to enforce file pointer usage for safety.
-        # This avoids potential issues with large or complex unknown types being passed as content.
-        logger.warning(
-            f"Unknown output_type '{output_type}'. Assuming binary and requiring file pointer."
+    # Ensure required fields
+    if "type" not in result_schema:
+        result_schema["type"] = "object"
+
+    if "description" not in result_schema:
+        result_schema["description"] = default_description
+
+    # Validate common schema issues
+    def _clean_schema_recursive(obj: Any) -> Any:
+        """Recursively clean schema objects to ensure compatibility."""
+        if isinstance(obj, dict):
+            cleaned = {}
+            for key, value in obj.items():
+                if key == "additionalProperties":
+                    cleaned[key] = False
+                else:
+                    cleaned[key] = _clean_schema_recursive(value)
+            return cleaned
+        elif isinstance(obj, list):
+            return [_clean_schema_recursive(item) for item in obj]
+        else:
+            return obj
+
+    result_schema = _clean_schema_recursive(result_schema)
+
+    # Final validation by attempting to serialize
+    try:
+        json.dumps(result_schema)
+    except (TypeError, ValueError) as e:
+        # Note: We don't have access to display_manager here, so we'll keep this as a simple warning
+        import warnings
+
+        warnings.warn(
+            f"Schema serialization failed after cleaning: {e}, using default object schema"
         )
-        return True
+        return {"type": "object", "description": default_description}
 
-
-def mime_type_from_path(path: str) -> str:
-    mime_type = mimetypes.guess_type(path)[0] or "application/octet-stream"
-
-    # Define allowed mime types
-    allowed_mime_types = [
-        "application/pdf",
-        "audio/mpeg",
-        "audio/mp3",
-        "audio/wav",
-        "image/png",
-        "image/jpeg",
-        "image/webp",
-        "text/plain",
-        "video/mov",
-        "video/mpeg",
-        "video/mp4",
-        "video/mpg",
-        "video/avi",
-        "video/wmv",
-        "video/mpegps",
-        "video/flv",
-    ]
-
-    # Check if the mime type is allowed, otherwise return a default safe type
-    if mime_type not in allowed_mime_types:
-        # Return text/plain as a safe default
-        logger.warning(
-            f"Disallowed MIME type '{mime_type}' for path '{path}', defaulting to 'text/plain'."
-        )
-        return "text/plain"
-
-    return mime_type
-
-
-METADATA_SCHEMA: Dict[str, Any] = {
-    "type": "object",
-    "description": "Metadata for the result",
-    "properties": {
-        "title": {
-            "type": "string",
-            "description": "The title of the result",
-        },
-        "locale": {
-            "type": "string",
-            "description": "The locale of the result",
-        },
-        "url": {
-            "type": "string",
-            "description": "The URL of the result",
-        },
-        "site_name": {
-            "type": "string",
-            "description": "The site name of the result",
-        },
-        "tags": {
-            "type": "array",
-            "description": "Tags for the result",
-            "items": {"type": "string"},
-        },
-        "description": {
-            "type": "string",
-            "description": "The description of the result",
-        },
-        "sources": {
-            "type": "array",
-            "description": "The sources of the result, either http://example.com, file://path/to/file.txt or search://query",
-            "items": {
-                "type": "string",
-            },
-        },
-    },
-    "additionalProperties": False,
-    "required": [
-        "title",
-        "description",
-        "sources",
-        "locale",
-        "url",
-        "site_name",
-        "tags",
-    ],
-}
-
-
-def json_schema_for_output_type(output_type: str) -> Dict[str, Any]:
-    if output_type == "string":
-        return {"type": "string"}
-    elif output_type == "markdown":
-        return {
-            "type": "string",
-            "description": "Markdown formatted text",
-            "contentMediaType": "text/markdown",
-        }
-    elif output_type == "json":
-        return {"type": "object"}
-    elif output_type == "yaml":
-        return {"type": "object"}
-    elif output_type == "csv":
-        return {"type": "array", "items": {"type": "string"}}
-    elif output_type == "html":
-        return {
-            "type": "string",
-            "description": "HTML markup",
-            "contentMediaType": "text/html",
-        }
-    elif output_type == "python":
-        return {
-            "type": "string",
-            "description": "Python source code",
-            "contentMediaType": "text/x-python",
-        }
-    elif output_type == "javascript":
-        return {
-            "type": "string",
-            "description": "JavaScript source code",
-            "contentMediaType": "application/javascript",
-        }
-    elif output_type == "typescript":
-        return {
-            "type": "string",
-            "description": "TypeScript source code",
-            "contentMediaType": "application/typescript",
-        }
-    elif output_type == "shell":
-        return {
-            "type": "string",
-            "description": "Shell script",
-            "contentMediaType": "text/x-shellscript",
-        }
-    elif output_type == "sql":
-        return {
-            "type": "string",
-            "description": "SQL query or script",
-            "contentMediaType": "text/x-sql",
-        }
-    elif output_type == "css":
-        return {
-            "type": "string",
-            "description": "CSS stylesheet",
-            "contentMediaType": "text/css",
-        }
-    elif output_type == "svg":
-        return {
-            "type": "string",
-            "description": "SVG image markup",
-            "contentMediaType": "image/svg+xml",
-        }
-    else:
-        return {"type": "string"}
-
-
-# Define the schema for the file pointer object
-FILE_POINTER_SCHEMA: Dict[str, Any] = {
-    "type": "object",
-    "description": "An object indicating the result is a file path within the workspace.",
-    "properties": {
-        "path": {
-            "type": "string",
-            "description": "The path to the result file relative to the workspace root (e.g., 'result_data.json'). Must be at the top level, not in a subdirectory.",
-        },
-    },
-    "required": ["path"],
-    "additionalProperties": False,
-}
+    return result_schema
 
 
 class FinishTaskTool(Tool):
@@ -559,103 +330,72 @@ class FinishTaskTool(Tool):
 
     name: str = "finish_task"
     description: str = """
-    Finish a task by saving its final result. Provide a file pointer
-    object {"path": "final_file.ext"} in 'result'. The path must be to a file at the workspace root.
-    Include 'metadata'. This will hold the final result of all subtasks.
-    The 'result' parameter MUST ALWAYS be a file pointer object like {"path": "your_final_output_file.ext"}.
+    Finish a task by saving its final result as an object. Provide the result directly
+    in the 'result' parameter - it will be stored as an object and made available to
+    downstream processes. Include relevant 'metadata' with title, description, and sources.
+    This will hold the final aggregated result of all subtasks.
     """
     input_schema: Dict[str, Any]  # Defined in __init__
 
     def __init__(
         self,
-        output_type: str,
         output_schema: Any,
     ):
         super().__init__()  # Call parent constructor
-        self.output_type: str = output_type  # Store output_type
 
-        # Always use FILE_POINTER_SCHEMA regardless of output type
-        content_schema = FILE_POINTER_SCHEMA
+        # Validate and prepare the result schema
+        result_schema = _validate_and_sanitize_schema(output_schema, "The task result")
 
         # Final input schema for the tool
         self.input_schema = {
             "type": "object",
             "properties": {
-                "result": content_schema,
-                "metadata": METADATA_SCHEMA,
+                "result": result_schema,
             },
-            "required": ["result", "metadata"],
+            "required": ["result"],
             "additionalProperties": False,
         }
 
-    async def process(
-        self, context: ProcessingContext, params: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        # Validation is handled by the JSON schema.
-        # We just pass the params through, as the saving logic is in SubTaskContext._save_to_output_file
-        return params
+    async def process(self, context: ProcessingContext, params: Dict[str, Any]):
+        return params["result"]
 
 
 class FinishSubTaskTool(Tool):
     """
     🏁 Task Completion Tool - Marks a subtask as done and saves its results
-
-    This tool serves as the formal completion mechanism for subtasks by:
-    1. Requiring the final output to be provided in `result` as an object `{"path": "..."}`
-       pointing to a file in the workspace at the root level.
-    2. The referenced file is copied to the designated output location (`output_file` defined
-       in the subtask, which also must be a root-level file).
-    3. Preserving structured metadata about the results.
-    4. Marking the subtask as completed.
-
-    **IMPORTANT**:
-    - The `result` parameter MUST ALWAYS be a file pointer object `{"path": "path/to/workspace_root_file.ext"}`.
-    - Always include the `metadata`.
-
-    Example usage with file path:
-    finish_subtask(result={"path": "final_report.pdf"}, metadata={...})
-
-    Example usage with directory path (where "analysis_results/" is a directory at the workspace root created by a previous step):
-    finish_subtask(result={"path": "analysis_results/"}, metadata={...})
     """
 
     name: str = "finish_subtask"
     description: str = """
-    Finish a subtask by saving its final result. Provide a file pointer
-    object {"path": "generated_file.ext"} in 'result'. The path must point to a file at the workspace root.
-    Include 'metadata'. The result will be saved to the output_path defined in the subtask (must also be a root-level file).
-    The 'result' parameter MUST ALWAYS be a file pointer object like {"path": "your_subtask_output_file.ext"}.
+    Finish a subtask by saving its final result as an object. Provide the result directly
+    in the 'result' parameter - it will be stored as an object and made available to
+    downstream tasks. Include relevant 'metadata' with title, description, and sources.
     """
     input_schema: Dict[str, Any]  # Defined in __init__
 
     def __init__(
         self,
-        output_type: str,
         output_schema: Any,
     ):
         super().__init__()  # Call parent constructor
-        self.output_type: str = output_type  # Store output_type
 
-        # Always use FILE_POINTER_SCHEMA regardless of output type
-        content_schema = FILE_POINTER_SCHEMA
+        # Validate and prepare the result schema
+        result_schema = _validate_and_sanitize_schema(
+            output_schema, "The subtask result"
+        )
 
         # Final input schema for the tool
         self.input_schema = {
             "type": "object",
             "properties": {
-                "result": content_schema,
-                "metadata": METADATA_SCHEMA,
+                "result": result_schema,
             },
-            "required": ["result", "metadata"],
+            "required": ["result"],
             "additionalProperties": False,
         }
 
-    async def process(
-        self, context: ProcessingContext, params: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        # Validation is largely handled by the JSON schema.
-        # We just pass the params through.
-        return params
+    async def process(self, context: ProcessingContext, params: Dict[str, Any]):
+        return params.get("result", None)
 
 
 class SubTaskContext:
@@ -684,7 +424,6 @@ class SubTaskContext:
     processing_context: ProcessingContext
     model: str
     provider: ChatProvider
-    workspace_dir: str
     max_token_limit: int
     use_finish_task: bool
     jinja_env: Environment
@@ -700,6 +439,9 @@ class SubTaskContext:
     _chunk_buffer: str
     _is_buffering_chunks: bool
     in_conclusion_stage: bool
+    _output_result: Any
+    tool_calls_made: int
+    max_tool_calls: int
 
     def __init__(
         self,
@@ -713,6 +455,7 @@ class SubTaskContext:
         use_finish_task: bool = False,
         max_token_limit: int | None = None,
         max_iterations: int = DEFAULT_MAX_ITERATIONS,
+        display_manager: Optional[AgentConsole] = None,
     ):
         """
         Initialize a subtask execution context.
@@ -728,41 +471,39 @@ class SubTaskContext:
             use_finish_task (bool): Whether to use the finish_task tool
             max_token_limit (int): Maximum token limit before summarization
             max_iterations (int): Maximum iterations for the subtask
+            display_manager (Optional[AgentConsole]): Console for beautiful terminal output
         """
         self.task = task
         self.subtask = subtask
         self.processing_context = processing_context
         self.model = model
         self.provider = provider
-        self.workspace_dir = processing_context.workspace_dir
         self.max_token_limit = max_token_limit or provider.get_max_token_limit(model)
         self.use_finish_task = use_finish_task
         self.message_compression_threshold = max(
             self.max_token_limit // 4,
             MESSAGE_COMPRESSION_THRESHOLD,
         )
+        self._output_result = None  # Added
+        self.display_manager = display_manager or AgentConsole(verbose=True)
 
-        logger.debug(f"Initializing SubTaskContext for subtask: {subtask.id}")
-        logger.debug(f"Task: {task.title}")
-        logger.debug(f"Subtask content: {subtask.content}")
-        logger.debug(f"Model: {model}, Provider: {provider.__class__.__name__}")
-        logger.debug(f"Max token limit: {self.max_token_limit}")
-        logger.debug(f"Max iterations: {max_iterations}")
-        logger.debug(f"Use finish task: {use_finish_task}")
-        logger.debug(f"Available tools: {[tool.name for tool in tools]}")
+        # Initialize tool call tracking
+        self.tool_calls_made = 0
+        self.max_tool_calls = subtask.max_tool_calls
 
-        # Detect batch processing configuration from subtask FIRST
-        self.batch_processing_config = getattr(self.subtask, "batch_processing", None)
-        self.is_batch_processing = (
-            self.batch_processing_config is not None
-            and isinstance(self.batch_processing_config, dict)
-            and self.batch_processing_config.get("enabled", False)
-        )
-
-        if self.is_batch_processing:
-            logger.debug(
-                f"Batch processing enabled for subtask {subtask.id}: {self.batch_processing_config}"
-            )
+        # Note: Initialization debug messages will be logged after setting current subtask in execute()
+        self._init_debug_messages = [
+            f"Initializing SubTaskContext for subtask: {subtask.id}",
+            f"Task: {task.title}",
+            f"Subtask content: {subtask.content}",
+            f"Subtask output_schema: {subtask.output_schema}",
+            f"Subtask output_schema type: {type(subtask.output_schema)}",
+            f"Model: {model}, Provider: {provider.__class__.__name__}",
+            f"Max token limit: {self.max_token_limit}",
+            f"Max iterations: {max_iterations}",
+            f"Use finish task: {use_finish_task}",
+            f"Available tools: {[tool.name for tool in tools]}",
+        ]
 
         # --- Prepare prompt templates ---
         self.jinja_env = Environment(loader=BaseLoader())
@@ -770,39 +511,21 @@ class SubTaskContext:
         if use_finish_task:
             base_system_prompt = system_prompt or DEFAULT_FINISH_TASK_SYSTEM_PROMPT
             prompt_context = {
-                "output_schema": json.dumps(
-                    self.subtask.output_schema, indent=2
-                )  # Provide schema context
+                "max_tool_calls": self.max_tool_calls,
             }
-            finish_tool_output_schema = self.subtask.output_schema
-            finish_tool_class = FinishTaskTool
+            self.finish_tool = FinishTaskTool(self.subtask.output_schema)
         else:  # Standard execution subtask
             base_system_prompt = system_prompt or DEFAULT_EXECUTION_SYSTEM_PROMPT
             prompt_context = {
                 "subtask_content": self.subtask.content,
-                # Execution tasks might still refer to an expected output format/schema
-                "output_schema": json.dumps(
-                    self.subtask.output_schema or {"type": "string"}, indent=2
-                ),
+                "max_tool_calls": self.max_tool_calls,
             }  # Provide subtask content context
-            finish_tool_output_schema = self.subtask.output_schema
-            finish_tool_class = FinishSubTaskTool
+            self.finish_tool = FinishSubTaskTool(self.subtask.output_schema)
 
-        rendered_prompt = self._render_prompt(base_system_prompt, prompt_context)
-        # Apply batch processing optimizations if enabled
-        self.system_prompt = self._get_batch_optimized_system_prompt(rendered_prompt)
-
-        # Initialize finish tool based on context (class determined above)
-        self.finish_tool = finish_tool_class(
-            self.subtask.output_type,
-            finish_tool_output_schema,  # Use the determined schema
-        )
+        self.system_prompt = self._render_prompt(base_system_prompt, prompt_context)
 
         self.tools: Sequence[Tool] = list(tools) + [
             self.finish_tool,
-            ReadFileTool(),
-            WriteFileTool(),
-            ListDirectoryTool(),
         ]
         self.system_prompt = (
             self.system_prompt
@@ -834,10 +557,6 @@ class SubTaskContext:
         # Flag to track which stage we're in - normal execution flow for all tasks
         self.in_conclusion_stage = False
 
-        # Initialize progressive result file for batch processing if enabled
-        if self.is_batch_processing:
-            self._init_batch_processing_file()
-
     def _render_prompt(self, template_string: str, context: dict) -> str:
         """Renders a prompt template using Jinja2."""
         template = self.jinja_env.from_string(template_string)
@@ -857,7 +576,9 @@ class SubTaskContext:
         for msg in messages:
             token_count += self._count_single_message_tokens(msg)
 
-        logger.debug(f"Token count for {len(messages)} messages: {token_count}")
+        self.display_manager.debug(
+            f"Token count for {len(messages)} messages: {token_count}"
+        )
 
         return token_count
 
@@ -900,231 +621,11 @@ class SubTaskContext:
 
         return token_count
 
-    def _is_file_pointer(self, data: Any) -> bool:
-        """Checks if the provided data matches the file pointer structure."""
-        return isinstance(data, dict) and isinstance(data.get("path"), str)
-
-    def _find_unique_summary_path(self, base_dir: str, base_name: str, ext: str) -> str:
-        """Finds a unique path for a summary file, avoiding collisions."""
-        summary_path = os.path.join(base_dir, f"{base_name}{ext}")
-        counter = 1
-        while os.path.exists(summary_path):
-            summary_path = os.path.join(base_dir, f"{base_name}_{counter}{ext}")
-            counter += 1
-        return summary_path
-
-    def _write_content_to_file(
-        self, file_path: str, content: Any, metadata: dict, file_ext: str
-    ):
-        """Encapsulates the logic for writing different content types to a file."""
-        try:
-            with open(file_path, "w", encoding="utf-8") as f:
-                if file_ext == ".md":
-                    if metadata:
-                        f.write("---\n")
-                        try:
-                            yaml.dump(
-                                metadata,
-                                f,
-                                default_flow_style=False,
-                                allow_unicode=True,
-                            )
-                        except yaml.YAMLError as ye:
-                            logger.warning(f"Metadata YAML dump failed: {ye}")
-                        if metadata:  # Re-check if dump was successful
-                            f.write("---\n\n")
-                    f.write(str(content))
-                elif file_ext in (".yaml", ".yml"):
-                    output_data = {}
-                    if isinstance(content, str):
-                        try:
-                            parsed = yaml.safe_load(content)
-                            if isinstance(parsed, dict):
-                                parsed["metadata"] = metadata
-                                output_data = parsed
-                            else:  # Handle non-dict YAML content string
-                                output_data = {"result": parsed, "metadata": metadata}
-                        except yaml.YAMLError:
-                            output_data = {"result": content, "metadata": metadata}
-                    elif isinstance(content, dict):
-                        content["metadata"] = metadata
-                        output_data = content
-                    else:
-                        output_data = {"result": content, "metadata": metadata}
-                    yaml.dump(
-                        output_data,
-                        f,
-                        default_flow_style=False,
-                        allow_unicode=True,
-                    )
-                elif file_ext == ".json":
-                    output_data = {}
-                    if isinstance(content, str):
-                        try:
-                            parsed = json.loads(content)
-                            if isinstance(parsed, dict):
-                                parsed["metadata"] = metadata
-                                output_data = parsed
-                            else:  # Handle non-dict JSON content string
-                                output_data = {"result": parsed, "metadata": metadata}
-                        except json.JSONDecodeError:
-                            output_data = {"result": content, "metadata": metadata}
-                    elif isinstance(content, dict):
-                        content["metadata"] = metadata
-                        output_data = content
-                    else:
-                        output_data = {"result": content, "metadata": metadata}
-                    json.dump(output_data, f, indent=2, ensure_ascii=False)
-                elif file_ext == ".jsonl":
-                    # Assume content is list/tuple of dicts, or a single dict
-                    if isinstance(content, (list, tuple)):
-                        for item in content:
-                            # Optionally add metadata to each line? For now, maybe not.
-                            json.dump(item, f, ensure_ascii=False)
-                            f.write("\n")
-                    elif isinstance(content, dict):
-                        content["metadata"] = (
-                            metadata  # Add metadata to the single object
-                        )
-                        json.dump(content, f, ensure_ascii=False)
-                        f.write("\n")
-                    else:  # Fallback for non-iterable/non-dict content
-                        json.dump(
-                            {"result": content, "metadata": metadata},
-                            f,
-                            ensure_ascii=False,
-                        )
-                        f.write("\n")
-                elif file_ext == ".csv":
-                    import csv
-
-                    if metadata:
-                        f.write("# -- Metadata --\n")
-                        [f.write(f"# {k}: {v}\n") for k, v in metadata.items()]
-                        f.write("# -- End Metadata --\n")
-                    # Assume content is list of lists, list of strings, or just a string
-                    if isinstance(content, (list, tuple)):
-                        if all(isinstance(row, (list, tuple)) for row in content):
-                            csv.writer(f).writerows(content)
-                        elif all(isinstance(item, str) for item in content):
-                            # Treat list of strings as single-column CSV
-                            csv.writer(f).writerows([[item] for item in content])
-                        else:
-                            # Fallback for mixed/unsupported list types
-                            f.write(str(content))
-                    else:
-                        f.write(str(content))
-                else:  # Default: treat as plain text, embed metadata in comment
-                    if metadata:
-                        f.write("/* -- Metadata --\n")
-                        try:
-                            yaml.dump(
-                                metadata,
-                                f,
-                                default_flow_style=False,
-                                allow_unicode=True,
-                            )
-                        except yaml.YAMLError as ye:
-                            logger.warning(f"Metadata YAML dump failed: {ye}")
-                        f.write("-- End Metadata -- */\n\n")
-                    f.write(str(content))
-        except Exception as e:
-            logger.error(f"Error writing content to {file_path}: {e}")
-            # Attempt to write error info even if content write failed
-            try:
-                with open(file_path, "w", encoding="utf-8") as f:
-                    json.dump(
-                        {
-                            "error": f"Failed to write result content: {e}",
-                            "metadata": metadata,  # Include original metadata attempt
-                        },
-                        f,
-                        indent=2,
-                    )
-            except Exception as write_err:
-                logger.error(
-                    f"Failed even to write error to file {file_path}: {write_err}"
-                )
-
-    def _save_to_output_file(self, finish_params: dict) -> None:
+    def get_result(self) -> Any | None:
         """
-        Save the result of a subtask to its designated output file.
-        Handles results that are direct content or a file/directory pointer object.
-        If the output path is a directory, content is saved to a summary file inside it.
+        Returns the stored result object.
         """
-        # verbose check removed
-        logger.debug(f"Saving output to file for subtask {self.subtask.id}")
-        logger.debug(f"Finish params: {finish_params}")
-
-        metadata = finish_params.get("metadata", {})
-        result_value = finish_params.get("result")
-        output_path_rel = self.subtask.output_file
-        output_path_abs = self.processing_context.resolve_workspace_path(
-            output_path_rel
-        )
-
-        # verbose check removed
-        logger.debug(f"Output path: {output_path_abs}")
-
-        # Add tracked sources to metadata
-        if self.sources:
-            if "sources" in metadata and isinstance(metadata["sources"], list):
-                metadata["sources"].extend(
-                    s for s in self.sources if s not in metadata["sources"]
-                )
-            else:
-                metadata["sources"] = list(self.sources)
-
-        # --- Handle File Pointer Case ---
-        if self._is_file_pointer(result_value):
-            # verbose check removed
-            logger.debug(f"Result is a file pointer: {result_value}")
-            assert isinstance(result_value, dict)
-            source_path_rel_raw = result_value["path"]
-            source_path_rel = os.path.normpath(source_path_rel_raw)
-            source_path_abs = self.processing_context.resolve_workspace_path(
-                source_path_rel
-            )
-
-            # verbose check removed
-            logger.debug(f"Source path: {source_path_abs}")
-
-            if source_path_abs != output_path_abs:
-                shutil.copy2(source_path_abs, output_path_abs)
-                logger.info(
-                    f"Successfully copied file '{source_path_abs}' to '{output_path_abs}'."
-                )
-            # verbose check removed
-            logger.debug("Source and output paths are the same, no copy needed")
-
-        # --- Handle Direct Content Case ---
-        elif result_value is not None:
-            result_content = result_value
-            if not os.path.exists(output_path_abs):
-                file_ext = os.path.splitext(output_path_rel)[1].lower()
-                self._write_content_to_file(
-                    output_path_abs, result_content, metadata, file_ext
-                )
-
-        # --- Handle Null Result Case ---
-        else:  # result_value is None
-            error_msg = f"finish_... tool called with null 'result' for target file '{output_path_rel}'"
-            logger.error(error_msg)
-            error_filename = (
-                f"error_null_{os.path.basename(output_path_rel)}.json"
-                if os.path.basename(output_path_rel)
-                else f"error_null_{self.subtask.id}.json"
-            )
-            error_file_path_abs = self.processing_context.resolve_workspace_path(
-                error_filename
-            )
-            try:
-                with open(error_file_path_abs, "w", encoding="utf-8") as f:
-                    json.dump({"error": error_msg, "metadata": metadata}, f, indent=2)
-            except Exception as write_err:
-                logger.error(
-                    f"Failed to write error file to {error_file_path_abs}: {write_err}"
-                )
+        return self._output_result
 
     async def execute(
         self,
@@ -1139,10 +640,19 @@ class SubTaskContext:
         current_time = int(time.time())
         self.subtask.start_time = current_time
 
-        # verbose check removed
-        logger.debug(
-            f"Starting execution of subtask {self.subtask.id} at {current_time}"
-        )
+        # Ensure subtask logs are initialized
+        if not hasattr(self.subtask, "logs") or self.subtask.logs is None:
+            self.subtask.logs = []
+
+        # Set the current subtask for the display manager
+        self.display_manager.set_current_subtask(self.subtask)
+
+        # Log initialization messages now that current subtask is set
+        for msg in self._init_debug_messages:
+            self.display_manager.debug(msg)
+
+        # Display beautiful subtask start panel
+        self.display_manager.display_subtask_start(self.subtask)
 
         # --- LLM-based Execution Logic ---
         prompt_parts = [
@@ -1150,33 +660,49 @@ class SubTaskContext:
             f"**Current Subtask Instructions:**\n{self.subtask.content}\n",  # Treat content as instructions
         ]
 
-        if self.subtask.input_files:
-            # Document that input files can be directories
-            input_files_str = "\n".join(
-                [
-                    f"- {f} (must be at root unless it is an initial task input file. Initial inputs can be files or directories in subdirs.)"
-                    for f in self.subtask.input_files
-                ]
-            )
+        if self.subtask.input_tasks:
+            input_tasks_str = ", ".join(self.subtask.input_tasks)
             prompt_parts.append(
-                f"**Input Files for this Subtask:**\n{input_files_str}\n"
+                f"**Input Tasks for this Subtask:**\n{input_tasks_str}\n"
             )
 
-        # Mention output path can be a directory
-        prompt_parts.append(
-            f"**Expected Output File (must be at workspace root):**\n{self.subtask.output_file}\n"
-        )
+            # Fetch and inject input results directly into the prompt
+            input_results = []
+            for input_task_id in self.subtask.input_tasks:
+                try:
+                    result = self.processing_context.get(input_task_id)
+                    if result is not None:
+                        input_results.append(
+                            f"**Result from Task {input_task_id}:**\n{json.dumps(result, indent=2, ensure_ascii=False)}\n"
+                        )
+                    else:
+                        input_results.append(
+                            f"**Result from Task {input_task_id}:** No result available\n"
+                        )
+                except Exception as e:
+                    self.display_manager.warning(
+                        f"Failed to fetch result for task {input_task_id}: {e}"
+                    )
+                    input_results.append(
+                        f"**Result from Task {input_task_id}:** Error fetching result: {e}\n"
+                    )
+
+            if input_results:
+                prompt_parts.append(
+                    "**Input Data from Upstream Tasks:**\n" + "\n".join(input_results)
+                )
 
         prompt_parts.append(
-            "Please perform the subtask based on the provided context, instructions, inputs, and expected output file."
+            "Please perform the subtask based on the provided context, instructions, and upstream task results."
         )
         task_prompt = "\n".join(prompt_parts)
 
         # Add the task prompt to this subtask's history
         self.history.append(Message(role="user", content=task_prompt))
 
-        # verbose check removed
-        logger.debug(f"Task prompt added to history: {task_prompt[:200]}...")
+        self.display_manager.debug(
+            f"Task prompt added to history: {task_prompt[:200]}..."
+        )
 
         # Yield task update for subtask start
         yield TaskUpdate(
@@ -1185,23 +711,35 @@ class SubTaskContext:
             event=TaskUpdateEvent.SUBTASK_STARTED,
         )
 
+        # Display task update event
+        self.display_manager.display_task_update(
+            "SUBTASK_STARTED", self.subtask.content
+        )
+
         # Continue executing until the task is completed or max iterations reached
         while not self.subtask.completed and self.iterations < self.max_iterations:
             self.iterations += 1
-
-            # verbose check removed
-            logger.debug(f"Starting iteration {self.iterations}/{self.max_iterations}")
+            self.display_manager.debug(
+                f"Starting iteration {self.iterations}/{self.max_iterations}"
+            )
 
             # Calculate total token count AFTER potential compression
             token_count = self._count_tokens(self.history)
 
-            # verbose check removed
-            logger.debug(f"Current token count: {token_count}/{self.max_token_limit}")
+            # Display beautiful iteration status
+            # self.display_manager.display_iteration_status(
+            #     self.iterations, self.max_iterations, token_count, self.max_token_limit
+            # )
 
             # Check if we need to transition to conclusion stage
             if (token_count > self.max_token_limit) and not self.in_conclusion_stage:
-                # verbose check removed
-                logger.debug("Token limit exceeded, transitioning to conclusion stage")
+                # Log and display token warning
+                self.display_manager.warning(
+                    f"Token usage: {token_count}/{self.max_token_limit}"
+                )
+                self.display_manager.display_token_warning(
+                    token_count, self.max_token_limit
+                )
                 await self._transition_to_conclusion_stage()
                 # Yield the event after transitioning
                 yield TaskUpdate(
@@ -1209,19 +747,70 @@ class SubTaskContext:
                     subtask=self.subtask,
                     event=TaskUpdateEvent.ENTERED_CONCLUSION_STAGE,
                 )
+                self.display_manager.display_task_update("ENTERED_CONCLUSION_STAGE")
 
             # Process current iteration
             message = await self._process_iteration()
             if message.tool_calls:
-                # verbose check removed
-                logger.debug(f"LLM returned {len(message.tool_calls)} tool calls")
+                self.display_manager.debug_subtask_only(
+                    f"LLM returned {len(message.tool_calls)} tool calls"
+                )
+
+                # Separate finish tools from other tools - finish tools are always allowed
+                finish_tools = [
+                    tc
+                    for tc in message.tool_calls
+                    if tc.name in ("finish_subtask", "finish_task")
+                ]
+                other_tools = [
+                    tc
+                    for tc in message.tool_calls
+                    if tc.name not in ("finish_subtask", "finish_task")
+                ]
+
+                # Check if we would exceed the tool call limit for non-finish tools
+                if self.tool_calls_made + len(other_tools) > self.max_tool_calls:
+                    remaining_calls = self.max_tool_calls - self.tool_calls_made
+                    if remaining_calls <= 0:
+                        # No more non-finish tool calls allowed
+                        if finish_tools:
+                            # Allow only finish tools
+                            message.tool_calls = finish_tools
+                            self.display_manager.warning(
+                                f"Tool call limit ({self.max_tool_calls}) reached. Only allowing finish tools."
+                            )
+                        else:
+                            # Force completion if no finish tools available
+                            self.display_manager.warning(
+                                f"Tool call limit ({self.max_tool_calls}) reached. Forcing completion."
+                            )
+                            tool_call = await self._handle_max_tool_calls_reached()
+                            yield tool_call
+                            yield TaskUpdate(
+                                task=self.task,
+                                subtask=self.subtask,
+                                event=TaskUpdateEvent.MAX_TOOL_CALLS_REACHED,
+                            )
+                            self.display_manager.display_task_update(
+                                "MAX_TOOL_CALLS_REACHED",
+                                f"Tool calls: {self.tool_calls_made}/{self.max_tool_calls}",
+                            )
+                            break
+                    else:
+                        # Allow remaining non-finish calls plus all finish calls
+                        allowed_other_tools = other_tools[:remaining_calls]
+                        message.tool_calls = finish_tools + allowed_other_tools
+                        self.display_manager.warning(
+                            f"Tool call limit approaching. Processing {len(finish_tools)} finish tools and {len(allowed_other_tools)} of {len(other_tools)} other tool calls."
+                        )
+
                 if message.content:
                     yield Chunk(content=str(message.content))
                 for tool_call in message.tool_calls:
-                    # verbose check removed
-                    logger.debug(
-                        f"Processing tool call: {tool_call.name} with args: {tool_call.args}"
-                    )
+                    # Log tool execution only to subtask (not phase)
+                    if tool_call.name not in ("finish_subtask", "finish_task"):
+                        self.display_manager.info_subtask_only(f"Executing tool: {tool_call.name}")
+                        self.tool_calls_made += 1
                     message = self._generate_tool_call_message(tool_call)
                     yield ToolCall(
                         id=tool_call.id,
@@ -1234,12 +823,16 @@ class SubTaskContext:
                         tool_call.name == "finish_subtask"
                         or tool_call.name == "finish_task"
                     ):
-                        # verbose check removed
-                        logger.debug(f"Subtask completed via {tool_call.name}")
+                        self.display_manager.debug(
+                            f"Subtask completed via {tool_call.name}"
+                        )
                         yield TaskUpdate(
                             task=self.task,
                             subtask=self.subtask,
                             event=TaskUpdateEvent.SUBTASK_COMPLETED,
+                        )
+                        self.display_manager.display_task_update(
+                            "SUBTASK_COMPLETED", self.subtask.content
                         )
             # Handle potential text chunk yields if provider supports streaming text
             elif message.content:
@@ -1254,14 +847,18 @@ class SubTaskContext:
                 subtask=self.subtask,
                 event=TaskUpdateEvent.MAX_ITERATIONS_REACHED,
             )
+            self.display_manager.display_task_update(
+                "MAX_ITERATIONS_REACHED",
+                f"Iterations: {self.iterations}/{self.max_iterations}",
+            )
             yield tool_call
 
-        # verbose check removed
-        logger.debug(
-            f"Subtask {self.subtask.id} execution completed. Status: {'completed' if self.subtask.completed else 'incomplete'}"
+        # Display completion event
+        self.display_manager.display_completion_event(
+            self.subtask, self.subtask.completed, self._output_result
         )
-        logger.debug(f"Total iterations: {self.iterations}")
-        logger.debug(f"Total messages in history: {len(self.history)}")
+        self.display_manager.debug(f"Total iterations: {self.iterations}")
+        self.display_manager.debug(f"Total messages in history: {len(self.history)}")
 
     async def _transition_to_conclusion_stage(self) -> None:
         """
@@ -1286,175 +883,8 @@ class SubTaskContext:
             for m in self.history
         ):
             self.history.append(Message(role="system", content=transition_message))
-            logger.warning(
-                f"Token limit approaching. Transitioning subtask '{self.subtask.content}' to conclusion stage."
-            )
-
-    async def _optimize_context_window(self) -> None:
-        """
-        Optimize the context window by cleaning up the message history using several strategies:
-        1. Remove "thinking" sections in messages
-        2. Summarize long tool results
-        3. Remove/summarize less relevant history
-        4. Keep only the most recent interactions
-        5. Ensure system and task messages are preserved
-        """
-        logger.warning(
-            f"Optimizing context window for subtask '{self.subtask.content}'"
-        )
-
-        # Make sure we have at least 3 messages (system, user, and 1+ exchanges)
-        if len(self.history) < 3:
-            logger.warning("History too short to optimize, nothing to do")
-            return
-
-        # Step 1: Never touch the system prompt (index 0) and the task prompt (index 1)
-        preserved_messages = self.history[:2]  # System and task prompt
-        working_history = self.history[2:]
-
-        # Step 2: Calculate token counts for each message to identify largest ones
-        message_sizes = [
-            (i + 2, msg, self._count_single_message_tokens(msg))
-            for i, msg in enumerate(working_history)
-        ]
-
-        # Step 3: Find the largest tool responses (typically file reads, web fetches)
-        large_tool_responses = []
-        for idx, msg, tokens in message_sizes:
-            if msg.role == "tool" and tokens > MESSAGE_COMPRESSION_THRESHOLD:
-                large_tool_responses.append((idx, msg, tokens))
-
-        # Step 4: Compress large tool responses
-        for idx, msg, tokens in large_tool_responses:
-            try:
-                # Check if it's JSON content that we can parse and compress
-                if msg.content and isinstance(msg.content, str):
-                    try:
-                        content_data = json.loads(msg.content)
-                        # If it's a read_file result, extract the essential metadata
-                        if msg.name == "read_file" and isinstance(content_data, dict):
-                            path = content_data.get("path", "unknown")
-                            # Keep line info and token info if available
-                            line_info = content_data.get("line_info", {})
-                            token_info = content_data.get("token_info", {})
-                            content_size = len(content_data.get("content", ""))
-                            # Create a compact summary instead of full content
-                            summary = {
-                                "success": content_data.get("success", False),
-                                "path": path,
-                                "action": "read_file",
-                                "content_summary": f"[File content ({content_size} chars, {token_info.get('count', 0)} tokens) removed to save context space]"
-                                f" File had {line_info.get('total_lines', 0)} lines.",
-                            }
-                            # Replace the content with our summary
-                            self.history[idx].content = json.dumps(summary)
-
-                        # Summarize other large tool results (like web fetches)
-                        elif msg.name in [
-                            "browser",
-                            "search",
-                            "web_fetch",
-                        ] and isinstance(content_data, dict):
-                            # Create a compact summary for web results
-                            summary = {
-                                "action": msg.name,
-                                "content_summary": f"[Web content ({tokens} tokens) removed to save context space]",
-                            }
-                            if "url" in content_data:
-                                summary["url"] = content_data.get("url")
-                            if "title" in content_data:
-                                summary["title"] = content_data.get("title")
-                            self.history[idx].content = json.dumps(summary)
-                    except json.JSONDecodeError:
-                        # Not valid JSON, use a simple text truncation approach
-                        if len(msg.content) > 500:
-                            self.history[idx].content = (
-                                f"{msg.content[:500]}... [Content truncated to save context space]"
-                            )
-            except Exception as e:
-                logger.error(f"Error optimizing message {idx}: {e}")
-
-        # Step 5: If we're still over limit, keep only the most recent interactions
-        # First count tokens again after the optimizations above
-        current_token_count = self._count_tokens(self.history)
-        if (
-            current_token_count > self.max_token_limit * 0.85
-        ):  # If still using >85% of limit
-            # Keep system message, task message, and the most recent exchanges
-            # The most important part is the system message and recent context
-            recent_count = min(
-                4, len(working_history)
-            )  # Keep at least 4 recent messages if available
-            oldest_to_remove = len(working_history) - recent_count
-
-            if oldest_to_remove > 0:
-                # Keep only the most recent exchanges
-                self.history = preserved_messages + working_history[-recent_count:]
-                # Insert a marker message to show history was truncated
-                self.history.insert(
-                    2,
-                    Message(
-                        role="system",
-                        content=f"[Context window optimized: {oldest_to_remove} older messages removed to stay within token limits]",
-                    ),
-                )
-                logger.info(
-                    f"Removed {oldest_to_remove} older messages to optimize context window"
-                )
-
-        # Apply batch processing specific optimizations
-        if self.is_batch_processing:
-            await self._apply_batch_context_optimizations()
-
-        # Log the final optimization results
-        original_tokens = current_token_count
-        optimized_tokens = self._count_tokens(self.history)
-        reduction = original_tokens - optimized_tokens
-        logger.info(
-            f"Context window optimization complete: {reduction} tokens removed ({int(reduction/original_tokens*100)}% reduction)"
-        )
-
-    async def _apply_batch_context_optimizations(self) -> None:
-        """Apply additional context optimizations specific to batch processing."""
-        logger.debug("Applying batch processing context optimizations")
-
-        # First, remove old processed tool results that are no longer needed
-        self._remove_old_tool_results()
-
-        # More aggressive trimming for batch processing since we focus on current item
-        if len(self.history) > 6:  # Keep system, task, and last 4 messages only
-            preserved_messages = self.history[:2]  # System and task prompt
-            recent_messages = self.history[-4:]  # Last 4 exchanges
-
-            # Insert a batch processing marker
-            batch_marker = Message(
-                role="system",
-                content="[Batch processing: Earlier context removed to optimize for current item processing]",
-            )
-
-            self.history = preserved_messages + [batch_marker] + recent_messages
-            logger.debug(
-                f"Trimmed history for batch processing: kept {len(self.history)} messages"
-            )
-
-        # Remove any large file content that's not immediately relevant
-        for i, msg in enumerate(self.history):
-            if msg.role == "tool" and msg.name == "read_file":
-                try:
-                    content_data = json.loads(str(msg.content))
-                    if isinstance(content_data, dict) and "content" in content_data:
-                        content_size = len(content_data.get("content", ""))
-                        if content_size > 1000:  # More aggressive for batch processing
-                            # Replace with minimal summary
-                            summary = {
-                                "success": content_data.get("success", False),
-                                "path": content_data.get("path", "unknown"),
-                                "action": "read_file",
-                                "content_summary": f"[Large file content ({content_size} chars) removed for batch optimization]",
-                            }
-                            self.history[i].content = json.dumps(summary)
-                except (json.JSONDecodeError, KeyError):
-                    continue
+            # Display beautiful conclusion stage transition
+            self.display_manager.display_conclusion_stage()
 
     async def _process_iteration(
         self,
@@ -1462,8 +892,7 @@ class SubTaskContext:
         """
         Process a single iteration of the task.
         """
-        # verbose check removed
-        logger.debug("Processing iteration")
+        self.display_manager.debug("Processing iteration")
 
         tools_for_iteration = (
             [self.finish_tool]  # Only allow finish tool in conclusion stage
@@ -1471,48 +900,34 @@ class SubTaskContext:
             else self.tools  # Allow all tools otherwise
         )
 
-        # verbose check removed
-        logger.debug(f"Conclusion stage: {self.in_conclusion_stage}")
-        logger.debug(f"Tools available: {[t.name for t in tools_for_iteration]}")
-
-        # Ensure ReadFileTool is always available if not already included
-        if not any(isinstance(t, ReadFileTool) for t in tools_for_iteration):
-            tools_for_iteration = list(tools_for_iteration) + [ReadFileTool()]
+        self.display_manager.debug(f"Conclusion stage: {self.in_conclusion_stage}")
+        self.display_manager.debug(
+            f"Tools available: {[t.name for t in tools_for_iteration]}"
+        )
 
         # Create a dictionary to track unique tools by name
         unique_tools = {tool.name: tool for tool in tools_for_iteration}
         final_tools = list(unique_tools.values())
 
         try:
-            # verbose check removed
-            logger.debug(f"Calling LLM with {len(self.history)} messages in history")
+            self.display_manager.debug(
+                f"Calling LLM with {len(self.history)} messages in history"
+            )
             message = await self.provider.generate_message(
                 messages=self.history,
                 model=self.model,
                 tools=final_tools,
             )
-            # verbose check removed
-            logger.debug(
+            self.display_manager.debug(
                 f"LLM response received - content length: {len(str(message.content)) if message.content else 0}"
             )
             if message.tool_calls:
-                logger.debug(
+                self.display_manager.debug(
                     f"LLM requested tool calls: {[tc.name for tc in message.tool_calls]}"
                 )
         except Exception as e:
-            if self.provider.is_context_length_error(e):
-                # verbose check removed
-                logger.debug(f"Context length error encountered: {e}")
-                await self._optimize_context_window()
-                message = await self.provider.generate_message(
-                    messages=self.history,
-                    model=self.model,
-                    tools=final_tools,
-                )
-            else:
-                # verbose check removed
-                logger.debug(f"Error generating message: {e}")
-                raise e
+            self.display_manager.error(f"Error generating message: {e}", exc_info=True)
+            raise e
 
         # Clean assistant message content
         if isinstance(message.content, str):
@@ -1528,24 +943,6 @@ class SubTaskContext:
                         cleaned_text = _remove_think_tags(None)  # Explicitly pass None
                         part_dict["text"] = cleaned_text  # Assigns None back
 
-        # Check if the message contains output files and use them as subtask output
-        if hasattr(message, "output_files") and message.output_files:
-            # Use the first output file as the subtask output
-            output_file = self.processing_context.resolve_workspace_path(
-                self.subtask.output_file
-            )
-            output_dir = os.path.dirname(output_file)
-            if output_dir and not os.path.exists(output_dir):
-                os.makedirs(output_dir, exist_ok=True)
-
-            # Write the file content to the output file
-            with open(output_file, "wb") as f:
-                f.write(message.output_files[0].content)
-
-            # Mark subtask as completed
-            self.subtask.completed = True
-            self.subtask.end_time = int(time.time())
-
         # Add the message to history
         self.history.append(message)
 
@@ -1557,7 +954,7 @@ class SubTaskContext:
                     if tc.name == self.finish_tool.name:
                         valid_tool_calls.append(tc)
                     else:
-                        logger.warning(
+                        self.display_manager.warning(
                             f"LLM attempted to call disallowed tool '{tc.name}' in conclusion stage. Ignoring."
                         )
             else:
@@ -1566,32 +963,28 @@ class SubTaskContext:
                 )  # Allow all tools if not in conclusion stage
 
             if valid_tool_calls:
-                # verbose check removed
-                logger.debug(f"Processing {len(valid_tool_calls)} valid tool calls")
+                self.display_manager.debug(
+                    f"Processing {len(valid_tool_calls)} valid tool calls"
+                )
 
-                # For batch processing, handle tool results more intelligently
-                if self.is_batch_processing and len(valid_tool_calls) > 2:
-                    # Process tool calls with token-aware batching
-                    tool_results = await self._handle_batch_tool_calls(valid_tool_calls)
-                    # In batch mode, don't keep all tool results in history
-                    # Only keep the most recent or most important ones
-                    filtered_results = self._filter_batch_tool_results(tool_results)
-                    self.history.extend(filtered_results)
-                    logger.debug(f"Added {len(filtered_results)} filtered tool results to history (batch mode)")
-                else:
-                    # Standard parallel processing for non-batch or small number of calls
-                    tool_results = await asyncio.gather(
-                        *[
-                            self._handle_tool_call(tool_call)
-                            for tool_call in valid_tool_calls
-                        ]
-                    )
-                    self.history.extend(tool_results)
-                    logger.debug(f"Added {len(tool_results)} tool results to history")
+                # Standard parallel processing for tool calls
+                tool_results = await asyncio.gather(
+                    *[
+                        self._handle_tool_call(tool_call)
+                        for tool_call in valid_tool_calls
+                    ]
+                )
+                print("************************************************")
+                print(tool_results)
+                print("************************************************")
+                self.history.extend(tool_results)
+                self.display_manager.debug(
+                    f"Added {len(tool_results)} tool results to history"
+                )
             elif self.in_conclusion_stage and not valid_tool_calls:
                 # If in conclusion stage and LLM didn't call finish_tool, add a nudge?
                 # Or handle it in the max_iterations logic? For now, let loop continue.
-                logger.warning(
+                self.display_manager.warning(
                     "LLM did not call the required finish tool in conclusion stage."
                 )
 
@@ -1618,41 +1011,36 @@ class SubTaskContext:
         Returns:
             Message: A message object with role 'tool' containing the processed and serialized result.
         """
-        # verbose check removed
-        logger.debug(f"Handling tool call: {tool_call.name} (ID: {tool_call.id})")
+        self.display_manager.debug_subtask_only(
+            f"Handling tool call: {tool_call.name} (ID: {tool_call.id})"
+        )
 
         # 1. Execute the tool
-        raw_tool_result = await self._process_tool_execution(tool_call)
+        tool_result = await self._process_tool_execution(tool_call)
 
-        # verbose check removed
-        logger.debug(f"Tool {tool_call.name} execution completed")
-
-        # 2. Conditionally compress the tool result
-        if self.is_batch_processing:
-            # Always compress large results in batch mode
-            processed_tool_result = await self._maybe_compress_tool_result(
-                raw_tool_result, tool_call
-            )
-        else:
-            processed_tool_result = raw_tool_result
+        self.display_manager.debug_subtask_only(f"Tool {tool_call.name} execution completed")
 
         # 3. Handle binary artifacts (images, audio)
-        if isinstance(processed_tool_result, dict):
-            if "image" in processed_tool_result:
-                processed_tool_result = self._handle_binary_artifact(
-                    processed_tool_result, tool_call.name, "image"
+        if isinstance(tool_result, dict):
+            if "image" in tool_result:
+                tool_result = self._handle_binary_artifact(
+                    tool_result, tool_call.name, "image"
                 )
-            elif "audio" in processed_tool_result:
-                processed_tool_result = self._handle_binary_artifact(
-                    processed_tool_result, tool_call.name, "audio"
+            elif "audio" in tool_result:
+                tool_result = self._handle_binary_artifact(
+                    tool_result, tool_call.name, "audio"
                 )
 
         # 4. Process special tool side-effects (e.g., finish_task, browser navigation)
-        self._process_special_tool_side_effects(processed_tool_result, tool_call)
+        self._process_special_tool_side_effects(tool_result, tool_call)
+
+        # Log tool result only to subtask tree (not phase)
+        if tool_call.name not in ("finish_subtask", "finish_task"):
+            self.display_manager.info_subtask_only(f"Tool result received from {tool_call.name}")
 
         # 5. Serialize the final processed result for history
         content_str = self._serialize_tool_result_for_history(
-            processed_tool_result, tool_call.name
+            tool_result, tool_call.name
         )
 
         # Return the tool result as a message to be added to history
@@ -1670,50 +1058,6 @@ class SubTaskContext:
                 return await tool.process(self.processing_context, tool_call.args)
         raise ValueError(f"Tool '{tool_call.name}' not found in available tools.")
 
-    async def _maybe_compress_tool_result(
-        self, tool_result: Any, tool_call: ToolCall
-    ) -> Any:
-        """Compresses the tool result if it's too large."""
-        # Skip compression for finish tools as their structure is required for saving
-        if tool_call.name in ("finish_task", "finish_subtask"):
-            return tool_result
-
-        try:
-            # Serialize the result to check its size
-            result_str_for_size_check = json.dumps(tool_result, ensure_ascii=False)
-            result_token_count = len(self.encoding.encode(result_str_for_size_check))
-
-            # More aggressive compression for batch processing
-            compression_threshold = self.message_compression_threshold
-
-            if result_token_count > compression_threshold:
-                logger.info(
-                    f"Tool result for '{tool_call.name}' ({result_token_count} tokens) "
-                    f"exceeds threshold ({compression_threshold}). Compressing..."
-                )
-                compressed_result = await self._compress_tool_result(
-                    tool_result, tool_call.name, tool_call.args
-                )
-                new_token_count = len(
-                    self.encoding.encode(
-                        json.dumps(compressed_result, ensure_ascii=False)
-                    )
-                )
-                logger.info(
-                    f"Compressed tool result for '{tool_call.name}' to {new_token_count} tokens."
-                )
-                return compressed_result
-            return tool_result
-        except TypeError as e:
-            logger.warning(
-                f"Could not serialize tool result for '{tool_call.name}' to check size: {e}. Skipping compression check."
-            )
-            return tool_result
-        except Exception as e:
-            logger.error(
-                f"Error during tool result compression check for '{tool_call.name}': {e}"
-            )
-            return tool_result  # Return original result if compression check fails
 
     def _handle_binary_artifact(
         self, tool_result: Dict[str, Any], tool_call_name: str, artifact_type: str
@@ -1723,7 +1067,7 @@ class SubTaskContext:
         base64_data = tool_result.get(artifact_key)
 
         if not isinstance(base64_data, str):
-            logger.warning(
+            self.display_manager.warning(
                 f"No valid base64 data found for artifact type '{artifact_type}' in tool '{tool_call_name}' result."
             )
             return tool_result
@@ -1749,7 +1093,7 @@ class SubTaskContext:
             with open(artifact_abs_path, "wb") as artifact_file:
                 artifact_file.write(decoded_data)
 
-            print(
+            self.display_manager.info_subtask_only(
                 f"Saved base64 {artifact_type} from tool '{tool_call_name}' to {artifact_rel_path}"
             )
 
@@ -1760,7 +1104,7 @@ class SubTaskContext:
                 del tool_result["format"]  # Clean up format key for audio
 
         except (binascii.Error, ValueError) as e:
-            logger.error(
+            self.display_manager.error(
                 f"Failed to decode base64 {artifact_type} from tool '{tool_call_name}': {e}"
             )
             tool_result[f"{artifact_type}_path"] = (
@@ -1771,7 +1115,7 @@ class SubTaskContext:
             if artifact_type == "audio" and "format" in tool_result:
                 del tool_result["format"]
         except Exception as e:
-            logger.error(
+            self.display_manager.error(
                 f"Failed to save {artifact_type} artifact from tool '{tool_call_name}': {e}"
             )
             tool_result[f"{artifact_type}_path"] = f"Error saving {artifact_type}: {e}"
@@ -1783,8 +1127,9 @@ class SubTaskContext:
 
     def _process_special_tool_side_effects(self, tool_result: Any, tool_call: ToolCall):
         """Handles side effects for specific tools, like 'browser' or 'finish_*'."""
-        # verbose check removed
-        logger.debug(f"Processing special side effects for tool: {tool_call.name}")
+        self.display_manager.debug(
+            f"Processing special side effects for tool: {tool_call.name}"
+        )
 
         if tool_call.name == "browser" and isinstance(tool_call.args, dict):
             action = tool_call.args.get("action", "")
@@ -1792,22 +1137,31 @@ class SubTaskContext:
             if action == "navigate" and url:
                 if url not in self.sources:  # Avoid duplicates
                     self.sources.append(url)
-                    # verbose check removed
-                    logger.debug(f"Added browser source: {url}")
+                    self.display_manager.debug_subtask_only(f"Added browser source: {url}")
 
         if tool_call.name == "finish_task":
-            # verbose check removed
-            logger.debug("Processing finish_task - marking subtask as completed")
+            self.display_manager.debug(
+                "Processing finish_task - marking subtask as completed"
+            )
             self.subtask.completed = True
             self.subtask.end_time = int(time.time())
-            self._save_to_output_file(cast(dict, tool_result))
+            # Store the result object directly
+            self.processing_context.set(self.task.id, tool_result)
+            self.processing_context.set(self.subtask.id, tool_result)
+            self._output_result = tool_result  # Store for completion display
 
         if tool_call.name == "finish_subtask":
-            # verbose check removed
-            logger.debug("Processing finish_subtask - marking subtask as completed")
+            self.display_manager.debug(
+                "Processing finish_subtask - marking subtask as completed"
+            )
             self.subtask.completed = True
             self.subtask.end_time = int(time.time())
-            self._save_to_output_file(cast(dict, tool_result))
+            # Store the result object directly
+            self.processing_context.set(self.subtask.id, tool_result)
+            self._output_result = tool_result  # Store for completion display
+            self.display_manager.info_subtask_only(
+                f"Subtask {self.subtask.id} completed with result: {tool_result}"
+            )
 
     def _serialize_tool_result_for_history(
         self, tool_result: Any, tool_name: str
@@ -1816,7 +1170,7 @@ class SubTaskContext:
         try:
             return json.dumps(tool_result, ensure_ascii=False)
         except TypeError as e:
-            logger.error(
+            self.display_manager.error(
                 f"Failed to serialize tool result for '{tool_name}' to JSON: {e}. Result: {tool_result}"
             )
             return json.dumps(
@@ -1829,170 +1183,130 @@ class SubTaskContext:
     async def _handle_max_iterations_reached(self):
         """
         Handle the case where max iterations are reached without completion by prompting
-        the LLM to explicitly call the finish tool.
+        the LLM to call the finish tool.
         """
-        logger.warning(
+        self.display_manager.warning(
             f"Subtask '{self.subtask.content}' reached max iterations ({self.max_iterations}). Forcing completion."
         )
 
-        # verbose check removed
-        logger.debug(f"Max iterations reached for subtask {self.subtask.id}")
-        logger.debug("Forcing completion with structured output request")
-        # --- Determine schema and tool name dynamically ---
+        self.display_manager.debug(
+            f"Max iterations reached for subtask {self.subtask.id}"
+        )
+        self.display_manager.debug("Prompting LLM to call finish tool")
+
+        # Determine the appropriate finish tool name
         tool_name = "finish_task" if self.use_finish_task else "finish_subtask"
-        # The finish_tool already has the correct schema based on __init__
-        final_call_schema = self.finish_tool.input_schema
-        # --- End schema/tool determination ---
 
-        # Request the final output using the determined schema
-        structured_result = await self.request_structured_output(
-            final_call_schema, tool_name
+        # Add a system message prompting the LLM to finish
+        force_completion_prompt = f"""
+SYSTEM: You have reached the maximum allowed iterations ({self.max_iterations}) for this subtask.
+You MUST now call the '{tool_name}' tool to complete the task.
+Synthesize all the work done so far and provide the best possible result based on the conversation history.
+Do not attempt any other tool calls - only call '{tool_name}' with your final result.
+"""
+
+        self.history.append(Message(role="system", content=force_completion_prompt))
+
+        # Get the LLM to generate the finish tool call
+        message = await self.provider.generate_message(
+            messages=self.history,
+            model=self.model,
+            tools=[self.finish_tool],  # Only allow the finish tool
         )
 
-        # Save the structured result (which includes result and metadata keys)
-        # _save_to_output_file expects the dict passed to finish_subtask/finish_task
-        self._save_to_output_file(structured_result)
-        self.subtask.completed = True
-        self.subtask.end_time = int(time.time())
+        # Add the assistant message to history
+        self.history.append(message)
 
-        # Create the tool call based on the structured data received
-        # Note: The 'result' field *within* structured_result holds the actual subtask/task result
-        tool_call = ToolCall(
-            id=f"max_iterations_{tool_name}",
-            name=tool_name,
-            args=structured_result,
-        )
-
-        # Add the tool call to history for completeness
-        self.history.append(Message(role="assistant", tool_calls=[tool_call]))
-
-        return tool_call
-
-    async def request_structured_output(self, schema: dict, schema_name: str) -> dict:
-        """
-        Request a final structured output from the LLM when max iterations are reached,
-        using response_format parameter with JSON schema to ensure valid structure.
-
-        Args:
-            schema: The JSON schema the output must conform to.
-            schema_name: A descriptive name for the root of the schema.
-
-        Returns:
-            A dictionary conforming to the schema, or an error dict.
-        """
-        logger.info(
-            f"Requesting structured output conforming to schema '{schema_name}' due to max iterations."
-        )
-        # Create a JSON-specific system prompt
-        json_system_prompt = f"""
-        You MUST provide the final output for the subtask in JSON format, strictly matching the '{schema_name}' tool's input schema.
-        You have reached the maximum iterations allowed ({self.max_iterations}). Synthesize all previous work from the conversation history into a single, valid JSON response.
-        Ensure the JSON includes all required fields specified in the schema, particularly 'result' and 'metadata'.
-        For the 'result' field, you must provide the actual computed data that fulfills the subtask's objective and conforms to its defined schema. Do NOT provide the schema definition itself as the value for the 'result' field.
-        If you cannot determine appropriate values for the 'result' or 'metadata' fields from the history, use sensible defaults or indicate the missing information clearly within the data structure (e.g., in the description field of metadata, or as null/empty values within the 'result' data if its schema allows).
-        Do NOT include any explanatory text outside the JSON object. Your entire response must be the JSON object itself.
-        """
-
-        # Create a focused user prompt
-        json_user_prompt = f"""
-        The subtask has reached the maximum allowed iterations ({self.max_iterations}).
-
-        Based on all previous information in the conversation history, generate the most complete and accurate JSON output possible
-        conforming EXACTLY to the '{schema_name}' schema.
-        Ensure all required fields (like 'result' and 'metadata') are present. Provide the best possible result based on the available context.
-        YOUR RESPONSE MUST BE ONLY THE JSON OBJECT.
-        """
-
-        # Create a minimal history with just the system prompt and request
-        # Include previous history to provide context for the final generation
-        json_history = [
-            Message(role="system", content=json_system_prompt),
-            *self.history[1:],  # Include previous interactions for context
-            Message(role="user", content=json_user_prompt),
-        ]
-
-        # --- Modify schema before sending ---
-        modified_schema = SubTaskContext._enforce_strict_object_schema(schema)
-        # --- End schema modification ---
-
-        # Get response with response_format set to JSON schema
-        response_format = {
-            "type": "json_schema",
-            "json_schema": {
-                "name": schema_name,
-                "schema": modified_schema,
-                "strict": True,
-            },
-        }
-
-        try:
-            message = await self.provider.generate_message(
-                messages=json_history,
-                model=self.model,
-                tools=[],  # No tools allowed for this specific call
-                response_format=response_format,
+        # Process the tool calls if any
+        if message.tool_calls:
+            tool_call = message.tool_calls[0]  # Should be the finish tool call
+            await self._handle_tool_call(tool_call)
+            return tool_call
+        else:
+            # If LLM didn't call the tool, create a fallback
+            self.display_manager.warning(
+                "LLM failed to call finish tool at max iterations, creating fallback"
             )
-
-            # Parse the JSON content
-            content = str(message.content)
-            # Add message to history for debugging/audit trail
-            self.history.append(message)
-
-            try:
-                parsed_json = json.loads(content)
-                # Basic validation: check if required keys are present (adjust as needed)
-                if "result" in parsed_json and "metadata" in parsed_json:
-                    return parsed_json
-                else:
-                    print(
-                        f"Warning: LLM JSON output missing required keys ('result', 'metadata'). Raw: {content}"
-                    )
-                    # Attempt to salvage if possible, otherwise return error
-                    return {
-                        "error": "Generated JSON missing required keys",
-                        "result": parsed_json.get("result", "Missing result key"),
-                        "metadata": parsed_json.get(
-                            "metadata",
-                            {
-                                "title": "Error",
-                                "description": "Missing metadata",
-                                "sources": [],
-                            },
-                        ),
-                    }
-
-            except json.JSONDecodeError as e:
-                print(
-                    f"Error: Failed to decode JSON from LLM after max iterations. Error: {e}. Raw: {content}"
-                )
-                return {
-                    "error": f"Failed to generate valid JSON: {e}",
-                    # Include raw content in 'result' field within the error structure
-                    "result": f"Invalid JSON received: {content}",
-                    "metadata": {
-                        "title": "JSON Error",
-                        "description": "Failed to parse LLM JSON output",
-                        "sources": [],
-                    },
+            fallback_result = {
+                "result": {
+                    "status": "completed_at_max_iterations_fallback",
+                    "message": f"Task completed after reaching maximum iterations ({self.max_iterations}) - LLM failed to generate proper finish call",
+                    "iteration_count": self.iterations,
                 }
-
-        except Exception as e:
-            # Catch potential API errors or other issues during generation
-            print(f"Error: Exception during structured output generation: {e}")
-            # Add an error message to history
-            error_msg = Message(
-                role="assistant", content=f"Error generating structured output: {e}"
-            )
-            self.history.append(error_msg)
-            return {
-                "error": f"Failed to generate structured output: {e}",
-                "result": "Error during generation",
-                "metadata": {
-                    "title": "Generation Error",
-                    "description": str(e),
-                    "sources": [],
-                },
             }
+
+            tool_call = ToolCall(
+                id=f"max_iterations_fallback_{tool_name}",
+                name=tool_name,
+                args=fallback_result,
+            )
+
+            await self._handle_tool_call(tool_call)
+            return tool_call
+
+    async def _handle_max_tool_calls_reached(self):
+        """
+        Handle the case where max tool calls are reached without completion by prompting
+        the LLM to call the finish tool.
+        """
+        self.display_manager.warning(
+            f"Subtask '{self.subtask.content}' reached max tool calls ({self.max_tool_calls}). Forcing completion."
+        )
+
+        self.display_manager.debug(
+            f"Max tool calls reached for subtask {self.subtask.id}"
+        )
+        self.display_manager.debug("Prompting LLM to call finish tool")
+
+        # Determine the appropriate finish tool name
+        tool_name = "finish_task" if self.use_finish_task else "finish_subtask"
+
+        # Add a system message prompting the LLM to finish
+        force_completion_prompt = f"""
+SYSTEM: You have reached the maximum allowed tool calls ({self.max_tool_calls}) for this subtask.
+You MUST now call the '{tool_name}' tool to complete the task.
+Synthesize all the work done so far and provide the best possible result based on the conversation history.
+Do not attempt any other tool calls - only call '{tool_name}' with your final result.
+"""
+
+        self.history.append(Message(role="system", content=force_completion_prompt))
+
+        # Get the LLM to generate the finish tool call
+        message = await self.provider.generate_message(
+            messages=self.history,
+            model=self.model,
+            tools=[self.finish_tool],  # Only allow the finish tool
+        )
+
+        # Add the assistant message to history
+        self.history.append(message)
+
+        # Process the tool calls if any
+        if message.tool_calls:
+            tool_call = message.tool_calls[0]  # Should be the finish tool call
+            await self._handle_tool_call(tool_call)
+            return tool_call
+        else:
+            # If LLM didn't call the tool, create a fallback
+            self.display_manager.warning(
+                "LLM failed to call finish tool at max tool calls, creating fallback"
+            )
+            fallback_result = {
+                "result": {
+                    "status": "completed_at_max_tool_calls_fallback",
+                    "message": f"Task completed after reaching maximum tool calls ({self.max_tool_calls}) - LLM failed to generate proper finish call",
+                    "tool_calls_made": self.tool_calls_made,
+                }
+            }
+
+            tool_call = ToolCall(
+                id=f"max_tool_calls_fallback_{tool_name}",
+                name=tool_name,
+                args=fallback_result,
+            )
+
+            await self._handle_tool_call(tool_call)
+            return tool_call
 
     async def _execute_tool(self, tool_call: ToolCall) -> Any:
         """
@@ -2031,7 +1345,9 @@ class SubTaskContext:
                 result_content, indent=2, ensure_ascii=False
             )
         except Exception as e:
-            logger.error(f"Failed to serialize result content for compression: {e}")
+            self.display_manager.error(
+                f"Failed to serialize result content for compression: {e}"
+            )
             return {
                 "error": "Failed to serialize content for compression",
                 "original_content_preview": repr(result_content)[:500],
@@ -2105,7 +1421,7 @@ class SubTaskContext:
                     parsed_json = json.loads(compressed_content_str)
                     return parsed_json  # Return parsed JSON if successful
                 except json.JSONDecodeError:
-                    logger.warning(
+                    self.display_manager.warning(
                         f"Compressed content for '{tool_name}' was not valid JSON, returning as string summary."
                     )
                     # Fall through to return the string if JSON parsing fails
@@ -2113,7 +1429,7 @@ class SubTaskContext:
             return compressed_content_str  # Return as string summary
 
         except Exception as e:
-            logger.error(
+            self.display_manager.error(
                 f"Error during LLM call for tool result compression ('{tool_name}'): {e}"
             )
             # Return a structured error message instead of the original large content
@@ -2123,406 +1439,3 @@ class SubTaskContext:
                 "original_content_preview": original_content_str[:500]
                 + "...",  # Include a preview
             }
-
-    # --- Helper Function for Schema Modification ---
-    @staticmethod
-    def _enforce_strict_object_schema(schema: Any) -> Any:
-        """Recursively adds 'additionalProperties': False and sets all properties as required for object schemas."""
-        if isinstance(schema, dict):
-            if schema.get("type") == "object" and "properties" in schema:
-                schema["additionalProperties"] = False
-                # Set all properties as required
-                schema["required"] = list(schema["properties"].keys())
-                # Recursively apply to properties
-                for key, prop_schema in schema["properties"].items():
-                    schema["properties"][key] = (
-                        SubTaskContext._enforce_strict_object_schema(prop_schema)
-                    )
-            elif schema.get("type") == "array" and "items" in schema:
-                # Recursively apply to array items schema
-                schema["items"] = SubTaskContext._enforce_strict_object_schema(
-                    schema["items"]
-                )
-            # Recursively apply to other nested structures like allOf, anyOf, etc.
-            for key in ["allOf", "anyOf", "oneOf", "not"]:
-                if key in schema and isinstance(schema[key], list):
-                    schema[key] = [
-                        SubTaskContext._enforce_strict_object_schema(sub_schema)
-                        for sub_schema in schema[key]
-                    ]
-            if "definitions" in schema and isinstance(schema["definitions"], dict):
-                for key, def_schema in schema["definitions"].items():
-                    schema["definitions"][key] = (
-                        SubTaskContext._enforce_strict_object_schema(def_schema)
-                    )
-
-        elif isinstance(schema, list):
-            # Handle cases where the schema itself might be a list (e.g., type: [string, null])
-            return [
-                SubTaskContext._enforce_strict_object_schema(item) for item in schema
-            ]
-
-        return schema
-
-    def _init_batch_processing_file(self) -> None:
-        """Initialize the progressive result file for batch processing."""
-        if not self.is_batch_processing:
-            return
-
-        output_path = self.processing_context.resolve_workspace_path(
-            self.subtask.output_file
-        )
-
-        # Determine file format based on output type
-        if self.subtask.output_type in ["json", "jsonl"]:
-            # Initialize with empty array for JSON or prepare for JSONL
-            if self.subtask.output_type == "json":
-                with open(output_path, "w", encoding="utf-8") as f:
-                    json.dump([], f)
-            # For JSONL, just ensure file exists (will append items as they're processed)
-            else:
-                with open(output_path, "w", encoding="utf-8") as f:
-                    pass  # Create empty file
-        else:
-            # For other formats, create with metadata header
-            assert self.batch_processing_config is not None
-            with open(output_path, "w", encoding="utf-8") as f:
-                f.write("# Batch Processing Results\n")
-                f.write(
-                    f"# Batch size: {self.batch_processing_config.get('batch_size', 'unknown')}\n"
-                )
-                f.write(
-                    f"# Start index: {self.batch_processing_config.get('start_index', 0)}\n"
-                )
-                f.write(
-                    f"# End index: {self.batch_processing_config.get('end_index', 'unknown')}\n\n"
-                )
-
-        logger.debug(f"Initialized batch processing file: {output_path}")
-
-    def _append_batch_result(self, item_result: Any, item_index: int = None) -> None:
-        """Append a single item result to the batch processing file."""
-        if not self.is_batch_processing:
-            return
-
-        output_path = self.processing_context.resolve_workspace_path(
-            self.subtask.output_file
-        )
-
-        try:
-            if self.subtask.output_type == "json":
-                # Read current array, append item, write back
-                with open(output_path, "r", encoding="utf-8") as f:
-                    current_data = json.load(f)
-                current_data.append(item_result)
-                with open(output_path, "w", encoding="utf-8") as f:
-                    json.dump(current_data, f, indent=2, ensure_ascii=False)
-            elif self.subtask.output_type == "jsonl":
-                # Append as new line
-                with open(output_path, "a", encoding="utf-8") as f:
-                    json.dump(item_result, f, ensure_ascii=False)
-                    f.write("\n")
-            else:
-                # Append as text with separator
-                with open(output_path, "a", encoding="utf-8") as f:
-                    if item_index is not None:
-                        f.write(f"\n--- Item {item_index} ---\n")
-                    f.write(str(item_result))
-                    f.write("\n")
-
-            logger.debug(f"Appended batch result {item_index} to {output_path}")
-        except Exception as e:
-            logger.error(f"Failed to append batch result to {output_path}: {e}")
-
-    def _get_batch_optimized_system_prompt(self, base_prompt: str) -> str:
-        """Modify system prompt for batch processing optimization."""
-        if not self.is_batch_processing:
-            return base_prompt
-
-        batch_optimization = f"""
-
-BATCH PROCESSING MODE:
-You are processing items {self.batch_processing_config.get('start_index', 0)} to {self.batch_processing_config.get('end_index', 'N')} in a batch of {self.batch_processing_config.get('total_items', 'unknown')} total items.
-
-BATCH OPTIMIZATION GUIDELINES:
-1. Process items PROGRESSIVELY - don't try to load everything into memory at once
-2. Use read_file with line ranges when possible to avoid loading entire large files
-3. Write results INCREMENTALLY using write_file in append mode
-4. Focus on one item at a time to minimize context window usage
-5. Use file pointers instead of including large content directly in tool calls
-6. When reading input files, prefer extracting specific items/ranges rather than full content
-7. The output file has been pre-initialized for progressive writing
-8. IMPORTANT: Process at most 2-3 items at a time to avoid context overflow
-
-Your goal is to process the assigned batch efficiently while maintaining low memory usage.
-"""
-        return base_prompt + batch_optimization
-
-    async def _handle_batch_tool_calls(
-        self, tool_calls: List[ToolCall]
-    ) -> List[Message]:
-        """
-        Handle multiple tool calls intelligently for batch processing.
-        This method processes tool calls in smaller batches to prevent context window overflow.
-        """
-        logger.info(
-            f"Batch processing {len(tool_calls)} tool calls to prevent context overflow"
-        )
-
-        all_results = []
-        current_history_tokens = self._count_tokens(self.history)
-
-        # Group tool calls by estimated result size
-        browser_calls = [tc for tc in tool_calls if tc.name == "browser"]
-        read_file_calls = [tc for tc in tool_calls if tc.name == "read_file"]
-        other_calls = [
-            tc for tc in tool_calls if tc.name not in ["browser", "read_file"]
-        ]
-
-        # Process in order of expected size: other calls first, then files, then browser
-        ordered_calls = other_calls + read_file_calls + browser_calls
-
-        # Process in chunks to avoid overwhelming the context
-        chunk_size = 2  # Process at most 2 browser/file calls at a time
-
-        for i in range(0, len(ordered_calls), chunk_size):
-            chunk = ordered_calls[i : i + chunk_size]
-
-            # Check if we're approaching token limit before processing
-            if current_history_tokens > self.max_token_limit * 0.7:
-                logger.warning(
-                    "Approaching token limit, compressing history before processing more tools"
-                )
-                await self._optimize_context_window()
-                current_history_tokens = self._count_tokens(self.history)
-
-            # Process this chunk
-            chunk_results = await asyncio.gather(
-                *[self._handle_tool_call(tool_call) for tool_call in chunk]
-            )
-
-            # For batch processing, immediately write results to file and create summaries
-            for j, (tool_call, result_msg) in enumerate(zip(chunk, chunk_results)):
-                if tool_call.name in ["browser", "read_file"]:
-                    # Save full result to file and create a summary message
-                    summary_msg = await self._create_summary_message(
-                        tool_call, result_msg
-                    )
-                    all_results.append(summary_msg)
-
-                    # If this is a browser result for batch processing, save it immediately
-                    if self.is_batch_processing and tool_call.name == "browser":
-                        await self._save_browser_result_to_batch(
-                            tool_call, result_msg, i + j
-                        )
-                else:
-                    all_results.append(result_msg)
-
-            # Update token count estimate
-            for msg in chunk_results:
-                current_history_tokens += self._count_single_message_tokens(msg)
-
-        return all_results
-
-    async def _create_summary_message(
-        self, tool_call: ToolCall, result_msg: Message
-    ) -> Message:
-        """Create a summarized version of a tool result for batch processing."""
-        try:
-            result_data = json.loads(str(result_msg.content))
-
-            if tool_call.name == "browser":
-                # Create a concise summary for browser results
-                summary = {
-                    "tool": "browser",
-                    "action": tool_call.args.get("action", "unknown"),
-                    "url": tool_call.args.get("url", ""),
-                    "success": result_data.get("success", False),
-                    "title": result_data.get("title", ""),
-                    "content_summary": f"[Full content saved to batch file - {len(str(result_data.get('content', '')))} chars]",
-                    "timestamp": result_data.get("timestamp", ""),
-                }
-            elif tool_call.name == "read_file":
-                # Create a summary for file reads
-                summary = {
-                    "tool": "read_file",
-                    "path": tool_call.args.get("path", ""),
-                    "success": result_data.get("success", False),
-                    "content_summary": f"[File content {len(str(result_data.get('content', '')))} chars - available in workspace]",
-                    "line_count": result_data.get("line_info", {}).get(
-                        "total_lines", 0
-                    ),
-                }
-            else:
-                # For other tools, return as-is
-                return result_msg
-
-            # Create a new message with the summary
-            return Message(
-                role="tool",
-                tool_call_id=result_msg.tool_call_id,
-                name=result_msg.name,
-                content=json.dumps(summary),
-            )
-        except Exception as e:
-            logger.error(f"Failed to create summary for {tool_call.name}: {e}")
-            return result_msg
-
-    async def _save_browser_result_to_batch(
-        self, tool_call: ToolCall, result_msg: Message, index: int
-    ):
-        """Save browser result immediately to batch processing file."""
-        if not self.is_batch_processing:
-            return
-
-        try:
-            result_data = json.loads(str(result_msg.content))
-
-            # Create a batch result entry
-            batch_entry = {
-                "index": index,
-                "url": tool_call.args.get("url", ""),
-                "title": result_data.get("title", ""),
-                "description": result_data.get("description", ""),
-                "content_preview": (
-                    result_data.get("content", "")[:200]
-                    if result_data.get("content")
-                    else ""
-                ),
-                "success": result_data.get("success", False),
-                "error": result_data.get("error", ""),
-                "timestamp": result_data.get("timestamp", ""),
-                "full_content_available": True,
-            }
-
-            # Append to batch file
-            self._append_batch_result(batch_entry, index)
-
-        except Exception as e:
-            logger.error(f"Failed to save browser result to batch: {e}")
-
-    def _filter_batch_tool_results(self, tool_results: List[Message]) -> List[Message]:
-        """
-        Filter tool results for batch processing to prevent context overflow.
-        
-        In batch processing mode, we want to remove processed tool results from history
-        to keep the context window clean. This method:
-        1. Keeps only the most recent tool results
-        2. Prioritizes error messages and important status updates
-        3. Removes large content-heavy results that have already been saved
-        
-        Args:
-            tool_results: List of tool result messages
-            
-        Returns:
-            List of filtered messages to keep in history
-        """
-        if not self.is_batch_processing:
-            return tool_results
-            
-        filtered = []
-        
-        # Keep track of how many results we're filtering
-        total_results = len(tool_results)
-        
-        for msg in tool_results:
-            try:
-                # Always keep error messages
-                if msg.content and "error" in str(msg.content).lower():
-                    filtered.append(msg)
-                    continue
-                    
-                # Always keep finish_task/finish_subtask results
-                if msg.name in ["finish_task", "finish_subtask"]:
-                    filtered.append(msg)
-                    continue
-                
-                # For browser and read_file results, check if they're summaries
-                if msg.name in ["browser", "read_file"]:
-                    content_str = str(msg.content)
-                    # If it's already a summary (contains "content_summary"), keep it
-                    if "content_summary" in content_str:
-                        filtered.append(msg)
-                    # Otherwise, create a minimal placeholder
-                    else:
-                        try:
-                            json.loads(content_str)  # Validate it's JSON
-                            minimal_msg = Message(
-                                role=msg.role,
-                                tool_call_id=msg.tool_call_id,
-                                name=msg.name,
-                                content=json.dumps({
-                                    "status": "processed",
-                                    "tool": msg.name,
-                                    "note": "Full result saved to workspace"
-                                })
-                            )
-                            filtered.append(minimal_msg)
-                        except (json.JSONDecodeError, TypeError):
-                            # If we can't parse, just skip this result
-                            pass
-                else:
-                    # Keep other tool results as they're typically smaller
-                    filtered.append(msg)
-                    
-            except Exception as e:
-                logger.warning(f"Error filtering tool result: {e}")
-                # On error, keep the original message
-                filtered.append(msg)
-        
-        removed_count = total_results - len(filtered)
-        if removed_count > 0:
-            logger.info(f"Filtered out {removed_count} tool results in batch mode to save context space")
-            
-        return filtered
-
-    def _remove_old_tool_results(self) -> None:
-        """
-        Remove old processed tool results from history in batch processing mode.
-        
-        This method scans through the history and removes tool result messages that:
-        1. Are older than the last assistant message
-        2. Are not error messages
-        3. Have already been processed and saved to workspace
-        """
-        if not self.is_batch_processing:
-            return
-            
-        # Find the index of the last assistant message
-        last_assistant_idx = -1
-        for i in range(len(self.history) - 1, -1, -1):
-            if self.history[i].role == "assistant":
-                last_assistant_idx = i
-                break
-                
-        if last_assistant_idx < 0:
-            return  # No assistant messages yet
-            
-        # Collect indices of tool results to remove
-        indices_to_remove = []
-        
-        for i in range(2, last_assistant_idx):  # Skip system and task prompts
-            msg = self.history[i]
-            if msg.role == "tool":
-                # Check if it's a large result that can be removed
-                if msg.name in ["browser", "read_file", "search", "web_fetch"]:
-                    try:
-                        content_str = str(msg.content)
-                        # Don't remove if it's an error or already a summary
-                        if "error" not in content_str.lower() and "content_summary" not in content_str:
-                            # Check token size
-                            tokens = self._count_single_message_tokens(msg)
-                            if tokens > 100:  # Remove if larger than 100 tokens
-                                indices_to_remove.append(i)
-                    except Exception:
-                        pass
-                        
-        # Remove messages in reverse order to maintain indices
-        for i in reversed(indices_to_remove):
-            removed_msg = self.history.pop(i)
-            logger.debug(f"Removed old {removed_msg.name} tool result from history (batch mode)")
-            
-        if indices_to_remove:
-            logger.info(f"Removed {len(indices_to_remove)} old tool results from history in batch mode")
-
-    # --- End Helper Function ---

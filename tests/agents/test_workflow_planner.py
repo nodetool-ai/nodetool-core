@@ -22,6 +22,7 @@ def make_node_metadata(
         recommended_models=[],
         basic_fields=[p.name for p in props],
         is_dynamic=False,
+        is_streaming=False,
     )
 
 

@@ -92,14 +92,13 @@ class Agent(BaseAgent):
         reasoning_model: str | None = None,
         tools: Optional[Sequence[Tool]] = None,
         description: str = "",
-        input_files: Optional[List[str]] = None,
+        inputs: dict[str, Any] | None = None,
         system_prompt: str | None = None,
         max_subtasks: int = 10,
         max_steps: int = 50,
         max_subtask_iterations: int = 5,
         max_token_limit: int | None = None,
         output_schema: dict | None = None,
-        output_type: str | None = None,
         enable_analysis_phase: bool = True,
         enable_data_contracts_phase: bool = True,
         task: Task | None = None,  # Add optional task parameter
@@ -118,14 +117,13 @@ class Agent(BaseAgent):
             reasoning_model (str, optional): The model to use for reasoning, defaults to the same as the provider model
             planning_model (str, optional): The model to use for planning, defaults to the same as the provider model
             tools (List[Tool]): List of tools available for this agent
-            input_files (List[str]): List of input files to use for the agent
+            inputs (dict[str, Any], optional): Inputs to use for the agent
             system_prompt (str, optional): Custom system prompt
             max_steps (int, optional): Maximum reasoning steps
             max_subtask_iterations (int, optional): Maximum iterations per subtask
             max_token_limit (int, optional): Maximum token limit before summarization
             max_subtasks (int, optional): Maximum number of subtasks to be created
             output_schema (dict, optional): JSON schema for the final task output
-            output_type (str, optional): Type of the final task output
             enable_analysis_phase (bool, optional): Whether to run the analysis phase (PHASE 2)
             enable_data_contracts_phase (bool, optional): Whether to run the data contracts phase (PHASE 3)
             task (Task, optional): Pre-defined task to execute, skipping planning
@@ -138,7 +136,7 @@ class Agent(BaseAgent):
             provider=provider,
             model=model,
             tools=tools or [],
-            input_files=input_files or [],
+            inputs=inputs or {},
             system_prompt=system_prompt,
             max_token_limit=max_token_limit,
         )
@@ -149,7 +147,6 @@ class Agent(BaseAgent):
         self.max_subtask_iterations = max_subtask_iterations
         self.max_subtasks = max_subtasks
         self.output_schema = output_schema
-        self.output_type = output_type
         self.enable_analysis_phase = enable_analysis_phase
         self.enable_data_contracts_phase = enable_data_contracts_phase
         self.initial_task = task
@@ -175,17 +172,8 @@ class Agent(BaseAgent):
             Union[Message, Chunk, ToolCall]: Execution progress
         """
         # Copy input files to the workspace directory if they are not already there
-        input_files = []
-        for file_path in self.input_files:
-            destination_path = os.path.join(
-                processing_context.workspace_dir,
-                os.path.basename(file_path),
-            )
-            shutil.copy(file_path, destination_path)
-            input_files.append(os.path.basename(file_path))
-
         if self.docker_image:
-            async for item in self._execute_in_docker(processing_context, input_files):
+            async for item in self._execute_in_docker(processing_context):
                 yield item
             return
 
@@ -195,12 +183,6 @@ class Agent(BaseAgent):
         )
 
         if self.task:  # If self.task is already set (e.g. by initial_task in __init__)
-            if self.initial_task:
-                for subtask in self.task.subtasks:
-                    if subtask.output_file and not os.path.isabs(subtask.output_file):
-                        subtask.output_file = os.path.join(
-                            processing_context.workspace_dir, subtask.output_file
-                        )
             # If self.task was set by initial_task, we skip planning.
             # We need to ensure it passes the None check for subsequent operations.
             pass
@@ -223,7 +205,7 @@ class Agent(BaseAgent):
                 objective=self.objective,
                 workspace_dir=processing_context.workspace_dir,
                 execution_tools=tools,
-                input_files=input_files,
+                inputs=self.inputs,
                 output_schema=self.output_schema,
                 enable_analysis_phase=self.enable_analysis_phase,
                 enable_data_contracts_phase=self.enable_data_contracts_phase,
@@ -251,16 +233,6 @@ class Agent(BaseAgent):
                 event=TaskUpdateEvent.TASK_CREATED,
             )
 
-        # At this point, self.task should be non-None if execution is to proceed.
-        if not self.task:
-            # This case should ideally be caught by the assertion above or if initial_task was None
-            # and planning failed to produce a task.
-            # However, as a safeguard:
-            raise RuntimeError("Agent execution cannot proceed: Task is not defined.")
-
-        if self.output_type and len(self.task.subtasks) > 0:
-            self.task.subtasks[-1].output_type = self.output_type
-
         if self.output_schema and len(self.task.subtasks) > 0:
             self.task.subtasks[-1].output_schema = json.dumps(self.output_schema)
 
@@ -268,13 +240,10 @@ class Agent(BaseAgent):
 
         # Start live display managed by AgentConsole
         self.display_manager.start_live(
-            self.display_manager.create_execution_table(
+            self.display_manager.create_execution_tree(
                 title=self.name, task=self.task, tool_calls=tool_calls
             )
         )
-
-        if task_planner_instance:  # Only save if planner was used
-            await task_planner_instance.save_task_plan()
 
         try:
             executor = TaskExecutor(
@@ -284,7 +253,7 @@ class Agent(BaseAgent):
                 tools=list(self.tools),  # Ensure it's a list of Tool
                 task=self.task,
                 system_prompt=self.system_prompt,
-                input_files=input_files,
+                inputs=self.inputs,
                 max_steps=self.max_steps,
                 max_subtask_iterations=self.max_subtask_iterations,
                 max_token_limit=self.max_token_limit,
@@ -297,7 +266,7 @@ class Agent(BaseAgent):
                     tool_calls.append(item)
 
                 # Create the updated table and update the live display
-                new_table = self.display_manager.create_execution_table(
+                new_table = self.display_manager.create_execution_tree(
                     title=f"Task:\\n{self.objective}",
                     task=self.task,
                     tool_calls=tool_calls,
@@ -367,7 +336,6 @@ class Agent(BaseAgent):
     async def _execute_in_docker(
         self,
         processing_context: ProcessingContext,
-        input_files: list[str],
     ) -> AsyncGenerator[Chunk, None]:
         """Run the agent inside a Docker container."""
         workspace = processing_context.workspace_dir
@@ -380,14 +348,13 @@ class Agent(BaseAgent):
             "reasoning_model": self.reasoning_model,
             "tools": [t.__class__.name for t in self.tools],
             "description": self.description,
-            "input_files": input_files,
+            "inputs": self.inputs,
             "system_prompt": self.system_prompt,
             "max_subtasks": self.max_subtasks,
             "max_steps": self.max_steps,
             "max_subtask_iterations": self.max_subtask_iterations,
             "max_token_limit": self.max_token_limit,
             "output_schema": self.output_schema,
-            "output_type": self.output_type,
             "enable_analysis_phase": self.enable_analysis_phase,
             "enable_data_contracts_phase": self.enable_data_contracts_phase,
             "verbose": self.verbose,

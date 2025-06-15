@@ -1,0 +1,449 @@
+{
+    "search_metadata": {
+        "id": "62d5efcae7d08a486c7b86ad",
+        "status": "Success",
+        "json_endpoint": "https://serpapi.com/searches/3ed30d31b62f3cfd/62d5efcae7d08a486c7b86ad.json",
+        "created_at": "2022-07-18 23:42:02 UTC",
+        "processed_at": "2022-07-18 23:42:02 UTC",
+        "google_url": "https://www.google.com/search?q=Fresh+Bagels&oq=Fresh+Bagels&uule=w+CAIQICIqU2VhdHRsZS1UYWNvbWEsV0EsV2FzaGluZ3RvbixVbml0ZWQgU3RhdGVz&hl=en&gl=us&num=10&safe=active&start=10&sourceid=chrome&ie=UTF-8",
+        "raw_html_file": "https://serpapi.com/searches/3ed30d31b62f3cfd/62d5efcae7d08a486c7b86ad.html",
+        "total_time_taken": 1.35
+    },
+    "search_parameters": {
+        "engine": "google",
+        "q": "Fresh Bagels",
+        "location_requested": "Seattle-Tacoma, WA, Washington, United States",
+        "location_used": "Seattle-Tacoma,WA,Washington,United States",
+        "google_domain": "google.com",
+        "hl": "en",
+        "gl": "us",
+        "safe": "active",
+        "start": 10,
+        "num": "10",
+        "device": "desktop"
+    },
+    "search_information": {
+        "organic_results_state": "Results for exact spelling",
+        "query_displayed": "Fresh Bagels",
+        "total_results": 200000000,
+        "page_number": 2,
+        "time_taken_displayed": 0.63
+    },
+    "organic_results": [
+        {
+            "position": 1,
+            "title": "The 7 Best Bagel Shops In Seattle - boam",
+            "link": "https://boam.com/wa/seattle/best-bagel-shops/",
+            "redirect_link": "https://www.google.com/url?sa=t&rct=j&q=&esrc=s&source=web&cd=&cad=rja&uact=8&ved=2ahUKEwj2ht67sK2DAxXlF1kFHZNwCNMQFnoECA4QAQ&url=https%3A%2F%2Fboam.com%2Fwa%2Fseattle%2Fbest-bagel-shops%2F&usg=AOvVaw1G5PhqPw6TVos-9iAP_inH&opi=89978449",
+            "displayed_link": "https://boam.com › WA › Seattle",
+            "thumbnail": "https://serpapi.com/searches/62d5efcae7d08a486c7b86ad/images/02306781b6e93635966d70cf70c16bc2e20ef7a5b15f3cc76dc37b5107d6e34b.jpeg",
+            "date": "May 2, 2022",
+            "snippet": "Zylberschtein's Delicatessen & Bakery · The Ultimate List of the Best Bagels In Seattle, Ranked · Seattle Actually Has a Bagel Scene Now.",
+            "snippet_highlighted_words": [
+                "Best Bagels"
+            ],
+            "about_this_result": {
+                "source": {
+                    "description": "boam.com was first indexed by Google more than 10 years ago",
+                    "icon": "https://serpapi.com/searches/62d5efcae7d08a486c7b86ad/images/02306781b6e93635966d70cf70c16bc2538e80db255d5d8270fc12ca4267e08fb2f662f2667d2872a277b3d2ec9557e9.png"
+                },
+                "keywords": [
+                    "bagels"
+                ],
+                "related_keywords": [
+                    "bagel"
+                ],
+                "languages": [
+                    "English"
+                ],
+                "regions": [
+                    "the United States"
+                ]
+            },
+            "about_page_link": "https://www.google.com/search?q=About+https://boam.com/wa/seattle/best-bagel-shops/&tbm=ilp&ilps=ADNMCi0YHj-gX85Ugpr7byPA3OZJqM5buA",
+            "about_page_serpapi_link": "https://serpapi.com/search.json?engine=google_about_this_result&ilps=ADNMCi0YHj-gX85Ugpr7byPA3OZJqM5buA&q=About+https://boam.com/wa/seattle/best-bagel-shops/",
+            "cached_page_link": "https://webcache.googleusercontent.com/search?q=cache:_46756rn-DYJ:https://boam.com/wa/seattle/best-bagel-shops/+&cd=11&hl=en&ct=clnk&gl=us"
+        },
+        {
+            "position": 2,
+            "title": "Einstein Bros. Bagels: Home",
+            "link": "https://www.einsteinbros.com/",
+            "redirect_link": "https://www.google.com/url?sa=t&rct=j&q=&esrc=s&source=web&cd=&cad=rja&uact=8&ved=2ahUKEwjmqP3Hsa2DAxWIF1kFHeISDdEQFnoECBUQAQ&url=https%3A%2F%2Fwww.einsteinbros.com%2F&usg=AOvVaw295ghVT-PGz-aBzCNE_CWq&opi=89978449",
+            "displayed_link": "https://www.einsteinbros.com",
+            "snippet": "Couple eating Einstein Bros. bagel egg sandwiches with coffee ... Our Menu. Fresh-Baked Bagels, Specialty Sandwiches, Coffee and more.",
+            "snippet_highlighted_words": [
+                "bagel",
+                "Fresh",
+                "Bagels"
+            ],
+            "about_this_result": {
+                "source": {
+                    "description": "Einstein Bros. Bagels is an American chain that specializes in bagels and coffee. In 1996, Berkeley-based Noah's Bagels was bought out by Einstein Bros. Manhattan-based New World Coffee, which bought out Manhattan Bagel in 1998, bought out Einstein Bros. in 2000 post-bankruptcy.",
+                    "icon": "https://serpapi.com/searches/62d5efcae7d08a486c7b86ad/images/02306781b6e93635966d70cf70c16bc2aecbb5efc76b6e09c807aa832d5370c842dd51865b1a58bcdf7acbad94ce77f8.png"
+                },
+                "keywords": [
+                    "fresh",
+                    "bagels"
+                ],
+                "related_keywords": [
+                    "bagel"
+                ],
+                "languages": [
+                    "English"
+                ],
+                "regions": [
+                    "the United States"
+                ]
+            },
+            "about_page_link": "https://www.google.com/search?q=About+https://www.einsteinbros.com/&tbm=ilp&ilps=ADNMCi3-IrycLvrpky0-3olpqCMPCat1JQ",
+            "about_page_serpapi_link": "https://serpapi.com/search.json?engine=google_about_this_result&ilps=ADNMCi3-IrycLvrpky0-3olpqCMPCat1JQ&q=About+https://www.einsteinbros.com/",
+            "cached_page_link": "https://webcache.googleusercontent.com/search?q=cache:W6Fk1TntVPwJ:https://www.einsteinbros.com/+&cd=12&hl=en&ct=clnk&gl=us",
+            "related_pages_link": "https://www.google.com/search?safe=active&hl=en&gl=us&q=related:https://www.einsteinbros.com/+Fresh+Bagels"
+        },
+        {
+            "position": 3,
+            "title": "Here's where to find the best bagels in Seattle - Daily Hive",
+            "link": "https://dailyhive.com/seattle/best-bagels-in-seattle",
+            "redirect_link": "https://www.google.com/url?sa=t&rct=j&q=&esrc=s&source=web&cd=&cad=rja&uact=8&ved=2ahUKEwjh6uPTsa2DAxVdEVkFHU96AwsQFnoECBgQAQ&url=https%3A%2F%2Fdailyhive.com%2Fseattle%2Fbest-bagels-in-seattle&usg=AOvVaw3FdhRzbq_sIq03UpGpX3pQ&opi=89978449",
+            "displayed_link": "https://dailyhive.com › seattle › best-bagels-in-seattle",
+            "thumbnail": "https://serpapi.com/searches/62d5efcae7d08a486c7b86ad/images/02306781b6e93635966d70cf70c16bc2ec9e582273005b8653ba8b50d218eaa0.jpeg",
+            "date": "Jan 15, 2021",
+            "snippet": "Whether you're after a dense, slightly sweet bagel or a soft, doughy New York-style bagel, check out our picks for where to find the best ...",
+            "snippet_highlighted_words": [
+                "bagel",
+                "bagel",
+                "best"
+            ],
+            "about_this_result": {
+                "source": {
+                    "description": "Daily Hive, formerly known as Vancity Buzz, is a Canadian online newspaper based in Vancouver, British Columbia. It began digital publishing in 2008 and became Western Canada's largest online-only publication by 2016.",
+                    "icon": "https://serpapi.com/searches/62d5efcae7d08a486c7b86ad/images/02306781b6e93635966d70cf70c16bc215a2020d35579a21332efc9087e61bfefff91a7125cdab79a97a1cb6288ce84f.png"
+                },
+                "keywords": [
+                    "bagels"
+                ],
+                "related_keywords": [
+                    "bagel"
+                ],
+                "languages": [
+                    "English"
+                ],
+                "regions": [
+                    "the United States"
+                ]
+            },
+            "about_page_link": "https://www.google.com/search?q=About+https://dailyhive.com/seattle/best-bagels-in-seattle&tbm=ilp&ilps=ADNMCi1lx-vDLNV9Lk3ui6_0CxYsT1zIug",
+            "about_page_serpapi_link": "https://serpapi.com/search.json?engine=google_about_this_result&ilps=ADNMCi1lx-vDLNV9Lk3ui6_0CxYsT1zIug&q=About+https://dailyhive.com/seattle/best-bagels-in-seattle",
+            "cached_page_link": "https://webcache.googleusercontent.com/search?q=cache:9m9a9OBplrAJ:https://dailyhive.com/seattle/best-bagels-in-seattle+&cd=13&hl=en&ct=clnk&gl=us"
+        },
+        {
+            "position": 4,
+            "title": "Best Bagels in Seattle - Do206",
+            "link": "https://do206.com/p/id/17521",
+            "redirect_link": "https://www.google.com/url?sa=t&rct=j&q=&esrc=s&source=web&cd=&cad=rja&uact=8&ved=2ahUKEwicruTisa2DAxUtF1kFHdsADNUQFnoECBAQAw&url=https%3A%2F%2Fdo206.com%2Fp%2Fbest-bagels-in-seattle&usg=AOvVaw1RxU-et6iPtTD5paDCDJ3o&opi=89978449",
+            "displayed_link": "https://do206.com › ...",
+            "thumbnail": "https://serpapi.com/searches/62d5efcae7d08a486c7b86ad/images/02306781b6e93635966d70cf70c16bc2befd0979111c077ee87b8eb551995b80.jpeg",
+            "snippet": "Best Bagels in Seattle · Eltana Wood-Fired Bagel Cafe · Rubinstein Bagels · Westman's Bagel and Coffee · Rachel's Bagels & Burritos · Zylberschtein's Delicatessen & ...",
+            "snippet_highlighted_words": [
+                "Best Bagels"
+            ],
+            "about_this_result": {
+                "source": {
+                    "description": "do206.com was first indexed by Google more than 10 years ago",
+                    "icon": "https://serpapi.com/searches/62d5efcae7d08a486c7b86ad/images/02306781b6e93635966d70cf70c16bc27005428c3e2adb10c3725e23efe4140797bfd06e54dff911537b7fc496355839.png"
+                },
+                "keywords": [
+                    "fresh",
+                    "bagels"
+                ],
+                "languages": [
+                    "English"
+                ],
+                "regions": [
+                    "the United States"
+                ]
+            },
+            "about_page_link": "https://www.google.com/search?q=About+https://do206.com/p/id/17521&tbm=ilp&ilps=ADNMCi0NS-fBBl4Sc4IWKniB87uup6G3hA",
+            "about_page_serpapi_link": "https://serpapi.com/search.json?engine=google_about_this_result&ilps=ADNMCi0NS-fBBl4Sc4IWKniB87uup6G3hA&q=About+https://do206.com/p/id/17521",
+            "cached_page_link": "https://webcache.googleusercontent.com/search?q=cache:If60T0P9qFoJ:https://do206.com/p/id/17521+&cd=14&hl=en&ct=clnk&gl=us"
+        },
+        {
+            "position": 5,
+            "title": "“Great fresh bagels” Review of Seattle Bagel Bakery - CLOSED",
+            "link": "https://www.tripadvisor.com/ShowUserReviews-g60878-d3846442-r537463219-Seattle_Bagel_Bakery-Seattle_Washington.html",
+            "reirect_link": "https://www.google.com/url?sa=t&rct=j&q=&esrc=s&source=web&cd=&cad=rja&uact=8&ved=2ahUKEwj94rTzsa2DAxWhLFkFHfW6B1QQFnoECCAQAQ&url=https%3A%2F%2Fwww.tripadvisor.com%2FShowUserReviews-g60878-d3846442-r537463219-Seattle_Bagel_Bakery-Seattle_Washington.html&usg=AOvVaw3XMsBJvQs_mDRyB4Gw_f32&opi=89978449",
+            "displayed_link": "https://www.tripadvisor.com › ... › Seattle Bagel Bakery",
+            "snippet": "Seattle Bagel Bakery: Great fresh bagels - See 33 traveler reviews, 9 candid photos, and great deals for Seattle, WA, at Tripadvisor.",
+            "snippet_highlighted_words": [
+                "fresh bagels"
+            ],
+            "rich_snippet": {
+                "top": {
+                    "detected_extensions": {
+                        "rating": 5,
+                        "review_by_jennaviles": 2
+                    },
+                    "extensions": [
+                        "Rating: 5",
+                        "‎Review by jennaviles2"
+                    ]
+                }
+            },
+            "about_this_result": {
+                "source": {
+                    "description": "Tripadvisor, Inc. is an American online travel company that operates a website and mobile app with user-generated content and a comparison shopping website. It also offers online hotel reservations and bookings for transportation, lodging, travel experiences, and restaurants.",
+                    "icon": "https://serpapi.com/searches/62d5efcae7d08a486c7b86ad/images/02306781b6e93635966d70cf70c16bc289f7cc417af569cbacf6edd042617b3405b0d86156f8aaffc2aceff58ced1713.png"
+                },
+                "keywords": [
+                    "fresh",
+                    "bagels"
+                ],
+                "related_keywords": [
+                    "bagel"
+                ],
+                "languages": [
+                    "English"
+                ],
+                "regions": [
+                    "the United States"
+                ]
+            },
+            "about_page_link": "https://www.google.com/search?q=About+https://www.tripadvisor.com/ShowUserReviews-g60878-d3846442-r537463219-Seattle_Bagel_Bakery-Seattle_Washington.html&tbm=ilp&ilps=ADNMCi2e3NRuFXI24IoiwLIVxH2Drgljtw",
+            "about_page_serpapi_link": "https://serpapi.com/search.json?engine=google_about_this_result&ilps=ADNMCi2e3NRuFXI24IoiwLIVxH2Drgljtw&q=About+https://www.tripadvisor.com/ShowUserReviews-g60878-d3846442-r537463219-Seattle_Bagel_Bakery-Seattle_Washington.html",
+            "cached_page_link": "https://webcache.googleusercontent.com/search?q=cache:USHKQJmIIkkJ:https://www.tripadvisor.com/ShowUserReviews-g60878-d3846442-r537463219-Seattle_Bagel_Bakery-Seattle_Washington.html+&cd=15&hl=en&ct=clnk&gl=us"
+        },
+        {
+            "position": 6,
+            "title": "Seattle Bagel Oasis",
+            "link": "https://seattlebageloasis.com/index.html",
+            "redirect_link": "https://www.google.com/url?sa=t&rct=j&q=&esrc=s&source=web&cd=&cad=rja&uact=8&ved=2ahUKEwiRytCUsq2DAxUyElkFHRjXAvsQFnoECAcQAQ&url=https%3A%2F%2Fseattlebageloasis.com%2Findex.html&usg=AOvVaw1N8YPQWFOp3XrcMFeN0sa6&opi=89978449",
+            "displayed_link": "https://seattlebageloasis.com",
+            "snippet": "Since 1988, Bagel Oasis has been baking the best bagels in Seattle with only natural ingredients and old fashioned baking methods.",
+            "snippet_highlighted_words": [
+                "best bagels"
+            ],
+            "about_this_result": {
+                "source": {
+                    "description": "seattlebageloasis.com was first indexed by Google more than 10 years ago"
+                },
+                "keywords": [
+                    "fresh",
+                    "bagels"
+                ],
+                "related_keywords": [
+                    "bagel"
+                ],
+                "languages": [
+                    "English"
+                ],
+                "regions": [
+                    "the United States"
+                ]
+            },
+            "about_page_link": "https://www.google.com/search?q=About+https://seattlebageloasis.com/index.html&tbm=ilp&ilps=ADNMCi0cIKpzkxKZyu7Rc93S2GFf2tN9xg",
+            "about_page_serpapi_link": "https://serpapi.com/search.json?engine=google_about_this_result&ilps=ADNMCi0cIKpzkxKZyu7Rc93S2GFf2tN9xg&q=About+https://seattlebageloasis.com/index.html",
+            "cached_page_link": "https://webcache.googleusercontent.com/search?q=cache:rIswffXb-xcJ:https://seattlebageloasis.com/index.html+&cd=16&hl=en&ct=clnk&gl=us"
+        },
+        {
+            "position": 7,
+            "title": "Big Apple Bagels",
+            "link": "https://bigapplebagels.com/",
+            "redirect_link": "https://www.google.com/url?sa=t&rct=j&q=&esrc=s&source=web&cd=&cad=rja&uact=8&ved=2ahUKEwihgOCjsq2DAxUqFVkFHbytCXgQFnoECA8QAQ&url=https%3A%2F%2Fbigapplebagels.com%2F&usg=AOvVaw08jeDUpbNxR4dRvY2CQ5r9&opi=89978449",
+            "displayed_link": "https://bigapplebagels.com",
+            "snippet": "Our Menu. We have so much more in store than just our fabulous fresh bagels, muffins, and cream cheese. Our restaurants offer a comfortable atmosphere in which ...",
+            "snippet_highlighted_words": [
+                "fresh bagels"
+            ],
+            "about_this_result": {
+                "source": {
+                    "description": "Big Apple Bagels is an American franchised chain of bakery-cafes based in Deerfield, Illinois. Coffee, along with a variety of other related products are sold. The products are sold as three different brands: Big Apple Bagels, Brewster's Coffee, and My Favorite Muffin.",
+                    "icon": "https://serpapi.com/searches/62d5efcae7d08a486c7b86ad/images/02306781b6e93635966d70cf70c16bc22e72198089a3c7cfd4d24be6ac914eb6d61e4b4a6de9575d030e75448c9db590.png"
+                },
+                "keywords": [
+                    "fresh",
+                    "bagels"
+                ],
+                "languages": [
+                    "English"
+                ],
+                "regions": [
+                    "the United States"
+                ]
+            },
+            "about_page_link": "https://www.google.com/search?q=About+https://bigapplebagels.com/&tbm=ilp&ilps=ADNMCi20AyQKpKCXX1ZjNnADw-yHobWmkg",
+            "about_page_serpapi_link": "https://serpapi.com/search.json?engine=google_about_this_result&ilps=ADNMCi20AyQKpKCXX1ZjNnADw-yHobWmkg&q=About+https://bigapplebagels.com/",
+            "cached_page_link": "https://webcache.googleusercontent.com/search?q=cache:FTkNXecwWj4J:https://bigapplebagels.com/+&cd=17&hl=en&ct=clnk&gl=us"
+        },
+        {
+            "position": 8,
+            "title": "Best Sellers in Bagels - Amazon.com",
+            "link": "https://www.amazon.com/gp/bestsellers/grocery/18770265011",
+            "redirect_link": "https://www.google.com/url?sa=t&rct=j&q=&esrc=s&source=web&cd=&cad=rja&uact=8&ved=2ahUKEwj_4aqwsq2DAxXHEVkFHbKNA6wQFnoECBQQAQ&url=https%3A%2F%2Fwww.amazon.com%2FBest-Sellers-Bagels%2Fzgbs%2Fgrocery%2F18770265011&usg=AOvVaw1PMKvxHueZiaLwvdaG8491&opi=89978449",
+            "displayed_link": "https://www.amazon.com › bestsellers › grocery",
+            "snippet": "Discover the best Bagels in Best Sellers. Find the top 100 most popular items in Amazon Grocery & Gourmet Food Best Sellers.",
+            "snippet_highlighted_words": [
+                "best Bagels"
+            ],
+            "about_this_result": {
+                "source": {
+                    "description": "Amazon.com, Inc. is an American multinational technology company which focuses on e-commerce, cloud computing, digital streaming, and artificial intelligence. It has been referred to as \"one of the most influential economic and cultural forces in the world\", and is one of the world's most valuable brands.",
+                    "icon": "https://serpapi.com/searches/62d5efcae7d08a486c7b86ad/images/02306781b6e93635966d70cf70c16bc2ec6b8603c599601b41d359cc74e73aa4e762e7d839303a57faed29f59c6d8339.png"
+                },
+                "keywords": [
+                    "fresh",
+                    "bagels"
+                ],
+                "languages": [
+                    "English"
+                ],
+                "regions": [
+                    "the United States"
+                ]
+            },
+            "about_page_link": "https://www.google.com/search?q=About+https://www.amazon.com/gp/bestsellers/grocery/18770265011&tbm=ilp&ilps=ADNMCi04QxXe0QPeMLZktODViW9RXktYZg",
+            "about_page_serpapi_link": "https://serpapi.com/search.json?engine=google_about_this_result&ilps=ADNMCi04QxXe0QPeMLZktODViW9RXktYZg&q=About+https://www.amazon.com/gp/bestsellers/grocery/18770265011",
+            "cached_page_link": "https://webcache.googleusercontent.com/search?q=cache:16Kt5ovsjskJ:https://www.amazon.com/gp/bestsellers/grocery/18770265011+&cd=18&hl=en&ct=clnk&gl=us"
+        },
+        {
+            "position": 9,
+            "title": "The 9 Best Bagel Shops in Washington State!",
+            "link": "https://bestthingswa.com/bagel-shops/",
+            "redirect_link": "https://www.google.com/url?sa=t&rct=j&q=&esrc=s&source=web&cd=&cad=rja&uact=8&ved=2ahUKEwivzpS_sq2DAxUXFmIAHRD2B0QQFnoECA4QAQ&url=https%3A%2F%2Fbestthingswa.com%2Fbagel-shops%2F&usg=AOvVaw35bAShnaKtGL8ZV1uu-MZQ&opi=89978449",
+            "displayed_link": "https://bestthingswa.com › bagel-shops",
+            "snippet": "Seattle Bagel Bakery in Tukwila creates classic light and chewy bagels from scratch every day. This grab and go bagel bakery has all the ingredients for a great ...",
+            "snippet_highlighted_words": [
+                "Bagel",
+                "bagels",
+                "bagel"
+            ],
+            "about_this_result": {
+                "source": {
+                    "description": "bestthingswa.com was first indexed by Google in August 2016"
+                },
+                "keywords": [
+                    "fresh",
+                    "bagels"
+                ],
+                "related_keywords": [
+                    "bagel"
+                ],
+                "languages": [
+                    "English"
+                ],
+                "regions": [
+                    "the United States"
+                ]
+            },
+            "about_page_link": "https://www.google.com/search?q=About+https://bestthingswa.com/bagel-shops/&tbm=ilp&ilps=ADNMCi3xYN2ttt8Ev-h9QIRxh1x4rWpxVw",
+            "about_page_serpapi_link": "https://serpapi.com/search.json?engine=google_about_this_result&ilps=ADNMCi3xYN2ttt8Ev-h9QIRxh1x4rWpxVw&q=About+https://bestthingswa.com/bagel-shops/",
+            "cached_page_link": "https://webcache.googleusercontent.com/search?q=cache:5W1XuIBYImkJ:https://bestthingswa.com/bagel-shops/+&cd=19&hl=en&ct=clnk&gl=us"
+        },
+        {
+            "position": 10,
+            "title": "KEEPING BAGELS FRESH - Richmond - Nate's Bagels",
+            "link": "https://www.natesbagelsrva.com/keeping-bagels-fresh",
+            "redirect_link": "https://www.google.com/url?sa=t&rct=j&q=&esrc=s&source=web&cd=&cad=rja&uact=8&ved=2ahUKEwj0-a3Osq2DAxXlFlkFHVmpCD4QFnoECB4QAQ&url=https%3A%2F%2Fwww.natesbagelsrva.com%2Fkeeping-bagels-fresh&usg=AOvVaw0PHutGsKRF2Zt7aAOT4qgC&opi=89978449",
+            "displayed_link": "https://www.natesbagelsrva.com › keeping-bagels-fresh",
+            "thumbnail": "https://serpapi.com/searches/62d5efcae7d08a486c7b86ad/images/02306781b6e93635966d70cf70c16bc26c90a941f649baa8c57ca509f8d3d634.png",
+            "snippet": "BAGEL STORAGE. Nothing beats a freshly baked bagel. That said, unsliced bagels can be brought back to almost-fresh by being stored properly.",
+            "snippet_highlighted_words": [
+                "BAGEL",
+                "freshly",
+                "bagel",
+                "bagels",
+                "fresh"
+            ],
+            "about_this_result": {
+                "source": {
+                    "description": "natesbagelsrva.com was first indexed by Google in January 2016",
+                    "icon": "https://serpapi.com/searches/62d5efcae7d08a486c7b86ad/images/02306781b6e93635966d70cf70c16bc2d8343d2f6d209aee83985f1b784909167a44eba06d1adbb6bb133e4b40f3e856.png"
+                },
+                "keywords": [
+                    "fresh",
+                    "bagels"
+                ],
+                "related_keywords": [
+                    "freshly",
+                    "bagel"
+                ],
+                "languages": [
+                    "English"
+                ],
+                "regions": [
+                    "the United States"
+                ]
+            },
+            "about_page_link": "https://www.google.com/search?q=About+https://www.natesbagelsrva.com/keeping-bagels-fresh&tbm=ilp&ilps=ADNMCi0zyqgLTwffJCWEUo95wR1YUFpBHg",
+            "about_page_serpapi_link": "https://serpapi.com/search.json?engine=google_about_this_result&ilps=ADNMCi0zyqgLTwffJCWEUo95wR1YUFpBHg&q=About+https://www.natesbagelsrva.com/keeping-bagels-fresh",
+            "cached_page_link": "https://webcache.googleusercontent.com/search?q=cache:ct2DxPva7S8J:https://www.natesbagelsrva.com/keeping-bagels-fresh+&cd=20&hl=en&ct=clnk&gl=us"
+        }
+    ],
+    "related_searches": [
+        {
+            "query": "Fresh Bagels near Bellevue, WA",
+            "link": "https://www.google.com/search?safe=active&hl=en&gl=us&q=fresh+bagels+near+bellevue,+wa&sa=X&ved=2ahUKEwjns9vRzoP5AhUipIkEHXkRDaY4ChDVAnoECCkQAQ"
+        },
+        {
+            "query": "bagels near me",
+            "link": "https://www.google.com/search?safe=active&hl=en&gl=us&q=Bagels+near+me&sa=X&ved=2ahUKEwjns9vRzoP5AhUipIkEHXkRDaY4ChDVAnoECCIQAQ"
+        },
+        {
+            "query": "best bagels in seattle",
+            "link": "https://www.google.com/search?safe=active&hl=en&gl=us&q=Best+bagels+in+Seattle&sa=X&ved=2ahUKEwjns9vRzoP5AhUipIkEHXkRDaY4ChDVAnoECCEQAQ"
+        },
+        {
+            "query": "blazing bagels",
+            "link": "https://www.google.com/search?safe=active&hl=en&gl=us&q=Blazing+Bagels&sa=X&ved=2ahUKEwjns9vRzoP5AhUipIkEHXkRDaY4ChDVAnoECCwQAQ"
+        },
+        {
+            "query": "bagel seattle",
+            "link": "https://www.google.com/search?safe=active&hl=en&gl=us&q=Bagel+Seattle&sa=X&ved=2ahUKEwjns9vRzoP5AhUipIkEHXkRDaY4ChDVAnoECCYQAQ"
+        },
+        {
+            "query": "best bagels near me",
+            "link": "https://www.google.com/search?safe=active&hl=en&gl=us&q=Best+bagels+near+me&sa=X&ved=2ahUKEwjns9vRzoP5AhUipIkEHXkRDaY4ChDVAnoECCsQAQ"
+        },
+        {
+            "query": "rubinstein bagels menu",
+            "link": "https://www.google.com/search?safe=active&hl=en&gl=us&q=Rubinstein+bagels+menu&sa=X&ved=2ahUKEwjns9vRzoP5AhUipIkEHXkRDaY4ChDVAnoECCMQAQ"
+        },
+        {
+            "query": "loxsmith bagels seattle",
+            "link": "https://www.google.com/search?safe=active&hl=en&gl=us&q=Loxsmith+bagels+seattle&sa=X&ved=2ahUKEwjns9vRzoP5AhUipIkEHXkRDaY4ChDVAnoECCoQAQ"
+        }
+    ],
+    "pagination": {
+        "current": 2,
+        "previous": "https://www.google.com/search?q=Fresh+Bagels&safe=active&hl=en&gl=us&ei=y-_VYqeiDqLIptQP-aK0sAo&start=0&sa=N&ved=2ahUKEwjns9vRzoP5AhUipIkEHXkRDaY4ChDx0wN6BAgBEDQ",
+        "next": "https://www.google.com/search?q=Fresh+Bagels&safe=active&hl=en&gl=us&ei=y-_VYqeiDqLIptQP-aK0sAo&start=20&sa=N&ved=2ahUKEwjns9vRzoP5AhUipIkEHXkRDaY4ChDw0wN6BAgBEEk",
+        "other_pages": {
+            "1": "https://www.google.com/search?q=Fresh+Bagels&safe=active&hl=en&gl=us&ei=y-_VYqeiDqLIptQP-aK0sAo&start=0&sa=N&ved=2ahUKEwjns9vRzoP5AhUipIkEHXkRDaY4ChDy0wN6BAgBEDY",
+            "3": "https://www.google.com/search?q=Fresh+Bagels&safe=active&hl=en&gl=us&ei=y-_VYqeiDqLIptQP-aK0sAo&start=20&sa=N&ved=2ahUKEwjns9vRzoP5AhUipIkEHXkRDaY4ChDy0wN6BAgBEDk",
+            "4": "https://www.google.com/search?q=Fresh+Bagels&safe=active&hl=en&gl=us&ei=y-_VYqeiDqLIptQP-aK0sAo&start=30&sa=N&ved=2ahUKEwjns9vRzoP5AhUipIkEHXkRDaY4ChDy0wN6BAgBEDs",
+            "5": "https://www.google.com/search?q=Fresh+Bagels&safe=active&hl=en&gl=us&ei=y-_VYqeiDqLIptQP-aK0sAo&start=40&sa=N&ved=2ahUKEwjns9vRzoP5AhUipIkEHXkRDaY4ChDy0wN6BAgBED0",
+            "6": "https://www.google.com/search?q=Fresh+Bagels&safe=active&hl=en&gl=us&ei=y-_VYqeiDqLIptQP-aK0sAo&start=50&sa=N&ved=2ahUKEwjns9vRzoP5AhUipIkEHXkRDaY4ChDy0wN6BAgBED8",
+            "7": "https://www.google.com/search?q=Fresh+Bagels&safe=active&hl=en&gl=us&ei=y-_VYqeiDqLIptQP-aK0sAo&start=60&sa=N&ved=2ahUKEwjns9vRzoP5AhUipIkEHXkRDaY4ChDy0wN6BAgBEEE",
+            "8": "https://www.google.com/search?q=Fresh+Bagels&safe=active&hl=en&gl=us&ei=y-_VYqeiDqLIptQP-aK0sAo&start=70&sa=N&ved=2ahUKEwjns9vRzoP5AhUipIkEHXkRDaY4ChDy0wN6BAgBEEM",
+            "9": "https://www.google.com/search?q=Fresh+Bagels&safe=active&hl=en&gl=us&ei=y-_VYqeiDqLIptQP-aK0sAo&start=80&sa=N&ved=2ahUKEwjns9vRzoP5AhUipIkEHXkRDaY4ChDy0wN6BAgBEEU",
+            "10": "https://www.google.com/search?q=Fresh+Bagels&safe=active&hl=en&gl=us&ei=y-_VYqeiDqLIptQP-aK0sAo&start=90&sa=N&ved=2ahUKEwjns9vRzoP5AhUipIkEHXkRDaY4ChDy0wN6BAgBEEc"
+        }
+    },
+    "serpapi_pagination": {
+        "current": 2,
+        "previous_link": "https://serpapi.com/search.json?device=desktop&engine=google&gl=us&google_domain=google.com&hl=en&location=Seattle-Tacoma%2C+WA%2C+Washington%2C+United+States&num=10&q=Fresh+Bagels&safe=active&start=0",
+        "previous": "https://serpapi.com/search.json?device=desktop&engine=google&gl=us&google_domain=google.com&hl=en&location=Seattle-Tacoma%2C+WA%2C+Washington%2C+United+States&num=10&q=Fresh+Bagels&safe=active&start=0",
+        "next_link": "https://serpapi.com/search.json?device=desktop&engine=google&gl=us&google_domain=google.com&hl=en&location=Seattle-Tacoma%2C+WA%2C+Washington%2C+United+States&num=10&q=Fresh+Bagels&safe=active&start=20",
+        "next": "https://serpapi.com/search.json?device=desktop&engine=google&gl=us&google_domain=google.com&hl=en&location=Seattle-Tacoma%2C+WA%2C+Washington%2C+United+States&num=10&q=Fresh+Bagels&safe=active&start=20",
+        "other_pages": {
+            "1": "https://serpapi.com/search.json?device=desktop&engine=google&gl=us&google_domain=google.com&hl=en&location=Seattle-Tacoma%2C+WA%2C+Washington%2C+United+States&num=10&q=Fresh+Bagels&safe=active&start=0",
+            "3": "https://serpapi.com/search.json?device=desktop&engine=google&gl=us&google_domain=google.com&hl=en&location=Seattle-Tacoma%2C+WA%2C+Washington%2C+United+States&num=10&q=Fresh+Bagels&safe=active&start=20",
+            "4": "https://serpapi.com/search.json?device=desktop&engine=google&gl=us&google_domain=google.com&hl=en&location=Seattle-Tacoma%2C+WA%2C+Washington%2C+United+States&num=10&q=Fresh+Bagels&safe=active&start=30",
+            "5": "https://serpapi.com/search.json?device=desktop&engine=google&gl=us&google_domain=google.com&hl=en&location=Seattle-Tacoma%2C+WA%2C+Washington%2C+United+States&num=10&q=Fresh+Bagels&safe=active&start=40",
+            "6": "https://serpapi.com/search.json?device=desktop&engine=google&gl=us&google_domain=google.com&hl=en&location=Seattle-Tacoma%2C+WA%2C+Washington%2C+United+States&num=10&q=Fresh+Bagels&safe=active&start=50",
+            "7": "https://serpapi.com/search.json?device=desktop&engine=google&gl=us&google_domain=google.com&hl=en&location=Seattle-Tacoma%2C+WA%2C+Washington%2C+United+States&num=10&q=Fresh+Bagels&safe=active&start=60",
+            "8": "https://serpapi.com/search.json?device=desktop&engine=google&gl=us&google_domain=google.com&hl=en&location=Seattle-Tacoma%2C+WA%2C+Washington%2C+United+States&num=10&q=Fresh+Bagels&safe=active&start=70",
+            "9": "https://serpapi.com/search.json?device=desktop&engine=google&gl=us&google_domain=google.com&hl=en&location=Seattle-Tacoma%2C+WA%2C+Washington%2C+United+States&num=10&q=Fresh+Bagels&safe=active&start=80",
+            "10": "https://serpapi.com/search.json?device=desktop&engine=google&gl=us&google_domain=google.com&hl=en&location=Seattle-Tacoma%2C+WA%2C+Washington%2C+United+States&num=10&q=Fresh+Bagels&safe=active&start=90"
+        }
+    }
+}

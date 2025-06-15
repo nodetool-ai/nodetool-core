@@ -28,17 +28,30 @@ class NodeMetadata(BaseModel):
     Metadata for a node.
     """
 
-    title: str
-    description: str
-    namespace: str
-    node_type: str
-    layout: str
-    properties: list[Property]
-    outputs: list[OutputSlot]
-    the_model_info: dict[str, Any]
-    recommended_models: list[HuggingFaceModel]
-    basic_fields: list[str]
-    is_dynamic: bool
+    title: str = Field(description="UI Title of the node")
+    description: str = Field(description="UI Description of the node")
+    namespace: str = Field(description="Namespace of the node")
+    node_type: str = Field(description="Fully qualified type of the node")
+    layout: str = Field(default="default", description="UI Layout of the node")
+    properties: list[Property] = Field(
+        default_factory=list, description="Properties of the node"
+    )
+    outputs: list[OutputSlot] = Field(
+        default_factory=list, description="Outputs of the node"
+    )
+    the_model_info: dict[str, Any] = Field(
+        default_factory=dict, description="HF Model info for the node"
+    )
+    recommended_models: list[HuggingFaceModel] = Field(
+        default_factory=list, description="Recommended models for the node"
+    )
+    basic_fields: list[str] = Field(
+        default_factory=list, description="Basic fields of the node"
+    )
+    is_dynamic: bool = Field(default=False, description="Whether the node is dynamic")
+    is_streaming: bool = Field(
+        default=False, description="Whether the node is streaming"
+    )
 
 
 class ExampleMetadata(BaseModel):
@@ -87,6 +100,8 @@ class EnumEncoder(json.JSONEncoder):
         try:
             if isinstance(obj, Enum):
                 return obj.value
+            if obj == b"":
+                return ""
             return super().default(obj)
         except TypeError as e:
             raise TypeError(f"Error encoding {obj}: {e}")

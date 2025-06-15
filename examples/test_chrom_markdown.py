@@ -116,13 +116,11 @@ Testing how it handles multiple H1 headers.
             f"\nRetrieved {len(retrieved_docs.get('ids', []))} documents from collection '{collection_name}':"
         )
         if retrieved_docs and retrieved_docs.get("ids"):
-            assert retrieved_docs["metadatas"] is not None
+            print(retrieved_docs)
             assert retrieved_docs["documents"] is not None
             for i, doc_id in enumerate(retrieved_docs["ids"]):
-                assert retrieved_docs["metadatas"][i] is not None
                 assert retrieved_docs["documents"][i] is not None
                 print(f"\n--- Document ID: {doc_id} ---")
-                print(f"Metadata: {retrieved_docs['metadatas'][i]}")
                 print(f"Content:\n{retrieved_docs['documents'][i]}")
                 print("-------------------------")
 

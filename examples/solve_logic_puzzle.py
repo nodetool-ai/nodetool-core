@@ -17,7 +17,6 @@ async def test_logical_puzzle_task(
 ):
     # 1. Set up workspace directory
     context = ProcessingContext()
-    workspace_dir = context.workspace_dir
 
     # 3. Create a sample task focused on reasoning
     task = Task(
@@ -45,9 +44,6 @@ async def test_logical_puzzle_task(
 
     subtask = SubTask(
         content=puzzle_statement,
-        output_file="solutions.json",
-        input_files=[],
-        output_type="json",
         output_schema=json.dumps(
             {
                 "type": "object",
@@ -93,55 +89,23 @@ async def test_logical_puzzle_task(
     # 6. Execute the subtask
     print(f"\n--- Starting Logical Puzzle Task using {model} ---")
     async for event in subtask_context.execute():
-        if isinstance(event, Chunk):
-            print(event.content, end="")
-        elif isinstance(event, ToolCall):
-            print(event.message, end="")
-        elif isinstance(event, TaskUpdate):
-            event_details = event.event
-            # Ensure event_details are printable
-            if not isinstance(
-                event_details, (str, dict, list, int, float, bool, type(None))
-            ):
-                event_details = str(event_details)
-            print(
-                f"\nTask Update: {json.dumps(event_details, indent=2) if isinstance(event_details, (dict, list)) else event_details}"
-            )
+        pass
 
-    # 7. Check if output file was created and print its content
-    output_path = context.resolve_workspace_path(subtask.output_file)
-    if Path(output_path).exists():
-        with open(output_path, "r") as f:
-            try:
-                result = json.load(f)
-                print("\n\n--- SubTask Execution Successful! ---")
-                print("Output File Content:")
-                print(json.dumps(result, indent=2))
-            except json.JSONDecodeError:
-                # If JSON parsing fails, print raw content for debugging
-                f.seek(0)  # Go to the beginning of the file
-                raw_content = f.read()
-                print("\n\n--- SubTask Execution Generated Non-JSON Output ---")
-                print(f"Content of {output_path}:")
-                print(raw_content)
-
-    else:
-        print(f"\n\n--- Output file '{subtask.output_file}' was not created! ---")
-        print(f"Contents of workspace directory '{workspace_dir}':")
-        for item in Path(workspace_dir).iterdir():
-            print(f"- {item.name}")
+    print("--------------------------------")
+    print(subtask_context.get_result())
+    print("--------------------------------")
 
 
 if __name__ == "__main__":
     # Example usage with OpenAI
+    # asyncio.run(
+    #     test_logical_puzzle_task(
+    #         provider=get_provider(Provider.OpenAI), model="o4-mini"
+    #     )
+    # )
     asyncio.run(
         test_logical_puzzle_task(
-            provider=get_provider(Provider.OpenAI), model="o4-mini"
-        )
-    )
-    asyncio.run(
-        test_logical_puzzle_task(
-            provider=get_provider(Provider.Ollama), model="qwen3:4b"
+            provider=get_provider(Provider.Ollama), model="qwen3:0.6b"
         )
     )
 

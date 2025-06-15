@@ -13,7 +13,7 @@ from nodetool.metadata.types import (
     ToolCall,
 )
 import os
-from typing import AsyncGenerator, List, Sequence, Union, Optional
+from typing import AsyncGenerator, List, Sequence, Union, Any
 
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import Chunk
@@ -44,7 +44,7 @@ class TaskExecutor:
         tools: Sequence[Tool],
         task: Task,
         system_prompt: str | None = None,
-        input_files: Optional[List[str]] = None,
+        inputs: dict[str, Any] = {},
         max_steps: int = 50,
         max_subtask_iterations: int = 10,
         max_token_limit: int = 100000,
@@ -60,7 +60,7 @@ class TaskExecutor:
             tools (List[Tool]): List of tools available for task execution
             task (Task): The task to execute
             system_prompt (str, optional): Custom system prompt
-            input_files (List[str], optional): List of input files to use for the task
+            inputs (dict[str, Any], optional): Inputs to use for the task
             max_steps (int, optional): Maximum execution steps to prevent infinite loops
             max_subtask_iterations (int, optional): Maximum iterations allowed per subtask
             max_token_limit (int, optional): Maximum token limit before summarization
@@ -71,7 +71,7 @@ class TaskExecutor:
         self.tools = tools
         self.task = task
         self.processing_context = processing_context
-        self.input_files = input_files or []
+        self.inputs = inputs
         self.max_token_limit = max_token_limit
         self.system_prompt = system_prompt
         self.max_steps = max_steps
@@ -104,6 +104,9 @@ class TaskExecutor:
             Union[TaskUpdate, Chunk, ToolCall]: Live updates during execution
         """
         steps_taken = 0
+
+        for key, value in self.inputs.items():
+            context.set(key, value)
 
         # Continue until all tasks are complete or we reach max steps
         while not self._all_tasks_complete() and steps_taken < self.max_steps:
@@ -171,17 +174,20 @@ class TaskExecutor:
 
         for subtask in self.task.subtasks:
             if not subtask.completed and not subtask.is_running():
-                # Check if all file dependencies exist
-                all_dependencies_met = self._check_input_files(
+                # Check if all task and file dependencies exist
+                all_task_dependencies_met = self._check_input_tasks(
+                    subtask.input_tasks, self.processing_context.workspace_dir
+                )
+                all_file_dependencies_met = self._check_input_files(
                     subtask.input_files, self.processing_context.workspace_dir
                 )
 
-                if all_dependencies_met:
+                if all_task_dependencies_met and all_file_dependencies_met:
                     executable_tasks.append(subtask)
 
         return executable_tasks
 
-    def _check_input_files(self, input_files: List[str], workspace_dir: str) -> bool:
+    def _check_input_tasks(self, input_tasks: List[str], workspace_dir: str) -> bool:
         """
         Check if all file dependencies exist in the workspace.
 
@@ -191,12 +197,35 @@ class TaskExecutor:
         Returns:
             bool: True if all dependencies exist, False otherwise
         """
-        for file_path in input_files:
-            full_path = self.processing_context.resolve_workspace_path(file_path)
 
-            if not os.path.exists(full_path):
+        def find_task_id(task_id: str) -> SubTask | None:
+            for subtask in self.task.subtasks:
+                if subtask.id == task_id:
+                    return subtask
+            return None
+
+        for task_id in input_tasks:
+            subtask = find_task_id(task_id)
+            if not subtask:
                 return False
 
+        return True
+
+    def _check_input_files(self, input_files: List[str], workspace_dir: str) -> bool:
+        """
+        Check if all file dependencies exist in the workspace.
+
+        Args:
+            input_files: List of file paths to check
+            workspace_dir: The workspace directory to check files in
+
+        Returns:
+            bool: True if all files exist, False otherwise
+        """
+        for file_path in input_files:
+            full_path = os.path.join(workspace_dir, file_path)
+            if not os.path.exists(full_path):
+                return False
         return True
 
     def _all_tasks_complete(self) -> bool:
@@ -210,19 +239,3 @@ class TaskExecutor:
             if not subtask.completed:
                 return False
         return True
-
-    def get_output_files(self) -> list[str]:
-        """
-        Get all subtask output files from the global result store.
-        Dynamically reads output files for completed subtasks if they aren't already in the result store.
-
-        Returns:
-            List[str]: List of output files
-        """
-        # Update result store with any new completed subtasks
-        results = []
-        for subtask in self.task.subtasks:
-            if subtask.completed and subtask.output_file:
-                results.append(subtask.output_file)
-
-        return results

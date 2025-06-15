@@ -72,6 +72,7 @@ import msgpack
 from typing import List, Sequence
 from enum import Enum
 
+import httpx
 from fastapi import WebSocket
 from supabase import create_async_client, AsyncClient
 
@@ -357,32 +358,58 @@ class ChatWebSocketRunner:
         Returns:
             Message: An assistant message containing the aggregated help content.
         """
-        provider = await provider_from_model(model)
-        log.debug(f"Processing help messages with model: {model}")
-        accumulated_content = ""
-        async for item in create_help_answer(
-            provider=provider,
-            messages=self.chat_history,
-            model=model,
-        ):
-            if isinstance(item, Chunk):
-                accumulated_content += item.content
-                await self.send_message(
-                    {"type": "chunk", "content": item.content, "done": False}
-                )
-            elif isinstance(item, ToolCall):
-                await self.send_message(
-                    {"type": "tool_call", "tool_call": item.model_dump()}
-                )
-            else:
-                log.debug("Help response item was not chunk or tool call")
+        try:
+            provider = await provider_from_model(model)
+            log.debug(f"Processing help messages with model: {model}")
+            accumulated_content = ""
+            async for item in create_help_answer(
+                provider=provider,
+                messages=self.chat_history,
+                model=model,
+            ):
+                if isinstance(item, Chunk):
+                    accumulated_content += item.content
+                    await self.send_message(
+                        {"type": "chunk", "content": item.content, "done": False}
+                    )
+                elif isinstance(item, ToolCall):
+                    await self.send_message(
+                        {"type": "tool_call", "tool_call": item.model_dump()}
+                    )
+                else:
+                    log.debug("Help response item was not chunk or tool call")
 
-        # Signal the end of the help stream
-        await self.send_message({"type": "chunk", "content": "", "done": True})
-        return Message(
-            role="assistant",
-            content=accumulated_content if accumulated_content else None,
-        )
+            # Signal the end of the help stream
+            await self.send_message({"type": "chunk", "content": "", "done": True})
+            return Message(
+                role="assistant",
+                content=accumulated_content if accumulated_content else None,
+            )
+        except httpx.ConnectError as e:
+            # Extract the error message from the exception
+            error_msg = str(e)
+            if "nodename nor servname provided" in error_msg:
+                error_msg = "Connection error: Unable to resolve hostname. Please check your network connection and API endpoint configuration."
+            else:
+                error_msg = f"Connection error: {error_msg}"
+            
+            log.error(f"httpx.ConnectError in _process_help_messages: {e}", exc_info=True)
+            
+            # Send error message to client
+            await self.send_message({
+                "type": "error",
+                "message": error_msg,
+                "error_type": "connection_error"
+            })
+            
+            # Signal the end of the help stream with error
+            await self.send_message({"type": "chunk", "content": "", "done": True})
+            
+            # Return an error message
+            return Message(
+                role="assistant", 
+                content=f"I encountered a connection error while processing the help request: {error_msg}. Please check your network connection and try again."
+            )
 
     async def process_messages(self) -> Message:
         """
@@ -434,72 +461,98 @@ class ChatWebSocketRunner:
 
             assert last_message.model, "Model is required"
 
-            provider = await provider_from_model(last_message.model)
-            log.debug(
-                f"Using provider {provider.__class__.__name__} for model {last_message.model}"
-            )
-            log.debug(f"Chat history length: {len(self.chat_history)} messages")
-
-            # Stream the response chunks
-            while True:
-                messages_to_send = self.chat_history + unprocessed_messages
-                unprocessed_messages = []
-
+            try:
+                provider = await provider_from_model(last_message.model)
                 log.debug(
-                    f"Calling provider.generate_messages with {len(messages_to_send)} messages"
+                    f"Using provider {provider.__class__.__name__} for model {last_message.model}"
                 )
-                async for chunk in provider.generate_messages(
-                    messages=messages_to_send,
-                    model=last_message.model,
-                    tools=selected_tools,
-                ):  # type: ignore
+                log.debug(f"Chat history length: {len(self.chat_history)} messages")
+
+                # Stream the response chunks
+                while True:
+                    messages_to_send = self.chat_history + unprocessed_messages
+                    unprocessed_messages = []
+
                     log.debug(
-                        f"Received chunk from provider: type={type(chunk).__name__}"
+                        f"Calling provider.generate_messages with {len(messages_to_send)} messages"
                     )
-                    if isinstance(chunk, Chunk):
-                        content += chunk.content
-                        await self.send_message(chunk.model_dump())
-                    elif isinstance(chunk, ToolCall):
-                        log.debug(f"Processing tool call: {chunk.name}")
-
-                        # Process the tool call
-                        tool_result = await self.run_tool(
-                            processing_context, chunk, selected_tools
-                        )
+                    async for chunk in provider.generate_messages(
+                        messages=messages_to_send,
+                        model=last_message.model,
+                        tools=selected_tools,
+                    ):  # type: ignore
                         log.debug(
-                            f"Tool {chunk.name} execution complete, id={tool_result.id}"
+                            f"Received chunk from provider: type={type(chunk).__name__}"
                         )
-                        # Add tool messages to unprocessed messages
-                        # Note: Assistant message with tool calls typically has no content
-                        assistant_msg = Message(role="assistant", tool_calls=[chunk])
-                        log.debug(
-                            f"Creating assistant message with tool call, content={assistant_msg.content}"
-                        )
-                        unprocessed_messages.append(assistant_msg)
+                        if isinstance(chunk, Chunk):
+                            content += chunk.content
+                            await self.send_message(chunk.model_dump())
+                        elif isinstance(chunk, ToolCall):
+                            log.debug(f"Processing tool call: {chunk.name}")
 
-                        tool_msg = Message(
-                            role="tool",
-                            tool_call_id=tool_result.id,
-                            content=json.dumps(tool_result.result),
-                        )
-                        log.debug(
-                            f"Creating tool message with result, content_length={len(tool_msg.content or '')}"
-                        )
-                        unprocessed_messages.append(tool_msg)
+                            # Process the tool call
+                            tool_result = await self.run_tool(
+                                processing_context, chunk, selected_tools
+                            )
+                            log.debug(
+                                f"Tool {chunk.name} execution complete, id={tool_result.id}"
+                            )
+                            # Add tool messages to unprocessed messages
+                            # Note: Assistant message with tool calls typically has no content
+                            assistant_msg = Message(role="assistant", tool_calls=[chunk])
+                            log.debug(
+                                f"Creating assistant message with tool call, content={assistant_msg.content}"
+                            )
+                            unprocessed_messages.append(assistant_msg)
 
-                # If no more unprocessed messages, we're done
-                if not unprocessed_messages:
-                    log.debug("No more unprocessed messages, completing generation")
-                    break
+                            tool_msg = Message(
+                                role="tool",
+                                tool_call_id=tool_result.id,
+                                content=json.dumps(tool_result.result),
+                            )
+                            log.debug(
+                                f"Creating tool message with result, content_length={len(tool_msg.content or '')}"
+                            )
+                            unprocessed_messages.append(tool_msg)
+
+                    # If no more unprocessed messages, we're done
+                    if not unprocessed_messages:
+                        log.debug("No more unprocessed messages, completing generation")
+                        break
+                    else:
+                        log.debug(
+                            f"Have {len(unprocessed_messages)} unprocessed messages, continuing loop"
+                        )
+
+                return Message(
+                    role="assistant",
+                    content=content if content else None,
+                )
+            except httpx.ConnectError as e:
+                # Extract the error message from the exception
+                error_msg = str(e)
+                if "nodename nor servname provided" in error_msg:
+                    error_msg = "Connection error: Unable to resolve hostname. Please check your network connection and API endpoint configuration."
                 else:
-                    log.debug(
-                        f"Have {len(unprocessed_messages)} unprocessed messages, continuing loop"
-                    )
-
-            return Message(
-                role="assistant",
-                content=content if content else None,
-            )
+                    error_msg = f"Connection error: {error_msg}"
+                
+                log.error(f"httpx.ConnectError in process_messages: {e}", exc_info=True)
+                
+                # Send error message to client
+                await self.send_message({
+                    "type": "error",
+                    "message": error_msg,
+                    "error_type": "connection_error"
+                })
+                
+                # Return an error message
+                return Message(
+                    role="assistant", 
+                    content=f"I encountered a connection error: {error_msg}. Please check your network connection and try again."
+                )
+            except Exception as e:
+                # Re-raise other exceptions to be handled by the outer try-catch
+                raise
 
     async def process_messages_for_workflow(self) -> Message:
         """

@@ -1,8 +1,8 @@
-from typing import Any, List, Sequence, Tuple, Optional
+from typing import Any, List, Sequence
 from collections import deque
-import logging
 
-from pydantic import BaseModel, Field, ValidationError
+from nodetool.metadata.typecheck import typecheck
+from pydantic import BaseModel, Field
 from nodetool.types.graph import Edge
 from nodetool.workflows.base_node import (
     GroupNode,
@@ -73,7 +73,7 @@ class Graph(BaseModel):
         ]
 
     @classmethod
-    def from_dict(cls, graph: dict[str, Any]):
+    def from_dict(cls, graph: dict[str, Any], skip_errors: bool = True):
         """
         Create a Graph object from a dictionary representation.
         The format is the same as the one used in the frontend.
@@ -90,12 +90,52 @@ class Graph(BaseModel):
             Graph: An instance of the Graph, potentially with fewer nodes/edges than specified
                    in the input if errors were encountered.
         """
+        valid_nodes = []
+        valid_node_ids = set()
+        
+        # Process nodes, collecting valid ones
+        for node_data in graph["nodes"]:
+            result = BaseNode.from_dict(node_data, skip_errors=skip_errors)
+            if result is not None and result[0] is not None:
+                valid_nodes.append(result[0])
+                valid_node_ids.add(result[0].id)
+        
+        # Process edges, filtering out invalid ones
+        valid_edges = []
+        for edge_data in graph["edges"]:
+            try:
+                # Check if edge has required fields
+                if ("sourceHandle" not in edge_data or 
+                    "targetHandle" not in edge_data or
+                    "source" not in edge_data or 
+                    "target" not in edge_data):
+                    if skip_errors:
+                        continue  # Skip malformed edges
+                    else:
+                        # Let Pydantic handle the validation error
+                        pass
+                
+                # Check if both source and target nodes exist in valid nodes
+                source_id = edge_data.get("source")
+                target_id = edge_data.get("target")
+                
+                if (source_id in valid_node_ids and target_id in valid_node_ids):
+                    valid_edges.append(edge_data)
+                elif skip_errors:
+                    continue  # Skip edges connected to non-existent nodes
+                else:
+                    # Keep the edge and let downstream validation handle it
+                    valid_edges.append(edge_data)
+                    
+            except Exception:
+                if skip_errors:
+                    continue
+                else:
+                    raise
+        
         return cls(
-            nodes=[
-                BaseNode.from_dict(node, skip_errors=True)[0]
-                for node in graph["nodes"]
-            ],
-            edges=graph["edges"],
+            nodes=valid_nodes,
+            edges=valid_edges,
         )
 
     def inputs(self) -> List[InputNode]:
@@ -198,3 +238,74 @@ class Graph(BaseModel):
             print("Graph contains at least one cycle")
 
         return sorted_nodes
+
+    def validate_edge_types(self):
+        """
+        Validate that edge connections have compatible types.
+
+        Returns:
+            List[str]: List of validation error messages. Empty list if all edges are valid.
+        """
+        validation_errors = []
+
+        for edge in self.edges:
+            try:
+                # Find source and target nodes
+                source_node = self.find_node(edge.source)
+                target_node = self.find_node(edge.target)
+
+                if not source_node:
+                    validation_errors.append(
+                        f"Source node '{edge.source}' not found for edge"
+                    )
+                    continue
+
+                if not target_node:
+                    validation_errors.append(
+                        f"Target node '{edge.target}' not found for edge"
+                    )
+                    continue
+
+                # Get node classes to access type metadata
+                # Since nodes are already instances, we can use their classes directly
+                source_node_class = source_node.__class__
+                target_node_class = target_node.__class__
+
+                # Get source output type (find_output is a class method)
+                source_output = source_node_class.find_output(edge.sourceHandle)
+                if not source_output:
+                    validation_errors.append(
+                        f"{edge.target}: Output '{edge.sourceHandle}' not found on source node {source_node_class.__name__}"
+                    )
+                    continue
+
+                # Get target input type (find_property is an instance method)
+                target_property = target_node.find_property(edge.targetHandle)
+                if not target_property:
+                    # Respect dynamic nodes that can accept arbitrary properties
+                    if type(target_node).is_dynamic():
+                        continue
+
+                    # Align error message format with test expectations ("Property ... not found")
+                    validation_errors.append(
+                        f"{edge.target}: Property '{edge.targetHandle}' not found on target node {target_node_class.__name__}"
+                    )
+                    continue
+
+                # Check type compatibility
+                source_type = source_output.type
+                target_type = target_property.type
+
+                if not typecheck(source_type, target_type):
+                    validation_errors.append(
+                        f"{edge.target}: Type mismatch for property '{edge.targetHandle}' - "
+                        f"{edge.source}.{edge.sourceHandle} outputs {source_type.type} "
+                        f"but {edge.target}.{edge.targetHandle} expects {target_type.type}"
+                    )
+
+            except Exception as e:
+                validation_errors.append(
+                    f"Error validating edge {edge.source}->{edge.target}: {str(e)}"
+                )
+
+        return validation_errors

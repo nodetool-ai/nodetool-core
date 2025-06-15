@@ -14,14 +14,8 @@ ensure the generated plan is robust and executable.
 """
 
 import asyncio
-import logging
 import traceback
 from nodetool.chat.providers import ChatProvider
-from nodetool.agents.sub_task_context import (
-    FILE_POINTER_SCHEMA,
-    is_binary_output_type,
-    json_schema_for_output_type,
-)
 from nodetool.agents.tools.base import Tool
 from nodetool.metadata.types import (
     Message,
@@ -61,23 +55,13 @@ from jinja2 import Environment, BaseLoader
 
 from nodetool.workflows.types import Chunk, PlanningUpdate
 
-# Set up logger for this module
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
-
 COMPACT_SUBTASK_NOTATION_DESCRIPTION = """
 --- Data Flow Representation (DOT/Graphviz Syntax) ---
-This format helps visualize the flow of data between files and process steps.
-Focus on file nodes and process step nodes, connected by arrows showing data movement.
-**Note: All file paths (`input_files`, `output_file`) can refer to either files or directories.**
+This format helps visualize the flow of data between subtasks.
 Example DOT for a pipeline:
 digraph DataPipeline {
-  "users.json" -> "merge_data";
-  "logs.csv" -> "merge_data";
-  "merge_data" -> "filter_activity";
-  "filter_activity" -> "filtered_logs.csv";
-  "filtered_logs.csv" -> "generate_report";
-  "generate_report" -> "summary.pdf";
+  "read_data" -> "process_data";
+  "process_data" -> "generate_report";
 }
 Used for concise subtask representation.
 """
@@ -85,82 +69,6 @@ Used for concise subtask representation.
 # --- Task Naming Convention ---
 # Use short names, prefixed with $, for conceptual tasks or process steps (e.g., $read_data, $process_logs, $generate_report).
 # These names should be unique and descriptive of the step.
-
-
-def clean_and_validate_path(workspace_dir: str, path: Any, context: str) -> str:
-    """
-    Cleans workspace prefix and validates a path is relative and safe.
-    """
-    # Stricter initial type check
-    if not isinstance(path, str):
-        raise ValueError(
-            f"Path must be a string, but got type {type(path)} ('{path}') in {context}."
-        )
-    if not path.strip():
-        raise ValueError(f"Path must be a non-empty string in {context}.")
-
-    # Ensure the path is not absolute
-    if Path(path).is_absolute():  # Use pathlib for robustness
-        raise ValueError(
-            f"Path must be relative, but got absolute path '{path}' in {context}."
-        )
-
-    cleaned_path: str = path
-
-    # Remove leading workspace prefixes more robustly
-    # Convert potential backslashes for consistency before prefix check
-    normalized_prefix_path = cleaned_path.replace("\\", "/")
-    if normalized_prefix_path.startswith("workspace/"):
-        cleaned_path = cleaned_path[len("workspace/") :]
-    # Check for absolute /workspace/ only if it wasn't caught by is_absolute earlier (edge case)
-    elif normalized_prefix_path.startswith("/workspace/"):
-        cleaned_path = cleaned_path[len("/workspace/") :]
-
-    # After cleaning, double-check it didn't somehow become absolute or empty
-    if not cleaned_path:
-        raise ValueError(
-            f"Path became empty after cleaning prefix: '{path}' in {context}."
-        )
-    # Re-check absoluteness after potential prefix stripping
-    if Path(cleaned_path).is_absolute():
-        raise ValueError(
-            f"Path became absolute after cleaning prefix: '{path}' -> '{cleaned_path}' in {context}."
-        )
-
-    # --- Path Traversal Check ---
-    try:
-        workspace_root = Path(workspace_dir).resolve(
-            strict=True
-        )  # Ensure workspace exists
-        # Create the full path by joining workspace root and the relative path
-        full_path = (workspace_root / cleaned_path).resolve()
-
-        # Check if the resolved path is within the workspace directory
-        # Using Path.is_relative_to (Python 3.9+) or common path check
-        is_within = False
-        try:
-            # Preferred method if available
-            is_within = full_path.is_relative_to(workspace_root)
-        except AttributeError:  # Fallback for Python < 3.9
-            is_within = (
-                workspace_root == full_path or workspace_root in full_path.parents
-            )
-
-        if not is_within:
-            raise ValueError(
-                f"Path validation failed: Resolved path '{full_path}' is outside the workspace root '{workspace_root}' for input '{path}' in {context}."
-            )
-
-    except FileNotFoundError:
-        # This occurs if self.workspace_dir doesn't exist during validation
-        raise ValueError(
-            f"Workspace directory '{workspace_dir}' not found during path validation for '{path}' in {context}."
-        )
-    except Exception as e:  # Catch other potential resolution or validation errors
-        raise ValueError(f"Error validating path safety for '{path}' in {context}: {e}")
-
-    # Return the cleaned, validated relative path
-    return cleaned_path
 
 
 class CreateTaskTool(Tool):
@@ -187,28 +95,25 @@ class CreateTaskTool(Tool):
                     "type": "object",
                     "additionalProperties": False,
                     "properties": {
+                        "id": {
+                            "type": "string",
+                            "description": "The unique identifier for the subtask.",
+                        },
                         "content": {
                             "type": "string",
                             "description": "High-level natural language instructions for the agent executing this subtask.",
                         },
-                        "output_file": {
-                            "type": "string",
-                            "description": "The file path where the subtask will save its output. MUST be relative to the workspace root and at the top level (e.g., 'result.json'). Do NOT use subdirectories, absolute paths, or '/workspace/' prefix.",
-                        },
-                        "input_files": {
+                        "input_tasks": {
                             "type": "array",
                             "items": {
                                 "type": "string",
-                                "description": "An input file for the subtask. MUST be a relative path at the top level of the workspace (e.g., 'source.txt' or 'another_output.json'). Paths must not be in subdirectories. Corresponds to an initial input file or the output_file of another subtask.",
+                                "description": "The ID of an upstream subtask or input key that this subtask depends on.",
                             },
+                            "description": "List of subtask IDs or input keys from the inputs dictionary that this subtask depends on for input data.",
                         },
                         "output_schema": {
                             "type": "string",
                             "description": 'Output schema for the subtask as a JSON string. Use \'{"type": "string"}\' for unstructured output types.',
-                        },
-                        "output_type": {
-                            "type": "string",
-                            "description": "The file format of the output of the subtask, e.g. 'json', 'markdown', 'csv', 'html'",
                         },
                         "max_iterations": {
                             "type": "integer",
@@ -222,36 +127,15 @@ class CreateTaskTool(Tool):
                             "type": "boolean",
                             "description": "Whether the subtask is an intermediate result of a task",
                         },
-                        "batch_processing": {
-                            "type": "object",
-                            "description": "Configuration for batch processing of list items",
-                            "properties": {
-                                "enabled": {"type": "boolean"},
-                                "batch_size": {"type": "integer"},
-                                "start_index": {"type": "integer"},
-                                "end_index": {"type": "integer"},
-                                "total_items": {"type": "integer"},
-                            },
-                            "required": [
-                                "enabled",
-                                "batch_size",
-                                "start_index",
-                                "end_index",
-                                "total_items",
-                            ],
-                            "additionalProperties": False,
-                        },
                     },
                     "required": [
+                        "id",
                         "content",
-                        "output_file",
-                        "output_type",
                         "output_schema",
-                        "input_files",
+                        "input_tasks",
                         "max_iterations",
                         "model",
                         "is_intermediate_result",
-                        "batch_processing",
                     ],
                 },
             },
@@ -300,21 +184,10 @@ all planning activities:
 2.  **Atomic Subtasks:** Decompose objectives into the smallest logical, 
     executable units (subtasks).
 3.  **Clear Data Flow:** Define explicit data dependencies between 
-    subtasks using `input_files` and `output_file`. Ensure this forms a 
-    Directed Acyclic Graph (DAG – no cycles).
-4.  **Relative & Unique Paths:** ALL file paths MUST be relative to the 
-    workspace root (e.g., `file.txt`) and `output_file` paths MUST 
-    be unique. Absolute paths or `workspace/` prefixes are forbidden. 
-    All file paths MUST be flat at the workspace root (e.g., 
-    `interim_file.json`, `final_output.pdf`), not in subdirectories. 
-    Paths *refer to files only*, not directories, unless they are initial 
-    input directories.
+    subtasks using `input_tasks`.
+4.  **Unique Subtask IDs:** ALL subtask IDs MUST be unique and descriptive.
 5.  **Tool Usage:** When a phase requires generating the plan (Phase 2), 
     use the `create_task` tool as instructed.
-6.  **Optimization:** Design plans that minimize unnecessary context.
-7.  **Result Passing:** Plan for subtasks to pass results efficiently, 
-    preferring file pointers (`{"path": "relative/path"}`) for non-trivial 
-    data.
 """
 
 # Make sure the phase prompts are concrete and focused
@@ -323,22 +196,24 @@ ANALYSIS_PHASE_TEMPLATE = """
 
 ## Goal
 Your primary goal in this phase is to deeply understand the user's objective.
-Based on this understanding, and considering available input files and overall
-output requirements, you will then devise a strategic execution plan. This plan
-will consist of a list of conceptual subtasks designed to achieve the objective.
+Based on this understanding and overall output requirements, you will devise a 
+strategic execution plan. This plan will consist of a list of conceptual subtasks 
+designed to achieve the objective.
 
 Specifically, you must:
 - **Clarify Objective Understanding:**
     - Articulate your interpretation of the user's core goal.
     - Identify any ambiguities in the objective and state your assumptions.
     - Consider how the desired final output (type and schema) informs the objective.
+    - Consider how the provided inputs can be utilized in your plan.
 - **Devise Strategic Plan:**
     - Based on your understanding, decompose the objective into distinct, atomic
       subtasks suitable for agent execution.
     - If the objective involves processing multiple similar items independently
-      (e.g., a list of files or URLs), plan for a separate subtask for each
+      (e.g., a list of URLs or data points), plan for a separate subtask for each
       item where appropriate.
     - Design subtasks with minimal execution context in mind.
+    - Consider which inputs will be needed by which subtasks.
 
 ## Return Format
 Provide your output in the following structure:
@@ -350,6 +225,9 @@ Provide your output in the following structure:
             inferred from the objective and the overall task output requirements.
         *   If there were ambiguities in the objective, explicitly state the
             assumptions you made to resolve them.
+    *   **Input Analysis:**
+        *   Describe how the provided inputs will be used in your plan.
+        *   Identify which inputs are critical for which conceptual subtasks.
     *   **Subtask Rationale:**
         *   Explain how your interpretation of the objective led to the
             proposed conceptual subtask breakdown.
@@ -357,17 +235,16 @@ Provide your output in the following structure:
         *   Describe how you considered parallel processing and planned the
             initial data flow at a high level.
     *   When referring to conceptual tasks in your reasoning, use the
-        '$short_name' convention (e.g., $read_data, $process_item).
+        '$short_name' convention (e.g., $fetch_data, $process_item).
 
 2.  **Task List:**
     *   List each conceptual subtask.
     *   For each subtask, provide its '$short_name' and a brief, clear
         description on a single line.
-    *   Example: `$process_file - Processes the content of a single input
-        file.`
+    *   Example: `$analyze_data - Analyzes the fetched data and extracts insights.`
 
 ## Warnings
-- Focus on *conceptual* subtasks here. Detailed file paths and schemas
+- Focus on *conceptual* subtasks here. Detailed schemas and dependencies
   will be defined in the next phase.
 - Ensure your reasoning clearly justifies the proposed subtask breakdown based
   on your understanding of the objective.
@@ -377,15 +254,14 @@ Provide your output in the following structure:
 **User's Objective:**
 {{ objective }}
 
-**Overall Task Output Requirements:**
-- Type: {{ overall_output_type }}
-- Schema: {{ overall_output_schema }}
+**Available Inputs:**
+{{ inputs_info }}
+
+**Output Schema:**
+{{ output_schema }}
 
 **Execution Tools Available (for the Agent to potentially use later):**
 {{ execution_tools_info }}
-
-**Initial Input Files:**
-{{ input_files_info }}
 """
 
 DATA_FLOW_ANALYSIS_TEMPLATE = """
@@ -393,17 +269,16 @@ DATA_FLOW_ANALYSIS_TEMPLATE = """
 
 ## Goal
 Your goal in this phase is to refine the conceptual subtask plan from Phase 0 
-by defining the precise data flow, dependencies, and contracts (input/output 
-files) for each subtask. You should also visualize this data flow.
+by defining the precise data flow and dependencies between subtasks. You should 
+also visualize this data flow.
 
 Specifically, you must:
 - Review the conceptual subtask list generated in Phase 0 (available in the 
   conversation history).
-- For each conceptual subtask, determine its `input_files` and a unique 
-  `output_file`. These paths can refer to files or directories and MUST be 
-  relative.
-- Establish the dependencies between subtasks based on these file inputs 
-  and outputs.
+- For each conceptual subtask, determine which other subtasks it depends on 
+  for input data (via their task IDs).
+- Subtasks can also depend on input keys from the provided inputs dictionary.
+- Establish the dependencies between subtasks based on data flow requirements.
 - Refine the high-level instructions for each subtask if necessary, keeping 
   them concise.
 - Ensure the subtask(s) producing the final result will generate output 
@@ -413,57 +288,52 @@ Specifically, you must:
 Provide your output in the following structure:
 
 1.  **Reasoning & Data Flow Analysis:**
-    *   Explain your data flow design choices, detailing how `input_files` 
-        and `output_file` were determined for each subtask from Phase 0.
+    *   Explain your data flow design choices, detailing how dependencies 
+        were determined for each subtask from Phase 0.
+    *   Identify which subtasks will use input keys directly from the inputs dictionary.
     *   Describe any refinements made to subtask instructions.
     *   Use the '$name' convention when referring to tasks from Phase 0 in 
         your reasoning.
 
 2.  **Data Flow (DOT/Graphviz Representation):**
-    *   Describe the data flow between all subtasks and files using the 
-        DOT/Graphviz syntax (see "Data Flow Representation (DOT/Graphviz 
-        Syntax) Guide" in Context Dump below).
+    *   Describe the data flow between all subtasks using the DOT/Graphviz 
+        syntax (see "Data Flow Representation (DOT/Graphviz Syntax) Guide" 
+        in Context Dump below).
+    *   Include input keys as source nodes in your graph when subtasks depend on them.
     *   The process steps in your DOT graph should correspond to the 
         '$short_name' of the conceptual subtasks.
     *   Example:
         ```dot
         digraph DataPipeline {
-          "input_file1.json" -> "$process_step_A";
-          "input_file2.csv" -> "$process_step_A";
-          "$process_step_A" -> "intermediate_A.json"; // Output of 
-          $process_step_A
-          "intermediate_A.json" -> "$process_step_B";
-          "$process_step_B" -> "final_output.pdf";      // Output of 
-          $process_step_B
+          "input:data_file" -> "$process_data";
+          "$fetch_data" -> "$process_data";
+          "$process_data" -> "$analyze_results";
+          "$analyze_results" -> "$generate_report";
         }
         ```
 
 ## Warnings
 - **DAG Requirement:** The defined dependencies MUST form a Directed Acyclic Graph (DAG). No circular dependencies.
-- **Relative & Unique Paths:** All file paths (`input_files`, `output_file`) MUST be relative to the workspace root and at the top level (e.g., `temp_file.csv`, `report.pdf`). Each `output_file` MUST be unique. No subdirectories. Do NOT use absolute paths or the `/workspace/` prefix. Paths refer to files only.
+- **Input Keys:** Input keys can be referenced in input_tasks using their key names from the inputs dictionary.
 - **Clarity:** Your reasoning should clearly link the conceptual tasks from 
   Phase 0 to the concrete data flow defined here.
-- **Final Output:** Ensure the final subtask(s) produce output matching the 
-  overall task requirements (Type: `{{ overall_output_type }}`, Schema: 
-  `{{ overall_output_schema }}`).
 
 ## Context Dump
 **User's Objective:**
 {{ objective }}
 
+**Available Inputs:**
+{{ inputs_info }}
+
 **Conceptual Subtask Plan from Phase 0:**
 (This will be available in the preceding conversation history. Please refer to 
 it.)
 
-**Overall Task Output Requirements:**
-- Type: {{ overall_output_type }}
-- Schema: {{ overall_output_schema }}
+**Output Schema:**
+{{ output_schema }}
 
 **Execution Tools Available (for the Agent to potentially use later):**
 {{ execution_tools_info }}
-
-**Initial Input Files (available to the first subtasks):**
-{{ input_files_info }}
 
 **Data Flow Representation (DOT/Graphviz Syntax) Guide:**
 {{ COMPACT_SUBTASK_NOTATION_DESCRIPTION }}
@@ -488,17 +358,15 @@ Your response MUST be structured as follows:
     *   Provide your comprehensive reasoning for constructing the final 
         executable task plan.
     *   Explain how you translated the refined conceptual subtasks and data 
-        flow (from Phase 1, including DOT graph and CSN strings if applicable) 
-        into the specific arguments for the `create_task` tool.
-    *   Detail your decisions for `content`, `input_files`, `output_file`, 
-        `output_type`, `output_schema`, `max_iterations`, `model`, and `is_intermediate_result` for 
-        each subtask.
+        flow (from Phase 1, including DOT graph if applicable) into the 
+        specific arguments for the `create_task` tool.
+    *   Detail your decisions for `content`, `input_tasks`, `output_schema`, 
+        `max_iterations`, `model`, and `is_intermediate_result` for each subtask.
     *   Confirm how you ensured all validation criteria (see Warnings section) 
-        were met, including dependency management (DAG), path correctness, 
-        and final output conformance.
+        were met, including dependency management (DAG) and final output conformance.
     *   If helpful, mentally construct or briefly describe the final data flow 
-        (as a DOT concept) based on the `input_files` and `output_file` you 
-        are defining for the `create_task` call.
+        (as a DOT concept) based on the `input_tasks` dependencies you are 
+        defining for the `create_task` call.
     *   Refer to conceptual tasks using the '$name' convention where 
         appropriate in your reasoning.
 
@@ -518,21 +386,20 @@ Adhere strictly to the following when constructing the arguments for the
     an object representing a subtask.
 
 **For Each Subtask:**
+*   **`id`:** Unique identifier for the subtask (e.g., "fetch_data", "analyze_results").
 *   **`content` (Agent Instructions):**
     *   MUST be high-level natural language instructions for the agent.
     *   Focus on *what* the agent should achieve, not *how*.
-*   **`input_files`:**
+    *   If the subtask uses input keys, mention which inputs it should use.
+*   **`input_tasks`:**
     *   Determine from the data flow graph (Phase 1).
-    *   List all relative paths to files/directories this subtask depends on.
-*   **`output_file`:**
-    *   Determine from the data flow graph (Phase 1).
-    *   MUST be a unique, relative file path at the workspace root (e.g., `data.json`, `final_report.pdf`). No subdirectories.
-*   **`output_type`:** Specify the correct file format of the output (e.g., 
-    'json', 'markdown', 'csv').
+    *   List all subtask IDs that this subtask depends on for input data.
+    *   Can also include input keys from the inputs dictionary (e.g., if inputs has a key "data_file", you can include "data_file" in input_tasks).
+    *   Use an empty array [] if this is an initial subtask with no dependencies.
 *   **`output_schema`:**
     *   Provide as a valid JSON string (e.g., `'{"type": "string"}'` for 
         unstructured, or a more detailed schema).
-    *   Derive from `output_type` or use a default if appropriate.
+    *   This describes the structure of the result object the subtask will produce.
 *   **`max_iterations`:**
     *   Set an integer value based on the subtask's complexity.
     *   Use values like 5 for simple tasks, 10-15 for complex analysis. 
@@ -544,48 +411,45 @@ Adhere strictly to the following when constructing the arguments for the
             requiring complex analysis, code generation, or significant reasoning.
     *   If unsure, default to `{{ model }}`.
 *   **`is_intermediate_result` (Boolean):**
-    *   Set to `true` if the subtask's `output_file` is primarily consumed by another subtask in the plan and is NOT a primary final output of the overall objective.
-    *   Set to `false` if the subtask's `output_file` represents a final deliverable for the user, or if it's a terminal output that directly contributes to the overall task goal (even if it's not the *only* final output).
-    *   **Crucially for multiple outputs:** If the objective requires several distinct final files (e.g., a text report and a separate image), ensure that each subtask producing one such final file has `is_intermediate_result: false`.
-    *   Consider the `Overall Task Output Requirements` when deciding this for terminal subtasks.
+    *   Set to `true` if the subtask's output is primarily consumed by another 
+        subtask in the plan and is NOT a primary final output of the overall objective.
+    *   Set to `false` if the subtask's output represents a final deliverable 
+        for the user, or if it's a terminal output that directly contributes to 
+        the overall task goal.
+    *   Consider the `Overall Task Output Requirements` when deciding this for 
+        terminal subtasks.
 
 **Plan-Wide Validation (Perform these checks *before* calling the tool):**
-*   **Path Correctness:** All file paths (`input_files`, `output_file`) 
-    MUST be relative to the workspace root and at the top level (e.g., `data.txt` or `final_report.csv`). No subdirectories. No absolute paths or `/workspace/` prefix. Paths refer to files only.
-*   **Unique Output Files:** Ensure ALL `output_file` paths are unique across 
-    the entire plan.
-*   **DAG Dependencies:** Subtask dependencies, as defined by `input_files` 
-    referencing `output_file` of other tasks, MUST form a Directed Acyclic 
-    Graph (DAG). No cycles.
-*   **Input Availability:** Ensure inputs for a subtask are produced by 
-    preceding tasks or are part of the initial `Input Files`.
-*   **Context Minimization:** Keep subtasks focused. Prefer passing results 
-    via file pointers (`{"path": "..."}`) within the agent's `finish_subtask` 
-    call to keep context small, especially for larger data.
+*   **Unique IDs:** Ensure ALL subtask `id` values are unique across the entire plan.
+*   **DAG Dependencies:** Subtask dependencies, as defined by `input_tasks` 
+    referencing other subtask IDs or input keys, MUST form a Directed Acyclic Graph (DAG). 
+    No cycles.
+*   **Input Availability:** Ensure each subtask only references task IDs that 
+    exist in the plan or input keys that exist in the inputs dictionary.
+*   **Context Minimization:** Keep subtasks focused. The agent will pass results 
+    as objects between subtasks automatically.
 *   **Final Output Conformance:** The plan's final output (from the terminal 
-    subtask(s)) MUST conform to the overall task requirements (Type: 
-    `{{ overall_output_type }}`, Schema: `{{ overall_output_schema }}`).
+    subtask(s)) MUST conform to the output schema.
 
 **Agent Execution Notes (for your planning awareness):**
-*   Agents executing these subtasks will call `finish_subtask`.
-*   They will pass small result content directly or, preferably, a file 
-    pointer `{"path": "relative/path/..."}` for larger data/files.
-*   If a subtask requires significant reasoning, the *agent* might use a 
-    reasoning tool; this is distinct from your `model` selection for the 
-    subtask itself.
+*   Agents executing these subtasks will call `finish_subtask` with result objects.
+*   Results are automatically passed between subtasks based on `input_tasks` dependencies.
+*   The agent uses the `read_result` tool to fetch results from upstream tasks or input keys.
+*   Input keys from the inputs dictionary are available in the context and can be referenced the same way as task results.
 
 ## Context Dump
 **User's Objective:**
 {{ objective }}
 
+**Available Inputs:**
+{{ inputs_info }}
+
 **Conceptual Subtasks & Data Flow (from Phase 1):**
 (Refer to the conversation history for the refined subtask list and DOT 
-graph from Phase 1. You should parse any CSN strings or the DOT graph to 
-inform your `create_task` call.)
+graph from Phase 1 to inform your `create_task` call.)
 
-**Overall Task Output Requirements:**
-- Type: {{ overall_output_type }}
-- Schema: {{ overall_output_schema }}
+**Output Schema:**
+{{ output_schema }}
 
 **Planner's LLM Models Available:**
 - Primary Model: `{{ model }}`
@@ -593,9 +457,6 @@ inform your `create_task` call.)
 
 **Execution Tools Available (for the Agent to potentially use within a subtask):**
 {{ execution_tools_info }}
-
-**Initial Input Files (available to the first subtasks):**
-{{ input_files_info }}
 """
 
 # Agent task prompt used in the final planning stage
@@ -608,69 +469,13 @@ aspects for *each* subtask:
 
 1.  **Clarity of Purpose:** Is the `content` a crystal-clear, high-level 
     objective for an autonomous agent?
-2.  **Self-Containment (Inputs):** Does `input_files` correctly list *all* 
-    necessary data for the subtask to run independently once those files 
-    are available?
-3.  **Output Precision:** Is the `output_file` path unique? Does 
-    `output_type` and `output_schema` accurately describe what will be 
-    produced?
+2.  **Self-Containment (Inputs):** Does `input_tasks` correctly list all 
+    upstream task dependencies that this subtask needs?
+3.  **Output Precision:** Does `output_schema` accurately describe the 
+    structure of the result object that will be produced?
 
 Ensure your overall plan effectively addresses the original `{{ objective }}` 
 using the available resources and adheres to the final output requirements.
-"""
-
-
-# --- Tiered Planning ---
-# Added a new enum-like structure for planning tiers
-class PlanningTier:
-    """Defines the complexity tiers for planning strategies."""
-
-    TIER_LOW_COMPLEXITY = "Low Complexity"  # Analysis -> Plan Creation
-    TIER_HIGH_COMPLEXITY = "High Complexity"  # Analysis -> Data Flow -> Plan Creation
-    DEFAULT = TIER_HIGH_COMPLEXITY  # Default to full planning if reflection fails
-
-    @classmethod
-    def from_string(cls, s: str) -> str:
-        """Parse a string to determine the corresponding planning tier.
-
-        Args:
-            s: The string to parse, expected to contain "Low Complexity" or "High Complexity".
-
-        Returns:
-            The identified planning tier string
-            or the default tier if no match is found.
-        """
-        if "Low Complexity" in s:  # Match the exact string for robustness
-            return cls.TIER_LOW_COMPLEXITY
-        elif "High Complexity" in s:  # Match the exact string
-            return cls.TIER_HIGH_COMPLEXITY
-        return cls.DEFAULT
-
-
-SELF_REFLECTION_PROMPT_TEMPLATE = """
-# Objective Complexity Assessment
-
-## Context:
-You are an expert at assessing the complexity of a given objective to determine the most efficient planning strategy.
-
-**Objective:**
-{{ objective }}
-
-**Initial Input Files:**
-{{ input_files_info }}
-
-**Overall Task Output Requirements:**
-- Type: {{ overall_output_type }}
-- Schema: {{ overall_output_schema }}
-
-## Task:
-Based on the objective, inputs, and desired outputs, classify the objective's complexity into one of the following tiers.
-Respond with ONLY the tier name (e.g., "Low Complexity" or "High Complexity"). Your response must contain nothing else.
-
-*   **Low Complexity:** The planning process involves an initial analysis of the objective to define conceptual subtasks, followed directly by the creation of the executable plan. This tier bypasses the explicit data flow definition phase. (Phases: Analysis -> Plan Creation)
-*   **High Complexity:** The planning process is comprehensive, including an initial analysis to define conceptual subtasks, a dedicated phase to define detailed data flows and dependencies between these subtasks, and finally, the creation of the executable plan. (Phases: Analysis -> Data Flow Analysis -> Plan Creation)
-
-**Your Classification (Low Complexity or High Complexity):**
 """
 
 
@@ -694,8 +499,7 @@ class TaskPlanner:
         and `output_file` for each subtask. Crucially, it
         establishes the dependency graph, ensuring subtasks run only after their
         required inputs are available. This forms a Directed Acyclic Graph (DAG).
-    4.  **Contracts:** Defining the expected data format (`output_type`,
-        `output_schema`) for each subtask's output, promoting type safety and
+    4.  **Contracts:** Defining the expected data format (`output_schema`) for each subtask's output, promoting type safety and
         predictable integration between steps.
     5.  **Workspace Management:** Enforcing the use of *relative* file paths within
         a defined workspace, preventing dangerous absolute path manipulations and
@@ -746,7 +550,6 @@ class TaskPlanner:
         display_manager (AgentConsole): Handles Rich display output.
         jinja_env (Environment): Jinja2 environment for rendering prompts.
         tasks_file_path (Path): Path where the plan might be saved/loaded (`tasks.yaml`).
-        current_planning_tier (str): The current planning tier determined by self-reflection.
     """
 
     def __init__(
@@ -757,10 +560,9 @@ class TaskPlanner:
         workspace_dir: str,
         execution_tools: Sequence[Tool],
         reasoning_model: str | None = None,
-        input_files: Optional[Sequence[str]] = None,
+        inputs: dict[str, Any] = {},
         system_prompt: str | None = None,
         output_schema: dict | None = None,
-        output_type: str | None = None,
         enable_analysis_phase: bool = True,
         enable_data_contracts_phase: bool = True,
         use_structured_output: bool = False,
@@ -776,22 +578,15 @@ class TaskPlanner:
             objective (str): The objective to solve
             workspace_dir (str): The workspace directory path
             execution_tools (List[Tool]): Tools available for subtask execution.
-            input_files (list[str]): The input files to use for planning
+            inputs (dict[str, Any]): The inputs to use for planning
             system_prompt (str, optional): Custom system prompt
             output_schema (dict, optional): JSON schema for the final task output
-            output_type (str, optional): The type of the final task output
             enable_analysis_phase (bool, optional): Whether to run the analysis phase (PHASE 0)
             enable_data_contracts_phase (bool, optional): Whether to run the data contracts phase (PHASE 1)
             use_structured_output (bool, optional): Whether to use structured output for plan creation
             verbose (bool, optional): Whether to print planning progress table (default: True)
         """
-        logger.debug(
-            f"Initializing TaskPlanner with model={model}, reasoning_model={reasoning_model}, "
-            f"objective='{objective[:100]}...', workspace_dir={workspace_dir}, "
-            f"enable_analysis_phase={enable_analysis_phase}, "
-            f"enable_data_contracts_phase={enable_data_contracts_phase}, "
-            f"use_structured_output={use_structured_output}, verbose={verbose}"
-        )
+        # Note: debug logging will be handled by display_manager initialization
 
         self.provider: ChatProvider = provider
         self.model: str = model
@@ -799,79 +594,24 @@ class TaskPlanner:
         self.objective: str = objective
         self.workspace_dir: str = workspace_dir
         self.task_plan: TaskPlan = TaskPlan()
-        # Clean and validate initial input files relative to workspace
-        cleaned_files = input_files or []
-        logger.debug(f"Processing {len(cleaned_files)} initial input files")
-        self.input_files: List[str] = [
-            self._clean_and_validate_path(f, "initial input files")
-            for f in cleaned_files
-        ]
-        logger.debug(f"Cleaned input files: {self.input_files}")
-
-        self.system_prompt: str = self._customize_system_prompt(system_prompt)
-        logger.debug(
-            f"System prompt customized, length: {len(self.system_prompt)} chars"
-        )
-
+        self.inputs: dict[str, Any] = inputs
+        self.system_prompt: str = system_prompt or DEFAULT_PLANNING_SYSTEM_PROMPT
         self.execution_tools: Sequence[Tool] = execution_tools or []
-        logger.debug(
-            f"Available execution tools: {[tool.name for tool in self.execution_tools]}"
-        )
-
         self.output_schema: Optional[dict] = output_schema
-        self.output_type: Optional[str] = output_type
         self.enable_analysis_phase: bool = enable_analysis_phase
         self.enable_data_contracts_phase: bool = enable_data_contracts_phase
         self.use_structured_output: bool = use_structured_output
         self.verbose: bool = verbose
         self.tasks_file_path: Path = Path(workspace_dir) / "tasks.yaml"
         self.display_manager = AgentConsole(verbose=self.verbose)
-        self.current_planning_tier: str = PlanningTier.DEFAULT  # Added
-
-        # Initialize Jinja2 environment
+        self.display_manager.debug(
+            f"Initializing TaskPlanner with model={model}, reasoning_model={reasoning_model}, "
+            f"objective='{objective[:100]}...', workspace_dir={workspace_dir}, "
+            f"enable_analysis_phase={enable_analysis_phase}, "
+            f"enable_data_contracts_phase={enable_data_contracts_phase}, "
+            f"use_structured_output={use_structured_output}, verbose={verbose}"
+        )
         self.jinja_env: Environment = Environment(loader=BaseLoader())
-
-        logger.debug("TaskPlanner initialization completed successfully")
-
-    def _clean_and_validate_path(self, path: Any, context: str) -> str:
-        """Clean and validate a path relative to the workspace directory.
-
-        This is a wrapper around the global `clean_and_validate_path` function,
-        using the instance's `self.workspace_dir`.
-
-        Args:
-            path: The path to clean and validate.
-            context: A string describing the context of the validation.
-
-        Returns:
-            The cleaned and validated relative path.
-
-        Raises:
-            ValueError: If the path is invalid.
-        """
-        logger.debug(f"Cleaning and validating path '{path}' in context: {context}")
-        result = clean_and_validate_path(self.workspace_dir, path, context)
-        logger.debug(f"Path validation result: '{result}'")
-        return result
-
-    def _customize_system_prompt(self, system_prompt: str | None) -> str:
-        """Customize the system prompt based on provider capabilities.
-
-        If a custom `system_prompt` is provided, it's used directly.
-        Otherwise, `DEFAULT_PLANNING_SYSTEM_PROMPT` is used.
-
-        Args:
-            system_prompt: Optional custom system prompt string.
-
-        Returns:
-            The system prompt string to be used.
-        """
-        if system_prompt:
-            base_prompt = system_prompt
-        else:
-            base_prompt = DEFAULT_PLANNING_SYSTEM_PROMPT
-
-        return str(base_prompt)
 
     async def _load_existing_plan(self) -> bool:
         """
@@ -915,18 +655,26 @@ class TaskPlanner:
             if self.output_schema
             else "Not specified (default: string)"
         )
-        overall_output_type_str = (
-            self.output_type if self.output_type else "Not specified (default: string)"
-        )
+
+        # Format inputs information
+        if self.inputs:
+            inputs_info = "The following inputs are available:\n"
+            for key, value in self.inputs.items():
+                # Truncate long values for display
+                value_str = str(value)
+                if len(value_str) > 100:
+                    value_str = value_str[:100] + "..."
+                inputs_info += f"- {key}: {type(value).__name__} = {value_str}\n"
+        else:
+            inputs_info = "No inputs provided."
 
         return {
             "objective": self.objective,
             "model": self.model,  # Add planner's primary model
             "reasoning_model": self.reasoning_model,  # Add planner's reasoning model
             "execution_tools_info": self._get_execution_tools_info(),
-            "input_files_info": self._get_input_files_info(),
-            "overall_output_type": overall_output_type_str,
-            "overall_output_schema": overall_output_schema_str,
+            "output_schema": overall_output_schema_str,
+            "inputs_info": inputs_info,
             "COMPACT_SUBTASK_NOTATION_DESCRIPTION": COMPACT_SUBTASK_NOTATION_DESCRIPTION,
         }
 
@@ -963,9 +711,9 @@ class TaskPlanner:
         """
         Build a directed graph of dependencies between subtasks.
 
-        The graph nodes represent subtasks (identified by their `output_file`).
-        An edge from subtask A to subtask B means B depends on the output of A
-        (i.e., one of B's `input_files` is A's `output_file`).
+        The graph nodes represent subtasks (identified by their `id`) and input keys.
+        An edge from node A to subtask B means B depends on the output of A
+        (i.e., one of B's `input_tasks` is A's `id` or an input key).
 
         Args:
             subtasks: A list of `SubTask` objects.
@@ -973,112 +721,68 @@ class TaskPlanner:
         Returns:
             A `networkx.DiGraph` representing the dependencies.
         """
-        # Create mapping of output files to their subtasks
-        output_to_subtask: Dict[str, SubTask] = {}
-        for subtask in subtasks:
-            output_to_subtask[subtask.output_file] = subtask
-
         G = nx.DiGraph()
 
-        # Add nodes representing subtasks (using output_file as a unique ID proxy for the node)
+        # Add nodes representing subtasks
         for subtask in subtasks:
-            G.add_node(subtask.output_file)  # Node represents the subtask completion
+            G.add_node(subtask.id)  # Node represents the subtask completion
 
-        # Add edges for dependencies: from the *output file* of the dependency task to the *output file* of the current task
+        # Add nodes representing input keys
+        for input_key in self.inputs:
+            G.add_node(input_key)  # Node represents an input
+
+        # Add edges for dependencies
         for subtask in subtasks:
-            if subtask.input_files:
-                for input_file in subtask.input_files:
-                    if input_file in output_to_subtask:
-                        # Get the subtask that produces this input file
-                        producer_subtask = output_to_subtask[input_file]
-                        # Add edge from the producer's node to the current subtask's node
-                        G.add_edge(producer_subtask.output_file, subtask.output_file)
+            if subtask.input_tasks:
+                for dependency in subtask.input_tasks:
+                    # Only add edge if the dependency exists (either as subtask or input)
+                    if (
+                        dependency in [t.id for t in subtasks]
+                        or dependency in self.inputs
+                    ):
+                        G.add_edge(dependency, subtask.id)
 
         return G
 
-    def _check_output_file_conflicts(
-        self, subtasks: List[SubTask]
-    ) -> tuple[List[str], Set[str]]:
-        """Checks for duplicate output files among subtasks.
-
-        Ensures that each subtask defines a unique `output_file`.
-        It also checks that a subtask's primary `output_file` does not
-        conflict with any artifact files if those were to be tracked separately
-        (currently, artifacts are not explicitly handled here beyond primary outputs).
-
-        Args:
-            subtasks: A list of `SubTask` objects.
-
-        Returns:
-            A tuple containing:
-                - A list of string error messages describing any conflicts found.
-                - A set of all unique `output_file` paths generated by the subtasks.
-        """
-        validation_errors: List[str] = []
-        output_files: Dict[str, SubTask] = {}
-        all_generated_files: Set[str] = set()
-
-        for i, subtask in enumerate(subtasks):
-            sub_context = f"Subtask {i} ('{subtask.content[:30]}...')"
-            # Check primary output file
-            if subtask.output_file in output_files:
-                validation_errors.append(
-                    f"{sub_context}: Multiple subtasks trying to write primary output to '{subtask.output_file}'"
-                )
-            elif subtask.output_file in all_generated_files:
-                validation_errors.append(
-                    f"{sub_context}: Primary output file '{subtask.output_file}' conflicts with an artifact from another task."
-                )
-            else:
-                output_files[subtask.output_file] = subtask
-                all_generated_files.add(subtask.output_file)
-
-        return validation_errors, all_generated_files
-
-    def _check_input_file_availability(
-        self, subtasks: List[SubTask], all_generated_files: Set[str]
+    def _check_inputs(
+        self,
+        subtasks: List[SubTask],
     ) -> List[str]:
-        """Checks if all input files for subtasks are available.
+        """Checks if all input task dependencies for subtasks are available.
 
-        An input file is considered available if it's one of the initial
-        input files provided to the planner or if it's an `output_file`
-        of another subtask in the plan.
+        An input task dependency is considered available if it:
+        1. References a valid subtask ID within the current task plan, OR
+        2. References a valid input key from the inputs dictionary
 
         Args:
             subtasks: A list of `SubTask` objects.
-            all_generated_files: A set of all `output_file` paths from the subtasks.
 
         Returns:
-            A list of string error messages for any missing input file dependencies.
+            A list of string error messages for any missing task dependencies.
         """
         validation_errors: List[str] = []
-        available_files: Set[str] = set(self.input_files)
+        tasks_by_id = {task.id: task for task in subtasks}
 
         for subtask in subtasks:
-            if subtask.input_files:
-                for file_path in subtask.input_files:
-                    if (
-                        file_path not in available_files
-                        and file_path not in all_generated_files
-                    ):
+            if subtask.input_tasks:
+                for dependency in subtask.input_tasks:
+                    # Check if it's a valid subtask ID or an input key
+                    if dependency not in tasks_by_id and dependency not in self.inputs:
                         validation_errors.append(
-                            f"Subtask '{subtask.content}' depends on missing file '{file_path}'"
+                            f"Subtask '{subtask.content}' depends on missing subtask or input '{dependency}'"
                         )
         return validation_errors
 
     def _validate_dependencies(self, subtasks: List[SubTask]) -> List[str]:
         """
-        Validate dependencies, file conflicts, and DAG structure for subtasks.
+        Validate task dependencies and DAG structure for subtasks.
 
-        This method performs several checks:
-        1.  Output file conflicts: Ensures no two subtasks write to the same
-            primary output file.
-        2.  Cycle detection: Builds a dependency graph and checks for circular
+        This method performs the following checks:
+        1.  Cycle detection: Builds a dependency graph and checks for circular
             dependencies, which would make execution impossible.
-        3.  Input file availability: Verifies that all `input_files` for each
-            subtask are either part of the initial task inputs or are generated
-            by a preceding subtask.
-        4.  Topological sort feasibility: Checks if a valid linear execution
+        2.  Task availability: Verifies that all `input_tasks` for each
+            subtask reference valid task IDs in the plan.
+        3.  Topological sort feasibility: Checks if a valid linear execution
             order for the subtasks can be determined.
 
         Args:
@@ -1089,179 +793,169 @@ class TaskPlanner:
             describing a validation failure. An empty list indicates
             all dependency checks passed.
         """
-        logger.debug(f"Starting dependency validation for {len(subtasks)} subtasks")
+        self.display_manager.info(
+            f"Starting dependency validation for {len(subtasks)} subtasks"
+        )
         validation_errors: List[str] = []
 
-        # 1. Check for output file conflicts
-        logger.debug("Checking for output file conflicts")
-        output_conflict_errors, all_generated_files = self._check_output_file_conflicts(
-            subtasks
-        )
-        validation_errors.extend(output_conflict_errors)
-        logger.debug(
-            f"Output conflict check found {len(output_conflict_errors)} errors"
-        )
+        # Log subtask summary for debugging
+        subtask_ids = [task.id for task in subtasks]
+        self.display_manager.debug(f"Subtask IDs to validate: {subtask_ids}")
 
-        # 2. Build dependency graph
-        logger.debug("Building dependency graph")
+        for i, task in enumerate(subtasks):
+            self.display_manager.debug(
+                f"Subtask {i}: id='{task.id}', input_tasks={task.input_tasks}"
+            )
+
+        # Build dependency graph
+        self.display_manager.debug("Building dependency graph")
         G = self._build_dependency_graph(subtasks)
-        logger.debug(
+        self.display_manager.info(
             f"Dependency graph built with {G.number_of_nodes()} nodes and {G.number_of_edges()} edges"
         )
 
-        # 3. Check for cycles
-        logger.debug("Checking for circular dependencies")
+        # Log graph structure for debugging
+        if G.number_of_edges() > 0:
+            edges = list(G.edges())
+            self.display_manager.debug(f"Graph edges: {edges}")
+
+        # Check for cycles
+        self.display_manager.debug("Checking for circular dependencies")
         try:
             cycle = nx.find_cycle(G)
             cycle_error = f"Circular dependency detected: {cycle}"
             validation_errors.append(cycle_error)
-            logger.warning(f"Circular dependency found: {cycle}")
+            self.display_manager.error(f"CRITICAL: Circular dependency found: {cycle}")
         except nx.NetworkXNoCycle:
-            logger.debug("No circular dependencies found")
+            self.display_manager.debug("✓ No circular dependencies found")
             pass  # No cycles found, which is good
 
-        # 4. Validate all input files exist before their use
-        logger.debug("Checking input file availability")
-        input_availability_errors = self._check_input_file_availability(
-            subtasks, all_generated_files
-        )
-        validation_errors.extend(input_availability_errors)
-        logger.debug(
-            f"Input availability check found {len(input_availability_errors)} errors"
-        )
+        # Check that all input task dependencies exist
+        self.display_manager.debug("Checking input task availability")
+        input_errors = self._check_inputs(subtasks)
+        validation_errors.extend(input_errors)
+        if input_errors:
+            self.display_manager.error(
+                f"Input task dependency check found {len(input_errors)} errors: {input_errors}"
+            )
+        else:
+            self.display_manager.debug("✓ All input task dependencies are valid")
 
-        # 5. Check if a valid execution order exists (topological sort)
+        # Check if a valid execution order exists (topological sort)
         if not validation_errors:  # Only check if no other critical errors found
-            logger.debug("Checking topological sort feasibility")
+            self.display_manager.debug("Checking topological sort feasibility")
             try:
                 topo_order = list(nx.topological_sort(G))
-                logger.debug(f"Valid execution order found: {topo_order}")
+                self.display_manager.info(
+                    f"✓ Valid execution order found: {topo_order}"
+                )
             except nx.NetworkXUnfeasible:
                 # This might be redundant if cycle check or input availability check failed,
                 # but provides an extra layer of verification.
                 error_msg = "Cannot determine valid execution order due to unresolved dependency issues (potentially complex cycle or missing input)."
                 validation_errors.append(error_msg)
-                logger.error(f"Topological sort failed: {error_msg}")
+                self.display_manager.error(
+                    f"CRITICAL: Topological sort failed: {error_msg}"
+                )
         else:
-            logger.debug(
-                "Skipping topological sort check due to existing validation errors"
+            self.display_manager.warning(
+                f"Skipping topological sort check due to {len(validation_errors)} existing validation errors"
             )
 
-        logger.debug(
-            f"Dependency validation completed with {len(validation_errors)} total errors"
-        )
+        if validation_errors:
+            self.display_manager.error(
+                f"❌ Dependency validation FAILED with {len(validation_errors)} total errors: {validation_errors}"
+            )
+        else:
+            self.display_manager.info(
+                f"✅ Dependency validation PASSED - all {len(subtasks)} subtasks validated successfully"
+            )
         return validation_errors
 
-    async def _run_self_reflection_phase(
-        self, history: List[Message]
+    async def _run_phase(
+        self,
+        history: List[Message],
+        phase_name: str,
+        phase_display_name: str,
+        is_enabled: bool,
+        prompt_template: str,
+        phase_result_name: str,
     ) -> tuple[List[Message], Optional[PlanningUpdate]]:
-        """Runs self-reflection to determine planning complexity tier.
+        """Generic method to run a planning phase.
 
-        This phase uses the LLM to assess the user's objective and classify
-        its complexity into high or low. The result dictates which subsequent planning
-        phases (Analysis, Data Flow) are executed.
-
-        The prompt used for self-reflection (`SELF_REFLECTION_PROMPT_TEMPLATE`)
-        is not added to the main planning history.
+        This method handles the common pattern for executing planning phases:
+        - Checking if phase is enabled
+        - Generating prompt using template
+        - Updating display before/after LLM call
+        - Calling the LLM
+        - Formatting the response
+        - Creating PlanningUpdate
 
         Args:
             history: The current list of messages in the planning conversation.
-                     This list is not modified by this method.
+            phase_name: The name of the phase for logging (e.g., "analysis", "data flow").
+            phase_display_name: The display name for UI (e.g., "0. Analysis", "1. Data Contracts").
+            is_enabled: Whether this phase is enabled.
+            prompt_template: The template string to render for the prompt.
+            phase_result_name: The name to use in the PlanningUpdate (e.g., "Analysis", "Data Flow").
 
         Returns:
             A tuple containing:
-                - The original, unmodified history.
-                - A `PlanningUpdate` object summarizing the outcome of this phase,
-                  or None if an error occurs that prevents update generation.
+                - The updated history with messages from this phase.
+                - A `PlanningUpdate` object summarizing the outcome, or None if skipped.
         """
-        logger.debug("Starting self-reflection phase")
+        self.display_manager.set_current_phase(phase_result_name)
+        self.display_manager.debug(f"Starting {phase_name} phase")
 
-        # Skip self-reflection if data contracts phase is disabled globally
-        if not self.enable_data_contracts_phase:
-            logger.debug("Skipping self-reflection: data contracts phase disabled")
+        if not is_enabled:
+            self.display_manager.debug(
+                f"Skipping {phase_name} phase: disabled by global flag"
+            )
             self.display_manager.update_planning_display(
-                "-1. Self-Reflection",
-                "Skipped",
-                Text(
-                    "Skipped as Data Contracts phase is disabled. Tier defaulted to Low Complexity."
-                ),
+                phase_display_name, "Skipped", "Phase disabled by global flag."
             )
-            self.current_planning_tier = PlanningTier.TIER_LOW_COMPLEXITY
-            planning_update = PlanningUpdate(
-                phase="Self-Reflection",
-                status="Skipped",
-                content="Skipped as Data Contracts phase is disabled. Tier defaulted to Low Complexity.",
-            )
-            return history, planning_update
+            return history, None
 
-        reflection_prompt_content: str = self._render_prompt(
-            SELF_REFLECTION_PROMPT_TEMPLATE
+        self.display_manager.debug(f"Generating {phase_name} prompt")
+        prompt_content: str = self._render_prompt(prompt_template)
+        self.display_manager.debug(
+            f"{phase_name.capitalize()} prompt generated, length: {len(prompt_content)} chars"
         )
-        logger.debug(
-            f"Generated reflection prompt, length: {len(reflection_prompt_content)} chars"
+        history.append(Message(role="user", content=prompt_content))
+
+        # Update display before LLM call
+        self.display_manager.update_planning_display(
+            phase_display_name, "Running", f"Generating {phase_name}..."
         )
 
-        # We don't add the prompt to history for this special call,
-        # as it's a meta-instruction for the planner itself.
-        # However, the response from the LLM (the tier) can be logged.
+        self.display_manager.debug(
+            f"Calling LLM for {phase_name} using model: {self.model}"
+        )
+        response_message: Message = await self.provider.generate_message(
+            messages=history, model=self.model, tools=[]  # Explicitly empty list
+        )
+        history.append(response_message)
+        self.display_manager.debug(
+            f"{phase_name.capitalize()} phase LLM response received, content length: "
+            f"{len(str(response_message.content)) if response_message.content else 0} chars"
+        )
+
+        phase_status: str = "Completed"
+        phase_content: str | Text = self._format_message_content(response_message)
+        self.display_manager.debug(
+            f"{phase_name.capitalize()} phase completed with status: {phase_status}"
+        )
 
         self.display_manager.update_planning_display(
-            "-1. Self-Reflection", "Running", "Assessing objective complexity..."
+            phase_display_name, phase_status, phase_content
         )
 
-        try:
-            logger.debug(
-                f"Calling LLM for self-reflection using model: {self.reasoning_model}"
-            )
-            # Use a separate call, not part of the main history chain for planning
-            # Use the reasoning_model for this critical decision.
-            reflection_message: Message = await self.provider.generate_message(
-                messages=[Message(role="user", content=reflection_prompt_content)],
-                model=self.reasoning_model,  # Use reasoning model for this step
-                tools=[],
-                max_tokens=10,  # Expecting a very short response like "Tier X"
-            )
-
-            tier_response_content = str(reflection_message.content).strip()
-            logger.debug(f"LLM self-reflection response: '{tier_response_content}'")
-
-            self.current_planning_tier = PlanningTier.from_string(tier_response_content)
-            logger.debug(f"Determined planning tier: {self.current_planning_tier}")
-
-            phase_status = "Completed"
-            phase_content = f"Determined Planning Tier: {self.current_planning_tier}"
-            if (
-                self.current_planning_tier == PlanningTier.DEFAULT
-                and tier_response_content
-                not in [
-                    PlanningTier.TIER_LOW_COMPLEXITY,
-                    PlanningTier.TIER_HIGH_COMPLEXITY,
-                ]
-            ):
-                phase_status = "Warning"
-                phase_content += f" (LLM response: '{tier_response_content}', defaulted to {PlanningTier.DEFAULT})"
-                logger.warning(
-                    f"Unexpected tier response, defaulted: {tier_response_content}"
-                )
-
-        except Exception as e:
-            logger.error(f"Error during self-reflection: {e}", exc_info=True)
-            self.current_planning_tier = PlanningTier.DEFAULT
-            phase_status = "Failed"
-            phase_content = f"Error during self-reflection: {e}. Defaulting to {self.current_planning_tier}"
-            # Log the error if verbose or always for critical failures
-            self.display_manager.print(f"[red]Self-reflection error: {e}[/red]")
-
-        logger.debug(f"Self-reflection phase completed with status: {phase_status}")
-        self.display_manager.update_planning_display(
-            "-1. Self-Reflection", phase_status, Text(str(phase_content))
-        )
         planning_update = PlanningUpdate(
-            phase="Self-Reflection",
+            phase=phase_result_name,
             status=phase_status,
             content=str(phase_content),
         )
-        # Do not append reflection messages to the main planning history
+
         return history, planning_update
 
     async def _run_analysis_phase(
@@ -1286,56 +980,14 @@ class TaskPlanner:
                 - The updated history with messages from this phase.
                 - A `PlanningUpdate` object summarizing the outcome, or None if skipped.
         """
-        logger.debug("Starting analysis phase")
-
-        if not self.enable_analysis_phase:
-            logger.debug("Skipping analysis phase: disabled by global flag")
-            self.display_manager.update_planning_display(
-                "0. Analysis", "Skipped", "Phase disabled by global flag."
-            )
-            return history, None
-
-        # Skip based on determined tier - REMOVED
-        # Analysis phase runs for both Low and High complexity tiers,
-        # so tier-based skipping is removed from here.
-        # It is only skipped if self.enable_analysis_phase is False (handled above).
-
-        logger.debug("Generating analysis prompt")
-        analysis_prompt_content: str = self._render_prompt(ANALYSIS_PHASE_TEMPLATE)
-        logger.debug(
-            f"Analysis prompt generated, length: {len(analysis_prompt_content)} chars"
+        return await self._run_phase(
+            history=history,
+            phase_name="analysis",
+            phase_display_name="0. Analysis",
+            is_enabled=self.enable_analysis_phase,
+            prompt_template=ANALYSIS_PHASE_TEMPLATE,
+            phase_result_name="Analysis",
         )
-        history.append(Message(role="user", content=analysis_prompt_content))
-
-        # Update display before LLM call
-        self.display_manager.update_planning_display(
-            "0. Analysis", "Running", "Generating analysis..."
-        )
-
-        logger.debug(f"Calling LLM for analysis using model: {self.model}")
-        analysis_message: Message = await self.provider.generate_message(
-            messages=history, model=self.model, tools=[]  # Explicitly empty list
-        )
-        history.append(analysis_message)
-        logger.debug(
-            f"Analysis phase LLM response received, content length: {len(str(analysis_message.content)) if analysis_message.content else 0} chars"
-        )
-
-        phase_status: str = "Completed"
-        phase_content: str | Text = self._format_message_content(analysis_message)
-        logger.debug(f"Analysis phase completed with status: {phase_status}")
-
-        self.display_manager.update_planning_display(
-            "0. Analysis", phase_status, phase_content
-        )
-
-        planning_update = PlanningUpdate(
-            phase="Analysis",
-            status=phase_status,
-            content=str(phase_content),
-        )
-
-        return history, planning_update
 
     async def _run_data_flow_phase(
         self, history: List[Message]
@@ -1349,8 +1001,6 @@ class TaskPlanner:
 
         This phase can be skipped if:
         - `self.enable_data_contracts_phase` is False.
-        - The `self.current_planning_tier` is `PlanningTier.TIER_1_SIMPLE` or
-          `PlanningTier.TIER_2_MODERATE`.
 
         Args:
             history: The current list of messages in the planning conversation.
@@ -1361,63 +1011,14 @@ class TaskPlanner:
                 - The updated history with messages from this phase.
                 - A `PlanningUpdate` object summarizing the outcome, or None if skipped.
         """
-        logger.debug("Starting data flow phase")
-
-        if not self.enable_data_contracts_phase:
-            logger.debug("Skipping data flow phase: disabled by global flag")
-            self.display_manager.update_planning_display(
-                "1. Data Contracts", "Skipped", "Phase disabled by global flag."
-            )
-            return history, None
-
-        # Skip based on determined tier
-        if self.current_planning_tier == PlanningTier.TIER_LOW_COMPLEXITY:
-            logger.debug(
-                f"Skipping data flow phase: tier is {self.current_planning_tier}"
-            )
-            self.display_manager.update_planning_display(
-                "1. Data Contracts",
-                "Skipped",
-                f"Skipped due to {self.current_planning_tier} (Low Complexity).",
-            )
-            return history, None
-
-        logger.debug("Generating data flow prompt")
-        data_flow_prompt_content: str = self._render_prompt(DATA_FLOW_ANALYSIS_TEMPLATE)
-        logger.debug(
-            f"Data flow prompt generated, length: {len(data_flow_prompt_content)} chars"
+        return await self._run_phase(
+            history=history,
+            phase_name="data flow",
+            phase_display_name="1. Data Contracts",
+            is_enabled=self.enable_data_contracts_phase,
+            prompt_template=DATA_FLOW_ANALYSIS_TEMPLATE,
+            phase_result_name="Data Flow",
         )
-        history.append(Message(role="user", content=data_flow_prompt_content))
-
-        # Update display before LLM call
-        self.display_manager.update_planning_display(
-            "1. Data Contracts", "Running", "Generating data flow..."
-        )
-
-        logger.debug(f"Calling LLM for data flow analysis using model: {self.model}")
-        data_contracts_message: Message = await self.provider.generate_message(
-            messages=history, model=self.model, tools=[]  # Explicitly empty list
-        )
-        history.append(data_contracts_message)
-        logger.debug(
-            f"Data flow phase LLM response received, content length: {len(str(data_contracts_message.content)) if data_contracts_message.content else 0} chars"
-        )
-
-        phase_status: str = "Completed"
-        phase_content: str | Text = self._format_message_content(data_contracts_message)
-        logger.debug(f"Data flow phase completed with status: {phase_status}")
-
-        self.display_manager.update_planning_display(
-            "1. Data Contracts", phase_status, phase_content
-        )
-
-        planning_update = PlanningUpdate(
-            phase="Data Flow",
-            status=phase_status,
-            content=str(phase_content),
-        )
-
-        return history, planning_update
 
     async def _run_plan_creation_phase(
         self,
@@ -1434,8 +1035,7 @@ class TaskPlanner:
         support it.
 
         The complexity of the plan generated depends on the information
-        gathered in preceding phases (Analysis, Data Flow), which are themselves
-        conditional on the `current_planning_tier`.
+        gathered in preceding phases (Analysis, Data Flow).
 
         Args:
             history: The list of messages from previous planning phases.
@@ -1454,7 +1054,7 @@ class TaskPlanner:
                   otherwise None.
                 - A `PlanningUpdate` object summarizing the outcome of this phase.
         """
-        logger.debug(
+        self.display_manager.debug(
             f"Starting plan creation phase with max_retries={max_retries}, use_structured_output={self.use_structured_output}"
         )
 
@@ -1471,7 +1071,7 @@ class TaskPlanner:
         # The main effect of Tier 1 will be the lack of Analysis and Data Flow history.
 
         if self.use_structured_output:
-            logger.debug("Using structured output for plan creation")
+            self.display_manager.debug("Using structured output for plan creation")
             self.display_manager.update_planning_display(
                 current_phase_name,
                 "Running",
@@ -1483,12 +1083,12 @@ class TaskPlanner:
                 )
                 phase_status = "Success"
                 phase_content = f"Plan created with {len(task.subtasks)} subtasks using structured output."
-                logger.debug(
+                self.display_manager.debug(
                     f"Structured output plan creation successful: {len(task.subtasks)} subtasks"
                 )
                 final_message = None  # Not applicable for structured output path
             except Exception as e:
-                logger.error(
+                self.display_manager.error(
                     f"Structured output plan creation failed: {e}", exc_info=True
                 )
                 plan_creation_error = e
@@ -1496,13 +1096,13 @@ class TaskPlanner:
                 phase_content = f"Structured output failed: {str(e)}\n{traceback.format_exc()}"  # Keep traceback for display
 
         else:  # Use tool-based generation
-            logger.debug("Using tool-based generation for plan creation")
+            self.display_manager.debug("Using tool-based generation for plan creation")
             plan_creation_prompt_content = self._render_prompt(PLAN_CREATION_TEMPLATE)
             agent_task_prompt_content = await self._build_agent_task_prompt_content()
-            logger.debug(
+            self.display_manager.debug(
                 f"Plan creation prompt length: {len(plan_creation_prompt_content)} chars"
             )
-            logger.debug(
+            self.display_manager.debug(
                 f"Agent task prompt length: {len(agent_task_prompt_content)} chars"
             )
 
@@ -1518,7 +1118,9 @@ class TaskPlanner:
                 "Attempting plan creation using the 'create_task' tool...",
             )
             try:
-                logger.debug("Starting tool-based plan generation with retry logic")
+                self.display_manager.debug(
+                    "Starting tool-based plan generation with retry logic"
+                )
                 task, final_message = await self._generate_with_retry(
                     history,
                     tools=[CreateTaskTool()],
@@ -1532,7 +1134,7 @@ class TaskPlanner:
                         if final_message
                         else "Plan created using tool calls."
                     )
-                    logger.debug(
+                    self.display_manager.debug(
                         f"Tool-based plan creation successful: {len(task.subtasks)} subtasks"
                     )
                 else:
@@ -1555,20 +1157,26 @@ class TaskPlanner:
                     ):  # Check if _generate_with_retry raised an error internally
                         failure_reason = f"Tool call generation failed internally: {plan_creation_error}"
 
-                    logger.warning(f"Tool-based plan creation failed: {failure_reason}")
+                    self.display_manager.warning(
+                        f"Tool-based plan creation failed: {failure_reason}"
+                    )
                     plan_creation_error = ValueError(
                         f"Tool call generation failed: {failure_reason}"
                     )
                     phase_content = f"Tool call generation failed: {failure_reason}"
                     phase_status = "Failed"
             except Exception as e:
-                logger.error(f"Tool-based plan creation failed: {e}", exc_info=True)
+                self.display_manager.error(
+                    f"Tool-based plan creation failed: {e}", exc_info=True
+                )
                 plan_creation_error = e
                 phase_status = "Failed"
                 phase_content = f"Tool call generation failed: {str(e)}\n{traceback.format_exc()}"  # Keep traceback for display
 
         # Update Table for Phase 2
-        logger.debug(f"Plan creation phase completed with status: {phase_status}")
+        self.display_manager.debug(
+            f"Plan creation phase completed with status: {phase_status}"
+        )
         self.display_manager.update_planning_display(
             current_phase_name,
             phase_status,
@@ -1598,13 +1206,13 @@ class TaskPlanner:
         Yields PlanningUpdate events during the process.
         Displays a live table summarizing the planning process if verbose mode is enabled.
         """
-        logger.info(
+        self.display_manager.info(
             f"Starting task creation for objective: '{objective[:100]}...' with max_retries={max_retries}"
         )
 
         # Start the live display using the display manager
         self.display_manager.start_live(
-            self.display_manager.create_planning_table("Task Planner")
+            self.display_manager.create_planning_tree("Task Planner")
         )
 
         history: List[Message] = [
@@ -1617,20 +1225,13 @@ class TaskPlanner:
         current_phase = "Initialization"
 
         try:
-            logger.debug("Starting planning phases")
-
-            # Phase -1: Self-Reflection
-            current_phase = "Self-Reflection"
-            logger.debug(f"Entering phase: {current_phase}")
-            yield PlanningUpdate(phase=current_phase, status="Starting", content=None)
-            # Run self-reflection. Note: history is not modified by this special phase call.
-            _, planning_update = await self._run_self_reflection_phase(history)
-            if planning_update:
-                yield planning_update
+            self.display_manager.set_current_phase("Initialization")
+            self.display_manager.debug("Starting planning phases")
 
             # Phase 0: Analysis
             current_phase = "Analysis"
-            logger.debug(f"Entering phase: {current_phase}")
+            self.display_manager.set_current_phase(current_phase)
+            self.display_manager.debug(f"Entering phase: {current_phase}")
             yield PlanningUpdate(phase=current_phase, status="Starting", content=None)
             history, planning_update = await self._run_analysis_phase(history)
             if planning_update:
@@ -1638,7 +1239,8 @@ class TaskPlanner:
 
             # Phase 1: Data Flow Analysis
             current_phase = "Data Flow"
-            logger.debug(f"Entering phase: {current_phase}")
+            self.display_manager.set_current_phase(current_phase)
+            self.display_manager.debug(f"Entering phase: {current_phase}")
             yield PlanningUpdate(phase=current_phase, status="Starting", content=None)
             history, planning_update = await self._run_data_flow_phase(history)
             if planning_update:
@@ -1646,7 +1248,8 @@ class TaskPlanner:
 
             # Phase 2: Plan Creation
             current_phase = "Plan Creation"
-            logger.debug(f"Entering phase: {current_phase}")
+            self.display_manager.set_current_phase(current_phase)
+            self.display_manager.debug(f"Entering phase: {current_phase}")
             yield PlanningUpdate(phase=current_phase, status="Starting", content=None)
             task, plan_creation_error, planning_update = (
                 await self._run_plan_creation_phase(history, objective, max_retries)
@@ -1656,7 +1259,7 @@ class TaskPlanner:
 
             # --- Final Outcome ---
             if task:
-                logger.info(
+                self.display_manager.info(
                     f"Plan created successfully with {len(task.subtasks)} subtasks"
                 )
                 self.display_manager.print(  # Use display manager print
@@ -1672,7 +1275,7 @@ class TaskPlanner:
                         if self.verbose
                         else error_message
                     )
-                    logger.error(f"Task creation failed: {error_message}")
+                    self.display_manager.error(f"Task creation failed: {error_message}")
                     # Yield failure update before raising
                     yield PlanningUpdate(
                         phase=current_phase, status="Failed", content=error_message
@@ -1687,7 +1290,7 @@ class TaskPlanner:
                     raise ValueError(full_error_message) from plan_creation_error
                 else:
                     error_message = "Failed to create valid task after maximum retries in Plan Creation phase for an unknown reason."
-                    logger.error(f"Task creation failed: {error_message}")
+                    self.display_manager.error(f"Task creation failed: {error_message}")
                     # Yield failure update before raising
                     yield PlanningUpdate(
                         phase=current_phase, status="Failed", content=error_message
@@ -1704,7 +1307,7 @@ class TaskPlanner:
         except Exception as e:
             # Capture the original exception type and message
             error_message = f"Planning failed during phase '{current_phase}': {type(e).__name__}: {str(e)}"
-            logger.error(
+            self.display_manager.error(
                 f"Task creation failed during {current_phase}: {e}", exc_info=True
             )
 
@@ -1735,7 +1338,9 @@ class TaskPlanner:
             raise  # Re-raise the caught exception
 
         finally:
-            logger.debug("Stopping live display and completing task creation")
+            self.display_manager.debug(
+                "Stopping live display and completing task creation"
+            )
             # Stop the live display using the display manager
             self.display_manager.stop_live()
 
@@ -1882,49 +1487,97 @@ class TaskPlanner:
                   validation is successful, otherwise None.
                 - A list of string error messages encountered during validation.
         """
+        self.display_manager.debug(
+            f"{sub_context}: Starting tool task validation for tool '{tool_name}'"
+        )
         validation_errors: List[str] = []
         parsed_content: Optional[dict] = None
 
+        # Check if tool exists
         if tool_name not in available_execution_tools:
-            validation_errors.append(
-                f"{sub_context}: Specified tool_name '{tool_name}' is not in the list of available execution tools: {list(available_execution_tools.keys())}."
-            )
+            error_msg = f"Specified tool_name '{tool_name}' is not in the list of available execution tools: {list(available_execution_tools.keys())}."
+            self.display_manager.error(f"{sub_context}: {error_msg}")
+            validation_errors.append(f"{sub_context}: {error_msg}")
             return None, validation_errors
 
         tool_to_use = available_execution_tools[tool_name]
+        self.display_manager.debug(
+            f"{sub_context}: Tool '{tool_name}' found, validating content type: {type(content)}"
+        )
 
         # Validate content is JSON and parse it
         if isinstance(content, dict):
             parsed_content = content  # Already a dict
+            self.display_manager.debug(
+                f"{sub_context}: Content is already a dict with {len(content)} keys"
+            )
         elif isinstance(content, str):
+            self.display_manager.debug(
+                f"{sub_context}: Parsing JSON string content of length {len(content)}"
+            )
             try:
                 parsed_content = json.loads(content) if content.strip() else {}
+                if parsed_content is not None:
+                    self.display_manager.debug(
+                        f"{sub_context}: Successfully parsed JSON with {len(parsed_content)} keys: {list(parsed_content.keys())}"
+                    )
+                else:
+                    self.display_manager.debug(f"{sub_context}: Parsed content is None")
             except json.JSONDecodeError as e:
+                error_msg = (
+                    f"'content' is not valid JSON. Error: {e}. Content: '{content}'"
+                )
+                self.display_manager.error(
+                    f"{sub_context} (tool: {tool_name}): {error_msg}"
+                )
                 validation_errors.append(
-                    f"{sub_context} (tool: {tool_name}): 'content' is not valid JSON. Error: {e}. Content: '{content}'"
+                    f"{sub_context} (tool: {tool_name}): {error_msg}"
                 )
                 return None, validation_errors
         else:
-            validation_errors.append(
-                f"{sub_context} (tool: {tool_name}): Expected JSON string or object for tool arguments, but got {type(content)}. Content: '{content}'"
+            error_msg = f"Expected JSON string or object for tool arguments, but got {type(content)}. Content: '{content}'"
+            self.display_manager.error(
+                f"{sub_context} (tool: {tool_name}): {error_msg}"
             )
+            validation_errors.append(f"{sub_context} (tool: {tool_name}): {error_msg}")
             return None, validation_errors
 
         # Validate the parsed content against the tool's input schema
         if tool_to_use.input_schema and parsed_content is not None:
+            self.display_manager.debug(
+                f"{sub_context}: Validating parsed content against tool schema"
+            )
             try:
                 validate(instance=parsed_content, schema=tool_to_use.input_schema)
+                self.display_manager.debug(
+                    f"{sub_context}: Tool arguments validation successful for '{tool_name}'"
+                )
             except ValidationError as e:
+                error_msg = f"JSON arguments in 'content' do not match the tool's input schema. Error: {e.message}. Path: {'/'.join(map(str, e.path))}. Schema: {e.schema}. Args: {parsed_content}"
+                self.display_manager.error(
+                    f"{sub_context} (tool: {tool_name}): Schema validation failed: {error_msg}"
+                )
                 validation_errors.append(
-                    f"{sub_context} (tool: {tool_name}): JSON arguments in 'content' do not match the tool's input schema. Error: {e.message}. Path: {'/'.join(map(str, e.path))}. Schema: {e.schema}. Args: {parsed_content}"
+                    f"{sub_context} (tool: {tool_name}): {error_msg}"
                 )
                 return None, validation_errors
             except Exception as e:  # Catch other potential validation errors
+                error_msg = f"Error validating arguments against tool schema. Error: {e}. Args: {parsed_content}"
+                self.display_manager.error(
+                    f"{sub_context} (tool: {tool_name}): Unexpected validation error: {error_msg}"
+                )
                 validation_errors.append(
-                    f"{sub_context} (tool: {tool_name}): Error validating arguments against tool schema. Error: {e}. Args: {parsed_content}"
+                    f"{sub_context} (tool: {tool_name}): {error_msg}"
                 )
                 return None, validation_errors
+        else:
+            self.display_manager.debug(
+                f"{sub_context}: No input schema defined for tool '{tool_name}', skipping schema validation"
+            )
 
+        self.display_manager.debug(
+            f"{sub_context}: Tool task validation completed successfully for '{tool_name}'"
+        )
         return parsed_content, validation_errors
 
     def _validate_agent_task(self, content: Any, sub_context: str) -> List[str]:
@@ -1940,11 +1593,24 @@ class TaskPlanner:
         Returns:
             A list of string error messages. An empty list means validation passed.
         """
+        self.display_manager.debug(f"{sub_context}: Starting agent task validation")
         validation_errors: List[str] = []
+
+        self.display_manager.debug(
+            f"{sub_context}: Validating content type: {type(content)}, length: {len(str(content)) if content else 0}"
+        )
+
         if not isinstance(content, str) or not content.strip():
-            validation_errors.append(
-                f"{sub_context}: 'content' must be a non-empty string containing instructions when 'tool_name' is not provided, but got: '{content}' (type: {type(content)})."
+            error_msg = f"'content' must be a non-empty string containing instructions when 'tool_name' is not provided, but got: '{content}' (type: {type(content)})."
+            self.display_manager.error(
+                f"{sub_context}: Agent task validation failed: {error_msg}"
             )
+            validation_errors.append(f"{sub_context}: {error_msg}")
+        else:
+            self.display_manager.debug(
+                f"{sub_context}: Agent task validation successful - content is valid string with {len(content)} characters"
+            )
+
         return validation_errors
 
     def _process_subtask_schema(
@@ -1952,16 +1618,8 @@ class TaskPlanner:
     ) -> tuple[Optional[str], List[str]]:
         """Processes and validates the output_schema for a subtask.
 
-        Handles several cases for `output_schema`:
-        - If `output_type` is binary, uses `FILE_POINTER_SCHEMA`.
-        - If `output_schema` is a valid JSON string, it's parsed.
-        - If `output_schema` is None or an empty string, a default schema is
-          generated based on `output_type` using `json_schema_for_output_type`.
-        - Ensures `additionalProperties: false` is set on object schemas.
-
         Args:
-            subtask_data: The raw dictionary data for the subtask, containing
-                          `output_type` and `output_schema`.
+            subtask_data: The raw dictionary data for the subtask
             sub_context: A string prefix for error messages.
 
         Returns:
@@ -1970,94 +1628,57 @@ class TaskPlanner:
                   or None if a fatal error occurred.
                 - A list of string error messages encountered.
         """
-        logger.debug(f"{sub_context}: Starting schema processing")
+        self.display_manager.debug(f"{sub_context}: Starting schema processing")
         validation_errors: List[str] = []
-        output_type: str = subtask_data.get("output_type", "string")
         current_schema_str: Any = subtask_data.get("output_schema")
         final_schema_str: Optional[str] = None
         schema_dict: Optional[dict] = None
 
         # Add logging for the input schema string
-        logger.debug(
-            f"{sub_context}: output_type='{output_type}', schema_input='{current_schema_str}' (type: {type(current_schema_str)})"
+        self.display_manager.debug(
+            f"{sub_context}: schema_input='{current_schema_str}' (type: {type(current_schema_str)})"
         )
         self.display_manager.print(
             f"{sub_context}: Attempting to process output_schema: '{current_schema_str}' of type {type(current_schema_str)}"
         )
 
-        if is_binary_output_type(output_type):
-            logger.debug(
-                f"{sub_context}: Using FILE_POINTER_SCHEMA for binary output type"
-            )
-            final_schema_str = json.dumps(FILE_POINTER_SCHEMA)
-        else:
-            try:
-                if isinstance(current_schema_str, str) and current_schema_str.strip():
-                    logger.debug(f"{sub_context}: Parsing string schema")
-                    self.display_manager.print(
-                        f"{sub_context}: Parsing string schema: '{current_schema_str}'"
-                    )  # Log before loads
-                    schema_dict = json.loads(current_schema_str)
-                    logger.debug(f"{sub_context}: Successfully parsed schema dict")
-                elif current_schema_str is None or (
-                    isinstance(current_schema_str, str)
-                    and not current_schema_str.strip()
-                ):
-                    # If schema is None or empty string, generate default based on type
-                    logger.debug(
-                        f"{sub_context}: Generating default schema for type '{output_type}'"
-                    )
-                    schema_dict = json_schema_for_output_type(output_type)
-                    logger.debug(f"{sub_context}: Generated default schema")
-                else:  # Invalid type for schema string
-                    error_msg = f"Output schema must be a JSON string or None, got {type(current_schema_str)}"
-                    logger.error(f"{sub_context}: {error_msg}")
-                    raise ValueError(error_msg)
-
-                # Apply defaults if schema_dict was successfully loaded or generated
-                if schema_dict is not None:
-                    logger.debug(
-                        f"{sub_context}: Applying additionalProperties constraints"
-                    )
-                    schema_dict = self._ensure_additional_properties_false(schema_dict)
-                    final_schema_str = json.dumps(schema_dict)
-                    logger.debug(
-                        f"{sub_context}: Final schema prepared, length={len(final_schema_str)}"
-                    )
-                # If schema_dict is still None here, it means default generation failed (unlikely with current json_schema_for_output_type)
-                # or input was invalid type that didn't parse
-
-            except (ValueError, json.JSONDecodeError) as e:
-                error_msg = f"Invalid output_schema provided: '{current_schema_str}'. Error: {e}. Using default for type '{output_type}'."
-                validation_errors.append(f"{sub_context}: {error_msg}")
-                logger.warning(f"{sub_context}: Schema parsing failed: {e}")
-                # Log the specific error
+        try:
+            if isinstance(current_schema_str, str) and current_schema_str.strip():
+                self.display_manager.debug(f"{sub_context}: Parsing string schema")
                 self.display_manager.print(
-                    f"{sub_context}: JSONDecodeError or ValueError for schema '{current_schema_str}': {e}"
+                    f"{sub_context}: Parsing string schema: '{current_schema_str}'"
+                )  # Log before loads
+                schema_dict = json.loads(current_schema_str)
+                self.display_manager.debug(
+                    f"{sub_context}: Successfully parsed schema dict: {schema_dict}"
                 )
-                # Attempt to generate default schema as fallback
-                try:
-                    logger.debug(f"{sub_context}: Generating fallback default schema")
-                    schema_dict = json_schema_for_output_type(output_type)
-                    schema_dict = self._ensure_additional_properties_false(schema_dict)
-                    final_schema_str = json.dumps(schema_dict)
-                    logger.debug(
-                        f"{sub_context}: Fallback schema generated successfully"
-                    )
-                except Exception as default_e:
-                    fallback_error = f"Failed to generate default schema for type '{output_type}' after error. Defaulting to string schema. Error: {default_e}"
-                    validation_errors.append(f"{sub_context}: {fallback_error}")
-                    logger.error(
-                        f"{sub_context}: Fallback schema generation failed: {default_e}"
-                    )
-                    # Final fallback: simple string schema
-                    final_schema_str = json.dumps(
-                        {"type": "string", "additionalProperties": False}
-                    )
-                    logger.debug(f"{sub_context}: Using final fallback string schema")
+            else:  # Invalid type for schema string
+                error_msg = f"Output schema must be a JSON string or None, got {type(current_schema_str)}"
+                self.display_manager.error(f"{sub_context}: {error_msg}")
+                raise ValueError(error_msg)
 
-        logger.debug(
-            f"{sub_context}: Schema processing completed, errors={len(validation_errors)}"
+            # Apply defaults if schema_dict was successfully loaded or generated
+            if schema_dict is not None:
+                self.display_manager.debug(
+                    f"{sub_context}: Applying additionalProperties constraints to schema"
+                )
+                schema_dict = self._ensure_additional_properties_false(schema_dict)
+                final_schema_str = json.dumps(schema_dict)
+                self.display_manager.debug(
+                    f"{sub_context}: Final schema prepared, length={len(final_schema_str)}: {final_schema_str}"
+                )
+
+        except (ValueError, json.JSONDecodeError) as e:
+            error_msg = f"Invalid output_schema provided: '{current_schema_str}'. Error: {e}. Using default string schema."
+            validation_errors.append(f"{sub_context}: {error_msg}")
+            self.display_manager.warning(f"{sub_context}: Schema parsing failed: {e}")
+            # Log the specific error
+            self.display_manager.print(
+                f"{sub_context}: JSONDecodeError or ValueError for schema '{current_schema_str}': {e}"
+            )
+
+        self.display_manager.debug(
+            f"{sub_context}: Schema processing completed, errors={len(validation_errors)}, final_schema_str={final_schema_str is not None}"
         )
         return final_schema_str, validation_errors
 
@@ -2068,13 +1689,11 @@ class TaskPlanner:
         parsed_tool_content: Optional[dict],
         sub_context: str,
     ) -> tuple[Optional[dict], List[str]]:
-        """Cleans paths and prepares the final data dictionary for SubTask creation.
+        """Prepares the final data dictionary for SubTask creation.
 
         This method takes the raw subtask data, the validated `final_schema_str`,
         and potentially parsed tool content, then performs:
-        1.  Path cleaning and validation for `output_file` and `input_files`
-            using `_clean_and_validate_path`. It also checks that output files
-            are at the workspace root.
+        1.  Validates input_tasks references to ensure they exist.
         2.  Ensures `tool_name` is None if it was an empty string.
         3.  Handles default model assignment for the subtask.
         4.  Filters the data dictionary to include only fields recognized by the
@@ -2101,36 +1720,25 @@ class TaskPlanner:
             processed_data["output_schema"] = (
                 final_schema_str  # Already validated/generated
             )
-            raw_output_file = processed_data.get("output_file", "")
-            cleaned_output_file = self._clean_and_validate_path(
-                raw_output_file, f"{sub_context} output_file"
-            )
-            if os.path.dirname(cleaned_output_file):
-                validation_errors.append(
-                    f"{sub_context}: Output file '{cleaned_output_file}' must be at the workspace root, not in a subdirectory."
-                )
-            processed_data["output_file"] = cleaned_output_file
 
-            raw_input_files = processed_data.get("input_files", [])
-            cleaned_input_files_list = []
-            for f_path in raw_input_files:
-                if not isinstance(f_path, str):
-                    validation_errors.append(
-                        f"{sub_context}: Input file path item '{f_path}' must be a string, got {type(f_path)}."
-                    )
-                    continue
-                cleaned_f_path = self._clean_and_validate_path(
-                    f_path, f"{sub_context} input_file '{f_path}'"
+            # Validate input_tasks
+            raw_input_tasks = processed_data.get("input_tasks", [])
+            if not isinstance(raw_input_tasks, list):
+                validation_errors.append(
+                    f"{sub_context}: input_tasks must be a list, got {type(raw_input_tasks)}."
                 )
-                if os.path.dirname(cleaned_f_path):
-                    # If the cleaned path is in a subdirectory, it must be one of the initial input files.
-                    # self.input_files contains paths already cleaned by _clean_and_validate_path.
-                    if cleaned_f_path not in self.input_files:
+                processed_data["input_tasks"] = []
+            else:
+                # Ensure all items in input_tasks are strings
+                validated_input_tasks = []
+                for task_id in raw_input_tasks:
+                    if not isinstance(task_id, str):
                         validation_errors.append(
-                            f"{sub_context}: Input file '{cleaned_f_path}' is in a subdirectory. Only initial input files are allowed in subdirectories, and this file is not part of the initial inputs."
+                            f"{sub_context}: Input task ID '{task_id}' must be a string, got {type(task_id)}."
                         )
-                cleaned_input_files_list.append(cleaned_f_path)
-            processed_data["input_files"] = cleaned_input_files_list
+                    else:
+                        validated_input_tasks.append(task_id)
+                processed_data["input_tasks"] = validated_input_tasks
 
             # Ensure tool_name is None if empty string or missing
             processed_data["tool_name"] = processed_data.get("tool_name") or None
@@ -2163,17 +1771,9 @@ class TaskPlanner:
                     return None, validation_errors
             elif isinstance(filtered_data.get("content"), str):
                 pass  # Keep agent task content as string
-            # else: # Handle cases where content might be missing or wrong type after filtering
-            #    if filtered_data.get("tool_name"): # Tool tasks expect content
-            #        validation_errors.append(f"{sub_context}: Missing or invalid 'content' for tool task.")
-            #        return None, validation_errors
-            # Agent tasks are validated earlier to ensure content is a string
 
             return filtered_data, validation_errors
 
-        except ValueError as e:  # Catch path validation errors
-            validation_errors.append(f"{sub_context}: Error processing paths: {e}")
-            return None, validation_errors
         except Exception as e:  # Catch unexpected errors during preparation
             validation_errors.append(
                 f"{sub_context}: Unexpected error preparing subtask data: {e}"
@@ -2191,7 +1791,7 @@ class TaskPlanner:
         Processes and validates data for a single subtask by delegating steps.
         """
         sub_context = f"{context_prefix} subtask {index}"
-        logger.debug(f"Processing {sub_context}")
+        self.display_manager.debug(f"Processing {sub_context}")
         all_validation_errors: List[str] = []
         parsed_tool_content: Optional[dict] = (
             None  # To store parsed JSON for tool tasks
@@ -2201,13 +1801,13 @@ class TaskPlanner:
             # --- Validate Tool Call vs Agent Instruction ---
             tool_name = subtask_data.get("tool_name")
             content = subtask_data.get("content")
-            logger.debug(
+            self.display_manager.debug(
                 f"{sub_context}: tool_name='{tool_name}', content_length={len(str(content)) if content else 0}"
             )
 
             if tool_name:
                 # --- Deterministic Tool Task Validation ---
-                logger.debug(f"{sub_context}: Validating as tool task")
+                self.display_manager.debug(f"{sub_context}: Validating as tool task")
                 parsed_tool_content, tool_errors = self._validate_tool_task(
                     subtask_data,
                     tool_name,
@@ -2219,27 +1819,31 @@ class TaskPlanner:
                 if (
                     parsed_tool_content is None and tool_errors
                 ):  # Fatal error during tool validation
-                    logger.error(
+                    self.display_manager.error(
                         f"{sub_context}: Tool validation failed with {len(tool_errors)} errors"
                     )
                     return None, all_validation_errors
                 else:
-                    logger.debug(f"{sub_context}: Tool validation successful")
+                    self.display_manager.debug(
+                        f"{sub_context}: Tool validation successful"
+                    )
             else:
                 # --- Probabilistic Agent Task Validation ---
-                logger.debug(f"{sub_context}: Validating as agent task")
+                self.display_manager.debug(f"{sub_context}: Validating as agent task")
                 agent_errors = self._validate_agent_task(content, sub_context)
                 all_validation_errors.extend(agent_errors)
                 if agent_errors:  # Fatal error during agent validation
-                    logger.error(
+                    self.display_manager.error(
                         f"{sub_context}: Agent validation failed with {len(agent_errors)} errors"
                     )
                     return None, all_validation_errors
                 else:
-                    logger.debug(f"{sub_context}: Agent validation successful")
+                    self.display_manager.debug(
+                        f"{sub_context}: Agent validation successful"
+                    )
 
             # --- Process schema ---
-            logger.debug(f"{sub_context}: Processing output schema")
+            self.display_manager.debug(f"{sub_context}: Processing output schema")
             final_schema_str, schema_errors = self._process_subtask_schema(
                 subtask_data, sub_context
             )
@@ -2247,34 +1851,42 @@ class TaskPlanner:
             # Continue even if there were schema errors, as a default might be used.
             # Need final_schema_str for data preparation. If None, indicates a fatal schema issue.
             if final_schema_str is None:
-                logger.error(f"{sub_context}: Fatal schema processing error")
+                self.display_manager.error(
+                    f"{sub_context}: Fatal schema processing error"
+                )
                 all_validation_errors.append(
                     f"{sub_context}: Fatal error processing output schema."
                 )
                 return None, all_validation_errors
             else:
-                logger.debug(f"{sub_context}: Schema processing successful")
+                self.display_manager.debug(
+                    f"{sub_context}: Schema processing successful"
+                )
 
             # --- Prepare data for SubTask creation (Paths, Filtering, Stringify Tool Args) ---
-            logger.debug(f"{sub_context}: Preparing data for SubTask creation")
+            self.display_manager.debug(
+                f"{sub_context}: Preparing data for SubTask creation"
+            )
             filtered_data, preparation_errors = self._prepare_subtask_data(
                 subtask_data, final_schema_str, parsed_tool_content, sub_context
             )
             all_validation_errors.extend(preparation_errors)
             if filtered_data is None:  # Fatal error during data preparation
-                logger.error(
+                self.display_manager.error(
                     f"{sub_context}: Data preparation failed with {len(preparation_errors)} errors"
                 )
                 return None, all_validation_errors
             else:
-                logger.debug(f"{sub_context}: Data preparation successful")
+                self.display_manager.debug(
+                    f"{sub_context}: Data preparation successful"
+                )
 
             # --- Create SubTask object ---
             # Pydantic validation happens here
-            logger.debug(f"{sub_context}: Creating SubTask object")
+            self.display_manager.debug(f"{sub_context}: Creating SubTask object")
             subtask = SubTask(**filtered_data)
-            logger.debug(
-                f"{sub_context}: SubTask created successfully with output_file='{subtask.output_file}'"
+            self.display_manager.debug(
+                f"{sub_context}: SubTask created successfully with id='{subtask.id}'"
             )
             # Return successful subtask and any *non-fatal* validation errors collected
             return subtask, all_validation_errors
@@ -2283,12 +1895,12 @@ class TaskPlanner:
             ValidationError
         ) as e:  # Catch Pydantic validation errors during SubTask(**filtered_data)
             error_msg = f"{sub_context}: Invalid data for SubTask model: {e}"
-            logger.error(f"{sub_context}: Pydantic validation error: {e}")
+            self.display_manager.error(f"{sub_context}: Pydantic validation error: {e}")
             all_validation_errors.append(error_msg)
             return None, all_validation_errors
         except Exception as e:  # Catch any other unexpected errors
             error_msg = f"{sub_context}: Unexpected error processing subtask: {e}\n{traceback.format_exc()}"
-            logger.error(
+            self.display_manager.error(
                 f"{sub_context}: Unexpected processing error: {e}", exc_info=True
             )
             all_validation_errors.append(error_msg)
@@ -2360,8 +1972,10 @@ class TaskPlanner:
         )
         all_validation_errors.extend(subtask_validation_errors)
 
-        logger.debug(f"Subtasks processed: {subtasks}")
-        logger.debug(f"Subtask validation errors: {subtask_validation_errors}")
+        self.display_manager.debug(f"Subtasks processed: {subtasks}")
+        self.display_manager.debug(
+            f"Subtask validation errors: {subtask_validation_errors}"
+        )
 
         # If subtask processing had fatal errors, don't proceed to dependency check
         if not subtasks and task_data.get(
@@ -2472,7 +2086,7 @@ class TaskPlanner:
                     # Raise a ValueError containing the raw response for retry feedback
                     raise ValueError(error_detail) from json_err
 
-                print(task_data)
+                self.display_manager.debug(f"Task data: {task_data}")
 
                 # 3. Validate Plan (Subtasks & Dependencies)
                 validated_task, validation_errors = (
@@ -2680,7 +2294,7 @@ class TaskPlanner:
         """
         Generates response, processes tool calls with validation and retry logic.
         """
-        logger.debug(
+        self.display_manager.debug(
             f"Starting generation with retry, max_retries={max_retries}, tools={[t.name for t in tools]}"
         )
         current_retry: int = 0
@@ -2688,10 +2302,12 @@ class TaskPlanner:
 
         while current_retry < max_retries:
             attempt = current_retry + 1
-            logger.debug(f"Generation attempt {attempt}/{max_retries}")
+            self.display_manager.debug(f"Generation attempt {attempt}/{max_retries}")
 
             # Generate response using current history
-            logger.debug(f"Calling LLM with {len(history)} messages in history")
+            self.display_manager.debug(
+                f"Calling LLM with {len(history)} messages in history"
+            )
             message = await self.provider.generate_message(
                 messages=history,
                 model=self.model,
@@ -2701,19 +2317,21 @@ class TaskPlanner:
                 message
             )  # Add assistant's response to history *before* processing
             last_message = message
-            logger.debug(
+            self.display_manager.debug(
                 f"LLM response received, has_tool_calls={bool(message.tool_calls)}"
             )
 
             if not message.tool_calls:
                 # LLM didn't use the expected tool
-                logger.warning(f"LLM did not use required tools on attempt {attempt}")
+                self.display_manager.warning(
+                    f"LLM did not use required tools on attempt {attempt}"
+                )
                 if tools and current_retry < max_retries - 1:
                     current_retry += 1
                     tool_names = ", ".join([t.name for t in tools])
                     retry_prompt = f"Please use one of the available tools ({tool_names}) to define the task based on the previous analysis and requirements."
                     history.append(Message(role="user", content=retry_prompt))
-                    logger.debug(
+                    self.display_manager.debug(
                         f"Added retry prompt for tool usage, attempt {current_retry + 1}"
                     )
                     self.display_manager.print(  # Use display manager print
@@ -2722,7 +2340,7 @@ class TaskPlanner:
                     continue  # Go to next iteration
                 else:
                     # Max retries reached without tool use
-                    logger.error(
+                    self.display_manager.error(
                         f"Max retries reached without tool usage after {max_retries} attempts"
                     )
                     self.display_manager.print(  # Use display manager print
@@ -2732,12 +2350,14 @@ class TaskPlanner:
 
             # Tool call exists, try to process it
             try:
-                logger.debug(f"Processing {len(message.tool_calls)} tool call(s)")
+                self.display_manager.debug(
+                    f"Processing {len(message.tool_calls)} tool call(s)"
+                )
                 # Process the tool call(s). This adds 'tool' role messages to history
                 # and raises ValueError on validation failure.
                 task = await self._process_tool_calls(message, history)
                 # If _process_tool_calls returns without error, success!
-                logger.info(
+                self.display_manager.info(
                     f"Tool calls processed successfully, created task with {len(task.subtasks)} subtasks"
                 )
                 self.display_manager.print(  # Use display manager print
@@ -2748,7 +2368,9 @@ class TaskPlanner:
                     last_message,
                 )  # Return created task and the assistant message
             except ValueError as e:  # Catch validation errors from _process_tool_calls
-                logger.warning(f"Tool call validation failed on attempt {attempt}: {e}")
+                self.display_manager.warning(
+                    f"Tool call validation failed on attempt {attempt}: {e}"
+                )
                 self.display_manager.print(  # Use display manager print
                     f"[yellow]Validation Error (Retry {attempt}/{max_retries}):[/yellow]\n{str(e)}"
                 )
@@ -2758,7 +2380,7 @@ class TaskPlanner:
                     # should already be in history from _process_tool_calls failing.
                     retry_prompt = f"The previous attempt failed validation. Please review the errors detailed in the tool response and call the tool again correctly:\n{str(e)}"
                     history.append(Message(role="user", content=retry_prompt))
-                    logger.debug(
+                    self.display_manager.debug(
                         f"Added validation error retry prompt, attempt {current_retry + 1}"
                     )
                     self.display_manager.print(  # Use display manager print
@@ -2769,7 +2391,7 @@ class TaskPlanner:
                     continue  # Go to next iteration
                 else:
                     # Max retries reached after validation errors
-                    logger.error(
+                    self.display_manager.error(
                         f"Max retries reached due to persistent validation errors after {max_retries} attempts"
                     )
                     self.display_manager.print(  # Use display manager print
@@ -2781,51 +2403,8 @@ class TaskPlanner:
                     )  # Return no task and the last assistant message
 
         # Should only be reached if max_retries is 0 or loop finishes unexpectedly
-        logger.error("Generation with retry exited unexpectedly")
+        self.display_manager.error("Generation with retry exited unexpectedly")
         return None, last_message
-
-    async def save_task_plan(self) -> None:
-        """
-        Save the current task plan to `tasks.yaml` in the workspace directory.
-
-        The plan is serialized to YAML format. Errors during saving are
-        printed to the display manager.
-        """
-        logger.debug(f"Attempting to save task plan to {self.tasks_file_path}")
-        if self.task_plan:
-            task_dict: dict = self.task_plan.model_dump(
-                exclude_none=True
-            )  # Use exclude_none
-            logger.debug(
-                f"Task plan serialized to dict with {len(task_dict.get('tasks', []))} tasks"
-            )
-            try:
-                with open(self.tasks_file_path, "w") as f:
-                    yaml.dump(
-                        task_dict,
-                        f,
-                        indent=2,
-                        sort_keys=False,
-                        default_flow_style=False,
-                    )  # Improve formatting
-                logger.info(f"Task plan saved successfully to {self.tasks_file_path}")
-                self.display_manager.print(  # Use display manager print
-                    f"[cyan]Task plan saved to {self.tasks_file_path}[/cyan]"
-                )
-            except IOError as e:
-                logger.error(f"IO error saving task plan: {e}")
-                self.display_manager.print(  # Use display manager print
-                    f"[red]Error saving task plan to {self.tasks_file_path}: {e}[/red]"
-                )
-            except (
-                Exception
-            ) as e:  # Catch other potential errors (e.g., yaml serialization)
-                logger.error(f"Unexpected error saving task plan: {e}", exc_info=True)
-                self.display_manager.print(  # Use display manager print
-                    f"[red]Unexpected error saving task plan: {e}[/red]"
-                )
-        else:
-            logger.warning("Attempted to save task plan but no plan exists")
 
     def _get_execution_tools_info(self) -> str:
         """
@@ -2862,20 +2441,13 @@ class TaskPlanner:
         """
         Get formatted string information about initial input files.
 
-        This is used in prompts to inform the LLM about files that are
-        available at the very beginning of the task execution.
+        Since we're now using object-based data flow instead of files,
+        this always returns a message indicating no file dependencies.
 
         Returns:
-            A string listing the input files, or "No input files available"
-            if the `input_files` list is empty.
+            A string indicating no file-based inputs are used.
         """
-        if not self.input_files:
-            return "No input files available"
-
-        input_files_info = "Input files:\n"
-        for file_path in self.input_files:
-            input_files_info += f"- {file_path}\n"
-        return input_files_info.strip()  # Remove trailing newline
+        return "No file-based inputs (data flows through task dependencies)"
 
     def _detect_list_processing(
         self, objective: str, input_files: List[str]
@@ -2930,117 +2502,6 @@ class TaskPlanner:
                     break
 
         return is_list, estimated_count
-
-    def _generate_batch_subtask_instructions(
-        self, base_content: str, batch_info: dict
-    ) -> dict:
-        """
-        Generate instructions for a batch processing subtask.
-
-        Args:
-            base_content: The base subtask content
-            batch_info: Dictionary with batch details (start_idx, end_idx, items)
-
-        Returns:
-            Modified subtask data for batch processing
-        """
-        batch_content = f"""
-{base_content}
-
-BATCH PROCESSING INSTRUCTIONS:
-1. Process items {batch_info['start_idx']} to {batch_info['end_idx']} from the input
-2. Write results progressively to the output file using WriteFileTool in append mode
-3. For each item processed:
-   - Write the result as a JSON object on a single line (JSONL format)
-   - Include item index/id for tracking
-   - Flush the file after each write to prevent data loss
-4. If an item fails, log the error but continue with remaining items
-5. At the end, write a summary line with batch statistics
-6. Use minimal memory - process one item at a time
-7. Do NOT keep all results in memory
-"""
-
-        return {
-            "content": batch_content,
-            "batch_processing": {
-                "enabled": True,
-                "batch_size": batch_info["end_idx"] - batch_info["start_idx"] + 1,
-                "start_index": batch_info["start_idx"],
-                "end_index": batch_info["end_idx"],
-                "total_items": batch_info.get("total_items", 0),
-            },
-        }
-
-    def _generate_aggregation_subtask(
-        self, batch_outputs: List[str], final_output: dict
-    ) -> dict:
-        """
-        Generate the aggregation subtask for combining batch results.
-
-        Args:
-            batch_outputs: List of output files from batch subtasks
-            final_output: Final output requirements
-
-        Returns:
-            Subtask data for aggregation
-        """
-        return {
-            "content": f"""
-Aggregate results from all batch processing subtasks into the final output.
-
-AGGREGATION INSTRUCTIONS:
-1. Read each batch result file line by line (JSONL format)
-2. Process results progressively to minimize memory usage:
-   - Use ReadFileTool to read one line at a time
-   - Extract relevant data from each line
-   - Update aggregated statistics/results
-3. Combine results according to the output schema
-4. Generate final summary and metadata
-5. Handle any batch processing errors gracefully
-6. Ensure the final output matches the required schema and format
-7. Use file pointers {"path": "filename"} when passing data between tools
-""",
-            "input_files": batch_outputs,
-            "output_file": final_output["file"],
-            "output_type": final_output["type"],
-            "output_schema": final_output["schema"],
-            "max_iterations": 5,  # Aggregation typically needs fewer iterations
-            "is_intermediate_result": False,
-            "batch_processing": {
-                "enabled": False  # Aggregation is not batch processing
-            },
-        }
-
-    def _prepare_list_processing_plan(
-        self, objective: str, item_count: int, batch_size: int = 15
-    ) -> dict:
-        """
-        Prepare a plan structure for list processing with batching.
-
-        Args:
-            objective: The processing objective
-            item_count: Estimated number of items
-            batch_size: Items per batch (default 15)
-
-        Returns:
-            Dictionary with plan structure hints
-        """
-        num_batches = (item_count + batch_size - 1) // batch_size
-
-        return {
-            "processing_type": "batch",
-            "estimated_items": item_count,
-            "batch_size": batch_size,
-            "num_batches": num_batches,
-            "parallel_capable": True,
-            "requires_aggregation": True,
-            "context_optimization": {
-                "use_streaming": True,
-                "use_file_pointers": True,
-                "progressive_writes": True,
-                "minimal_memory": True,
-            },
-        }
 
     def _ensure_additional_properties_false(self, schema: dict) -> dict:
         """

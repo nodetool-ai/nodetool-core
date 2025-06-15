@@ -551,6 +551,7 @@ def docs(output_dir: str, compact: bool, verbose: bool):
                             if classes:
                                 node_classes.extend(classes)
                         except Exception as e:
+                            traceback.print_exc()
                             if verbose:
                                 click.echo(
                                     f"Error processing {module_name}: {e}", err=True

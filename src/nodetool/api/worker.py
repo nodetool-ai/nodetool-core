@@ -22,7 +22,6 @@ from nodetool.common.huggingface_models import (
 from nodetool.workflows.base_node import get_recommended_models
 from nodetool.metadata.node_metadata import NodeMetadata
 from nodetool.metadata.types import HuggingFaceModel
-from nodetool.workflows.base_node import get_registered_node_classes
 
 try:
     from nodes import init_extra_nodes  # type: ignore
@@ -124,12 +123,3 @@ async def try_cache_files(
         RepoPath(repo_id=path.repo_id, path=path.path, downloaded=check_path(path))
         for path in paths
     ]
-
-
-@app.get("/metadata")
-async def metadata() -> list[NodeMetadata]:
-    """
-    Returns a list of all node metadata.
-    """
-
-    return [node_class.metadata() for node_class in get_registered_node_classes()]
