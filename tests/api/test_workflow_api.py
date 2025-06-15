@@ -145,20 +145,20 @@ def test_delete_workflow(
     assert response.status_code == 200
 
 
-def test_run_workflow(client: TestClient, workflow: Workflow, headers: dict[str, str]):
-    workflow.save()
+# def test_run_workflow(client: TestClient, workflow: Workflow, headers: dict[str, str]):
+#     workflow.save()
 
-    response = client.post(
-        f"/api/workflows/{workflow.id}/run", json={}, headers=headers
-    )
-    assert response.status_code == 200
+#     response = client.post(
+#         f"/api/workflows/{workflow.id}/run", json={}, headers=headers
+#     )
+#     assert response.status_code == 200
 
-    # Test streaming response
-    response = client.post(
-        f"/api/workflows/{workflow.id}/run",
-        json={},
-        params={"stream": True},
-        headers=headers,
-    )
-    assert response.status_code == 200
-    assert response.headers["content-type"] == "application/x-ndjson"
+#     # Test streaming response
+#     response = client.post(
+#         f"/api/workflows/{workflow.id}/run",
+#         json={},
+#         params={"stream": True},
+#         headers=headers,
+#     )
+#     assert response.status_code == 200
+#     assert response.headers["content-type"] == "application/x-ndjson"

@@ -4,6 +4,8 @@ from datetime import datetime
 import traceback
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Header, Request
 from fastapi.responses import StreamingResponse
+from nodetool.types.job import JobUpdate
+from nodetool.workflows.types import Error, OutputUpdate
 from pydantic import BaseModel, Field
 from nodetool.types.graph import Edge, Node, remove_connected_slots
 from nodetool.types.workflow import WorkflowList, Workflow, WorkflowRequest
@@ -366,24 +368,25 @@ async def run_workflow_by_id(
             if isinstance(msg, BaseModel):
                 msg = msg.model_dump()
 
-            if msg.get("type") == "job_update":
-                if msg.get("status") == "completed":
-                    result = msg.get("result", {})
-                    for key, value in result.items():
-                        if isinstance(value, dict) and value.get("data"):
-                            data = value.get("data")
-                            if isinstance(data, bytes):
-                                value["uri"] = (
-                                    f"data:application/octet-stream;base64,{base64.b64encode(data).decode('utf-8')}"
-                                )
-                            elif isinstance(data, list):
-                                # TODO: handle multiple assets
-                                value["uri"] = (
-                                    f"data:application/octet-stream;base64,{base64.b64encode(data[0]).decode('utf-8')}"
-                                )
-                            value["data"] = None
-                elif msg.get("status") == "failed":
-                    raise HTTPException(status_code=500, detail=msg.get("error"))
+            if isinstance(msg, OutputUpdate):
+                name = msg.node_name
+                value = msg.value
+                if isinstance(value, dict):
+                    if "data" in value:
+                        data = value["data"]
+                        if isinstance(data, bytes):
+                            value["uri"] = (
+                                f"data:application/octet-stream;base64,{base64.b64encode(data).decode('utf-8')}"
+                            )
+                        elif isinstance(data, list):
+                            # TODO: handle multiple assets
+                            value["uri"] = (
+                                f"data:application/octet-stream;base64,{base64.b64encode(data[0]).decode('utf-8')}"
+                            )
+                        value["data"] = None
+                elif isinstance(msg, Error):
+                    raise HTTPException(status_code=500, detail=msg.error)
+                result[name] = value
         return result
 
 
