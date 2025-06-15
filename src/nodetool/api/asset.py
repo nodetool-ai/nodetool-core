@@ -435,38 +435,66 @@ async def download_assets(
     Create a ZIP file containing the requested assets and return it for download.
     Maintains folder structure based on asset.parent_id relationships.
     """
+    log.info(f"User '{user}' initiated download for asset IDs: {req.asset_ids}")
     if not req.asset_ids:
         raise HTTPException(status_code=400, detail="No asset IDs provided")
 
     zip_buffer = BytesIO()
     storage = Environment.get_asset_storage()
 
+    # This dictionary will hold all assets to be included in the zip, plus their parents for path construction.
+    all_assets_with_parents: Dict[str, AssetModel] = {}
+    # This set will hold just the assets that should be included in the zip file content.
+    assets_to_zip: Dict[str, AssetModel] = {}
+
+    # Step 1: Fetch the requested assets and all their descendants.
+    queue = list(req.asset_ids)
+    processed_ids = set()
+    while queue:
+        asset_id = queue.pop(0)
+        if asset_id in processed_ids:
+            continue
+        processed_ids.add(asset_id)
+
+        asset = AssetModel.get(asset_id)
+        if asset:
+            assets_to_zip[asset.id] = asset
+            all_assets_with_parents[asset.id] = asset
+            if asset.content_type == "folder":
+                child_assets = AssetModel.get_children(asset.id)
+                queue.extend([child.id for child in child_assets])
+    log.info(f"Found {len(assets_to_zip)} assets/folders to include in the zip.")
+
+    # Step 2: Fetch all necessary ancestors for path construction.
+    parents_to_fetch = set()
+    for asset in assets_to_zip.values():
+        if asset.parent_id and asset.parent_id not in all_assets_with_parents:
+            parents_to_fetch.add(asset.parent_id)
+
+    while parents_to_fetch:
+        parent_id = parents_to_fetch.pop()
+        if parent_id in all_assets_with_parents:
+            continue
+
+        parent_asset = AssetModel.get(parent_id)
+        if parent_asset:
+            all_assets_with_parents[parent_id] = parent_asset
+            if (
+                parent_asset.parent_id
+                and parent_asset.parent_id not in all_assets_with_parents
+            ):
+                parents_to_fetch.add(parent_asset.parent_id)
+
     asset_paths: Dict[str, str] = {}
-    all_assets: Dict[str, AssetModel] = {}
-
-    def fetch_all_assets(asset_ids: List[str]):
-        for asset_id in asset_ids:
-            asset = AssetModel.get(asset_id)
-            if asset:
-                all_assets[asset.id] = asset
-                if asset.parent_id and asset.parent_id not in all_assets:
-                    fetch_all_assets([asset.parent_id])
-                if asset.content_type == "folder":
-                    child_assets = AssetModel.get_children(asset.id)
-                    child_asset_ids = [child.id for child in child_assets]
-                    if child_asset_ids:
-                        fetch_all_assets(child_asset_ids)
-
-    fetch_all_assets(req.asset_ids)
 
     def get_asset_path(asset: AssetModel) -> str:
         if asset.id in asset_paths:
             return asset_paths[asset.id]
 
-        if not asset.parent_id or asset.parent_id not in all_assets:
+        if not asset.parent_id or asset.parent_id not in all_assets_with_parents:
             path = asset.name
         else:
-            parent_path = get_asset_path(all_assets[asset.parent_id])
+            parent_path = get_asset_path(all_assets_with_parents[asset.parent_id])
             path = f"{parent_path}/{asset.name}"
 
         asset_paths[asset.id] = path
@@ -487,7 +515,6 @@ async def download_assets(
             if asset.content_type == "folder":
                 return f"{asset_path}/", None
             else:
-                # Check if the file extension is already present
                 if asset.name.lower().endswith(f".{asset.file_extension.lower()}"):
                     file_path = asset_path
                 else:
@@ -501,9 +528,11 @@ async def download_assets(
             log.warning(f"Error downloading asset {asset.id}: {str(e)}")
             return "", None
 
-    asset_contents = await asyncio.gather(
-        *[fetch_asset_content(asset) for asset in all_assets.values()]
-    )
+    asset_contents = []
+    # Only iterate over the assets we actually want to zip, not the parents used for pathing.
+    for asset in assets_to_zip.values():
+        content = await fetch_asset_content(asset)
+        asset_contents.append(content)
 
     used_paths: Dict[str, int] = {}
     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
@@ -531,12 +560,13 @@ async def download_assets(
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = f"assets_{timestamp}.zip"
 
+    log.info(f"Sending ZIP file '{filename}' with {len(asset_contents)} items.")
     return StreamingResponse(
         zip_buffer,
         media_type="application/zip",
         headers={
             "Content-Disposition": f"attachment; filename={filename}",
-            "Cache-Control": "no-cache, no-store, must-revalidate",  # Don't cache downloads
+            "Cache-Control": "no-cache, no-store, must-revalidate",
             "Pragma": "no-cache",
             "Expires": "0",
         },

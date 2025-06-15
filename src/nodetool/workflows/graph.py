@@ -78,15 +78,64 @@ class Graph(BaseModel):
         Create a Graph object from a dictionary representation.
         The format is the same as the one used in the frontend.
 
+        Invalid nodes or edges in the input dictionary are skipped, and warnings are logged.
+        If all nodes in a workflow are invalid, or if the graph data leads to a Pydantic
+        validation error during final Graph instantiation, the resulting graph might be empty
+        or incomplete. The method attempts to construct a graph with as much valid data as possible.
+
         Args:
             graph (dict[str, Any]): The dictionary representing the Graph.
+        
+        Returns:
+            Graph: An instance of the Graph, potentially with fewer nodes/edges than specified
+                   in the input if errors were encountered.
         """
+        valid_nodes = []
+        valid_node_ids = set()
+        
+        # Process nodes, collecting valid ones
+        for node_data in graph["nodes"]:
+            result = BaseNode.from_dict(node_data, skip_errors=skip_errors)
+            if result is not None and result[0] is not None:
+                valid_nodes.append(result[0])
+                valid_node_ids.add(result[0].id)
+        
+        # Process edges, filtering out invalid ones
+        valid_edges = []
+        for edge_data in graph["edges"]:
+            try:
+                # Check if edge has required fields
+                if ("sourceHandle" not in edge_data or 
+                    "targetHandle" not in edge_data or
+                    "source" not in edge_data or 
+                    "target" not in edge_data):
+                    if skip_errors:
+                        continue  # Skip malformed edges
+                    else:
+                        # Let Pydantic handle the validation error
+                        pass
+                
+                # Check if both source and target nodes exist in valid nodes
+                source_id = edge_data.get("source")
+                target_id = edge_data.get("target")
+                
+                if (source_id in valid_node_ids and target_id in valid_node_ids):
+                    valid_edges.append(edge_data)
+                elif skip_errors:
+                    continue  # Skip edges connected to non-existent nodes
+                else:
+                    # Keep the edge and let downstream validation handle it
+                    valid_edges.append(edge_data)
+                    
+            except Exception:
+                if skip_errors:
+                    continue
+                else:
+                    raise
+        
         return cls(
-            nodes=[
-                BaseNode.from_dict(node, skip_errors=skip_errors)
-                for node in graph["nodes"]
-            ],
-            edges=graph["edges"],
+            nodes=valid_nodes,
+            edges=valid_edges,
         )
 
     def inputs(self) -> List[InputNode]:

@@ -311,32 +311,50 @@ class BaseNode(BaseModel):
                 NameToType[name] = field_type
 
     @staticmethod
-    def from_dict(node: dict[str, Any], skip_errors: bool = False) -> "BaseNode":
+    def from_dict(node: dict[str, Any], skip_errors: bool = False) -> tuple["BaseNode", list[str]]:
         """
         Create a Node object from a dictionary representation.
 
         Args:
             node (dict[str, Any]): The dictionary representing the Node.
+            skip_errors (bool): If True, property assignment errors are collected and returned,
+                                not logged directly or raised immediately.
 
         Returns:
-            Node: The created Node object.
+            tuple[BaseNode, list[str]]: The created Node object and a list of property assignment error messages.
+                                        The error list is empty if no errors occurred or if skip_errors is False and an error was raised.
         """
         # avoid circular import
 
-        node_type = get_node_class(node["type"])
-        if node_type is None:
-            raise ValueError(f"Invalid node type: {node['type']}")
-        if "id" not in node:
-            raise ValueError("Node must have an id")
-        n = node_type(
-            id=node["id"],
+        node_type_str = node.get("type")
+        if not node_type_str:
+            raise ValueError("Node data must have a 'type' field.")
+
+        node_class = get_node_class(node_type_str)
+        if node_class is None:
+            if skip_errors:
+                # Return None to indicate this node should be skipped
+                return None, [f"Invalid node type: {node_type_str}"]
+            else:
+                # This is a critical error, node cannot be instantiated, so raise immediately.
+                raise ValueError(f"Invalid node type: {node_type_str}")
+        
+        node_id = node.get("id")
+        if not node_id:
+            # Node ID is critical for instantiation, raise if missing.
+            raise ValueError("Node data must have an 'id' field.")
+
+        n = node_class(
+            id=node_id,
             parent_id=node.get("parent_id"),
             ui_properties=node.get("ui_properties", {}),
             dynamic_properties=node.get("dynamic_properties", {}),
         )
         data = node.get("data", {})
-        n.set_node_properties(data, skip_errors=skip_errors)
-        return n
+        # `set_node_properties` will raise ValueError if skip_errors is False and an error occurs.
+        # If skip_errors is True, it returns a list of error messages.
+        property_errors = n.set_node_properties(data, skip_errors=skip_errors)
+        return n, property_errors
 
     @classmethod
     def get_node_type(cls) -> str:
@@ -441,11 +459,14 @@ class BaseNode(BaseModel):
         """
         Assign a value to a node property, performing type checking and conversion.
         If the property is dynamic, it will be added to the _dynamic_properties dictionary.
-        If the property cannot be assigned, we will not fail.
+        If the property cannot be assigned, an error message is returned.
 
         Args:
             name (str): The name of the property to assign.
             value (Any): The value to assign to the property.
+
+        Returns:
+            Optional[str]: An error message string if assignment fails, None otherwise.
 
         Note:
             This method handles type conversion for enums, lists, and objects with 'model_validate' method.
@@ -454,52 +475,53 @@ class BaseNode(BaseModel):
         if prop is None:
             if self._is_dynamic:
                 self._dynamic_properties[name] = value
-                return
+                return None
             else:
-                raise ValueError(
-                    f"Property {name} does not exist and node type {self.get_node_type()} is not dynamic"
-                )
-
+                return f"[{self.__class__.__name__}] Property {name} does not exist"
         python_type = prop.type.get_python_type()
         type_args = prop.type.type_args
 
         if not is_assignable(prop.type, value):
-            print(
+            return (
                 f"[{self.__class__.__name__}] Invalid value for property `{name}`: {type(value)} (expected {prop.type})"
             )
-            return
 
-        if prop.type.is_enum_type():
-            v = python_type(value)
-        elif prop.type.is_list_type() and len(type_args) == 1:
-            subtype = prop.type.type_args[0].get_python_type()
-            if hasattr(subtype, "from_dict") and all(
-                isinstance(x, dict) and "type" in x for x in value
+        try:
+            if prop.type.is_enum_type():
+                v = python_type(value)
+            elif prop.type.is_list_type() and len(type_args) == 1:
+                subtype = prop.type.type_args[0].get_python_type()
+                if hasattr(subtype, "from_dict") and all(
+                    isinstance(x, dict) and "type" in x for x in value
+                ):
+                    # Handle lists of dicts with 'type' field as BaseType instances
+                    v = [subtype.from_dict(x) for x in value]
+                elif hasattr(subtype, "model_validate"):
+                    v = [subtype.model_validate(x) for x in value]
+                else:
+                    v = value
+            elif (
+                isinstance(value, dict)
+                and "type" in value
+                and hasattr(python_type, "from_dict")
             ):
-                # Handle lists of dicts with 'type' field as BaseType instances
-                v = [subtype.from_dict(x) for x in value]
-            elif hasattr(subtype, "model_validate"):
-                v = [subtype.model_validate(x) for x in value]
+                # Handle dicts with 'type' field as BaseType instances
+                v = python_type.from_dict(value)
+            elif hasattr(python_type, "model_validate"):
+                v = python_type.model_validate(value)
             else:
                 v = value
-        elif (
-            isinstance(value, dict)
-            and "type" in value
-            and hasattr(python_type, "from_dict")
-        ):
-            # Handle dicts with 'type' field as BaseType instances
-            v = python_type.from_dict(value)
-        elif hasattr(python_type, "model_validate"):
-            v = python_type.model_validate(value)
-        else:
-            v = value
+        except Exception as e:
+            return f"[{self.__class__.__name__}] Error converting value for property `{name}`: {e}"
 
         if hasattr(self, name):
             setattr(self, name, v)
         elif self._is_dynamic:
             self._dynamic_properties[name] = v
         else:
-            raise ValueError(f"Property {name} does not exist")
+            # This case should ideally not be reached if find_property works correctly
+            return f"[{self.__class__.__name__}] Property {name} does not exist and node is not dynamic"
+        return None # Indicates success
 
     def read_property(self, name: str) -> Any:
         """
@@ -524,26 +546,32 @@ class BaseNode(BaseModel):
 
     def set_node_properties(
         self, properties: dict[str, Any], skip_errors: bool = False
-    ):
+    ) -> list[str]:
         """
         Set multiple node properties at once.
 
         Args:
             properties (dict[str, Any]): A dictionary of property names and their values.
-            skip_errors (bool, optional): If True, continue setting properties even if an error occurs. Defaults to False.
+            skip_errors (bool, optional): If True, continue setting properties even if an error occurs.
+                                        If False, an error is raised on the first property assignment failure.
+
+        Returns:
+            list[str]: A list of error messages encountered during property assignment.
+                       Empty if no errors or if skip_errors is False and an error was raised.
 
         Raises:
             ValueError: If skip_errors is False and an error occurs while setting a property.
-
-        Note:
-            Errors during property assignment are printed regardless of the skip_errors flag.
         """
+        error_messages = []
         for name, value in properties.items():
-            try:
-                self.assign_property(name, value)
-            except ValueError as e:
+            error_msg = self.assign_property(name, value)
+            if error_msg:
                 if not skip_errors:
-                    raise e
+                    raise ValueError(f"Error setting property '{name}' on node '{self.id}': {error_msg}")
+                error_messages.append(error_msg)
+        
+        # Removed logging from here; caller will decide what to do with errors.
+        return error_messages
 
     def properties_for_client(self):
         """

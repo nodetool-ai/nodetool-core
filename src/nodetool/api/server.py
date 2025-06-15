@@ -100,7 +100,7 @@ if not Environment.is_production():
 
 
 def create_app(
-    origins: list[str] = ["*"],
+    origins: list[str] = ["*", "http://localhost:3000"],
     routers: list[APIRouter] = DEFAULT_ROUTERS,
     static_folder: str | None = None,
     apps_folder: str | None = None,
@@ -230,12 +230,13 @@ def run_uvicorn_server(app: Any, host: str, port: int, reload: bool) -> None:
     if reload:
         reload_dirs = [parent_dir] + [str(dir) for dir in editable_dirs]
     else:
-        reload_dirs = None
-    uvicorn(
-        app=app,
-        host=host,
-        port=port,
-        reload=reload,
-        reload_dirs=reload_dirs,
-        reload_includes=["*.py"] if reload else None,
+        reload_dirs = []
+    uvicorn(app=app, host=host, port=port, reload=reload, reload_dirs=reload_dirs)
+
+
+if __name__ == "__main__":
+    app = create_app(
+        # static_folder=os.path.join(os.path.dirname(__file__), "..", "ui", "dist"),
+        # apps_folder=os.path.join(os.path.dirname(__file__), "..", "ui", "apps"),
     )
+    run_uvicorn_server(app, "0.0.0.0", 8000, True)
