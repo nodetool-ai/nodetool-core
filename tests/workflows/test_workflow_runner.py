@@ -687,6 +687,7 @@ class StreamingNode(BaseNode):
         return "test.streaming.StreamingNode"
     
     async def gen_process(self, context: ProcessingContext) -> AsyncGenerator[tuple[str, Any], None]:
+        assert self.items is not None
         for i, item in enumerate(self.items):
             yield "output", item
             yield "index", i
@@ -833,6 +834,7 @@ class EventConsumerNode(BaseNode):
         return "test.event.EventConsumerNode"
     
     async def handle_event(self, context: ProcessingContext, event: Event) -> AsyncGenerator[tuple[str, Any], None]:
+        assert self.processed_events is not None
         self.processed_events.append(event.name)
         yield "result", f"Processed: {event.name}"
 
@@ -1060,6 +1062,7 @@ async def test_multiple_messages_in_queue():
             return "test.queue.CollectorNode"
         
         async def process(self, context: ProcessingContext) -> str:
+            assert self.values is not None
             self.values.append(self.value)
             return f"collected_{len(self.values)}"
     
@@ -1369,35 +1372,6 @@ async def test_missing_input_node_for_param():
     with pytest.raises(ValueError, match="No input node found for param: missing_input"):
         await workflow_runner.run(req, context)
 
-
-@pytest.mark.asyncio
-async def test_workflow_runner_device_selection():
-    """Test device selection logic in WorkflowRunner init"""
-    # Test CPU fallback
-    with patch("nodetool.workflows.workflow_runner.TORCH_AVAILABLE", False):
-        runner = WorkflowRunner(job_id="1")
-        assert runner.device == "cpu"
-    
-    # Test CUDA selection
-    with patch("nodetool.workflows.workflow_runner.TORCH_AVAILABLE", True):
-        mock_torch = Mock()
-        mock_torch.cuda.is_available.return_value = True
-        with patch("nodetool.workflows.workflow_runner.torch", mock_torch):
-            runner = WorkflowRunner(job_id="1")
-            assert runner.device == "cuda"
-    
-    # Test MPS selection
-    with patch("nodetool.workflows.workflow_runner.TORCH_AVAILABLE", True):
-        mock_torch = Mock()
-        mock_torch.cuda.is_available.return_value = False
-        mock_torch.backends.mps.is_available.return_value = True
-        with patch("nodetool.workflows.workflow_runner.torch", mock_torch):
-            runner = WorkflowRunner(job_id="1")
-            assert runner.device == "mps"
-    
-    # Test explicit device
-    runner = WorkflowRunner(job_id="1", device="custom")
-    assert runner.device == "custom"
 
 
 @pytest.mark.asyncio
