@@ -47,7 +47,7 @@ setuptools = "80.8.0"
 tabulate = "0.9.0"
 tomli = "2.2.1"
 tomlkit = "*"
-tqdm = "4.67.0"
+tqdm = "4.67.1"
 
 # Document processing dependencies
 bs4 = "0.0.2"
