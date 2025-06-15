@@ -1,3 +1,4 @@
+from nodetool.workflows.types import Error, JobUpdate, OutputUpdate
 from pydantic import BaseModel, Field
 import uuid
 
@@ -61,14 +62,12 @@ async def run_graph(graph: Graph, user_id: str = "1", auth_token: str = "token")
     """
     req = RunJobRequest(user_id=user_id, auth_token=auth_token, graph=graph)
 
-    res = None
+    res = {}
     async for msg in run_workflow(req):
-        if msg["type"] == "job_update" and msg["status"] == "completed":
-            res = msg["result"]
-        elif msg["type"] == "job_update" and msg["status"] == "failed":
-            raise Exception(msg["error"])
-        elif msg["type"] == "error":
-            raise Exception(msg["error"])
+        if isinstance(msg, OutputUpdate):
+            res[msg.node_name] = msg.value
+        elif isinstance(msg, Error):
+            raise Exception(msg.error)
     return res
 
 

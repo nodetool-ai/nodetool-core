@@ -343,13 +343,6 @@ class AnthropicProvider(ChatProvider):
             else "You are a helpful assistant."
         )
 
-        if isinstance(response_format, dict) and "json_schema" in response_format:
-            if "schema" not in response_format["json_schema"]:
-                raise ValueError("schema is required in json_schema response format")
-            json_tool = JsonOutputTool(response_format["json_schema"]["schema"])
-            local_tools.append(json_tool)
-            system_message = f"{system_message}\nYou must call the '{json_tool.name}' tool to output JSON according to the specified schema."
-
         # Convert messages and tools to Anthropic format
         anthropic_messages = [
             msg
@@ -358,6 +351,23 @@ class AnthropicProvider(ChatProvider):
             ]
             if msg is not None
         ]
+
+        if isinstance(response_format, dict) and "json_schema" in response_format:
+            if "schema" not in response_format["json_schema"]:
+                raise ValueError("schema is required in json_schema response format")
+            json_tool = JsonOutputTool(response_format["json_schema"]["schema"])
+            local_tools.append(json_tool)
+            system_message = system_message
+            last_message = messages[-1]
+            if last_message.role == "user":
+                if isinstance(last_message.content, str):
+                    last_message.content += f"\nYou must call the '{json_tool.name}' tool to output JSON according to the specified schema."
+                elif isinstance(last_message.content, list):
+                    last_message.content.append(
+                        MessageTextContent(
+                            text=f"You must call the '{json_tool.name}' tool to output JSON according to the specified schema."
+                        )
+                    )
 
         # Use the potentially modified local_tools list
         anthropic_tools = self.format_tools(local_tools)

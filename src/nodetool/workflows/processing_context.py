@@ -2189,3 +2189,39 @@ class ProcessingContext:
         self._browser = browser
 
         return browser
+
+    async def get_browser_context(self):
+        """
+        Get a browser context for this context.
+        """
+        if getattr(self, "_browser_context", None):
+            return self._browser_context  # type: ignore
+
+        browser = await self.get_browser()
+        self._browser_context = await browser.new_context()
+        return self._browser_context
+
+    async def get_browser_page(self, url: str):
+        """
+        Get a browser page for this context.
+        """
+        if getattr(self, "_browser_pages", None) and url in self._browser_pages:
+            return self._browser_pages[url]  # type: ignore
+        
+        if not getattr(self, "_browser_pages", None):
+            self._browser_pages = {}
+
+        browser_context = await self.get_browser_context()
+        page = await browser_context.new_page()
+        await page.goto(url, wait_until="domcontentloaded", timeout=30000)
+        self._browser_pages[url] = page
+        return page
+
+
+    async def cleanup(self):
+        """
+        Cleanup the browser context and pages.
+        """
+        if getattr(self, "_browser", None):
+            await self._browser.close() # type: ignore
+            self._browser = None

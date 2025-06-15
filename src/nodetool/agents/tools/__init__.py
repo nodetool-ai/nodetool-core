@@ -69,19 +69,37 @@ from .workspace_tools import ReadFileTool, WriteFileTool
 # Asset tools
 from .asset_tools import ListAssetsDirectoryTool, ReadAssetTool, SaveAssetTool
 
+# Help tools
+from .help_tools import (
+    SearchExamplesTool,
+    SearchNodesTool,
+)
+
+# Math tools
+from .math_tools import (
+    CalculatorTool,
+    StatisticsTool,
+    GeometryTool,
+    TrigonometryTool,
+    ConversionTool,
+)
+
 # Names to be exported (dunder all)
 __all__ = [
     "AddLabelTool",
     "ArchiveEmailTool",
     "BrowserTool",
     "BrowserUseTool",
+    "CalculatorTool",
     "ChromaHybridSearchTool",
     "ChromaIndexTool",
     "ChromaTextSearchTool",
+    "ConversionTool",
     "ConvertPDFToMarkdownTool",
     "DownloadFileTool",
     "ExtractPDFTablesTool",
     "ExtractPDFTextTool",
+    "GeometryTool",
     "GoogleGroundedSearchTool",
     "GoogleImageGenerationTool",
     "GoogleImagesTool",
@@ -101,7 +119,11 @@ __all__ = [
     "SaveAssetTool",
     "ScreenshotTool",
     "SearchEmailTool",
+    "SearchExamplesTool",
+    "SearchNodesTool",
+    "StatisticsTool",
     "Tool",
+    "TrigonometryTool",
     "WriteFileTool",
     # Directly imported helpers
     "create_gmail_connection",

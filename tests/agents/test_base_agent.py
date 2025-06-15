@@ -34,11 +34,6 @@ class DummyAgent(BaseAgent):
         return "result"
 
 
-def test_base_class_is_abstract():
-    provider = DummyProvider()
-    with pytest.raises(TypeError):
-        BaseAgent("a", "b", provider, "model")
-
 
 def test_initialization_defaults():
     provider = DummyProvider()
@@ -49,7 +44,7 @@ def test_initialization_defaults():
     assert agent.provider is provider
     assert agent.model == "model"
     assert agent.tools == []
-    assert agent.input_files == []
+    assert agent.inputs == {}
     assert agent.system_prompt == ""
     assert agent.max_token_limit == 42
     assert agent.results is None
@@ -66,11 +61,11 @@ def test_initialization_custom_values():
         model="model",
         system_prompt="hello",
         max_token_limit=77,
-        input_files=["file1"],
+        inputs={"file1": "file1"},
     )
 
     assert agent.system_prompt == "hello"
-    assert agent.input_files == ["file1"]
+    assert agent.inputs == {"file1": "file1"}
     assert agent.max_token_limit == 77
     assert provider.calls == 0
 

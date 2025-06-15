@@ -2,6 +2,20 @@ from pydantic import BaseModel
 from typing import Any, Optional
 
 
+ALL_TYPES = [
+    "str",
+    "int",
+    "float",
+    "bool",
+    "list",
+    "dict",
+    "tuple",
+    "union",
+    "enum",
+    "any",
+]
+
+
 class TypeMetadata(BaseModel):
     """
     Metadata for a type.
@@ -213,7 +227,7 @@ class TypeMetadata(BaseModel):
             return {"type": "string", "format": "binary"}
         if self.type == "text":
             return {"type": "string"}
-        if self.type == "tensor":
+        if self.type == "np_array":
             return {"type": "array", "items": {"type": "number"}}
         if self.type == "list":
             if not self.type_args:

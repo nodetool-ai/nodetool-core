@@ -19,19 +19,16 @@ searches across documentation and examples.
 """
 
 import asyncio
-import json
 import os
-import re
-from typing import Any, AsyncGenerator, Mapping, List, Type, Dict, cast
+from typing import Any, AsyncGenerator, Mapping, List
 import readline
 import uuid
+from nodetool.agents.tools.base import Tool
+from nodetool.metadata.node_metadata import NodeMetadata
 from pydantic import BaseModel
 
-import chromadb
-from chromadb.api.types import IncludeEnum, WhereDocument, Metadata
 from jsonschema import validators
 from nodetool.chat.providers.base import ChatProvider
-from nodetool.common.settings import get_system_data_path
 from nodetool.common.environment import Environment
 from nodetool.metadata.types import (
     Message,
@@ -42,7 +39,6 @@ from nodetool.metadata.types import (
 from nodetool.packages.registry import Registry
 from nodetool.workflows.types import Chunk
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.agents.tools.base import Tool
 from nodetool.chat.providers import get_provider
 
 
@@ -69,293 +65,13 @@ def validate_schema(schema):
         return False
 
 
-def get_collection(name) -> chromadb.Collection:
-    """
-    Get or create a collection with the given name.
-
-    Args:
-        context: The processing context.
-        name: The name of the collection to get or create.
-    """
-    from chromadb.utils.embedding_functions import SentenceTransformerEmbeddingFunction  # type: ignore
-    from chromadb.config import DEFAULT_DATABASE, DEFAULT_TENANT, Settings
-
-    chroma_path = get_system_data_path("chroma-docs")
-
-    log.info(f"Using collection {name} from {chroma_path}")
-
-    client = chromadb.PersistentClient(
-        path=Environment.get_chroma_path(),
-        tenant=DEFAULT_TENANT,
-        database=DEFAULT_DATABASE,
-        settings=Settings(anonymized_telemetry=False),
-    )
-
-    embedding_function = SentenceTransformerEmbeddingFunction()
-
-    return client.get_or_create_collection(
-        name=name,
-        embedding_function=embedding_function,  # type: ignore
-        metadata={"embedding_model": "all-MiniLM-L6-v2"},
-    )
-
-
-def index_documentation(collection: chromadb.Collection):
-    """
-    Index the documentation if it doesn't exist yet.
-    """
-
-    registry = Registry()
-    installed_packages = registry.list_installed_packages()
-
-    ids = []
-    docs = []
-    metadata = []
-    for package in installed_packages:
-        if package.nodes:
-            for node in package.nodes:
-                ids.append(node.node_type)
-                docs.append(node.description)
-                node_meta_raw = node.model_dump()
-                # Filter to include only valid Metadata types (str, int, float, bool)
-                node_meta: Metadata = {
-                    k: v
-                    for k, v in node_meta_raw.items()
-                    if isinstance(v, (str, int, float, bool))
-                }
-                metadata.append(node_meta)
-
-    collection.add(ids=ids, documents=docs, metadatas=metadata)  # type: ignore
-    return collection
-
-
-def index_examples(collection: chromadb.Collection):
-    """
-    Index the examples if they don't exist yet.
-    """
-    from nodetool.workflows.examples import load_examples
-
-    examples = load_examples()
-    ids = [example.id for example in examples]
-    docs = [example.model_dump_json() for example in examples]
-
-    collection.add(ids=ids, documents=docs)
-    print("Indexed examples")
-
-
-def get_doc_collection():
-    collection = get_collection("docs")
-    if collection.count() == 0:
-        index_documentation(collection)
-    return collection
-
-
-def get_example_collection():
-    collection = get_collection("examples")
-    if collection.count() == 0:
-        index_examples(collection)
-
-    return collection
-
-
 class SearchResult(BaseModel):
     id: str
     content: str
     metadata: Mapping[str, Any] | None = None
 
 
-def semantic_search_documentation(
-    query: str,
-) -> list[SearchResult]:
-    """
-    Perform semantic search on documentation using embeddings.
-
-    Args:
-        query: The query to search for.
-
-    Returns:
-        A list of search results from semantic matching.
-    """
-    n_results = 10
-    collection = get_doc_collection()
-    results = collection.query(
-        query_texts=[query],
-        n_results=n_results,
-        include=[IncludeEnum.documents, IncludeEnum.metadatas, IncludeEnum.distances],
-    )
-
-    search_results = []
-    if (
-        results["documents"]
-        and results["ids"]
-        and results["ids"][0]
-        and len(results["documents"][0]) > 0
-    ):
-        for i, doc in enumerate(results["documents"][0]):
-            current_metadata = None
-            if (
-                results["metadatas"]
-                and results["metadatas"][0]
-                and i < len(results["metadatas"][0])
-            ):
-                current_metadata = results["metadatas"][0][i]
-
-            search_results.append(
-                SearchResult(
-                    id=results["ids"][0][i],
-                    content=doc,
-                    metadata=current_metadata,
-                )
-            )
-    return search_results
-
-
-def node_properties(node_type: str) -> Dict[str, Any]:
-    """
-    Get the properties of a node.
-    """
-    collection = get_doc_collection()
-    results = collection.get(
-        ids=[node_type], include=[IncludeEnum.documents, IncludeEnum.metadatas]
-    )
-    if (
-        results["metadatas"]
-        and len(results["metadatas"]) > 0
-        and results["metadatas"][0] is not None
-    ):
-        # Convert Mapping to dict for consistent return type
-        return dict(results["metadatas"][0])
-    elif (
-        results["documents"]
-        and len(results["documents"]) > 0
-        and results["documents"][0] is not None
-    ):
-        doc_content_str = results["documents"][0]
-        try:
-            loaded_json = json.loads(doc_content_str)
-            if isinstance(loaded_json, dict):
-                return loaded_json
-            return {"description": doc_content_str}  # If not a dict, wrap it
-        except json.JSONDecodeError:
-            return {"description": doc_content_str}
-    return {}
-
-
-def keyword_search_documentation(query: str) -> list[SearchResult]:
-    """
-    Perform keyword search on documentation using token matching.
-
-    Args:
-        query: The query to search for.
-
-    Returns:
-        A list of search results from keyword matching.
-    """
-    n_results = 10
-    collection = get_doc_collection()
-
-    pattern = r"[ ,.!?\-_=|]+"
-    query_tokens = [
-        token.strip() for token in re.split(pattern, query) if token.strip()
-    ]
-    if len(query_tokens) > 1:
-        where_document = {"$or": [{"$contains": token} for token in query_tokens]}
-    else:
-        where_document = {"$contains": query_tokens[0]}
-
-    results = collection.query(
-        query_texts=[query],
-        n_results=n_results,
-        where_document=cast(WhereDocument, where_document),
-        include=[IncludeEnum.documents, IncludeEnum.metadatas, IncludeEnum.distances],
-    )
-
-    search_results = []
-    if (
-        results["documents"]
-        and results["ids"]
-        and results["ids"][0]
-        and len(results["documents"][0]) > 0
-    ):
-        for i, doc in enumerate(results["documents"][0]):
-            current_metadata = None
-            if (
-                results["metadatas"]
-                and results["metadatas"][0]
-                and i < len(results["metadatas"][0])
-            ):
-                current_metadata = results["metadatas"][0][i]
-            search_results.append(
-                SearchResult(
-                    id=results["ids"][0][i],
-                    content=doc,
-                    metadata=current_metadata,
-                )
-            )
-    return search_results
-
-
-def search_examples(query: str) -> list[SearchResult]:
-    """
-    Search the examples for the given query string.
-
-    Args:
-        query: The query to search for.
-        n_results: The number of results to return.
-
-    Returns:
-        A tuple of the ids and documents that match the query.
-    """
-    res = get_example_collection().query(query_texts=[query], n_results=2)
-    if len(res["ids"]) == 0 or res["documents"] is None:
-        return []
-    return [
-        SearchResult(
-            id=res["ids"][0][i],
-            content=res["documents"][0][i],
-        )
-        for i in range(len(res["ids"][0]))
-    ]
-
-
-"""
-Workflow Tool:
-You have access to a powerful tool called "workflow_tool". This tool allows 
-you to design new workflows for the user.
-
-Here's how to use it:
-
-1. When a user requests a new workflow or you identify an opportunity to 
-   create one, design the workflow using your knowledge of Nodetool nodes 
-   and their connections.
-
-2. Structure the workflow as a JSON object with the following properties:
-   - name: A descriptive name for the workflow
-   - description: A brief explanation of what the workflow does
-   - graph: An object containing two arrays:
-     - nodes: Each node should have an id, type, data (properties), and 
-              ui_properties
-     - edges: Connections between nodes, each with an id, source, target, 
-              sourceHandle, and targetHandle
-
-3. Make sure all nodes are connected properly and the workflow is logically
-    sound. Important: Only use existing Nodetool nodes in the workflow.
-
-4. Call the "workflow_tool" with this JSON object as its parameter.
-
-This feature allows you to not only suggest workflows but actually implement 
-them, greatly enhancing your ability to assist users. Be creative in 
-designing workflows that solve user problems or demonstrate Nodetool 
-capabilities.
-
-Example usage:
-User: "Can you create a workflow that generates an image and then applies a 
-sepia filter?"
-You: "Yes, here it is:"
-
-Then proceed to design the workflow by calling the tool with the name, description
-and graph properties, including all necessary nodes and edges.
-"""
+registry = Registry()
 
 
 CORE_DOCS = [
@@ -452,14 +168,6 @@ CORE_DOCS = [
         """,
     },
 ]
-
-
-def index_core_docs(collection: chromadb.Collection):
-    collection.add(
-        ids=[doc["id"] for doc in CORE_DOCS],
-        documents=[doc["content"] for doc in CORE_DOCS],
-        metadatas=[{"title": doc["title"], "id": doc["id"]} for doc in CORE_DOCS],
-    )
 
 
 SYSTEM_PROMPT = """
@@ -596,162 +304,6 @@ async def create_message(message: Message) -> Mapping[str, str | list[str]]:
     return ollama_message
 
 
-# --- Pydantic Models for Tool Arguments ---
-class SearchArgs(BaseModel):
-    query: str
-
-
-class NodePropertiesArgs(BaseModel):
-    node_type: str
-
-
-# --- Tool Classes for Help System ---
-class BaseHelpTool(Tool):
-    _args_model_class: Type[BaseModel]
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        if hasattr(self, "_args_model_class") and self._args_model_class:
-            self.input_schema = self._args_model_class.model_json_schema()
-        else:
-            self.input_schema = super().input_schema
-
-    # Override process to parse params with Pydantic model
-    async def _process_typed(
-        self, context: ProcessingContext, typed_params: BaseModel
-    ) -> Any:
-        # This method should be implemented by subclasses if they want to work with typed_params
-        raise NotImplementedError(
-            "Subclasses must implement _process_typed or override process directly"
-        )
-
-    async def process(self, context: ProcessingContext, params: Dict[str, Any]) -> Any:
-        # Parse the raw params dict using the specific Pydantic model for this tool
-        if hasattr(self, "_args_model_class") and self._args_model_class:
-            try:
-                typed_params_instance = self._args_model_class(**params)
-                return await self._process_typed(context, typed_params_instance)
-            except Exception as e:  # Catch Pydantic validation errors or other issues
-                log.error(
-                    f"Error parsing params for tool {self.name} with model {self._args_model_class.__name__}: {params}. Error: {e}"
-                )
-                # Return a JSON string error, as tool results are often expected to be strings by LLMs
-                return json.dumps(
-                    {"error": f"Invalid parameters for tool {self.name}: {str(e)}"}
-                )
-        else:
-            log.warning(
-                f"Tool {self.name} is missing _args_model_class for Pydantic validation."
-            )
-            return await super().process(
-                context, params
-            )  # Fallback to base if no model defined
-
-
-class SemanticSearchDocumentationTool(BaseHelpTool):
-    name: str = "semantic_search_documentation"
-    description: str = (
-        "Performs semantic search on Nodetool documentation. Use for conceptual queries and finding related content."
-    )
-    _args_model_class: Type[BaseModel] = SearchArgs
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-    async def _process_typed(self, context: ProcessingContext, typed_params: SearchArgs) -> str:  # type: ignore
-        log.info(
-            f"Executing SemanticSearchDocumentationTool with query: {typed_params.query}"
-        )
-        results = semantic_search_documentation(query=typed_params.query)
-        return convert_results_to_json(results)
-
-
-class KeywordSearchDocumentationTool(BaseHelpTool):
-    name: str = "keyword_search_documentation"
-    description: str = (
-        "Performs keyword search on Nodetool documentation. Use for finding specific node types or features by exact word matches."
-    )
-    _args_model_class: Type[BaseModel] = SearchArgs
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-    async def _process_typed(self, context: ProcessingContext, typed_params: SearchArgs) -> str:  # type: ignore
-        log.info(
-            f"Executing KeywordSearchDocumentationTool with query: {typed_params.query}"
-        )
-        results = keyword_search_documentation(query=typed_params.query)
-        return convert_results_to_json(results)
-
-
-class SearchExamplesTool(BaseHelpTool):
-    name: str = "search_examples"
-    description: str = (
-        "Searches for relevant Nodetool workflow examples. Use for finding example workflows and use cases."
-    )
-    _args_model_class: Type[BaseModel] = SearchArgs
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-    async def _process_typed(self, context: ProcessingContext, typed_params: SearchArgs) -> str:  # type: ignore
-        log.info(f"Executing SearchExamplesTool with query: {typed_params.query}")
-        results = search_examples(query=typed_params.query)
-        return convert_results_to_json(results)
-
-
-class NodePropertiesTool(BaseHelpTool):
-    name: str = "node_properties"
-    description: str = (
-        "Gets the properties (inputs, outputs, description) of a specific Nodetool node type."
-    )
-    _args_model_class: Type[BaseModel] = NodePropertiesArgs
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-    async def _process_typed(self, context: ProcessingContext, typed_params: NodePropertiesArgs) -> str:  # type: ignore
-        log.info(
-            f"Executing NodePropertiesTool with node_type: {typed_params.node_type}"
-        )
-        properties = node_properties(node_type=typed_params.node_type)
-        return convert_results_to_json(properties)
-
-
-def convert_results_to_json(obj: Any) -> str:
-    if isinstance(obj, BaseModel):
-        return obj.model_dump_json()
-    elif isinstance(obj, list):
-        return json.dumps(
-            [
-                (
-                    json.loads(convert_results_to_json(item))
-                    if isinstance(convert_results_to_json(item), str)
-                    else convert_results_to_json(item)
-                )
-                for item in obj
-            ]
-        )
-    elif isinstance(obj, dict):
-        return json.dumps(
-            {
-                k: (
-                    json.loads(convert_results_to_json(v))
-                    if isinstance(convert_results_to_json(v), str)
-                    else convert_results_to_json(v)
-                )
-                for k, v in obj.items()
-            }
-        )
-    elif isinstance(obj, (str, int, float, bool)):
-        return json.dumps(obj)
-    else:
-        try:
-            return json.dumps(obj)
-        except TypeError:
-            return json.dumps(str(obj))
-
-
 async def create_help_answer(
     provider: ChatProvider, messages: List[Message], model: str
 ) -> AsyncGenerator[Chunk | ToolCall, None]:
@@ -759,16 +311,14 @@ async def create_help_answer(
     Generates help answers using a ChatProvider and a set of help-specific tools.
     Streams text chunks of the answer.
     """
-    semantic_search_tool = SemanticSearchDocumentationTool()
-    keyword_search_tool = KeywordSearchDocumentationTool()
-    search_examples_tool = SearchExamplesTool()
-    node_properties_tool = NodePropertiesTool()
+    from nodetool.agents.tools.help_tools import (
+        SearchNodesTool,
+        SearchExamplesTool,
+    )
 
     help_tools_instances: List[Tool] = [
-        semantic_search_tool,
-        keyword_search_tool,
-        search_examples_tool,
-        node_properties_tool,
+        SearchNodesTool(),
+        SearchExamplesTool(),
     ]
 
     effective_messages_for_provider: List[Message] = [
@@ -800,9 +350,7 @@ async def create_help_answer(
 
                 tool_call_id = item.id or str(uuid.uuid4())
 
-                if found_tool_instance and isinstance(
-                    found_tool_instance, BaseHelpTool
-                ):
+                if found_tool_instance:
                     tool_args_dict = item.args if isinstance(item.args, dict) else {}
                     if not isinstance(item.args, dict):
                         log.warning(
@@ -846,23 +394,6 @@ async def test_chat(provider: ChatProvider, model: str):
     """Simple terminal-based chat tester with readline support"""
     print("Starting help chat test (type 'exit' to quit)")
     print("This test uses the refactored create_help_answer with a provider.")
-
-    try:
-        doc_collection = get_doc_collection()
-        if doc_collection.count() == 0:
-            print("Indexing core documentation for test...")
-            index_core_docs(doc_collection)
-            print("Indexing package documentation for test...")
-            index_documentation(doc_collection)
-
-        example_collection = get_example_collection()
-        if example_collection.count() == 0:
-            print("Indexing examples for test...")
-            index_examples(example_collection)
-    except Exception as e:
-        print(f"Error initializing ChromaDB collections for test: {e}")
-        print("Searches might not work correctly.")
-
     chat_history: List[Message] = []
 
     readline.parse_and_bind("tab: complete")
@@ -885,8 +416,14 @@ async def test_chat(provider: ChatProvider, model: str):
             async for chunk in create_help_answer(
                 provider=provider, messages=chat_history, model=model
             ):
-                print(chunk, end="", flush=True)
-                full_response.append(chunk)
+                if isinstance(chunk, Chunk):
+                    print(chunk.content, end="", flush=True)
+                    full_response.append(chunk.content)
+                elif isinstance(chunk, ToolCall):
+                    print(chunk.name, end="", flush=True)
+                    full_response.append(chunk.name)
+                else:
+                    raise ValueError(f"Unexpected chunk type: {type(chunk)}")
             print()
 
             if full_response:
@@ -905,26 +442,4 @@ async def test_chat(provider: ChatProvider, model: str):
 
 
 if __name__ == "__main__":
-    print("Initializing ChromaDB collections for __main__...")
-    try:
-        doc_collection = get_doc_collection()
-        if doc_collection.count() == 0:
-            print("Indexing core documentation...")
-            index_core_docs(doc_collection)
-            print("Indexing package documentation...")
-            index_documentation(doc_collection)
-        else:
-            print("Documentation collections appear to be already indexed.")
-
-        example_collection = get_example_collection()
-        if example_collection.count() == 0:
-            print("Indexing examples...")
-            index_examples(example_collection)
-        else:
-            print("Example collection appears to be already indexed.")
-        print("ChromaDB initialization complete.")
-    except Exception as e:
-        print(f"Error during __main__ ChromaDB initialization: {e}")
-        print("Help tool searches might fail or return empty results.")
-
     asyncio.run(test_chat(provider=get_provider(Provider.OpenAI), model="gpt-4o-mini"))

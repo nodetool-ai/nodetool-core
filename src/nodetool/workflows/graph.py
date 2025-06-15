@@ -1,6 +1,7 @@
 from typing import Any, List, Sequence
 from collections import deque
 
+from nodetool.metadata.typecheck import typecheck
 from pydantic import BaseModel, Field
 from nodetool.types.graph import Edge
 from nodetool.workflows.base_node import (
@@ -72,7 +73,7 @@ class Graph(BaseModel):
         ]
 
     @classmethod
-    def from_dict(cls, graph: dict[str, Any]):
+    def from_dict(cls, graph: dict[str, Any], skip_errors: bool = True):
         """
         Create a Graph object from a dictionary representation.
         The format is the same as the one used in the frontend.
@@ -82,7 +83,8 @@ class Graph(BaseModel):
         """
         return cls(
             nodes=[
-                BaseNode.from_dict(node, skip_errors=True) for node in graph["nodes"]
+                BaseNode.from_dict(node, skip_errors=skip_errors)
+                for node in graph["nodes"]
             ],
             edges=graph["edges"],
         )
@@ -187,3 +189,74 @@ class Graph(BaseModel):
             print("Graph contains at least one cycle")
 
         return sorted_nodes
+
+    def validate_edge_types(self):
+        """
+        Validate that edge connections have compatible types.
+
+        Returns:
+            List[str]: List of validation error messages. Empty list if all edges are valid.
+        """
+        validation_errors = []
+
+        for edge in self.edges:
+            try:
+                # Find source and target nodes
+                source_node = self.find_node(edge.source)
+                target_node = self.find_node(edge.target)
+
+                if not source_node:
+                    validation_errors.append(
+                        f"Source node '{edge.source}' not found for edge"
+                    )
+                    continue
+
+                if not target_node:
+                    validation_errors.append(
+                        f"Target node '{edge.target}' not found for edge"
+                    )
+                    continue
+
+                # Get node classes to access type metadata
+                # Since nodes are already instances, we can use their classes directly
+                source_node_class = source_node.__class__
+                target_node_class = target_node.__class__
+
+                # Get source output type (find_output is a class method)
+                source_output = source_node_class.find_output(edge.sourceHandle)
+                if not source_output:
+                    validation_errors.append(
+                        f"{edge.target}: Output '{edge.sourceHandle}' not found on source node {source_node_class.__name__}"
+                    )
+                    continue
+
+                # Get target input type (find_property is an instance method)
+                target_property = target_node.find_property(edge.targetHandle)
+                if not target_property:
+                    # Respect dynamic nodes that can accept arbitrary properties
+                    if type(target_node).is_dynamic():
+                        continue
+
+                    # Align error message format with test expectations ("Property ... not found")
+                    validation_errors.append(
+                        f"{edge.target}: Property '{edge.targetHandle}' not found on target node {target_node_class.__name__}"
+                    )
+                    continue
+
+                # Check type compatibility
+                source_type = source_output.type
+                target_type = target_property.type
+
+                if not typecheck(source_type, target_type):
+                    validation_errors.append(
+                        f"{edge.target}: Type mismatch for property '{edge.targetHandle}' - "
+                        f"{edge.source}.{edge.sourceHandle} outputs {source_type.type} "
+                        f"but {edge.target}.{edge.targetHandle} expects {target_type.type}"
+                    )
+
+            except Exception as e:
+                validation_errors.append(
+                    f"Error validating edge {edge.source}->{edge.target}: {str(e)}"
+                )
+
+        return validation_errors

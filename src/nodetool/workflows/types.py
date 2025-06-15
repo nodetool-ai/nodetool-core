@@ -14,6 +14,7 @@ class TaskUpdateEvent(str, Enum):
     SUBTASK_STARTED = "subtask_started"
     ENTERED_CONCLUSION_STAGE = "entered_conclusion_stage"
     MAX_ITERATIONS_REACHED = "max_iterations_reached"
+    MAX_TOOL_CALLS_REACHED = "max_tool_calls_reached"
     SUBTASK_COMPLETED = "subtask_completed"
     SUBTASK_FAILED = "subtask_failed"
     TASK_COMPLETED = "task_completed"

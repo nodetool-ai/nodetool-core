@@ -50,19 +50,11 @@ Dependencies:
 import asyncio
 from contextlib import contextmanager
 import gc
+import logging
 import time
 from typing import Any, AsyncGenerator, Optional
 from collections import deque
 import random
-
-# Import anext for Python 3.10+ async generator support
-try:
-    anext
-except NameError:
-    # For Python < 3.10, define anext
-    async def anext(async_gen):
-        return await async_gen.__anext__()
-
 
 from nodetool.common.model_manager import ModelManager
 from nodetool.types.job import JobUpdate
@@ -100,7 +92,8 @@ try:
 except ImportError:
     pass
 
-log = Environment.get_logger()
+log = logging.getLogger(__name__)
+# log.setLevel(logging.DEBUG)
 
 MAX_RETRIES = 2
 BASE_DELAY = 1  # seconds
@@ -222,6 +215,9 @@ class WorkflowRunner:
                     self.device = "mps"
 
             log.info(f"Workflow runs on device: {self.device}")
+            log.debug(
+                f"WorkflowRunner initialized for job_id: {self.job_id} with device: {self.device}"
+            )
 
     def is_running(self) -> bool:
         """
@@ -279,6 +275,9 @@ class WorkflowRunner:
         """
         log.info(f"Starting workflow execution for job_id: {self.job_id}")
         log.debug("Run parameters: params=%s messages=%s", req.params, req.messages)
+        log.debug(
+            f"WorkflowRunner.run called for job_id: {self.job_id} with req: {req}, context: {context}"
+        )
 
         Environment.load_settings()
 
@@ -300,38 +299,38 @@ class WorkflowRunner:
         log.debug("Edge queues after initialization: %s", self.edge_queues)
         self.context = context
         context.device = self.device
+        log.debug(f"Context and device set. Device: {self.device}")
 
         input_nodes = {node.name: node for node in graph.inputs()}
 
         start_time = time.time()
         context.post_message(JobUpdate(job_id=self.job_id, status="running"))
 
-        if req.params:
-            for key, value in req.params.items():
-                if key not in input_nodes:
-                    raise ValueError(f"No input node found for param: {key}")
-
-                node = input_nodes[key]
-                node.assign_property("value", value)
-
-        if req.messages:
-            # find chat input node
-            chat_input_node = next(
-                (
-                    node
-                    for node in context.graph.nodes
-                    if node.get_node_type() == "nodetool.input.ChatInput"
-                ),
-                None,
-            )
-            if chat_input_node is None:
-                raise ValueError(
-                    "Chat input node not found. Make sure you have a ChatInput node in your graph."
-                )
-            chat_input_node.assign_property("value", req.messages)
-
         with self.torch_context(context):
             try:
+                if req.params:
+                    for key, value in req.params.items():
+                        if key not in input_nodes:
+                            raise ValueError(f"No input node found for param: {key}")
+
+                        node = input_nodes[key]
+                        node.assign_property("value", value)
+
+                if req.messages:
+                    # find chat input node
+                    chat_input_node = next(
+                        (
+                            node
+                            for node in context.graph.nodes
+                            if node.get_node_type() == "nodetool.input.ChatInput"
+                        ),
+                        None,
+                    )
+                    if chat_input_node is None:
+                        raise ValueError(
+                            "Chat input node not found. Make sure you have a ChatInput node in your graph."
+                        )
+                    chat_input_node.assign_property("value", req.messages)
                 await self.validate_graph(context, graph)
                 await self.initialize_graph(context, graph)
                 await self.process_graph(context, graph)
@@ -347,6 +346,7 @@ class WorkflowRunner:
                 log.error(
                     f"Error during graph execution for job {self.job_id}: {error_message_for_job_update}"
                 )
+                log.debug(f"Exception caught in WorkflowRunner.run: {e}", exc_info=True)
 
                 # Specific handling for OOM error message, but status is always error
                 if TORCH_AVAILABLE and isinstance(e, torch.cuda.OutOfMemoryError):
@@ -371,9 +371,11 @@ class WorkflowRunner:
                 ):  # graph is the internal Graph instance from the start of run
                     for node in graph.nodes:
                         await node.finalize(context)
+                log.debug("Nodes finalized in finally block.")
 
                 if TORCH_AVAILABLE and torch.cuda.is_available():
                     torch.cuda.empty_cache()
+                log.debug("CUDA cache emptied if available.")
 
                 self.active_generators.clear()
                 log.info(
@@ -408,6 +410,9 @@ class WorkflowRunner:
             f"WorkflowRunner.run for job_id: {self.job_id} method ending with status: {self.status}"
         )
         log.debug("Workflow outputs: %s", self.outputs)
+        log.debug(
+            f"WorkflowRunner.run finished for job_id: {self.job_id}. Final status: {self.status}, Outputs: {self.outputs}"
+        )
 
     async def validate_graph(self, context: ProcessingContext, graph: Graph):
         """
@@ -425,8 +430,11 @@ class WorkflowRunner:
                         summarize the issues found.
         """
         log.debug("Validating graph with %d nodes", len(graph.nodes))
+        log.debug(f"validate_graph called with graph: {graph}")
         is_valid = True
+        all_errors = []
 
+        # First validate node inputs
         for node in graph.nodes:
             input_edges = [edge for edge in graph.edges if edge.target == node.id]
             log.debug("Validating node %s", node.get_title())
@@ -434,6 +442,7 @@ class WorkflowRunner:
             if len(errors) > 0:
                 is_valid = False
                 for e in errors:
+                    all_errors.append(e)
                     context.post_message(
                         NodeUpdate(
                             node_id=node.id,
@@ -442,9 +451,29 @@ class WorkflowRunner:
                             error=str(e),
                         )
                     )
+
+        # Now validate edge type compatibility
+        edge_errors = graph.validate_edge_types()
+        if edge_errors:
+            is_valid = False
+            for error in edge_errors:
+                all_errors.append(error)
+                # Extract node_id from error message if possible
+                node_id = error.split(":")[0] if ":" in error else None
+                if node_id and graph.find_node(node_id):
+                    node = graph.find_node(node_id)
+                    context.post_message(
+                        NodeUpdate(
+                            node_id=node_id,
+                            node_name=node.get_title() if node else node_id,
+                            status="error",
+                            error=error,
+                        )
+                    )
+
         if not is_valid:
             log.debug("Graph validation failed")
-            raise ValueError("Graph contains errors: " + "\n".join(errors))
+            raise ValueError("Graph contains errors: " + "\n".join(all_errors))
         log.debug("Graph validation successful")
 
     async def initialize_graph(self, context: ProcessingContext, graph: Graph):
@@ -465,6 +494,7 @@ class WorkflowRunner:
                        graph processing.
         """
         log.debug("Initializing graph with %d nodes", len(graph.nodes))
+        log.debug(f"initialize_graph called with graph: {graph}")
         for node in graph.nodes:
             try:
                 log.debug(f"Initializing node: {node.get_title()} ({node.id})")
@@ -503,6 +533,9 @@ class WorkflowRunner:
                                      to find target nodes and edges.
         """
         log.debug(f"Sending messages from {node.get_title()} ({node.id})")
+        log.debug(
+            f"send_messages called for node: {node.get_title()} ({node.id}), result: {result}"
+        )
         for key, value_to_send in result.items():
             # find edges from node.id and this specific output slot (key)
             outgoing_edges = context.graph.find_edges(node.id, key)
@@ -521,12 +554,24 @@ class WorkflowRunner:
                     )
                     continue
 
+                # Enqueue the value so normal downstream processing can occur (including OutputNodes)
+                # Additionally, if the target node is an OutputNode, capture the value immediately so
+                # that workflows which rely solely on streaming updates still have their outputs
+                # available even if the OutputNode is not explicitly executed before termination.
+                target_node = context.graph.find_node(edge.target)
+                if target_node and isinstance(target_node, OutputNode):
+                    output_name = getattr(target_node, "name", "") or edge.targetHandle
+                    existing_values = self.outputs.get(output_name, [])
+                    if not existing_values or existing_values[-1] != value_to_send:
+                        self.outputs.setdefault(output_name, []).append(value_to_send)
+
                 self.edge_queues[edge_key].append(value_to_send)
                 log.debug(
                     f"Sent message from {node.get_title()} ({node.id}) output '{key}' "
                     f"to {edge.target} input '{edge.targetHandle}' via edge_queue. Value: {str(value_to_send)[:50]}"
                 )
         log.debug("Edge queue state after sending messages: %s", self.edge_queues)
+        log.debug(f"send_messages finished for node: {node.get_title()} ({node.id})")
 
     async def _process_trigger_nodes(
         self,
@@ -550,6 +595,7 @@ class WorkflowRunner:
                        The job status is also set to "error".
         """
         log.debug("Processing trigger nodes")
+        log.debug("_process_trigger_nodes called.")
         initial_processing_tasks = []
         initial_nodes_for_tasks = []
 
@@ -583,6 +629,10 @@ class WorkflowRunner:
                             status="error",
                             error=str(result_or_exc)[:1000],
                         )
+                    )
+                    log.debug(
+                        f"Error in _process_trigger_nodes for node {node_obj.get_title()}: {result_or_exc}",
+                        exc_info=True,
                     )
                     raise result_or_exc
         log.debug("Trigger node processing complete")
@@ -623,6 +673,7 @@ class WorkflowRunner:
                                           (either an active generator or a node with inputs).
         """
         log.debug("Scanning graph for ready nodes")
+        log.debug("_get_ready_nodes_and_prepare_tasks called.")
         tasks_to_run_this_iteration = []
         ready_node_task_details_list: list[tuple[BaseNode, dict[str, Any]]] = []
         any_progress_potential = False
@@ -829,6 +880,9 @@ class WorkflowRunner:
             any_progress_potential = True
 
         log.debug("Found %d ready nodes", len(ready_node_task_details_list))
+        log.debug(
+            f"_get_ready_nodes_and_prepare_tasks found {len(ready_node_task_details_list)} ready nodes. any_progress_potential: {any_progress_potential}"
+        )
         return (
             ready_node_task_details_list,
             tasks_to_run_this_iteration,
@@ -868,6 +922,7 @@ class WorkflowRunner:
                   False otherwise.
         """
         log.debug("Executing node batch of size %d", len(tasks_to_run))
+        log.debug(f"_execute_node_batch called with {len(tasks_to_run)} tasks.")
         if not tasks_to_run:
             return False
 
@@ -894,9 +949,16 @@ class WorkflowRunner:
                         error=str(results[i])[:1000],
                     )
                 )
+                log.debug(
+                    f"Exception in _execute_node_batch for node {node_processed.get_title()}: {results[i]}",
+                    exc_info=True,
+                )
                 raise results[i]  # Propagate the error to halt graph processing
 
         log.debug("Batch execution completed. Success=%s", executed_something)
+        log.debug(
+            f"_execute_node_batch finished. executed_something: {executed_something}"
+        )
         return executed_something
 
     def _check_loop_termination_conditions(
@@ -926,13 +988,20 @@ class WorkflowRunner:
                     pending_data_in_queues = True
 
             if pending_data_in_queues:
+                # If there is still data queued after sufficient idle iterations, 
+                # this indicates a potential deadlock or stall. Terminate with warning.
                 log.warning(
-                    "Graph processing finished due to inactivity, but some edge queues still contain data. Potential stall or graph logic issue."
+                    "Terminating workflow despite pending data in edge queues after idle iterations. "
+                    "This may indicate a deadlock or unreachable nodes."
                 )
-                # Optionally, trigger deadlock-like reporting here or set job status to error.
-                # For now, let it terminate and the final job status will reflect outputs.
+                return True  # Terminate the processing loop due to potential deadlock.
+
+            # No pending data and idle for sufficient iterations – safe to terminate.
             return True
 
+        log.debug(
+            f"_check_loop_termination_conditions returning False (continue loop). iterations_without_progress: {iterations_without_progress}"
+        )
         return False  # Default: continue loop
 
     async def _main_processing_loop(
@@ -963,6 +1032,7 @@ class WorkflowRunner:
         log.debug(
             "Starting main processing loop for graph with %d nodes", len(graph.nodes)
         )
+        log.debug(f"_main_processing_loop started for parent_id: {parent_id}")
         iterations_without_progress = 0
         # Heuristic limit: N*3 (3 passes per node for complex message patterns) + buffer
         max_iterations_limit = len(graph.nodes) * 3 + 10
@@ -991,6 +1061,9 @@ class WorkflowRunner:
                 or any_progress_potential
                 or self.active_processing_node_ids
             ):
+                log.debug(
+                    f"Progress made in iteration. Resetting iterations_without_progress. nodes_processed: {nodes_were_processed_this_iteration}, progress_potential: {any_progress_potential}, active_ids: {self.active_processing_node_ids}"
+                )
                 iterations_without_progress = 0
             else:
                 iterations_without_progress += 1
@@ -1005,9 +1078,11 @@ class WorkflowRunner:
                 iterations_without_progress,
                 max_iterations_limit,
             ):
+                log.debug("Loop termination condition met.")
                 break
 
         log.debug("Main processing loop complete")
+        log.debug(f"_main_processing_loop finished for parent_id: {parent_id}")
 
     async def process_graph(
         self, context: ProcessingContext, graph: Graph, parent_id: str | None = None
@@ -1039,6 +1114,9 @@ class WorkflowRunner:
             len(graph.nodes),
             len(graph.edges),
         )
+        log.debug(
+            f"process_graph called for parent_id: {parent_id}. Graph: {len(graph.nodes)} nodes, {len(graph.edges)} edges."
+        )
 
         await self._process_trigger_nodes(context, graph)
 
@@ -1047,6 +1125,7 @@ class WorkflowRunner:
         # based on their dependencies.
         await self._main_processing_loop(context, graph, parent_id)
         log.debug("Graph processing finished for parent_id: %s", parent_id)
+        log.debug(f"process_graph finished for parent_id: {parent_id}")
 
     async def _init_streaming_node(
         self,
@@ -1059,6 +1138,9 @@ class WorkflowRunner:
         Sets up the generator, assigns initial properties, and sends a "running" update.
         """
         log.info(f"Initializing streaming node: {node.get_title()} ({node._id})")
+        log.debug(
+            f"_init_streaming_node called for node: {node.get_title()} ({node._id}), initial_config: {initial_config_properties}"
+        )
         self.current_node = node._id  # Ensure current_node is set for ComfyUI hooks
 
         # Assign initial configuration properties to the node instance.
@@ -1096,6 +1178,10 @@ class WorkflowRunner:
                 result={"error": str(e)[:1000]},
                 properties=list(initial_config_properties.keys()),
             )
+            log.debug(
+                f"Error in _init_streaming_node for node {node.get_title()}: {e}",
+                exc_info=True,
+            )
             # Remove from active_processing_node_ids if it was added by the caller of process_node
             if node._id in self.active_processing_node_ids:
                 self.active_processing_node_ids.remove(node._id)
@@ -1111,6 +1197,9 @@ class WorkflowRunner:
         """
         log.debug(
             f"Pulling next item from streaming node: {node.get_title()} ({node._id})"
+        )
+        log.debug(
+            f"_pull_from_streaming_node called for node: {node.get_title()} ({node._id})"
         )
         self.current_node = node._id  # Ensure current_node is set
 
@@ -1129,6 +1218,10 @@ class WorkflowRunner:
             # To prevent further issues, ensure it's marked as an error that halts the graph.
             raise RuntimeError(
                 f"Streaming state error for node {node.get_title()}: generator not found for pull."
+            )
+            log.debug(
+                f"Streaming state error in _pull_from_streaming_node for node {node.get_title()}: generator not found.",
+                exc_info=True,
             )
 
         generator, initial_config_properties = self.active_generators[node._id]
@@ -1198,6 +1291,10 @@ class WorkflowRunner:
             log.error(
                 f"Error during generation for streaming node {node.get_title()} ({node._id}): {str(e)}"
             )
+            log.debug(
+                f"Exception in _pull_from_streaming_node for node {node.get_title()}: {e}",
+                exc_info=True,
+            )
             node.send_update(
                 context,
                 "error",
@@ -1223,6 +1320,9 @@ class WorkflowRunner:
         """
         log.debug(
             f"Processing node: {node.get_title()} ({node._id}) with inputs: {list(inputs_from_edges.keys())}"
+        )
+        log.debug(
+            f"process_node called for node: {node.get_title()} ({node._id}), inputs: {inputs_from_edges}"
         )
         self.current_node = node._id
 
@@ -1264,6 +1364,9 @@ class WorkflowRunner:
                 await self.process_event_node(
                     context, node, event_value_for_handling, event_slot_for_handling
                 )
+                log.debug(
+                    f"process_node routed to event processing for node {node.get_title()}"
+                )
 
             # Existing logic for other node types
             elif node.is_streaming_output():
@@ -1273,6 +1376,9 @@ class WorkflowRunner:
                     # First time processing this streaming node instance in this run.
                     # `inputs_from_edges` contains its initial configuration if it's not a trigger node.
                     # `_init_streaming_node` will assign these or node uses intrinsic config.
+                    log.debug(
+                        f"process_node: Initializing streaming node {node.get_title()}"
+                    )
                     await self._init_streaming_node(context, node, inputs_from_edges)
                     # After initialization, immediately try to pull.
                     # `_pull_from_streaming_node` will raise StopAsyncIteration if it completes,
@@ -1300,9 +1406,15 @@ class WorkflowRunner:
                             f"Error assigning property {key} to OutputNode {node.id}: {str(e)}"
                         ) from e
                 await self.process_output_node(context, node, inputs_from_edges)
+                log.debug(
+                    f"process_node routed to output node processing for node {node.get_title()}"
+                )
             else:
                 # Regular, non-streaming, non-output node.
                 # process_node_with_inputs handles assigning properties from inputs_from_edges.
+                log.debug(
+                    f"process_node routed to regular node processing for node {node.get_title()}"
+                )
                 await self.process_node_with_inputs(context, node, inputs_from_edges)
 
         except StopAsyncIteration:
@@ -1315,6 +1427,10 @@ class WorkflowRunner:
         except Exception as e:
             log.error(
                 f"Exception during process_node for {node.get_title()} ({node._id}): {str(e)}"
+            )
+            log.debug(
+                f"Exception in process_node for node {node.get_title()}: {e}",
+                exc_info=True,
             )
             # If it was a streaming node that errored, ensure it's cleaned up.
             # _pull_from_streaming_node should handle this, but this is a safeguard.
@@ -1346,6 +1462,9 @@ class WorkflowRunner:
         log.info(
             f"Processing EVENT {event.name} for node {node.get_title()} ({node._id}) on slot '{event_slot}'"
         )
+        log.debug(
+            f"process_event_node called for node: {node.get_title()} ({node._id}), event: {event.name}, slot: {event_slot}"
+        )
 
         # Assign event to the appropriate slot
         node.assign_property(event_slot, event)
@@ -1372,6 +1491,10 @@ class WorkflowRunner:
         except Exception as e:
             log.error(
                 f"Error handling event for node {node.get_title()} ({node._id}): {str(e)}"
+            )
+            log.debug(
+                f"Error in process_event_node for node {node.get_title()}: {e}",
+                exc_info=True,
             )
             node.send_update(
                 context,
@@ -1423,6 +1546,9 @@ class WorkflowRunner:
                        logged and re-raised after posting a `NodeUpdate` with error status.
         """
         log.debug(f"{node.get_title()} ({node._id}) inputs: {inputs}")
+        log.debug(
+            f"process_node_with_inputs called for node: {node.get_title()} ({node._id}), inputs: {inputs}"
+        )
 
         # Assign input values to node properties
         for name, value in inputs.items():
@@ -1572,7 +1698,11 @@ class WorkflowRunner:
         if "value" in inputs:
             value = inputs["value"]
             if node.name in self.outputs:
-                self.outputs[node.name].append(value)
+                if self.outputs[node.name] and self.outputs[node.name][-1] == value:
+                    # Skip duplicate
+                    pass
+                else:
+                    self.outputs[node.name].append(value)
             else:
                 self.outputs[node.name] = [value]
 
@@ -1603,6 +1733,9 @@ class WorkflowRunner:
         """
         Processes a node with GPU, with retry logic for CUDA OOM errors.
         """
+        log.debug(
+            f"process_with_gpu called for node: {node.get_title()} ({node._id}), retries: {retries}"
+        )
         if TORCH_AVAILABLE:
             try:
                 if node._requires_grad:
@@ -1657,12 +1790,19 @@ class WorkflowRunner:
                         context, node, retries + 1
                     )  # Recursive call
                 else:
+                    log.debug(
+                        f"Non-OOM error in process_with_gpu for node {node.get_title()}: {e}",
+                        exc_info=True,
+                    )
                     # For non-OOM errors in non-streaming nodes, process_node_with_inputs handles logging and NodeUpdate.
                     # It then re-raises, so we just re-raise here to exit the retry loop and propagate.
                     raise
         else:
             # This case implies TORCH_AVAILABLE is False.
             # Fallback to regular processing if no GPU capability or torch is not there.
+            log.debug(
+                f"Torch not available, falling back to regular process for node: {node.get_title()}"
+            )
             return await node.process(context)
 
 

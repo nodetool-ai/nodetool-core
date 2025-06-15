@@ -12,28 +12,18 @@ class SerpProvider(abc.ABC):
     """
 
     @abc.abstractmethod
-    async def search(
-        self, keyword: str, num_results: int = 10
-    ) -> Union[List[Dict[str, Any]], ErrorResponse]:
+    async def search(self, keyword: str, num_results: int = 10) -> Dict[str, Any]:
         """
         Perform an organic web search.
 
         Args:
             keyword: The search query.
             num_results: The desired number of results. Defaults to 10.
-
-        Returns:
-            A list of dictionaries representing search results or an error dictionary.
-            Each dictionary should ideally contain keys like 'title', 'url', 'snippet'.
         """
         pass
 
     @abc.abstractmethod
-    async def search_news(
-        self,
-        keyword: str,
-        num_results: int = 10,
-    ) -> Union[List[Dict[str, Any]], ErrorResponse]:
+    async def search_news(self, keyword: str, num_results: int = 10) -> Dict[str, Any]:
         """
         Perform a news search.
 
@@ -41,9 +31,6 @@ class SerpProvider(abc.ABC):
             keyword: The search query.
             num_results: The desired number of results. Defaults to 10.
 
-        Returns:
-            A list of dictionaries representing news results or an error dictionary.
-            Each dictionary should ideally contain keys like 'title', 'url', 'source', 'published_at', 'snippet'.
         """
         pass
 
@@ -53,7 +40,7 @@ class SerpProvider(abc.ABC):
         keyword: Optional[str] = None,
         image_url: Optional[str] = None,
         num_results: int = 10,
-    ) -> Union[List[Dict[str, Any]], ErrorResponse]:
+    ) -> Dict[str, Any]:
         """
         Perform an image search.
         One of 'keyword' or 'image_url' must be provided.
@@ -63,16 +50,13 @@ class SerpProvider(abc.ABC):
             image_url: URL of an image to use for reverse image search.
             num_results: The desired number of image results. Defaults to 10.
 
-        Returns:
-            A list of dictionaries representing image results or an error dictionary.
-            Each dictionary should ideally contain keys like 'title', 'image_url', 'source_url', 'alt_text'.
         """
         pass
 
     @abc.abstractmethod
     async def search_finance(
         self, query: str, window: Optional[str] = None
-    ) -> Union[Dict[str, Any], ErrorResponse]:
+    ) -> Dict[str, Any]:
         """
         Retrieves financial data.
         """
@@ -81,7 +65,7 @@ class SerpProvider(abc.ABC):
     @abc.abstractmethod
     async def search_jobs(
         self, query: str, location: Optional[str] = None, num_results: int = 10
-    ) -> Union[List[Dict[str, Any]], ErrorResponse]:
+    ) -> Dict[str, Any]:
         """
         Perform a job search.
         """
@@ -90,16 +74,14 @@ class SerpProvider(abc.ABC):
     @abc.abstractmethod
     async def search_lens(
         self, image_url: str, num_results: int = 10
-    ) -> Union[List[Dict[str, Any]], ErrorResponse]:
+    ) -> Dict[str, Any]:
         """
         Perform a lens search.
         """
         pass
 
     @abc.abstractmethod
-    async def search_maps(
-        self, query: str, num_results: int = 10
-    ) -> Union[List[Dict[str, Any]], ErrorResponse]:
+    async def search_maps(self, query: str, num_results: int = 10) -> Dict[str, Any]:
         """
         Perform a maps search.
         """
@@ -115,7 +97,7 @@ class SerpProvider(abc.ABC):
         condition: Optional[str] = None,
         sort_by: Optional[str] = None,
         num_results: int = 10,
-    ) -> Union[List[Dict[str, Any]], ErrorResponse]:
+    ) -> Dict[str, Any]:
         """
         Perform a shopping search.
         """

@@ -3,10 +3,10 @@ from enum import Enum
 import enum
 from types import NoneType
 import numpy as np
+import pandas as pd
 from pydantic import BaseModel, Field
 from typing import Any, Literal, Optional, Type, Union
 import base64
-import uuid
 
 from nodetool.metadata.type_metadata import TypeMetadata
 from nodetool.types.graph import Graph
@@ -968,12 +968,25 @@ class ToolName(BaseType):
     name: str = Field(default="", description="The name of the tool")
 
 
+class LogEntry(BaseType):
+    """
+    A log entry for a subtask.
+    """
+
+    type: Literal["log_entry"] = "log_entry"
+    message: str = Field(default="", description="The message of the log entry")
+    level: Literal["debug", "info", "warning", "error"] = Field(
+        default="info", description="The level of the log entry"
+    )
+    timestamp: int = Field(default=0, description="The timestamp of the log entry")
+
+
 class SubTask(BaseType):
     """A subtask item with completion status, dependencies, and tools."""
 
     type: Literal["subtask"] = "subtask"
     id: str = Field(
-        default_factory=lambda: str(uuid.uuid4()),
+        default="",
         description="Unique identifier for the subtask",
     )
 
@@ -982,28 +995,28 @@ class SubTask(BaseType):
         description="The model to use for the subtask",
     )
     content: str = Field(description="Instructions for the subtask")
-    output_file: str = Field(
-        description="The file path where the subtask will save its output"
-    )
+    logs: list[LogEntry] = Field(default=[], description="The logs of the subtask")
     max_iterations: int = Field(
         default=10,
         description="The maximum number of iterations for the subtask",
     )
-    batch_processing: dict[str, Any] | None = Field(
-        default=None,
-        description="Configuration for batch processing of list items. Contains fields like enabled, batch_size, start_index, end_index, total_items",
+    max_tool_calls: int = Field(
+        default=10,
+        description="The maximum number of tool calls for the subtask",
     )
     completed: bool = Field(
         default=False, description="Whether the subtask is completed"
     )
     start_time: int = Field(default=0, description="The start time of the subtask")
     end_time: int = Field(default=0, description="The end time of the subtask")
-    input_files: list[str] = Field(
-        default=[], description="The input files for the subtask"
+    input_tasks: list[str] = Field(
+        default=[], description="The input tasks for the subtask"
     )
-    output_type: str = Field(
-        default="string",
-        description="The type of the output of the subtask",
+    input_files: list[str] = Field(
+        default=[], description="The input files required for the subtask"
+    )
+    output_file: str = Field(
+        default="", description="The output file produced by the subtask"
     )
     output_schema: str = Field(
         default="",
@@ -1018,12 +1031,12 @@ class SubTask(BaseType):
         """Convert the subtask to markdown format."""
         checkbox = "[x]" if self.completed else "[*]" if self.is_running() else "[ ]"
         deps_str = (
-            f" (depends on {', '.join(self.input_files)})" if self.input_files else ""
+            f" (depends on {', '.join(self.input_tasks)})" if self.input_tasks else ""
         )
         output_schema_str = (
             f" (output schema: {self.output_schema})" if self.output_schema else ""
         )
-        return f"- {checkbox} {self.content} => '{self.output_file}'{deps_str}{output_schema_str}"
+        return f"- {checkbox} {self.content}{deps_str}{output_schema_str}"
 
     def is_running(self) -> bool:
         """
@@ -1042,6 +1055,11 @@ class SubTask(BaseType):
 
 class Task(BaseType):
     """A task containing a title, description, and list of subtasks."""
+
+    id: str = Field(
+        default="",
+        description="Unique identifier for the task",
+    )
 
     type: Literal["task"] = "task"
 
@@ -1161,6 +1179,15 @@ class DataframeRef(AssetRef):
     type: Literal["dataframe"] = "dataframe"
     columns: list[ColumnDef] | None = None
     data: list[list[Any]] | None = None
+
+    @staticmethod
+    def from_pandas(data: pd.DataFrame):
+        rows = data.values.tolist()
+        column_defs = [
+            ColumnDef(name=name, data_type=dtype_name(dtype.name))
+            for name, dtype in zip(data.columns, data.dtypes)
+        ]
+        return DataframeRef(columns=column_defs, data=rows)
 
 
 #######################

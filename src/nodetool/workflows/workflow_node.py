@@ -46,30 +46,36 @@ class WorkflowNode(BaseNode):
         )
         output = {}
         async for msg in run_workflow(req):
-            assert "type" in msg
-            if msg["type"] == "error":
-                raise Exception(msg["error"])
-            if msg["type"] == "job_update":
-                if msg["status"] == "completed":
-                    output = msg["result"] or {}
-            if msg["type"] == "node_progress":
+            # Convert Pydantic model to dict for uniform access
+            if hasattr(msg, 'model_dump'):
+                msg_dict = msg.model_dump()
+            else:
+                msg_dict = msg
+                
+            assert "type" in msg_dict
+            if msg_dict["type"] == "error":
+                raise Exception(msg_dict["error"])
+            if msg_dict["type"] == "job_update":
+                if msg_dict["status"] == "completed":
+                    output = msg_dict["result"] or {}
+            if msg_dict["type"] == "node_progress":
                 context.post_message(
                     NodeProgress(
                         node_id=self._id,
-                        progress=msg["progress"],
-                        total=msg["total"],
+                        progress=msg_dict["progress"],
+                        total=msg_dict["total"],
                     )
                 )
-            if msg["type"] == "chunk":
-                context.post_message(Chunk(content=msg["content"]))
-            if msg["type"] == "node_update":
-                if msg["status"] == "completed":
+            if msg_dict["type"] == "chunk":
+                context.post_message(Chunk(content=msg_dict["content"]))
+            if msg_dict["type"] == "node_update":
+                if msg_dict["status"] == "completed":
                     context.post_message(
                         NodeProgress(
                             node_id=self._id,
                             progress=0,
                             total=0,
-                            chunk=f"{msg['node_name']} {msg['status']}",
+                            chunk=f"{msg_dict['node_name']} {msg_dict['status']}",
                         )
                     )
         return output

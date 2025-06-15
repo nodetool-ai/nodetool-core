@@ -50,7 +50,7 @@ from nodetool.metadata.types import (
     NameToType,
     TypeToName,
 )
-from nodetool.metadata import (
+from nodetool.metadata.typecheck import (
     is_assignable,
 )
 from nodetool.metadata.types import (
@@ -284,7 +284,7 @@ class BaseNode(BaseModel):
     @property
     def id(self):
         return self._id
-
+    
     @property
     def parent_id(self):
         return self._parent_id
@@ -394,7 +394,7 @@ class BaseNode(BaseModel):
         return [p.name for p in cls.properties()]
 
     @classmethod
-    def metadata(cls: Type["BaseNode"]):
+    def get_metadata(cls: Type["BaseNode"]):
         """
         Generate comprehensive metadata for the node class.
 
@@ -417,6 +417,7 @@ class BaseNode(BaseModel):
             recommended_models=cls.get_recommended_models(),
             basic_fields=cls.get_basic_fields(),
             is_dynamic=cls.is_dynamic(),
+            is_streaming=cls.is_streaming(),
         )
 
     @classmethod
@@ -451,8 +452,14 @@ class BaseNode(BaseModel):
         """
         prop = self.find_property(name)
         if prop is None:
-            print(f"[{self.__class__.__name__}] Property {name} does not exist")
-            return
+            if self._is_dynamic:
+                self._dynamic_properties[name] = value
+                return
+            else:
+                raise ValueError(
+                    f"Property {name} does not exist and node type {self.get_node_type()} is not dynamic"
+                )
+
         python_type = prop.type.get_python_type()
         type_args = prop.type.type_args
 
@@ -466,10 +473,22 @@ class BaseNode(BaseModel):
             v = python_type(value)
         elif prop.type.is_list_type() and len(type_args) == 1:
             subtype = prop.type.type_args[0].get_python_type()
-            if hasattr(subtype, "model_validate"):
+            if hasattr(subtype, "from_dict") and all(
+                isinstance(x, dict) and "type" in x for x in value
+            ):
+                # Handle lists of dicts with 'type' field as BaseType instances
+                v = [subtype.from_dict(x) for x in value]
+            elif hasattr(subtype, "model_validate"):
                 v = [subtype.model_validate(x) for x in value]
             else:
                 v = value
+        elif (
+            isinstance(value, dict)
+            and "type" in value
+            and hasattr(python_type, "from_dict")
+        ):
+            # Handle dicts with 'type' field as BaseType instances
+            v = python_type.from_dict(value)
         elif hasattr(python_type, "model_validate"):
             v = python_type.model_validate(value)
         else:
@@ -643,15 +662,20 @@ class BaseNode(BaseModel):
         return is_assignable(prop.type, value)
 
     @classmethod
+    def is_streaming(cls):
+        """
+        Check if the node is streaming.
+        """
+        return cls.gen_process is not BaseNode.gen_process
+
+    @classmethod
     def is_cacheable(cls):
         """
         Check if the node is cacheable.
         Nodes that implement gen_process (i.e., have overridden it) are not cacheable.
         """
         # Check if gen_process method in cls is different from the one in BaseNode
-        if cls.gen_process is not BaseNode.gen_process:
-            return False
-        return not cls.is_dynamic()
+        return not cls.is_dynamic() and not cls.is_streaming()
 
     def get_dynamic_properties(self):
         from nodetool.workflows.property import Property
@@ -689,7 +713,7 @@ class BaseNode(BaseModel):
             return None
 
     @classmethod
-    def find_output(cls, name: str) -> OutputSlot:
+    def find_output(cls, name: str) -> OutputSlot | None:
         """
         Find an output slot of the node by its name.
 
@@ -706,7 +730,7 @@ class BaseNode(BaseModel):
             if output.name == name:
                 return output
 
-        raise ValueError(f"Output {name} does not exist")
+        return None
 
     @classmethod
     def find_output_by_index(cls, index: int) -> OutputSlot:
@@ -990,6 +1014,9 @@ class InputNode(BaseNode):
 
     value: Any = Field(None, description="The value of the input.")
     name: str = Field("", description="The parameter name for the workflow.")
+    description: str = Field(
+        "", description="The description of the input for the workflow."
+    )
 
     @classmethod
     def get_basic_fields(cls):
@@ -1016,6 +1043,9 @@ class OutputNode(BaseNode):
 
     value: Any = Field(None, description="The value of the output.")
     name: str = Field("", description="The parameter name for the workflow.")
+    description: str = Field(
+        "", description="The description of the output for the workflow."
+    )
 
     @classmethod
     def is_visible(cls):
@@ -1076,6 +1106,57 @@ class Preview(BaseNode):
         return self.result_for_all_outputs(result)
 
 
+def find_node_class_by_name(class_name: str) -> type[BaseNode] | None:
+    """Find a node class by its class name (without namespace).
+
+    Searches through all registered node classes for a match by class name.
+    If not found in registered nodes, it also checks the package registry
+    to see if the node is available in an external package.
+    This is used as a fallback when the full node type cannot be found.
+
+    Args:
+        class_name: The class name to search for (e.g., "ClassName" without namespace).
+
+    Returns:
+        The first matching `BaseNode` subclass if found, otherwise `None`.
+    """
+    # First check registered nodes
+    for node_type, node_class in NODE_BY_TYPE.items():
+        if node_type.split(".")[-1] == class_name:
+            return node_class
+
+    # If not found, check the package registry
+    try:
+        from nodetool.packages.registry import Registry
+
+        registry = Registry()
+        package_nodes = registry.get_all_installed_nodes()
+
+        # Search for nodes with matching class name
+        for node in package_nodes:
+            node_type = node.node_type
+            if node_type.split(".")[-1] == class_name:
+                # Try to import and return the node class
+                full_node_type = node_type
+                try:
+                    # Attempt to import the module
+                    module_path = "nodetool.nodes." + ".".join(
+                        full_node_type.split(".")[:-1]
+                    )
+                    if module_path:
+                        importlib.import_module(module_path)
+                        # Check if it's now registered
+                        if full_node_type in NODE_BY_TYPE:
+                            return NODE_BY_TYPE[full_node_type]
+                except Exception:
+                    pass
+                return None
+    except Exception as e:
+        log.debug(f"Could not check package registry: {e}")
+
+    return None
+
+
 def get_comfy_class_by_name(class_name: str) -> type[BaseNode] | None:
     """Retrieve a ComfyUI node class by its registered name.
 
@@ -1103,25 +1184,6 @@ def get_comfy_class_by_name(class_name: str) -> type[BaseNode] | None:
     return COMFY_NODE_CLASSES[class_name]
 
 
-def find_node_class_by_name(class_name: str) -> type[BaseNode] | None:
-    """Find a registered node class by its Python class name.
-
-    Iterates through all registered node classes (obtained via
-    `get_registered_node_classes`) and returns the first one whose
-    `__name__` attribute matches the given `class_name`.
-
-    Args:
-        class_name: The Python class name of the node to find.
-
-    Returns:
-        The `BaseNode` subclass if found, otherwise `None`.
-    """
-    for node_class in get_registered_node_classes():
-        if node_class.__name__ == class_name:
-            return node_class
-    return None
-
-
 def get_node_class(node_type: str) -> type[BaseNode] | None:
     """Retrieve a node class by its unique node type identifier.
 
@@ -1129,8 +1191,10 @@ def get_node_class(node_type: str) -> type[BaseNode] | None:
     to dynamically import the module where the node class might be defined,
     based on the `node_type` string (e.g., "namespace.ClassName" implies
     `nodetool.nodes.namespace`). After attempting import, it checks the
-    registry again. If still not found, it falls back to searching by the
-    class name part of the `node_type` using `find_node_class_by_name`.
+    registry again. If still not found, it checks the package registry to
+    see if the node is available in an external package. Finally, it falls
+    back to searching by the class name part of the `node_type` using
+    `find_node_class_by_name`.
 
     Args:
         node_type: The unique type identifier of the node (e.g.,
@@ -1142,31 +1206,20 @@ def get_node_class(node_type: str) -> type[BaseNode] | None:
     """
     if node_type in NODE_BY_TYPE:
         return NODE_BY_TYPE[node_type]
-    else:
-        # Try to load the module if node type not found
-        try:
-            module_path = "nodetool.nodes." + ".".join(node_type.split(".")[:-1])
-            if module_path:
-                importlib.import_module(module_path)
-                # Check again after importing
-                if node_type in NODE_BY_TYPE:
-                    return NODE_BY_TYPE[node_type]
-        except Exception as e:
-            log.error(f"Could not import module {module_path}: {e}")
-            traceback.print_exc()
-        return find_node_class_by_name(node_type.split(".")[-1])
 
+    # Try to load the module if node type not found
+    try:
+        module_path = "nodetool.nodes." + ".".join(node_type.split(".")[:-1])
+        if module_path:
+            importlib.import_module(module_path)
+            # Check again after importing
+            if node_type in NODE_BY_TYPE:
+                return NODE_BY_TYPE[node_type]
+    except Exception as e:
+        log.error(f"Could not import module {module_path}: {e}")
+        traceback.print_exc()
 
-def get_registered_node_classes() -> list[type[BaseNode]]:
-    """Retrieve all registered node classes that are marked as visible.
-
-    Filters the global `NODE_BY_TYPE` dictionary to include only those
-    node classes for which `is_visible()` returns `True`.
-
-    Returns:
-        A list of visible `BaseNode` subclasses.
-    """
-    return [c for c in NODE_BY_TYPE.values() if c.is_visible()]
+    return find_node_class_by_name(node_type.split(".")[-1])
 
 
 class GroupNode(BaseNode):
@@ -1195,10 +1248,17 @@ def get_recommended_models() -> dict[str, list[HuggingFaceModel]]:
         A dictionary where keys are Hugging Face repository IDs (str) and
         values are lists of `HuggingFaceModel` instances.
     """
-    node_classes = get_registered_node_classes()
+    from nodetool.packages.registry import Registry
+
+    registry = Registry()
+    node_metadata = registry.get_all_installed_nodes()
     model_ids = set()
     models = {}
-    for node_class in node_classes:
+    for node_metadata in node_metadata:
+        node_class = get_node_class(node_metadata.node_type)
+        if node_class is None:
+            log.warning(f"Node class {node_metadata.node_type} not found. ")
+            continue
         for model in node_class.get_recommended_models():
             if model.path is not None:
                 model_id = "/".join([model.repo_id, model.path])

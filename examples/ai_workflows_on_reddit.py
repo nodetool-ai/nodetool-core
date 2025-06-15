@@ -21,22 +21,15 @@ from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import Chunk
 
 objective = """
-Find and analyze indie hacker success stories from Reddit to extract actionable insights.
+Find example for AI workflows on Reddit.
 
 Tasks:
-1. Search Reddit (r/indiehackers, r/SideProject, r/startups, etc.) for posts about:
-   - Product launches and growth stories
-   - Revenue milestones ($1, $100 MRR, $1k MRR+)
-   - Success strategies and failures
-
-2. For each relevant post:
-   - Read the post and top comments
-   - Extract key details: product type, timeline, strategies, tools used, outcomes
-
-3. Output results as a markdown table with these columns:
-   | Product | Strategy | Tools | Results | URL |
-   
-   Each row should contain one indie hacker story with concise, actionable information in each column.
+1. Use Google Search to find examples of AI workflows on Reddit.
+2. For each relevant post, extract the following details:
+   - Title
+   - URL
+   - Comments
+3. Output results as a JSON object with the following structure
 """
 
 
@@ -48,7 +41,7 @@ async def test_reddit_journey_deconstructor_agent(  # Renamed for clarity
 ):
     context = ProcessingContext()
     search_agent = Agent(
-        name="Reddit Indie Hacker Journey Deconstructor",  # New Agent Name
+        name="AI Workflow Examples on Reddit",
         objective=objective,
         provider=provider,
         model=model,
@@ -60,7 +53,25 @@ async def test_reddit_journey_deconstructor_agent(  # Renamed for clarity
             GoogleSearchTool(),
             BrowserTool(),
         ],
-        output_type="markdown",  # Markdown is good for readable reports
+        output_schema={
+            "type": "object",
+            "properties": {
+                "products": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "title": {"type": "string"},
+                            "problem": {"type": "string"},
+                            "solution": {"type": "string"},
+                            "comments": {"type": "array", "items": {"type": "string"}},
+                            "url": {"type": "string", "format": "uri"},
+                        },
+                        "required": ["title", "problem", "solution", "comments", "url"],
+                    },
+                }
+            },
+        },
     )
 
     # Execute each task in the plan
@@ -74,10 +85,6 @@ async def test_reddit_journey_deconstructor_agent(  # Renamed for clarity
     if final_report:
         print("\n\n--- FINAL COMPILED REPORT ---")
         print(final_report)
-
-    print("\n\n--- Workspace Directory for artifacts ---")
-    print(context.workspace_dir)
-    # You would typically find the full report or structured data in the workspace directory.
 
 
 if __name__ == "__main__":

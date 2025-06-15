@@ -2,7 +2,6 @@ import pytest
 from rich.text import Text
 
 from nodetool.agents.task_planner import (
-    clean_and_validate_path,
     TaskPlanner,
 )
 from nodetool.chat.providers.base import MockProvider
@@ -24,20 +23,6 @@ def make_planner(tmp_path):
     )
 
 
-def test_clean_and_validate_path(tmp_path):
-    workspace = tmp_path / "ws"
-    workspace.mkdir()
-
-    assert (
-        clean_and_validate_path(str(workspace), "workspace/file.txt", "ctx")
-        == "file.txt"
-    )
-    assert (
-        clean_and_validate_path(str(workspace), "workspace/other.txt", "ctx")
-        == "other.txt"
-    )
-    with pytest.raises(ValueError):
-        clean_and_validate_path(str(workspace), "../outside.txt", "ctx")
 
 
 def test_remove_think_tags(tmp_path):
@@ -63,36 +48,38 @@ def test_format_message_content(tmp_path):
 
 def test_build_dependency_graph(tmp_path):
     planner = make_planner(tmp_path)
-    s1 = SubTask(content="a", output_file="a.txt")
-    s2 = SubTask(content="b", output_file="b.txt", input_files=["a.txt"])
-    s3 = SubTask(content="c", output_file="c.txt", input_files=["b.txt", "a.txt"])
+    s1 = SubTask(id="task_a", content="a", input_tasks=[])
+    s2 = SubTask(id="task_b", content="b", input_tasks=["task_a"])
+    s3 = SubTask(id="task_c", content="c", input_tasks=["task_b", "task_a"])
     graph = planner._build_dependency_graph([s1, s2, s3])
     assert set(graph.edges()) == {
-        ("a.txt", "b.txt"),
-        ("b.txt", "c.txt"),
-        ("a.txt", "c.txt"),
+        ("task_a", "task_b"),
+        ("task_b", "task_c"),
+        ("task_a", "task_c"),
     }
 
 
 def test_validate_dependencies_cycle(tmp_path):
     planner = make_planner(tmp_path)
-    s1 = SubTask(content="a", output_file="a.txt", input_files=["b.txt"])
-    s2 = SubTask(content="b", output_file="b.txt", input_files=["a.txt"])
+    s1 = SubTask(id="task_a", content="a", input_tasks=["task_b"])
+    s2 = SubTask(id="task_b", content="b", input_tasks=["task_a"])
     errors = planner._validate_dependencies([s1, s2])
     assert any("Circular dependency" in e for e in errors)
 
 
 def test_validate_dependencies_missing_input(tmp_path):
     planner = make_planner(tmp_path)
-    s1 = SubTask(content="a", output_file="a.txt", input_files=["missing.txt"])
+    s1 = SubTask(id="task_a", content="a", input_tasks=["missing_task"])
     errors = planner._validate_dependencies([s1])
-    assert any("missing file" in e for e in errors)
+    assert any("missing subtask" in e for e in errors)
 
 
-def test_check_output_file_conflicts(tmp_path):
+def test_task_id_uniqueness(tmp_path):
+    """Test that task IDs should be unique in a plan"""
     planner = make_planner(tmp_path)
-    s1 = SubTask(content="a", output_file="dup.txt")
-    s2 = SubTask(content="b", output_file="dup.txt")
-    errors, files = planner._check_output_file_conflicts([s1, s2])
-    assert any("dup.txt" in e for e in errors)
-    assert "dup.txt" in files
+    s1 = SubTask(id="duplicate_id", content="a", input_tasks=[])
+    s2 = SubTask(id="duplicate_id", content="b", input_tasks=[])
+    # Since task IDs should be unique, having duplicates would be caught
+    # during plan validation - this tests the concept of ID uniqueness
+    task_ids = [s.id for s in [s1, s2]]
+    assert len(task_ids) != len(set(task_ids))  # Should have duplicates

@@ -16,7 +16,7 @@ from nodetool.workflows.types import (
 
 @pytest.mark.asyncio
 async def test_execute_with_initial_task(monkeypatch, tmp_path):
-    subtask = SubTask(id="sub1", content="do", output_file="result.txt")
+    subtask = SubTask(id="sub1", content="do")
     task = Task(title="t", subtasks=[subtask])
     provider = MockProvider([])
 
@@ -50,7 +50,6 @@ async def test_execute_with_initial_task(monkeypatch, tmp_path):
         provider=provider,
         model="m",
         task=task,
-        output_type="text",
         output_schema={"type": "string"},
         verbose=False,
     )
@@ -61,10 +60,7 @@ async def test_execute_with_initial_task(monkeypatch, tmp_path):
         results.append(item)
 
     assert agent.get_results() == "final"
-    assert subtask.output_file == str(tmp_path / "result.txt")
-    assert subtask.output_type == "text"
     assert subtask.output_schema == json.dumps({"type": "string"})
-    assert provider.log_file.endswith(f"__my_agent__{subtask.id}.jsonl")
 
     assert [type(i) for i in results] == [
         TaskUpdate,
@@ -107,14 +103,14 @@ class DummyTaskPlanner:
         objective,
         workspace_dir,
         execution_tools,
-        input_files,
+        inputs,
         output_schema,
         enable_analysis_phase,
         enable_data_contracts_phase,
         use_structured_output,
         verbose,
     ):
-        sub = SubTask(content="do", output_file="out.txt")
+        sub = SubTask(content="do")
         task = Task(title="t", subtasks=[sub])
         self.task_plan = TaskPlan(title="p", tasks=[task])
 
@@ -128,7 +124,7 @@ class DummyTaskPlanner:
 @pytest.mark.asyncio
 async def test_agent_execute_with_initial_task(monkeypatch, tmp_path):
     provider = MockProvider([])
-    sub = SubTask(content="do", output_file="out.txt")
+    sub = SubTask(content="do")
     task = Task(title="t", subtasks=[sub])
     monkeypatch.setattr("nodetool.agents.agent.TaskExecutor", DummyTaskExecutor)
     agent = Agent(
@@ -152,41 +148,3 @@ async def test_agent_execute_with_initial_task(monkeypatch, tmp_path):
     )
     assert agent.get_results() == "done"
 
-
-@pytest.mark.asyncio
-async def test_agent_planning_and_input_files(monkeypatch, tmp_path):
-    provider = MockProvider([])
-    input_file = tmp_path / "input.txt"
-    input_file.write_text("data")
-    workspace = tmp_path / "ws"
-    workspace.mkdir()
-    monkeypatch.setattr("nodetool.agents.agent.TaskExecutor", DummyTaskExecutor)
-    monkeypatch.setattr("nodetool.agents.agent.TaskPlanner", DummyTaskPlanner)
-
-    agent = Agent(
-        name="a",
-        objective="obj",
-        provider=provider,
-        model="m",
-        tools=[],
-        input_files=[str(input_file)],
-        verbose=False,
-    )
-    context = ProcessingContext(workspace_dir=str(workspace))
-    items = []
-    async for item in agent.execute(context):
-        items.append(item)
-
-    copied_path = workspace / "input.txt"
-    assert copied_path.exists()
-    assert agent.task is not None
-    assert any(isinstance(i, PlanningUpdate) for i in items)
-    assert any(
-        isinstance(i, TaskUpdate) and i.event == TaskUpdateEvent.TASK_CREATED
-        for i in items
-    )
-    assert any(
-        isinstance(i, TaskUpdate) and i.event == TaskUpdateEvent.TASK_COMPLETED
-        for i in items
-    )
-    assert agent.get_results() == "done"

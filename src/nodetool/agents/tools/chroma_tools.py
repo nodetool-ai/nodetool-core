@@ -10,6 +10,7 @@ This module provides tools for semantic and keyword searching:
 
 from typing import Any
 import chromadb
+import uuid
 from chromadb.api.types import IncludeEnum
 from nodetool.workflows.processing_context import ProcessingContext
 from .base import Tool
@@ -299,46 +300,6 @@ class SemanticDocSearchTool(Tool):
         return msg
 
 
-class KeywordDocSearchTool(Tool):
-    name = "keyword_doc_search"
-    description = "Search documentation using keyword matching"
-    input_schema = {
-        "type": "object",
-        "properties": {
-            "query": {
-                "type": "string",
-                "description": "The text to search for in the documentation",
-            },
-        },
-        "required": ["query"],
-    }
-
-    async def process(self, context: ProcessingContext, params: dict) -> Any:
-        try:
-            from nodetool.chat.help import keyword_search_documentation
-
-            results = keyword_search_documentation(params["query"])
-            return {
-                "results": [
-                    {
-                        "id": result.id,
-                        "content": result.content,
-                        "metadata": result.metadata,
-                    }
-                    for result in results
-                ]
-            }
-        except Exception as e:
-            return {"error": str(e)}
-
-    def user_message(self, params: dict) -> str:
-        text = params.get("query", "something")
-        msg = f"Searching documentation by keyword for '{text}'..."
-        if len(msg) > 80:
-            msg = "Searching documentation by keyword..."
-        return msg
-
-
 class ChromaRecursiveSplitAndIndexTool(Tool):
     name = "chroma_recursive_split_and_index"
     description = (
@@ -484,6 +445,10 @@ class ChromaMarkdownSplitAndIndexTool(Tool):
                 "type": "string",
                 "description": "The path to the markdown file to split and index",
             },
+            "text": {
+                "type": "string",
+                "description": "Raw markdown content if no file_path provided"
+            },
             "chunk_size": {
                 "type": "integer",
                 "description": "Maximum size of each chunk in characters",
@@ -495,7 +460,7 @@ class ChromaMarkdownSplitAndIndexTool(Tool):
                 "default": 200,
             },
         },
-        "required": ["file_path"],
+        "required": [],
     }
 
     def __init__(self, collection: chromadb.Collection):
@@ -537,19 +502,26 @@ class ChromaMarkdownSplitAndIndexTool(Tool):
         ]
 
     async def process(self, context: ProcessingContext, params: dict) -> dict[str, Any]:
-        file_path = params["file_path"]
-        # Split the text
-        resolved_file_path = context.resolve_workspace_path(file_path)
+        file_path = params.get("file_path", None)
+        if file_path:
+            doc_id = file_path
+            resolved_file_path = context.resolve_workspace_path(file_path)
 
-        with open(resolved_file_path, "r") as f:
-            text = f.read()
-        chunks = await self._split_text_markdown(text, file_path, params)
+            with open(resolved_file_path, "r") as f:
+                text = f.read()
+        else:
+            text = params.get("text", None)
+            doc_id = str(uuid.uuid4())
+            if text is None:
+                raise ValueError("Neither file_path nor text is provided")
+
+        chunks = await self._split_text_markdown(text, doc_id, params)
 
         # Index each chunk
         indexed_ids = []
         for i, chunk in enumerate(chunks):
             # Generate a unique ID for this chunk
-            unique_id = f"{file_path}:{chunk.start_index}"
+            unique_id = f"{doc_id}:{chunk.start_index}"
 
             # Index the chunk
             self.collection.add(
@@ -561,8 +533,7 @@ class ChromaMarkdownSplitAndIndexTool(Tool):
         return {
             "status": "success",
             "indexed_ids": indexed_ids,
-            "file_path": file_path,
-            "message": f"Successfully indexed {len(indexed_ids)} chunks from document {file_path}",
+            "message": f"Successfully indexed {len(indexed_ids)} chunks",
         }
 
     def user_message(self, params: dict) -> str:

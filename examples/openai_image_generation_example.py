@@ -11,6 +11,7 @@ import asyncio
 import os
 
 from nodetool.agents.agent import Agent
+from nodetool.agents.tools.workspace_tools import WriteFileTool
 from nodetool.chat.providers import get_provider
 from nodetool.agents.tools import OpenAIImageGenerationTool
 from nodetool.chat.providers.base import ChatProvider
@@ -22,8 +23,6 @@ from nodetool.workflows.types import Chunk
 async def test_openai_image_generation_agent(
     provider: ChatProvider,
     model: str,
-    reasoning_model: str,
-    planning_model: str,
     image_prompt: str,
 ):
     """
@@ -32,8 +31,6 @@ async def test_openai_image_generation_agent(
     Args:
         provider: The chat provider (e.g., OpenAI).
         model: The primary model for agent orchestration.
-        reasoning_model: The model used for reasoning tasks by the agent.
-        planning_model: The model used for planning tasks by the agent.
         image_prompt: The textual prompt to generate an image from.
     """
     context = ProcessingContext()
@@ -47,15 +44,23 @@ async def test_openai_image_generation_agent(
         objective=f"""
         You are an image generation assistant. Your primary goal is to generate an image
         based on the following prompt: '{image_prompt}'.
+        Write the image to the workspace directory.
         """,
         provider=provider,
         model=model,
-        reasoning_model=reasoning_model,
-        planning_model=planning_model,
         tools=[
             OpenAIImageGenerationTool(),
+            WriteFileTool(),
         ],
-        output_type="png",
+        output_schema={
+            "type": "object",
+            "properties": {
+                "image_path": {
+                    "type": "string",
+                    "description": "The path to the generated image",
+                },
+            },
+        },
     )
 
     print(f"Starting agent: {image_agent.name}")
@@ -81,8 +86,6 @@ if __name__ == "__main__":
         test_openai_image_generation_agent(
             provider=get_provider(Provider.OpenAI),
             model="gpt-4o-mini",
-            planning_model="gpt-4o-mini",
-            reasoning_model="gpt-4o-mini",
             image_prompt=IMAGE_PROMPT,
         )
     )

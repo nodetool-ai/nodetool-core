@@ -362,6 +362,10 @@ async def run_workflow_by_id(
     else:
         result = {}
         async for msg in run_workflow(job_request):
+            # Ensure msg is a dictionary-like object for uniform access
+            if isinstance(msg, BaseModel):
+                msg = msg.model_dump()
+
             if msg.get("type") == "job_update":
                 if msg.get("status") == "completed":
                     result = msg.get("result", {})
