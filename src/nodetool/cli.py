@@ -10,6 +10,7 @@ from nodetool.dsl.codegen import create_dsl_modules
 import warnings
 
 # Add Rich for better tables and terminal output
+from nodetool.types.job import JobUpdate
 from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
@@ -121,33 +122,65 @@ def worker(
 
 
 @cli.command()
-@click.argument("workflow_id", type=str)
-def run(workflow_id: str):
-    """Run a workflow from a file."""
+@click.argument("workflow", type=str)
+def run(workflow: str):
+    """Run a workflow by ID or from a local JSON definition file."""
     import asyncio
+    import json
+    import os
+    import sys
     import traceback
+
     from nodetool.workflows.run_job_request import RunJobRequest
     from nodetool.workflows.run_workflow import run_workflow
+    from nodetool.workflows.read_graph import read_graph
+    from nodetool.types.graph import Graph
 
-    request = RunJobRequest(
-        workflow_id=workflow_id, user_id="1", auth_token="local_token"
-    )
+    # Determine whether the provided argument is a file path or an ID
+    is_file = os.path.isfile(workflow)
+
+    try:
+        if is_file:
+            with open(workflow, "r", encoding="utf-8") as f:
+                workflow_json = json.load(f)
+
+            assert "graph" in workflow_json, "Graph not found in workflow JSON"
+            graph = Graph(**workflow_json["graph"])
+
+            request = RunJobRequest(
+                user_id="1",
+                auth_token="local_token",
+                graph=graph,
+            )
+        else:
+            # Treat the argument as a workflow ID
+            request = RunJobRequest(
+                workflow_id=workflow,
+                user_id="1",
+                auth_token="local_token",
+            )
+    except Exception as e:
+        console.print(Panel.fit(f"Failed to prepare workflow: {e}", style="bold red"))
+        traceback.print_exc()
+        sys.exit(1)
 
     async def run_workflow_async():
-        console.print(Panel.fit("Running workflow...", style="blue"))
+        console.print(Panel.fit(f"Running workflow {workflow}...", style="blue"))
         try:
             async for message in run_workflow(request):
-                # Print message type and content
-                if hasattr(message, "type"):
+                print(message)
+                # Pretty-print each message coming from the runner
+                if isinstance(message, JobUpdate) and message.status == "error":
+                    console.print(Panel.fit(f"Error: {message.error}", style="bold red"))
+                    sys.exit(1)
+                else:
                     msg_type = Text(message.type, style="bold cyan")
                     console.print(f"{msg_type}: {message.model_dump_json()}")
-                else:
-                    console.print(message)
             console.print(Panel.fit("Workflow finished successfully", style="green"))
         except Exception as e:
             console.print(Panel.fit(f"Error running workflow: {e}", style="bold red"))
             traceback.print_exc()
-            exit(1)
+            sys.exit(1)
 
     asyncio.run(run_workflow_async())
 

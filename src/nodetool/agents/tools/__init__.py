@@ -84,6 +84,9 @@ from .math_tools import (
     ConversionTool,
 )
 
+# Workflow tools
+from .workflow_tool import WorkflowTool, create_workflow_tools, create_workflow_tool_by_name
+
 # Names to be exported (dunder all)
 __all__ = [
     "AddLabelTool",
@@ -124,9 +127,12 @@ __all__ = [
     "StatisticsTool",
     "Tool",
     "TrigonometryTool",
+    "WorkflowTool",
     "WriteFileTool",
     # Directly imported helpers
     "create_gmail_connection",
+    "create_workflow_tools",
+    "create_workflow_tool_by_name",
     "get_tool_by_name",
     "parse_email_message",
     "sanitize_node_name",

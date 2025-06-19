@@ -241,6 +241,66 @@ class WorkflowRunner:
             log.debug("Initialized queue for edge %s", edge_key)
         log.debug("Edge queues initialized: %s", list(self.edge_queues.keys()))
 
+    def _filter_invalid_edges(self, graph: Graph) -> None:
+        """Remove edges that reference non-existent nodes/slots or feed into a node's
+        *output* socket.
+
+        This is meant as a last-resort safety net so that a single mis-wired edge
+        does not stall the whole workflow.  Any edge that fulfils one of the
+        following conditions will be dropped:
+
+        1. Source node cannot be found.
+        2. Target node cannot be found.
+        3. Source handle is not a declared output of the source node.
+        4. Target handle matches a declared output of the *target* node (i.e. the
+           edge is wired into the target's output socket).
+        5. Target handle is not a declared property of the target node *and* the
+           target node is *not* dynamic.
+
+        The method mutates ``graph.edges`` in-place.
+        """
+        valid_edges = []
+        removed: list[str] = []  # store edge ids for logging
+
+        for edge in graph.edges:
+            # 1 / 2 – both nodes must exist
+            source_node = graph.find_node(edge.source)
+            target_node = graph.find_node(edge.target)
+            if source_node is None or target_node is None:
+                removed.append(edge.id or "<unknown>")
+                continue
+
+            source_cls = source_node.__class__
+            target_cls = target_node.__class__
+
+            # 3 – source handle must be an output on the *source* node
+            if source_cls.find_output(edge.sourceHandle) is None:
+                removed.append(edge.id or "<unknown>")
+                continue
+
+            # 4 – edge wired into the *output* socket of the target
+            if target_cls.find_output(edge.targetHandle) is not None:
+                removed.append(edge.id or "<unknown>")
+                continue
+
+            # 5 – target property must exist unless node is dynamic
+            if not target_cls.is_dynamic() and target_node.find_property(edge.targetHandle) is None:
+                removed.append(edge.id or "<unknown>")
+                continue
+
+            # Edge passed all checks – keep it
+            valid_edges.append(edge)
+
+        if removed:
+            log.warning(
+                "Filtering %d invalid edge(s) from workflow: %s",
+                len(removed),
+                ", ".join(removed),
+            )
+
+        # Replace edges in the graph with the validated list
+        graph.edges = valid_edges
+
     async def run(
         self,
         req: RunJobRequest,
@@ -286,14 +346,18 @@ class WorkflowRunner:
         self.edge_queues.clear()
 
         # Load node instances using the context
-        loaded_node_instances = context.load_nodes(req.graph.nodes)
-        log.debug("Loaded %d node instances", len(loaded_node_instances))
+        # loaded_node_instances = []
+        # for node in req.graph.nodes:
+        #     loaded_node_instances.append(BaseNode.from_dict(node.model_dump()))
+        # log.debug("Loaded %d node instances", len(loaded_node_instances))
 
         # Create the internal Graph object with these loaded instances
-        graph = Graph(
-            nodes=loaded_node_instances,
-            edges=req.graph.edges,  # Edges from the original request graph
+        graph = Graph.from_dict(req.graph.model_dump())
+
+        log.info(
+            "Graph prepared: %d nodes, %d valid edges after filtering", len(graph.nodes), len(graph.edges)
         )
+
         context.graph = graph
         self._initialize_edge_queues(graph)
         log.debug("Edge queues after initialization: %s", self.edge_queues)
@@ -429,7 +493,7 @@ class WorkflowRunner:
             ValueError: If the graph contains validation errors. The error message will
                         summarize the issues found.
         """
-        log.debug("Validating graph with %d nodes", len(graph.nodes))
+        log.info("Validating graph – %d nodes, %d edges", len(graph.nodes), len(graph.edges))
         log.debug(f"validate_graph called with graph: {graph}")
         is_valid = True
         all_errors = []
@@ -474,7 +538,7 @@ class WorkflowRunner:
         if not is_valid:
             log.debug("Graph validation failed")
             raise ValueError("Graph contains errors: " + "\n".join(all_errors))
-        log.debug("Graph validation successful")
+        log.info("Graph validation successful")
 
     async def initialize_graph(self, context: ProcessingContext, graph: Graph):
         """
@@ -594,7 +658,7 @@ class WorkflowRunner:
                        re-raised after logging and posting error messages.
                        The job status is also set to "error".
         """
-        log.debug("Processing trigger nodes")
+        log.info("Identifying and running trigger nodes (nodes without incoming edges)")
         log.debug("_process_trigger_nodes called.")
         initial_processing_tasks = []
         initial_nodes_for_tasks = []
@@ -635,7 +699,7 @@ class WorkflowRunner:
                         exc_info=True,
                     )
                     raise result_or_exc
-        log.debug("Trigger node processing complete")
+        log.info("Trigger node processing complete – processed %d trigger node(s)", len(initial_nodes_for_tasks))
 
     def _get_ready_nodes_and_prepare_tasks(
         self,
@@ -1029,8 +1093,8 @@ class WorkflowRunner:
             parent_id (str | None): Optional ID of a parent group node, used primarily for
                                     contextual logging if this is a subgraph execution.
         """
-        log.debug(
-            "Starting main processing loop for graph with %d nodes", len(graph.nodes)
+        log.info(
+            "Entering main processing loop (%d nodes, %d edges)", len(graph.nodes), len(graph.edges)
         )
         log.debug(f"_main_processing_loop started for parent_id: {parent_id}")
         iterations_without_progress = 0
@@ -1078,7 +1142,7 @@ class WorkflowRunner:
                 iterations_without_progress,
                 max_iterations_limit,
             ):
-                log.debug("Loop termination condition met.")
+                log.info("Main processing loop finished – termination condition met")
                 break
 
         log.debug("Main processing loop complete")

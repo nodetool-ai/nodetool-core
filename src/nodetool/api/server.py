@@ -88,6 +88,7 @@ DEFAULT_ROUTERS = [
     prediction.router,
     workflow.router,
     storage.router,
+    storage.temp_router,
     font.router,
 ]
 

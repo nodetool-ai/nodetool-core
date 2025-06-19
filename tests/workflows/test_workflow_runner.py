@@ -156,7 +156,7 @@ async def test_from_dict():
         },
     }
 
-    node = ImageInput.from_dict(image_input)
+    node, _ = ImageInput.from_dict(image_input)
 
     assert node.id == "1"  # type: ignore
     assert node.value.uri == "https://example.com/image.jpg"  # type: ignore
@@ -1024,8 +1024,11 @@ async def test_edge_queue_initialization(workflow_runner: WorkflowRunner):
     # Just initialize, don't run
     assert context.graph is not None
     assert req.graph is not None
-    loaded_nodes = context.load_nodes(req.graph.nodes)
-    graph_obj = Graph(nodes=loaded_nodes, edges=req.graph.edges)
+    base_nodes: list[BaseNode] = []
+    for node in req.graph.nodes:
+        node, _ = BaseNode.from_dict(node.model_dump())
+        base_nodes.append(node)
+    graph_obj = Graph(nodes=base_nodes, edges=req.graph.edges)
     workflow_runner._initialize_edge_queues(graph_obj)
     
     # Check queues are initialized

@@ -274,25 +274,24 @@ class Agent(BaseAgent):
                 self.display_manager.update_live(new_table)
 
                 # Yield the item
-                if isinstance(item, ToolCall) and item.name == "finish_task":
-                    self.results = item.args["result"]
-                    yield TaskUpdate(
-                        task=self.task,
-                        event=TaskUpdateEvent.TASK_COMPLETED,
-                    )
-                elif isinstance(item, ToolCall) and (
-                    item.name == "finish_subtask" or item.name == "finish_task"
-                ):
-                    for subtask in self.task.subtasks:
-                        if (
-                            subtask.id == item.subtask_id
-                            and not subtask.is_intermediate_result
-                            and "result" in item.args
-                        ):
-                            yield SubTaskResult(
-                                subtask=subtask,
-                                result=item.args["result"],
-                            )
+                if isinstance(item, ToolCall):
+                    if item.name == "finish_task":
+                        self.results = item.args["result"]
+                        yield TaskUpdate(
+                            task=self.task,
+                            event=TaskUpdateEvent.TASK_COMPLETED,
+                        )
+                    if item.name == "finish_subtask" or item.name == "finish_task":
+                        for subtask in self.task.subtasks:
+                            if (
+                                subtask.id == item.subtask_id
+                                and "result" in item.args
+                            ):
+                                yield SubTaskResult(
+                                    subtask=subtask,
+                                    result=item.args["result"],
+                                    is_task_result=item.name == "finish_task",
+                                )
                 elif isinstance(item, TaskUpdate):
                     yield item
                     # Update provider log file when a subtask starts/completes

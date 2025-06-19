@@ -51,6 +51,7 @@ class Workflow(DBModel):
     graph: dict = DBField(default_factory=dict)
     settings: dict[str, Any] | None = DBField(default_factory=dict)
     receive_clipboard: bool | None = DBField(default=False)
+    run_mode: str | None = DBField(default=None)
 
     def before_save(self):
         """Updates the `updated_at` timestamp before saving."""
@@ -80,6 +81,7 @@ class Workflow(DBModel):
                     "edges": [],
                 },
             ),
+            run_mode=data.get("run_mode", None),
         )
 
     @classmethod
@@ -150,6 +152,8 @@ class Workflow(DBModel):
             "updated_at",
             "tags",
             "graph",
+            "settings",
+            "run_mode",
         }
 
         # Validate and sanitize column names
@@ -198,7 +202,7 @@ class Workflow(DBModel):
         """
         return Graph(
             nodes=[
-                BaseNode.from_dict(node, skip_errors=True)
+                BaseNode.from_dict(node, skip_errors=True)[0]
                 for node in self.graph["nodes"]
             ],
             edges=self.graph["edges"],
