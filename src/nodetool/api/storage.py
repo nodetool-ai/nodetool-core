@@ -19,10 +19,20 @@ router = APIRouter(prefix="/api/storage", tags=["storage"])
 temp_router = APIRouter(prefix="/api/storage/temp", tags=["temp"])
 
 
+def validate_key(key: str) -> None:
+    """
+    Validates that the key contains no path separators, ensuring files are only in the base folder.
+    Raises HTTPException if validation fails.
+    """
+    if "/" in key or "\\" in key:
+        raise HTTPException(status_code=400, detail="Invalid key: path separators not allowed")
+
+
 async def _head_file(storage, key: str):
     """
     Common logic for returning file metadata.
     """
+    validate_key(key)
     if not storage.file_exists(key):
         raise HTTPException(status_code=404)
 
@@ -42,6 +52,7 @@ async def _get_file(storage, key: str, request: Request):
     """
     Common logic for returning file as a stream with range support.
     """
+    validate_key(key)
     if not storage.file_exists(key):
         raise HTTPException(status_code=404)
 
@@ -106,6 +117,7 @@ async def _put_file(storage, key: str, request: Request):
     """
     Common logic for uploading/updating files.
     """
+    validate_key(key)
     body = await request.body()
     await storage.upload(key, BytesIO(body))
 
@@ -117,6 +129,7 @@ async def _delete_file(storage, key: str):
     """
     Common logic for deleting files.
     """
+    validate_key(key)
     if not storage.file_exists(key):
         return Response(status_code=404)
     await storage.delete(key)
