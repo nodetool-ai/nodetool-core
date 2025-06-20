@@ -40,19 +40,9 @@ class WorkflowTool(Tool):
         if workflow.description:
             self.description += f" - {workflow.description}"
         
-        # Generate input schema from workflow
-        try:
-            graph = workflow.get_api_graph()
-            schema = get_input_schema(graph)
-            self.input_schema = schema
-        except Exception as e:
-            # Fallback to empty schema if generation fails
-            self.input_schema = {
-                "type": "object",
-                "properties": {},
-                "required": []
-            }
-            print(f"Warning: Could not generate schema for workflow {workflow.name}: {e}")
+        graph = workflow.get_api_graph()
+        schema = get_input_schema(graph)
+        self.input_schema = schema
 
     async def process(self, context: ProcessingContext, params: Dict[str, Any]) -> Any:
         """

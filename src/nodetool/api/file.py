@@ -12,6 +12,58 @@ from nodetool.common.environment import Environment
 log = Environment.get_logger()
 router = APIRouter(prefix="/api/files", tags=["files"])
 
+# Base directory for file operations - restrict access to user's home directory
+# or a specific workspace directory
+def get_base_directory():
+    """Get the base directory for file operations."""
+    # Check for environment variable override first
+    if "FILE_API_BASE_DIR" in os.environ:
+        return os.environ["FILE_API_BASE_DIR"]
+    # In test mode, use temp directory
+    if Environment.is_test():
+        return "/tmp/nodetool_test_files"
+    # Otherwise use home directory
+    return os.path.expanduser("~")
+
+
+def validate_path(path: str) -> str:
+    """
+    Validate that the resolved path is within the allowed base directory.
+    Prevents path traversal attacks.
+    
+    Args:
+        path: The path to validate
+        
+    Returns:
+        The absolute path if valid
+        
+    Raises:
+        HTTPException: If the path is outside the allowed directory
+    """
+    base_directory = get_base_directory()
+    
+    # Expand user home directory and resolve to absolute path
+    expanded_path = os.path.expanduser(path)
+    abs_path = os.path.abspath(expanded_path)
+    
+    # Ensure the resolved path is within the base directory
+    try:
+        # os.path.commonpath will raise ValueError if paths are on different drives (Windows)
+        common_path = os.path.commonpath([base_directory, abs_path])
+        if common_path != base_directory:
+            raise HTTPException(
+                status_code=403,
+                detail="Access denied: Path is outside allowed directory"
+            )
+    except ValueError:
+        # Paths are on different drives
+        raise HTTPException(
+            status_code=403,
+            detail="Access denied: Path is outside allowed directory"
+        )
+    
+    return abs_path
+
 
 class FileInfo(BaseModel):
     name: str
@@ -47,9 +99,8 @@ async def list_files(
     List files and directories in the specified path, excluding hidden files (starting with dot)
     """
     try:
-        # Normalize and validate path
-        expanded_path = os.path.expanduser(path)
-        abs_path = os.path.abspath(expanded_path)
+        # Validate and normalize path
+        abs_path = validate_path(path)
         if not os.path.exists(abs_path):
             raise HTTPException(status_code=404, detail=f"Path not found: {path}")
 
@@ -68,6 +119,9 @@ async def list_files(
                 continue
 
         return files
+    except HTTPException:
+        # Re-raise HTTPExceptions (like from validate_path)
+        raise
     except Exception as e:
         log.error(f"Error listing files in {path}: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -79,10 +133,13 @@ async def get_file(path: str, user: str = Depends(current_user)) -> FileInfo:
     Get information about a specific file or directory
     """
     try:
-        abs_path = os.path.abspath(path)
+        abs_path = validate_path(path)
         if not os.path.exists(abs_path):
             raise HTTPException(status_code=404, detail=f"Path not found: {path}")
         return await get_file_info(abs_path)
+    except HTTPException:
+        # Re-raise HTTPExceptions (like from validate_path)
+        raise
     except Exception as e:
         log.error(f"Error getting file info for {path}: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -94,7 +151,7 @@ async def download_file(path: str, user: str = Depends(current_user)):
     Download a file from the specified path
     """
     try:
-        abs_path = os.path.abspath(path)
+        abs_path = validate_path(path)
         if not os.path.exists(abs_path) or os.path.isdir(abs_path):
             raise HTTPException(status_code=404, detail=f"File not found: {path}")
 
@@ -111,6 +168,9 @@ async def download_file(path: str, user: str = Depends(current_user)):
                 "Content-Disposition": f'attachment; filename="{os.path.basename(path)}"'
             },
         )
+    except HTTPException:
+        # Re-raise HTTPExceptions (like from validate_path)
+        raise
     except Exception as e:
         log.error(f"Error downloading file {path}: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -122,7 +182,7 @@ async def upload_file(path: str, file: UploadFile, user: str = Depends(current_u
     Upload a file to the specified path
     """
     try:
-        abs_path = os.path.abspath(path)
+        abs_path = validate_path(path)
         os.makedirs(os.path.dirname(abs_path), exist_ok=True)
 
         # Read and write in chunks to handle large files
@@ -131,6 +191,9 @@ async def upload_file(path: str, file: UploadFile, user: str = Depends(current_u
                 f.write(chunk)
 
         return await get_file_info(abs_path)
+    except HTTPException:
+        # Re-raise HTTPExceptions (like from validate_path)
+        raise
     except Exception as e:
         log.error(f"Error uploading file to {path}: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
