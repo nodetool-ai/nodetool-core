@@ -1414,6 +1414,11 @@ class Message(BaseType):
     The model that was used to generate the message.
     """
 
+    agent_mode: bool | None = None
+    """
+    Whether to use agent mode for processing this message.
+    """
+
     @staticmethod
     def from_model(message: Any):
         """

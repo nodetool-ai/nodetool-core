@@ -401,6 +401,13 @@ class Environment(object):
         return f"{cls.get_nodetool_api_url()}/api/storage"
 
     @classmethod
+    def get_temp_storage_api_url(cls):
+        """
+        The temp storage API endpoint.
+        """
+        return f"{cls.get_nodetool_api_url()}/api/storage/temp"
+
+    @classmethod
     def get_worker_api_client(cls):
         from nodetool.common.worker_api_client import WorkerAPIClient
 
@@ -646,17 +653,22 @@ class Environment(object):
         return cls.get("ASSET_TEMP_DOMAIN")
 
     @classmethod
-    def get_asset_temp_storage(cls, use_s3: bool = False):
+    def get_temp_storage(cls, use_s3: bool = False):
         """
         Get the storage adapter for temporary assets.
         """
-        if not hasattr(cls, "asset_temp_storage"):
+        if not hasattr(cls, "temp_storage"):
             if not cls.is_production():
-                from nodetool.storage.memory_storage import MemoryStorage
+                # from nodetool.storage.memory_storage import MemoryStorage
+                from nodetool.storage.file_storage import FileStorage
 
-                cls.get_logger().info("Using memory storage for temp asset storage")
-                cls.asset_temp_storage = MemoryStorage(
-                    base_url=cls.get_storage_api_url()
+                cls.get_logger().info("Using memory storage for temp storage")
+                # cls.temp_storage = MemoryStorage(
+                #     base_url=cls.get_temp_storage_api_url()
+                # )
+                cls.temp_storage = FileStorage(
+                    base_path="/tmp",
+                    base_url=cls.get_temp_storage_api_url(),
                 )
             else:
                 assert (
@@ -669,12 +681,12 @@ class Environment(object):
                     cls.get_asset_temp_domain() is not None
                 ), "Asset temp domain is required"
                 cls.get_logger().info("Using S3 storage for temp asset storage")
-                cls.asset_temp_storage = cls.get_s3_storage(
+                cls.temp_storage = cls.get_s3_storage(
                     cls.get_asset_temp_bucket(), cls.get_asset_temp_domain()
                 )
 
-        assert cls.asset_temp_storage is not None
-        return cls.asset_temp_storage
+        assert cls.temp_storage is not None
+        return cls.temp_storage
 
     @classmethod
     def get_supabase_url(cls):

@@ -29,6 +29,7 @@ class SubTaskResult(BaseModel):
     subtask: SubTask
     result: Any
     error: str | None = None
+    is_task_result: bool = False
 
 
 class PlanningUpdate(BaseModel):
@@ -196,4 +197,5 @@ ProcessingMessage = (
     | ToolCallUpdate
     | PlanningUpdate
     | OutputUpdate
+    | SubTaskResult
 )

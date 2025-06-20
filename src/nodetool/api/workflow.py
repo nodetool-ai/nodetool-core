@@ -54,6 +54,7 @@ def from_model(workflow: WorkflowModel):
         input_schema=get_input_schema(api_graph),
         output_schema=get_output_schema(api_graph),
         settings=workflow.settings,
+        run_mode=workflow.run_mode,
     )
 
 
@@ -91,6 +92,7 @@ async def create(
                     access=workflow_request.access,
                     graph=example_workflow.graph.model_dump(),
                     user_id=user,
+                    run_mode=workflow_request.run_mode,
                 )
             )
         except ValueError as e:
@@ -107,6 +109,7 @@ async def create(
                 access=workflow_request.access,
                 graph=remove_connected_slots(workflow_request.graph).model_dump(),
                 user_id=user,
+                run_mode=workflow_request.run_mode,
             )
         )
     elif workflow_request.comfy_workflow:
@@ -127,6 +130,7 @@ async def create(
                     "nodes": [node.model_dump() for node in nodes],
                     "edges": [edge.model_dump() for edge in edges],
                 },
+                run_mode=workflow_request.run_mode,
             )
         )
     else:
@@ -176,6 +180,44 @@ async def get_public_workflow(id: str) -> Workflow:
     if workflow.access != "public":
         raise HTTPException(status_code=404, detail="Workflow not found")
     return from_model(workflow)
+
+
+@router.get("/tools")
+async def get_workflow_tools(
+    user: str = Depends(current_user),
+    cursor: Optional[str] = None,
+    limit: int = 100,
+    columns: Optional[str] = None,
+) -> WorkflowList:
+    """
+    Get all workflows that have run_mode set to "tool".
+    
+    These workflows can be used as tools by agents and other workflows.
+    
+    Args:
+        user: The authenticated user
+        cursor: Pagination cursor
+        limit: Maximum number of workflows to return
+        columns: Comma-separated list of columns to return
+        
+    Returns:
+        WorkflowList: List of tool workflows with pagination info
+    """
+    column_list = columns.split(",") if columns else None
+    
+    # Get all user workflows
+    workflows, cursor = WorkflowModel.paginate(
+        user_id=user, limit=limit, start_key=cursor, columns=column_list
+    )
+    
+    # Filter for workflows with run_mode = "tool"
+    tool_workflows = [w for w in workflows if w.run_mode == "tool"]
+    
+    return WorkflowList(
+        workflows=[from_model(workflow) for workflow in tool_workflows], 
+        next=cursor if len(workflows) == limit else None
+    )
+
 
 
 @router.get("/examples")
@@ -245,6 +287,7 @@ async def update_workflow(
     background_tasks: BackgroundTasks,
     user: str = Depends(current_user),
 ) -> Workflow:
+    print(workflow_request.settings)
     workflow = WorkflowModel.get(id)
     if not workflow:
         workflow = WorkflowModel(id=id, user_id=user)
@@ -261,6 +304,7 @@ async def update_workflow(
     workflow.access = workflow_request.access
     workflow.graph = remove_connected_slots(workflow_request.graph).model_dump()
     workflow.settings = workflow_request.settings
+    workflow.run_mode = workflow_request.run_mode
     workflow.updated_at = datetime.now()
     workflow.save()
     updated_workflow = from_model(workflow)

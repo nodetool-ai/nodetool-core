@@ -1,10 +1,10 @@
-from typing import Any, List
+from typing import Any, List, Annotated
 import json
 import importlib
 import pkgutil
 import inspect
 import logging
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from nodetool.packages.types import AssetInfo
 from nodetool.workflows.property import Property
 from nodetool.metadata.types import OutputSlot, HuggingFaceModel
@@ -27,6 +27,11 @@ class NodeMetadata(BaseModel):
     """
     Metadata for a node.
     """
+    model_config = ConfigDict(
+        json_schema_extra={
+            "required": ["title", "description", "namespace", "node_type", "outputs", "properties", "the_model_info", "recommended_models", "basic_fields"]
+        }
+    )
 
     title: str = Field(description="UI Title of the node")
     description: str = Field(description="UI Description of the node")

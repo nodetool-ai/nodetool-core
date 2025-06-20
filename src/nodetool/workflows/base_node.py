@@ -332,12 +332,7 @@ class BaseNode(BaseModel):
 
         node_class = get_node_class(node_type_str)
         if node_class is None:
-            if skip_errors:
-                # Return None to indicate this node should be skipped
-                return None, [f"Invalid node type: {node_type_str}"]
-            else:
-                # This is a critical error, node cannot be instantiated, so raise immediately.
-                raise ValueError(f"Invalid node type: {node_type_str}")
+            raise ValueError(f"Invalid node type: {node_type_str}")
         
         node_id = node.get("id")
         if not node_id:
@@ -507,6 +502,9 @@ class BaseNode(BaseModel):
             ):
                 # Handle dicts with 'type' field as BaseType instances
                 v = python_type.from_dict(value)
+            elif isinstance(value, dict) and hasattr(python_type, "model_validate"):
+                # Handle dictionary being parsed into Pydantic BaseModel
+                v = python_type.model_validate(value)
             elif hasattr(python_type, "model_validate"):
                 v = python_type.model_validate(value)
             else:

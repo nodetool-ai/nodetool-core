@@ -16,14 +16,23 @@ from nodetool.common.environment import Environment
 
 log = Environment.get_logger()
 router = APIRouter(prefix="/api/storage", tags=["storage"])
+temp_router = APIRouter(prefix="/api/storage/temp", tags=["temp"])
 
 
-@router.head("/{key}")
-async def head(key: str):
+def validate_key(key: str) -> None:
     """
-    Returns the metadata for the file with the given key.
+    Validates that the key contains no path separators, ensuring files are only in the base folder.
+    Raises HTTPException if validation fails.
     """
-    storage = Environment.get_asset_storage()
+    if "/" in key or "\\" in key:
+        raise HTTPException(status_code=400, detail="Invalid key: path separators not allowed")
+
+
+async def _head_file(storage, key: str):
+    """
+    Common logic for returning file metadata.
+    """
+    validate_key(key)
     if not storage.file_exists(key):
         raise HTTPException(status_code=404)
 
@@ -39,12 +48,11 @@ async def head(key: str):
     )
 
 
-@router.get("/{key}")
-async def get(key: str, request: Request):
+async def _get_file(storage, key: str, request: Request):
     """
-    Returns the file as a stream for the given key, supporting range queries.
+    Common logic for returning file as a stream with range support.
     """
-    storage = Environment.get_asset_storage()
+    validate_key(key)
     if not storage.file_exists(key):
         raise HTTPException(status_code=404)
 
@@ -105,18 +113,54 @@ async def get(key: str, request: Request):
     )
 
 
+async def _put_file(storage, key: str, request: Request):
+    """
+    Common logic for uploading/updating files.
+    """
+    validate_key(key)
+    body = await request.body()
+    await storage.upload(key, BytesIO(body))
+
+    # return the same xml response as aws s3 upload_fileobj
+    return Response(status_code=200, content=b"")
+
+
+async def _delete_file(storage, key: str):
+    """
+    Common logic for deleting files.
+    """
+    validate_key(key)
+    if not storage.file_exists(key):
+        return Response(status_code=404)
+    await storage.delete(key)
+
+
+# Asset storage endpoints
+@router.head("/{key}")
+async def head(key: str):
+    """
+    Returns the metadata for the file with the given key.
+    """
+    storage = Environment.get_asset_storage()
+    return await _head_file(storage, key)
+
+
+@router.get("/{key}")
+async def get(key: str, request: Request):
+    """
+    Returns the file as a stream for the given key, supporting range queries.
+    """
+    storage = Environment.get_asset_storage()
+    return await _get_file(storage, key, request)
+
+
 @router.put("/{key}")
 async def update(key: str, request: Request, user: str = Depends(current_user)):
     """
     Updates or creates the file for the given key.
     """
     storage = Environment.get_asset_storage()
-
-    body = await request.body()
-    await storage.upload(key, BytesIO(body))
-
-    # return the same xml response as aws s3 upload_fileobj
-    return Response(status_code=200, content=b"")
+    return await _put_file(storage, key, request)
 
 
 @router.delete("/{key}")
@@ -125,6 +169,41 @@ async def delete(key: str, user: str = Depends(current_user)):
     Deletes the asset for the given key.
     """
     storage = Environment.get_asset_storage()
-    if not storage.file_exists(key):
-        return Response(status_code=404)
-    await storage.delete(key)
+    return await _delete_file(storage, key)
+
+
+# Temp storage endpoints
+@temp_router.head("/{key}")
+async def temp_head(key: str):
+    """
+    Returns the metadata for the temp file with the given key.
+    """
+    storage = Environment.get_temp_storage()
+    return await _head_file(storage, key)
+
+
+@temp_router.get("/{key}")
+async def temp_get(key: str, request: Request):
+    """
+    Returns the temp file as a stream for the given key, supporting range queries.
+    """
+    storage = Environment.get_temp_storage()
+    return await _get_file(storage, key, request)
+
+
+@temp_router.put("/{key}")
+async def temp_update(key: str, request: Request, user: str = Depends(current_user)):
+    """
+    Updates or creates the temp file for the given key.
+    """
+    storage = Environment.get_temp_storage()
+    return await _put_file(storage, key, request)
+
+
+@temp_router.delete("/{key}")
+async def temp_delete(key: str, user: str = Depends(current_user)):
+    """
+    Deletes the temp asset for the given key.
+    """
+    storage = Environment.get_temp_storage()
+    return await _delete_file(storage, key)

@@ -19,6 +19,7 @@ class Workflow(BaseModel):
     settings: dict[str, str | bool | int | float | None] | None = None
     package_name: str | None = None
     path: str | None = None
+    run_mode: str | None = None
 
 
 class WorkflowRequest(BaseModel):
@@ -33,6 +34,7 @@ class WorkflowRequest(BaseModel):
     graph: Graph | None = None
     comfy_workflow: dict[str, Any] | None = None
     settings: dict[str, str | bool | int | float | None] | None = None
+    run_mode: str | None = None
 
 
 class WorkflowList(BaseModel):

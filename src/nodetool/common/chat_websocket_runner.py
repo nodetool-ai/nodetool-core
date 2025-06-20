@@ -76,6 +76,30 @@ import httpx
 from fastapi import WebSocket
 from supabase import create_async_client, AsyncClient
 
+from nodetool.agents.agent import Agent
+from nodetool.agents.tools import (
+    AddLabelTool,
+    ArchiveEmailTool,
+    BrowserTool,
+    ConvertPDFToMarkdownTool,
+    DownloadFileTool,
+    ExtractPDFTablesTool,
+    ExtractPDFTextTool,
+    GoogleGroundedSearchTool,
+    GoogleImageGenerationTool,
+    GoogleImagesTool,
+    GoogleNewsTool,
+    GoogleSearchTool,
+    ListAssetsDirectoryTool,
+    OpenAIImageGenerationTool,
+    OpenAITextToSpeechTool,
+    OpenAIWebSearchTool,
+    ReadAssetTool,
+    SaveAssetTool,
+    ScreenshotTool,
+    SearchEmailTool,
+    create_workflow_tools,
+)
 from nodetool.chat.ollama_service import get_ollama_models
 from nodetool.chat.providers import get_provider
 from nodetool.agents.tools.base import Tool, get_tool_by_name
@@ -94,7 +118,7 @@ from nodetool.metadata.types import (
 from nodetool.metadata.types import MessageImageContent, MessageTextContent
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.run_workflow import run_workflow
-from nodetool.workflows.types import Chunk, ToolCallUpdate
+from nodetool.workflows.types import Chunk, ToolCallUpdate, TaskUpdate, PlanningUpdate, SubTaskResult, OutputUpdate
 from nodetool.workflows.workflow_runner import WorkflowRunner
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.chat.help import create_help_answer
@@ -102,7 +126,7 @@ from nodetool.chat.help import create_help_answer
 log = logging.getLogger(__name__)
 
 # Enable debug logging for this module
-log.setLevel(logging.DEBUG)
+# log.setLevel(logging.DEBUG)
 
 ollama_models: list[str] = []
 
@@ -166,6 +190,7 @@ class ChatWebSocketRunner:
         self.auth_token = auth_token
         self.user_id: str | None = None
         self.supabase: AsyncClient | None = None
+        self.all_tools = []  # Initialize empty list, will be populated after user_id is set
 
     async def init_supabase(self):
         if self.supabase:
@@ -217,6 +242,9 @@ class ChatWebSocketRunner:
         self.websocket = websocket
         log.info("WebSocket connection established for chat")
         log.debug("WebSocket connection ready")
+        
+        # Initialize tools after user_id is set
+        self._initialize_tools()
 
     async def validate_token(self, token: str) -> bool:
         """
@@ -324,9 +352,12 @@ class ChatWebSocketRunner:
                     response_message = await self.process_messages_for_workflow()
                 else:
                     log.debug(
-                        f"Processing regular chat message with model: {message.model}"
+                        f"Processing regular chat message with model: {message.model}, agent_mode: {message.agent_mode}"
                     )
-                    response_message = await self.process_messages()
+                    if message.agent_mode:
+                        response_message = await self.process_agent_messages()
+                    else:
+                        response_message = await self.process_messages()
 
                 log.debug(
                     f"Response message created - role: {response_message.role}, content length: {len(str(response_message.content or ''))}"
@@ -445,6 +476,11 @@ class ChatWebSocketRunner:
             unprocessed_messages = []
 
             def init_tool(name: str) -> Tool:
+                # First check if it's a workflow tool
+                for tool in self.all_tools:
+                    if tool.name == name:
+                        return tool
+                # If not found in all_tools, try to get by name
                 tool_class = get_tool_by_name(name)
                 if tool_class:
                     return tool_class()
@@ -554,6 +590,164 @@ class ChatWebSocketRunner:
                 # Re-raise other exceptions to be handled by the outer try-catch
                 raise
 
+    async def process_agent_messages(self) -> Message:
+        """
+        Process messages using the Agent, similar to the CLI implementation.
+        
+        Returns:
+            Message: The assistant's response message after agent execution.
+        """
+        last_message = self.chat_history[-1]
+        assert last_message.model, "Model is required for agent mode"
+        
+        # Extract objective from message content
+        if isinstance(last_message.content, str):
+            objective = last_message.content
+        elif isinstance(last_message.content, list) and last_message.content:
+            # Find the first text content
+            for content_item in last_message.content:
+                if isinstance(content_item, MessageTextContent):
+                    objective = content_item.text
+                    break
+            else:
+                objective = "Complete the requested task"
+        else:
+            objective = "Complete the requested task"
+        
+        # Ensure tools are initialized
+        if not self.all_tools:
+            self._initialize_tools()
+        
+        # Get selected tools based on message.tools
+        selected_tools = []
+        if last_message.tools:
+            tool_names = set(last_message.tools)
+            selected_tools = [tool for tool in self.all_tools if tool.name in tool_names]
+            log.debug(f"Selected tools for agent: {[tool.name for tool in selected_tools]}")
+        
+        processing_context = ProcessingContext(user_id=self.user_id)
+        
+        try:
+            provider = await provider_from_model(last_message.model)
+            agent = Agent(
+                name="Assistant",
+                objective=objective,
+                provider=provider,
+                model=last_message.model,
+                tools=selected_tools,
+                enable_analysis_phase=False,
+                enable_data_contracts_phase=False,
+                verbose=False,  # Disable verbose console output for websocket
+            )
+            
+            accumulated_content = ""
+            
+            async for item in agent.execute(processing_context):
+                if isinstance(item, Chunk):
+                    accumulated_content += item.content
+                    # Stream chunk to client using the same format as regular messages
+                    await self.send_message({
+                        "type": "chunk",
+                        "content": item.content,
+                        "done": item.done if hasattr(item, 'done') else False
+                    })
+                elif isinstance(item, ToolCall):
+                    # Send tool call update
+                    await self.send_message({
+                        "type": "tool_call_update",
+                        "name": item.name,
+                        "args": item.args,
+                        "message": f"Calling {item.name}..."
+                    })
+                elif isinstance(item, TaskUpdate):
+                    # Send task update
+                    await self.send_message({
+                        "type": "task_update",
+                        "event": item.event,
+                        "task": item.task.model_dump() if item.task else None,
+                        "subtask": item.subtask.model_dump() if item.subtask else None
+                    })
+                elif isinstance(item, PlanningUpdate):
+                    # Send planning update
+                    await self.send_message({
+                        "type": "planning_update",
+                        "phase": item.phase,
+                        "status": item.status,
+                        "content": item.content,
+                        "node_id": item.node_id
+                    })
+                elif isinstance(item, SubTaskResult) and not item.is_task_result:
+                    # Send subtask result
+                    await self.send_message({
+                        "type": "message",
+                        "role": "assistant",
+                        "content": str(item.result)
+                    })
+            
+            # Signal completion
+            await self.send_message({"type": "chunk", "content": "", "done": True})
+            
+            return Message(
+                role="assistant",
+                content=accumulated_content if accumulated_content else None,
+            )
+            
+        except Exception as e:
+            log.error(f"Error in agent execution: {e}", exc_info=True)
+            error_msg = f"Agent execution error: {str(e)}"
+            
+            # Send error message to client
+            await self.send_message({
+                "type": "error",
+                "message": error_msg,
+                "error_type": "agent_error"
+            })
+            
+            # Return error message
+            return Message(
+                role="assistant",
+                content=error_msg
+            )
+
+    def _initialize_tools(self):
+        """Initialize all available tools."""
+        # Initialize standard tools
+        standard_tools = [
+            AddLabelTool(),
+            ArchiveEmailTool(),
+            BrowserTool(),
+            ConvertPDFToMarkdownTool(),
+            DownloadFileTool(),
+            ExtractPDFTablesTool(),
+            ExtractPDFTextTool(),
+            GoogleGroundedSearchTool(),
+            GoogleImageGenerationTool(),
+            GoogleImagesTool(),
+            GoogleNewsTool(),
+            GoogleSearchTool(),
+            ListAssetsDirectoryTool(),
+            OpenAIImageGenerationTool(),
+            OpenAITextToSpeechTool(),
+            OpenAIWebSearchTool(),
+            ReadAssetTool(),
+            SaveAssetTool(),
+            ScreenshotTool(),
+            SearchEmailTool(),
+        ]
+        
+        # Initialize workflow tools if user_id is available
+        workflow_tools = []
+        if self.user_id:
+            try:
+                workflow_tools = create_workflow_tools(self.user_id, limit=200)
+                log.debug(f"Loaded {len(workflow_tools)} workflow tools")
+            except Exception as e:
+                log.warning(f"Failed to load workflow tools: {e}")
+        
+        # Store all available tools
+        self.all_tools = standard_tools + workflow_tools
+        log.debug(f"Initialized {len(self.all_tools)} total tools")
+
     async def process_messages_for_workflow(self) -> Message:
         """
         Processes messages that are part of a defined workflow.
@@ -595,10 +789,10 @@ class ChatWebSocketRunner:
             workflow_runner,
             processing_context,
         ):
-            await self.send_message(update)
-            log.debug(f"Workflow update sent: {update.get('type')}")
-            if update["type"] == "job_update" and update["status"] == "completed":
-                result = update["result"]
+            await self.send_message(update.model_dump())
+            log.debug(f"Workflow update sent: {update.type}")
+            if isinstance(update, OutputUpdate):
+                result[update.node_name] = update.value
 
         return self.create_response_message(result)
 

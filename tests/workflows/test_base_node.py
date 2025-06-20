@@ -327,10 +327,11 @@ def test_node_from_dict_with_base_type_properties():
         },
     }
 
-    node = BaseNode.from_dict(node_dict)
+    node, _ = BaseNode.from_dict(node_dict)
     assert isinstance(node, DataframeNode)
     assert isinstance(node.dataframe, DataframeRef)
     assert node.dataframe.uri == "test://df.csv"
+    assert node.dataframe.columns is not None
     assert len(node.dataframe.columns) == 2
 
 

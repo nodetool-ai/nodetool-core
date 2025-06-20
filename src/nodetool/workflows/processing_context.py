@@ -146,7 +146,6 @@ class ProcessingContext:
         self.message_queue = message_queue if message_queue else queue.Queue()
         self.device = device
         self.variables: dict[str, Any] = variables if variables else {}
-        self.nodes: dict[str, BaseNode] = {}
         self.environment: dict[str, str] = Environment.get_environment()
         if environment:
             self.environment.update(environment)
@@ -305,24 +304,6 @@ class ProcessingContext:
         """
         return Environment.get_asset_storage().get_url(key)
 
-    def load_nodes(self, nodes: list[Node]):
-        """
-        Loads nodes into the runner.
-
-        Args:
-            nodes (list[Node]): The list of nodes to load.
-
-        Returns:
-            list[BaseNode]: The list of loaded nodes.
-        """
-        result = []
-        for node in nodes:
-            if node.id in self.nodes:
-                result.append(self.nodes[node.id])
-            else:
-                self.nodes[node.id] = BaseNode.from_dict(node.model_dump())
-                result.append(self.nodes[node.id])
-        return result
 
     def generate_node_cache_key(
         self,
@@ -1915,12 +1896,23 @@ class ProcessingContext:
         Returns:
             Any: The value with all AssetRef objects uploaded to S3 and replaced with their URLs
         """
+        def get_ext(value: Any) -> str:
+            if isinstance(value, ImageRef):
+                return "png"
+            elif isinstance(value, AudioRef):
+                return "mp3"
+            elif isinstance(value, VideoRef):
+                return "mp4"
+            else:
+                return "bin"
+
         if isinstance(value, AssetRef):
             log.info(f"Uploading asset {value.uri} to S3")
             # Upload the asset data to S3 and return the URL
             if value.data is not None:
-                storage = Environment.get_asset_temp_storage()
-                key = uuid.uuid4().hex
+                storage = Environment.get_temp_storage()
+                ext = get_ext(value)
+                key = uuid.uuid4().hex + "." + ext
                 uri = storage.upload_sync(
                     key,
                     BytesIO(
