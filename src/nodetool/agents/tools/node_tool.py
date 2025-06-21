@@ -1,0 +1,192 @@
+"""
+Node Tool Module
+================
+
+This module provides a NodeTool class that wraps a single BaseNode instance
+as a tool for use by agents, enabling individual nodes to be executed
+independently within agent workflows.
+"""
+
+from typing import Any, Dict, Type
+from nodetool.agents.tools.base import Tool
+from nodetool.workflows.base_node import BaseNode, get_node_class
+from nodetool.workflows.processing_context import ProcessingContext
+from nodetool.metadata.node_metadata import NodeMetadata
+import json
+
+
+class NodeTool(Tool):
+    """
+    Tool that wraps a single BaseNode for use by agents.
+    
+    This class enables agents to execute individual workflow nodes as tools,
+    providing a bridge between the node system and the agent system.
+    
+    Attributes:
+        node_class: The BaseNode class that this tool wraps
+        node_instance: An instance of the node class (created on demand)
+    """
+    
+    def __init__(self, node_class: Type[BaseNode] | str, name: str | None = None):
+        """
+        Initialize the NodeTool with a specific node class.
+        
+        Args:
+            node_class: Either a BaseNode class or a string node type identifier
+            name: Optional custom name for the tool (defaults to node class name)
+        """
+        # Handle string node type
+        if isinstance(node_class, str):
+            resolved_class = get_node_class(node_class)
+            if resolved_class is None:
+                raise ValueError(f"Unknown node type: {node_class}")
+            self.node_class = resolved_class
+        else:
+            self.node_class = node_class
+            
+        # Get node metadata
+        metadata = self.node_class.get_metadata()
+        
+        # Set tool name - use custom name or generate from node class
+        if name:
+            self.name = name
+        else:
+            # Convert class name to snake_case tool name
+            class_name = self.node_class.__name__
+            if class_name.endswith("Node"):
+                class_name = class_name[:-4]
+            self.name = f"node_{self._to_snake_case(class_name)}"
+        
+        # Set description from node metadata
+        self.description = metadata.description or f"Execute {metadata.title} node"
+        
+        # Generate input schema from node properties
+        self._generate_input_schema(metadata)
+        
+        # Store node type for reference
+        self.node_type = self.node_class.get_node_type()
+    
+    def _to_snake_case(self, name: str) -> str:
+        """Convert CamelCase to snake_case."""
+        import re
+        s1 = re.sub('(.)([A-Z][a-z]+)', r'\1_\2', name)
+        return re.sub('([a-z0-9])([A-Z])', r'\1_\2', s1).lower()
+    
+    def _generate_input_schema(self, metadata: NodeMetadata) -> None:
+        """Generate JSON schema for tool inputs from node properties."""
+        properties = {}
+        required = []
+        
+        for prop in metadata.properties:
+            # Skip internal properties
+            if prop.name.startswith("_"):
+                continue
+                
+            # Get JSON schema for property
+            try:
+                prop_schema = prop.get_json_schema()
+                properties[prop.name] = prop_schema
+                
+                # Add to required list if not optional
+                if prop.required:
+                    required.append(prop.name)
+            except Exception as e:
+                # Skip properties that can't be converted to JSON schema
+                pass
+        
+        self.input_schema = {
+            "type": "object",
+            "properties": properties
+        }
+        
+        if required:
+            self.input_schema["required"] = required
+    
+    async def process(self, context: ProcessingContext, params: Dict[str, Any]) -> Any:
+        """
+        Execute the node with provided parameters.
+        
+        Args:
+            context: The processing context for the workflow
+            params: Parameters to pass to the node
+            
+        Returns:
+            Dict containing the execution result or error information
+        """
+        try:
+            # Create node instance with a unique ID and properties
+            import uuid
+            node_id = f"node_tool_{uuid.uuid4().hex[:8]}"
+            
+            # Create node with properties
+            try:
+                node = self.node_class(id=node_id, **params)
+            except Exception as e:
+                # If direct creation fails, try creating empty and setting properties
+                node = self.node_class(id=node_id)
+                errors = node.set_node_properties(params, skip_errors=True)
+                if errors:
+                    return {
+                        "node_type": self.node_type,
+                        "error": f"Failed to set properties: {'; '.join(errors)}",
+                        "status": "failed"
+                    }
+            
+            # Initialize the node if needed
+            await node.initialize(context)
+            
+            # Execute the node
+            result = await node.process(context)
+            
+            # Convert output according to node's output format
+            converted_result = await node.convert_output(context, result)
+            
+            return {
+                "node_type": self.node_type,
+                "result": converted_result,
+                "status": "completed"
+            }
+            
+        except Exception as e:
+            import traceback
+            return {
+                "node_type": self.node_type,
+                "error": str(e),
+                "traceback": traceback.format_exc(),
+                "status": "failed"
+            }
+        finally:
+            # Clean up node resources if needed
+            if 'node' in locals():
+                await node.finalize(context)
+    
+    def user_message(self, params: Dict[str, Any]) -> str:
+        """
+        Returns a user message describing what the tool is doing.
+        
+        Args:
+            params: The parameters being passed to the node
+            
+        Returns:
+            A human-readable message about the tool execution
+        """
+        param_str = json.dumps(params, indent=2) if params else "no parameters"
+        return f"Executing '{self.node_class.get_title()}' node with {param_str}"
+    
+    @classmethod
+    def from_node_type(cls, node_type: str, name: str | None = None) -> "NodeTool":
+        """
+        Create a NodeTool from a node type string.
+        
+        Args:
+            node_type: The node type identifier (e.g., "nodetool.text.Concatenate")
+            name: Optional custom name for the tool
+            
+        Returns:
+            A NodeTool instance wrapping the specified node type
+        """
+        return cls(node_type, name)
+    
+    def __repr__(self) -> str:
+        """String representation of the NodeTool."""
+        return f"NodeTool(name={self.name}, node_type={self.node_type})"
