@@ -65,7 +65,6 @@ Example:
 """
 
 import logging
-import traceback
 import uuid
 import json
 import msgpack
@@ -73,7 +72,9 @@ from typing import List, Sequence
 from enum import Enum
 
 import httpx
+import chromadb
 from fastapi import WebSocket
+from nodetool.common.chroma_client import get_chroma_client, get_collection
 from supabase import create_async_client, AsyncClient
 
 from nodetool.agents.agent import Agent
@@ -266,7 +267,7 @@ class ChatWebSocketRunner:
         assert self.supabase, "Supabase client not initialized"
         try:
             # Validate the token using Supabase
-            session: AuthSession = await self.supabase.auth.get_session()  # type: ignore
+            session = await self.supabase.auth.get_session()  # type: ignore
             if session and session.access_token == token:
                 # verify the token
                 user_response = await self.supabase.auth.get_user(token)
@@ -379,6 +380,40 @@ class ChatWebSocketRunner:
                 # Continue processing instead of breaking
                 continue
 
+    async def _query_chroma_collections(self, collections: list[str], query_text: str, n_results: int = 5) -> str:
+        """Query multiple ChromaDB collections and return concatenated results."""
+        if not collections or not query_text:
+            return ""
+        
+        all_results = []
+        
+        for collection_name in collections:
+            # Get the collection
+            collection = get_collection(name=collection_name)
+            
+            # Perform query
+            results = collection.query(
+                query_texts=[query_text],
+                n_results=n_results,
+            )
+            
+            if results["documents"] and results["documents"][0]:
+                # Format results from this collection
+                collection_results = f"\n\n### Results from {collection_name}:\n"
+                for doc, metadata in zip(
+                    results["documents"][0], 
+                    results["metadatas"][0] if results["metadatas"] else [{}]*len(results["documents"][0])
+                ):
+                    # Truncate long documents
+                    doc_preview = f"{doc[:200]}..." if len(doc) > 200 else doc
+                    collection_results += f"\n- {doc_preview}"
+                all_results.append(collection_results)
+        
+        if all_results:
+            return "\n".join(all_results)
+        else:
+            return ""
+
     async def _process_help_messages(self, model: str) -> Message:
         """
         Processes messages using the integrated help system.
@@ -472,6 +507,28 @@ class ChatWebSocketRunner:
             # Existing logic for regular messages
             processing_context = ProcessingContext(user_id=self.user_id)
 
+            # Extract query text from the last message for collection search
+            query_text = ""
+            if isinstance(last_message.content, str):
+                query_text = last_message.content
+            elif isinstance(last_message.content, list) and last_message.content:
+                for content_item in last_message.content:
+                    if isinstance(content_item, MessageTextContent):
+                        query_text = content_item.text
+                        break
+
+            # Query collections if specified
+            collection_context = ""
+            if last_message.collections:
+                log.debug(f"Querying collections: {last_message.collections}")
+                collection_context = await self._query_chroma_collections(
+                    last_message.collections, 
+                    query_text,
+                    n_results=5
+                )
+                if collection_context:
+                    log.debug(f"Retrieved collection context: {len(collection_context)} characters")
+
             content = ""
             unprocessed_messages = []
 
@@ -507,6 +564,30 @@ class ChatWebSocketRunner:
                 # Stream the response chunks
                 while True:
                     messages_to_send = self.chat_history + unprocessed_messages
+                    
+                    # If we have collection context, add it as a system message before the last user message
+                    if collection_context:
+                        # Find the last user message index
+                        last_user_index = -1
+                        for i in range(len(messages_to_send) - 1, -1, -1):
+                            if messages_to_send[i].role == "user":
+                                last_user_index = i
+                                break
+                        
+                        if last_user_index >= 0:
+                            # Insert collection context before the last user message
+                            collection_message = Message(
+                                role="system",
+                                content=f"Context from knowledge base:\n{collection_context}"
+                            )
+                            messages_to_send = (
+                                messages_to_send[:last_user_index] + 
+                                [collection_message] + 
+                                messages_to_send[last_user_index:]
+                            )
+                            # Clear collection_context so we don't add it again in subsequent iterations
+                            collection_context = ""
+                    
                     unprocessed_messages = []
 
                     log.debug(
@@ -586,7 +667,7 @@ class ChatWebSocketRunner:
                     role="assistant", 
                     content=f"I encountered a connection error: {error_msg}. Please check your network connection and try again."
                 )
-            except Exception as e:
+            except Exception:
                 # Re-raise other exceptions to be handled by the outer try-catch
                 raise
 
