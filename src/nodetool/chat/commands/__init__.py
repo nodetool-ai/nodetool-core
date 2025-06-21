@@ -5,12 +5,11 @@ from .help import HelpCommand
 from .exit import ExitCommand
 from .model import ModelCommand, ModelsCommand
 from .clear import ClearCommand
-from .agent import AgentCommand, AnalysisPhaseCommand, FlowAnalysisCommand
+from .agent import AgentCommand
 from .debug import DebugCommand
 from .usage import UsageCommand
 from .tools import ToolsCommand, ToolEnableCommand, ToolDisableCommand, ToolSearchCommand
 from .workspace import ChangeToWorkspaceCommand
-from .reasoning import ReasoningModelCommand
 from .workflow import RunWorkflowCommand
 
 __all__ = [
@@ -21,8 +20,6 @@ __all__ = [
     "ModelsCommand",
     "ClearCommand",
     "AgentCommand",
-    "AnalysisPhaseCommand",
-    "FlowAnalysisCommand",
     "DebugCommand",
     "UsageCommand",
     "ToolsCommand",
@@ -30,6 +27,5 @@ __all__ = [
     "ToolDisableCommand",
     "ToolSearchCommand",
     "ChangeToWorkspaceCommand",
-    "ReasoningModelCommand",
     "RunWorkflowCommand",
 ]

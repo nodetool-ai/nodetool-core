@@ -154,8 +154,8 @@ class ChatCLI:
             DebugCommand(),
             UsageCommand(),
             ToolsCommand(),
-            ToolEnableCommand(), 
-            ToolDisableCommand(), 
+            ToolEnableCommand(),
+            ToolDisableCommand(),
             RunWorkflowCommand(),
         ]
 
@@ -364,13 +364,16 @@ class ChatCLI:
         command_completer["model"] = WordCompleter(model_ids)
         command_completer["m"] = command_completer["model"]
         # Use tool names for completion
-        command_completer["tools"] = WordCompleter(all_tool_names)
+        command_completer["tools"] = WordCompleter(all_tool_names, match_middle=True)
         command_completer["t"] = command_completer["tools"]
         # Add completers for tool enable/disable commands
-        command_completer["enable"] = WordCompleter(all_tool_names + ["all"])
-        command_completer["en"] = command_completer["enable"]
-        command_completer["disable"] = WordCompleter(all_tool_names + ["all"])
-        command_completer["dis"] = command_completer["disable"]
+        enable_disable_completer = WordCompleter(
+            all_tool_names + ["all"], match_middle=True
+        )
+        command_completer["enable"] = enable_disable_completer
+        command_completer["en"] = enable_disable_completer
+        command_completer["disable"] = enable_disable_completer
+        command_completer["dis"] = enable_disable_completer
 
         # Create nested completer with commands prefixed with "/" and workspace commands
         prefixed_command_completer = {
