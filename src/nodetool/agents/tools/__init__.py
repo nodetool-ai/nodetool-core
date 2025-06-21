@@ -63,9 +63,6 @@ from nodetool.agents.tools.email_tools import (
     parse_email_message,
 )
 
-# Workspace tools
-from .workspace_tools import ReadFileTool, WriteFileTool
-
 # Asset tools
 from .asset_tools import ListAssetsDirectoryTool, ReadAssetTool, SaveAssetTool
 
@@ -83,6 +80,13 @@ from .math_tools import (
     TrigonometryTool,
     ConversionTool,
 )
+
+from .filesystem_tools import (
+    ReadFileTool,
+    WriteFileTool,
+    ListDirectoryTool,
+)
+
 
 # Workflow tools
 from .workflow_tool import WorkflowTool, create_workflow_tools, create_workflow_tool_by_name
@@ -114,11 +118,11 @@ __all__ = [
     "GoogleShoppingTool",
     "GoogleFinanceTool",
     "ListAssetsDirectoryTool",
+    "ListDirectoryTool",
     "OpenAIImageGenerationTool",
     "OpenAITextToSpeechTool",
     "OpenAIWebSearchTool",
     "ReadAssetTool",
-    "ReadFileTool",
     "SaveAssetTool",
     "ScreenshotTool",
     "SearchEmailTool",

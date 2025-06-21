@@ -36,7 +36,6 @@ from rich.table import Table
 from rich.panel import Panel
 from rich.syntax import Syntax
 from rich.align import Align
-from rich.prompt import Confirm  # Added for boolean toggles
 from rich.columns import Columns  # Add Columns
 
 # Existing imports
@@ -59,758 +58,18 @@ from nodetool.agents.tools import (
     GoogleImagesTool,
     GoogleNewsTool,
     GoogleSearchTool,
-    ListAssetsDirectoryTool,
     OpenAIImageGenerationTool,
     OpenAITextToSpeechTool,
     OpenAIWebSearchTool,
-    ReadAssetTool,
-    SaveAssetTool,
+    ListDirectoryTool,
+    ReadFileTool,
+    WriteFileTool,
     ScreenshotTool,
     SearchEmailTool,
     create_workflow_tools,
 )
 from nodetool.workflows.types import Chunk
-from nodetool.workflows.run_workflow import run_workflow
-from nodetool.workflows.run_job_request import RunJobRequest
-from nodetool.types.graph import get_input_schema, get_output_schema
-from nodetool.models.workflow import Workflow
 
-
-class Command:
-    """Base class for CLI commands with documentation and execution logic."""
-
-    def __init__(
-        self, name: str, description: str, aliases: Optional[List[str]] = None
-    ):
-        self.name = name
-        self.description = description
-        self.aliases = aliases or []
-
-    async def execute(self, cli: "ChatCLI", args: List[str]) -> bool:
-        """Execute the command with the given arguments.
-
-        Returns:
-            bool: True if the CLI should exit, False otherwise
-        """
-        raise NotImplementedError("Command must implement execute method")
-
-
-class HelpCommand(Command):
-    def __init__(self):
-        super().__init__("help", "Display available commands", ["h"])
-
-    async def execute(self, cli: "ChatCLI", args: List[str]) -> bool:
-        cli.console.print("\n[bold]Available Commands[/bold]", style="cyan")
-
-        table = Table(show_header=True, header_style="bold magenta")
-        table.add_column("Command", style="cyan")
-        table.add_column("Description", style="green")
-
-        # Get unique command objects to avoid printing aliases separately
-        unique_commands = sorted(set(cli.commands.values()), key=lambda cmd: cmd.name)
-
-        for cmd in unique_commands:
-            aliases = (
-                f" ({', '.join(['/' + a for a in cmd.aliases])})" if cmd.aliases else ""
-            )
-            table.add_row(f"/{cmd.name}{aliases}", cmd.description)
-
-        cli.console.print(table)
-        cli.console.print("\n[bold]Workspace Commands[/bold]", style="cyan")
-
-        workspace_table = Table(show_header=True, header_style="bold magenta")
-        workspace_table.add_column("Command", style="cyan")
-        workspace_table.add_column("Description", style="green")
-
-        workspace_commands = [
-            ("pwd", "Print current workspace directory"),
-            ("ls [path]", "List contents of workspace directory"),
-            ("cd [path]", "Change directory within workspace"),
-            ("mkdir [dir]", "Create new directory in workspace"),
-            ("rm [path]", "Remove file or directory in workspace"),
-            ("open [file]", "Open file in system default application"),
-            ("cat [file]", "Display the content of a file"),
-            ("cp <src> <dest>", "Copy file or directory within workspace"),
-            ("mv <src> <dest>", "Move/rename file or directory within workspace"),
-            ("grep <pattern> [path]", "Search for pattern in files within workspace"),
-            ("cdw", "Change directory to the defined workspace root"),
-        ]
-
-        for cmd, desc in workspace_commands:
-            workspace_table.add_row(cmd, desc)
-
-        cli.console.print(workspace_table)
-        return False
-
-
-class ExitCommand(Command):
-    def __init__(self):
-        super().__init__("exit", "Exit the chat interface", ["quit", "q"])
-
-    async def execute(self, cli: "ChatCLI", args: List[str]) -> bool:
-        cli.console.print("[bold yellow]Exiting chat...[/bold yellow]")
-        return True
-
-
-class ModelCommand(Command):
-    def __init__(self):
-        super().__init__("model", "Set the model for all agents by ID", ["m"])
-
-    async def execute(self, cli: "ChatCLI", args: List[str]) -> bool:
-        if not cli.selected_model:
-            cli.console.print(
-                "[bold red]Error:[/bold red] No models loaded. Cannot set model."
-            )
-            return False
-
-        if not args:
-            cli.console.print(
-                f"Current model: [bold green]{cli.selected_model.name}[/bold green] (ID: {cli.selected_model.id}, Provider: {cli.selected_model.provider.value})"
-            )
-            return False
-
-        model_id_to_set = args[0]
-        found_model = None
-        for model in cli.language_models:
-            if model.id == model_id_to_set:
-                found_model = model
-                break
-
-        if found_model:
-            cli.selected_model = found_model
-            # Update related model IDs (can be changed later via specific commands if needed)
-            cli.planner_model_id = found_model.id
-            cli.summarization_model_id = found_model.id
-            cli.retrieval_model_id = found_model.id
-
-            cli.console.print(
-                f"Model set to [bold green]{found_model.name}[/bold green] (ID: {found_model.id})"
-            )
-            # Save settings after changing model
-            cli.save_settings()
-        else:
-            cli.console.print(
-                f"[bold red]Error:[/bold red] Model ID '{model_id_to_set}' not found. Use /models to list available IDs."
-            )
-
-        return False
-
-
-class ModelsCommand(Command):
-    def __init__(self):
-        super().__init__(
-            "models", "List available models for the current provider", ["ms"]
-        )
-
-    async def execute(self, cli: "ChatCLI", args: List[str]) -> bool:
-        try:
-            table = Table(title="Available Models", show_header=True)
-            table.add_column("Provider", style="cyan")
-            table.add_column("Model Name", style="cyan")
-            table.add_column("Model ID", style="cyan")
-            for model in cli.language_models:
-                table.add_row(model.provider, model.name, model.id)
-
-            cli.console.print(table)
-        except Exception as e:
-            cli.console.print(f"[bold red]Error listing models:[/bold red] {e}")
-
-        return False
-
-
-class ClearCommand(Command):
-    def __init__(self):
-        super().__init__("clear", "Clear chat history", ["cls"])
-
-    async def execute(self, cli: "ChatCLI", args: List[str]) -> bool:
-        cli.messages = []
-        cli.console.print("[bold green]Chat history cleared[/bold green]")
-        return False
-
-
-class AgentCommand(Command):
-    def __init__(self):
-        super().__init__("agent", "Toggle agent mode (on/off)", ["a"])
-
-    async def execute(self, cli: "ChatCLI", args: List[str]) -> bool:
-        if not args:
-            status = (
-                "[bold green]ON[/bold green]"
-                if cli.agent_mode
-                else "[bold red]OFF[/bold red]"
-            )
-            cli.console.print(f"Agent mode is currently: {status}")
-            return False
-
-        if args[0].lower() == "on":
-            cli.agent_mode = True
-            cli.console.print("[bold green]Agent mode turned ON[/bold green]")
-        elif args[0].lower() == "off":
-            cli.agent_mode = False
-            cli.console.print("[bold red]Agent mode turned OFF[/bold red]")
-        else:
-            cli.console.print("[bold yellow]Usage: /agent [on|off][/bold yellow]")
-
-        # Save settings after changing agent mode
-        cli.save_settings()
-        return False
-
-
-class DebugCommand(Command):
-    def __init__(self):
-        super().__init__("debug", "Toggle debug mode (on/off)", ["d"])
-
-    async def execute(self, cli: "ChatCLI", args: List[str]) -> bool:
-        new_state = None
-        if not args:
-            current_state = (
-                "[bold green]ON[/bold green]"
-                if cli.debug_mode
-                else "[bold red]OFF[/bold red]"
-            )
-            cli.console.print(f"Debug mode is currently: {current_state}")
-            # Ask user if they want to toggle
-            if Confirm.ask(
-                "Toggle debug mode?", default=cli.debug_mode, console=cli.console
-            ):
-                new_state = not cli.debug_mode
-            else:
-                return False  # No change
-        elif args[0].lower() == "on":
-            new_state = True
-        elif args[0].lower() == "off":
-            new_state = False
-        else:
-            cli.console.print(
-                "[bold yellow]Usage: /debug [on|off] (or just /debug to toggle)[/bold yellow]"
-            )
-            return False
-
-        if new_state is not None and new_state != cli.debug_mode:
-            cli.debug_mode = new_state
-            message = (
-                "Debug mode turned ON - Will display tool calls and results"
-                if cli.debug_mode
-                else "Debug mode turned OFF - Tool calls and results hidden"
-            )
-            cli.console.print(f"[bold green]{message}[/bold green]")
-            cli.save_settings()  # Save settings after changing
-        elif new_state is not None:
-            cli.console.print(
-                f"Debug mode is already {'ON' if cli.debug_mode else 'OFF'}."
-            )
-
-        return False
-
-
-class AnalysisPhaseCommand(Command):
-    """Command to toggle the Analysis Phase for the Agent planner."""
-
-    def __init__(self):
-        super().__init__("analysis", "Toggle agent analysis phase (on/off)", ["an"])
-
-    async def execute(self, cli: "ChatCLI", args: List[str]) -> bool:
-        new_state = None
-        if not args:
-            current_state = (
-                "[bold green]ON[/bold green]"
-                if cli.enable_analysis_phase
-                else "[bold red]OFF[/bold red]"
-            )
-            cli.console.print(f"Agent Analysis Phase is currently: {current_state}")
-            if Confirm.ask(
-                "Toggle Analysis Phase?",
-                default=cli.enable_analysis_phase,
-                console=cli.console,
-            ):
-                new_state = not cli.enable_analysis_phase
-            else:
-                return False  # No change
-        elif args[0].lower() == "on":
-            new_state = True
-        elif args[0].lower() == "off":
-            new_state = False
-        else:
-            cli.console.print(
-                "[bold yellow]Usage: /analysis [on|off] (or just /analysis to toggle)[/bold yellow]"
-            )
-            return False
-
-        if new_state is not None and new_state != cli.enable_analysis_phase:
-            cli.enable_analysis_phase = new_state
-            status = (
-                "[bold green]ON[/bold green]"
-                if cli.enable_analysis_phase
-                else "[bold red]OFF[/bold red]"
-            )
-            message = f"Agent Analysis Phase turned {status}"
-            cli.console.print(f"[bold green]{message}[/bold green]")
-            cli.save_settings()
-        elif new_state is not None:
-            cli.console.print(
-                f"Agent Analysis Phase is already {'ON' if cli.enable_analysis_phase else 'OFF'}."
-            )
-        return False
-
-
-class FlowAnalysisCommand(Command):
-    """Command to toggle the Data Flow Analysis Phase for the Agent planner."""
-
-    def __init__(self):
-        super().__init__(
-            "flow", "Toggle agent data flow analysis phase (on/off)", ["fl"]
-        )
-
-    async def execute(self, cli: "ChatCLI", args: List[str]) -> bool:
-        new_state = None
-        if not args:
-            current_state = (
-                "[bold green]ON[/bold green]"
-                if cli.enable_flow_analysis
-                else "[bold red]OFF[/bold red]"
-            )
-            cli.console.print(
-                f"Agent Data Flow Analysis Phase is currently: {current_state}"
-            )
-            if Confirm.ask(
-                "Toggle Data Flow Analysis Phase?",
-                default=cli.enable_flow_analysis,
-                console=cli.console,
-            ):
-                new_state = not cli.enable_flow_analysis
-            else:
-                return False  # No change
-        elif args[0].lower() == "on":
-            new_state = True
-        elif args[0].lower() == "off":
-            new_state = False
-        else:
-            cli.console.print(
-                "[bold yellow]Usage: /flow [on|off] (or just /flow to toggle)[/bold yellow]"
-            )
-            return False
-
-        if new_state is not None and new_state != cli.enable_flow_analysis:
-            cli.enable_flow_analysis = new_state
-            status = (
-                "[bold green]ON[/bold green]"
-                if cli.enable_flow_analysis
-                else "[bold red]OFF[/bold red]"
-            )
-            message = f"Agent Data Flow Analysis Phase turned {status}"
-            cli.console.print(f"[bold green]{message}[/bold green]")
-            cli.save_settings()
-        elif new_state is not None:
-            cli.console.print(
-                f"Agent Data Flow Analysis Phase is already {'ON' if cli.enable_flow_analysis else 'OFF'}."
-            )
-        return False
-
-
-class ChangeToWorkspaceCommand(Command):
-    """Command to change the current directory to the context's workspace directory."""
-
-    def __init__(self):
-        super().__init__("cdw", "Change directory to the defined workspace root")
-
-    async def execute(self, cli: "ChatCLI", args: List[str]) -> bool:
-        workspace_dir = Path(cli.context.workspace_dir).resolve()
-        if not workspace_dir.is_dir():
-            cli.console.print(
-                f"[bold red]Error:[/bold red] Workspace directory '{cli.context.workspace_dir}' does not exist or is not a directory."
-            )
-            return False
-        try:
-            os.chdir(workspace_dir)
-            # No need to update context.workspace_dir here, we are just navigating to it
-            cli.console.print(
-                f"Changed to workspace: [bold green]{os.getcwd()}[/bold green]"
-            )
-        except Exception as e:
-            cli.console.print(
-                f"[bold red]Error changing to workspace directory:[/bold red] {e}"
-            )
-        return False
-
-
-class UsageCommand(Command):
-    def __init__(self):
-        super().__init__(
-            "usage", "Display usage statistics for the selected model's provider", ["u"]
-        )
-
-    async def execute(self, cli: "ChatCLI", args: List[str]) -> bool:
-        if cli.selected_model:
-            # Get the provider instance for the selected model
-            try:
-                provider_instance = get_provider(cli.selected_model.provider)
-                cli.console.print(
-                    f"[bold]Usage statistics for provider: {cli.selected_model.provider.value}[/bold]"
-                )
-                # Assuming the provider instance has a 'usage' attribute or method
-                usage_data = getattr(provider_instance, "usage", {})
-                syntax = Syntax(
-                    json.dumps(usage_data, indent=2),
-                    "json",
-                    theme="monokai",
-                    line_numbers=True,
-                )
-                cli.console.print(syntax)
-            except Exception as e:
-                cli.console.print(
-                    f"[bold red]Error getting usage for provider {cli.selected_model.provider.value}:[/bold red] {e}"
-                )
-        else:
-            cli.console.print(
-                "[yellow]No model selected. Cannot display usage.[/yellow]"
-            )
-        return False
-
-
-class ToolsCommand(Command):
-    def __init__(self):
-        super().__init__(
-            "tools", "List available tools or show details about a specific tool", ["t"]
-        )
-
-    async def execute(self, cli: "ChatCLI", args: List[str]) -> bool:
-        if not args:
-            table = Table(title="Available Tools", show_header=True)
-            table.add_column("Tool Name", style="cyan")
-            table.add_column("Status", style="magenta")
-            table.add_column("Description", style="green")
-
-            for tool in cli.all_tools:
-                tool_name = tool.name
-                status = "[bold green]ENABLED[/bold green]" if cli.enabled_tools.get(tool.name, False) else "[bold red]DISABLED[/bold red]"
-                table.add_row(tool_name, status, tool.description)
-
-            cli.console.print(table)
-            cli.console.print(f"\n[bold cyan]Currently enabled tools:[/bold cyan] {len([t for t in cli.enabled_tools.values() if t])}/{len(cli.all_tools)}")
-        else:
-            tool_name = args[0]
-            found = False
-
-            for tool in cli.all_tools:
-                if tool.name.lower() == tool_name.lower():
-                    found = True
-                    status = "[bold green]ENABLED[/bold green]" if cli.enabled_tools.get(tool.name, False) else "[bold red]DISABLED[/bold red]"
-                    panel = Panel(
-                        f"[bold]Status:[/bold] {status}\n"
-                        f"[bold]Description:[/bold] {tool.description}\n\n",
-                        title=f"Tool: {tool.name}",
-                        border_style="green",
-                    )
-                    cli.console.print(panel)
-                    break
-
-            if not found:
-                cli.console.print(f"[bold red]Tool '{tool_name}' not found[/bold red]")
-
-        return False
-
-
-class ToolEnableCommand(Command):
-    def __init__(self):
-        super().__init__(
-            "enable", "Enable a specific tool or all tools", ["en"]
-        )
-
-    async def execute(self, cli: "ChatCLI", args: List[str]) -> bool:
-        if not args:
-            cli.console.print("[bold red]Usage:[/bold red] /enable <tool_name> | all")
-            return False
-
-        if args[0].lower() == "all":
-            for tool in cli.all_tools:
-                cli.enabled_tools[tool.name] = True
-            cli.refresh_tools()
-            cli.console.print(f"[bold green]Enabled all {len(cli.all_tools)} tools[/bold green]")
-            cli.save_settings()
-            return False
-
-        tool_name = args[0]
-        found = False
-        
-        for tool in cli.all_tools:
-            if tool.name.lower() == tool_name.lower():
-                cli.enabled_tools[tool.name] = True
-                cli.refresh_tools()
-                cli.console.print(f"[bold green]Enabled tool:[/bold green] {tool.name}")
-                found = True
-                break
-
-        if not found:
-            cli.console.print(f"[bold red]Tool '{tool_name}' not found[/bold red]")
-            return False
-
-        cli.save_settings()
-        return False
-
-
-class ToolDisableCommand(Command):
-    def __init__(self):
-        super().__init__(
-            "disable", "Disable a specific tool or all tools", ["dis"]
-        )
-
-    async def execute(self, cli: "ChatCLI", args: List[str]) -> bool:
-        if not args:
-            cli.console.print("[bold red]Usage:[/bold red] /disable <tool_name> | all")
-            return False
-
-        if args[0].lower() == "all":
-            for tool in cli.all_tools:
-                cli.enabled_tools[tool.name] = False
-            cli.refresh_tools()
-            cli.console.print(f"[bold red]Disabled all {len(cli.all_tools)} tools[/bold red]")
-            cli.save_settings()
-            return False
-
-        tool_name = args[0]
-        found = False
-        
-        for tool in cli.all_tools:
-            if tool.name.lower() == tool_name.lower():
-                cli.enabled_tools[tool.name] = False
-                cli.refresh_tools()
-                cli.console.print(f"[bold red]Disabled tool:[/bold red] {tool.name}")
-                found = True
-                break
-
-        if not found:
-            cli.console.print(f"[bold red]Tool '{tool_name}' not found[/bold red]")
-            return False
-
-        cli.save_settings()
-        return False
-
-
-class ReasoningModelCommand(Command):
-    """Command to set the reasoning model used by the agent."""
-
-    def __init__(self):
-        super().__init__(
-            "reasoning",
-            "Set the reasoning model for the agent (use 'default' to sync with main model)",
-            ["r"],
-        )
-
-    async def execute(self, cli: "ChatCLI", args: List[str]) -> bool:
-        if not cli.selected_model:
-            cli.console.print(
-                "[bold red]Error:[/bold red] No models loaded. Cannot set reasoning model."
-            )
-            return False
-
-        current_reasoning_model_id = cli.reasoning_model_id or cli.selected_model.id
-        current_reasoning_model = None
-        for model in cli.language_models:
-            if model.id == current_reasoning_model_id:
-                current_reasoning_model = model
-                break
-
-        if not args:
-            if current_reasoning_model:
-                cli.console.print(
-                    f"Current reasoning model: [bold green]{current_reasoning_model.name}[/bold green] (ID: {current_reasoning_model.id})"
-                )
-            else:
-                # Should ideally not happen if models are loaded and IDs are synced
-                cli.console.print(
-                    f"Current reasoning model ID: [bold green]{current_reasoning_model_id}[/bold green] (Model details not found, using main model default)"
-                )
-                cli.console.print(
-                    "Use '/reasoning [model_id]' or '/reasoning default' to set."
-                )
-            return False
-
-        model_id_to_set = args[0].lower()
-
-        if model_id_to_set == "default":
-            # Set reasoning model to track the main selected model
-            cli.reasoning_model_id = None  # Use None to signify tracking default
-            cli.console.print(
-                f"Reasoning model set to track main model: [bold green]{cli.selected_model.name}[/bold green]"
-            )
-            cli.save_settings()
-            return False
-
-        # Find the specified model ID
-        found_model = None
-        for model in cli.language_models:
-            if model.id == model_id_to_set:
-                found_model = model
-                break
-
-        if found_model:
-            cli.reasoning_model_id = found_model.id
-            cli.console.print(
-                f"Reasoning model set to [bold green]{found_model.name}[/bold green] (ID: {found_model.id})"
-            )
-            cli.save_settings()
-        else:
-            cli.console.print(
-                f"[bold red]Error:[/bold red] Model ID '{model_id_to_set}' not found. Use /models to list available IDs."
-            )
-
-        return False
-
-
-
-
-class RunWorkflowCommand(Command):
-    """Command to run a workflow by name from the database."""
-
-    def __init__(self):
-        super().__init__(
-            "workflow",
-            "Run a workflow by name: /workflow <workflow_name> [input_values_json]",
-            ["wf"],
-        )
-
-    async def execute(self, cli: "ChatCLI", args: List[str]) -> bool:
-        if not args:
-            cli.console.print(
-                "[bold red]Usage:[/bold red] /workflow <workflow_name> [input_values_json]"
-            )
-            cli.console.print(
-                "Example: /workflow \"My Workflow\" '{\"input1\": 5, \"input2\": 3}'"
-            )
-            return False
-
-        workflow_name = args[0]
-        input_values = {}
-
-        # Parse input values if provided
-        if len(args) > 1:
-            try:
-                input_values = json.loads(" ".join(args[1:]))
-            except json.JSONDecodeError as e:
-                cli.console.print(
-                    f"[bold red]Error parsing input JSON:[/bold red] {e}"
-                )
-                return False
-
-        # Find workflow by name
-        try:
-            workflows, _ = Workflow.paginate(user_id=cli.context.user_id, limit=1000)
-            
-            # Find workflow with matching name
-            found_workflow = None
-            for workflow in workflows:
-                if workflow.name == workflow_name:
-                    found_workflow = workflow
-                    break
-            
-            if not found_workflow:
-                cli.console.print(
-                    f"[bold red]Error:[/bold red] Workflow '{workflow_name}' not found"
-                )
-                cli.console.print("Available workflows:")
-                for wf in workflows[:10]:  # Show first 10 workflows
-                    cli.console.print(f"  - {wf.name}")
-                if len(workflows) > 10:
-                    cli.console.print(f"  ... and {len(workflows) - 10} more")
-                return False
-
-            cli.console.print(f"[bold green]Found workflow:[/bold green] {found_workflow.name}")
-            if found_workflow.description:
-                cli.console.print(f"[bold cyan]Description:[/bold cyan] {found_workflow.description}")
-                
-        except Exception as e:
-            cli.console.print(
-                f"[bold red]Error loading workflow:[/bold red] {e}"
-            )
-            return False
-
-        # Get the graph from the workflow
-        try:
-            graph = found_workflow.get_api_graph()
-        except Exception as e:
-            cli.console.print(
-                f"[bold red]Error getting workflow graph:[/bold red] {e}"
-            )
-            return False
-
-        # Get input and output schemas
-        try:
-            input_schema = get_input_schema(graph)
-            output_schema = get_output_schema(graph)
-            
-            cli.console.print("\n[bold cyan]Input Schema:[/bold cyan]")
-            cli.console.print(Syntax(
-                json.dumps(input_schema, indent=2),
-                "json",
-                theme="monokai",
-                line_numbers=False,
-            ))
-            
-            cli.console.print("\n[bold cyan]Output Schema:[/bold cyan]")
-            cli.console.print(Syntax(
-                json.dumps(output_schema, indent=2),
-                "json",
-                theme="monokai",
-                line_numbers=False,
-            ))
-            
-        except Exception as e:
-            cli.console.print(
-                f"[bold yellow]Warning:[/bold yellow] Could not generate schemas: {e}"
-            )
-
-        # Update graph with input values if provided
-        if input_values:
-            try:
-                for node in graph.nodes:
-                    if node.type.startswith("nodetool.input."):
-                        node_name = node.data.get("name", node.id)
-                        if node_name in input_values:
-                            node.data["value"] = input_values[node_name]
-                            cli.console.print(
-                                f"[bold green]Set {node_name} = {input_values[node_name]}[/bold green]"
-                            )
-            except Exception as e:
-                cli.console.print(
-                    f"[bold yellow]Warning:[/bold yellow] Error setting input values: {e}"
-                )
-
-        # Create workflow request
-        try:
-            req = RunJobRequest(
-                user_id=cli.context.user_id,
-                auth_token=cli.context.auth_token,
-                workflow_id=found_workflow.id,
-                graph=graph,
-            )
-            
-            cli.console.print(f"\n[bold green]Running workflow '{workflow_name}'...[/bold green]")
-            cli.console.print("-" * 50)
-            
-            # Run the workflow
-            async for msg in run_workflow(req, context=cli.context, use_thread=False):
-                if hasattr(msg, 'content'):
-                    cli.console.print(msg.content)
-                else:
-                    cli.console.print(str(msg))
-                    
-            cli.console.print("-" * 50)
-            cli.console.print("[bold green]Workflow completed![/bold green]")
-            
-        except Exception as e:
-            cli.console.print(
-                f"[bold red]Error running workflow:[/bold red] {e}"
-            )
-            cli.console.print(
-                Syntax(
-                    traceback.format_exc(),
-                    "python",
-                    theme="monokai",
-                    line_numbers=True,
-                )
-            )
-
-        return False
 
 
 class ChatCLI:
@@ -847,9 +106,6 @@ class ChatCLI:
         self.agent_mode = False
         self.debug_mode = False
         self.agent = None
-        # Add new phase settings
-        self.enable_analysis_phase = True
-        self.enable_flow_analysis = True
 
         # Store selected LanguageModel object and model ID preference
         self.language_models: List[LanguageModel] = []
@@ -862,7 +118,6 @@ class ChatCLI:
         self.planner_model_id: Optional[str] = None
         self.summarization_model_id: Optional[str] = None
         self.retrieval_model_id: Optional[str] = None
-        self.reasoning_model_id: Optional[str] = None  # Add reasoning model ID
 
         # Tool management
         self.enabled_tools: Dict[str, bool] = {}  # Track enabled/disabled tools
@@ -880,6 +135,15 @@ class ChatCLI:
 
     def register_commands(self):
         """Register all available commands."""
+        from nodetool.chat.commands.agent import AgentCommand
+        from nodetool.chat.commands.clear import ClearCommand
+        from nodetool.chat.commands.debug import DebugCommand
+        from nodetool.chat.commands.exit import ExitCommand
+        from nodetool.chat.commands.help import HelpCommand
+        from nodetool.chat.commands.model import ModelCommand, ModelsCommand
+        from nodetool.chat.commands.tools import ToolDisableCommand, ToolEnableCommand, ToolsCommand
+        from nodetool.chat.commands.usage import UsageCommand
+        from nodetool.chat.commands.workflow import RunWorkflowCommand
         commands = [
             HelpCommand(),
             ExitCommand(),
@@ -890,13 +154,9 @@ class ChatCLI:
             DebugCommand(),
             UsageCommand(),
             ToolsCommand(),
-            ToolEnableCommand(),  # Add tool enable command
-            ToolDisableCommand(),  # Add tool disable command
-            AnalysisPhaseCommand(),  # Add new command
-            FlowAnalysisCommand(),  # Add new command
-            ChangeToWorkspaceCommand(),  # Add new command
-            ReasoningModelCommand(),  # Add new command
-            RunWorkflowCommand(),  # Add workflow command
+            ToolEnableCommand(), 
+            ToolDisableCommand(), 
+            RunWorkflowCommand(),
         ]
 
         for command in commands:
@@ -1022,26 +282,6 @@ class ChatCLI:
         self.planner_model_id = self.selected_model.id
         self.summarization_model_id = self.selected_model.id
         self.retrieval_model_id = self.selected_model.id
-        # Initialize reasoning model ID based on settings or default to selected model if not explicitly set
-        # Check if reasoning_model_id from settings corresponds to an existing model
-        reasoning_model_exists = False
-        if self.reasoning_model_id:
-            for model in self.language_models:
-                if model.id == self.reasoning_model_id:
-                    reasoning_model_exists = True
-                    break
-        # If the loaded reasoning_model_id is not valid or not set, default it to the selected model's ID
-        if not self.reasoning_model_id or not reasoning_model_exists:
-            if (
-                self.selected_model
-            ):  # Ensure selected_model exists before accessing its id
-                self.reasoning_model_id = self.selected_model.id
-            else:
-                # Handle case where no model is selected - perhaps set to None or log an error
-                self.reasoning_model_id = None  # Or handle as appropriate
-                self.console.print(
-                    "[bold yellow]Warning:[/bold yellow] No valid selected model, cannot default reasoning model."
-                )
 
         # Initialize standard tools
         standard_tools = [
@@ -1057,12 +297,12 @@ class ChatCLI:
             GoogleImagesTool(),
             GoogleNewsTool(),
             GoogleSearchTool(),
-            ListAssetsDirectoryTool(),
+            ListDirectoryTool(),
             OpenAIImageGenerationTool(),
             OpenAITextToSpeechTool(),
             OpenAIWebSearchTool(),
-            ReadAssetTool(),
-            SaveAssetTool(),
+            ReadFileTool(),
+            WriteFileTool(),
             ScreenshotTool(),
             SearchEmailTool(),
         ]
@@ -1131,14 +371,6 @@ class ChatCLI:
         command_completer["en"] = command_completer["enable"]
         command_completer["disable"] = WordCompleter(all_tool_names + ["all"])
         command_completer["dis"] = command_completer["disable"]
-        # Add completers for new phase commands
-        command_completer["analysis"] = WordCompleter(["on", "off"])
-        command_completer["an"] = command_completer["analysis"]
-        command_completer["flow"] = WordCompleter(["on", "off"])
-        command_completer["fl"] = command_completer["flow"]
-        # Add completer for reasoning command
-        command_completer["reasoning"] = WordCompleter(model_ids + ["default"])
-        command_completer["r"] = command_completer["reasoning"]
 
         # Create nested completer with commands prefixed with "/" and workspace commands
         prefixed_command_completer = {
@@ -1165,8 +397,6 @@ class ChatCLI:
                 "mv": PathCompleter(only_directories=False),
                 # grep pattern doesn't have standard completion, but path does
                 "grep": PathCompleter(only_directories=False),
-                # Add new workspace command
-                "cdw": None,
             }
         )
 
@@ -1203,10 +433,6 @@ class ChatCLI:
             tools=self.tools,
             # planner_model, summarization_model, retrieval_model are not direct Agent args
             # They might be configured differently or passed via context if needed
-            enable_analysis_phase=self.enable_analysis_phase,  # Pass setting
-            enable_data_contracts_phase=self.enable_flow_analysis,  # Pass setting
-            # Pass the specific reasoning model ID if set, otherwise default to main model ID
-            reasoning_model=self.reasoning_model_id or self.selected_model.id,
         )
         return agent
 
@@ -1612,9 +838,6 @@ class ChatCLI:
             "model_id": self.selected_model.id,
             "agent_mode": self.agent_mode,
             "debug_mode": self.debug_mode,
-            "enable_analysis_phase": self.enable_analysis_phase,  # Save setting
-            "enable_flow_analysis": self.enable_flow_analysis,  # Save setting
-            "reasoning_model_id": self.reasoning_model_id,  # Save reasoning model setting
             "enabled_tools": self.enabled_tools,  # Save tool enable/disable states
         }
 
@@ -1641,20 +864,6 @@ class ChatCLI:
                 # Load other settings
                 self.agent_mode = settings.get("agent_mode", False)
                 self.debug_mode = settings.get("debug_mode", False)
-                # Load phase settings, defaulting to True if not found
-                self.enable_analysis_phase = settings.get("enable_analysis_phase", True)
-                # Load flow setting, defaulting to True if not found
-                self.enable_flow_analysis = settings.get("enable_flow_analysis", True)
-                # Handle potential legacy setting name for backward compatibility
-                if (
-                    "enable_data_contracts_phase" in settings
-                    and "enable_flow_analysis" not in settings
-                ):
-                    self.enable_flow_analysis = settings.get(
-                        "enable_data_contracts_phase", True
-                    )
-                # Load reasoning model ID
-                self.reasoning_model_id = settings.get("reasoning_model_id", None)
                 # Load tool enable/disable states
                 self.enabled_tools = settings.get("enabled_tools", {})
 
@@ -1708,11 +917,7 @@ class ChatCLI:
             [
                 f"[bold cyan]Agent:[/bold cyan] {'ON' if self.agent_mode else 'OFF'} (/agent)",
                 f"[bold cyan]Debug:[/bold cyan] {'ON' if self.debug_mode else 'OFF'} (/debug)",
-                f"[bold cyan]Analysis:[/bold cyan] {'ON' if self.enable_analysis_phase else 'OFF'} (/analysis)",
-                f"[bold cyan]Flow:[/bold cyan] {'ON' if self.enable_flow_analysis else 'OFF'} (/flow)",
                 f"[bold cyan]Tools:[/bold cyan] {enabled_tools_count}/{total_tools_count} enabled (/tools)",
-                # Display reasoning model setting, handle None case for selected_model
-                f"[bold cyan]Reasoning:[/bold cyan] {self.reasoning_model_id or ('Default (' + self.selected_model.id + ')' if self.selected_model else 'Default (None)')} (/reasoning)",
                 # Span workspace across full width potentially, or keep it separate
                 # f"[bold cyan]Workspace:[/bold cyan] {str(self.context.workspace_dir)}"
             ]
@@ -1726,9 +931,7 @@ class ChatCLI:
                 [  # Use Columns to arrange elements
                     "[bold green]Welcome to NodeTool Chat CLI[/bold green]",
                     settings_columns,  # Add the settings columns here
-                    f"[bold cyan]Workspace:[/bold cyan] {str(self.context.workspace_dir)} {os.getcwd()}",
                     "Type [bold cyan]/help[/bold cyan] for application commands (/help)",
-                    "Use workspace commands: [bold]pwd, ls, cd, mkdir, rm, open, cat, cp, mv, grep, cdw[/bold]",
                 ],
                 equal=True,
             ),  # Make columns equal width

@@ -564,6 +564,16 @@ digraph workflow {
 ## Context
 **User's Objective:**
 {{ objective }}
+{% if existing_graph_spec -%}
+This is an **EDIT** request. You must modify the existing graph below.
+The user's objective should be interpreted as an instruction to change this graph.
+Your new DOT graph should represent the final, desired state of the graph after the edits.
+
+**Existing Graph Structure:**
+```json
+{{ existing_graph_spec }}
+```
+{%- endif %}
 
 **Input Nodes:**
 {{ input_nodes }}
@@ -589,6 +599,18 @@ Review the previous analysis phase conversation above to understand:
 - Any constraints and assumptions identified
 
 Use the DOT graph from the analysis as a guide for your workflow design. You must create ALL nodes shown in the DOT graph including input and output nodes.
+{% if existing_graph_spec -%}
+This is an **EDIT** request. The user's objective is an instruction to modify the existing graph.
+Your primary goal is to produce a NEW, complete `node_specifications` JSON object that represents the final state of the graph AFTER the edits.
+You should include ALL nodes (both existing and new) in your final output.
+
+**Existing Graph to Modify:**
+```json
+{{ existing_graph_spec }}
+```
+When returning the final `node_specifications`, you may reuse `node_id`s from the existing graph.
+Analyze the user's request and the existing graph to determine which nodes to add, remove, or re-wire.
+{%- endif %}
 
 ## Using `search_nodes` Effectively
 When using the `search_nodes` tool to find nodes:
@@ -697,6 +719,7 @@ class GraphPlanner:
         inputs: dict[str, Any] = {},
         input_schema: list[GraphInput] = [],
         output_schema: list[GraphOutput] = [],
+        existing_graph: Optional[APIGraph] = None,
         system_prompt: Optional[str] = None,
         max_tokens: int = 20000,
         verbose: bool = True,
@@ -710,6 +733,7 @@ class GraphPlanner:
             inputs: Dictionary of input values to infer types from
             input_schema: List of GraphInput objects defining expected inputs
             output_schema: List of GraphOutput objects defining expected outputs
+            existing_graph: Optional existing graph to edit
             system_prompt: Custom system prompt (optional)
             verbose: Enable detailed logging
         """
@@ -718,6 +742,7 @@ class GraphPlanner:
         self.objective = objective
         self.inputs = inputs
         self.max_tokens = max_tokens
+        self.existing_graph = existing_graph
 
         # If input_schema is empty but inputs are provided, infer the schema
         if not input_schema and inputs:
@@ -787,6 +812,41 @@ class GraphPlanner:
             node_metadata_list = self._get_node_metadata()
             self._cached_namespaces = {node.namespace for node in node_metadata_list}
         return self._cached_namespaces
+
+    def _convert_graph_to_specifications(
+        self, graph: APIGraph
+    ) -> List[Dict[str, Any]]:
+        """Converts an APIGraph object into the node_specifications format."""
+        node_specs = []
+        # Create a lookup for edges by their target node ID
+        edges_by_target: Dict[str, List[Any]] = {}
+        for edge in graph.edges:
+            target_id = edge.target
+            if target_id not in edges_by_target:
+                edges_by_target[target_id] = []
+            edges_by_target[target_id].append(edge)
+
+        for node in graph.nodes:
+            properties = node.data.copy() if node.data else {}
+
+            # Find incoming edges for the current node and add them to properties
+            if node.id in edges_by_target:
+                for edge in edges_by_target[node.id]:
+                    properties[edge.targetHandle] = {
+                        "type": "edge",
+                        "source": edge.source,
+                        "sourceHandle": edge.sourceHandle,
+                    }
+
+            spec = {
+                "node_id": node.id,
+                "node_type": node.type,
+                "purpose": "Existing node in the graph.",
+                "properties": json.dumps(properties, indent=2),
+            }
+            node_specs.append(spec)
+
+        return node_specs
 
     def _infer_type_metadata_from_value(self, value: Any) -> TypeMetadata:
         """Infer TypeMetadata from a Python value.
@@ -949,13 +1009,19 @@ class GraphPlanner:
 
     def _get_prompt_context(self, **kwargs) -> Dict[str, Any]:
         """Build context for Jinja2 prompt rendering."""
-
-        return {
+        context = {
             **kwargs,
             "objective": self.objective,
             "input_nodes": json.dumps(self._input_nodes),
             "output_nodes": json.dumps(self._output_nodes),
+            "existing_graph_spec": None,
         }
+
+        if self.existing_graph:
+            specs = self._convert_graph_to_specifications(self.existing_graph)
+            context["existing_graph_spec"] = json.dumps(specs, indent=2)
+
+        return context
 
     def _render_prompt(self, template_string: str, **kwargs) -> str:
         """Render a Jinja2 template with context."""
