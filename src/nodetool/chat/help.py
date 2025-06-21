@@ -19,6 +19,7 @@ searches across documentation and examples.
 """
 
 import asyncio
+import json
 import os
 from typing import Any, AsyncGenerator, Mapping, List
 import readline
@@ -371,7 +372,7 @@ async def create_help_answer(
                         role="tool",
                         tool_call_id=tool_call_id,
                         name=item.name,
-                        content=tool_result_data,
+                        content=json.dumps(tool_result_data),
                     )
                     tool_messages_generated_this_iteration.extend(
                         [assistant_tool_call_msg, tool_result_msg]
