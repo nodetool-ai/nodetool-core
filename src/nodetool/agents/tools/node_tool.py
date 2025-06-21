@@ -27,7 +27,7 @@ class NodeTool(Tool):
         node_instance: An instance of the node class (created on demand)
     """
     
-    def __init__(self, node_class: Type[BaseNode] | str, name: str | None = None):
+    def __init__(self, node_class: Type[BaseNode] | str):
         """
         Initialize the NodeTool with a specific node class.
         
@@ -48,14 +48,7 @@ class NodeTool(Tool):
         metadata = self.node_class.get_metadata()
         
         # Set tool name - use custom name or generate from node class
-        if name:
-            self.name = name
-        else:
-            # Convert class name to snake_case tool name
-            class_name = self.node_class.__name__
-            if class_name.endswith("Node"):
-                class_name = class_name[:-4]
-            self.name = f"node_{self._to_snake_case(class_name)}"
+        self.name = self.node_class.get_node_type()
         
         # Set description from node metadata
         self.description = metadata.description or f"Execute {metadata.title} node"
@@ -65,12 +58,6 @@ class NodeTool(Tool):
         
         # Store node type for reference
         self.node_type = self.node_class.get_node_type()
-    
-    def _to_snake_case(self, name: str) -> str:
-        """Convert CamelCase to snake_case."""
-        import re
-        s1 = re.sub('(.)([A-Z][a-z]+)', r'\1_\2', name)
-        return re.sub('([a-z0-9])([A-Z])', r'\1_\2', s1).lower()
     
     def _generate_input_schema(self, metadata: NodeMetadata) -> None:
         """Generate JSON schema for tool inputs from node properties."""
@@ -86,12 +73,7 @@ class NodeTool(Tool):
             try:
                 prop_schema = prop.get_json_schema()
                 properties[prop.name] = prop_schema
-                
-                # Add to required list if not optional
-                if prop.required:
-                    required.append(prop.name)
             except Exception as e:
-                # Skip properties that can't be converted to JSON schema
                 pass
         
         self.input_schema = {
@@ -174,18 +156,17 @@ class NodeTool(Tool):
         return f"Executing '{self.node_class.get_title()}' node with {param_str}"
     
     @classmethod
-    def from_node_type(cls, node_type: str, name: str | None = None) -> "NodeTool":
+    def from_node_type(cls, node_type: str) -> "NodeTool":
         """
         Create a NodeTool from a node type string.
         
         Args:
             node_type: The node type identifier (e.g., "nodetool.text.Concatenate")
-            name: Optional custom name for the tool
             
         Returns:
             A NodeTool instance wrapping the specified node type
         """
-        return cls(node_type, name)
+        return cls(node_type)
     
     def __repr__(self) -> str:
         """String representation of the NodeTool."""

@@ -77,7 +77,7 @@ async def main():
     
     # Example 1: Direct usage of NodeTool
     print("1. Direct NodeTool Usage:")
-    text_tool = NodeTool(TextProcessorNode, name="text_processor")
+    text_tool = NodeTool(TextProcessorNode)
     print(f"Tool name: {text_tool.name}")
     print(f"Tool description: {text_tool.description}")
     
@@ -98,8 +98,8 @@ async def main():
     
     # Create NodeTools for the agent
     tools = [
-        NodeTool(TextProcessorNode, name="text_processor"),
-        NodeTool(MathOperationNode, name="math_calculator"),
+        NodeTool(TextProcessorNode),
+        NodeTool(MathOperationNode),
     ]
     
     # Create an agent with custom node tools

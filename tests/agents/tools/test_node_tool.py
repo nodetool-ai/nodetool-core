@@ -58,13 +58,6 @@ async def test_node_tool_creation():
 
 
 @pytest.mark.asyncio
-async def test_node_tool_custom_name():
-    """Test creating a NodeTool with a custom name."""
-    tool = NodeTool(TestNode, name="my_custom_tool")
-    assert tool.name == "my_custom_tool"
-
-
-@pytest.mark.asyncio
 async def test_node_tool_process():
     """Test executing a node through NodeTool."""
     tool = NodeTool(TestNode)

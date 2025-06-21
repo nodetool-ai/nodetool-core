@@ -72,9 +72,8 @@ from nodetool.agents.tools import (
 from nodetool.workflows.types import Chunk
 from nodetool.workflows.run_workflow import run_workflow
 from nodetool.workflows.run_job_request import RunJobRequest
-from nodetool.types.graph import Graph, get_input_schema, get_output_schema
+from nodetool.types.graph import get_input_schema, get_output_schema
 from nodetool.models.workflow import Workflow
-from uuid import uuid4
 
 
 class Command:
@@ -498,8 +497,7 @@ class ToolsCommand(Command):
                     status = "[bold green]ENABLED[/bold green]" if cli.enabled_tools.get(tool.name, False) else "[bold red]DISABLED[/bold red]"
                     panel = Panel(
                         f"[bold]Status:[/bold] {status}\n"
-                        f"[bold]Description:[/bold] {tool.description}\n\n"
-                        f"[bold]Parameters:[/bold] {json.dumps(tool.parameters, indent=2)}",
+                        f"[bold]Description:[/bold] {tool.description}\n\n",
                         title=f"Tool: {tool.name}",
                         border_style="green",
                     )
@@ -659,6 +657,8 @@ class ReasoningModelCommand(Command):
         return False
 
 
+
+
 class RunWorkflowCommand(Command):
     """Command to run a workflow by name from the database."""
 
@@ -738,7 +738,7 @@ class RunWorkflowCommand(Command):
             input_schema = get_input_schema(graph)
             output_schema = get_output_schema(graph)
             
-            cli.console.print(f"\n[bold cyan]Input Schema:[/bold cyan]")
+            cli.console.print("\n[bold cyan]Input Schema:[/bold cyan]")
             cli.console.print(Syntax(
                 json.dumps(input_schema, indent=2),
                 "json",
@@ -746,7 +746,7 @@ class RunWorkflowCommand(Command):
                 line_numbers=False,
             ))
             
-            cli.console.print(f"\n[bold cyan]Output Schema:[/bold cyan]")
+            cli.console.print("\n[bold cyan]Output Schema:[/bold cyan]")
             cli.console.print(Syntax(
                 json.dumps(output_schema, indent=2),
                 "json",
@@ -905,8 +905,75 @@ class ChatCLI:
             for alias in command.aliases:
                 self.commands[alias] = command
 
+    def load_all_node_packages(self):
+        """Load all available node packages to populate NODE_BY_TYPE registry."""
+        try:
+            from nodetool.packages.registry import Registry
+            from nodetool.metadata.node_metadata import get_node_classes_from_namespace
+            import importlib
+            
+            registry = Registry()
+            packages = registry.list_installed_packages()
+            
+            total_loaded = 0
+            total_packages = len(packages)
+            
+            for package in packages:
+                if package.nodes:
+                    # Collect unique namespaces from this package
+                    namespaces = set()
+                    for node_metadata in package.nodes:
+                        node_type = node_metadata.node_type
+                        # Extract namespace from node_type (e.g., "nodetool.text" from "nodetool.text.Concatenate")
+                        namespace_parts = node_type.split('.')[:-1]
+                        if len(namespace_parts) >= 2:  # Must have at least nodetool.something
+                            namespace = '.'.join(namespace_parts)
+                            namespaces.add(namespace)
+                    
+                    # Load each unique namespace from this package
+                    for namespace in namespaces:
+                        try:
+                            # Try to import the module directly
+                            if namespace.startswith('nodetool.nodes.'):
+                                module_path = namespace
+                            else:
+                                module_path = f"nodetool.nodes.{namespace}"
+                            
+                            importlib.import_module(module_path)
+                            total_loaded += 1
+                        except ImportError:
+                            # Try alternative approach using get_node_classes_from_namespace
+                            try:
+                                if namespace.startswith('nodetool.'):
+                                    namespace_suffix = namespace[9:]  # Remove 'nodetool.'
+                                    get_node_classes_from_namespace(f"nodetool.nodes.{namespace_suffix}")
+                                    total_loaded += 1
+                                else:
+                                    get_node_classes_from_namespace(f"nodetool.nodes.{namespace}")
+                                    total_loaded += 1
+                            except Exception:
+                                # Silent fail for packages that can't be loaded
+                                pass
+            
+            from nodetool.workflows.base_node import NODE_BY_TYPE
+            total_nodes = len(NODE_BY_TYPE)
+            
+            self.console.print(
+                f"[bold green]Loaded {total_packages} packages with {total_nodes} available nodes[/bold green]"
+            )
+            
+        except Exception as e:
+            self.console.print(
+                f"[bold yellow]Warning:[/bold yellow] Failed to load all packages: {e}"
+            )
+            # Continue anyway - some nodes may still be available
+
     async def initialize(self):
         """Initialize async components and workspace with visual feedback."""
+        # Load all available packages during startup
+        self.console.print("[bold cyan]Loading available packages...[/bold cyan]")
+        self.load_all_node_packages()
+        
         # Initialize components with progress indicators
         try:
             self.language_models = await get_language_models()
@@ -1006,8 +1073,23 @@ class ChatCLI:
         if workflow_tools:
             self.console.print(f"[bold green]Loaded {len(workflow_tools)} workflow tools[/bold green]")
         
-        # Store all available tools
-        self.all_tools = standard_tools + workflow_tools
+        # Initialize node tools
+        from nodetool.workflows.base_node import NODE_BY_TYPE
+        from nodetool.agents.tools.node_tool import NodeTool
+        
+        node_tools = []
+        for node_type, node_class in NODE_BY_TYPE.items():
+            try:
+                node_tool = NodeTool(node_class)
+                node_tools.append(node_tool)
+            except Exception as e:
+                self.console.print(f"[bold yellow]Warning:[/bold yellow] Failed to create node tool for {node_type}: {e}")
+        
+        if node_tools:
+            self.console.print(f"[bold green]Loaded {len(node_tools)} node tools[/bold green]")
+        
+        # Store all available tools (standard tools + workflow tools + node tools)
+        self.all_tools = standard_tools + workflow_tools + node_tools
         
         # Initialize enabled_tools tracking if not already set
         for tool in self.all_tools:
@@ -1032,7 +1114,6 @@ class ChatCLI:
         model_ids = [model.id for model in self.language_models]
         # Get tool names for completion (use all_tools instead of just enabled tools)
         all_tool_names = [tool.name for tool in self.all_tools]
-        enabled_tool_names = [tool.name for tool in self.tools]
 
         # Add special completers for commands with arguments
         command_completer["agent"] = WordCompleter(["on", "off"])
@@ -1709,11 +1790,6 @@ class ChatCLI:
                 if self.agent_mode:
                     await self.process_agent_response(user_input)
                 else:
-                    # Display user message in chat style - indented
-                    self.console.print(
-                        f"\n  [bold cyan]You:[/bold cyan] {user_input}"
-                    )  # Indent user message
-
                     if not self.selected_model:
                         self.console.print(
                             "[bold red]Error:[/bold red] No model selected"
