@@ -8,7 +8,7 @@ independently within agent workflows.
 """
 
 from typing import Any, Dict, Type
-from nodetool.agents.tools.base import Tool
+from nodetool.agents.tools.base import Tool, sanitize_node_name
 from nodetool.workflows.base_node import BaseNode, get_node_class
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.metadata.node_metadata import NodeMetadata
@@ -47,8 +47,9 @@ class NodeTool(Tool):
         # Get node metadata
         metadata = self.node_class.get_metadata()
         
-        # Set tool name - use custom name or generate from node class
-        self.name = self.node_class.get_node_type()
+        # Set tool name - sanitize node type to meet provider requirements
+        raw_node_type = self.node_class.get_node_type()
+        self.name = sanitize_node_name(raw_node_type)
         
         # Set description from node metadata
         self.description = metadata.description or f"Execute {metadata.title} node"

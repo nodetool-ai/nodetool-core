@@ -70,6 +70,7 @@ import json
 import msgpack
 from typing import List, Sequence
 from enum import Enum
+from pydantic import BaseModel
 
 import httpx
 import chromadb
@@ -533,16 +534,29 @@ class ChatWebSocketRunner:
             unprocessed_messages = []
 
             def init_tool(name: str) -> Tool:
-                # First check if it's a workflow tool
+                # First check if it's a workflow tool (exact match)
                 for tool in self.all_tools:
                     if tool.name == name:
                         return tool
-                # If not found in all_tools, try to get by name
+                
+                # If not found, try sanitizing the name and check again (for node tools)
+                from nodetool.agents.tools.base import sanitize_node_name
+                sanitized_name = sanitize_node_name(name)
+                for tool in self.all_tools:
+                    if tool.name == sanitized_name:
+                        return tool
+                
+                # If still not found in all_tools, try to get by name from registry
                 tool_class = get_tool_by_name(name)
                 if tool_class:
                     return tool_class()
-                else:
-                    raise ValueError(f"Tool {name} not found")
+                
+                # Try sanitized name in registry too
+                tool_class = get_tool_by_name(sanitized_name)
+                if tool_class:
+                    return tool_class()
+                
+                raise ValueError(f"Tool {name} not found")
 
             if last_message.tools:
                 selected_tools = [init_tool(name) for name in last_message.tools]
@@ -621,11 +635,23 @@ class ChatWebSocketRunner:
                                 f"Creating assistant message with tool call, content={assistant_msg.content}"
                             )
                             unprocessed_messages.append(assistant_msg)
-
+                            def recursively_model_dump(obj):
+                                """Recursively convert BaseModel instances to dictionaries."""
+                                if isinstance(obj, BaseModel):
+                                    return obj.model_dump()
+                                elif isinstance(obj, dict):
+                                    return {k: recursively_model_dump(v) for k, v in obj.items()}
+                                elif isinstance(obj, (list, tuple)):
+                                    return [recursively_model_dump(item) for item in obj]
+                                else:
+                                    return obj
+                            
+                            converted_result = recursively_model_dump(tool_result.result)
+                            tool_result_json = json.dumps(converted_result)
                             tool_msg = Message(
                                 role="tool",
                                 tool_call_id=tool_result.id,
-                                content=json.dumps(tool_result.result),
+                                content=tool_result_json
                             )
                             log.debug(
                                 f"Creating tool message with result, content_length={len(tool_msg.content or '')}"
@@ -825,8 +851,76 @@ class ChatWebSocketRunner:
             except Exception as e:
                 log.warning(f"Failed to load workflow tools: {e}")
         
+        # Load all node packages to populate NODE_BY_TYPE registry
+        try:
+            from nodetool.packages.registry import Registry
+            from nodetool.metadata.node_metadata import get_node_classes_from_namespace
+            import importlib
+            
+            registry = Registry()
+            packages = registry.list_installed_packages()
+            
+            total_loaded = 0
+            for package in packages:
+                if package.nodes:
+                    # Collect unique namespaces from this package
+                    namespaces = set()
+                    for node_metadata in package.nodes:
+                        node_type = node_metadata.node_type
+                        # Extract namespace from node_type (e.g., "nodetool.text" from "nodetool.text.Concatenate")
+                        namespace_parts = node_type.split('.')[:-1]
+                        if len(namespace_parts) >= 2:  # Must have at least nodetool.something
+                            namespace = '.'.join(namespace_parts)
+                            namespaces.add(namespace)
+                    
+                    # Load each unique namespace from this package
+                    for namespace in namespaces:
+                        try:
+                            # Try to import the module directly
+                            if namespace.startswith('nodetool.nodes.'):
+                                module_path = namespace
+                            else:
+                                module_path = f"nodetool.nodes.{namespace}"
+                            
+                            importlib.import_module(module_path)
+                            total_loaded += 1
+                        except ImportError:
+                            # Try alternative approach using get_node_classes_from_namespace
+                            try:
+                                if namespace.startswith('nodetool.'):
+                                    namespace_suffix = namespace[9:]  # Remove 'nodetool.'
+                                    get_node_classes_from_namespace(f"nodetool.nodes.{namespace_suffix}")
+                                    total_loaded += 1
+                                else:
+                                    get_node_classes_from_namespace(f"nodetool.nodes.{namespace}")
+                                    total_loaded += 1
+                            except Exception:
+                                # Silent fail for packages that can't be loaded
+                                pass
+            
+            log.debug(f"Loaded {len(packages)} packages with node types")
+            
+        except Exception as e:
+            log.warning(f"Failed to load all packages: {e}")
+            # Continue anyway - some nodes may still be available
+        
+        # Initialize node tools
+        from nodetool.workflows.base_node import NODE_BY_TYPE
+        from nodetool.agents.tools.node_tool import NodeTool
+        
+        node_tools = []
+        for node_type, node_class in NODE_BY_TYPE.items():
+            try:
+                node_tool = NodeTool(node_class)
+                node_tools.append(node_tool)
+            except Exception as e:
+                log.warning(f"Failed to create node tool for {node_type}: {e}")
+        
+        if node_tools:
+            log.debug(f"Loaded {len(node_tools)} node tools from {len(NODE_BY_TYPE)} available node types")
+        
         # Store all available tools
-        self.all_tools = standard_tools + workflow_tools
+        self.all_tools = standard_tools + workflow_tools + node_tools
         log.debug(f"Initialized {len(self.all_tools)} total tools")
 
     async def process_messages_for_workflow(self) -> Message:
