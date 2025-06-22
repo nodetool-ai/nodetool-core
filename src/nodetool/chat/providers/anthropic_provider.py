@@ -6,10 +6,13 @@ handling message conversion, streaming, and tool integration.
 """
 
 import json
+import base64
 from typing import Any, AsyncGenerator, Sequence
 import anthropic
 from anthropic.types.message_param import MessageParam
 from anthropic.types.image_block_param import ImageBlockParam
+from anthropic.types.url_image_source_param import URLImageSourceParam
+from anthropic.types.base64_image_source_param import Base64ImageSourceParam
 from anthropic.types.tool_param import ToolParam
 from nodetool.chat.providers.base import ChatProvider
 from nodetool.chat.providers.openai_prediction import calculate_chat_cost
@@ -150,14 +153,32 @@ class AnthropicProvider(ChatProvider):
                     if isinstance(part, MessageTextContent):
                         content.append({"type": "text", "text": part.text})
                     elif isinstance(part, MessageImageContent):
+                        # Handle image content - either data URI or raw base64
+                        uri = part.image.uri
+                        if uri.startswith("http"):
+                            # Handle image URL
+                            media_type = "image/png"
+                            data = uri
+                            image_source = URLImageSourceParam(
+                                type="url",
+                                url=uri,
+                            )
+                        elif part.image.data:
+                            # Handle raw image data
+                            data = base64.b64encode(part.image.data).decode("utf-8")
+                            media_type = "image/png"  # Default assumption
+                            image_source = Base64ImageSourceParam(
+                                type="base64",
+                                media_type=media_type, # type: ignore
+                                data=data,
+                            )
+                        else:
+                            raise ValueError(f"Invalid image URI: {uri}")
+
                         content.append(
                             ImageBlockParam(
                                 type="image",
-                                source={
-                                    "type": "base64",
-                                    "media_type": "image/png",
-                                    "data": part.image.uri,
-                                },
+                                source=image_source,
                             )
                         )
                 return {"role": "user", "content": content}
