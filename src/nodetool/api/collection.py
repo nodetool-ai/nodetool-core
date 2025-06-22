@@ -6,6 +6,8 @@ from langchain_text_splitters import (
     ExperimentalMarkdownSyntaxTextSplitter,
     RecursiveCharacterTextSplitter,
 )
+from nodetool.common.environment import Environment
+from nodetool.types.job import JobUpdate
 from pydantic import BaseModel
 from nodetool.common.chroma_client import (
     get_chroma_client,
@@ -18,6 +20,7 @@ import pymupdf4llm
 import os
 import shutil
 import tempfile
+import traceback
 
 from nodetool.metadata.types import Collection, FilePath
 from nodetool.models.workflow import Workflow
@@ -344,7 +347,7 @@ async def index(
         file_path = tmp_path
         mime_type = file.content_type or "application/octet-stream"
 
-        if workflow_id := collection.metadata.get("workflow"):
+        if collection.metadata and (workflow_id := collection.metadata.get("workflow")):
             processing_context = ProcessingContext(
                 user_id="1",
                 auth_token=token,
@@ -367,12 +370,12 @@ async def index(
                 req.params[file_input] = FilePath(path=file_path)
 
             async for msg in run_workflow(req):
-                if msg.get("type") == "job_update":
-                    if msg.get("status") == "completed":
+                if isinstance(msg, JobUpdate):
+                    if msg.status == "completed":
                         break
-                    elif msg.get("status") == "failed":
+                    elif msg.status == "failed":
                         return IndexResponse(
-                            path=file.filename or "unknown", error=msg.get("error")
+                            path=file.filename or "unknown", error=msg.error
                         )
         else:
             # Use the temporary file path and determined mime type
@@ -380,8 +383,9 @@ async def index(
 
         return IndexResponse(path=file.filename or "unknown", error=None)
     except Exception as e:
-        # Catch potential errors during file processing or workflow execution
-        return IndexResponse(path=file.filename or "unknown", error=str(e))
+        Environment.get_logger().error(f"Error indexing file {file.filename}: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
     finally:
         # Ensure temporary directory is cleaned up
         shutil.rmtree(tmp_dir)

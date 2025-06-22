@@ -1393,6 +1393,11 @@ class Message(BaseType):
     The list of tool calls returned by the model.
     """
 
+    collections: list[str] | None = None
+    """
+    The list of collections to query for this message.
+    """
+
     input_files: list[MessageFile] | None = None
     """
     The list of input files for the message.
