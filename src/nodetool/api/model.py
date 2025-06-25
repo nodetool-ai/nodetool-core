@@ -44,7 +44,8 @@ router = APIRouter(prefix="/api/models", tags=["models"])
 # Simple module-level cache
 _cached_huggingface_models = None
 _cached_recommended_models = None
-_cached_ollama_models_dir_path: Path | None | object = object()  # Sentinel to distinguish from None result
+# Cache for Ollama models directory (None = not found, Path = found, uninitialized = None)
+_cached_ollama_models_dir_path: Path | None = None
 
 
 # Internal helper to get Ollama models directory
@@ -59,8 +60,8 @@ def _get_ollama_models_dir() -> Path | None:
                       and valid, otherwise None.
     """
     global _cached_ollama_models_dir_path
-    if _cached_ollama_models_dir_path is not object(): # Check if cache is populated
-        return _cached_ollama_models_dir_path # type: ignore
+    if _cached_ollama_models_dir_path is not None: # Check if cache is populated
+        return _cached_ollama_models_dir_path
 
     path = None
     try:
@@ -97,9 +98,10 @@ def _get_valid_explorable_roots() -> list[Path]:
     Returns:
         list[Path]: A list of Path objects representing safe explorable roots.
     """
-    safe_roots = []
+    safe_roots: list[Path] = []
+
     ollama_dir = _get_ollama_models_dir()
-    if ollama_dir:
+    if isinstance(ollama_dir, Path):
         safe_roots.append(ollama_dir)
     
     try:
@@ -398,6 +400,7 @@ if not Environment.is_production():
                 "message": "Cannot open path: No safe directories (like Ollama or Hugging Face cache) could be determined.",
             }
 
+        path_to_open: str | None = None
         try:
             requested_path = Path(path).resolve()
             is_safe_path = False
@@ -426,7 +429,9 @@ if not Environment.is_production():
                 subprocess.run(["xdg-open", sane_path_to_open], check=True)
             return {"status": "success", "path": path_to_open}
         except Exception as e:
-            log.error(f"Failed to open path {path_to_open} in explorer: {e}")
+            log.error(
+                f"Failed to open path {path_to_open if path_to_open else path} in explorer: {e}"
+            )
             return {
                 "status": "error",
                 "message": "An internal error occurred while attempting to open the path. Please check server logs for details.",
