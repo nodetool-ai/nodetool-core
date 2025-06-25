@@ -1261,6 +1261,16 @@ class GroupNode(BaseNode):
         return False
 
 
+def get_registered_node_classes() -> list[type["BaseNode"]]:
+    """Return a list of all registered node classes that are marked as visible.
+
+    The global ``NODE_BY_TYPE`` registry tracks every node class that has been
+    imported.  This helper simply filters that mapping to keep only those
+    classes whose ``is_visible`` class-method returns ``True``.
+    """
+    return [cls for cls in NODE_BY_TYPE.values() if getattr(cls, "is_visible", lambda: True)()]
+
+
 def get_recommended_models() -> dict[str, list[HuggingFaceModel]]:
     """Aggregate recommended HuggingFace models from all registered node classes.
 
@@ -1274,18 +1284,25 @@ def get_recommended_models() -> dict[str, list[HuggingFaceModel]]:
         A dictionary where keys are Hugging Face repository IDs (str) and
         values are lists of `HuggingFaceModel` instances.
     """
-    from nodetool.packages.registry import Registry
 
-    registry = Registry()
-    node_metadata = registry.get_all_installed_nodes()
+    def flatten_models(
+        models: list[Any],
+    ) -> list[HuggingFaceModel]:
+        """Flatten a list of models that may contain nested lists."""
+        flat_list = []
+        for item in models:
+            if isinstance(item, list):
+                flat_list.extend(flatten_models(item))
+            else:
+                flat_list.append(item)
+        return flat_list
+
+    node_classes = get_registered_node_classes()
     model_ids = set()
     models = {}
-    for node_metadata in node_metadata:
-        node_class = get_node_class(node_metadata.node_type)
-        if node_class is None:
-            log.warning(f"Node class {node_metadata.node_type} not found. ")
-            continue
-        for model in node_class.get_recommended_models():
+    for node_class in node_classes:
+        recommended_models = flatten_models(node_class.get_recommended_models())
+        for model in recommended_models:
             if model.path is not None:
                 model_id = "/".join([model.repo_id, model.path])
             else:

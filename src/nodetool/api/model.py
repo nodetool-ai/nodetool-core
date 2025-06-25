@@ -18,8 +18,8 @@ from nodetool.metadata.types import (
 )
 from huggingface_hub import try_to_load_from_cache
 from huggingface_hub.constants import HF_HUB_CACHE
-from nodetool.api.utils import current_user
-from fastapi import APIRouter, Depends
+from nodetool.api.utils import current_user, flatten_models
+from fastapi import APIRouter, Depends, Query
 from nodetool.common.huggingface_models import (
     CachedModel,
     delete_cached_hf_model,
@@ -43,6 +43,7 @@ router = APIRouter(prefix="/api/models", tags=["models"])
 
 # Simple module-level cache
 _cached_huggingface_models = None
+_cached_recommended_models = None
 _cached_ollama_models_dir_path: Path | None | object = object()  # Sentinel to distinguish from None result
 
 
@@ -130,7 +131,15 @@ class CachedRepo(BaseModel):
 async def recommended_models(
     user: str = Depends(current_user),
 ) -> list[HuggingFaceModel]:
-    return list(get_recommended_models().values())  # type: ignore
+    global _cached_recommended_models
+    if _cached_recommended_models is not None:
+        return _cached_recommended_models
+
+    recommended = get_recommended_models()
+    # Flatten the list of lists into a single list
+    models = flatten_models(list(recommended.values()))
+    _cached_recommended_models = models
+    return models
 
 
 @router.get("/huggingface_models")
@@ -139,12 +148,11 @@ async def get_huggingface_models(
 ) -> list[CachedModel]:
     global _cached_huggingface_models
 
-    if Environment.is_production() and _cached_huggingface_models is not None:
+    if _cached_huggingface_models is not None:
         return _cached_huggingface_models
 
     models = await read_cached_hf_models()
-    if Environment.is_production():
-        _cached_huggingface_models = models
+    _cached_huggingface_models = models
     return models
 
 
@@ -363,7 +371,9 @@ if not Environment.is_production():
         )
 
     @router.post("/open_in_explorer")
-    async def open_in_explorer(path: str, user: str = Depends(current_user)):
+    async def open_in_explorer(
+        path: str = Query(...), user: str = Depends(current_user)
+    ):
         """Opens the specified path in the system's default file explorer.
 
         Security measures:

@@ -18,10 +18,13 @@ from nodetool.common.huggingface_models import (
     CachedModel,
     delete_cached_hf_model,
     read_cached_hf_models,
+    get_cached_hf_model_info,
 )
 from nodetool.workflows.base_node import get_recommended_models
 from nodetool.metadata.node_metadata import NodeMetadata
 from nodetool.metadata.types import HuggingFaceModel
+from typing import List, cast
+import inspect
 
 try:
     from nodes import init_extra_nodes  # type: ignore
@@ -90,36 +93,65 @@ def flatten_models(models: dict[str, list[HuggingFaceModel]]) -> list[HuggingFac
     return [model for models in models.values() for model in models]
 
 
-@app.get("/recommended_models")
-async def recommended_models() -> list[HuggingFaceModel]:
-    return flatten_models(get_recommended_models())
+# Simple in-memory cache
+_cached_recommended_models: List[HuggingFaceModel] | None = None
+_cached_huggingface_models: List[CachedModel] | None = None
 
 
-@app.get("/huggingface_models")
-async def get_huggingface_models() -> list[CachedModel]:
-    return await read_cached_hf_models()
+def get_worker_app(worker: WorkerApiClient) -> FastAPI:
+    global _cached_recommended_models
+    global _cached_huggingface_models
 
+    app = FastAPI()
 
-@app.delete("/huggingface_model")
-async def delete_huggingface_model(repo_id: str) -> bool:
-    return delete_cached_hf_model(repo_id)
+    if Environment.is_development():
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=["*"],
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
 
+    @app.get("/models/recommended", response_model=List[HuggingFaceModel])
+    async def get_recommended_models_endpoint() -> List[HuggingFaceModel]:
+        nonlocal _cached_recommended_models
+        if _cached_recommended_models is None:
+            recommended = await worker.get_recommended_models()
+            _cached_recommended_models = flatten_models(recommended)
+        return _cached_recommended_models
 
-@app.post("/huggingface_file_info")
-async def get_huggingface_file_info(
-    requests: list[HFFileRequest],
-) -> list[HFFileInfo]:
-    return get_huggingface_file_infos(requests)
+    @app.get("/models/huggingface", response_model=List[CachedModel])
+    async def get_huggingface_models_endpoint() -> List[CachedModel]:
+        nonlocal _cached_huggingface_models
+        if _cached_huggingface_models is None:
+            _cached_huggingface_models = await worker.get_huggingface_models()
+        return _cached_huggingface_models
 
+    @app.get("/models/huggingface/{repo_id:path}", response_model=CachedModel)
+    async def get_huggingface_model_endpoint(repo_id: str) -> CachedModel:
+        return await get_cached_hf_model_info(repo_id)
 
-@app.post("/huggingface/try_cache_files")
-async def try_cache_files(
-    paths: list[RepoPath],
-) -> list[RepoPath]:
-    def check_path(path: RepoPath) -> bool:
-        return try_to_load_from_cache(path.repo_id, path.path) is not None
+    @app.delete("/huggingface_model")
+    async def delete_huggingface_model(repo_id: str) -> bool:
+        return delete_cached_hf_model(repo_id)
 
-    return [
-        RepoPath(repo_id=path.repo_id, path=path.path, downloaded=check_path(path))
-        for path in paths
-    ]
+    @app.post("/huggingface_file_info")
+    async def get_huggingface_file_info(
+        requests: list[HFFileRequest],
+    ) -> list[HFFileInfo]:
+        return get_huggingface_file_infos(requests)
+
+    @app.post("/huggingface/try_cache_files")
+    async def try_cache_files(
+        paths: list[RepoPath],
+    ) -> list[RepoPath]:
+        def check_path(path: RepoPath) -> bool:
+            return try_to_load_from_cache(path.repo_id, path.path) is not None
+
+        return [
+            RepoPath(repo_id=path.repo_id, path=path.path, downloaded=check_path(path))
+            for path in paths
+        ]
+
+    return app
