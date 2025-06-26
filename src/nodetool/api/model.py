@@ -31,6 +31,7 @@ from nodetool.chat.ollama_service import (
     get_ollama_models,
     get_ollama_model_info,
     stream_ollama_model_pull,
+    delete_ollama_model as _delete_ollama_model,
 )
 import subprocess
 import sys
@@ -196,6 +197,14 @@ async def get_ollama_models_endpoint(
     user: str = Depends(current_user),
 ) -> list[LlamaModel]:
     return await get_ollama_models()
+
+
+@router.delete("/ollama_model")
+async def delete_ollama_model_endpoint(model_name: str) -> bool:
+    if Environment.is_production():
+        log.warning("Cannot delete ollama models in production")
+        return False
+    return await _delete_ollama_model(model_name)
 
 
 anthropic_models = [
