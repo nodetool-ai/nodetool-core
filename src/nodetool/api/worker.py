@@ -2,6 +2,8 @@ import dotenv
 from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from nodetool.api.model import RepoPath
+from nodetool.api.utils import flatten_models
+from nodetool.common.worker_api_client import WorkerAPIClient
 from nodetool.common.huggingface_file import (
     HFFileInfo,
     HFFileRequest,
@@ -17,14 +19,10 @@ from nodetool.common.huggingface_cache import huggingface_download_endpoint
 from nodetool.common.huggingface_models import (
     CachedModel,
     delete_cached_hf_model,
-    read_cached_hf_models,
     get_cached_hf_model_info,
 )
-from nodetool.workflows.base_node import get_recommended_models
-from nodetool.metadata.node_metadata import NodeMetadata
 from nodetool.metadata.types import HuggingFaceModel
-from typing import List, cast
-import inspect
+from typing import List
 
 try:
     from nodes import init_extra_nodes  # type: ignore
@@ -44,18 +42,6 @@ if env_file != "":
     dotenv.load_dotenv(env_file)
 
 Environment.initialize_sentry()
-
-app = FastAPI()
-
-# Add CORS middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # Allows all origins
-    allow_credentials=True,
-    allow_methods=["*"],  # Allows all methods
-    allow_headers=["*"],  # Allows all headers
-)
-
 
 app = FastAPI()
 
@@ -89,16 +75,12 @@ async def system_stats() -> SystemStats:
     return get_system_stats()
 
 
-def flatten_models(models: dict[str, list[HuggingFaceModel]]) -> list[HuggingFaceModel]:
-    return [model for models in models.values() for model in models]
-
-
 # Simple in-memory cache
 _cached_recommended_models: List[HuggingFaceModel] | None = None
 _cached_huggingface_models: List[CachedModel] | None = None
 
 
-def get_worker_app(worker: WorkerApiClient) -> FastAPI:
+def get_worker_app(worker: WorkerAPIClient) -> FastAPI:
     global _cached_recommended_models
     global _cached_huggingface_models
 
@@ -115,7 +97,7 @@ def get_worker_app(worker: WorkerApiClient) -> FastAPI:
 
     @app.get("/models/recommended", response_model=List[HuggingFaceModel])
     async def get_recommended_models_endpoint() -> List[HuggingFaceModel]:
-        nonlocal _cached_recommended_models
+        global _cached_recommended_models
         if _cached_recommended_models is None:
             recommended = await worker.get_recommended_models()
             _cached_recommended_models = flatten_models(recommended)
@@ -123,9 +105,9 @@ def get_worker_app(worker: WorkerApiClient) -> FastAPI:
 
     @app.get("/models/huggingface", response_model=List[CachedModel])
     async def get_huggingface_models_endpoint() -> List[CachedModel]:
-        nonlocal _cached_huggingface_models
+        global _cached_huggingface_models
         if _cached_huggingface_models is None:
-            _cached_huggingface_models = await worker.get_huggingface_models()
+            _cached_huggingface_models = await worker.get_installed_models()
         return _cached_huggingface_models
 
     @app.get("/models/huggingface/{repo_id:path}", response_model=CachedModel)

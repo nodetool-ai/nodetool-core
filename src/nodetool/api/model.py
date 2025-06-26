@@ -447,6 +447,8 @@ if not Environment.is_production():
             sane_path_to_open = shlex.quote(path_to_open)
 
             if sys.platform == "win32":
+                # Using a list argument with subprocess.run ensures the path is passed as a single
+                # argument to Explorer, mitigating command-injection risks even without quoting.
                 subprocess.run(["explorer", path_to_open], check=True)
             elif sys.platform == "darwin":
                 subprocess.run(["open", sane_path_to_open], check=True)
