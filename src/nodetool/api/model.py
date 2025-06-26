@@ -80,20 +80,7 @@ def _get_ollama_models_dir() -> Path | None:
                 # If resolve fails (e.g., path portion doesn't yet exist) keep the expanded path.
                 pass
 
-            # If the directory hasn't been created yet, make a best-effort attempt
-            # to create it so downstream callers can rely on it existing.
-            if not p.exists():
-                try:
-                    p.mkdir(parents=True, exist_ok=True)
-                    log.debug(
-                        f"Created missing Ollama models directory specified via OLLAMA_MODELS: {p}"
-                    )
-                except Exception as e:
-                    log.warning(
-                        f"Could not create directory '{p}' from OLLAMA_MODELS env var: {e}"
-                    )
-
-            # Whether or not the directory existed/was created, honour the env var.
+            # Honour the env var regardless of whether the directory exists.
             log.debug(f"Using Ollama models directory from OLLAMA_MODELS env var: {p}")
             _cached_ollama_models_dir_path = p
             return p
