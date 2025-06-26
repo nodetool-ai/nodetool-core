@@ -64,6 +64,44 @@ def _get_ollama_models_dir() -> Path | None:
         return _cached_ollama_models_dir_path
 
     path = None
+
+    # 1. Check explicit environment variable first. According to Ollama's
+    #    documentation, the OLLAMA_MODELS variable allows users to override the
+    #    default location. This takes precedence over any heuristic paths.
+    custom_path = os.environ.get("OLLAMA_MODELS")
+    if custom_path:
+        try:
+            # Expand ~ and resolve as far as possible (even if the folder doesn't
+            # exist yet)
+            p = Path(custom_path).expanduser()
+            try:
+                p = p.resolve(strict=False)
+            except Exception:
+                # If resolve fails (e.g., path portion doesn't yet exist) keep the expanded path.
+                pass
+
+            # If the directory hasn't been created yet, make a best-effort attempt
+            # to create it so downstream callers can rely on it existing.
+            if not p.exists():
+                try:
+                    p.mkdir(parents=True, exist_ok=True)
+                    log.debug(
+                        f"Created missing Ollama models directory specified via OLLAMA_MODELS: {p}"
+                    )
+                except Exception as e:
+                    log.warning(
+                        f"Could not create directory '{p}' from OLLAMA_MODELS env var: {e}"
+                    )
+
+            # Whether or not the directory existed/was created, honour the env var.
+            log.debug(f"Using Ollama models directory from OLLAMA_MODELS env var: {p}")
+            _cached_ollama_models_dir_path = p
+            return p
+        except Exception as e:
+            log.error(
+                f"Failed to process OLLAMA_MODELS environment variable '{custom_path}': {e}"
+            )
+
     try:
         if sys.platform == "win32":
             path = Path(os.environ["USERPROFILE"]) / ".ollama" / "models"
