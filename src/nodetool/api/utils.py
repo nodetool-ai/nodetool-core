@@ -26,7 +26,7 @@ async def current_user(
     # In non-production environments, we can skip authentication
     # to allow developers to access the API without needing a key.
     if not Environment.is_production():
-        return "anonymous"
+        return "1"
 
     key = None
     if authorization:
