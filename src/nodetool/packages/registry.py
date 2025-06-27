@@ -602,14 +602,28 @@ class Registry:
                         # Extract and cache node types for search
                         graph_data = workflow_data.get("graph", {})
                         nodes = graph_data.get("nodes", [])
-                        node_types = [
-                            node.get("type", "").lower() for node in nodes
-                        ]
+                        node_types = []
+                        node_titles = []
+                        
+                        for node in nodes:
+                            node_type = node.get("type", "")
+                            node_types.append(node_type.lower())
+                            
+                            # Try to get the node class to extract its title
+                            try:
+                                from nodetool.workflows.base_node import get_node_class
+                                node_class = get_node_class(node_type)
+                                if node_class:
+                                    node_titles.append(node_class.get_title().lower())
+                            except Exception:
+                                # If we can't get the node class, skip title extraction
+                                pass
 
                         # Store only essential data for search
                         cached_item = {
                             "id": workflow_data.get("id"),  # For deduplication
                             "_node_types": node_types,      # For searching
+                            "_node_titles": node_titles,     # For searching by title
                         }
 
                         cache_key = f"{package.name}:{example_meta.name}"
@@ -998,7 +1012,9 @@ class Registry:
                 continue
 
             node_types = workflow_data.get("_node_types", [])
-            found_match = any(query in node_type for node_type in node_types)
+            node_titles = workflow_data.get("_node_titles", [])
+            found_match = any(query in node_type for node_type in node_types) or \
+                          any(query in title for title in node_titles)
 
             if found_match:
                 self.logger.info(f"Found match in workflow '{cache_key}'")

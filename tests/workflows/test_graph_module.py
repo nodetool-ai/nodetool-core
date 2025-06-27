@@ -59,9 +59,9 @@ def test_from_dict_with_invalid_nodes():
     """Test Graph.from_dict handles invalid nodes gracefully"""
     data = {
         "nodes": [
-            {"id": "1", "type": "test_graph_module.In", "name": "a", "value": 1}, # valid
+            {"id": "1", "type": "tests.workflows.test_graph_module.In", "name": "a", "value": 1}, # valid
             {"id": "2", "type": "InvalidNodeType"}, # invalid
-            {"id": "3", "type": "test_graph_module.Out", "name": "out"} # valid
+            {"id": "3", "type": "tests.workflows.test_graph_module.Out", "name": "out"} # valid
         ],
         "edges": [
             {"id": "e1", "source": "1", "sourceHandle": "output", "target": "3", "targetHandle": "value"}
@@ -79,8 +79,8 @@ def test_from_dict_with_invalid_edges():
     """Test Graph.from_dict handles invalid edges gracefully"""
     data = {
         "nodes": [
-            {"id": "1", "type": "test_graph_module.In", "name": "a", "value": 1},
-            {"id": "2", "type": "test_graph_module.Out", "name": "out"}
+            {"id": "1", "type": "tests.workflows.test_graph_module.In", "name": "a", "value": 1},
+            {"id": "2", "type": "tests.workflows.test_graph_module.Out", "name": "out"}
         ],
         "edges": [
             {"id": "e1", "source": "1", "sourceHandle": "output", "target": "2", "targetHandle": "value"}, # valid
@@ -98,10 +98,10 @@ def test_from_dict_mixed_valid_invalid():
     """Test Graph.from_dict with mix of valid/invalid data"""
     data = {
         "nodes": [
-            {"id": "1", "type": "test_graph_module.In", "name": "a", "value": 1},
+            {"id": "1", "type": "tests.workflows.test_graph_module.In", "name": "a", "value": 1},
             {"id": "2", "type": "UnknownNodeType"}, # invalid node
-            {"id": "3", "type": "test_graph_module.Add", "a": 1, "b": 2},
-            {"id": "4", "type": "test_graph_module.Out", "name": "out"}
+            {"id": "3", "type": "tests.workflows.test_graph_module.Add", "a": 1, "b": 2},
+            {"id": "4", "type": "tests.workflows.test_graph_module.Out", "name": "out"}
         ],
         "edges": [
             {"id": "e1", "source": "1", "sourceHandle": "output", "target": "3", "targetHandle": "a"}, # valid

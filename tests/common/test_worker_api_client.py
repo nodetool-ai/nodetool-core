@@ -19,7 +19,7 @@ async def test_get_installed_models(monkeypatch):
     async def fake_get(path, **kwargs):
         assert path == "/huggingface_models"
         return DummyResponse([
-            {"repo_id": "model1", "repo_type": "model", "size_on_disk": 123}
+            {"repo_id": "model1", "repo_type": "model", "size_on_disk": 123, "path": "/path/to/model1"}
         ])
 
     monkeypatch.setattr(client, "get", fake_get)

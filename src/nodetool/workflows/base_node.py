@@ -332,7 +332,10 @@ class BaseNode(BaseModel):
 
         node_class = get_node_class(node_type_str)
         if node_class is None:
-            raise ValueError(f"Invalid node type: {node_type_str}")
+            if skip_errors:
+                return None, [f"Invalid node type: {node_type_str}"]
+            else:
+                raise ValueError(f"Invalid node type: {node_type_str}")
         
         node_id = node.get("id")
         if not node_id:
