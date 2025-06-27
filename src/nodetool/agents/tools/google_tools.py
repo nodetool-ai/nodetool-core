@@ -31,7 +31,6 @@ class GoogleGroundedSearchTool(Tool):
     description = "Search the web using Google's Gemini API with grounding capabilities"
 
     def __init__(self):
-        self.client = get_genai_client()
         self.input_schema = {
             "type": "object",
             "properties": {
@@ -68,7 +67,8 @@ class GoogleGroundedSearchTool(Tool):
         google_search_tool = GenAITool(google_search=GoogleSearch())
 
         # Generate content with search grounding
-        response = await self.client.models.generate_content(
+        client = get_genai_client()
+        response = await client.models.generate_content(
             model="gemini-2.0-flash",
             contents=query,
             config=GenerateContentConfig(
@@ -166,7 +166,6 @@ class GoogleImageGenerationTool(Tool):
     description = "Generate images based on a text prompt using Google's Gemini API"
 
     def __init__(self):
-        self.client = get_genai_client()
         self.input_schema = {
             "type": "object",
             "properties": {
@@ -202,7 +201,8 @@ class GoogleImageGenerationTool(Tool):
         if not output_file:
             raise ValueError("Output file is required")
 
-        response = await self.client.models.generate_images(
+        client = get_genai_client()
+        response = await client.models.generate_images(
             model="imagen-3.0-generate-002",
             prompt=prompt,
             config=GenerateImagesConfig(
