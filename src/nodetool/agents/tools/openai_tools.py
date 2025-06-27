@@ -4,7 +4,13 @@ from nodetool.agents.tools.base import Tool
 from nodetool.common.environment import Environment
 from nodetool.workflows.processing_context import ProcessingContext
 import base64
+from openai import AsyncClient
 
+def get_openai_client() -> AsyncClient:
+    env = Environment.get_environment()
+    api_key = env.get("OPENAI_API_KEY")
+    assert api_key, "OPENAI_API_KEY is not set"
+    return AsyncClient(api_key=api_key)
 
 class OpenAIWebSearchTool(Tool):
     """
@@ -18,7 +24,6 @@ class OpenAIWebSearchTool(Tool):
     description = "Search the web using OpenAI's web search API"
 
     def __init__(self):
-        self.client = openai.AsyncClient(api_key=Environment.get("OPENAI_API_KEY"))
         self.input_schema = {
             "type": "object",
             "properties": {
@@ -51,7 +56,8 @@ class OpenAIWebSearchTool(Tool):
         if not query:
             raise ValueError("Search query is required")
 
-        completion = await self.client.chat.completions.create(
+        client = get_openai_client()
+        completion = await client.chat.completions.create(
             model="gpt-4o-search-preview",
             web_search_options={},
             messages=[
@@ -91,7 +97,6 @@ class OpenAIImageGenerationTool(Tool):
     description = "Generate an image from a text prompt using OpenAI DALL-E"
 
     def __init__(self):
-        self.client = openai.AsyncClient(api_key=Environment.get("OPENAI_API_KEY"))
         self.input_schema = {
             "type": "object",
             "properties": {
@@ -129,7 +134,8 @@ class OpenAIImageGenerationTool(Tool):
         if not output_file:
             raise ValueError("Output file is required")
 
-        response = await self.client.images.generate(
+        client = get_openai_client()
+        response = await client.images.generate(
             model="gpt-image-1",
             prompt=prompt,
             n=1,
@@ -175,7 +181,6 @@ class OpenAITextToSpeechTool(Tool):
     description = "Convert text into spoken audio using OpenAI TTS"
 
     def __init__(self):
-        self.client = openai.AsyncClient(api_key=Environment.get("OPENAI_API_KEY"))
         # Define schema based on OpenAI API parameters for TTS
         # Reference: https://platform.openai.com/docs/api-reference/audio/createSpeech
         self.input_schema = {
@@ -233,7 +238,8 @@ class OpenAITextToSpeechTool(Tool):
         if len(text_input) > 4096:
             raise ValueError("Input text exceeds maximum length of 4096 characters.")
 
-        response = await self.client.audio.speech.create(
+        client = get_openai_client()
+        response = await client.audio.speech.create(
             model=model,
             voice=voice,
             input=text_input,
