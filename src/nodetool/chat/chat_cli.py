@@ -137,6 +137,7 @@ class ChatCLI:
         """Register all available commands."""
         from nodetool.chat.commands.agent import AgentCommand
         from nodetool.chat.commands.clear import ClearCommand
+        from nodetool.chat.commands.create_workflow import CreateWorkflowCommand
         from nodetool.chat.commands.debug import DebugCommand
         from nodetool.chat.commands.exit import ExitCommand
         from nodetool.chat.commands.help import HelpCommand
@@ -157,6 +158,7 @@ class ChatCLI:
             ToolEnableCommand(),
             ToolDisableCommand(),
             RunWorkflowCommand(),
+            CreateWorkflowCommand(),
         ]
 
         for command in commands:

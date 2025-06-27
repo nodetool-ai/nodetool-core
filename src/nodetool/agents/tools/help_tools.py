@@ -16,6 +16,7 @@ from typing import Any
 
 from nodetool.agents.tools.base import Tool
 from nodetool.common.environment import Environment
+from nodetool.workflows.base_node import get_node_class
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.metadata.type_metadata import ALL_TYPES
 
@@ -91,6 +92,10 @@ class SearchNodesTool(Tool):
             n_results=n_results,
             exclude_namespaces=exclude_namespaces,
         )
+        for result in results:
+            # Import node class to import necessary types
+            get_node_class(result.node_type)
+
         return [
             {
                 "type": result.node_type,

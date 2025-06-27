@@ -32,60 +32,12 @@ from nodetool.workflows.types import Chunk, PlanningUpdate
 
 # List of websites to scrape - demonstrating batch processing
 WEBSITES_TO_SCRAPE = [
-    # Tech news sites
     "https://techcrunch.com",
     "https://www.theverge.com",
     "https://arstechnica.com",
     "https://www.wired.com",
     "https://hackernews.com",
-    # AI/ML focused sites
-    "https://openai.com/blog",
-    "https://www.anthropic.com/news",
-    "https://huggingface.co/blog",
-    "https://pytorch.org/blog",
-    # General tech company blogs
-    "https://blog.google",
-    "https://engineering.fb.com",
-    "https://netflixtechblog.com",
-    "https://aws.amazon.com/blogs/aws",
-    # Developer resources
-    "https://github.blog",
-    "https://stackoverflow.blog",
-    "https://dev.to",
-    "https://medium.com/tag/technology",
 ]
-
-
-def _categorize_site(url: str) -> str:
-    """Simple categorization based on URL."""
-    if "blog" in url or "engineering" in url:
-        return "blog"
-    elif "news" in url or "techcrunch" in url or "verge" in url:
-        return "news"
-    elif "ai" in url or "anthropic" in url or "openai" in url:
-        return "ai"
-    else:
-        return "general"
-
-
-async def create_website_list_file(workspace_dir: str) -> str:
-    """Create a file containing the list of websites to scrape."""
-    websites_file = Path(workspace_dir) / "websites_to_scrape.json"
-
-    # Structure the data to make batch processing clear
-    website_data = {
-        "total_sites": len(WEBSITES_TO_SCRAPE),
-        "sites": [
-            {"index": i, "url": url, "category": _categorize_site(url)}
-            for i, url in enumerate(WEBSITES_TO_SCRAPE)
-        ],
-    }
-
-    with open(websites_file, "w") as f:
-        json.dump(website_data, f, indent=2)
-
-    print(f"Created website list file with {len(WEBSITES_TO_SCRAPE)} sites")
-    return str(websites_file)
 
 
 async def create_and_execute_scraping_workflow(
@@ -96,11 +48,9 @@ async def create_and_execute_scraping_workflow(
 
     # Define the objective for GraphPlanner
     objective = f"""
-    Create a workflow to scrape websites and extract key information:
-    
-    1. Read the website list from the input list
-    2. For each website in the list extract the content using a browser
-    3. Output the content of the website
+    For each website in the list {WEBSITES_TO_SCRAPE}
+    - Extract the content of the website
+    - Output the content of the website in a structured format
     """
 
     # Create GraphPlanner
@@ -109,7 +59,6 @@ async def create_and_execute_scraping_workflow(
         model=model,
         objective=objective,
         verbose=True,
-        inputs={"websites": WEBSITES_TO_SCRAPE},
     )
 
     # Plan the graph
@@ -132,14 +81,8 @@ async def create_and_execute_scraping_workflow(
     graph = graph_planner.graph
     print(f"\n✅ Generated workflow with {len(graph.nodes)} nodes")
 
-    # Prepare inputs for execution
-    inputs = {"websites": WEBSITES_TO_SCRAPE}
-
     # Create execution request
-    req = RunJobRequest(
-        graph=graph,
-        params=inputs,
-    )
+    req = RunJobRequest(graph=graph)
 
     print(f"\n🚀 Executing website scraping workflow...")
 

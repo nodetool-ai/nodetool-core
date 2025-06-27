@@ -331,6 +331,9 @@ WORKFLOW_ANALYSIS_SCHEMA = {
         "assumptions",
         "required_namespaces",
         "workflow_graph_dot",
+        "inferred_inputs",
+        "inferred_outputs",
+        "usage_context",
     ],
     "additionalProperties": False,
     "properties": {
@@ -365,6 +368,39 @@ WORKFLOW_ANALYSIS_SCHEMA = {
         "workflow_graph_dot": {
             "type": "string",
             "description": "DOT graph notation representing the planned workflow structure",
+        },
+        "inferred_inputs": {
+            "type": "array",
+            "description": "Inferred input requirements based on the objective",
+            "items": {
+                "type": "object",
+                "required": ["name", "type", "description"],
+                "additionalProperties": False,
+                "properties": {
+                    "name": {"type": "string", "description": "Input parameter name"},
+                    "type": {"type": "string", "description": "Data type (str, int, float, bool, list, dict, image, video, audio, dataframe, document, any)"},
+                    "description": {"type": "string", "description": "What this input represents"},
+                }
+            },
+        },
+        "inferred_outputs": {
+            "type": "array",
+            "description": "Inferred output results based on the objective",
+            "items": {
+                "type": "object",
+                "required": ["name", "type", "description"],
+                "additionalProperties": False,
+                "properties": {
+                    "name": {"type": "string", "description": "Output parameter name"},
+                    "type": {"type": "string", "description": "Data type (str, int, float, bool, list, dict, image, video, audio, dataframe, document, any)"},
+                    "description": {"type": "string", "description": "What this output represents"},
+                }
+            },
+        },
+        "usage_context": {
+            "type": "string",
+            "enum": ["workflow", "tool", "hybrid"],
+            "description": "Whether this graph is meant to be used as a standalone workflow, as a tool for LLMs, or both",
         },
     },
 }
@@ -412,30 +448,30 @@ WORKFLOW_DESIGN_SCHEMA = {
 
 
 DEFAULT_GRAPH_PLANNING_SYSTEM_PROMPT = """
-# GraphArchitect System Core Directives
+# GraphArchitect AI System Core Directives
 
-## Goal
-As GraphArchitect, your primary goal is to transform complex user objectives 
-into executable workflow graphs composed of Nodes. You will guide the 
-LLM through distinct phases to produce a valid and optimal graph structure.
+## Mission
+As GraphArchitect AI, you are an intelligent system that transforms natural language objectives into executable workflow graphs. Your intelligence lies in automatically understanding what users want to accomplish and creating the appropriate graph structure without requiring manual specification of inputs and outputs.
 
-## Return Format
-This system prompt establishes your operational context. For each 
-subsequent phase, you will receive specific instructions detailing the 
-required output format. Your cumulative output across all phases will be 
-a well-structured workflow graph, ultimately generated via the `create_graph` 
-tool.
+## Intelligence Principles
+1. **Automatic Inference:** You MUST automatically infer required inputs and outputs from the user's objective. Do not require explicit schemas.
+2. **Contextual Awareness:** Understand whether the graph should be used as:
+   - **Workflow**: Standalone process executed by users
+   - **Tool**: Called by LLMs to process specific inputs  
+   - **Hybrid**: Designed to work in both contexts
+3. **Flexible Adaptation:** Adapt the graph design based on the intended usage context
+4. **Smart Defaults:** Make intelligent assumptions about data types, processing steps, and connections
 
 ## Core Principles
-1. **Graph Structure:** Design workflows as Directed Acyclic Graphs (DAGs) 
-   with no cycles.
-2. **Data Flow:** Connect nodes via edges that represent data flow
+1. **Graph Structure:** Design workflows as Directed Acyclic Graphs (DAGs) with no cycles
+2. **Data Flow:** Connect nodes via edges that represent data flow from inputs through processing to outputs
 3. **Node Design:** Each node should have a clear, focused purpose
-4. **Valid Node Types:** All nodes in the graph **must** correspond to available node types. You **must** use the `search_nodes` tool to discover and verify node types. Do not invent or assume node types.
+4. **Valid Node Types:** All nodes **must** correspond to available node types. Always use `search_nodes` to discover and verify node types
 5. **Type Safety:** Ensure type compatibility throughout the workflow:
-   - Only connect compatible types (matching types, numeric conversions, or 'any' type)
+   - Connect compatible types (matching types, numeric conversions, or 'any' type)
    - Use converter nodes when types don't match directly
    - Plan for type conversions during node selection phase
+6. **User-Centric Design:** Create graphs that solve the user's actual problem, not just technical requirements
 
 ## Understanding Node Metadata
 Each node type has specific metadata that defines:
@@ -526,11 +562,11 @@ Some nodes, identifiable by `is_streaming=True` in their metadata, are designed 
 
 
 GRAPH_ANALYSIS_PHASE_TEMPLATE = """
-# PHASE 1: OBJECTIVE ANALYSIS
+# PHASE 1: OBJECTIVE ANALYSIS AND SCHEMA INFERENCE
 
 ## Goal
-Analyze the user's objective and understand what the workflow needs to accomplish.
-Focus on breaking down the requirements without getting into specific implementation details.
+Analyze the user's objective to understand what the workflow needs to accomplish.
+Intelligently infer the required inputs and outputs from the objective without requiring explicit schemas.
 
 ## Instructions
 1. Interpret what the user wants to achieve
@@ -538,32 +574,64 @@ Focus on breaking down the requirements without getting into specific implementa
 3. List expected outcomes from the workflow
 4. Note any constraints or special requirements
 5. Document assumptions you're making
-6. Create a DOT graph representing the planned workflow structure
+6. **CRITICAL: Infer required inputs and outputs from the objective**
+7. Determine usage context (workflow, tool, or hybrid)
+8. Create a DOT graph representing the planned workflow structure
+
+## Input/Output Inference Guidelines
+Based on the objective, intelligently determine:
+
+### Inputs:
+- What data does the workflow need to receive to accomplish the objective?
+- Look for nouns that represent data (e.g., "image", "text", "CSV file", "name")
+- Look for parameters mentioned (e.g., "interest rate", "principal amount")
+- If no explicit inputs are mentioned, consider if the workflow generates data internally
+- Name inputs descriptively based on their purpose
+
+### Outputs:
+- What results should the workflow produce?
+- Look for desired outcomes (e.g., "report", "analysis", "chart", "greeting")
+- Consider intermediate results that might be useful
+- Name outputs based on what they represent
+
+### Usage Context:
+- **workflow**: Standalone process executed by a user
+- **tool**: Called by an LLM to process specific inputs
+- **hybrid**: Can be used both ways
+
+### Type Mapping:
+- Text/strings → "str"
+- Numbers → "int" or "float" 
+- Yes/no values → "bool"
+- Collections → "list" or "dict"
+- Media → "image", "video", "audio"
+- Tabular data → "dataframe"
+- Files → "document"
+- Unknown/flexible → "any"
 
 ## DOT Graph Guidelines
-Create a simple DOT graph that shows the high-level flow of data through the workflow:
-- Use descriptive node labels (not specific node types yet)
-- Show the general flow from inputs to outputs
-- Include key processing steps
-- Use clear, concise labels
+Create a simple DOT graph that shows the high-level flow:
+- Start with inferred inputs
+- Show processing steps
+- End with inferred outputs
+- Use descriptive labels
 
 Example DOT format:
 ```dot
 digraph workflow {
-    input [label="Input Data"];
-    process1 [label="Process Step 1"];
-    process2 [label="Process Step 2"];
-    output [label="Output Result"];
+    input_name [label="User Name"];
+    generate [label="Generate Greeting"];
+    output_greeting [label="Greeting Message"];
     
-    input -> process1;
-    process1 -> process2;
-    process2 -> output;
+    input_name -> generate;
+    generate -> output_greeting;
 }
 ```
 
 ## Context
 **User's Objective:**
 {{ objective }}
+
 {% if existing_graph_spec -%}
 This is an **EDIT** request. You must modify the existing graph below.
 The user's objective should be interpreted as an instruction to change this graph.
@@ -575,13 +643,21 @@ Your new DOT graph should represent the final, desired state of the graph after 
 ```
 {%- endif %}
 
-**Input Nodes:**
+{% if input_nodes and input_nodes|length > 0 -%}
+**Provided Input Schema (use these instead of inferring):**
 {{ input_nodes }}
+{%- else -%}
+**No input schema provided - you MUST infer inputs from the objective**
+{%- endif %}
 
-**Output Nodes:**
+{% if output_nodes and output_nodes|length > 0 -%}
+**Provided Output Schema (use these instead of inferring):**
 {{ output_nodes }}
+{%- else -%}
+**No output schema provided - you MUST infer outputs from the objective**
+{%- endif %}
 
-Return ONLY the JSON object, no additional text.
+Return ONLY the JSON object matching the schema, no additional text.
 """
 
 WORKFLOW_DESIGN_PROMPT = """
@@ -731,8 +807,8 @@ class GraphPlanner:
             model: Model identifier to use
             objective: High-level goal to achieve
             inputs: Dictionary of input values to infer types from
-            input_schema: List of GraphInput objects defining expected inputs
-            output_schema: List of GraphOutput objects defining expected outputs
+            input_schema: List of GraphInput objects defining expected inputs (optional - will be inferred from objective if empty)
+            output_schema: List of GraphOutput objects defining expected outputs (optional - will be inferred from objective if empty)
             existing_graph: Optional existing graph to edit
             system_prompt: Custom system prompt (optional)
             verbose: Enable detailed logging
@@ -744,16 +820,20 @@ class GraphPlanner:
         self.max_tokens = max_tokens
         self.existing_graph = existing_graph
 
-        # If input_schema is empty but inputs are provided, infer the schema
+        # Schema handling - prioritize provided schemas, but allow inference
         if not input_schema and inputs:
+            # If inputs are provided but no schema, infer from values
             self.input_schema = self._infer_input_schema_from_values(inputs)
             logger.info(
                 f"Inferred input schema from provided values: {[inp.model_dump() for inp in self.input_schema]}"
             )
         else:
+            # Use provided schema (may be empty - will be inferred during analysis phase)
             self.input_schema = input_schema
 
         self.output_schema = output_schema
+        # Note: Empty schemas will be populated during the analysis phase via LLM inference
+
         self.system_prompt = system_prompt or DEFAULT_GRAPH_PLANNING_SYSTEM_PROMPT
         self.verbose = verbose
         self.registry = Registry()
@@ -768,7 +848,13 @@ class GraphPlanner:
         self._cached_node_metadata: Optional[List] = None
         self._cached_namespaces: Optional[set[str]] = None
 
-        # Get inferred nodes for the context
+        # Build initial node representations (may be empty if schemas not provided)
+        self._build_initial_node_representations()
+        
+        logger.debug(f"GraphPlanner initialized for objective: {objective[:100]}...")
+
+    def _build_initial_node_representations(self):
+        """Build initial input/output node representations from current schemas."""
         self._input_nodes = [
             {
                 "node_type": get_node_type_for_metadata(i.type, InputNode),
@@ -796,9 +882,6 @@ class GraphPlanner:
             }
             for o in self.output_schema
         ]
-        print(self._input_nodes)
-        print(self._output_nodes)
-        logger.debug(f"GraphPlanner initialized for objective: {objective[:100]}...")
 
     def _get_node_metadata(self) -> List:
         """Get node metadata with caching."""
@@ -955,6 +1038,42 @@ class GraphPlanner:
 
         return input_schema
 
+    def _process_inferred_schemas(self, analysis_result: Dict[str, Any]) -> None:
+        """Process inferred input/output schemas from analysis phase and update instance schemas."""
+        # Update input schema if not already provided
+        if not self.input_schema and "inferred_inputs" in analysis_result:
+            inferred_inputs = analysis_result["inferred_inputs"]
+            self.input_schema = [
+                GraphInput(
+                    name=inp["name"],
+                    type=TypeMetadata(type=inp["type"]),
+                    description=inp["description"]
+                )
+                for inp in inferred_inputs
+            ]
+            logger.info(f"Using inferred input schema: {[inp.name + ':' + inp.type.type for inp in self.input_schema]}")
+
+        # Update output schema if not already provided  
+        if not self.output_schema and "inferred_outputs" in analysis_result:
+            inferred_outputs = analysis_result["inferred_outputs"]
+            self.output_schema = [
+                GraphOutput(
+                    name=out["name"],
+                    type=TypeMetadata(type=out["type"]),
+                    description=out["description"]
+                )
+                for out in inferred_outputs
+            ]
+            logger.info(f"Using inferred output schema: {[out.name + ':' + out.type.type for out in self.output_schema]}")
+
+        # Rebuild node representations with updated schemas
+        self._build_initial_node_representations()
+
+        # Log usage context if available
+        if "usage_context" in analysis_result:
+            usage_context = analysis_result["usage_context"]
+            logger.info(f"Graph usage context: {usage_context}")
+
     def _build_nodes_and_edges_from_specifications(
         self,
         node_specifications: List[Dict[str, Any]],
@@ -1069,10 +1188,6 @@ class GraphPlanner:
                     logger.info(
                         f"[{phase_name}] Running: LLM interaction (iteration {i + 1}/{max_iterations})..."
                     )
-
-                # print("************************************************")
-                # print(prompt_content)
-                # print("************************************************")
 
                 response = await self.provider.generate_message(
                     messages=history,
@@ -1202,9 +1317,6 @@ class GraphPlanner:
                         f"Failed to get structured {phase_name.lower()} output"
                     )
 
-                print("************************************************")
-                print(structured_response.content)
-                print("************************************************")
                 try:
                     result = json.loads(structured_response.content)
                 except Exception as e:
@@ -1237,10 +1349,6 @@ class GraphPlanner:
                 # Success
                 if self.verbose:
                     logger.info(f"[{phase_name}] Success: {phase_name} complete")
-
-                logger.debug("************************************************")
-                logger.debug(f"{phase_name} Result: {result}")
-                logger.debug("************************************************")
 
                 return (
                     history,
@@ -1410,10 +1518,6 @@ class GraphPlanner:
             nodes, edges = self._build_nodes_and_edges_from_specifications(
                 enriched_result.get("node_specifications", []),
             )
-            print("************************************************")
-            print(nodes)
-            print(edges)
-            print("************************************************")
 
             # Create graph dict
             graph_dict = {"nodes": nodes, "edges": edges}
@@ -1600,6 +1704,10 @@ class GraphPlanner:
                 logger.error(f"[Overall Status] Failed: {error_msg}")
             raise ValueError(error_msg)
 
+        # Process inferred schemas before continuing to design phase
+        if analysis_result:
+            self._process_inferred_schemas(analysis_result)
+
         # Pretty print analysis results
         if self.verbose and analysis_result:
             logger.info("\n" + "=" * 60)
@@ -1612,6 +1720,21 @@ class GraphPlanner:
             logger.info("\nExpected Outcomes:")
             for outcome in analysis_result.get("expected_outcomes", []):
                 logger.info(f"  • {outcome}")
+            
+            # Print inferred schemas
+            if "inferred_inputs" in analysis_result:
+                logger.info("\nInferred Inputs:")
+                for inp in analysis_result["inferred_inputs"]:
+                    logger.info(f"  • {inp['name']} ({inp['type']}): {inp['description']}")
+            
+            if "inferred_outputs" in analysis_result:
+                logger.info("\nInferred Outputs:")
+                for out in analysis_result["inferred_outputs"]:
+                    logger.info(f"  • {out['name']} ({out['type']}): {out['description']}")
+            
+            if "usage_context" in analysis_result:
+                logger.info(f"\nUsage Context: {analysis_result['usage_context']}")
+            
             logger.info("\nConstraints:")
             for constraint in analysis_result.get("constraints", []):
                 logger.info(f"  • {constraint}")
@@ -1781,32 +1904,25 @@ class GraphPlanner:
 
 
 async def main():
-    """Main function to run a simple GraphPlanner example."""
-    # provider = OpenAIProvider()
-    # model = "o4-mini"
+    """Main function demonstrating the enhanced GraphPlanner with automatic schema inference."""
     provider = AnthropicProvider()
     model = "claude-sonnet-4-20250514"
+    
+    # Test objective - NO input/output schemas provided, everything will be inferred automatically
     objective = "Generate a personalized greeting. The workflow should take a name as input and use a template to create a message like 'Hello, [name]! Welcome to the Nodetool demo.'"
+
+    print("🚀 Testing Enhanced GraphPlanner with Automatic Schema Inference")
+    print(f"Objective: {objective}")
+    print("📋 Note: NO input or output schemas provided - everything will be inferred from the objective!")
+    print()
 
     planner = GraphPlanner(
         provider=provider,
         model=model,
         objective=objective,
-        verbose=True,  # Set to False to reduce console output from GraphPlanner
-        input_schema=[
-            GraphInput(
-                name="name",
-                type=TypeMetadata(type="str"),
-                description="the name of the user",
-            ),
-        ],
-        output_schema=[
-            GraphOutput(
-                name="greeting",
-                type=TypeMetadata(type="str"),
-                description="the greeting message",
-            ),
-        ],
+        verbose=True,
+        # NO input_schema or output_schema provided!
+        # The planner will automatically infer these from the objective
     )
 
     # Initialize a basic ProcessingContext
@@ -1814,47 +1930,62 @@ async def main():
     # for GraphPlanner's core graph generation logic, but it expects an instance.
     context = ProcessingContext()
 
-    print(f"Running GraphPlanner with objective: {objective}")
+    print("⚡ Running Enhanced GraphPlanner...")
     print("This will involve LLM calls and may take a few moments...")
+    print()
+    
     try:
         async for update in planner.create_graph(context):
             if isinstance(update, PlanningUpdate):
-                print(
-                    f"Phase: {update.phase}, Status: {update.status}, Content: {str(update.content or '')}"
-                )
+                print(f"📋 {update.phase}: {update.status}")
+                if update.content:
+                    print(f"   └─ {update.content}")
             elif isinstance(update, Chunk):
-                print(f"Received chunk: {update.content}")
+                print(f"📨 Chunk: {update.content}")
 
         if planner.graph:
-            print("\nGenerated Graph:")
-            print(
-                f"  Title: {getattr(planner.graph, 'title', 'N/A')}"
-            )  # Graph title might not be set by default from tool
+            print("\n" + "="*60)
+            print("🎉 GRAPH GENERATED SUCCESSFULLY!")
+            print("="*60)
+            
+            # Show inferred schemas
+            print("\n🔍 AUTOMATICALLY INFERRED SCHEMAS:")
+            print(f"📥 Inputs ({len(planner.input_schema)}):")
+            for inp in planner.input_schema:
+                print(f"   • {inp.name} ({inp.type.type}): {inp.description}")
+            
+            print(f"\n📤 Outputs ({len(planner.output_schema)}):")
+            for out in planner.output_schema:
+                print(f"   • {out.name} ({out.type.type}): {out.description}")
 
             # Create visual graph representation
             print_visual_graph(planner.graph)
 
-            print(f"\n  Detailed Nodes ({len(planner.graph.nodes)}):")
+            print(f"\n🔧 DETAILED NODES ({len(planner.graph.nodes)}):")
             for node in planner.graph.nodes:
-                print(f"    {node.id} ({node.type}):")
+                print(f"   └─ {node.id} [{node.type}]")
                 if hasattr(node, "data") and node.data:
                     for key, value in node.data.items():
-                        print(f"      {key}: {value}")
+                        val_str = str(value)[:50] + "..." if len(str(value)) > 50 else str(value)
+                        print(f"      {key}: {val_str}")
 
-            print(f"\n  Edges ({len(planner.graph.edges)}):")
+            print(f"\n🔗 EDGES ({len(planner.graph.edges)}):")
             for edge in planner.graph.edges:
-                print(
-                    f"    - {edge.source} ({edge.sourceHandle}) -> {edge.target} ({edge.targetHandle})"
-                )
+                print(f"   └─ {edge.source}({edge.sourceHandle}) ──→ {edge.target}({edge.targetHandle})")
+                
+            print("\n" + "="*60)
+            print("✅ SUCCESS: The GraphPlanner automatically inferred the complete workflow!")
+            print("🧠 No manual input/output schema specification was required.")
+            print("="*60)
 
         else:
-            print("\nGraph planning completed, but no graph was generated.")
+            print("\n❌ Graph planning completed, but no graph was generated.")
 
     except Exception as e:
-        print(f"An error occurred during graph planning: {e}")
+        print(f"\n💥 An error occurred during graph planning: {e}")
         traceback.print_exc()
     finally:
-        print("\nGraphPlanner example finished.")
+        print("\n🏁 GraphPlanner demonstration finished.")
 
 
 if __name__ == "__main__":

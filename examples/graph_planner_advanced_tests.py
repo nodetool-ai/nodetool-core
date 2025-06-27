@@ -63,6 +63,7 @@ async def create_and_execute_workflow(
                     f"Failed to create workflow after {max_planning_attempts} attempts: {e}"
                 )
 
+    assert graph_planner.graph is not None
     print_visual_graph(graph_planner.graph)
     graph = graph_planner.graph
     logger.info(f"Generated workflow has {len(graph.nodes)} nodes")
