@@ -18,8 +18,8 @@ from nodetool.metadata.types import (
 )
 from huggingface_hub import try_to_load_from_cache
 from huggingface_hub.constants import HF_HUB_CACHE
-from nodetool.api.utils import current_user
-from fastapi import APIRouter, Depends
+from nodetool.api.utils import current_user, flatten_models
+from fastapi import APIRouter, Depends, Query
 from nodetool.common.huggingface_models import (
     CachedModel,
     delete_cached_hf_model,
@@ -31,6 +31,7 @@ from nodetool.chat.ollama_service import (
     get_ollama_models,
     get_ollama_model_info,
     stream_ollama_model_pull,
+    delete_ollama_model as _delete_ollama_model,
 )
 import subprocess
 import sys
@@ -43,7 +44,9 @@ router = APIRouter(prefix="/api/models", tags=["models"])
 
 # Simple module-level cache
 _cached_huggingface_models = None
-_cached_ollama_models_dir_path: Path | None | object = object()  # Sentinel to distinguish from None result
+_cached_recommended_models = None
+# Cache for Ollama models directory (None = not found, Path = found, uninitialized = None)
+_cached_ollama_models_dir_path: Path | None = None
 
 
 # Internal helper to get Ollama models directory
@@ -58,10 +61,35 @@ def _get_ollama_models_dir() -> Path | None:
                       and valid, otherwise None.
     """
     global _cached_ollama_models_dir_path
-    if _cached_ollama_models_dir_path is not object(): # Check if cache is populated
-        return _cached_ollama_models_dir_path # type: ignore
+    if _cached_ollama_models_dir_path is not None: # Check if cache is populated
+        return _cached_ollama_models_dir_path
 
     path = None
+
+    # 1. Check explicit environment variable first. According to Ollama's
+    #    documentation, the OLLAMA_MODELS variable allows users to override the
+    #    default location. This takes precedence over any heuristic paths.
+    custom_path = os.environ.get("OLLAMA_MODELS")
+    if custom_path:
+        try:
+            # Expand ~ and resolve as far as possible (even if the folder doesn't
+            # exist yet)
+            p = Path(custom_path).expanduser()
+            try:
+                p = p.resolve(strict=False)
+            except Exception:
+                # If resolve fails (e.g., path portion doesn't yet exist) keep the expanded path.
+                pass
+
+            # Honour the env var regardless of whether the directory exists.
+            log.debug(f"Using Ollama models directory from OLLAMA_MODELS env var: {p}")
+            _cached_ollama_models_dir_path = p
+            return p
+        except Exception as e:
+            log.error(
+                f"Failed to process OLLAMA_MODELS environment variable '{custom_path}': {e}"
+            )
+
     try:
         if sys.platform == "win32":
             path = Path(os.environ["USERPROFILE"]) / ".ollama" / "models"
@@ -96,9 +124,10 @@ def _get_valid_explorable_roots() -> list[Path]:
     Returns:
         list[Path]: A list of Path objects representing safe explorable roots.
     """
-    safe_roots = []
+    safe_roots: list[Path] = []
+
     ollama_dir = _get_ollama_models_dir()
-    if ollama_dir:
+    if isinstance(ollama_dir, Path):
         safe_roots.append(ollama_dir)
     
     try:
@@ -130,7 +159,15 @@ class CachedRepo(BaseModel):
 async def recommended_models(
     user: str = Depends(current_user),
 ) -> list[HuggingFaceModel]:
-    return list(get_recommended_models().values())  # type: ignore
+    global _cached_recommended_models
+    if _cached_recommended_models is not None:
+        return _cached_recommended_models
+
+    recommended = get_recommended_models()
+    # Flatten the list of lists into a single list
+    models = flatten_models(list(recommended.values()))
+    _cached_recommended_models = models
+    return models
 
 
 @router.get("/huggingface_models")
@@ -139,12 +176,11 @@ async def get_huggingface_models(
 ) -> list[CachedModel]:
     global _cached_huggingface_models
 
-    if Environment.is_production() and _cached_huggingface_models is not None:
+    if _cached_huggingface_models is not None:
         return _cached_huggingface_models
 
     models = await read_cached_hf_models()
-    if Environment.is_production():
-        _cached_huggingface_models = models
+    _cached_huggingface_models = models
     return models
 
 
@@ -161,6 +197,14 @@ async def get_ollama_models_endpoint(
     user: str = Depends(current_user),
 ) -> list[LlamaModel]:
     return await get_ollama_models()
+
+
+@router.delete("/ollama_model")
+async def delete_ollama_model_endpoint(model_name: str) -> bool:
+    if Environment.is_production():
+        log.warning("Cannot delete ollama models in production")
+        return False
+    return await _delete_ollama_model(model_name)
 
 
 anthropic_models = [
@@ -363,7 +407,9 @@ if not Environment.is_production():
         )
 
     @router.post("/open_in_explorer")
-    async def open_in_explorer(path: str, user: str = Depends(current_user)):
+    async def open_in_explorer(
+        path: str = Query(...), user: str = Depends(current_user)
+    ):
         """Opens the specified path in the system's default file explorer.
 
         Security measures:
@@ -388,6 +434,7 @@ if not Environment.is_production():
                 "message": "Cannot open path: No safe directories (like Ollama or Hugging Face cache) could be determined.",
             }
 
+        path_to_open: str | None = None
         try:
             requested_path = Path(path).resolve()
             is_safe_path = False
@@ -409,6 +456,8 @@ if not Environment.is_production():
             sane_path_to_open = shlex.quote(path_to_open)
 
             if sys.platform == "win32":
+                # Using a list argument with subprocess.run ensures the path is passed as a single
+                # argument to Explorer, mitigating command-injection risks even without quoting.
                 subprocess.run(["explorer", path_to_open], check=True)
             elif sys.platform == "darwin":
                 subprocess.run(["open", sane_path_to_open], check=True)
@@ -416,7 +465,9 @@ if not Environment.is_production():
                 subprocess.run(["xdg-open", sane_path_to_open], check=True)
             return {"status": "success", "path": path_to_open}
         except Exception as e:
-            log.error(f"Failed to open path {path_to_open} in explorer: {e}")
+            log.error(
+                f"Failed to open path {path_to_open if path_to_open else path} in explorer: {e}"
+            )
             return {
                 "status": "error",
                 "message": "An internal error occurred while attempting to open the path. Please check server logs for details.",

@@ -63,3 +63,18 @@ async def stream_ollama_model_pull(model_name: str) -> AsyncGenerator[str, None]
     res = await ollama.pull(model_name, stream=True)
     async for chunk in res:
         yield json.dumps(chunk.model_dump()) + "\n"
+
+
+async def delete_ollama_model(model_name: str) -> bool:
+    """Delete an Ollama model by name.
+
+    Returns True when deletion succeeds or the model does not exist,
+    False on error.
+    """
+    ollama = get_ollama_client()
+    try:
+        await ollama.delete(model_name)
+        return True
+    except Exception as e:
+        print(f"Error deleting ollama model '{model_name}': {e}")
+        return False

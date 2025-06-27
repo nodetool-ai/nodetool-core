@@ -271,15 +271,36 @@ class BaseNode(BaseModel):
 
     @classmethod
     def is_visible(cls):
-        return cls._visible.default  # type: ignore
+        """Return whether the node class should be listed in UIs.
+
+        Historically ``_visible`` was stored either as a plain Python
+        ``bool`` *or* as a Pydantic ``Field``/``FieldInfo`` (whose default
+        value lives in the ``default`` attribute).  Accessing ``.default`` on
+        a raw boolean raises ``AttributeError`` which broke API calls that
+        enumerate all registered nodes.
+
+        This implementation tolerates both representations:
+
+        * If the attribute is a plain ``bool`` -> return it directly.
+        * Otherwise fall back to ``getattr(attr, "default", True)``.
+        """
+        attr = getattr(cls, "_visible", True)
+        if isinstance(attr, bool):
+            return attr
+        return bool(getattr(attr, "default", True))
 
     @classmethod
     def is_dynamic(cls):
-        return cls._is_dynamic.default  # type: ignore
+        attr = getattr(cls, "_is_dynamic", False)
+        if isinstance(attr, bool):
+            return attr
+        return bool(getattr(attr, "default", False))
 
     @classmethod
     def layout(cls):
-        return cls._layout.default  # type: ignore
+        attr = getattr(cls, "_layout", "default")
+        # If it's a Pydantic Field / FieldInfo return its default, else direct.
+        return getattr(attr, "default", attr)  # type: ignore
 
     @property
     def id(self):
@@ -1280,22 +1301,31 @@ def get_recommended_models() -> dict[str, list[HuggingFaceModel]]:
     from nodetool.packages.registry import Registry
 
     registry = Registry()
-    node_metadata = registry.get_all_installed_nodes()
+    node_metadata_list = registry.get_all_installed_nodes()
     model_ids = set()
-    models = {}
-    for node_metadata in node_metadata:
-        node_class = get_node_class(node_metadata.node_type)
+    models: dict[str, list[HuggingFaceModel]] = {}
+
+    for meta in node_metadata_list:
+        node_class = get_node_class(meta.node_type)
         if node_class is None:
-            log.warning(f"Node class {node_metadata.node_type} not found. ")
             continue
-        for model in node_class.get_recommended_models():
-            if model.path is not None:
-                model_id = "/".join([model.repo_id, model.path])
-            else:
-                model_id = model.repo_id
-            if model_id not in model_ids:
-                model_ids.add(model_id)
-                if model.repo_id not in models:
-                    models[model.repo_id] = []
-                models[model.repo_id].append(model)
+        try:
+            node_models = node_class.get_recommended_models()
+        except Exception as e:
+            log.error(
+                f"Error getting recommended models from {node_class.__name__}: {e}"
+            )
+            continue
+
+        for model in node_models:
+            if model is None:
+                continue
+            model_id = (
+                f"{model.repo_id}/{model.path}" if model.path is not None else model.repo_id
+            )
+            if model_id in model_ids:
+                continue
+            model_ids.add(model_id)
+            models.setdefault(model.repo_id, []).append(model)
+
     return models

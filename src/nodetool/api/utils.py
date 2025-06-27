@@ -2,10 +2,12 @@ from fastapi import (
     HTTPException,
     Header,
     status,
+    Cookie,
 )
-from typing import Optional
-from fastapi import Cookie
+from typing import Optional, Any, List, Union
 from nodetool.common.environment import Environment
+from nodetool.common.huggingface_models import CachedModel
+from nodetool.metadata.types import HuggingFaceModel
 
 log = Environment.get_logger()
 
@@ -57,9 +59,20 @@ async def current_user(
             detail="Failed to validate authentication token.",
         )
 
-
 async def abort(status_code: int, detail: Optional[str] = None) -> None:
     """
     Abort the current request with the given status code and detail.
     """
     raise HTTPException(status_code=status_code, detail=detail)
+
+def flatten_models(
+    models: list[Any],
+) -> list[Union[HuggingFaceModel, CachedModel]]:
+    """Flatten a list of models that may contain nested lists."""
+    flat_list = []
+    for item in models:
+        if isinstance(item, list):
+            flat_list.extend(flatten_models(item))
+        else:
+            flat_list.append(item)
+    return flat_list
