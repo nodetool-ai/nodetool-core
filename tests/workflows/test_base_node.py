@@ -217,7 +217,7 @@ def test_base_node_from_dict():
         "ui_properties": {"x": 100, "y": 200},
         "data": {"prop": 456},
     }
-    node = DummyClass.from_dict(node_dict)
+    node, _ = DummyClass.from_dict(node_dict)
     assert isinstance(node, DummyClass)
     assert node.id == "test_id"
     assert node.parent_id == "parent_id"

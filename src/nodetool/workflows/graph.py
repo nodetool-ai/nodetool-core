@@ -95,10 +95,15 @@ class Graph(BaseModel):
         
         # Process nodes, collecting valid ones
         for node_data in graph["nodes"]:
-            result = BaseNode.from_dict(node_data, skip_errors=skip_errors)
-            if result is not None and result[0] is not None:
-                valid_nodes.append(result[0])
-                valid_node_ids.add(result[0].id)
+            try:
+                result = BaseNode.from_dict(node_data, skip_errors=skip_errors)
+                if result is not None and result[0] is not None:
+                    valid_nodes.append(result[0])
+                    valid_node_ids.add(result[0].id)
+            except ValueError as e:
+                if not skip_errors:
+                    raise
+                # If skip_errors is True, skip this node
         
         # Process edges, filtering out invalid ones
         valid_edges = []

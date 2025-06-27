@@ -14,13 +14,16 @@ logger = logging.getLogger(__name__)
 
 def sanitize_node_name(node_name: str) -> str:
     """
-    Sanitize a node name, typically replacing '.' with '__' and potentially truncating.
+    Convert node type to tool name format.
+    
+    Converts from node type format (e.g., "namespace.TestNode") to tool name format
+    (e.g., "node_test"). Handles CamelCase to snake_case conversion and adds "node_" prefix.
 
     Args:
-        node_name: The node name.
+        node_name: The node type string.
 
     Returns:
-        The sanitized node name.
+        The sanitized tool name.
     """
     if not isinstance(node_name, str):
         logger.warning(
@@ -28,20 +31,27 @@ def sanitize_node_name(node_name: str) -> str:
         )
         return ""
 
-    segments = node_name.split(".")
-    # Basic sanitization: replace non-alphanumeric (except _) with underscore
-    safe_segments = ["".join(c if c.isalnum() else "_" for c in s) for s in segments]
-
-    # Join sanitized segments
-    sanitized_name = "__".join(safe_segments)
-
+    # Extract the class name from the full node type (e.g., "test.TestNode" -> "TestNode")
+    class_name = node_name.split(".")[-1]
+    
+    # Remove "Node" suffix if present
+    if class_name.endswith("Node"):
+        class_name = class_name[:-4]
+    
+    # Convert CamelCase to snake_case
+    import re
+    snake_case = re.sub('([a-z0-9])([A-Z])', r'\1_\2', class_name).lower()
+    
+    # Add "node_" prefix
+    result = f"node_{snake_case}"
+    
     # Truncate if necessary (adjust max length as needed)
     max_length = 64  # Example max length
-    if len(sanitized_name) > max_length:
+    if len(result) > max_length:
         # Simple truncation, could be smarter (e.g., keep start/end)
-        return sanitized_name[:max_length]
+        return result[:max_length]
     else:
-        return sanitized_name
+        return result
 
 
 # Tool registry to keep track of all tool subclasses

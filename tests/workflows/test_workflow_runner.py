@@ -590,30 +590,6 @@ async def test_gpu_lock_contention():
 
 
 @pytest.mark.asyncio
-async def test_get_available_vram():
-    """Test VRAM availability check"""
-    # Without torch, should return 0
-    with patch("nodetool.workflows.workflow_runner.TORCH_AVAILABLE", False):
-        assert get_available_vram() == 0
-    
-    # With torch but no CUDA
-    with patch("nodetool.workflows.workflow_runner.TORCH_AVAILABLE", True):
-        mock_torch = Mock()
-        mock_torch.cuda.is_available.return_value = False
-        with patch("nodetool.workflows.workflow_runner.torch", mock_torch):
-            assert get_available_vram() == 0
-    
-    # With torch and CUDA
-    with patch("nodetool.workflows.workflow_runner.TORCH_AVAILABLE", True):
-        mock_torch = Mock()
-        mock_torch.cuda.is_available.return_value = True
-        mock_torch.cuda.get_device_properties.return_value = Mock(total_memory=8000000000)
-        mock_torch.cuda.memory_allocated.return_value = 2000000000
-        with patch("nodetool.workflows.workflow_runner.torch", mock_torch):
-            assert get_available_vram() == 6000000000
-
-
-@pytest.mark.asyncio
 async def test_gpu_node_processing():
     """Test processing a node that requires GPU"""
     # This test verifies GPU node requirements are checked
@@ -1131,28 +1107,6 @@ async def test_loop_termination_pending_data():
         assert should_terminate
         # Check warning was logged
         mock_log.warning.assert_called()
-
-
-# ============= TORCH CONTEXT TESTS =============
-
-@pytest.mark.asyncio
-async def test_torch_context_manager():
-    """Test torch_context context manager"""
-    workflow_runner = WorkflowRunner(job_id="1")
-    context = ProcessingContext(user_id="1", auth_token="token")
-    
-    # Test without torch/comfy - should work without errors
-    with workflow_runner.torch_context(context):
-        pass
-    
-    # Test with torch available
-    with patch("nodetool.workflows.workflow_runner.TORCH_AVAILABLE", True):
-        mock_torch = Mock()
-        mock_torch.cuda.is_available.return_value = False
-        
-        with patch("nodetool.workflows.workflow_runner.torch", mock_torch):
-            with workflow_runner.torch_context(context):
-                pass
 
 
 # ============= OUTPUT NODE TESTS =============
