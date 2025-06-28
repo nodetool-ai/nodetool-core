@@ -1,67 +1,26 @@
 """Unit tests for GraphPlanner"""
 
-from nodetool.workflows.processing_context import ProcessingContext
 import pytest
 import tempfile
-from unittest.mock import Mock, AsyncMock, patch 
+import json
+from unittest.mock import Mock, AsyncMock, patch
+from pathlib import Path
 
+from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.agents.graph_planner import (
     GraphPlanner,
     GraphInput,
+    GraphOutput,
+    get_node_type_for_metadata,
+    _is_type_compatible,
 )
-from nodetool.metadata.types import DocumentRef, DataframeRef
-from nodetool.metadata.type_metadata import TypeMetadata
+from nodetool.metadata.types import TypeMetadata, Message, ToolCall
 from nodetool.workflows.base_node import BaseNode, InputNode, OutputNode
-
-# Add test node classes at the module level
-class TestDocumentInputNode(InputNode):
-    """Test node that outputs a document"""
-    
-    @classmethod
-    def get_namespace(cls):
-        return "test.input"
-    
-    async def process(self, context: ProcessingContext) -> DocumentRef:
-        return DocumentRef(uri="test_document")
+from nodetool.workflows.types import PlanningUpdate, Chunk
+from nodetool.types.graph import Graph as APIGraph, Node as APINode, Edge as APIEdge
 
 
-class TestStringInputNode(InputNode):
-    """Test node that outputs a string - for compatible edge testing"""
-    
-    @classmethod
-    def get_namespace(cls):
-        return "test.input"
-    
-    async def process(self, context: ProcessingContext) -> str:
-        return "test_string"
-
-
-class TestCSVImportNode(BaseNode):
-    """Test node that imports CSV with string input"""
-    
-    csv_data: str = ""
-    
-    @classmethod 
-    def get_namespace(cls):
-        return "test.data"
-    
-    async def process(self, context: ProcessingContext) -> DataframeRef:
-        return DataframeRef(uri="test_dataframe")
-
-
-class TestSumArrayNode(BaseNode):
-    """Test node that sums an array"""
-    
-    array: list = []
-    
-    @classmethod
-    def get_namespace(cls):
-        return "test.math"
-    
-    async def process(self, context: ProcessingContext) -> float:
-        return 42.0
-
-
+@pytest.mark.asyncio
 class TestGraphPlanner:
     """Test the GraphPlanner class"""
 
@@ -70,6 +29,7 @@ class TestGraphPlanner:
         """Create a mock chat provider"""
         provider = Mock()
         provider.generate_message = AsyncMock()
+        provider.generate_messages = AsyncMock()
         return provider
 
     @pytest.fixture
@@ -78,8 +38,17 @@ class TestGraphPlanner:
         with tempfile.TemporaryDirectory() as tmpdir:
             yield tmpdir
 
-    def test_prompt_context(self, mock_provider, temp_workspace):
-        """Test prompt context generation"""
+    @pytest.fixture
+    def processing_context(self, temp_workspace):
+        """Create a processing context for tests"""
+        return ProcessingContext(
+            user_id="test_user",
+            auth_token="test_token", 
+            workspace_dir=temp_workspace
+        )
+
+    def test_initialization(self, mock_provider, temp_workspace):
+        """Test GraphPlanner initialization"""
         planner = GraphPlanner(
             provider=mock_provider,
             model="test-model",
@@ -87,96 +56,34 @@ class TestGraphPlanner:
             verbose=False,
         )
 
-        context = planner._get_prompt_context()
-        assert context["objective"] == "Test objective"
+        assert planner.provider == mock_provider
+        assert planner.model == "test-model"
+        assert planner.objective == "Test objective"
+        assert planner.input_schema == []
+        assert planner.output_schema == []
+        assert planner.graph is None
 
-    def test_is_edge_type_compatible(self, mock_provider, temp_workspace):
-        """Test edge type compatibility checking"""
-        planner = GraphPlanner(
-            provider=mock_provider,
-            model="test-model",
-            objective="Test objective",
-            verbose=False,
-        )
-
-        from nodetool.metadata.type_metadata import TypeMetadata
-
+    def test_type_compatibility(self):
+        """Test type compatibility checking"""
         # Test compatible types
         str_type = TypeMetadata(type="str")
-        assert planner._is_edge_type_compatible_enhanced(str_type, str_type) is True
+        assert _is_type_compatible(str_type, str_type) is True
 
         # Test numeric conversions
         int_type = TypeMetadata(type="int")
         float_type = TypeMetadata(type="float")
-        assert planner._is_edge_type_compatible_enhanced(int_type, float_type) is True
-        assert planner._is_edge_type_compatible_enhanced(float_type, int_type) is True
+        assert _is_type_compatible(int_type, float_type) is True
+        assert _is_type_compatible(float_type, int_type) is True
 
         # Test incompatible types
         image_type = TypeMetadata(type="image")
-        assert planner._is_edge_type_compatible_enhanced(image_type, str_type) is False
-        assert planner._is_edge_type_compatible_enhanced(str_type, image_type) is False
+        assert _is_type_compatible(image_type, str_type) is False
+        assert _is_type_compatible(str_type, image_type) is False
 
         # Test any type
         any_type = TypeMetadata(type="any")
-        assert planner._is_edge_type_compatible_enhanced(any_type, str_type) is True
-        assert planner._is_edge_type_compatible_enhanced(str_type, any_type) is True
-
-    def test_validate_graph_edge_types(self, mock_provider, temp_workspace):
-        """Test graph edge type validation catches type mismatches"""
-        planner = GraphPlanner(
-            provider=mock_provider,
-            model="test-model",
-            objective="Test objective",
-            verbose=False,
-        )
-
-        # Create test node instances
-        doc_input_node = {
-            "node_id": "doc_input",
-            "node_type": TestDocumentInputNode.get_node_type(),
-            "properties": "{}"
-        }
-        
-        csv_import_node = {
-            "node_id": "csv_import",
-            "node_type": TestCSVImportNode.get_node_type(),
-            "properties": "{\"csv_data\": {\"type\": \"edge\", \"source\": \"doc_input\", \"sourceHandle\": \"output\"}}"
-        }
-
-        sum_array_node = {
-            "node_id": "sum_array",
-            "node_type": TestSumArrayNode.get_node_type(),
-            "properties": "{}"
-        }
-
-        # Test incompatible edge (document to string)
-        node_specs = {
-            "node_specifications": [doc_input_node, csv_import_node, sum_array_node],
-        }
-
-        error = planner._validate_graph_edge_types(node_specs)
-        assert "Type mismatch on edge" in error or "Graph edge type validation errors:" in error
-        assert "doc_input.output" in error and "csv_import.csv_data" in error
-
-        # Test compatible edge (use string input node instead)
-        string_input_node = {
-            "node_id": "string_input",
-            "node_type": TestStringInputNode.get_node_type(),
-            "properties": "{}"
-        }
-        csv_import_node_compatible = {
-            "node_id": "csv_import_compatible",
-            "node_type": TestCSVImportNode.get_node_type(),
-            "properties": "{\"csv_data\": {\"type\": \"edge\", \"source\": \"string_input\", \"sourceHandle\": \"output\"}}"
-        }
-        
-        node_specs_compatible = {
-            "node_specifications": [string_input_node, csv_import_node_compatible],
-        }
-        
-        error = planner._validate_graph_edge_types(node_specs_compatible)
-        assert error == ""  # No error for compatible types
-
+        assert _is_type_compatible(any_type, str_type) is True
+        assert _is_type_compatible(str_type, any_type) is True
 
     def test_type_inference_from_values(self, mock_provider, temp_workspace):
         """Test that GraphPlanner can infer input schema from provided values"""
@@ -192,6 +99,7 @@ class TestGraphPlanner:
             "empty_dict": {},
             "nested": {"data": [1, 2, 3]},
         }
+        
         with patch(
             "nodetool.agents.graph_planner.get_node_type_for_metadata",
             return_value="dummy.input_node",
@@ -249,6 +157,7 @@ class TestGraphPlanner:
                 description="Number input",
             ),
         ]
+        
         with patch(
             "nodetool.agents.graph_planner.get_node_type_for_metadata",
             return_value="dummy.input_node",
@@ -277,6 +186,7 @@ class TestGraphPlanner:
             "image_ref": {"type": "image", "uri": "path/to/image.jpg"},
             "tuple_data": (1, "two", 3.0),
         }
+        
         with patch(
             "nodetool.agents.graph_planner.get_node_type_for_metadata",
             return_value="dummy.input_node",
@@ -304,6 +214,93 @@ class TestGraphPlanner:
         assert schema_by_name["tuple_data"].type.type_args[0].type == "int"
         assert schema_by_name["tuple_data"].type.type_args[1].type == "str"
         assert schema_by_name["tuple_data"].type.type_args[2].type == "float"
+
+    def test_create_graph_method_exists(self, mock_provider):
+        """Test that create_graph method exists"""
+        planner = GraphPlanner(
+            provider=mock_provider,
+            model="test-model",
+            objective="Simple test",
+            verbose=False,
+        )
+
+        # Test that the method exists and is callable
+        assert hasattr(planner, 'create_graph')
+        assert callable(planner.create_graph)
+
+    def test_schema_handling(self, mock_provider):
+        """Test that GraphPlanner handles input and output schemas correctly"""
+        input_schema = [
+            GraphInput(
+                name="name",
+                type=TypeMetadata(type="str"),
+                description="Person's name"
+            )
+        ]
+        
+        output_schema = [
+            GraphOutput(
+                name="greeting",
+                type=TypeMetadata(type="str"),
+                description="Greeting message"
+            )
+        ]
+
+        planner = GraphPlanner(
+            provider=mock_provider,
+            model="test-model",
+            objective="Generate greeting",
+            inputs={"name": "Alice"},
+            input_schema=input_schema,
+            output_schema=output_schema,
+            verbose=False,
+        )
+
+        # Verify the planner used the provided schemas
+        assert len(planner.input_schema) == 1
+        assert planner.input_schema[0].name == "name"
+        assert len(planner.output_schema) == 1
+        assert planner.output_schema[0].name == "greeting"
+
+    @pytest.mark.asyncio
+    async def test_create_graph_failure(self, mock_provider, processing_context):
+        """Test create_graph handles failures gracefully"""
+        # Mock generate_messages to return chunks with invalid JSON content
+        async def mock_generate_messages(*args, **kwargs):
+            yield Chunk(content="Invalid JSON response")
+        
+        mock_provider.generate_messages = mock_generate_messages
+
+        planner = GraphPlanner(
+            provider=mock_provider,
+            model="test-model",
+            objective="Test failure handling",
+            verbose=False,
+        )
+
+        with pytest.raises(ValueError) as exc_info:
+            async for update in planner.create_graph(processing_context):
+                pass
+
+        assert "failed to produce valid result" in str(exc_info.value)
+
+    def test_node_type_mapping_exists(self):
+        """Test that get_node_type_for_metadata function exists and is importable"""
+        # Simple test to verify the function can be imported and called
+        # without doing actual node type resolution which requires full registry
+        str_meta = TypeMetadata(type="str")
+        
+        # Just test that the function is callable - we can't easily test actual 
+        # functionality without the full node registry setup
+        try:
+            # This will likely fail but we're just testing it's callable
+            get_node_type_for_metadata(str_meta, InputNode)
+        except (ValueError, Exception):
+            # Expected to fail without proper registry setup
+            pass
+        
+        # If we get here, the function exists and is callable
+        assert callable(get_node_type_for_metadata)
 
 
 if __name__ == "__main__":

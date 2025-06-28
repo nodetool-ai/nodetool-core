@@ -70,12 +70,12 @@ import json
 import msgpack
 from typing import List, Sequence
 from enum import Enum
+from nodetool.models.workflow import Workflow
 from pydantic import BaseModel
 
 import httpx
-import chromadb
 from fastapi import WebSocket
-from nodetool.common.chroma_client import get_chroma_client, get_collection
+from nodetool.common.chroma_client import get_collection
 from supabase import create_async_client, AsyncClient
 
 from nodetool.agents.agent import Agent
@@ -124,6 +124,7 @@ from nodetool.workflows.types import Chunk, ToolCallUpdate, TaskUpdate, Planning
 from nodetool.workflows.workflow_runner import WorkflowRunner
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.chat.help import create_help_answer
+from nodetool.agents.graph_planner import GraphPlanner
 
 log = logging.getLogger(__name__)
 
@@ -478,6 +479,122 @@ class ChatWebSocketRunner:
                 content=f"I encountered a connection error while processing the help request: {error_msg}. Please check your network connection and try again."
             )
 
+    async def _process_create_workflow(self, message: Message) -> Message:
+        """
+        Processes create-workflow command to generate a new workflow using GraphPlanner.
+
+        Args:
+            message (Message): The message containing the create-workflow command.
+
+        Returns:
+            Message: An assistant message containing the workflow creation results.
+        """
+        try:
+            assert message.model, "Model is required"
+            assert isinstance(message.content, list) and isinstance(message.content[0], MessageTextContent), "Content must be a list of MessageTextContent"
+
+            provider = await provider_from_model(message.model)
+            log.debug(f"Processing create-workflow with model: {message.model}")
+
+            objective = message.content[0].text.split("create-workflow")[1].strip()
+            
+            planner = GraphPlanner(
+                provider=provider,
+                model=message.model,
+                objective=objective,
+                verbose=True,
+            )
+            
+            # Create processing context
+            processing_context = ProcessingContext(user_id=self.user_id)
+            
+            # Send initial status
+            await self.send_message({
+                "type": "planning_update",
+                "phase": "Initialization",
+                "status": "Starting",
+                "content": "Initializing workflow creation..."
+            })
+            
+            accumulated_content = ""
+            workflow_graph = None
+            
+            # Variables will be used to store analysis and design results if needed in future
+            
+            # Execute graph planning and stream updates
+            async for update in planner.create_graph(processing_context):
+                if isinstance(update, PlanningUpdate):
+                    # Stream planning updates to client
+                    await self.send_message({
+                        "type": "planning_update",
+                        "phase": update.phase,
+                        "status": update.status,
+                        "content": update.content,
+                        "node_id": update.node_id
+                    })
+                    
+                    # Accumulate content for the final message
+                    if update.content:
+                        accumulated_content += f"[{update.phase}] {update.status}: {update.content}\n"
+                        
+                elif isinstance(update, Chunk):
+                    # If any chunks are emitted, send them too
+                    await self.send_message({
+                        "type": "chunk",
+                        "content": update.content,
+                        "done": False
+                    })
+                    accumulated_content += update.content
+            
+            # Get the generated graph
+            if planner.graph:
+                workflow_graph = planner.graph.model_dump()
+                workflow = Workflow.create(
+                    user_id=self.user_id or "1",
+                    name=objective,
+                    graph=workflow_graph,
+                )
+                
+                # Send the complete workflow graph
+                await self.send_message({
+                    "type": "workflow_created",
+                    "workflow_id": workflow.id,
+                    "graph": workflow_graph,
+                })
+                
+                accumulated_content += "\n\nWorkflow created successfully!\n"
+            else:
+                accumulated_content += "\nWorkflow creation completed but no graph was generated."
+            
+            # Signal completion
+            await self.send_message({"type": "chunk", "content": "", "done": True})
+            
+            return Message(
+                role="assistant",
+                content=accumulated_content if accumulated_content else "Workflow creation completed.",
+                graph=planner.graph
+            )
+            
+        except Exception as e:
+            error_msg = f"Error creating workflow: {str(e)}"
+            log.error(f"Error in _process_create_workflow: {e}", exc_info=True)
+            
+            # Send error message to client
+            await self.send_message({
+                "type": "error",
+                "message": error_msg,
+                "error_type": "workflow_creation_error"
+            })
+            
+            # Signal completion even on error
+            await self.send_message({"type": "chunk", "content": "", "done": True})
+            
+            # Return error message
+            return Message(
+                role="assistant",
+                content=f"I encountered an error while creating the workflow: {error_msg}"
+            )
+
     async def process_messages(self) -> Message:
         """
         Process messages without a workflow, typically for general chat interactions.
@@ -504,6 +621,9 @@ class ChatWebSocketRunner:
                 actual_model_name = "gpt-4"  # Default model if not specified
             log.debug(f"Processing help request with model: {actual_model_name}")
             return await self._process_help_messages(actual_model_name)
+        # Check for create-workflow command
+        elif isinstance(last_message.content, list) and isinstance(last_message.content[0], MessageTextContent) and last_message.content[0].text.startswith("create-workflow"):
+            return await self._process_create_workflow(last_message)
         else:
             # Existing logic for regular messages
             processing_context = ProcessingContext(user_id=self.user_id)

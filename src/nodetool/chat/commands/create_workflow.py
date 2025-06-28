@@ -2,14 +2,13 @@
 
 import traceback
 from typing import List
-import uuid
 from nodetool.chat.chat_cli import ChatCLI
 from rich.syntax import Syntax
 from rich.panel import Panel
 from .base import Command
 from nodetool.agents.graph_planner import GraphPlanner
 from nodetool.chat.providers import get_provider
-from nodetool.workflows.types import PlanningUpdate
+from nodetool.workflows.types import PlanningUpdate, Chunk
 from nodetool.models.workflow import Workflow
 from nodetool.agents.graph_planner import print_visual_graph
 
@@ -88,6 +87,9 @@ class CreateWorkflowCommand(Command):
             cli.console.print("\n[bold green]Starting workflow creation...[/bold green]")
             
             # Create the graph with progress updates
+            streaming_output = ""
+            lines_printed = 0
+            
             try:
                 async for update in planner.create_graph(cli.context):
                     if isinstance(update, PlanningUpdate):
@@ -95,6 +97,22 @@ class CreateWorkflowCommand(Command):
                         cli.console.print(f"[bold {status_color}]{update.phase}:[/bold {status_color}] {update.status}")
                         if update.content:
                             cli.console.print(f"  {update.content}")
+                    elif isinstance(update, Chunk):
+                        # Collect streaming content and track lines
+                        streaming_output += update.content
+                        chunk_lines = update.content.count('\n')
+                        cli.console.print(update.content, highlight=False, end="")
+                        lines_printed += chunk_lines
+                
+                # Clear the streamed output and display final result
+                if lines_printed > 0:
+                    # Move cursor up and clear streamed content
+                    cli.console.print(f"\033[{lines_printed}A", end="")
+                    cli.console.print("\033[0J", end="")
+                
+                # Print the final complete result if there was streaming content
+                if streaming_output.strip():
+                    cli.console.print(streaming_output.strip())
                             
             except Exception as e:
                 cli.console.print(f"[bold red]Error during planning:[/bold red] {e}")

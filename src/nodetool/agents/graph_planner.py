@@ -17,8 +17,10 @@ select appropriate nodes, and design data flow connections.
 The system operates in three distinct phases:
 
 1. **Analysis Phase**: Interprets the user's objective, creates a high-level plan, and generates a DOT graph visualization
-2. **Workflow Design Phase**: Uses the DOT graph as a guide to select specific nodes and define data connections
-3. **Graph Creation Phase**: Converts the design into an executable graph structure
+2. **Design Phase**: Uses the DOT graph as a guide to select specific nodes and define data connections
+3. **Validation Phase**: Validates the designed workflow for type compatibility and structural integrity
+
+Graph creation occurs as the final step after successful validation.
 
 ### 2. Embedded Edge Format
 
@@ -67,12 +69,12 @@ digraph workflow {
 
 ### 6. Type Safety and Validation
 
-The GraphPlanner enforces strict type safety:
+The GraphPlanner includes type safety features:
 
-- Validates node types exist in the registry
-- Checks edge connections for type compatibility
+- Validates node types through SearchNodesTool registry lookup
+- Performs basic type compatibility checking for edge connections
 - Ensures Input/Output nodes match schema requirements
-- Provides helpful suggestions for type mismatches
+- Validation occurs during the dedicated validation phase
 
 ## Usage Example
 
@@ -88,13 +90,19 @@ planner = GraphPlanner(
     output_schema=[
         GraphOutput(name="report", type=TypeMetadata(type="string"),
                     description="Summary report")
-    ]
+    ],
+    inputs={},  # Optional: Pre-defined input values
+    existing_graph=None,  # Optional: Extend existing graph
+    system_prompt=None,  # Optional: Custom system prompt
+    max_tokens=8192,  # Optional: Token limit for LLM
+    verbose=True  # Optional: Enable detailed logging
 )
 
 # Generate the graph
 async for update in planner.create_graph(context):
     if isinstance(update, PlanningUpdate):
         print(f"Phase: {update.phase}, Status: {update.status}")
+    # Note: create_graph yields both Chunk and PlanningUpdate objects
 
 # Access the generated graph
 graph = planner.graph
@@ -103,10 +111,10 @@ graph = planner.graph
 ## Key Components
 
 - **GraphPlanner**: Main orchestrator class
-- **SearchNodesTool**: Helps LLM find available node types
+- **SearchNodesTool**: Helps LLM find available node types (excludes agent namespaces)
 - **Validation Functions**: Ensure graph correctness at each phase
 - **Type Compatibility Checker**: Validates connections between nodes
-- **Visual Graph Printer**: ASCII representation for debugging
+- **Visual Graph Printer**: Logs visual graph representation for debugging
 
 ## Benefits of Embedded Edge Format
 
@@ -124,19 +132,22 @@ separate nodes and edges arrays for execution by the WorkflowRunner.
 import asyncio
 import json
 import logging
-from typing import Any, AsyncGenerator, Dict, List, Optional
+from typing import Any, AsyncGenerator, Dict, List, Optional, cast
 import traceback
 from nodetool.chat.providers.anthropic_provider import AnthropicProvider
 from nodetool.metadata.type_metadata import TypeMetadata
 from nodetool.metadata.typecheck import typecheck
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from enum import Enum
 
 from jinja2 import Environment, BaseLoader
 
 from nodetool.agents.tools.help_tools import SearchNodesTool
-from nodetool.chat.providers import ChatProvider, OpenAIProvider
+from nodetool.agents.tools.base import Tool
+from nodetool.chat.providers import ChatProvider
 from nodetool.metadata.types import (
     Message,
+    ToolCall,
 )
 from nodetool.packages.registry import Registry
 from nodetool.workflows.base_node import BaseNode, InputNode, OutputNode, get_node_class
@@ -150,6 +161,148 @@ from nodetool.workflows.graph import Graph
 # Set up logger for this module
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
+
+
+
+REVISION_PROMPT_TEMPLATE = """
+# Workflow Design Revision Task
+
+The previous workflow design has been validated and requires improvement. You need to revise the design based on the validation feedback below.
+
+## Original Objective
+{{ objective }}
+
+## Previous Design
+The previous workflow design included:
+
+**Node Count:** {{ node_count }}
+
+**Node Specifications:**
+{{ original_nodes }}
+
+## Validation Results
+
+**Validation Status:** {{ validation_status }}
+
+**Objective Fulfillment Score:** {{ obj_fulfillment_score }}/10
+**Analysis:** {{ obj_fulfillment_analysis }}
+
+**Design Consistency Score:** {{ design_consistency_score }}/10
+**Analysis:** {{ design_consistency_analysis }}
+
+**Flow Correctness Score:** {{ flow_correctness_score }}/10
+**Analysis:** {{ flow_correctness_analysis }}
+
+**Recommendations:**
+{{ recommendations }}
+
+**Overall Assessment:**
+{{ overall_assessment }}
+
+## Revision Instructions
+
+Based on the validation feedback above, please revise the workflow design to address the identified issues:
+
+1. **Address Low Scores:** Focus on areas with scores below 8/10
+2. **Follow Recommendations:** Implement the specific recommendations provided
+3. **Improve Objective Fulfillment:** Ensure the revised design better addresses the original objective
+4. **Enhance Design Consistency:** Make sure the design follows logical flow and best practices
+5. **Fix Flow Issues:** Correct any data flow or connection problems identified
+
+## Your Task
+
+Please provide a revised workflow design that addresses the validation feedback. You may:
+- Modify existing nodes and their properties
+- Add new nodes if needed to improve functionality
+- Remove nodes that don't contribute to the objective
+- Restructure the data flow to be more logical and efficient
+- Use the SearchNodesTool to find better node types if needed
+
+You MUST use the submit_design_result tool to submit your revised workflow design. Do not provide JSON output directly - use the tool to submit your improved node specifications.
+"""
+
+
+# Pydantic models for type safety
+
+class ValidationStatus(str, Enum):
+    """Enum for validation status."""
+    PASSED = "passed"
+    FAILED = "failed"
+    NEEDS_REVISION = "needs_revision"
+
+
+class UsageContext(str, Enum):
+    """Enum for usage context."""
+    WORKFLOW = "workflow"
+    TOOL = "tool"
+    HYBRID = "hybrid"
+
+
+class InferredInput(BaseModel):
+    """Model for inferred input schema."""
+    name: str = Field(description="Input parameter name")
+    type: str = Field(description="Data type (str, int, float, bool, list, dict, image, video, audio, dataframe, document, any)")
+    description: str = Field(description="What this input represents")
+
+
+class InferredOutput(BaseModel):
+    """Model for inferred output schema."""
+    name: str = Field(description="Output parameter name")
+    type: str = Field(description="Data type (str, int, float, bool, list, dict, image, video, audio, dataframe, document, any)")
+    description: str = Field(description="What this output represents")
+
+
+class WorkflowAnalysisResult(BaseModel):
+    """Result model for workflow analysis phase."""
+    model_config = {"use_enum_values": True}
+    
+    objective_interpretation: str = Field(description="Clear interpretation of what the user wants to achieve")
+    workflow_approach: str = Field(description="High-level approach to solve the problem using a graph workflow")
+    expected_outcomes: List[str] = Field(description="List of expected outputs or results from the workflow")
+    constraints: List[str] = Field(description="Any constraints or special requirements identified")
+    assumptions: List[str] = Field(description="Assumptions made about the workflow")
+    required_namespaces: List[str] = Field(description="List of required node namespaces for the workflow")
+    workflow_graph_dot: str = Field(description="DOT graph notation representing the planned workflow structure")
+    inferred_inputs: List[InferredInput] = Field(description="Inferred input requirements based on the objective")
+    inferred_outputs: List[InferredOutput] = Field(description="Inferred output results based on the objective")
+    usage_context: UsageContext = Field(description="Whether this graph is meant to be used as a standalone workflow, as a tool for LLMs, or both")
+
+
+class NodeSpecification(BaseModel):
+    """Model for node specification in workflow design."""
+    node_id: str = Field(description="Unique identifier for the node (e.g., 'input_1', 'agent_1')")
+    node_type: str = Field(description="The exact node type from search_nodes results (e.g., 'nodetool.agents.Agent')")
+    purpose: str = Field(description="What this node does in the workflow and why it's needed")
+    properties: str = Field(description="JSON string of properties for the node")
+
+
+class WorkflowDesignResult(BaseModel):
+    """Result model for workflow design phase."""
+    node_specifications: List[NodeSpecification] = Field(description="Detailed specifications for processing nodes only (Input/Output nodes are automatically generated)")
+
+
+class ValidationScore(BaseModel):
+    """Model for validation score with analysis."""
+    score: int = Field(ge=1, le=10, description="Score from 1-10")
+    analysis: str = Field(description="Detailed analysis")
+
+
+class GraphValidationResult(BaseModel):
+    """Result model for graph validation phase."""
+    model_config = {"use_enum_values": True}
+    
+    validation_status: ValidationStatus = Field(description="Overall validation status of the generated graph")
+    objective_fulfillment: ValidationScore = Field(description="Score and analysis of how well the graph fulfills the original objective")
+    design_consistency: ValidationScore = Field(description="Score and analysis of consistency between analysis, design, and final graph")
+    flow_correctness: ValidationScore = Field(description="Score and analysis of correctness of data flow and node connections")
+    recommendations: List[str] = Field(description="List of recommendations for improvement (if any)")
+    overall_assessment: str = Field(description="Overall assessment summary and final verdict on the generated workflow")
+
+
+# Generate JSON schemas from Pydantic models
+WORKFLOW_ANALYSIS_SCHEMA = WorkflowAnalysisResult.model_json_schema()
+WORKFLOW_DESIGN_SCHEMA = WorkflowDesignResult.model_json_schema()
+GRAPH_VALIDATION_SCHEMA = GraphValidationResult.model_json_schema()
 
 
 def get_node_type_for_metadata(
@@ -213,6 +366,51 @@ def _is_type_compatible(source_type: TypeMetadata, target_type: TypeMetadata) ->
     return False
 
 
+class SubmitAnalysisResultTool(Tool):
+    """Tool for submitting workflow analysis results."""
+    name: str = "submit_analysis_result"
+    description: str = "Submit the final analysis result for the objective interpretation phase. Use this tool when you have completed your analysis and are ready to provide the structured result."
+    input_schema: Dict[str, Any] = WorkflowAnalysisResult.model_json_schema()
+
+    async def process(self, context: ProcessingContext, params: Dict[str, Any]) -> WorkflowAnalysisResult:
+        """Process the analysis result submission."""
+        try:
+            return WorkflowAnalysisResult.model_validate(params)
+        except Exception as e:
+            logger.error(f"Error validating analysis result: {e}")
+            raise ValueError(f"Invalid analysis result format: {e}")
+
+
+class SubmitDesignResultTool(Tool):
+    """Tool for submitting workflow design results."""
+    name: str = "submit_design_result"
+    description: str = "Submit the final workflow design result. Use this tool when you have completed your workflow design and are ready to provide the structured node specifications."
+    input_schema: Dict[str, Any] = WorkflowDesignResult.model_json_schema()
+
+    async def process(self, context: ProcessingContext, params: Dict[str, Any]) -> WorkflowDesignResult:
+        """Process the design result submission."""
+        try:
+            return WorkflowDesignResult.model_validate(params)
+        except Exception as e:
+            logger.error(f"Error validating design result: {e}")
+            raise ValueError(f"Invalid design result format: {e}")
+
+
+class SubmitValidationResultTool(Tool):
+    """Tool for submitting graph validation results."""
+    name: str = "submit_validation_result"
+    description: str = "Submit the final validation result for the graph. Use this tool when you have completed your validation analysis and are ready to provide the structured validation scores and assessment."
+    input_schema: Dict[str, Any] = GraphValidationResult.model_json_schema()
+
+    async def process(self, context: ProcessingContext, params: Dict[str, Any]) -> GraphValidationResult:
+        """Process the validation result submission."""
+        try:
+            return GraphValidationResult.model_validate(params)
+        except Exception as e:
+            logger.error(f"Error validating validation result: {e}")
+            raise ValueError(f"Invalid validation result format: {e}")
+
+
 # Now mappers are always available
 MAPPERS_AVAILABLE = True
 
@@ -223,8 +421,8 @@ def print_visual_graph(graph: APIGraph) -> None:
     logger.info("  " + "=" * 50)
 
     # Build adjacency information
-    adjacency = {}
-    reverse_adjacency = {}
+    adjacency: Dict[str, List[Any]] = {}
+    reverse_adjacency: Dict[str, List[Any]] = {}
     all_nodes = {node.id: node for node in graph.nodes}
 
     for edge in graph.edges:
@@ -320,138 +518,16 @@ def print_visual_graph(graph: APIGraph) -> None:
     logger.info("  " + "=" * 50)
 
 
-# Schema for Phase 1: Analysis
-WORKFLOW_ANALYSIS_SCHEMA = {
-    "type": "object",
-    "required": [
-        "objective_interpretation",
-        "workflow_approach",
-        "expected_outcomes",
-        "constraints",
-        "assumptions",
-        "required_namespaces",
-        "workflow_graph_dot",
-        "inferred_inputs",
-        "inferred_outputs",
-        "usage_context",
-    ],
-    "additionalProperties": False,
-    "properties": {
-        "objective_interpretation": {
-            "type": "string",
-            "description": "Clear interpretation of what the user wants to achieve",
-        },
-        "workflow_approach": {
-            "type": "string",
-            "description": "High-level approach to solve the problem using a graph workflow",
-        },
-        "expected_outcomes": {
-            "type": "array",
-            "description": "List of expected outputs or results from the workflow",
-            "items": {"type": "string"},
-        },
-        "constraints": {
-            "type": "array",
-            "description": "Any constraints or special requirements identified",
-            "items": {"type": "string"},
-        },
-        "assumptions": {
-            "type": "array",
-            "description": "Assumptions made about the workflow",
-            "items": {"type": "string"},
-        },
-        "required_namespaces": {
-            "type": "array",
-            "description": "List of required node namespaces for the workflow",
-            "items": {"type": "string"},
-        },
-        "workflow_graph_dot": {
-            "type": "string",
-            "description": "DOT graph notation representing the planned workflow structure",
-        },
-        "inferred_inputs": {
-            "type": "array",
-            "description": "Inferred input requirements based on the objective",
-            "items": {
-                "type": "object",
-                "required": ["name", "type", "description"],
-                "additionalProperties": False,
-                "properties": {
-                    "name": {"type": "string", "description": "Input parameter name"},
-                    "type": {"type": "string", "description": "Data type (str, int, float, bool, list, dict, image, video, audio, dataframe, document, any)"},
-                    "description": {"type": "string", "description": "What this input represents"},
-                }
-            },
-        },
-        "inferred_outputs": {
-            "type": "array",
-            "description": "Inferred output results based on the objective",
-            "items": {
-                "type": "object",
-                "required": ["name", "type", "description"],
-                "additionalProperties": False,
-                "properties": {
-                    "name": {"type": "string", "description": "Output parameter name"},
-                    "type": {"type": "string", "description": "Data type (str, int, float, bool, list, dict, image, video, audio, dataframe, document, any)"},
-                    "description": {"type": "string", "description": "What this output represents"},
-                }
-            },
-        },
-        "usage_context": {
-            "type": "string",
-            "enum": ["workflow", "tool", "hybrid"],
-            "description": "Whether this graph is meant to be used as a standalone workflow, as a tool for LLMs, or both",
-        },
-    },
-}
 
-# Schema for Phase 2: Node Selection and Dataflow
-WORKFLOW_DESIGN_SCHEMA = {
-    "type": "object",
-    "required": ["node_specifications"],
-    "additionalProperties": False,
-    "properties": {
-        "node_specifications": {
-            "type": "array",
-            "description": "Detailed specifications for processing nodes only (Input/Output nodes are automatically generated)",
-            "items": {
-                "type": "object",
-                "required": [
-                    "node_id",
-                    "node_type",
-                    "purpose",
-                    "properties",
-                ],
-                "additionalProperties": False,
-                "properties": {
-                    "node_id": {
-                        "type": "string",
-                        "description": "Unique identifier for the node (e.g., 'input_1', 'agent_1')",
-                    },
-                    "node_type": {
-                        "type": "string",
-                        "description": "The exact node type from search_nodes results (e.g., 'nodetool.agents.Agent')",
-                    },
-                    "purpose": {
-                        "type": "string",
-                        "description": "What this node does in the workflow and why it's needed",
-                    },
-                    "properties": {
-                        "type": "string",
-                        "description": "JSON string of properties for the node",
-                    },
-                },
-            },
-        },
-    },
-}
+
 
 
 DEFAULT_GRAPH_PLANNING_SYSTEM_PROMPT = """
 # GraphArchitect AI System Core Directives
 
 ## Mission
-As GraphArchitect AI, you are an intelligent system that transforms natural language objectives into executable workflow graphs. Your intelligence lies in automatically understanding what users want to accomplish and creating the appropriate graph structure without requiring manual specification of inputs and outputs.
+As GraphArchitect AI, you are an intelligent system that transforms natural language objectives into executable workflow graphs. 
+Your intelligence lies in automatically understanding what users want to accomplish and creating the appropriate graph structure without requiring manual specification of inputs and outputs.
 
 ## Intelligence Principles
 1. **Automatic Inference:** You MUST automatically infer required inputs and outputs from the user's objective. Do not require explicit schemas.
@@ -485,23 +561,39 @@ Each property and output has a name, type, and description.
 - description: What the property does
 - default: Default value if not connected
 
+## Input and Output Nodes
+
+Input and Output nodes are special nodes that are used to connect the workflow to the outside world.
+Use following mapping to create input:
+- string -> nodetool.input.StringInput
+- int -> nodetool.input.IntegerInput
+- float -> nodetool.input.FloatInput
+- bool -> nodetool.input.BooleanInput
+- list[any] -> nodetool.input.ListInput
+- image -> nodetool.input.ImageInput
+- video -> nodetool.input.VideoInput
+- document -> nodetool.input.DocumentInput
+- dataframe -> nodetool.input.DataFrameInput
+
+Use following mapping to create output:
+- string -> nodetool.output.StringOutput
+- int -> nodetool.output.IntegerOutput
+- float -> nodetool.output.FloatOutput
+- bool -> nodetool.output.BooleanOutput
+- list[any] -> nodetool.output.ListOutput
+- image -> nodetool.output.ImageOutput
+- video -> nodetool.output.VideoOutput
+- document -> nodetool.output.DocumentOutput
+- dataframe -> nodetool.output.DataFrameOutput
+
+
 ## Dynamic Properties
 Some nodes have `is_dynamic=true` in their metadata, which means:
 - **Flexible Configuration**: You can set any property name on these nodes, not just predefined ones
 - **Runtime Handling**: The node will dynamically process arbitrary properties during execution
 - **Custom Fields**: Create property names that match your specific workflow requirements
 - **Beyond Schema**: You're not limited to the properties listed in the node's metadata
-
-Example of using dynamic properties:
-```json
-{
-  "custom_field": "some_value",
-  "user_defined_param": {"type": "edge", "source": "input_node", "sourceHandle": "output"},
-  "workflow_specific_data": 42
-}
 ```
-
-**Important**: Always include any required properties from the metadata, but feel free to add additional custom properties for dynamic nodes.
 
 ## Type Compatibility Rules
 - Exact matches are always compatible (string -> string)
@@ -512,7 +604,7 @@ Example of using dynamic properties:
 
 ## Iterator Nodes: Processing Lists Item-by-Item
 
-Iterator nodes are special nodes that process lists by emitting each item individually to downstream nodes. They use a streaming pattern with events to coordinate processing.
+Iterator nodes are special nodes that process lists by emitting each item individually to downstream nodes. 
 
 ### Key Iterator Concepts:
 
@@ -533,27 +625,29 @@ Iterator nodes are special nodes that process lists by emitting each item indivi
 - **Process each item individually**: When you need to apply operations to each element of a list separately
 - **Item-specific transformations**: When each list item requires individual processing
 - **Conditional processing**: When you need to apply different logic to different items
-- **Parallel processing**: When you want multiple nodes to process the same items
 - **Streaming workflows**: When working with large lists that should be processed incrementally
 
 ### Important Notes:
 - Iterator nodes trigger downstream processing for each item in the list
 - Downstream nodes process one item at a time, not the entire list
-- Use CollectorNode when you need to gather results back into a list
-- Event connections are crucial for proper coordination between iterator and collector
-- **Stream to Output Conversion**: When an iterator stream (or any streaming node) connects directly to an Output node of type T, the system automatically collects all streamed values into a list[T]. You don't need a CollectorNode in this case - the Output node handles the collection automatically.
+- Output nodes automatically collect streamed items into a list[T]
 
 ## Streaming Node Behavior and Output Collection
 
-Some nodes, identifiable by `is_streaming=True` in their metadata, are designed to yield multiple outputs sequentially during their execution. This is common for iterators that process list items one-by-one, or nodes that break down data into multiple parts.
+Some nodes, identifiable by `is_streaming=True` in their metadata, are designed to yield multiple outputs sequentially during their execution. 
+This is common for iterators that process list items one-by-one.
 
 ### Key Streaming Concepts:
 
-1.  **Multiple Yields**: A node with `is_streaming=True` can produce a sequence of output values on a single output handle from one processing cycle. For example, an `Iterator` processes an input list and yields each item of the list individually through its `output` handle.
+1.  **Multiple Yields**: A node with `is_streaming=True` can produce a sequence of output values on a single output handle from one processing cycle. 
+    For example, an `Iterator` processes an input list and yields each item of the list individually through its `output` handle.
 
-2.  **Output Node Collection**: When a streaming node (e.g., an `Iterator` yielding items of type `T`) is connected to an Output node defined in the `output_schema` with type `T` (e.g., `string`), the Output node will automatically collect all the individual streamed items of type `T`. The system handles aggregating these items, typically into a list, when the graph execution completes or the stream ends.
-    - **Important**: When designing the graph and defining `output_schema`, if you expect a stream of items of type `T` to be collected by an Output node, you should declare that `GraphOutput` with type `T` (e.g., `string`), NOT `list[T]` (e.g., `list[string]`). The graph execution system manages the collection. This simplifies the graph's output signature.
-    - **Avoid `list[T]` for streamed outputs**: Do not define an Output node as `list[T]` if it's meant to collect a stream of `T` items. Use type `T` for the Output node, and the system will provide the collected list.
+2.  **Output Node Collection**: When a streaming node (e.g., an `Iterator` yielding items of type `T`) is connected to an Output node defined in the `output_schema` with type `T` (e.g., `string`), the Output node will automatically collect all the individual streamed items of type `T`. 
+    The system handles aggregating these items, typically into a list, when the graph execution completes or the stream ends.
+    - **Important**: When designing the graph and defining `output_schema`, if you expect a stream of items of type `T` to be collected by an Output node, you should declare that `GraphOutput` with type `T` (e.g., `string`), NOT `list[T]` (e.g., `list[string]`). 
+    The graph execution system manages the collection. This simplifies the graph's output signature.
+    - **Avoid `list[T]` for streamed outputs**: Do not define an Output node as `list[T]` if it's meant to collect a stream of `T` items. 
+    Use type `T` for the Output node, and the system will provide the collected list.
 
 3.  **Edge Validation for Streaming Outputs**:
     - When connecting a streaming node (source) to an Output node (target), ensure the type compatibility check considers the *individual item type* yielded by the streaming source.
@@ -657,16 +751,18 @@ Your new DOT graph should represent the final, desired state of the graph after 
 **No output schema provided - you MUST infer outputs from the objective**
 {%- endif %}
 
-Return ONLY the JSON object matching the schema, no additional text.
+You MUST use the submit_analysis_result tool to submit your analysis. Do not provide any JSON output directly - use the tool to submit your structured analysis result.
 """
 
 WORKFLOW_DESIGN_PROMPT = """
 # PHASE 2: WORKFLOW DESIGN (NODE SELECTION & DATAFLOW)
 
 ## Goal
-Based on the previous analysis, design the PART of the workflow by selecting appropriate intermediate nodes and defining how data flows between them. Use the search_nodes tool to find specific node types and understand their inputs/outputs to create proper connections.
+Based on the previous analysis, design the COMPLETE workflow by selecting appropriate intermediate nodes and defining ALL data flow connections between them. Use the search_nodes tool to find specific node types and understand their inputs/outputs to create proper connections.
 
-**IMPORTANT: You MUST create ALL nodes including Input and Output nodes. The Input and Output node types are already specified in the context below - use those exact types without searching for them. The system will validate that your Input and Output nodes match the provided schema.**
+**CRITICAL: You MUST create ALL nodes including Input and Output nodes AND ALL necessary edge connections between them. Every node that requires input must have its input properties connected via edges. The system will validate that your graph has complete data flow.**
+
+**EDGE CONNECTION REQUIREMENT: After creating all nodes, you MUST ensure that every processing node receives its required inputs through edge connections. Missing edge connections will cause validation failures.**
 
 Review the previous analysis phase conversation above to understand:
 - The objective interpretation 
@@ -688,18 +784,25 @@ When returning the final `node_specifications`, you may reuse `node_id`s from th
 Analyze the user's request and the existing graph to determine which nodes to add, remove, or re-wire.
 {%- endif %}
 
-## Using `search_nodes` Effectively
-When using the `search_nodes` tool to find nodes:
+## Using `search_nodes` Efficiently
+**EFFICIENCY PRIORITY:** Minimize the number of search iterations by being strategic and comprehensive:
+
+- **Plan your searches:** Before starting, identify all the different types of processing you need (e.g., data transformation, aggregation, visualization, text generation)
+- **Batch similar searches:** If you need multiple data processing nodes, search for them together with broader queries
+- **Use specific, descriptive queries:** Instead of generic terms, use specific keywords that target exactly what you need
+- **Target the right namespaces:** Most functionality is in `nodetool.data` (dataframes), `nodetool.text` (text processing), `nodetool.code` (custom code), `lib.*` (visualization/specialized tools)
+
+When using the `search_nodes` tool:
 - Provide a `query` with keywords describing the node's function (e.g., "convert", "summarize", "filter data").
-- **By default, prefer to omit `input_type` and `output_type` parameters to search broadly across all types.** This allows the tool to find the most relevant nodes regardless of specific type constraints initially.
-- **Only specify `input_type` or `output_type` if your initial broad search yields ambiguous or too many irrelevant results, and you need to narrow down the search to a specific data type.** For instance, if a general search for "process data" is too vague, you might then refine it with `input_type="dataframe"` if you are specifically looking for dataframe processing nodes.
-- The available types for `input_type` and `output_type` are: "str", "int", "float", "bool", "list", "dict", "tuple", "union", "enum", "any".
-- If you are looking for a node that explicitly handles 'any' type or a generic operation, omitting type parameters is the best approach.
+- **Start with targeted searches using `input_type` and `output_type` when you know the data types** - this reduces irrelevant results and speeds up the process
+- **Only use broad searches without type parameters if you're unsure about available node types** 
+- The available types for `input_type` and `output_type` are: "str", "int", "float", "bool", "list", "dict", "tuple", "union", "enum", "any"
+- **Search for multiple related functionalities in a single query** when possible (e.g., "dataframe group aggregate sum" instead of separate searches)
 
 ## Instructions - Node Selection
 1. **Create ALL nodes including Input and Output nodes.** For Input and Output nodes, use the exact node types provided in the context below (do NOT search for them). Only search for intermediate processing nodes.
    
-2. **Search for intermediate processing nodes using `search_nodes`**. Apply `input_type` and `output_type` filters whenever the data type is known to get more accurate results.
+2. **Search for intermediate processing nodes using `search_nodes`**. Be strategic with searches - use specific, targeted queries to find the most appropriate nodes. Prefer fewer, more powerful nodes over many simple ones to improve efficiency.
    - **For dataframe operations**: Search with relevant keywords (e.g., "GroupBy", "Aggregate", "Filter", "Transform", "dataframe"). Many dataframe nodes are in the `nodetool.data` namespace.
    - **For list operations**: Search with `input_type="list"` or `output_type="list"` and relevant keywords.
    - **For text operations**: Search with `input_type="str"` or `output_type="str"` (e.g., "concatenate", "regex", "template").
@@ -733,13 +836,27 @@ Example connections:
 - From an Input node: `{"type": "edge", "source": "input_id", "sourceHandle": "output"}`
 - To an Output node: Connect your final node to the output using a `value` property in your node specifications
 
-## Instructions - Dataflow Design
-5. **Connect nodes based on type compatibility:**
+## Instructions - Dataflow Design & Edge Creation
+5. **MANDATORY: Create ALL required edge connections.** Every processing node must have its input properties connected to appropriate source nodes via edges:
+   - Trace data flow from Input nodes through processing nodes to Output nodes
+   - Connect EVERY required input property of EVERY processing node
+   - Use the node metadata from `search_nodes` to identify which properties need connections
+   - Template nodes: ALL template variables (referenced as `{{ variable_name }}`) MUST have corresponding edge connections
+
+6. **Edge Connection Checklist - VERIFY BEFORE SUBMITTING:**
+   - ✓ Every Input node connects to at least one processing node
+   - ✓ Every processing node has ALL its required input properties connected
+   - ✓ Every Output node receives data from a processing node via its "value" property
+   - ✓ Template nodes have edge connections for ALL variables used in their templates
+   - ✓ Chart/visualization nodes connect their output to encoding/processing nodes if needed
+   - ✓ No processing nodes are left as isolated islands without connections
+
+7. **Connect nodes based on type compatibility:**
    - Exact type matches are always safe
    - Use converter nodes for type mismatches (find them with `search_nodes`)
    - Check node metadata from `search_nodes` for actual input/output types for nodes.
 
-6. **Common connection patterns:**
+8. **Common connection patterns:**
    - Input → Node → Output
    - Input → Node → Node → Output
    - Input → Node → Node → Node → Output
@@ -750,6 +867,17 @@ Example connections:
 - ✗ dataframe → list operations (needs conversion, search for a converter node)
 - ✗ LoadCSVFile as input node (use proper Input node type as recommended or found via `search_nodes`)
 
+## FINAL VALIDATION CHECKLIST
+Before submitting your node specifications, verify:
+
+1. **Complete Data Flow:** Every node that needs input has edge connections defined in its properties
+2. **Template Variables:** If using template nodes, ALL variables in the template string have corresponding edge connections
+3. **Output Connectivity:** All Output nodes receive data via their "value" property connection
+4. **No Orphaned Nodes:** Every node participates in the data flow from inputs to outputs
+5. **Proper Node Types:** All intermediate nodes use valid types found via `search_nodes`
+
+**REMEMBER:** The evaluation showed that many workflows fail due to missing edge connections. Your graph must have COMPLETE data flow connectivity to pass validation.
+
 ## Context
 **User's Objective:**
 {{ objective }}
@@ -759,6 +887,8 @@ Example connections:
 
 **Output Nodes:**
 {{ output_nodes }}
+
+You MUST use the submit_design_result tool to submit your workflow design. Do not provide JSON output directly - use the tool to submit your structured node specifications.
 """
 
 
@@ -797,7 +927,7 @@ class GraphPlanner:
         output_schema: list[GraphOutput] = [],
         existing_graph: Optional[APIGraph] = None,
         system_prompt: Optional[str] = None,
-        max_tokens: int = 20000,
+        max_tokens: int = 8192,
         verbose: bool = True,
     ):
         """Initialize the GraphPlanner.
@@ -853,7 +983,7 @@ class GraphPlanner:
         
         logger.debug(f"GraphPlanner initialized for objective: {objective[:100]}...")
 
-    def _build_initial_node_representations(self):
+    def _build_initial_node_representations(self) -> None:
         """Build initial input/output node representations from current schemas."""
         self._input_nodes = [
             {
@@ -1038,29 +1168,29 @@ class GraphPlanner:
 
         return input_schema
 
-    def _process_inferred_schemas(self, analysis_result: Dict[str, Any]) -> None:
+    def _process_inferred_schemas(self, analysis_result: WorkflowAnalysisResult) -> None:
         """Process inferred input/output schemas from analysis phase and update instance schemas."""
         # Update input schema if not already provided
-        if not self.input_schema and "inferred_inputs" in analysis_result:
-            inferred_inputs = analysis_result["inferred_inputs"]
+        if not self.input_schema and analysis_result.inferred_inputs:
+            inferred_inputs = analysis_result.inferred_inputs
             self.input_schema = [
                 GraphInput(
-                    name=inp["name"],
-                    type=TypeMetadata(type=inp["type"]),
-                    description=inp["description"]
+                    name=inp.name,
+                    type=TypeMetadata(type=inp.type),
+                    description=inp.description
                 )
                 for inp in inferred_inputs
             ]
             logger.info(f"Using inferred input schema: {[inp.name + ':' + inp.type.type for inp in self.input_schema]}")
 
         # Update output schema if not already provided  
-        if not self.output_schema and "inferred_outputs" in analysis_result:
-            inferred_outputs = analysis_result["inferred_outputs"]
+        if not self.output_schema and analysis_result.inferred_outputs:
+            inferred_outputs = analysis_result.inferred_outputs
             self.output_schema = [
                 GraphOutput(
-                    name=out["name"],
-                    type=TypeMetadata(type=out["type"]),
-                    description=out["description"]
+                    name=out.name,
+                    type=TypeMetadata(type=out.type),
+                    description=out.description
                 )
                 for out in inferred_outputs
             ]
@@ -1070,19 +1200,19 @@ class GraphPlanner:
         self._build_initial_node_representations()
 
         # Log usage context if available
-        if "usage_context" in analysis_result:
-            usage_context = analysis_result["usage_context"]
+        if analysis_result.usage_context:
+            usage_context = analysis_result.usage_context
             logger.info(f"Graph usage context: {usage_context}")
 
     def _build_nodes_and_edges_from_specifications(
         self,
-        node_specifications: List[Dict[str, Any]],
+        node_specifications: List[NodeSpecification],
     ) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
         """
         Build nodes and edges from node specifications.
 
         Args:
-            node_specifications: List of node specification dictionaries
+            node_specifications: List of NodeSpecification models
 
         Returns:
             Tuple of (nodes, edges) lists
@@ -1091,12 +1221,12 @@ class GraphPlanner:
         edges = []
 
         for spec in node_specifications:
-            node_id = spec["node_id"]
-            node_type = spec["node_type"]
+            node_id = spec.node_id
+            node_type = spec.node_type
             node_data = {}
 
-            # Process properties array and extract edges
-            properties_string = spec.get("properties", "{}")
+            # Process properties and extract edges
+            properties_string = spec.properties
             properties = json.loads(properties_string)
 
             for prop_name, prop_value in properties.items():
@@ -1126,7 +1256,7 @@ class GraphPlanner:
 
         return nodes, edges
 
-    def _get_prompt_context(self, **kwargs) -> Dict[str, Any]:
+    def _get_prompt_context(self, **kwargs: Any) -> Dict[str, Any]:
         """Build context for Jinja2 prompt rendering."""
         context = {
             **kwargs,
@@ -1142,7 +1272,7 @@ class GraphPlanner:
 
         return context
 
-    def _render_prompt(self, template_string: str, **kwargs) -> str:
+    def _render_prompt(self, template_string: str, **kwargs: Any) -> str:
         """Render a Jinja2 template with context."""
         template = self.jinja_env.from_string(template_string)
         return template.render(self._get_prompt_context(**kwargs))
@@ -1151,246 +1281,237 @@ class GraphPlanner:
         self,
         phase_name: str,
         prompt_content: str,
-        response_schema: Dict[str, Any],
-        schema_name: str,
+        response_model: type[BaseModel],
         tools: List[Any],
         context: ProcessingContext,
         history: List[Message],
         max_iterations: int = 5,
         max_validation_attempts: int = 5,
-        validation_fn=None,
-    ) -> tuple[List[Message], Dict[str, Any], Optional[PlanningUpdate]]:
-        """Generic method for running a phase with looped tool calling until completion with final structured output.
+        validation_fn: Optional[Any] = None,
+    ) -> AsyncGenerator[Chunk | ToolCall | tuple[List[Message], BaseModel, Optional[PlanningUpdate]], None]:
+        """Generic method for running a phase with single loop tool calling including output tool.
 
         Args:
             phase_name: Name of the phase for display purposes
             prompt_content: The prompt to send to the LLM
-            response_schema: JSON schema for structured output
-            schema_name: Name for the schema in structured output
-            tools: List of tools available to the LLM
+            response_model: Pydantic model class for structured output
+            tools: List of tools available to the LLM (output tool will be added)
             context: Processing context
             history: Message history
             max_iterations: Maximum tool calling iterations
             max_validation_attempts: Maximum attempts if validation fails
             validation_fn: Optional validation function that returns error message or empty string
         """
+        # Add appropriate output tool based on response model
+        output_tool_name = ""
+        if response_model == WorkflowAnalysisResult:
+            tools.append(SubmitAnalysisResultTool())
+            output_tool_name = "submit_analysis_result"
+        elif response_model == WorkflowDesignResult:
+            tools.append(SubmitDesignResultTool()) 
+            output_tool_name = "submit_design_result"
+        elif response_model == GraphValidationResult:
+            tools.append(SubmitValidationResultTool())
+            output_tool_name = "submit_validation_result"
+
         if self.verbose:
             logger.info(
                 f"[{phase_name}] Running: Starting {phase_name.lower()} phase..."
             )
 
         history.append(Message(role="user", content=prompt_content))
-
+        
+        result = None
+        
         try:
-            # Phase 1: Tool usage - let the LLM use tools
-            for i in range(max_iterations):
-                if self.verbose:
+            # Single loop with tool calling including output tool
+            for attempt in range(max_validation_attempts):
+                if self.verbose and attempt > 0:
                     logger.info(
-                        f"[{phase_name}] Running: LLM interaction (iteration {i + 1}/{max_iterations})..."
+                        f"[{phase_name}] Running: Retry attempt {attempt + 1}/{max_validation_attempts}..."
                     )
 
-                response = await self.provider.generate_message(
-                    messages=history,
-                    model=self.model,
-                    tools=tools,
-                    max_tokens=self.max_tokens,
-                )
-
-                if not response:
-                    raise Exception("LLM returned no response.")
-
-                history.append(response)
-
-                if response.tool_calls:
+                for i in range(max_iterations):
                     if self.verbose:
                         logger.info(
-                            f"[{phase_name}] Running: Executing {len(response.tool_calls)} tool call(s)..."
+                            f"[{phase_name}] Running: LLM interaction (iteration {i + 1}/{max_iterations})..."
                         )
-                    tool_messages_for_history: List[Message] = []
-                    for tool_call in response.tool_calls:
-                        tool_output_str = ""
-                        # Execute the tool call
-                        tool_found = False
-                        for tool_instance in tools:
-                            if tool_call.name == tool_instance.name:
-                                tool_found = True
-                                try:
-                                    params_for_tool = tool_call.args
-                                    if not isinstance(params_for_tool, dict):
-                                        logger.warning(
-                                            f"Tool call arguments for {tool_call.name} is not a dict: {tool_call.args}. Using empty dict."
-                                        )
-                                        params_for_tool = {}
 
-                                    if self.verbose:
-                                        logger.info(
-                                            f"[{phase_name}] Running: Processing tool: {tool_call.name} with args: {params_for_tool}"
-                                        )
-                                    tool_output = await tool_instance.process(
-                                        context, params_for_tool
-                                    )
-                                    tool_output_str = (
-                                        json.dumps(tool_output)
-                                        if tool_output is not None
-                                        else "Tool returned no output."
-                                    )
-                                    logger.debug(
-                                        f"Tool {tool_call.name} output: {tool_output_str[:200]}..."
-                                    )
-                                except Exception as e:
-                                    logger.error(
-                                        f"Error executing tool {tool_call.name}: {e}",
-                                        exc_info=True,
-                                    )
-                                    tool_output_str = f"Error executing tool {tool_call.name}: {str(e)}"
-                                    if self.verbose:
-                                        logger.error(
-                                            f"[{phase_name}] Running: Error in tool {tool_call.name}: {str(e)}"
-                                        )
-                                break
-
-                        if not tool_found:
-                            logger.warning(
-                                f"Received unknown tool call: {tool_call.name}"
-                            )
-                            tool_output_str = (
-                                f"Error: Unknown tool {tool_call.name} was called."
-                            )
-
-                        tool_messages_for_history.append(
-                            Message(
-                                role="tool",
-                                tool_call_id=tool_call.id,
-                                name=tool_call.name,
-                                content=tool_output_str,
-                            )
-                        )
-                    history.extend(tool_messages_for_history)
-                    # Continue to the next iteration to get LLM response after tool execution
-                else:
-                    # LLM is done with tools, break out to get structured output
-                    break
-
-            # Phase 2: Request structured output with validation attempts
-            for attempt in range(max_validation_attempts):
-                if self.verbose:
-                    logger.info(
-                        f"[{phase_name}] Running: Generating structured output (attempt {attempt + 1}/{max_validation_attempts})..."
-                    )
-
-                # Add instruction to provide structured output
-                if attempt == 0:
-                    history.append(
-                        Message(
-                            role="user",
-                            content=f"Based on your analysis, provide the {phase_name.lower()} result as a JSON object according to the specified schema. Return ONLY the JSON, no additional text.",
-                        )
-                    )
-                else:
-                    # Include validation error from previous attempt
-                    history.append(
-                        Message(
-                            role="user",
-                            content=f"The previous output failed validation. Please fix the issues and provide the {phase_name.lower()} result as a JSON object. Return ONLY the JSON, no additional text.",
-                        )
-                    )
-
-                # Request structured output
-                structured_response = await self.provider.generate_message(
-                    messages=history,
-                    model=self.model,
-                    response_format={
-                        "type": "json_schema",
-                        "json_schema": {
-                            "name": schema_name,
-                            "schema": response_schema,
-                            "strict": True,
-                        },
-                    },
-                    max_tokens=self.max_tokens,
-                )
-
-                if not structured_response or not isinstance(
-                    structured_response.content, str
-                ):
-                    raise ValueError(
-                        f"Failed to get structured {phase_name.lower()} output"
-                    )
-
-                try:
-                    result = json.loads(structured_response.content)
-                except Exception as e:
-                    logger.error(f"Error parsing structured output: {e}", exc_info=True)
-                    raise ValueError(f"Error parsing structured output: {e}")
-
-                history.append(
-                    Message(
+                    # Use streaming generate_messages and yield all chunks and tool calls
+                    response_content = ""
+                    tool_calls = []
+                    
+                    async for chunk in self.provider.generate_messages( # type: ignore
+                        messages=history,
+                        model=self.model,
+                        tools=tools,
+                        max_tokens=self.max_tokens,
+                    ):
+                        if isinstance(chunk, Chunk):
+                            if chunk.content:
+                                response_content += chunk.content
+                            # Yield chunk to frontend
+                            yield chunk
+                        elif isinstance(chunk, ToolCall):
+                            tool_calls.append(chunk)
+                            # Yield tool call to frontend
+                            yield chunk
+                    
+                    # Create response message from accumulated content and tool calls
+                    response = Message(
                         role="assistant",
-                        content=structured_response.content,
+                        content=response_content if response_content else None,
+                        tool_calls=tool_calls if tool_calls else None,
                     )
-                )
 
-                # Run validation if provided
-                if validation_fn:
-                    error_message = validation_fn(result)
-                    if error_message:
-                        logger.warning(
-                            f"{phase_name} validation failed: {error_message}"
-                        )
-                        # Add error to history for next attempt
+                    if not response:
+                        raise Exception("LLM returned no response.")
+
+                    history.append(response)
+
+                    if response.tool_calls:
+                        if self.verbose:
+                            logger.info(
+                                f"[{phase_name}] Running: Executing {len(response.tool_calls)} tool call(s)..."
+                            )
+                        tool_messages_for_history: List[Message] = []
+                        for tool_call in response.tool_calls:
+                            tool_output_str = ""
+                            # Execute the tool call
+                            tool_found = False
+                            for tool_instance in tools:
+                                if tool_call.name == tool_instance.name:
+                                    tool_found = True
+                                    try:
+                                        params_for_tool = tool_call.args
+                                        if not isinstance(params_for_tool, dict):
+                                            logger.warning(
+                                                f"Tool call arguments for {tool_call.name} is not a dict: {tool_call.args}. Using empty dict."
+                                            )
+                                            params_for_tool = {}
+
+                                        if self.verbose:
+                                            logger.info(
+                                                f"[{phase_name}] Running: Processing tool: {tool_call.name} with args: {params_for_tool}"
+                                            )
+                                        tool_output = await tool_instance.process(
+                                            context, params_for_tool
+                                        )
+                                        
+                                        # Check if this is an output tool result
+                                        if tool_call.name == output_tool_name and isinstance(tool_output, response_model):
+                                            result = tool_output
+                                            tool_output_str = "Result submitted successfully."
+                                        else:
+                                            tool_output_str = (
+                                                json.dumps(tool_output)
+                                                if tool_output is not None
+                                                else "Tool returned no output."
+                                            )
+                                        
+                                        logger.debug(
+                                            f"Tool {tool_call.name} output: {tool_output_str[:200]}..."
+                                        )
+                                    except Exception as e:
+                                        logger.error(
+                                            f"Error executing tool {tool_call.name}: {e}",
+                                            exc_info=True,
+                                        )
+                                        tool_output_str = f"Error executing tool {tool_call.name}: {str(e)}"
+                                        if self.verbose:
+                                            logger.error(
+                                                f"[{phase_name}] Running: Error in tool {tool_call.name}: {str(e)}"
+                                            )
+                                    break
+
+                            if not tool_found:
+                                logger.warning(
+                                    f"Received unknown tool call: {tool_call.name}"
+                                )
+                                tool_output_str = (
+                                    f"Error: Unknown tool {tool_call.name} was called."
+                                )
+
+                            tool_messages_for_history.append(
+                                Message(
+                                    role="tool",
+                                    tool_call_id=tool_call.id,
+                                    name=tool_call.name,
+                                    content=tool_output_str,
+                                )
+                            )
+                        history.extend(tool_messages_for_history)
+                        
+                        # Check if we got the result from output tool
+                        if result is not None:
+                            break
+                        # Continue to the next iteration to get LLM response after tool execution
+                    else:
+                        # LLM didn't call any tools, this is an error - prompt again for output tool
                         history.append(
                             Message(
                                 role="user",
-                                content=f"Validation failed: {error_message}",
+                                content=f"You must call the {output_tool_name} tool to submit your {phase_name.lower()} result. Please use the tool to provide your structured output.",
                             )
                         )
                         continue
+                
+                # If we got here and have a result, validate it
+                if result is not None:
+                    # Run validation if provided
+                    if validation_fn:
+                        error_message = validation_fn(result)
+                        if error_message:
+                            logger.warning(
+                                f"{phase_name} validation failed: {error_message}"
+                            )
+                            # Add error to history for next attempt
+                            history.append(
+                                Message(
+                                    role="user",
+                                    content=f"Validation failed: {error_message}. Please fix the issues and call {output_tool_name} again with corrected data.",
+                                )
+                            )
+                            result = None  # Reset result for retry
+                            continue
+                    
+                    # Success
+                    if self.verbose:
+                        logger.info(f"[{phase_name}] Success: {phase_name} complete")
 
-                # Success
-                if self.verbose:
-                    logger.info(f"[{phase_name}] Success: {phase_name} complete")
-
-                return (
-                    history,
-                    result,
-                    PlanningUpdate(
-                        phase=phase_name,
-                        status="Success",
-                        content=f"{phase_name} complete",
-                    ),
-                )
+                    # Yield the final result as a tuple
+                    yield (
+                        history,
+                        result,
+                        PlanningUpdate(
+                            phase=phase_name,
+                            status="Success",
+                            content=f"{phase_name} complete",
+                        ),
+                    )
+                    return
+                else:
+                    # No result was obtained, add instruction for next attempt
+                    history.append(
+                        Message(
+                            role="user",
+                            content=f"You must call the {output_tool_name} tool to submit your {phase_name.lower()} result. Please analyze the requirements and submit your structured output using the tool.",
+                        )
+                    )
 
             # All validation attempts failed
             raise ValueError(
-                f"{phase_name} failed validation after {max_validation_attempts} attempts"
+                f"{phase_name} failed to produce valid result after {max_validation_attempts} attempts"
             )
+
 
         except Exception as e:
             logger.error(f"{phase_name} phase failed critically: {e}", exc_info=True)
-            phase_status = "Failed"
-            error_content = f"Error: {str(e)}"
-            if self.verbose:
-                logger.error(f"[{phase_name}] {phase_status}: {error_content}")
-
-            # Clean history on error
-            cleaned_history = []
-            for msg in history:
-                if msg.role in ["system", "user"]:
-                    cleaned_history.append(msg)
-                elif msg.role == "assistant" and not msg.tool_calls:
-                    cleaned_history.append(msg)
-
-            return (
-                cleaned_history,
-                {},
-                PlanningUpdate(
-                    phase=phase_name, status=phase_status, content=error_content
-                ),
-            )
+            raise e
 
     async def _run_analysis_phase(
         self, context: ProcessingContext, history: List[Message]
-    ) -> tuple[List[Message], Dict[str, Any], Optional[PlanningUpdate]]:
+    ) -> AsyncGenerator[Chunk | ToolCall | tuple[List[Message], WorkflowAnalysisResult, Optional[PlanningUpdate]], None]:
         """Run the analysis phase to understand objectives and design workflow."""
         namespaces = self._get_namespaces()
 
@@ -1399,31 +1520,61 @@ class GraphPlanner:
             namespaces=list(namespaces),
         )
 
-        return await self._run_phase_with_tools(
+        async for item in self._run_phase_with_tools(
             phase_name="Analysis",
             prompt_content=analysis_prompt_content,
-            response_schema=WORKFLOW_ANALYSIS_SCHEMA,
-            schema_name="WorkflowAnalysis",
+            response_model=WorkflowAnalysisResult,
             tools=[SearchNodesTool()],
             context=context,
             history=history,
             max_iterations=1,  # No tool iterations needed
             max_validation_attempts=1,  # No validation for analysis phase
             validation_fn=None,
-        )
+        ):
+            if isinstance(item, tuple):
+                # Final result tuple
+                history, result, update = item
+                yield (history, cast(WorkflowAnalysisResult, result), update)
+            else:
+                # Stream chunk or tool call
+                yield item
 
-    def _validate_workflow_design(self, result: Dict[str, Any]) -> str:
+    def _validate_workflow_design(self, result: WorkflowDesignResult) -> str:
         """Validate the complete workflow design (nodes + edges)."""
         error_messages = []
 
-        # Validate dataflow analysis using the same logic but with the combined result
-        dataflow_errors = self._validate_graph_edge_types(result)
+        # Check for metadata_info properties in node specifications and remove them
+        cleaned_specs = []
+        for spec in result.node_specifications:
+            try:
+                properties = json.loads(spec.properties)
+                # Remove metadata_info if it exists
+                if "metadata_info" in properties:
+                    properties.pop("metadata_info")
+                    logger.debug(f"Removed metadata_info from node {spec.node_id}")
+                cleaned_properties = json.dumps(properties)
+                cleaned_spec = NodeSpecification(
+                    node_id=spec.node_id,
+                    node_type=spec.node_type,
+                    purpose=spec.purpose,
+                    properties=cleaned_properties
+                )
+                cleaned_specs.append(cleaned_spec)
+            except (json.JSONDecodeError, TypeError):
+                # If properties are malformed, keep original
+                cleaned_specs.append(spec)
+        
+        # Create cleaned result
+        cleaned_result = WorkflowDesignResult(node_specifications=cleaned_specs)
+
+        # Validate dataflow analysis using the cleaned result
+        dataflow_errors = self._validate_graph_edge_types(cleaned_result)
         if dataflow_errors:
             error_messages.append(dataflow_errors)
 
         # If initial validations pass, create a real Graph and validate edge types
         if not error_messages:
-            graph_validation_errors = self._validate_graph_edge_types(result)
+            graph_validation_errors = self._validate_graph_edge_types(cleaned_result)
             if graph_validation_errors:
                 error_messages.append(graph_validation_errors)
 
@@ -1433,15 +1584,14 @@ class GraphPlanner:
         self,
         context: ProcessingContext,
         history: List[Message],
-    ) -> tuple[List[Message], Dict[str, Any], Optional[PlanningUpdate]]:
+    ) -> AsyncGenerator[Chunk | ToolCall | tuple[List[Message], WorkflowDesignResult, Optional[PlanningUpdate]], None]:
         """Run the combined workflow design phase with SearchNodesTool."""
         workflow_design_prompt = self._render_prompt(WORKFLOW_DESIGN_PROMPT)
 
-        return await self._run_phase_with_tools(
+        async for item in self._run_phase_with_tools(
             phase_name="Workflow Design",
             prompt_content=workflow_design_prompt,
-            response_schema=WORKFLOW_DESIGN_SCHEMA,
-            schema_name="WorkflowDesign",
+            response_model=WorkflowDesignResult,
             tools=[
                 SearchNodesTool(
                     exclude_namespaces=[
@@ -1454,7 +1604,255 @@ class GraphPlanner:
             max_iterations=8,  # Allow more iterations since this is a combined phase
             max_validation_attempts=5,
             validation_fn=self._validate_workflow_design,
+        ):
+            if isinstance(item, tuple):
+                # Final result tuple
+                history, result, update = item
+                yield (history, cast(WorkflowDesignResult, result), update)
+            else:
+                # Stream chunk or tool call
+                yield item
+
+    async def _run_graph_validation_phase(
+        self,
+        context: ProcessingContext,
+        history: List[Message],
+        analysis_result: WorkflowAnalysisResult,
+        workflow_result: WorkflowDesignResult,
+    ) -> AsyncGenerator[Chunk | ToolCall | tuple[List[Message], GraphValidationResult, Optional[PlanningUpdate]], None]:
+        """Run the graph validation phase to review the generated graph against analysis and design."""
+        
+        # Create a comprehensive prompt for validation
+        validation_prompt = self._create_validation_prompt(analysis_result, workflow_result)
+        
+        async for item in self._run_phase_with_tools(
+            phase_name="Graph Validation",
+            prompt_content=validation_prompt,
+            response_model=GraphValidationResult,
+            tools=[],  # No tools needed for validation
+            context=context,
+            history=history,
+            max_iterations=1,  # Simple validation, no iterations needed
+            max_validation_attempts=3,
+            validation_fn=None,  # The schema itself validates the structure
+        ):
+            if isinstance(item, tuple):
+                # Final result tuple
+                history, result, update = item
+                yield (history, cast(GraphValidationResult, result), update)
+            else:
+                # Stream chunk or tool call
+                yield item
+
+    async def _run_workflow_design_revision_phase(
+        self,
+        context: ProcessingContext,
+        history: List[Message],
+        original_workflow_result: WorkflowDesignResult,
+        validation_result: GraphValidationResult,
+    ) -> AsyncGenerator[Chunk | ToolCall | tuple[List[Message], WorkflowDesignResult, Optional[PlanningUpdate]], None]:
+        """Run a revised workflow design phase using validation feedback to improve the design."""
+        
+        # Create a revision prompt that includes the original design and validation feedback
+        revision_prompt = self._create_design_revision_prompt(original_workflow_result, validation_result)
+        
+        async for item in self._run_phase_with_tools(
+            phase_name="Design Revision",
+            prompt_content=revision_prompt,
+            response_model=WorkflowDesignResult,
+            tools=[
+                SearchNodesTool(
+                    exclude_namespaces=[
+                        "nodetool.agents",
+                    ]
+                )
+            ],
+            context=context,
+            history=history,
+            max_iterations=6,  # Allow fewer iterations for revision
+            max_validation_attempts=3,
+            validation_fn=self._validate_workflow_design,
+        ):
+            if isinstance(item, tuple):
+                # Final result tuple
+                history, result, update = item
+                yield (history, cast(WorkflowDesignResult, result), update)
+            else:
+                # Stream chunk or tool call
+                yield item
+
+    def _create_design_revision_prompt(self, original_workflow_result: WorkflowDesignResult, validation_result: GraphValidationResult) -> str:
+        """Create a prompt for revising the workflow design based on validation feedback."""
+        
+        # Extract validation feedback details
+        validation_status = validation_result.validation_status
+        obj_fulfillment = validation_result.objective_fulfillment
+        design_consistency = validation_result.design_consistency
+        flow_correctness = validation_result.flow_correctness
+        recommendations = validation_result.recommendations
+        overall_assessment = validation_result.overall_assessment
+        
+        # Format original node specifications for reference
+        original_nodes = self._format_node_specifications_for_validation(
+            original_workflow_result.node_specifications
         )
+        
+        # Format recommendations
+        formatted_recommendations = chr(10).join(['- ' + rec for rec in recommendations]) if recommendations else 'No specific recommendations provided.'
+        
+        # Render template with variables
+        template = self.jinja_env.from_string(REVISION_PROMPT_TEMPLATE)
+        revision_prompt = template.render(
+            objective=self.objective,
+            node_count=len(original_workflow_result.node_specifications),
+            original_nodes=original_nodes,
+            validation_status=validation_status,
+            obj_fulfillment_score=obj_fulfillment.score,
+            obj_fulfillment_analysis=obj_fulfillment.analysis,
+            design_consistency_score=design_consistency.score,
+            design_consistency_analysis=design_consistency.analysis,
+            flow_correctness_score=flow_correctness.score,
+            flow_correctness_analysis=flow_correctness.analysis,
+            recommendations=formatted_recommendations,
+            overall_assessment=overall_assessment
+        )
+        
+        return revision_prompt
+
+    def _create_validation_prompt(self, analysis_result: WorkflowAnalysisResult, workflow_result: WorkflowDesignResult) -> str:
+        """Create a comprehensive validation prompt that includes analysis, design, and graph details."""
+        
+        # Get the current graph structure for validation
+        graph_summary = self._get_graph_summary_for_validation()
+        
+        validation_prompt = f"""
+# Graph Validation Task
+
+You are a workflow validation expert. Your task is to thoroughly review a generated workflow graph against the original analysis and design to ensure it correctly fulfills the intended objective.
+
+## Original Objective
+{self.objective}
+
+## Analysis Results
+The initial analysis phase identified the following:
+
+**Objective Interpretation:**
+{analysis_result.objective_interpretation}
+
+**Workflow Approach:**
+{analysis_result.workflow_approach}
+
+**Expected Outcomes:**
+{chr(10).join(['- ' + outcome for outcome in analysis_result.expected_outcomes])}
+
+**Inferred Input Schema:**
+{chr(10).join(['- ' + inp.name + ' (' + inp.type + '): ' + inp.description for inp in analysis_result.inferred_inputs])}
+
+**Inferred Output Schema:**
+{chr(10).join(['- ' + out.name + ' (' + out.type + '): ' + out.description for out in analysis_result.inferred_outputs])}
+
+**Usage Context:** {analysis_result.usage_context}
+
+**Constraints:**
+{chr(10).join(['- ' + constraint for constraint in analysis_result.constraints])}
+
+**Assumptions:**
+{chr(10).join(['- ' + assumption for assumption in analysis_result.assumptions])}
+
+## Design Results
+The workflow design phase created the following plan:
+
+**Node Count:** {len(workflow_result.node_specifications)}
+
+**Node Specifications:**
+{self._format_node_specifications_for_validation(workflow_result.node_specifications)}
+
+## Generated Graph Structure
+{graph_summary}
+
+## Validation Requirements
+
+Please perform a comprehensive validation by scoring each aspect from 1-10:
+
+1. **Objective Fulfillment (1-10):** Does the generated graph fully address the original objective?
+   - Check if all required functionality is present
+   - Verify that the workflow will produce the expected outcomes
+   - Assess completeness and correctness
+
+2. **Design Consistency (1-10):** How well does the final graph match the planned design?
+   - Compare nodes in the graph vs. planned specifications
+   - Check if data flow matches the intended design
+   - Verify that all planned components are implemented
+
+3. **Flow Correctness (1-10):** Are the data connections logical and correct?
+   - Validate input/output type compatibility
+   - Check for missing or incorrect connections
+   - Ensure proper data flow from inputs to outputs
+
+4. **Recommendations:** Provide specific, actionable recommendations for improvement (if any)
+
+5. **Overall Assessment:** Provide a comprehensive summary of the workflow's readiness and quality
+
+You MUST use the submit_validation_result tool to submit your validation assessment. Do not provide JSON output directly - use the tool to submit your structured validation results.
+"""
+        
+        return validation_prompt
+
+    def _get_graph_summary_for_validation(self) -> str:
+        """Generate a detailed graph summary for validation purposes."""
+        if not self.graph:
+            return "No graph generated."
+        
+        summary = "**Graph Overview:**\n"
+        summary += f"- Nodes: {len(self.graph.nodes)}\n"
+        summary += f"- Edges: {len(self.graph.edges)}\n\n"
+        
+        summary += "**Nodes:**\n"
+        for node in self.graph.nodes:
+            summary += f"- {node.id} [{node.type}]\n"
+            if hasattr(node, "data") and node.data:
+                for key, value in node.data.items():
+                    val_str = str(value)[:100] + "..." if len(str(value)) > 100 else str(value)
+                    summary += f"  - {key}: {val_str}\n"
+        
+        summary += "\n**Edges:**\n"
+        for edge in self.graph.edges:
+            summary += f"- {edge.source}({edge.sourceHandle}) → {edge.target}({edge.targetHandle})\n"
+        
+        return summary
+
+    def _format_node_specifications_for_validation(self, node_specs: List[NodeSpecification]) -> str:
+        """Format node specifications for the validation prompt."""
+        if not node_specs:
+            return "No node specifications available."
+        
+        formatted = ""
+        for spec in node_specs:
+            node_id = spec.node_id
+            node_type = spec.node_type
+            purpose = spec.purpose
+            
+            formatted += f"- **{node_id}** [{node_type}]\n"
+            formatted += f"  Purpose: {purpose}\n"
+            
+            # Format properties
+            properties_string = spec.properties
+            try:
+                properties = json.loads(properties_string)
+                if properties:
+                    formatted += "  Properties:\n"
+                    for prop_name, prop_value in properties.items():
+                        if isinstance(prop_value, dict) and prop_value.get("type") == "edge":
+                            formatted += f"    - {prop_name}: [edge from {prop_value.get('source')}.{prop_value.get('sourceHandle')}]\n"
+                        else:
+                            val_str = str(prop_value)[:50] + "..." if len(str(prop_value)) > 50 else str(prop_value)
+                            formatted += f"    - {prop_name}: {val_str}\n"
+            except (json.JSONDecodeError, TypeError):
+                formatted += f"  Properties: {properties_string}\n"
+            
+            formatted += "\n"
+        
+        return formatted
 
     def _is_edge_type_compatible_enhanced(self, source_type, target_type) -> bool:
         """
@@ -1508,7 +1906,7 @@ class GraphPlanner:
         # Default: types must match exactly
         return False
 
-    def _validate_graph_edge_types(self, result: Dict[str, Any]) -> str:
+    def _validate_graph_edge_types(self, result: WorkflowDesignResult) -> str:
         """Create a real Graph object and validate edge types using Graph.validate_edge_types()."""
         try:
             # Enrich node specifications with metadata
@@ -1516,7 +1914,7 @@ class GraphPlanner:
 
             # Build nodes and edges using the helper method
             nodes, edges = self._build_nodes_and_edges_from_specifications(
-                enriched_result.get("node_specifications", []),
+                enriched_result.node_specifications,
             )
 
             # Create graph dict
@@ -1600,13 +1998,14 @@ class GraphPlanner:
         return " ".join(error_messages)
 
     def _enrich_analysis_with_metadata(
-        self, analysis_result: Dict[str, Any]
-    ) -> Dict[str, Any]:
+        self, analysis_result: WorkflowDesignResult
+    ) -> WorkflowDesignResult:
         """Enrich the analysis result with actual node metadata from the registry."""
-        enriched_result = analysis_result.copy()
-
-        for node_spec in enriched_result.get("node_specifications", []):
-            node_type = node_spec.get("node_type")
+        # Create a copy of the result with enriched node specifications
+        enriched_specs = []
+        
+        for node_spec in analysis_result.node_specifications:
+            node_type = node_spec.node_type
             if node_type:
                 # Get the node class from registry
                 node_class = get_node_class(node_type)
@@ -1614,18 +2013,29 @@ class GraphPlanner:
                     # Get node metadata
                     metadata = node_class.get_metadata()
 
-                    # Extract properties and outputs
-                    node_spec["metadata_info"] = metadata.model_dump()
+                    # Create enriched node specification (keep original properties without metadata_info)
+                    enriched_spec = NodeSpecification(
+                        node_id=node_spec.node_id,
+                        node_type=node_spec.node_type,
+                        purpose=node_spec.purpose,
+                        properties=node_spec.properties
+                    )
+                    enriched_specs.append(enriched_spec)
 
                     logger.debug(
-                        f"Enriched metadata for {node_type}: {len(metadata.properties)} properties, {len(metadata.outputs)} outputs"
+                        f"Validated metadata for {node_type}: {len(metadata.properties)} properties, {len(metadata.outputs)} outputs"
                     )
                 else:
                     logger.warning(
                         f"Could not find node class for type: {node_type}"
                     )
+                    # Keep original spec if we can't enrich it
+                    enriched_specs.append(node_spec)
+            else:
+                # Keep original spec if no node type
+                enriched_specs.append(node_spec)
 
-        return enriched_result
+        return WorkflowDesignResult(node_specifications=enriched_specs)
 
     def log_graph_summary(self) -> None:
         """Log a summary of the generated graph for debugging."""
@@ -1646,7 +2056,7 @@ class GraphPlanner:
         logger.info(f"  - Total Edges: {len(self.graph.edges)}")
 
         # Count node types
-        node_type_counts = {}
+        node_type_counts: Dict[str, int] = {}
         for node in self.graph.nodes:
             node_type = node.type
             node_type_counts[node_type] = node_type_counts.get(node_type, 0) + 1
@@ -1692,11 +2102,19 @@ class GraphPlanner:
         current_phase = "Analysis"
         logger.info(f"Starting Phase 1: {current_phase}")
         yield PlanningUpdate(phase=current_phase, status="Starting", content=None)
-        history, analysis_result, planning_update = await self._run_analysis_phase(
-            context, history
-        )
-        if planning_update:
-            yield planning_update
+        
+        analysis_result = None
+        planning_update = None
+        async for item in self._run_analysis_phase(context, history):
+            if isinstance(item, tuple):
+                # Final result tuple
+                history, analysis_result, planning_update = item
+                if planning_update:
+                    yield planning_update
+            else:
+                # Stream chunk or tool call to frontend
+                yield item # type: ignore
+        
         if planning_update and planning_update.status == "Failed":
             error_msg = f"Analysis phase failed: {planning_update.content}"
             logger.error(error_msg)
@@ -1708,56 +2126,104 @@ class GraphPlanner:
         if analysis_result:
             self._process_inferred_schemas(analysis_result)
 
-        # Pretty print analysis results
+        # Pretty print analysis results and yield as chunks
         if self.verbose and analysis_result:
             logger.info("\n" + "=" * 60)
             logger.info("WORKFLOW ANALYSIS RESULTS")
             logger.info("=" * 60)
+            
+            # Build analysis summary to send to client
+            analysis_summary = "\n## 📊 Workflow Analysis Results\n\n"
+            
+            # Objective Interpretation
+            objective_interp = analysis_result.objective_interpretation
             logger.info("Objective Interpretation:")
-            logger.info(f"  {analysis_result.get('objective_interpretation', 'N/A')}")
+            logger.info(f"  {objective_interp}")
+            analysis_summary += f"**Objective Interpretation:**\n{objective_interp}\n\n"
+            
+            # Workflow Approach
+            workflow_approach = analysis_result.workflow_approach
             logger.info("\nWorkflow Approach:")
-            logger.info(f"  {analysis_result.get('workflow_approach', 'N/A')}")
+            logger.info(f"  {workflow_approach}")
+            analysis_summary += f"**Workflow Approach:**\n{workflow_approach}\n\n"
+            
+            # Expected Outcomes
             logger.info("\nExpected Outcomes:")
-            for outcome in analysis_result.get("expected_outcomes", []):
+            analysis_summary += "**Expected Outcomes:**\n"
+            for outcome in analysis_result.expected_outcomes:
                 logger.info(f"  • {outcome}")
+                analysis_summary += f"- {outcome}\n"
+            analysis_summary += "\n"
             
             # Print inferred schemas
-            if "inferred_inputs" in analysis_result:
+            if analysis_result.inferred_inputs:
                 logger.info("\nInferred Inputs:")
-                for inp in analysis_result["inferred_inputs"]:
-                    logger.info(f"  • {inp['name']} ({inp['type']}): {inp['description']}")
+                analysis_summary += "**Inferred Inputs:**\n"
+                for inp in analysis_result.inferred_inputs:
+                    logger.info(f"  • {inp.name} ({inp.type}): {inp.description}")
+                    analysis_summary += f"- `{inp.name}` ({inp.type}): {inp.description}\n"
+                analysis_summary += "\n"
             
-            if "inferred_outputs" in analysis_result:
+            if analysis_result.inferred_outputs:
                 logger.info("\nInferred Outputs:")
-                for out in analysis_result["inferred_outputs"]:
-                    logger.info(f"  • {out['name']} ({out['type']}): {out['description']}")
+                analysis_summary += "**Inferred Outputs:**\n"
+                for out in analysis_result.inferred_outputs:
+                    logger.info(f"  • {out.name} ({out.type}): {out.description}")
+                    analysis_summary += f"- `{out.name}` ({out.type}): {out.description}\n"
+                analysis_summary += "\n"
             
-            if "usage_context" in analysis_result:
-                logger.info(f"\nUsage Context: {analysis_result['usage_context']}")
+            usage_context = analysis_result.usage_context
+            logger.info(f"\nUsage Context: {usage_context}")
+            analysis_summary += f"**Usage Context:** {usage_context}\n\n"
             
-            logger.info("\nConstraints:")
-            for constraint in analysis_result.get("constraints", []):
-                logger.info(f"  • {constraint}")
-            logger.info("\nAssumptions:")
-            for assumption in analysis_result.get("assumptions", []):
-                logger.info(f"  • {assumption}")
+            # Constraints and Assumptions
+            if analysis_result.constraints:
+                logger.info("\nConstraints:")
+                analysis_summary += "**Constraints:**\n"
+                for constraint in analysis_result.constraints:
+                    logger.info(f"  • {constraint}")
+                    analysis_summary += f"- {constraint}\n"
+                analysis_summary += "\n"
+                
+            if analysis_result.assumptions:
+                logger.info("\nAssumptions:")
+                analysis_summary += "**Assumptions:**\n"
+                for assumption in analysis_result.assumptions:
+                    logger.info(f"  • {assumption}")
+                    analysis_summary += f"- {assumption}\n"
+                analysis_summary += "\n"
+            
+            # DOT Graph
             logger.info("\nPlanned Workflow Structure (DOT Graph):")
-            dot_graph = analysis_result.get("workflow_graph_dot", "N/A")
-            if dot_graph != "N/A":
+            dot_graph = analysis_result.workflow_graph_dot
+            if dot_graph:
+                analysis_summary += "**Planned Workflow Structure (DOT Graph):**\n```dot\n"
                 # Print the DOT graph with indentation
                 for line in dot_graph.split("\n"):
                     logger.info(f"  {line}")
+                analysis_summary += dot_graph + "\n```\n\n"
             logger.info("=" * 60)
+            
+            # Yield the analysis summary as a chunk
+            yield Chunk(content=analysis_summary, done=False)
 
         # Phase 2: Workflow Design (Combined Node Selection & Dataflow)
         current_phase = "Workflow Design"
         logger.info(f"Starting Phase 2: {current_phase}")
         yield PlanningUpdate(phase=current_phase, status="Starting", content=None)
-        history, workflow_result, planning_update = (
-            await self._run_workflow_design_phase(context, history)
-        )
-        if planning_update:
-            yield planning_update
+        
+        workflow_result = None
+        planning_update = None
+        async for item in self._run_workflow_design_phase(context, history):
+            if isinstance(item, tuple):
+                # Final result tuple
+                history, workflow_result, planning_update = item
+                if planning_update:
+                    yield planning_update
+            else:
+                # Stream chunk or tool call to frontend
+                yield item # type: ignore
+        
         if planning_update and planning_update.status == "Failed":
             error_msg = f"Workflow design phase failed: {planning_update.content}"
             logger.error(error_msg)
@@ -1765,25 +2231,39 @@ class GraphPlanner:
                 logger.error(f"[Overall Status] Failed: {error_msg}")
             raise ValueError(error_msg)
 
-        # Pretty print workflow design results
+        # Pretty print workflow design results and yield as chunks
         if self.verbose and workflow_result:
             logger.info("\n" + "=" * 60)
             logger.info("WORKFLOW DESIGN RESULTS")
             logger.info("=" * 60)
 
+            # Build design summary to send to client
+            design_summary = "\n## 🛠️ Workflow Design Results\n\n"
+
             # Print nodes
-            node_specifications = workflow_result.get("node_specifications", [])
+            node_specifications = workflow_result.node_specifications
             logger.info(f"Nodes ({len(node_specifications)}):")
+            design_summary += f"### Nodes ({len(node_specifications)})\n\n"
+            
             for spec in node_specifications:
-                logger.info(f"  ┌─ [{spec.get('node_id', 'unknown')}]")
-                logger.info(f"  │  Type: {spec.get('node_type', 'unknown')}")
-                logger.info(f"  │  Purpose: {spec.get('purpose', 'N/A')}")
+                node_id = spec.node_id
+                node_type = spec.node_type
+                purpose = spec.purpose
+                
+                logger.info(f"  ┌─ [{node_id}]")
+                logger.info(f"  │  Type: {node_type}")
+                logger.info(f"  │  Purpose: {purpose}")
+                
+                design_summary += f"#### `{node_id}`\n"
+                design_summary += f"- **Type**: `{node_type}`\n"
+                design_summary += f"- **Purpose**: {purpose}\n"
 
                 # Print properties
-                properties_string = spec.get("properties", "{}")
+                properties_string = spec.properties
                 properties = json.loads(properties_string)
                 if properties:
                     logger.info("  │  Properties:")
+                    design_summary += "- **Properties**:\n"
                     for prop_name, prop_value in properties.items():
                         if (
                             isinstance(prop_value, dict)
@@ -1792,16 +2272,26 @@ class GraphPlanner:
                             logger.info(
                                 f"  │    - {prop_name}: [edge from {prop_value.get('source')}.{prop_value.get('sourceHandle')}]"
                             )
+                            design_summary += f"  - `{prop_name}`: [edge from `{prop_value.get('source')}.{prop_value.get('sourceHandle')}`]\n"
                         else:
                             logger.info(f"  │    - {prop_name}: {prop_value}")
+                            # Truncate long values for display
+                            val_str = str(prop_value)
+                            if len(val_str) > 100:
+                                val_str = val_str[:100] + "..."
+                            design_summary += f"  - `{prop_name}`: {val_str}\n"
                 logger.info("  └─")
+                design_summary += "\n"
 
             # Extract and print edges from embedded format
             logger.info("\nEdges (extracted from properties):")
+            design_summary += "### Data Flow (Edges)\n\n"
             edge_count = 0
+            edges_list = []
+            
             for spec in node_specifications:
-                target_id = spec.get("node_id")
-                properties_string = spec.get("properties", "{}")
+                target_id = spec.node_id
+                properties_string = spec.properties
                 properties = json.loads(properties_string)
                 for prop_name, prop_value in properties.items():
                     if (
@@ -1814,93 +2304,295 @@ class GraphPlanner:
                         logger.info(
                             f"  • {source}({source_handle}) ──→ {target_id}({target_handle})"
                         )
+                        edges_list.append(f"- `{source}({source_handle})` → `{target_id}({target_handle})`")
                         edge_count += 1
 
             if edge_count == 0:
                 logger.info("  (No edges defined)")
+                design_summary += "*(No edges defined)*\n"
+            else:
+                design_summary += "\n".join(edges_list) + "\n"
 
             logger.info("=" * 60)
+            design_summary += "\n"
+            
+            # Yield the design summary as a chunk
+            yield Chunk(content=design_summary, done=False)
 
         # Enrich node specifications with actual metadata
         logger.info("Enriching node specifications with metadata from registry...")
+        assert workflow_result is not None
         enriched_workflow = self._enrich_analysis_with_metadata(workflow_result)
 
         yield PlanningUpdate(
             phase="Metadata Enrichment",
             status="Success",
-            content=f"Enhanced {len(enriched_workflow.get('node_specifications', []))} nodes with metadata",
+            content=f"Enhanced {len(enriched_workflow.node_specifications)} nodes with metadata",
         )
 
-        # Create graph directly from the workflow design
-        current_phase = "Graph Creation"
-        logger.info(f"Starting Phase 3: {current_phase}")
-        yield PlanningUpdate(phase=current_phase, status="Starting", content=None)
+        # Graph Creation and Validation Loop - iterate until validation passes or max attempts reached
+        max_revision_attempts = 3
+        validation_result = None
+        
+        for revision_attempt in range(max_revision_attempts):
+            attempt_suffix = f" (Attempt {revision_attempt + 1}/{max_revision_attempts})" if revision_attempt > 0 else ""
+            
+            # If this is a revision attempt, use validation feedback to improve the design
+            if revision_attempt > 0 and validation_result:
+                logger.info(f"Starting revision attempt {revision_attempt + 1} based on validation feedback")
+                yield PlanningUpdate(
+                    phase="Design Revision",
+                    status="Starting", 
+                    content=f"Revising design based on validation feedback (attempt {revision_attempt + 1}/{max_revision_attempts})"
+                )
+                
+                # Re-run workflow design phase with validation feedback
+                original_workflow_result = workflow_result
+                assert original_workflow_result is not None
+                workflow_result = None
+                planning_update = None
+                async for item in self._run_workflow_design_revision_phase(context, history, original_workflow_result, validation_result):
+                    if isinstance(item, tuple):
+                        # Final result tuple
+                        history, workflow_result, planning_update = item
+                        if planning_update:
+                            yield planning_update
+                    else:
+                        # Stream chunk or tool call to frontend
+                        yield item # type: ignore
+                
+                if planning_update and planning_update.status == "Failed":
+                    error_msg = f"Design revision phase failed: {planning_update.content}"
+                    logger.error(error_msg)
+                    if self.verbose:
+                        logger.error(f"[Overall Status] Failed: {error_msg}")
+                    raise ValueError(error_msg)
+                
+                # Re-enrich with metadata after revision
+                assert workflow_result is not None
+                enriched_workflow = self._enrich_analysis_with_metadata(workflow_result)
 
-        try:
-            # Build nodes and edges using the helper method
-            nodes, edges = self._build_nodes_and_edges_from_specifications(
-                enriched_workflow.get("node_specifications", []),
-            )
+            # Create graph directly from the workflow design
+            current_phase = f"Graph Creation{attempt_suffix}"
+            logger.info(f"Starting Phase 3: {current_phase}")
+            yield PlanningUpdate(phase=current_phase, status="Starting", content=None)
 
-            # Note: Input and Output nodes are now created by the LLM, not auto-generated
-            logger.info(
-                "Input and Output nodes will be created by the LLM based on schema hints"
-            )
-
-            # Create the final graph
-            self.graph = APIGraph(
-                nodes=nodes,  # type: ignore
-                edges=edges,  # type: ignore
-            )
-            logger.info(
-                f"Graph created successfully with {len(self.graph.nodes)} nodes and {len(self.graph.edges)} edges"
-            )
-
-            # Log the generated graph structure
-            logger.info("Generated Graph Structure:")
-            logger.info("=" * 80)
-
-            # Log nodes
-            logger.info(f"Nodes ({len(self.graph.nodes)}):")
-            for node in self.graph.nodes:
-                logger.info(f"  - ID: {node.id}")
-                logger.info(f"    Type: {node.type}")
-                if hasattr(node, "data") and node.data:
-                    logger.info(f"    Data: {json.dumps(node.data, indent=6)}")
-
-            # Log edges
-            logger.info(f"\nEdges ({len(self.graph.edges)}):")
-            for edge in self.graph.edges:
-                logger.info(
-                    f"  - {edge.source} ({edge.sourceHandle}) -> {edge.target} ({edge.targetHandle})"
+            try:
+                # Build nodes and edges using the helper method
+                nodes, edges = self._build_nodes_and_edges_from_specifications(
+                    enriched_workflow.node_specifications,
                 )
 
-            # Log the summary
-            self.log_graph_summary()
-
-            yield PlanningUpdate(
-                phase=current_phase,
-                status="Success",
-                content=f"Created graph with {len(self.graph.nodes)} nodes and {len(self.graph.edges)} edges",
-            )
-
-            if self.verbose:
+                # Note: Input and Output nodes are now created by the LLM, not auto-generated
                 logger.info(
-                    f"[{current_phase}] Success: Graph created with {len(self.graph.nodes)} nodes and {len(self.graph.edges)} edges"
+                    "Input and Output nodes will be created by the LLM based on schema hints"
                 )
 
-        except Exception as e:
-            error_msg = f"Failed to create graph: {str(e)}"
-            logger.error(error_msg, exc_info=True)
+                # Create the final graph
+                self.graph = APIGraph(
+                    nodes=nodes,  # type: ignore
+                    edges=edges,  # type: ignore
+                )
+                logger.info(
+                    f"Graph created successfully with {len(self.graph.nodes)} nodes and {len(self.graph.edges)} edges"
+                )
 
-            yield PlanningUpdate(
-                phase=current_phase, status="Failed", content=error_msg
-            )
+                # Log the generated graph structure
+                logger.info("Generated Graph Structure:")
+                logger.info("=" * 80)
 
-            if self.verbose:
-                logger.error(f"[Overall Status] Failed: {error_msg}")
+                # Log nodes
+                logger.info(f"Nodes ({len(self.graph.nodes)}):")
+                for node in self.graph.nodes:
+                    logger.info(f"  - ID: {node.id}")
+                    logger.info(f"    Type: {node.type}")
+                    if hasattr(node, "data") and node.data:
+                        logger.info(f"    Data: {json.dumps(node.data, indent=6)}")
 
-            raise ValueError(error_msg)
+                # Log edges
+                logger.info(f"\nEdges ({len(self.graph.edges)}):")
+                for edge in self.graph.edges:
+                    logger.info(
+                        f"  - {edge.source} ({edge.sourceHandle}) -> {edge.target} ({edge.targetHandle})"
+                    )
+
+                # Log the summary
+                self.log_graph_summary()
+
+                yield PlanningUpdate(
+                    phase=current_phase,
+                    status="Success",
+                    content=f"Created graph with {len(self.graph.nodes)} nodes and {len(self.graph.edges)} edges",
+                )
+
+                if self.verbose:
+                    logger.info(
+                        f"[{current_phase}] Success: Graph created with {len(self.graph.nodes)} nodes and {len(self.graph.edges)} edges"
+                    )
+
+                # Phase 4: Graph Validation
+                validation_phase = f"Graph Validation{attempt_suffix}"
+                logger.info(f"Starting Phase 4: {validation_phase}")
+                yield PlanningUpdate(phase=validation_phase, status="Starting", content=None)
+                
+                try:
+                    validation_result = None
+                    planning_update = None
+                    assert analysis_result is not None
+                    async for item in self._run_graph_validation_phase(context, history, analysis_result, workflow_result):
+                        if isinstance(item, tuple):
+                            # Final result tuple
+                            history, validation_result, planning_update = item
+                            if planning_update:
+                                yield planning_update
+                        else:
+                            # Stream chunk or tool call to frontend
+                            yield item # type: ignore
+                    
+                    if planning_update and planning_update.status == "Failed":
+                        error_msg = f"Graph validation phase failed: {planning_update.content}"
+                        logger.error(error_msg)
+                        if self.verbose:
+                            logger.error(f"[Overall Status] Failed: {error_msg}")
+                        # Don't raise here - validation failure shouldn't stop graph creation
+                        validation_result = GraphValidationResult(
+                            validation_status=ValidationStatus.FAILED,
+                            objective_fulfillment=ValidationScore(score=1, analysis="Validation failed"),
+                            design_consistency=ValidationScore(score=1, analysis="Validation failed"), 
+                            flow_correctness=ValidationScore(score=1, analysis="Validation failed"),
+                            recommendations=["Review validation errors and retry"],
+                            overall_assessment="Validation process failed"
+                        )
+
+                    # Pretty print validation results and yield as chunks
+                    if self.verbose and validation_result:
+                        logger.info("\n" + "=" * 60)
+                        logger.info("GRAPH VALIDATION RESULTS")
+                        logger.info("=" * 60)
+
+                        # Build validation summary to send to client
+                        validation_summary = "\n## ✅ Graph Validation Results\n\n"
+
+                        validation_status = validation_result.validation_status
+                        logger.info(f"Validation Status: {validation_status}")
+                        validation_summary += f"**Validation Status**: `{validation_status}`\n\n"
+
+                        # Objective Fulfillment
+                        obj_fulfillment = validation_result.objective_fulfillment
+                        obj_score = obj_fulfillment.score
+                        obj_analysis = obj_fulfillment.analysis
+                        logger.info(f"Objective Fulfillment Score: {obj_score}/10")
+                        logger.info(f"Objective Analysis: {obj_analysis}")
+                        validation_summary += "### 🎯 Objective Fulfillment\n"
+                        validation_summary += f"**Score**: {obj_score}/10\n"
+                        validation_summary += f"**Analysis**: {obj_analysis}\n\n"
+
+                        # Design Consistency
+                        design_consistency = validation_result.design_consistency
+                        design_score = design_consistency.score
+                        design_analysis = design_consistency.analysis
+                        logger.info(f"Design Consistency Score: {design_score}/10")
+                        logger.info(f"Design Analysis: {design_analysis}")
+                        validation_summary += "### 🏗️ Design Consistency\n"
+                        validation_summary += f"**Score**: {design_score}/10\n"
+                        validation_summary += f"**Analysis**: {design_analysis}\n\n"
+
+                        # Flow Correctness
+                        flow_correctness = validation_result.flow_correctness
+                        flow_score = flow_correctness.score
+                        flow_analysis = flow_correctness.analysis
+                        logger.info(f"Flow Correctness Score: {flow_score}/10")
+                        logger.info(f"Flow Analysis: {flow_analysis}")
+                        validation_summary += "### 🔗 Flow Correctness\n"
+                        validation_summary += f"**Score**: {flow_score}/10\n"
+                        validation_summary += f"**Analysis**: {flow_analysis}\n\n"
+
+                        # Recommendations
+                        recommendations = validation_result.recommendations
+                        if recommendations:
+                            logger.info("Recommendations:")
+                            validation_summary += "### 💡 Recommendations\n"
+                            for rec in recommendations:
+                                logger.info(f"  • {rec}")
+                                validation_summary += f"- {rec}\n"
+                            validation_summary += "\n"
+
+                        # Overall Assessment
+                        overall_assessment = validation_result.overall_assessment
+                        logger.info(f"Overall Assessment: {overall_assessment}")
+                        validation_summary += f"### 📊 Overall Assessment\n{overall_assessment}\n\n"
+
+                        logger.info("=" * 60)
+                        
+                        # Yield the validation summary as a chunk
+                        yield Chunk(content=validation_summary, done=False)
+
+                    yield PlanningUpdate(
+                        phase=validation_phase,
+                        status="Success",
+                        content=f"Graph validation completed with status: {validation_result.validation_status if validation_result else 'Unknown'}",
+                    )
+
+                    if self.verbose:
+                        logger.info(
+                            f"[{validation_phase}] Success: Graph validation completed with status: {validation_result.validation_status if validation_result else 'Unknown'}"
+                        )
+
+                except Exception as e:
+                    error_msg = f"Failed to validate graph: {str(e)}"
+                    logger.error(error_msg, exc_info=True)
+
+                    yield PlanningUpdate(
+                        phase=validation_phase, status="Failed", content=error_msg
+                    )
+
+                    if self.verbose:
+                        logger.error(f"[{validation_phase}] Failed: {error_msg}")
+
+                    # Don't raise here - validation failure shouldn't stop graph creation
+                    logger.warning("Graph validation failed, but graph creation was successful")
+                    validation_result = GraphValidationResult(
+                        validation_status=ValidationStatus.FAILED,
+                        objective_fulfillment=ValidationScore(score=1, analysis="Validation failed"),
+                        design_consistency=ValidationScore(score=1, analysis="Validation failed"), 
+                        flow_correctness=ValidationScore(score=1, analysis="Validation failed"),
+                        recommendations=["Review validation errors and retry"],
+                        overall_assessment="Validation process failed"
+                    )
+
+                # Check validation result and decide whether to continue or break
+                validation_status = validation_result.validation_status if validation_result else ValidationStatus.FAILED
+                
+                if validation_status == ValidationStatus.PASSED:
+                    logger.info("Graph validation passed! Graph creation complete.")
+                    break
+                elif validation_status == ValidationStatus.NEEDS_REVISION:
+                    if revision_attempt < max_revision_attempts - 1:
+                        logger.info(f"Graph needs revision. Attempting revision {revision_attempt + 2}/{max_revision_attempts}")
+                        continue
+                    else:
+                        logger.warning(f"Graph needs revision but reached maximum attempts ({max_revision_attempts}). Accepting current graph.")
+                        break
+                else:  # failed or unknown
+                    if revision_attempt < max_revision_attempts - 1:
+                        logger.warning(f"Graph validation failed. Attempting revision {revision_attempt + 2}/{max_revision_attempts}")
+                        continue
+                    else:
+                        logger.warning(f"Graph validation failed but reached maximum attempts ({max_revision_attempts}). Accepting current graph.")
+                        break
+
+            except Exception as e:
+                error_msg = f"Failed to create graph: {str(e)}"
+                logger.error(error_msg, exc_info=True)
+
+                yield PlanningUpdate(
+                    phase=current_phase, status="Failed", content=error_msg
+                )
+
+                if self.verbose:
+                    logger.error(f"[Overall Status] Failed: {error_msg}")
+
+                raise ValueError(error_msg)
 
 
 async def main():

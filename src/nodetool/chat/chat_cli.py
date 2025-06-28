@@ -445,11 +445,15 @@ class ChatCLI:
         """Process a problem with the Agent and display the response with rich formatting."""
         self.agent = self.initialize_agent(problem)
         output = ""
+        lines_printed = 0
+        
         async for item in self.agent.execute(self.context):
             if isinstance(item, Chunk):
                 output += item.content
                 # Print the chunk directly for real-time feedback
+                chunk_lines = item.content.count('\n')
                 self.console.print(item.content, end="", highlight=False)
+                lines_printed += chunk_lines
             elif isinstance(item, ToolCall):
                 args = json.dumps(item.args)
                 if len(args) > 120:
@@ -458,7 +462,19 @@ class ChatCLI:
                     self.console.print(
                         f"\n[bold cyan][{item.name}]:[/bold cyan] {args}"
                     )
+                    lines_printed += 1
 
+        # Clear the streamed output by moving cursor up and clearing lines
+        if lines_printed > 0:
+            # Move cursor up by the number of lines printed
+            self.console.print(f"\033[{lines_printed}A", end="")
+            # Clear from cursor to end of screen
+            self.console.print("\033[0J", end="")
+        
+        # Print the final complete result
+        if output.strip():
+            self.console.print(output.strip())
+        
         # Print final newline to separate from prompt
         self.console.print()
 
@@ -1015,6 +1031,7 @@ class ChatCLI:
                             provider=get_provider(self.selected_model.provider),
                             status=status,
                             context=self.context,
+                            console=self.console,
                             debug_mode=self.debug_mode,
                         )
 

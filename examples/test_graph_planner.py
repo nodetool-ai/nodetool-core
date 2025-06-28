@@ -6,12 +6,13 @@ import os
 from pathlib import Path
 import json
 
-from nodetool.agents.graph_planner import GraphPlanner
+from nodetool.agents.graph_planner import GraphPlanner, GraphInput, GraphOutput
 from nodetool.chat.providers.openai_provider import OpenAIProvider
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.workflow_runner import WorkflowRunner
 from nodetool.workflows.types import PlanningUpdate
 from nodetool.types.graph import Graph as APIGraph
+from nodetool.metadata.types import TypeMetadata
 
 # Set up logging
 import logging
@@ -58,16 +59,29 @@ async def test_graph_planner():
             provider=provider,
             model="gpt-4o-mini",
             objective="Analyze the input text file to extract key topics, then generate a summary and a list of questions about the content. The workflow should take 'input_file' as input and output a JSON object with 'summary' and 'questions' fields.",
-            workspace_dir=workspace_dir,
-            inputs=["input_file"],  # Changed from input_files
+            inputs={"input_file": str(input_file)},  # Provide actual input values
+            input_schema=[
+                GraphInput(
+                    name="input_file",
+                    type=TypeMetadata(type="str"),
+                    description="Path to input text file"
+                )
+            ],
+            output_schema=[
+                GraphOutput(
+                    name="analysis_result",
+                    type=TypeMetadata(type="dict"),
+                    description="JSON object with 'summary' and 'questions' fields"
+                )
+            ],
             verbose=True,
         )
         
         # Create processing context
         context = ProcessingContext(
-            workspace_dir=workspace_dir,
             user_id="test_user",
-            auth_token="test_token"
+            auth_token="test_token",
+            workspace_dir=workspace_dir
         )
         
         # Plan the graph
@@ -125,16 +139,23 @@ async def test_simple_graph():
             provider=provider,
             model="gpt-4o-mini",
             objective="Generate a haiku about the seasons. The workflow should output a string containing the haiku poem.",
-            workspace_dir=workspace_dir,
-            inputs=[],  # No inputs needed for this task
+            inputs={},  # No inputs needed for this task
+            input_schema=[],  # No inputs needed
+            output_schema=[
+                GraphOutput(
+                    name="haiku",
+                    type=TypeMetadata(type="str"),
+                    description="A haiku poem about the seasons"
+                )
+            ],
             verbose=True,
         )
         
         # Create processing context
         context = ProcessingContext(
-            workspace_dir=workspace_dir,
             user_id="test_user",
-            auth_token="test_token"
+            auth_token="test_token",
+            workspace_dir=workspace_dir
         )
         
         # Plan the graph
@@ -176,16 +197,34 @@ async def test_math_workflow():
             provider=provider,
             model="gpt-4o-mini",
             objective="Create a workflow that takes two numbers as input, adds them together, and outputs the result with a descriptive message.",
-            workspace_dir=workspace_dir,
-            inputs=["number1", "number2"],
+            inputs={"number1": 5, "number2": 3},  # Sample values
+            input_schema=[
+                GraphInput(
+                    name="number1",
+                    type=TypeMetadata(type="float"),
+                    description="First number to add"
+                ),
+                GraphInput(
+                    name="number2",
+                    type=TypeMetadata(type="float"),
+                    description="Second number to add"
+                )
+            ],
+            output_schema=[
+                GraphOutput(
+                    name="result",
+                    type=TypeMetadata(type="str"),
+                    description="Result message with the sum"
+                )
+            ],
             verbose=True,
         )
         
         # Create processing context
         context = ProcessingContext(
-            workspace_dir=workspace_dir,
             user_id="test_user",
-            auth_token="test_token"
+            auth_token="test_token",
+            workspace_dir=workspace_dir
         )
         
         # Plan the graph
@@ -240,16 +279,29 @@ async def test_greeting_graph():
             provider=provider,
             model="gpt-4o-mini",
             objective="Generate a personalized greeting. The workflow should take a 'name' as input and use a template to create a message like 'Hello, [name]! Welcome to the Nodetool demo.'",
-            workspace_dir=workspace_dir,
-            inputs=["name"],
+            inputs={"name": "Alice"},  # Sample value
+            input_schema=[
+                GraphInput(
+                    name="name",
+                    type=TypeMetadata(type="str"),
+                    description="Name of the person to greet"
+                )
+            ],
+            output_schema=[
+                GraphOutput(
+                    name="greeting",
+                    type=TypeMetadata(type="str"),
+                    description="Personalized greeting message"
+                )
+            ],
             verbose=True,
         )
         
         # Create processing context
         context = ProcessingContext(
-            workspace_dir=workspace_dir,
             user_id="test_user",
-            auth_token="test_token"
+            auth_token="test_token",
+            workspace_dir=workspace_dir
         )
         
         # Plan the graph
@@ -272,6 +324,96 @@ async def test_greeting_graph():
             logger.error("Failed to create graph")
 
 
+async def test_data_processing_workflow():
+    """Test with a data processing workflow to demonstrate improved edge connections"""
+    
+    with tempfile.TemporaryDirectory() as workspace_dir:
+        logger.info(f"Using workspace: {workspace_dir}")
+        
+        # Initialize provider
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            logger.error("Please set OPENAI_API_KEY environment variable")
+            return
+            
+        provider = OpenAIProvider(api_key=api_key)
+        
+        # Create GraphPlanner for a data processing task
+        planner = GraphPlanner(
+            provider=provider,
+            model="gpt-4o-mini",
+            objective="Process CSV sales data by calculating monthly totals, identifying top products, and generating a summary report with charts",
+            inputs={},  # No specific input values needed for planning
+            input_schema=[
+                GraphInput(
+                    name="sales_data",
+                    type=TypeMetadata(type="dataframe"),
+                    description="CSV sales data containing transaction records"
+                )
+            ],
+            output_schema=[
+                GraphOutput(
+                    name="monthly_summary",
+                    type=TypeMetadata(type="dataframe"),
+                    description="Monthly sales totals"
+                ),
+                GraphOutput(
+                    name="summary_report",
+                    type=TypeMetadata(type="str"),
+                    description="Comprehensive analysis report"
+                )
+            ],
+            verbose=True,
+        )
+        
+        # Create processing context
+        context = ProcessingContext(
+            user_id="test_user",
+            auth_token="test_token",
+            workspace_dir=workspace_dir
+        )
+        
+        # Plan the graph
+        logger.info("Creating data processing workflow graph...")
+        async for update in planner.create_graph(context):
+            if isinstance(update, PlanningUpdate):
+                logger.info(f"Planning update - Phase: {update.phase}, Status: {update.status}")
+                if update.phase == "Analysis" and update.status == "Success":
+                    logger.info("Analysis phase completed - workflow design is ready")
+        
+        if planner.graph:
+            logger.info(f"\nGraph created successfully!")
+            logger.info(f"Total nodes: {len(planner.graph.nodes)}")
+            logger.info(f"Total edges: {len(planner.graph.edges)}")
+            
+            # Check edge connectivity - this should be much better with the improved prompt
+            logger.info("\n🔍 Edge Connectivity Analysis:")
+            edge_count_by_target = {}
+            for edge in planner.graph.edges:
+                if edge.target not in edge_count_by_target:
+                    edge_count_by_target[edge.target] = 0
+                edge_count_by_target[edge.target] += 1
+            
+            nodes_without_inputs = []
+            for node in planner.graph.nodes:
+                if node.type not in ["nodetool.input.DataframeInput", "nodetool.input.StringInput"] and node.id not in edge_count_by_target:
+                    nodes_without_inputs.append(node.id)
+            
+            if nodes_without_inputs:
+                logger.warning(f"⚠️  Nodes without input connections: {nodes_without_inputs}")
+            else:
+                logger.info("✅ All processing nodes have input connections!")
+            
+            # Show visual graph
+            from nodetool.agents.graph_planner import print_visual_graph
+            print_visual_graph(planner.graph)
+            
+            # Save the graph for inspection
+            save_graph_to_file(planner.graph, workspace_dir, "data_processing_graph.json")
+        else:
+            logger.error("Failed to create graph")
+
+
 if __name__ == "__main__":
     print("GraphPlanner Test Script")
     print("=" * 50)
@@ -280,8 +422,9 @@ if __name__ == "__main__":
     print("2. Simple haiku generation")
     print("3. Math calculation workflow")
     print("4. Personalized greeting workflow")
+    print("5. Data processing workflow (tests edge connections)")
     
-    choice = input("\nEnter choice (1-4): ")
+    choice = input("\nEnter choice (1-5): ")
     
     if choice == "1":
         asyncio.run(test_graph_planner())
@@ -291,5 +434,7 @@ if __name__ == "__main__":
         asyncio.run(test_math_workflow())
     elif choice == "4":
         asyncio.run(test_greeting_graph())
+    elif choice == "5":
+        asyncio.run(test_data_processing_workflow())
     else:
         print("Invalid choice")
