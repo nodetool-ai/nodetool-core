@@ -91,6 +91,7 @@ from .filesystem_tools import (
 # Workflow tools
 from .workflow_tool import WorkflowTool, create_workflow_tools, create_workflow_tool_by_name
 from .create_workflow_tool import CreateWorkflowTool
+from .edit_workflow_tool import EditWorkflowTool
 
 # Names to be exported (dunder all)
 __all__ = [
@@ -106,6 +107,7 @@ __all__ = [
     "ConvertPDFToMarkdownTool",
     "CreateWorkflowTool",
     "DownloadFileTool",
+    "EditWorkflowTool",
     "ExtractPDFTablesTool",
     "ExtractPDFTextTool",
     "GeometryTool",
