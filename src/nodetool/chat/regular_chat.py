@@ -37,6 +37,7 @@ from nodetool.agents.tools import (
     SearchEmailTool,
 )
 from rich.status import Status
+from rich.console import Console
 
 
 async def run_tool(
@@ -91,6 +92,7 @@ async def process_regular_chat(
     provider: ChatProvider,
     status: Status,
     context: ProcessingContext,
+    console: Console,
     debug_mode: bool = False,
 ) -> List[Message]:
     """
@@ -101,8 +103,9 @@ async def process_regular_chat(
         messages: The current message history
         model: The AI model to use
         provider: The chat provider to use
-        console: The console to use for status updates
+        status: The status object to use for updates
         context: The processing context
+        console: The console to use for output
         debug_mode: Whether to display debug information about tool calls
 
     Returns:
@@ -146,7 +149,7 @@ async def process_regular_chat(
         ):  # type: ignore
             if isinstance(chunk, Chunk):
                 current_chunk = str(chunk.content)
-                print(chunk.content, end="")
+                console.print(chunk.content, end="", highlight=False)
                 if messages[-1].role == "assistant":
                     assert isinstance(messages[-1].content, str)
                     messages[-1].content += current_chunk
@@ -156,9 +159,9 @@ async def process_regular_chat(
             if isinstance(chunk, ToolCall):
                 # Display tool call in debug mode
                 if debug_mode:
-                    print("\n[Debug] Tool Call:")
-                    print(f"  Name: {chunk.name}")
-                    print(f"  Arguments: {json.dumps(chunk.args, indent=2)}")
+                    console.print("\n[Debug] Tool Call:")
+                    console.print(f"  Name: {chunk.name}")
+                    console.print(f"  Arguments: {json.dumps(chunk.args, indent=2)}")
 
                 tool_result = await run_tool(
                     status=status,
@@ -169,8 +172,8 @@ async def process_regular_chat(
 
                 # Display tool result in debug mode
                 if debug_mode:
-                    print("[Debug] Tool Result:")
-                    print(
+                    console.print("[Debug] Tool Result:")
+                    console.print(
                         f"  {json.dumps(tool_result.result, indent=2, default=default_serializer)}\n"
                     )
 
@@ -196,4 +199,6 @@ async def process_regular_chat(
         else:
             break
 
+    # Print final newline to separate from prompt
+    console.print()
     return messages
