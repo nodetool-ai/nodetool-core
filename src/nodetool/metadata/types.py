@@ -1424,6 +1424,16 @@ class Message(BaseType):
     Whether to use agent mode for processing this message.
     """
 
+    workflow_assistant: bool | None = None
+    """
+    Whether to use workflow assistant mode for processing this message.
+    """
+
+    help_mode: bool | None = None
+    """
+    Whether to use help mode for processing this message.
+    """
+
     @staticmethod
     def from_model(message: Any):
         """

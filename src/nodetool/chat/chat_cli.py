@@ -138,6 +138,7 @@ class ChatCLI:
         from nodetool.chat.commands.agent import AgentCommand
         from nodetool.chat.commands.clear import ClearCommand
         from nodetool.chat.commands.create_workflow import CreateWorkflowCommand
+        from nodetool.chat.commands.edit_workflow import EditWorkflowCommand
         from nodetool.chat.commands.debug import DebugCommand
         from nodetool.chat.commands.exit import ExitCommand
         from nodetool.chat.commands.help import HelpCommand
@@ -159,6 +160,7 @@ class ChatCLI:
             ToolDisableCommand(),
             RunWorkflowCommand(),
             CreateWorkflowCommand(),
+            EditWorkflowCommand(),
         ]
 
         for command in commands:

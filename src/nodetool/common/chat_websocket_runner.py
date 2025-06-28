@@ -84,6 +84,7 @@ from nodetool.agents.tools import (
     ArchiveEmailTool,
     BrowserTool,
     ConvertPDFToMarkdownTool,
+    CreateWorkflowTool,
     DownloadFileTool,
     ExtractPDFTablesTool,
     ExtractPDFTextTool,
@@ -101,6 +102,10 @@ from nodetool.agents.tools import (
     ScreenshotTool,
     SearchEmailTool,
     create_workflow_tools,
+)
+from nodetool.agents.tools.help_tools import (
+    SearchNodesTool,
+    SearchExamplesTool,
 )
 from nodetool.chat.ollama_service import get_ollama_models
 from nodetool.chat.providers import get_provider
@@ -355,7 +360,7 @@ class ChatWebSocketRunner:
                     response_message = await self.process_messages_for_workflow()
                 else:
                     log.debug(
-                        f"Processing regular chat message with model: {message.model}, agent_mode: {message.agent_mode}"
+                        f"Processing regular chat message with model: {message.model}, agent_mode: {message.agent_mode}, workflow_assistant: {message.workflow_assistant}"
                     )
                     if message.agent_mode:
                         response_message = await self.process_agent_messages()
@@ -418,7 +423,7 @@ class ChatWebSocketRunner:
 
     async def _process_help_messages(self, model: str) -> Message:
         """
-        Processes messages using the integrated help system.
+        Processes messages using the integrated help system with full tool access.
 
         Args:
             model (str): The name of the model to use for help.
@@ -429,24 +434,82 @@ class ChatWebSocketRunner:
         try:
             provider = await provider_from_model(model)
             log.debug(f"Processing help messages with model: {model}")
+            from nodetool.chat.help import SYSTEM_PROMPT
+            
+            # Create help tools combined with all available tools including CreateWorkflowTool
+            help_tools = [
+                SearchNodesTool(),
+                SearchExamplesTool(),
+                CreateWorkflowTool(),
+            ]
+            
+            # Combine help tools with all other available tools
+            all_available_tools = help_tools + self.all_tools
+            
+            # Create effective messages for provider with help system prompt
+            effective_messages = [
+                Message(role="system", content=SYSTEM_PROMPT)
+            ] + self.chat_history
+            
+            processing_context = ProcessingContext(user_id=self.user_id)
             accumulated_content = ""
-            async for item in create_help_answer(
-                provider=provider,
-                messages=self.chat_history,
-                model=model,
-            ):
-                if isinstance(item, Chunk):
-                    accumulated_content += item.content
-                    await self.send_message(
-                        {"type": "chunk", "content": item.content, "done": False}
-                    )
-                elif isinstance(item, ToolCall):
-                    await self.send_message(
-                        {"type": "tool_call", "tool_call": item.model_dump()}
-                    )
-                else:
-                    log.debug("Help response item was not chunk or tool call")
-
+            unprocessed_messages = []
+            
+            # Process messages with tool execution using common infrastructure
+            while True:
+                messages_to_send = effective_messages + unprocessed_messages
+                unprocessed_messages = []
+                
+                async for chunk in provider.generate_messages( # type: ignore
+                    messages=messages_to_send,
+                    model=model,
+                    tools=help_tools,
+                ):
+                    if isinstance(chunk, Chunk):
+                        accumulated_content += chunk.content
+                        await self.send_message(
+                            {"type": "chunk", "content": chunk.content, "done": False}
+                        )
+                    elif isinstance(chunk, ToolCall):
+                        log.debug(f"Processing help tool call: {chunk.name}")
+                        
+                        # Process the tool call using the common tool execution method
+                        # This ensures CreateWorkflowTool and all other tools work properly
+                        tool_result = await self.run_tool(
+                            processing_context, chunk, all_available_tools
+                        )
+                        log.debug(
+                            f"Help tool {chunk.name} execution complete, id={tool_result.id}"
+                        )
+                        
+                        # Add tool messages to unprocessed messages
+                        assistant_msg = Message(role="assistant", tool_calls=[chunk])
+                        unprocessed_messages.append(assistant_msg)
+                        
+                        def recursively_model_dump(obj):
+                            """Recursively convert BaseModel instances to dictionaries."""
+                            if isinstance(obj, BaseModel):
+                                return obj.model_dump()
+                            elif isinstance(obj, dict):
+                                return {k: recursively_model_dump(v) for k, v in obj.items()}
+                            elif isinstance(obj, (list, tuple)):
+                                return [recursively_model_dump(item) for item in obj]
+                            else:
+                                return obj
+                        
+                        converted_result = recursively_model_dump(tool_result.result)
+                        tool_result_json = json.dumps(converted_result)
+                        tool_msg = Message(
+                            role="tool",
+                            tool_call_id=tool_result.id,
+                            content=tool_result_json
+                        )
+                        unprocessed_messages.append(tool_msg)
+                
+                # If no more unprocessed messages, we're done
+                if not unprocessed_messages:
+                    break
+            
             # Signal the end of the help stream
             await self.send_message({"type": "chunk", "content": "", "done": True})
             return Message(
@@ -479,28 +542,34 @@ class ChatWebSocketRunner:
                 content=f"I encountered a connection error while processing the help request: {error_msg}. Please check your network connection and try again."
             )
 
-    async def _process_create_workflow(self, message: Message) -> Message:
+    async def _trigger_workflow_creation(self, objective: str) -> dict:
         """
-        Processes create-workflow command to generate a new workflow using GraphPlanner.
-
+        Triggers workflow creation using the GraphPlanner for tool-initiated requests.
+        
+        This method reuses the logic from _process_create_workflow but is designed
+        to be called from tool execution rather than direct message processing.
+        
         Args:
-            message (Message): The message containing the create-workflow command.
-
+            objective (str): The workflow objective/goal
+            
         Returns:
-            Message: An assistant message containing the workflow creation results.
+            dict: Result of the workflow creation process
         """
         try:
-            assert message.model, "Model is required"
-            assert isinstance(message.content, list) and isinstance(message.content[0], MessageTextContent), "Content must be a list of MessageTextContent"
-
-            provider = await provider_from_model(message.model)
-            log.debug(f"Processing create-workflow with model: {message.model}")
-
-            objective = message.content[0].text.split("create-workflow")[1].strip()
+            # Get the current model from the last message in chat history
+            if not self.chat_history:
+                raise ValueError("No chat history available to determine model")
+            
+            last_message = self.chat_history[-1]
+            if not last_message.model:
+                raise ValueError("No model specified in the current conversation")
+            
+            provider = await provider_from_model(last_message.model)
+            log.debug(f"Triggering workflow creation with model: {last_message.model}")
             
             planner = GraphPlanner(
                 provider=provider,
-                model=message.model,
+                model=last_message.model,
                 objective=objective,
                 verbose=True,
             )
@@ -511,15 +580,13 @@ class ChatWebSocketRunner:
             # Send initial status
             await self.send_message({
                 "type": "planning_update",
-                "phase": "Initialization",
+                "phase": "Tool-Initiated Creation",
                 "status": "Starting",
-                "content": "Initializing workflow creation..."
+                "content": f"Creating workflow from tool request: {objective}"
             })
             
             accumulated_content = ""
             workflow_graph = None
-            
-            # Variables will be used to store analysis and design results if needed in future
             
             # Execute graph planning and stream updates
             async for update in planner.create_graph(processing_context):
@@ -533,7 +600,7 @@ class ChatWebSocketRunner:
                         "node_id": update.node_id
                     })
                     
-                    # Accumulate content for the final message
+                    # Accumulate content for the final result
                     if update.content:
                         accumulated_content += f"[{update.phase}] {update.status}: {update.content}\n"
                         
@@ -562,22 +629,22 @@ class ChatWebSocketRunner:
                     "graph": workflow_graph,
                 })
                 
-                accumulated_content += "\n\nWorkflow created successfully!\n"
+                return {
+                    "success": True,
+                    "workflow_id": workflow.id,
+                    "graph": workflow_graph,
+                    "content": accumulated_content + "\n\nWorkflow created successfully!\n"
+                }
             else:
-                accumulated_content += "\nWorkflow creation completed but no graph was generated."
-            
-            # Signal completion
-            await self.send_message({"type": "chunk", "content": "", "done": True})
-            
-            return Message(
-                role="assistant",
-                content=accumulated_content if accumulated_content else "Workflow creation completed.",
-                graph=planner.graph
-            )
-            
+                return {
+                    "success": False,
+                    "error": "No graph was generated",
+                    "content": accumulated_content + "\nWorkflow creation completed but no graph was generated."
+                }
+                
         except Exception as e:
             error_msg = f"Error creating workflow: {str(e)}"
-            log.error(f"Error in _process_create_workflow: {e}", exc_info=True)
+            log.error(f"Error in _trigger_workflow_creation: {e}", exc_info=True)
             
             # Send error message to client
             await self.send_message({
@@ -586,14 +653,10 @@ class ChatWebSocketRunner:
                 "error_type": "workflow_creation_error"
             })
             
-            # Signal completion even on error
-            await self.send_message({"type": "chunk", "content": "", "done": True})
-            
-            # Return error message
-            return Message(
-                role="assistant",
-                content=f"I encountered an error while creating the workflow: {error_msg}"
-            )
+            return {
+                "success": False,
+                "error": error_msg
+            }
 
     async def process_messages(self) -> Message:
         """
@@ -613,17 +676,11 @@ class ChatWebSocketRunner:
         last_message = self.chat_history[-1]
 
         # Check for help request
-        if last_message.model and last_message.model.startswith("help"):
-            parts = last_message.model.split(":", 1)
-            if len(parts) > 1 and parts[1]:
-                actual_model_name = parts[1]
-            else:
-                actual_model_name = "gpt-4"  # Default model if not specified
-            log.debug(f"Processing help request with model: {actual_model_name}")
-            return await self._process_help_messages(actual_model_name)
-        # Check for create-workflow command
-        elif isinstance(last_message.content, list) and isinstance(last_message.content[0], MessageTextContent) and last_message.content[0].text.startswith("create-workflow"):
-            return await self._process_create_workflow(last_message)
+        if last_message.help_mode:
+            log.debug(f"Processing help request with model: {last_message.model}")
+            assert last_message.model, "Model is required"
+            return await self._process_help_messages(last_message.model)
+        # Check for workflow assistant mode
         else:
             # Existing logic for regular messages
             processing_context = ProcessingContext(user_id=self.user_id)
@@ -944,6 +1001,7 @@ class ChatWebSocketRunner:
             ArchiveEmailTool(),
             BrowserTool(),
             ConvertPDFToMarkdownTool(),
+            CreateWorkflowTool(),
             DownloadFileTool(),
             ExtractPDFTablesTool(),
             ExtractPDFTextTool(),
@@ -1213,6 +1271,23 @@ class ChatWebSocketRunner:
         )
         result = await tool.process(context, tool_call.args)
         log.debug(f"Tool {tool_call.name} returned: {result}")
+
+        # Special handling for CreateWorkflowTool
+        if tool_call.name == "create_workflow" and isinstance(result, dict):
+            if result.get("action") == "create_workflow" and result.get("success"):
+                objective = result.get("objective", "")
+                log.info(f"CreateWorkflowTool triggered workflow creation for: {objective}")
+                
+                # Trigger the actual workflow creation process
+                try:
+                    workflow_result = await self._trigger_workflow_creation(objective)
+                    # Update the result to include workflow creation outcome
+                    result["workflow_creation_result"] = workflow_result
+                    result["message"] = f"Workflow creation completed for: {objective}"
+                except Exception as e:
+                    log.error(f"Error in workflow creation triggered by tool: {e}", exc_info=True)
+                    result["error"] = f"Workflow creation failed: {str(e)}"
+                    result["success"] = False
 
         return ToolCall(
             id=tool_call.id,

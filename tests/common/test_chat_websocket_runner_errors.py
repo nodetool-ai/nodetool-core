@@ -112,7 +112,7 @@ async def test_httpx_connect_error_in_help_messages():
             mock_help.return_value = raise_connect_error()
             
             # Process a help message
-            runner.chat_history = [Message(role="user", content="Help me", model="help:gpt-4")]
+            runner.chat_history = [Message(role="user", content="Help me", help_mode=True)]
             response = await runner._process_help_messages("gpt-4")
             
             # Check that an error message was sent to the client
@@ -137,7 +137,7 @@ async def test_other_httpx_connect_errors():
     websocket = MockWebSocket()
     
     # Connect without auth (in test mode)
-    await runner.connect(websocket)
+    await runner.connect(websocket) # type: ignore
     
     # Mock the provider to raise a different httpx.ConnectError
     with patch('nodetool.common.chat_websocket_runner.provider_from_model') as mock_provider_from_model:
