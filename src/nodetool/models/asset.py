@@ -216,3 +216,129 @@ class Asset(DBModel):
         folder_dict["children"] = recursive_fetch(folder_id)
 
         return {"assets": [folder_dict]}
+
+    @classmethod
+    def search_assets_global(
+        cls,
+        user_id: str,
+        query: str,
+        content_type: Optional[str] = None,
+        limit: int = 100,
+        start_key: Optional[str] = None,
+    ):
+        """
+        Search assets globally across all user folders and return path information.
+        
+        Note: Local search is handled in the frontend by filtering already-loaded folder assets.
+        
+        Args:
+            user_id: The ID of the user whose assets are being searched.
+            query: Search term to match against asset names.
+            content_type: Optional content type filter.
+            limit: Maximum number of results to return.
+            start_key: Pagination key for continuing search.
+            
+        Returns:
+            Tuple of (assets, next_cursor, folder_paths) where:
+            - assets: List of Asset objects matching the search
+            - next_cursor: Pagination cursor for next page (None if no more results)
+            - folder_paths: List of dicts with folder context for each asset
+        """
+        # Build base condition for user and name search (global search only)
+        condition = Field("user_id").equals(user_id).and_(
+            Field("name").like(f"%{query}%")
+        )
+        
+        # Add content_type filter if specified
+        if content_type:
+            condition = condition.and_(
+                Field("content_type").like((content_type or "") + "%")
+            )
+        
+        # Add pagination
+        if start_key:
+            condition = condition.and_(Field("id").greater_than(start_key))
+        
+        # Execute query
+        assets, next_cursor = cls.query(condition, limit)
+        
+        # Get folder path information for each asset
+        folder_paths = cls.get_asset_path_info(user_id, [asset.id for asset in assets])
+        
+        # Convert folder_paths dict to list in same order as assets
+        folder_path_list = []
+        for asset in assets:
+            if asset.id in folder_paths:
+                folder_path_list.append(folder_paths[asset.id])
+            else:
+                folder_path_list.append({
+                    'folder_name': 'Unknown',
+                    'folder_path': 'Unknown',
+                    'folder_id': asset.parent_id or ''
+                })
+        
+        return assets, next_cursor, folder_path_list
+
+    @classmethod
+    def get_asset_path_info(cls, user_id: str, asset_ids: list[str]) -> Dict[str, Dict[str, str]]:
+        """
+        Get folder path information for given asset IDs.
+        
+        Args:
+            user_id: The ID of the user who owns the assets.
+            asset_ids: List of asset IDs to get path information for.
+            
+        Returns:
+            Dictionary mapping asset_id to folder info:
+            {asset_id: {folder_name, folder_path, folder_id}}
+        """
+        result = {}
+        
+        for asset_id in asset_ids:
+            asset = cls.find(user_id, asset_id)
+            if not asset:
+                continue
+                
+            # If asset is in root folder (parent_id == user_id), handle specially
+            if asset.parent_id == user_id:
+                result[asset_id] = {
+                    'folder_name': 'Home',
+                    'folder_path': 'Home',
+                    'folder_id': user_id
+                }
+                continue
+            
+            # Build folder path by walking up the parent chain
+            folder_path_parts = []
+            folder_ids = []
+            current_id = asset.parent_id
+            
+            # Walk up the folder hierarchy
+            while current_id and current_id != user_id:
+                parent_folder = cls.find(user_id, current_id)
+                if not parent_folder:
+                    break
+                    
+                folder_path_parts.append(parent_folder.name)
+                folder_ids.append(parent_folder.id)
+                current_id = parent_folder.parent_id
+            
+            # Add Home as root
+            folder_path_parts.append('Home')
+            folder_ids.append(user_id)
+            
+            # Reverse to get path from root to immediate parent
+            folder_path_parts.reverse()
+            folder_ids.reverse()
+            
+            # Get immediate parent info
+            immediate_parent_name = folder_path_parts[-1] if folder_path_parts else 'Home'
+            immediate_parent_id = folder_ids[-1] if folder_ids else user_id
+            
+            result[asset_id] = {
+                'folder_name': immediate_parent_name,
+                'folder_path': ' / '.join(folder_path_parts),
+                'folder_id': immediate_parent_id
+            }
+        
+        return result

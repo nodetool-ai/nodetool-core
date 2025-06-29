@@ -75,6 +75,35 @@ class PackageAssetList(BaseModel):
     assets: List[PackageAsset]
 
 
+# Define Pydantic models for search functionality
+class AssetWithPath(BaseModel):
+    # All existing Asset fields
+    id: str
+    user_id: str
+    workflow_id: Optional[str]
+    parent_id: Optional[str]
+    name: str
+    content_type: str
+    size: int
+    metadata: Dict = {}
+    created_at: str
+    get_url: Optional[str]
+    thumb_url: Optional[str]
+    duration: Optional[float]
+    
+    # New fields for search context
+    folder_name: str = PydanticField(..., description="Direct parent folder name")
+    folder_path: str = PydanticField(..., description="Full path breadcrumb")
+    folder_id: str = PydanticField(..., description="Parent folder ID for navigation")
+
+
+class AssetSearchResult(BaseModel):
+    assets: List[AssetWithPath]
+    next_cursor: Optional[str] = None
+    total_count: int
+    is_global_search: bool
+
+
 log = Environment.get_logger()
 router = APIRouter(prefix="/api/assets", tags=["assets"])
 
@@ -108,6 +137,80 @@ async def index(
     assets = [from_model(asset) for asset in assets]
 
     return AssetList(next=next_cursor, assets=assets)
+
+
+@router.get("/search")
+async def search_assets_global(
+    query: str,
+    content_type: Optional[str] = None,
+    page_size: Optional[int] = 100,
+    cursor: Optional[str] = None,
+    user: str = Depends(current_user),
+) -> AssetSearchResult:
+    """
+    Search assets globally across all user folders with folder path information.
+    
+    Note: Local search (within current folder) is handled efficiently in the frontend
+    by filtering already-loaded folder assets.
+    
+    Args:
+        query: Search term (minimum 2 characters)
+        content_type: Optional content type filter
+        page_size: Results per page (default 100)
+        cursor: Pagination cursor
+        user: Current user ID
+    
+    Returns:
+        AssetSearchResult with assets and folder path information
+    """
+    # Validate query length
+    if len(query.strip()) < 2:
+        raise HTTPException(
+            status_code=400, 
+            detail="Search query must be at least 2 characters long"
+        )
+    
+    try:
+        # Search assets globally using the model's search method
+        assets, next_cursor, folder_paths = AssetModel.search_assets_global(
+            user_id=user,
+            query=query.strip(),
+            content_type=content_type,
+            limit=page_size,
+            start_key=cursor,
+        )
+        
+        # Convert to AssetWithPath objects
+        assets_with_path = []
+        for i, asset in enumerate(assets):
+            asset_data = from_model(asset)
+            folder_info = folder_paths[i] if i < len(folder_paths) else {
+                'folder_name': 'Unknown',
+                'folder_path': 'Unknown',
+                'folder_id': ''
+            }
+            
+            asset_with_path = AssetWithPath(
+                **asset_data.model_dump(),
+                folder_name=folder_info['folder_name'],
+                folder_path=folder_info['folder_path'],
+                folder_id=folder_info['folder_id']
+            )
+            assets_with_path.append(asset_with_path)
+        
+        return AssetSearchResult(
+            assets=assets_with_path,
+            next_cursor=next_cursor,
+            total_count=len(assets_with_path),
+            is_global_search=True
+        )
+        
+    except Exception as e:
+        log.exception(f"Error searching assets: {str(e)}")
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Error searching assets: {str(e)}"
+        )
 
 
 # Routes for package assets
