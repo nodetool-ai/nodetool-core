@@ -11,6 +11,7 @@ class Asset(BaseModel):
     parent_id: str
     name: str
     content_type: str
+    size: int = 0  # File size in bytes
     metadata: dict[str, Any] | None = None
     created_at: str
     get_url: str | None
@@ -45,6 +46,7 @@ class AssetUpdateRequest(BaseModel):
     data: str | None = None
     metadata: dict | None = None
     duration: float | None = None
+    size: int | None = None
 
 
 class AssetCreateRequest(BaseModel):
@@ -54,6 +56,7 @@ class AssetCreateRequest(BaseModel):
     content_type: str
     metadata: dict | None = None
     duration: float | None = None
+    size: int = 0
 
 
 class AssetDownloadRequest(BaseModel):

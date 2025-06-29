@@ -39,6 +39,7 @@ class Asset(DBModel):
     file_id: str | None = DBField(default="")
     name: str = DBField(default="")
     content_type: str = DBField(default="")
+    size: int = DBField(default=0)  # File size in bytes
     metadata: dict | None = DBField(default=None)
     created_at: datetime = DBField(default_factory=datetime.now)
     duration: Optional[float] = DBField(default=None)
@@ -89,6 +90,7 @@ class Asset(DBModel):
         parent_id: str | None = None,
         workflow_id: str | None = None,
         duration: float | None = None,
+        size: int = 0,
         **kwargs,
     ):
         """Creates a new asset record in the database.
@@ -104,6 +106,7 @@ class Asset(DBModel):
             parent_id: Optional ID of the parent asset (e.g., folder).
             workflow_id: Optional ID of an associated workflow.
             duration: Optional duration (e.g., for video/audio assets).
+            size: File size in bytes (default: 0).
             **kwargs: Additional fields to set on the model.
 
         Returns:
@@ -117,6 +120,7 @@ class Asset(DBModel):
             workflow_id=workflow_id,
             content_type=content_type,
             duration=duration,
+            size=size,
             created_at=datetime.now(),
             metadata=metadata,
             **kwargs,

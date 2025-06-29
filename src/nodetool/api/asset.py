@@ -52,6 +52,7 @@ def from_model(asset: AssetModel):
         parent_id=asset.parent_id,
         name=asset.name,
         content_type=asset.content_type,
+        size=asset.size,
         metadata=asset.metadata,
         created_at=asset.created_at.isoformat(),
         get_url=get_url,
@@ -253,6 +254,7 @@ async def get(id: str, user: str = Depends(current_user)) -> Asset:
             content_type="folder",
             parent_id="",
             workflow_id=None,
+            size=0,
             get_url=None,
             thumb_url=None,
             created_at="",
@@ -285,9 +287,13 @@ async def update(
         asset.name = req.name.strip()
     if req.parent_id:
         asset.parent_id = req.parent_id
+    if req.size is not None:
+        asset.size = req.size
     if req.data:
         storage = Environment.get_asset_storage()
-        await storage.upload(asset.file_name, BytesIO(req.data.encode("utf-8")))
+        data_bytes = req.data.encode("utf-8")
+        asset.size = len(data_bytes)  # Update size when data is updated
+        await storage.upload(asset.file_name, BytesIO(data_bytes))
 
     asset.save()
     return from_model(asset)
@@ -382,6 +388,7 @@ async def create(
     duration = None
     file_io = None
     thumbnail = None
+    file_size = req.size  # Default size from request
 
     if req.workflow_id:
         workflow = Workflow.get(req.workflow_id)
@@ -391,6 +398,7 @@ async def create(
     try:
         if file:
             file_content = await file.read()
+            file_size = len(file_content)  # Calculate actual file size
             file_io = BytesIO(file_content)
             storage = Environment.get_asset_storage()
 
@@ -409,6 +417,7 @@ async def create(
             content_type=req.content_type,
             metadata=req.metadata,
             duration=duration,
+            size=file_size,
         )
         if file_io:
             file_io.seek(0)
