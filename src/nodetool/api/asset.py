@@ -15,6 +15,8 @@ from nodetool.types.asset import (
     AssetDownloadRequest,
     AssetList,
     AssetUpdateRequest,
+    AssetWithPath,
+    AssetSearchResult,
 )
 from nodetool.api.utils import current_user
 from nodetool.common.environment import Environment
@@ -52,6 +54,7 @@ def from_model(asset: AssetModel):
         parent_id=asset.parent_id,
         name=asset.name,
         content_type=asset.content_type,
+        size=asset.size,
         metadata=asset.metadata,
         created_at=asset.created_at.isoformat(),
         get_url=get_url,
@@ -73,6 +76,10 @@ class PackageAsset(BaseModel):
 class PackageAssetList(BaseModel):
     assets: List[PackageAsset]
 
+
+# Constants
+MIN_SEARCH_QUERY_LENGTH = 2
+DEFAULT_SEARCH_PAGE_SIZE = 200
 
 log = Environment.get_logger()
 router = APIRouter(prefix="/api/assets", tags=["assets"])
@@ -107,6 +114,94 @@ async def index(
     assets = [from_model(asset) for asset in assets]
 
     return AssetList(next=next_cursor, assets=assets)
+
+
+@router.get("/search")
+async def search_assets_global(
+    query: str,
+    content_type: Optional[str] = None,
+    page_size: Optional[int] = 100,
+    cursor: Optional[str] = None,
+    user: str = Depends(current_user),
+) -> AssetSearchResult:
+    """
+    **Global Asset Search**
+    
+    Search assets globally across all folders belonging to the current user with folder path information.
+    
+    **Features:**
+    - Searches asset names using contains matching (finds matches anywhere in filename)
+    - Provides folder breadcrumb information for each result
+    - Supports content type filtering (e.g., "image", "text")
+    - Includes pagination for large result sets
+    - Returns only current user's assets (user isolation)
+    
+    **Examples:**
+    - `GET /api/assets/search?query=photo` - Find all assets with "photo" in name
+    - `GET /api/assets/search?query=sunset&content_type=image` - Find images with "sunset"
+    - `GET /api/assets/search?query=doc&page_size=50` - Find "doc" assets, 50 per page
+    
+    Note: Local search (within current folder) is handled efficiently in the frontend
+    by filtering already-loaded folder assets.
+    
+    Args:
+        query: Search term (minimum 2 characters, case insensitive)
+        content_type: Optional content type filter (e.g., "image", "text", "video")
+        page_size: Results per page (default 200, max recommended 1000)
+        cursor: Pagination cursor for next page
+        user: Current user ID (automatically provided)
+    
+    Returns:
+        AssetSearchResult with assets and folder path information (current user's assets only)
+    """
+    # Validate query length
+    if len(query.strip()) < MIN_SEARCH_QUERY_LENGTH:
+        raise HTTPException(
+            status_code=400, 
+            detail="Search query must be at least 2 characters long"
+        )
+    
+    try:
+        # Search assets globally using the model's search method
+        assets, next_cursor, folder_paths = AssetModel.search_assets_global(
+            user_id=user,
+            query=query.strip(),
+            content_type=content_type,
+            limit=page_size or DEFAULT_SEARCH_PAGE_SIZE,
+            start_key=cursor,
+        )
+        
+        # Convert to AssetWithPath objects
+        assets_with_path = []
+        for i, asset in enumerate(assets):
+            asset_data = from_model(asset)
+            folder_info = folder_paths[i] if i < len(folder_paths) else {
+                'folder_name': 'Unknown',
+                'folder_path': 'Unknown',
+                'folder_id': ''
+            }
+            
+            asset_with_path = AssetWithPath(
+                **asset_data.model_dump(),
+                folder_name=folder_info['folder_name'],
+                folder_path=folder_info['folder_path'],
+                folder_id=folder_info['folder_id']
+            )
+            assets_with_path.append(asset_with_path)
+        
+        return AssetSearchResult(
+            assets=assets_with_path,
+            next_cursor=next_cursor,
+            total_count=len(assets_with_path),
+            is_global_search=True
+        )
+        
+    except Exception as e:
+        log.exception(f"Error searching assets for user {user}: {str(e)}")
+        raise HTTPException(
+            status_code=500, 
+            detail="Search temporarily unavailable"
+        )
 
 
 # Routes for package assets
@@ -253,6 +348,7 @@ async def get(id: str, user: str = Depends(current_user)) -> Asset:
             content_type="folder",
             parent_id="",
             workflow_id=None,
+            size=None,
             get_url=None,
             thumb_url=None,
             created_at="",
@@ -285,9 +381,13 @@ async def update(
         asset.name = req.name.strip()
     if req.parent_id:
         asset.parent_id = req.parent_id
+    if req.size is not None:
+        asset.size = req.size
     if req.data:
         storage = Environment.get_asset_storage()
-        await storage.upload(asset.file_name, BytesIO(req.data.encode("utf-8")))
+        data_bytes = req.data.encode("utf-8")
+        asset.size = len(data_bytes)  # Update size when data is updated
+        await storage.upload(asset.file_name, BytesIO(data_bytes))
 
     asset.save()
     return from_model(asset)
@@ -382,6 +482,7 @@ async def create(
     duration = None
     file_io = None
     thumbnail = None
+    file_size = req.size  # Default size from request
 
     if req.workflow_id:
         workflow = Workflow.get(req.workflow_id)
@@ -391,6 +492,7 @@ async def create(
     try:
         if file:
             file_content = await file.read()
+            file_size = len(file_content)  # Calculate actual file size
             file_io = BytesIO(file_content)
             storage = Environment.get_asset_storage()
 
@@ -409,6 +511,7 @@ async def create(
             content_type=req.content_type,
             metadata=req.metadata,
             duration=duration,
+            size=file_size,
         )
         if file_io:
             file_io.seek(0)

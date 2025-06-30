@@ -1,5 +1,5 @@
-from typing import Any
-from pydantic import BaseModel
+from typing import Any, Optional
+from pydantic import BaseModel, Field as PydanticField
 
 from nodetool.common.content_types import CONTENT_TYPE_TO_EXTENSION
 
@@ -11,6 +11,7 @@ class Asset(BaseModel):
     parent_id: str
     name: str
     content_type: str
+    size: Optional[int] = None  # File size in bytes (None for folders)
     metadata: dict[str, Any] | None = None
     created_at: str
     get_url: str | None
@@ -45,6 +46,7 @@ class AssetUpdateRequest(BaseModel):
     data: str | None = None
     metadata: dict | None = None
     duration: float | None = None
+    size: int | None = None
 
 
 class AssetCreateRequest(BaseModel):
@@ -54,6 +56,7 @@ class AssetCreateRequest(BaseModel):
     content_type: str
     metadata: dict | None = None
     duration: float | None = None
+    size: Optional[int] = None
 
 
 class AssetDownloadRequest(BaseModel):
@@ -68,3 +71,31 @@ class AssetList(BaseModel):
 class TempAsset(BaseModel):
     get_url: str
     put_url: str
+
+
+class AssetWithPath(BaseModel):
+    # All existing Asset fields
+    id: str
+    user_id: str
+    workflow_id: str | None
+    parent_id: str | None
+    name: str
+    content_type: str
+    size: int | None
+    metadata: dict[str, Any] | None = None
+    created_at: str
+    get_url: str | None
+    thumb_url: str | None
+    duration: float | None
+    
+    # New fields for search context
+    folder_name: str = PydanticField(..., description="Direct parent folder name")
+    folder_path: str = PydanticField(..., description="Full path breadcrumb")
+    folder_id: str = PydanticField(..., description="Parent folder ID for navigation")
+
+
+class AssetSearchResult(BaseModel):
+    assets: list[AssetWithPath]
+    next_cursor: str | None = None
+    total_count: int
+    is_global_search: bool
