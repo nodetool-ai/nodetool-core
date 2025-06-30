@@ -248,18 +248,10 @@ class Asset(DBModel):
         import re
         sanitized_query = re.sub(r'[%_\\]', r'\\\1', query.strip())
         
-        # Build base condition for user and name search with performance optimization
-        # Use prefix search for short queries (better performance) and contains search for longer queries (better UX)
-        condition = Field("user_id").equals(user_id)
-        
-        if len(sanitized_query) <= 3:
-            # For short queries, use prefix search for better performance (can use indexes)
-            search_condition = Field("name").like(f"{sanitized_query}%")
-        else:
-            # For longer queries, use contains search for better user experience
-            search_condition = Field("name").like(f"%{sanitized_query}%")
-        
-        condition = condition.and_(search_condition)
+        # Build base condition for user and name search (consistent contains search for better UX)
+        condition = Field("user_id").equals(user_id).and_(
+            Field("name").like(f"%{sanitized_query}%")
+        )
         
         # Add content_type filter if specified
         if content_type:
