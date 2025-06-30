@@ -85,7 +85,7 @@ class AssetWithPath(BaseModel):
     name: str
     content_type: str
     size: Optional[int]
-    metadata: Dict = {}
+    metadata: Optional[Dict] = None
     created_at: str
     get_url: Optional[str]
     thumb_url: Optional[str]
