@@ -125,17 +125,31 @@ async def search_assets_global(
     user: str = Depends(current_user),
 ) -> AssetSearchResult:
     """
+    **Global Asset Search**
+    
     Search assets globally across all folders belonging to the current user with folder path information.
+    
+    **Features:**
+    - Searches asset names using contains matching (finds matches anywhere in filename)
+    - Provides folder breadcrumb information for each result
+    - Supports content type filtering (e.g., "image", "text")
+    - Includes pagination for large result sets
+    - Returns only current user's assets (user isolation)
+    
+    **Examples:**
+    - `GET /api/assets/search?query=photo` - Find all assets with "photo" in name
+    - `GET /api/assets/search?query=sunset&content_type=image` - Find images with "sunset"
+    - `GET /api/assets/search?query=doc&page_size=50` - Find "doc" assets, 50 per page
     
     Note: Local search (within current folder) is handled efficiently in the frontend
     by filtering already-loaded folder assets.
     
     Args:
-        query: Search term (minimum 2 characters)
-        content_type: Optional content type filter
-        page_size: Results per page (default 100)
-        cursor: Pagination cursor
-        user: Current user ID
+        query: Search term (minimum 2 characters, case insensitive)
+        content_type: Optional content type filter (e.g., "image", "text", "video")
+        page_size: Results per page (default 200, max recommended 1000)
+        cursor: Pagination cursor for next page
+        user: Current user ID (automatically provided)
     
     Returns:
         AssetSearchResult with assets and folder path information (current user's assets only)

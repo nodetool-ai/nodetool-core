@@ -227,22 +227,31 @@ class Asset(DBModel):
         start_key: Optional[str] = None,
     ):
         """
+        **Global Asset Search (Model Layer)**
+        
         Search assets globally across all folders belonging to the current user and return path information.
+        
+        **Security:** Only returns assets owned by the specified user_id (user isolation enforced).
+        **Performance:** Uses batch queries to avoid N+1 problems when fetching folder paths.
+        **Search Behavior:** Uses contains matching (LIKE %query%) for user-friendly search.
         
         Note: Local search (within current folder) is handled in the frontend by filtering already-loaded folder assets.
         
         Args:
-            user_id: The ID of the user whose assets are being searched.
-            query: Search term to match against asset names.
-            content_type: Optional content type filter.
-            limit: Maximum number of results to return.
-            start_key: Pagination key for continuing search.
+            user_id: The ID of the user whose assets are being searched
+            query: Search term to match against asset names (automatically sanitized)
+            content_type: Optional content type filter (e.g., "image", "text")
+            limit: Maximum number of results to return (default 100)
+            start_key: Pagination key for continuing search
             
         Returns:
             Tuple of (assets, next_cursor, folder_paths) where:
             - assets: List of Asset objects matching the search (filtered to current user only)
             - next_cursor: Pagination cursor for next page (None if no more results)
             - folder_paths: List of dicts with folder context for each asset
+            
+        Example:
+            assets, cursor, paths = Asset.search_assets_global("user123", "photo", limit=50)
         """
         # Sanitize query to prevent SQL injection by escaping special characters
         import re

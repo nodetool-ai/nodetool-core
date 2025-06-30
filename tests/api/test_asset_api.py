@@ -6,7 +6,7 @@ import pytest
 from nodetool.common.environment import Environment
 from nodetool.models.asset import Asset
 from nodetool.types.asset import AssetCreateRequest, AssetUpdateRequest
-from conftest import make_image
+from conftest import make_image, make_text
 
 
 test_jpg = os.path.join(os.path.dirname(os.path.dirname(__file__)), "test.jpg")
@@ -136,3 +136,174 @@ def test_download_deduplicated_names(
 
     assert len(names) == 2
     assert len(set(names)) == 2
+
+
+# Search functionality tests
+def test_search_basic_functionality(client: TestClient, headers: dict[str, str], user_id: str):
+    """Test basic search functionality with valid queries."""
+    # Create test assets with different names
+    make_image(user_id).update(name="sunset_photo")
+    make_image(user_id).update(name="beach_vacation")
+    make_text(user_id, "content").update(name="document.txt")
+    
+    # Test basic search
+    response = client.get("/api/assets/search", params={"query": "photo"}, headers=headers)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["is_global_search"] is True
+    assert len(data["assets"]) == 1
+    assert data["assets"][0]["name"] == "sunset_photo"
+
+
+def test_search_query_validation(client: TestClient, headers: dict[str, str], user_id: str):
+    """Test search query length validation."""
+    # Test query too short
+    response = client.get("/api/assets/search", params={"query": "a"}, headers=headers)
+    assert response.status_code == 400
+    assert "at least 2 characters" in response.json()["detail"]
+    
+    # Test minimum valid length
+    response = client.get("/api/assets/search", params={"query": "ab"}, headers=headers)
+    assert response.status_code == 200
+
+
+def test_search_with_content_type_filter(client: TestClient, headers: dict[str, str], user_id: str):
+    """Test search with content type filtering."""
+    # Create assets of different types
+    make_image(user_id).update(name="test_image")
+    make_text(user_id, "content").update(name="test_document")
+    
+    # Search for images only
+    response = client.get(
+        "/api/assets/search", 
+        params={"query": "test", "content_type": "image"}, 
+        headers=headers
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data["assets"]) == 1
+    assert data["assets"][0]["content_type"].startswith("image")
+
+
+def test_search_pagination(client: TestClient, headers: dict[str, str], user_id: str):
+    """Test search pagination functionality."""
+    # Create multiple matching assets
+    for i in range(5):
+        make_image(user_id).update(name=f"photo_{i}")
+    
+    # Test first page
+    response = client.get(
+        "/api/assets/search", 
+        params={"query": "photo", "page_size": 2}, 
+        headers=headers
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data["assets"]) == 2
+    assert data["total_count"] == 2
+    
+    # Test with cursor if provided
+    if data["next_cursor"]:
+        response = client.get(
+            "/api/assets/search", 
+            params={"query": "photo", "page_size": 2, "cursor": data["next_cursor"]}, 
+            headers=headers
+        )
+        assert response.status_code == 200
+
+
+def test_search_folder_path_information(client: TestClient, headers: dict[str, str], user_id: str):
+    """Test that search returns folder path information."""
+    # Create folder structure
+    folder = Asset.create(user_id=user_id, name="My Folder", content_type="folder")
+    subfolder = Asset.create(user_id=user_id, name="Sub Folder", content_type="folder", parent_id=folder.id)
+    
+    # Create asset in subfolder
+    image = make_image(user_id, parent_id=subfolder.id)
+    image.update(name="nested_photo")
+    
+    response = client.get("/api/assets/search", params={"query": "photo"}, headers=headers)
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data["assets"]) == 1
+    
+    asset = data["assets"][0]
+    assert "folder_name" in asset
+    assert "folder_path" in asset
+    assert "folder_id" in asset
+    # Should include breadcrumb path
+    assert "Sub Folder" in asset["folder_path"]
+
+
+def test_search_empty_results(client: TestClient, headers: dict[str, str], user_id: str):
+    """Test search with no matching results."""
+    make_image(user_id).update(name="sunset")
+    
+    response = client.get("/api/assets/search", params={"query": "nonexistent"}, headers=headers)
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data["assets"]) == 0
+    assert data["total_count"] == 0
+
+
+def test_search_case_insensitive(client: TestClient, headers: dict[str, str], user_id: str):
+    """Test that search is case insensitive."""
+    make_image(user_id).update(name="SUNSET_Photo")
+    
+    # Test lowercase search
+    response = client.get("/api/assets/search", params={"query": "sunset"}, headers=headers)
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data["assets"]) == 1
+
+
+def test_search_special_characters(client: TestClient, headers: dict[str, str], user_id: str):
+    """Test search with special characters that could cause SQL injection."""
+    make_image(user_id).update(name="test_file")
+    
+    # Test SQL injection attempts
+    malicious_queries = ["'; DROP TABLE assets; --", "test%", "test_", "test\\"]
+    
+    for query in malicious_queries:
+        response = client.get("/api/assets/search", params={"query": query}, headers=headers)
+        # Should not crash and should return proper response
+        assert response.status_code == 200
+        # Response should be well-formed JSON
+        data = response.json()
+        assert "assets" in data
+
+
+def test_search_user_isolation(client: TestClient, headers: dict[str, str], user_id: str):
+    """Test that search only returns current user's assets."""
+    # Create asset for current user
+    make_image(user_id).update(name="my_photo")
+    
+    # Create asset for different user
+    other_user_id = "other_user"
+    other_asset = Asset.create(
+        user_id=other_user_id,
+        name="other_photo", 
+        content_type="image/jpeg"
+    )
+    
+    # Search should only return current user's assets
+    response = client.get("/api/assets/search", params={"query": "photo"}, headers=headers)
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data["assets"]) == 1
+    assert data["assets"][0]["name"] == "my_photo"
+    assert data["assets"][0]["user_id"] == user_id
+
+
+def test_search_contains_behavior(client: TestClient, headers: dict[str, str], user_id: str):
+    """Test that search finds matches anywhere in the filename."""
+    # Create assets with query in different positions
+    make_image(user_id).update(name="photo_sunset")  # at beginning
+    make_image(user_id).update(name="beautiful_photo_vacation")  # in middle
+    make_image(user_id).update(name="vacation_photo")  # at end
+    
+    response = client.get("/api/assets/search", params={"query": "photo"}, headers=headers)
+    assert response.status_code == 200
+    data = response.json()
+    # Should find all three
+    assert len(data["assets"]) == 3
