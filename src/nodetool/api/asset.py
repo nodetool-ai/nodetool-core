@@ -104,6 +104,10 @@ class AssetSearchResult(BaseModel):
     is_global_search: bool
 
 
+# Constants
+MIN_SEARCH_QUERY_LENGTH = 2
+DEFAULT_SEARCH_PAGE_SIZE = 200
+
 log = Environment.get_logger()
 router = APIRouter(prefix="/api/assets", tags=["assets"])
 
@@ -164,7 +168,7 @@ async def search_assets_global(
         AssetSearchResult with assets and folder path information
     """
     # Validate query length
-    if len(query.strip()) < 2:
+    if len(query.strip()) < MIN_SEARCH_QUERY_LENGTH:
         raise HTTPException(
             status_code=400, 
             detail="Search query must be at least 2 characters long"
@@ -176,7 +180,7 @@ async def search_assets_global(
             user_id=user,
             query=query.strip(),
             content_type=content_type,
-            limit=page_size or 100,
+            limit=page_size or DEFAULT_SEARCH_PAGE_SIZE,
             start_key=cursor,
         )
         
@@ -206,10 +210,10 @@ async def search_assets_global(
         )
         
     except Exception as e:
-        log.exception(f"Error searching assets: {str(e)}")
+        log.exception(f"Error searching assets for user {user}: {str(e)}")
         raise HTTPException(
             status_code=500, 
-            detail=f"Error searching assets: {str(e)}"
+            detail="Search temporarily unavailable"
         )
 
 

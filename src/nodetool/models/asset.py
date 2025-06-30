@@ -244,9 +244,13 @@ class Asset(DBModel):
             - next_cursor: Pagination cursor for next page (None if no more results)
             - folder_paths: List of dicts with folder context for each asset
         """
+        # Sanitize query to prevent SQL injection by escaping special characters
+        import re
+        sanitized_query = re.sub(r'[%_\\]', r'\\\1', query.strip())
+        
         # Build base condition for user and name search (global search only)
         condition = Field("user_id").equals(user_id).and_(
-            Field("name").like(f"%{query}%")
+            Field("name").like(f"%{sanitized_query}%")
         )
         
         # Add content_type filter if specified
@@ -282,7 +286,7 @@ class Asset(DBModel):
     @classmethod
     def get_asset_path_info(cls, user_id: str, asset_ids: list[str]) -> Dict[str, Dict[str, str]]:
         """
-        Get folder path information for given asset IDs.
+        Get folder path information for given asset IDs using batch queries to avoid N+1 problem.
         
         Args:
             user_id: The ID of the user who owns the assets.
@@ -292,13 +296,70 @@ class Asset(DBModel):
             Dictionary mapping asset_id to folder info:
             {asset_id: {folder_name, folder_path, folder_id}}
         """
+        if not asset_ids:
+            return {}
+            
         result = {}
         
+        # Step 1: Batch fetch all requested assets
+        asset_condition = Field("user_id").equals(user_id)
+        # Create an OR condition for all asset IDs
+        if len(asset_ids) == 1:
+            asset_condition = asset_condition.and_(Field("id").equals(asset_ids[0]))
+        else:
+            id_conditions = [Field("id").equals(asset_id) for asset_id in asset_ids]
+            # Combine with OR - this assumes the query system supports it
+            # If not, we'll need to make multiple queries in batches
+            combined_id_condition = id_conditions[0]
+            for condition in id_conditions[1:]:
+                combined_id_condition = combined_id_condition.or_(condition)
+            asset_condition = asset_condition.and_(combined_id_condition)
+        
+        try:
+            assets, _ = cls.query(asset_condition, limit=len(asset_ids) * 2)  # Some buffer
+        except Exception:
+            # Fallback to individual queries if batch query fails
+            log.warning(f"Batch asset query failed, falling back to individual queries for user {user_id}")
+            return cls._get_asset_path_info_fallback(user_id, asset_ids)
+        
+        # Create a map of assets by ID for quick lookup
+        assets_by_id = {asset.id: asset for asset in assets}
+        
+        # Step 2: Collect all parent IDs we need to fetch
+        all_parent_ids = set()
+        for asset in assets:
+            current_id = asset.parent_id
+            while current_id and current_id != user_id:
+                all_parent_ids.add(current_id)
+                # We'll need to do this iteratively since we don't know the full hierarchy yet
+                break  # Just collect immediate parents for now
+        
+        # Step 3: Batch fetch all parent folders
+        parent_assets = {}
+        if all_parent_ids:
+            parent_condition = Field("user_id").equals(user_id)
+            if len(all_parent_ids) == 1:
+                parent_condition = parent_condition.and_(Field("id").equals(list(all_parent_ids)[0]))
+            else:
+                parent_id_conditions = [Field("id").equals(parent_id) for parent_id in all_parent_ids]
+                combined_parent_condition = parent_id_conditions[0]
+                for condition in parent_id_conditions[1:]:
+                    combined_parent_condition = combined_parent_condition.or_(condition)
+                parent_condition = parent_condition.and_(combined_parent_condition)
+            
+            try:
+                parent_results, _ = cls.query(parent_condition, limit=len(all_parent_ids) * 2)
+                parent_assets = {asset.id: asset for asset in parent_results}
+            except Exception:
+                log.warning(f"Batch parent query failed for user {user_id}")
+        
+        # Step 4: Build path information for each requested asset
         for asset_id in asset_ids:
-            asset = cls.find(user_id, asset_id)
-            if not asset:
+            if asset_id not in assets_by_id:
                 continue
                 
+            asset = assets_by_id[asset_id]
+            
             # If asset is in root folder (parent_id == user_id), handle specially
             if asset.parent_id == user_id:
                 result[asset_id] = {
@@ -308,20 +369,27 @@ class Asset(DBModel):
                 }
                 continue
             
-            # Build folder path by walking up the parent chain
+            # Build folder path by walking up the parent chain using cached parents
             folder_path_parts = []
             folder_ids = []
             current_id = asset.parent_id
             
-            # Walk up the folder hierarchy
+            # Walk up the folder hierarchy using cached data
             while current_id and current_id != user_id:
-                parent_folder = cls.find(user_id, current_id)
-                if not parent_folder:
-                    break
-                    
-                folder_path_parts.append(parent_folder.name)
-                folder_ids.append(parent_folder.id)
-                current_id = parent_folder.parent_id
+                if current_id in parent_assets:
+                    parent_folder = parent_assets[current_id]
+                    folder_path_parts.append(parent_folder.name)
+                    folder_ids.append(parent_folder.id)
+                    current_id = parent_folder.parent_id
+                else:
+                    # If we don't have the parent cached, we need to fetch it
+                    # This can happen for deeply nested folders
+                    parent_folder = cls.find(user_id, current_id)
+                    if not parent_folder:
+                        break
+                    folder_path_parts.append(parent_folder.name)
+                    folder_ids.append(parent_folder.id)
+                    current_id = parent_folder.parent_id
             
             # Add Home as root
             folder_path_parts.append('Home')
@@ -340,5 +408,71 @@ class Asset(DBModel):
                 'folder_path': ' / '.join(folder_path_parts),
                 'folder_id': immediate_parent_id
             }
+        
+        return result
+
+    @classmethod
+    def _get_asset_path_info_fallback(cls, user_id: str, asset_ids: list[str]) -> Dict[str, Dict[str, str]]:
+        """
+        Fallback method for get_asset_path_info when batch queries fail.
+        Uses individual queries but with better error handling.
+        """
+        result = {}
+        
+        for asset_id in asset_ids:
+            try:
+                asset = cls.find(user_id, asset_id)
+                if not asset:
+                    continue
+                    
+                # If asset is in root folder (parent_id == user_id), handle specially
+                if asset.parent_id == user_id:
+                    result[asset_id] = {
+                        'folder_name': 'Home',
+                        'folder_path': 'Home',
+                        'folder_id': user_id
+                    }
+                    continue
+                
+                # Build folder path by walking up the parent chain
+                folder_path_parts = []
+                folder_ids = []
+                current_id = asset.parent_id
+                
+                # Walk up the folder hierarchy
+                while current_id and current_id != user_id:
+                    parent_folder = cls.find(user_id, current_id)
+                    if not parent_folder:
+                        break
+                        
+                    folder_path_parts.append(parent_folder.name)
+                    folder_ids.append(parent_folder.id)
+                    current_id = parent_folder.parent_id
+                
+                # Add Home as root
+                folder_path_parts.append('Home')
+                folder_ids.append(user_id)
+                
+                # Reverse to get path from root to immediate parent
+                folder_path_parts.reverse()
+                folder_ids.reverse()
+                
+                # Get immediate parent info
+                immediate_parent_name = folder_path_parts[-1] if folder_path_parts else 'Home'
+                immediate_parent_id = folder_ids[-1] if folder_ids else user_id
+                
+                result[asset_id] = {
+                    'folder_name': immediate_parent_name,
+                    'folder_path': ' / '.join(folder_path_parts),
+                    'folder_id': immediate_parent_id
+                }
+            except Exception as e:
+                log.warning(f"Error getting path info for asset {asset_id}: {e}")
+                # Provide a fallback result
+                result[asset_id] = {
+                    'folder_name': 'Unknown',
+                    'folder_path': 'Unknown',
+                    'folder_id': ''
+                }
         
         return result

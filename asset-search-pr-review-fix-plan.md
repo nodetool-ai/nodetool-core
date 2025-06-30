@@ -90,8 +90,8 @@ This document outlines the fixes needed for the asset search functionality PR ba
 1. Remove leading wildcard (search only from beginning): `LIKE "query%"`
 2. Implement full-text search if supported by database
 3. Add prefix-based search as default with option for contains search
-
-**Impact:** Medium - Performance improvement
+   NOTE: searching onfly from the start is not user friendly.
+   **Impact:** Medium - Performance improvement
 
 ### 6. Type Annotation Consistency
 
@@ -108,6 +108,7 @@ This document outlines the fixes needed for the asset search functionality PR ba
 - Update type annotations consistently
 
 **Impact:** Low-Medium - Code quality and consistency
+NOTE: avoid changing other code outside of search to avoid breaking things.
 
 ## 🟢 Nice to Have Fixes
 
@@ -122,7 +123,7 @@ This document outlines the fixes needed for the asset search functionality PR ba
 
 ```python
 MIN_SEARCH_QUERY_LENGTH = 2
-DEFAULT_SEARCH_PAGE_SIZE = 100
+DEFAULT_SEARCH_PAGE_SIZE = 200
 ```
 
 **Impact:** Low - Code readability
@@ -171,6 +172,7 @@ folder_info = folder_paths[i] if i < len(folder_paths) else {...}
 - Can be addressed in follow-up PR
 
 **Impact:** Low priority for initial implementation
+NOTE: add minimal documentation
 
 ## Implementation Priority Order
 
@@ -203,12 +205,3 @@ folder_info = folder_paths[i] if i < len(folder_paths) else {...}
 - Moving models to types file - Simple refactor
 - Error message improvements - Only affects error cases
 - Magic number constants - No functional change
-
-## Estimated Implementation Time
-
-- **Critical fixes:** 2-3 days
-- **Important fixes:** 1-2 days
-- **Nice to have:** 1-2 days
-- **Testing:** 2-3 days
-
-**Total:** ~1 week for all planned fixes
