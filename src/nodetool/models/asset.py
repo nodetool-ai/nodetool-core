@@ -227,9 +227,9 @@ class Asset(DBModel):
         start_key: Optional[str] = None,
     ):
         """
-        Search assets globally across all user folders and return path information.
+        Search assets globally across all folders belonging to the current user and return path information.
         
-        Note: Local search is handled in the frontend by filtering already-loaded folder assets.
+        Note: Local search (within current folder) is handled in the frontend by filtering already-loaded folder assets.
         
         Args:
             user_id: The ID of the user whose assets are being searched.
@@ -240,7 +240,7 @@ class Asset(DBModel):
             
         Returns:
             Tuple of (assets, next_cursor, folder_paths) where:
-            - assets: List of Asset objects matching the search
+            - assets: List of Asset objects matching the search (filtered to current user only)
             - next_cursor: Pagination cursor for next page (None if no more results)
             - folder_paths: List of dicts with folder context for each asset
         """
@@ -248,10 +248,18 @@ class Asset(DBModel):
         import re
         sanitized_query = re.sub(r'[%_\\]', r'\\\1', query.strip())
         
-        # Build base condition for user and name search (global search only)
-        condition = Field("user_id").equals(user_id).and_(
-            Field("name").like(f"%{sanitized_query}%")
-        )
+        # Build base condition for user and name search with performance optimization
+        # Use prefix search for short queries (better performance) and contains search for longer queries (better UX)
+        condition = Field("user_id").equals(user_id)
+        
+        if len(sanitized_query) <= 3:
+            # For short queries, use prefix search for better performance (can use indexes)
+            search_condition = Field("name").like(f"{sanitized_query}%")
+        else:
+            # For longer queries, use contains search for better user experience
+            search_condition = Field("name").like(f"%{sanitized_query}%")
+        
+        condition = condition.and_(search_condition)
         
         # Add content_type filter if specified
         if content_type:

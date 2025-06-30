@@ -15,6 +15,8 @@ from nodetool.types.asset import (
     AssetDownloadRequest,
     AssetList,
     AssetUpdateRequest,
+    AssetWithPath,
+    AssetSearchResult,
 )
 from nodetool.api.utils import current_user
 from nodetool.common.environment import Environment
@@ -75,35 +77,6 @@ class PackageAssetList(BaseModel):
     assets: List[PackageAsset]
 
 
-# Define Pydantic models for search functionality
-class AssetWithPath(BaseModel):
-    # All existing Asset fields
-    id: str
-    user_id: str
-    workflow_id: Optional[str]
-    parent_id: Optional[str]
-    name: str
-    content_type: str
-    size: Optional[int]
-    metadata: Optional[Dict] = None
-    created_at: str
-    get_url: Optional[str]
-    thumb_url: Optional[str]
-    duration: Optional[float]
-    
-    # New fields for search context
-    folder_name: str = PydanticField(..., description="Direct parent folder name")
-    folder_path: str = PydanticField(..., description="Full path breadcrumb")
-    folder_id: str = PydanticField(..., description="Parent folder ID for navigation")
-
-
-class AssetSearchResult(BaseModel):
-    assets: List[AssetWithPath]
-    next_cursor: Optional[str] = None
-    total_count: int
-    is_global_search: bool
-
-
 # Constants
 MIN_SEARCH_QUERY_LENGTH = 2
 DEFAULT_SEARCH_PAGE_SIZE = 200
@@ -152,7 +125,7 @@ async def search_assets_global(
     user: str = Depends(current_user),
 ) -> AssetSearchResult:
     """
-    Search assets globally across all user folders with folder path information.
+    Search assets globally across all folders belonging to the current user with folder path information.
     
     Note: Local search (within current folder) is handled efficiently in the frontend
     by filtering already-loaded folder assets.
@@ -165,7 +138,7 @@ async def search_assets_global(
         user: Current user ID
     
     Returns:
-        AssetSearchResult with assets and folder path information
+        AssetSearchResult with assets and folder path information (current user's assets only)
     """
     # Validate query length
     if len(query.strip()) < MIN_SEARCH_QUERY_LENGTH:
