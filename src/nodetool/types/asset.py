@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Optional
 from pydantic import BaseModel
 
 from nodetool.common.content_types import CONTENT_TYPE_TO_EXTENSION
@@ -11,7 +11,7 @@ class Asset(BaseModel):
     parent_id: str
     name: str
     content_type: str
-    size: int = 0  # File size in bytes
+    size: Optional[int] = None  # File size in bytes (None for folders)
     metadata: dict[str, Any] | None = None
     created_at: str
     get_url: str | None
@@ -56,7 +56,7 @@ class AssetCreateRequest(BaseModel):
     content_type: str
     metadata: dict | None = None
     duration: float | None = None
-    size: int = 0
+    size: Optional[int] = None
 
 
 class AssetDownloadRequest(BaseModel):

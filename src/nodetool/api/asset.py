@@ -84,7 +84,7 @@ class AssetWithPath(BaseModel):
     parent_id: Optional[str]
     name: str
     content_type: str
-    size: int
+    size: Optional[int]
     metadata: Dict = {}
     created_at: str
     get_url: Optional[str]
@@ -176,7 +176,7 @@ async def search_assets_global(
             user_id=user,
             query=query.strip(),
             content_type=content_type,
-            limit=page_size,
+            limit=page_size or 100,
             start_key=cursor,
         )
         
@@ -357,7 +357,7 @@ async def get(id: str, user: str = Depends(current_user)) -> Asset:
             content_type="folder",
             parent_id="",
             workflow_id=None,
-            size=0,
+            size=None,
             get_url=None,
             thumb_url=None,
             created_at="",
