@@ -255,7 +255,10 @@ class Asset(DBModel):
         """
         # Sanitize query to prevent SQL injection by escaping special characters
         import re
-        sanitized_query = re.sub(r'[%_\\]', r'\\\1', query.strip())
+        sanitized_query = query.strip()
+        sanitized_query = sanitized_query.replace('\\', '\\\\')  # Escape backslashes first
+        sanitized_query = sanitized_query.replace('%', '\\%')    # Escape SQL wildcards
+        sanitized_query = sanitized_query.replace('_', '\\_')    # Escape SQL wildcards
         
         # Build base condition for user and name search (consistent contains search for better UX)
         condition = Field("user_id").equals(user_id).and_(
