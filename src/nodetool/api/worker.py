@@ -1,5 +1,5 @@
 import dotenv
-from fastapi import FastAPI, WebSocket
+from fastapi import FastAPI, WebSocket, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from nodetool.api.model import RepoPath
 from nodetool.api.utils import flatten_models
@@ -19,7 +19,7 @@ from nodetool.common.huggingface_cache import huggingface_download_endpoint
 from nodetool.common.huggingface_models import (
     CachedModel,
     delete_cached_hf_model,
-    get_cached_hf_model_info,
+    read_cached_hf_models,
 )
 from nodetool.metadata.types import HuggingFaceModel
 from typing import List
@@ -112,7 +112,13 @@ def get_worker_app(worker: WorkerAPIClient) -> FastAPI:
 
     @app.get("/models/huggingface/{repo_id:path}", response_model=CachedModel)
     async def get_huggingface_model_endpoint(repo_id: str) -> CachedModel:
-        return await get_cached_hf_model_info(repo_id)
+        models = await read_cached_hf_models()
+        for model in models:
+            if model.repo_id == repo_id:
+                return model
+        # If model not found, raise HTTPException
+        raise HTTPException(status_code=404, detail=f"Model {repo_id} not found in cache")
+
 
     @app.delete("/huggingface_model")
     async def delete_huggingface_model(repo_id: str) -> bool:
