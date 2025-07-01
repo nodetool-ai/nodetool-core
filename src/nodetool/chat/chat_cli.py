@@ -26,6 +26,7 @@ import shutil  # Add shutil for cp and mv
 import re  # Add re for grep
 
 # New imports
+from nodetool.agents.tools.workflow_tool import create_workflow_tools
 from prompt_toolkit import PromptSession
 from prompt_toolkit.history import FileHistory
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
@@ -66,6 +67,8 @@ from nodetool.agents.tools import (
     WriteFileTool,
     ScreenshotTool,
     SearchEmailTool,
+    CreateWorkflowTool,
+    EditWorkflowTool,
     create_workflow_tools,
 )
 from nodetool.workflows.types import Chunk
@@ -137,8 +140,6 @@ class ChatCLI:
         """Register all available commands."""
         from nodetool.chat.commands.agent import AgentCommand
         from nodetool.chat.commands.clear import ClearCommand
-        from nodetool.chat.commands.create_workflow import CreateWorkflowCommand
-        from nodetool.chat.commands.edit_workflow import EditWorkflowCommand
         from nodetool.chat.commands.debug import DebugCommand
         from nodetool.chat.commands.exit import ExitCommand
         from nodetool.chat.commands.help import HelpCommand
@@ -159,8 +160,6 @@ class ChatCLI:
             ToolEnableCommand(),
             ToolDisableCommand(),
             RunWorkflowCommand(),
-            CreateWorkflowCommand(),
-            EditWorkflowCommand(),
         ]
 
         for command in commands:
@@ -293,6 +292,8 @@ class ChatCLI:
             ArchiveEmailTool(),
             BrowserTool(),
             ConvertPDFToMarkdownTool(),
+            CreateWorkflowTool(),
+            EditWorkflowTool(),
             DownloadFileTool(),
             ExtractPDFTablesTool(),
             ExtractPDFTextTool(),
@@ -447,15 +448,12 @@ class ChatCLI:
         """Process a problem with the Agent and display the response with rich formatting."""
         self.agent = self.initialize_agent(problem)
         output = ""
-        lines_printed = 0
         
         async for item in self.agent.execute(self.context):
             if isinstance(item, Chunk):
                 output += item.content
                 # Print the chunk directly for real-time feedback
-                chunk_lines = item.content.count('\n')
                 self.console.print(item.content, end="", highlight=False)
-                lines_printed += chunk_lines
             elif isinstance(item, ToolCall):
                 args = json.dumps(item.args)
                 if len(args) > 120:
@@ -464,18 +462,6 @@ class ChatCLI:
                     self.console.print(
                         f"\n[bold cyan][{item.name}]:[/bold cyan] {args}"
                     )
-                    lines_printed += 1
-
-        # Clear the streamed output by moving cursor up and clearing lines
-        if lines_printed > 0:
-            # Move cursor up by the number of lines printed
-            self.console.print(f"\033[{lines_printed}A", end="")
-            # Clear from cursor to end of screen
-            self.console.print("\033[0J", end="")
-        
-        # Print the final complete result
-        if output.strip():
-            self.console.print(output.strip())
         
         # Print final newline to separate from prompt
         self.console.print()

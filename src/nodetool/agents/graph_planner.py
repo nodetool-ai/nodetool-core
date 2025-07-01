@@ -1042,6 +1042,10 @@ class GraphPlanner:
         for node in graph.nodes:
             properties = node.data.copy() if node.data else {}
 
+            # Include dynamic properties if they exist
+            if hasattr(node, 'dynamic_properties') and node.dynamic_properties:
+                properties.update(node.dynamic_properties)
+
             # Find incoming edges for the current node and add them to properties
             if node.id in edges_by_target:
                 for edge in edges_by_target[node.id]:
@@ -1224,10 +1228,16 @@ class GraphPlanner:
             node_id = spec.node_id
             node_type = spec.node_type
             node_data = {}
+            dynamic_properties = {}
 
             # Process properties and extract edges
             properties_string = spec.properties
             properties = json.loads(properties_string)
+
+            # Check if this is a dynamic node type
+            node_class = get_node_class(node_type)
+            is_dynamic_node = node_class.is_dynamic() if node_class else False
+            standard_prop_names = {prop.name for prop in node_class.properties()} if is_dynamic_node and node_class else set()
 
             for prop_name, prop_value in properties.items():
 
@@ -1242,8 +1252,13 @@ class GraphPlanner:
                     }
                     edges.append(edge)
                 else:
-                    # Regular property value
-                    node_data[prop_name] = prop_value
+                    # For dynamic nodes, check if this property is in the standard schema
+                    if is_dynamic_node and prop_name not in standard_prop_names:
+                        # This is a dynamic property
+                        dynamic_properties[prop_name] = prop_value
+                    else:
+                        # This is a standard property
+                        node_data[prop_name] = prop_value
 
             # Create node dict in the requested format
             node_dict = {
@@ -1251,6 +1266,10 @@ class GraphPlanner:
                 "type": node_type,
                 "data": node_data,
             }
+            
+            # Add dynamic_properties only if there are any
+            if dynamic_properties:
+                node_dict["dynamic_properties"] = dynamic_properties
 
             nodes.append(node_dict)
 
@@ -1318,6 +1337,10 @@ class GraphPlanner:
             logger.info(
                 f"[{phase_name}] Running: Starting {phase_name.lower()} phase..."
             )
+            available_tools = [tool.name for tool in tools]
+            logger.info(
+                f"[{phase_name}] Running: Available tools: {available_tools} + {output_tool_name} (output)"
+            )
 
         history.append(Message(role="user", content=prompt_content))
         
@@ -1326,10 +1349,15 @@ class GraphPlanner:
         try:
             # Single loop with tool calling including output tool
             for attempt in range(max_validation_attempts):
-                if self.verbose and attempt > 0:
-                    logger.info(
-                        f"[{phase_name}] Running: Retry attempt {attempt + 1}/{max_validation_attempts}..."
-                    )
+                if self.verbose:
+                    if attempt > 0:
+                        logger.info(
+                            f"[{phase_name}] Running: Retry attempt {attempt + 1}/{max_validation_attempts}..."
+                        )
+                    else:
+                        logger.info(
+                            f"[{phase_name}] Running: Starting validation attempt {attempt + 1}/{max_validation_attempts}..."
+                        )
 
                 for i in range(max_iterations):
                     if self.verbose:
@@ -1374,6 +1402,14 @@ class GraphPlanner:
                             logger.info(
                                 f"[{phase_name}] Running: Executing {len(response.tool_calls)} tool call(s)..."
                             )
+                            tool_names = [tc.name for tc in response.tool_calls]
+                            logger.info(
+                                f"[{phase_name}] Running: Tool calls: {tool_names}"
+                            )
+                            logger.info(
+                                f"[{phase_name}] Running: Expected output tool: {output_tool_name}"
+                            )
+                        
                         tool_messages_for_history: List[Message] = []
                         for tool_call in response.tool_calls:
                             tool_output_str = ""
@@ -1402,12 +1438,20 @@ class GraphPlanner:
                                         if tool_call.name == output_tool_name and isinstance(tool_output, response_model):
                                             result = tool_output
                                             tool_output_str = "Result submitted successfully."
+                                            if self.verbose:
+                                                logger.info(
+                                                    f"[{phase_name}] Running: ✅ Output tool {output_tool_name} called successfully! Result captured."
+                                                )
                                         else:
                                             tool_output_str = (
                                                 json.dumps(tool_output)
                                                 if tool_output is not None
                                                 else "Tool returned no output."
                                             )
+                                            if tool_call.name == output_tool_name:
+                                                logger.warning(
+                                                    f"[{phase_name}] Running: ⚠️ Output tool {output_tool_name} was called but result is not the expected type {response_model.__name__}. Got: {type(tool_output)}"
+                                                )
                                         
                                         logger.debug(
                                             f"Tool {tool_call.name} output: {tool_output_str[:200]}..."
@@ -1444,10 +1488,29 @@ class GraphPlanner:
                         
                         # Check if we got the result from output tool
                         if result is not None:
+                            if self.verbose:
+                                logger.info(
+                                    f"[{phase_name}] Running: ✅ Result obtained from output tool, breaking out of iteration loop"
+                                )
                             break
+                        else:
+                            if self.verbose:
+                                logger.info(
+                                    f"[{phase_name}] Running: ❌ No result obtained from output tool {output_tool_name}. Continuing to next iteration (iteration {i + 1}/{max_iterations})."
+                                )
+                            # If this is the last iteration and we still don't have a result, that's a problem
+                            if i == max_iterations - 1:
+                                if self.verbose:
+                                    logger.warning(
+                                        f"[{phase_name}] Running: ⚠️ Reached last iteration ({max_iterations}) without calling output tool {output_tool_name}"
+                                    )
                         # Continue to the next iteration to get LLM response after tool execution
                     else:
                         # LLM didn't call any tools, this is an error - prompt again for output tool
+                        if self.verbose:
+                            logger.warning(
+                                f"[{phase_name}] Running: ⚠️ LLM didn't call any tools (iteration {i + 1}/{max_iterations}). Prompting for {output_tool_name} tool."
+                            )
                         history.append(
                             Message(
                                 role="user",
@@ -1456,12 +1519,26 @@ class GraphPlanner:
                         )
                         continue
                 
+                # Check what happened at the end of this validation attempt
+                if self.verbose:
+                    logger.info(
+                        f"[{phase_name}] Running: Completed iteration loop for attempt {attempt + 1}. Result obtained: {result is not None}"
+                    )
+                
                 # If we got here and have a result, validate it
                 if result is not None:
+                    if self.verbose:
+                        logger.info(
+                            f"[{phase_name}] Running: ✅ Result obtained from output tool in attempt {attempt + 1}. Running validation..."
+                        )
                     # Run validation if provided
                     if validation_fn:
                         error_message = validation_fn(result)
                         if error_message:
+                            if self.verbose:
+                                logger.warning(
+                                    f"[{phase_name}] Running: ❌ Validation failed for attempt {attempt + 1}: {error_message}"
+                                )
                             logger.warning(
                                 f"{phase_name} validation failed: {error_message}"
                             )
@@ -1474,10 +1551,21 @@ class GraphPlanner:
                             )
                             result = None  # Reset result for retry
                             continue
+                        else:
+                            if self.verbose:
+                                logger.info(
+                                    f"[{phase_name}] Running: ✅ Validation passed for attempt {attempt + 1}"
+                                )
+                    else:
+                        if self.verbose:
+                            logger.info(
+                                f"[{phase_name}] Running: ✅ No validation function provided, accepting result from attempt {attempt + 1}"
+                            )
                     
                     # Success
                     if self.verbose:
                         logger.info(f"[{phase_name}] Success: {phase_name} complete")
+                        logger.info(f"[{phase_name}] Success: Final result type: {type(result).__name__}")
 
                     # Yield the final result as a tuple
                     yield (
@@ -1492,6 +1580,10 @@ class GraphPlanner:
                     return
                 else:
                     # No result was obtained, add instruction for next attempt
+                    if self.verbose:
+                        logger.warning(
+                            f"[{phase_name}] Running: ❌ No result obtained after {max_iterations} iterations in attempt {attempt + 1}. Adding instruction for next attempt."
+                        )
                     history.append(
                         Message(
                             role="user",
@@ -1500,6 +1592,10 @@ class GraphPlanner:
                     )
 
             # All validation attempts failed
+            if self.verbose:
+                logger.error(
+                    f"[{phase_name}] Running: ❌ All {max_validation_attempts} validation attempts exhausted without obtaining valid result"
+                )
             raise ValueError(
                 f"{phase_name} failed to produce valid result after {max_validation_attempts} attempts"
             )
@@ -1524,11 +1620,15 @@ class GraphPlanner:
             phase_name="Analysis",
             prompt_content=analysis_prompt_content,
             response_model=WorkflowAnalysisResult,
-            tools=[SearchNodesTool()],
+            tools=[SearchNodesTool(
+                exclude_namespaces=[
+                    "nodetool.agents",
+                ]
+            )],
             context=context,
             history=history,
-            max_iterations=1,  # No tool iterations needed
-            max_validation_attempts=1,  # No validation for analysis phase
+            max_iterations=5,
+            max_validation_attempts=1,
             validation_fn=None,
         ):
             if isinstance(item, tuple):
@@ -1601,7 +1701,7 @@ class GraphPlanner:
             ],
             context=context,
             history=history,
-            max_iterations=8,  # Allow more iterations since this is a combined phase
+            max_iterations=8,
             max_validation_attempts=5,
             validation_fn=self._validate_workflow_design,
         ):
@@ -1629,12 +1729,18 @@ class GraphPlanner:
             phase_name="Graph Validation",
             prompt_content=validation_prompt,
             response_model=GraphValidationResult,
-            tools=[],  # No tools needed for validation
+            tools=[
+                SearchNodesTool(
+                    exclude_namespaces=[
+                        "nodetool.agents",
+                    ]
+                )
+            ],
             context=context,
             history=history,
-            max_iterations=1,  # Simple validation, no iterations needed
+            max_iterations=5,
             max_validation_attempts=3,
-            validation_fn=None,  # The schema itself validates the structure
+            validation_fn=None, 
         ):
             if isinstance(item, tuple):
                 # Final result tuple
@@ -2237,87 +2343,6 @@ You MUST use the submit_validation_result tool to submit your validation assessm
             logger.info("WORKFLOW DESIGN RESULTS")
             logger.info("=" * 60)
 
-            # Build design summary to send to client
-            design_summary = "\n## 🛠️ Workflow Design Results\n\n"
-
-            # Print nodes
-            node_specifications = workflow_result.node_specifications
-            logger.info(f"Nodes ({len(node_specifications)}):")
-            design_summary += f"### Nodes ({len(node_specifications)})\n\n"
-            
-            for spec in node_specifications:
-                node_id = spec.node_id
-                node_type = spec.node_type
-                purpose = spec.purpose
-                
-                logger.info(f"  ┌─ [{node_id}]")
-                logger.info(f"  │  Type: {node_type}")
-                logger.info(f"  │  Purpose: {purpose}")
-                
-                design_summary += f"#### `{node_id}`\n"
-                design_summary += f"- **Type**: `{node_type}`\n"
-                design_summary += f"- **Purpose**: {purpose}\n"
-
-                # Print properties
-                properties_string = spec.properties
-                properties = json.loads(properties_string)
-                if properties:
-                    logger.info("  │  Properties:")
-                    design_summary += "- **Properties**:\n"
-                    for prop_name, prop_value in properties.items():
-                        if (
-                            isinstance(prop_value, dict)
-                            and prop_value.get("type") == "edge"
-                        ):
-                            logger.info(
-                                f"  │    - {prop_name}: [edge from {prop_value.get('source')}.{prop_value.get('sourceHandle')}]"
-                            )
-                            design_summary += f"  - `{prop_name}`: [edge from `{prop_value.get('source')}.{prop_value.get('sourceHandle')}`]\n"
-                        else:
-                            logger.info(f"  │    - {prop_name}: {prop_value}")
-                            # Truncate long values for display
-                            val_str = str(prop_value)
-                            if len(val_str) > 100:
-                                val_str = val_str[:100] + "..."
-                            design_summary += f"  - `{prop_name}`: {val_str}\n"
-                logger.info("  └─")
-                design_summary += "\n"
-
-            # Extract and print edges from embedded format
-            logger.info("\nEdges (extracted from properties):")
-            design_summary += "### Data Flow (Edges)\n\n"
-            edge_count = 0
-            edges_list = []
-            
-            for spec in node_specifications:
-                target_id = spec.node_id
-                properties_string = spec.properties
-                properties = json.loads(properties_string)
-                for prop_name, prop_value in properties.items():
-                    if (
-                        isinstance(prop_value, dict)
-                        and prop_value.get("type") == "edge"
-                    ):
-                        source = prop_value.get("source", "unknown")
-                        source_handle = prop_value.get("sourceHandle", "unknown")
-                        target_handle = prop_name
-                        logger.info(
-                            f"  • {source}({source_handle}) ──→ {target_id}({target_handle})"
-                        )
-                        edges_list.append(f"- `{source}({source_handle})` → `{target_id}({target_handle})`")
-                        edge_count += 1
-
-            if edge_count == 0:
-                logger.info("  (No edges defined)")
-                design_summary += "*(No edges defined)*\n"
-            else:
-                design_summary += "\n".join(edges_list) + "\n"
-
-            logger.info("=" * 60)
-            design_summary += "\n"
-            
-            # Yield the design summary as a chunk
-            yield Chunk(content=design_summary, done=False)
 
         # Enrich node specifications with actual metadata
         logger.info("Enriching node specifications with metadata from registry...")
@@ -2377,222 +2402,167 @@ You MUST use the submit_validation_result tool to submit your validation assessm
             logger.info(f"Starting Phase 3: {current_phase}")
             yield PlanningUpdate(phase=current_phase, status="Starting", content=None)
 
-            try:
-                # Build nodes and edges using the helper method
-                nodes, edges = self._build_nodes_and_edges_from_specifications(
-                    enriched_workflow.node_specifications,
-                )
+            # Build nodes and edges using the helper method
+            nodes, edges = self._build_nodes_and_edges_from_specifications(
+                enriched_workflow.node_specifications,
+            )
 
-                # Note: Input and Output nodes are now created by the LLM, not auto-generated
+            # Note: Input and Output nodes are now created by the LLM, not auto-generated
+            logger.info(
+                "Input and Output nodes will be created by the LLM based on schema hints"
+            )
+
+            # Create the final graph
+            self.graph = APIGraph(
+                nodes=nodes,  # type: ignore
+                edges=edges,  # type: ignore
+            )
+            logger.info(
+                f"Graph created successfully with {len(self.graph.nodes)} nodes and {len(self.graph.edges)} edges"
+            )
+
+            # Log the generated graph structure
+            logger.info("Generated Graph Structure:")
+            logger.info("=" * 80)
+
+            # Log nodes
+            logger.info(f"Nodes ({len(self.graph.nodes)}):")
+            for node in self.graph.nodes:
+                logger.info(f"  - ID: {node.id}")
+                logger.info(f"    Type: {node.type}")
+                if hasattr(node, "data") and node.data:
+                    logger.info(f"    Data: {json.dumps(node.data, indent=6)}")
+
+            # Log edges
+            logger.info(f"\nEdges ({len(self.graph.edges)}):")
+            for edge in self.graph.edges:
                 logger.info(
-                    "Input and Output nodes will be created by the LLM based on schema hints"
+                    f"  - {edge.source} ({edge.sourceHandle}) -> {edge.target} ({edge.targetHandle})"
                 )
 
-                # Create the final graph
-                self.graph = APIGraph(
-                    nodes=nodes,  # type: ignore
-                    edges=edges,  # type: ignore
-                )
+            # Log the summary
+            self.log_graph_summary()
+
+            yield PlanningUpdate(
+                phase=current_phase,
+                status="Success",
+                content=f"Created graph with {len(self.graph.nodes)} nodes and {len(self.graph.edges)} edges",
+            )
+
+            if self.verbose:
                 logger.info(
-                    f"Graph created successfully with {len(self.graph.nodes)} nodes and {len(self.graph.edges)} edges"
+                    f"[{current_phase}] Success: Graph created with {len(self.graph.nodes)} nodes and {len(self.graph.edges)} edges"
                 )
 
-                # Log the generated graph structure
-                logger.info("Generated Graph Structure:")
-                logger.info("=" * 80)
-
-                # Log nodes
-                logger.info(f"Nodes ({len(self.graph.nodes)}):")
-                for node in self.graph.nodes:
-                    logger.info(f"  - ID: {node.id}")
-                    logger.info(f"    Type: {node.type}")
-                    if hasattr(node, "data") and node.data:
-                        logger.info(f"    Data: {json.dumps(node.data, indent=6)}")
-
-                # Log edges
-                logger.info(f"\nEdges ({len(self.graph.edges)}):")
-                for edge in self.graph.edges:
-                    logger.info(
-                        f"  - {edge.source} ({edge.sourceHandle}) -> {edge.target} ({edge.targetHandle})"
-                    )
-
-                # Log the summary
-                self.log_graph_summary()
-
-                yield PlanningUpdate(
-                    phase=current_phase,
-                    status="Success",
-                    content=f"Created graph with {len(self.graph.nodes)} nodes and {len(self.graph.edges)} edges",
-                )
-
-                if self.verbose:
-                    logger.info(
-                        f"[{current_phase}] Success: Graph created with {len(self.graph.nodes)} nodes and {len(self.graph.edges)} edges"
-                    )
-
-                # Phase 4: Graph Validation
-                validation_phase = f"Graph Validation{attempt_suffix}"
-                logger.info(f"Starting Phase 4: {validation_phase}")
-                yield PlanningUpdate(phase=validation_phase, status="Starting", content=None)
-                
-                try:
-                    validation_result = None
-                    planning_update = None
-                    assert analysis_result is not None
-                    async for item in self._run_graph_validation_phase(context, history, analysis_result, workflow_result):
-                        if isinstance(item, tuple):
-                            # Final result tuple
-                            history, validation_result, planning_update = item
-                            if planning_update:
-                                yield planning_update
-                        else:
-                            # Stream chunk or tool call to frontend
-                            yield item # type: ignore
-                    
-                    if planning_update and planning_update.status == "Failed":
-                        error_msg = f"Graph validation phase failed: {planning_update.content}"
-                        logger.error(error_msg)
-                        if self.verbose:
-                            logger.error(f"[Overall Status] Failed: {error_msg}")
-                        # Don't raise here - validation failure shouldn't stop graph creation
-                        validation_result = GraphValidationResult(
-                            validation_status=ValidationStatus.FAILED,
-                            objective_fulfillment=ValidationScore(score=1, analysis="Validation failed"),
-                            design_consistency=ValidationScore(score=1, analysis="Validation failed"), 
-                            flow_correctness=ValidationScore(score=1, analysis="Validation failed"),
-                            recommendations=["Review validation errors and retry"],
-                            overall_assessment="Validation process failed"
-                        )
-
-                    # Pretty print validation results and yield as chunks
-                    if self.verbose and validation_result:
-                        logger.info("\n" + "=" * 60)
-                        logger.info("GRAPH VALIDATION RESULTS")
-                        logger.info("=" * 60)
-
-                        # Build validation summary to send to client
-                        validation_summary = "\n## ✅ Graph Validation Results\n\n"
-
-                        validation_status = validation_result.validation_status
-                        logger.info(f"Validation Status: {validation_status}")
-                        validation_summary += f"**Validation Status**: `{validation_status}`\n\n"
-
-                        # Objective Fulfillment
-                        obj_fulfillment = validation_result.objective_fulfillment
-                        obj_score = obj_fulfillment.score
-                        obj_analysis = obj_fulfillment.analysis
-                        logger.info(f"Objective Fulfillment Score: {obj_score}/10")
-                        logger.info(f"Objective Analysis: {obj_analysis}")
-                        validation_summary += "### 🎯 Objective Fulfillment\n"
-                        validation_summary += f"**Score**: {obj_score}/10\n"
-                        validation_summary += f"**Analysis**: {obj_analysis}\n\n"
-
-                        # Design Consistency
-                        design_consistency = validation_result.design_consistency
-                        design_score = design_consistency.score
-                        design_analysis = design_consistency.analysis
-                        logger.info(f"Design Consistency Score: {design_score}/10")
-                        logger.info(f"Design Analysis: {design_analysis}")
-                        validation_summary += "### 🏗️ Design Consistency\n"
-                        validation_summary += f"**Score**: {design_score}/10\n"
-                        validation_summary += f"**Analysis**: {design_analysis}\n\n"
-
-                        # Flow Correctness
-                        flow_correctness = validation_result.flow_correctness
-                        flow_score = flow_correctness.score
-                        flow_analysis = flow_correctness.analysis
-                        logger.info(f"Flow Correctness Score: {flow_score}/10")
-                        logger.info(f"Flow Analysis: {flow_analysis}")
-                        validation_summary += "### 🔗 Flow Correctness\n"
-                        validation_summary += f"**Score**: {flow_score}/10\n"
-                        validation_summary += f"**Analysis**: {flow_analysis}\n\n"
-
-                        # Recommendations
-                        recommendations = validation_result.recommendations
-                        if recommendations:
-                            logger.info("Recommendations:")
-                            validation_summary += "### 💡 Recommendations\n"
-                            for rec in recommendations:
-                                logger.info(f"  • {rec}")
-                                validation_summary += f"- {rec}\n"
-                            validation_summary += "\n"
-
-                        # Overall Assessment
-                        overall_assessment = validation_result.overall_assessment
-                        logger.info(f"Overall Assessment: {overall_assessment}")
-                        validation_summary += f"### 📊 Overall Assessment\n{overall_assessment}\n\n"
-
-                        logger.info("=" * 60)
-                        
-                        # Yield the validation summary as a chunk
-                        yield Chunk(content=validation_summary, done=False)
-
-                    yield PlanningUpdate(
-                        phase=validation_phase,
-                        status="Success",
-                        content=f"Graph validation completed with status: {validation_result.validation_status if validation_result else 'Unknown'}",
-                    )
-
-                    if self.verbose:
-                        logger.info(
-                            f"[{validation_phase}] Success: Graph validation completed with status: {validation_result.validation_status if validation_result else 'Unknown'}"
-                        )
-
-                except Exception as e:
-                    error_msg = f"Failed to validate graph: {str(e)}"
-                    logger.error(error_msg, exc_info=True)
-
-                    yield PlanningUpdate(
-                        phase=validation_phase, status="Failed", content=error_msg
-                    )
-
-                    if self.verbose:
-                        logger.error(f"[{validation_phase}] Failed: {error_msg}")
-
-                    # Don't raise here - validation failure shouldn't stop graph creation
-                    logger.warning("Graph validation failed, but graph creation was successful")
-                    validation_result = GraphValidationResult(
-                        validation_status=ValidationStatus.FAILED,
-                        objective_fulfillment=ValidationScore(score=1, analysis="Validation failed"),
-                        design_consistency=ValidationScore(score=1, analysis="Validation failed"), 
-                        flow_correctness=ValidationScore(score=1, analysis="Validation failed"),
-                        recommendations=["Review validation errors and retry"],
-                        overall_assessment="Validation process failed"
-                    )
-
-                # Check validation result and decide whether to continue or break
-                validation_status = validation_result.validation_status if validation_result else ValidationStatus.FAILED
-                
-                if validation_status == ValidationStatus.PASSED:
-                    logger.info("Graph validation passed! Graph creation complete.")
-                    break
-                elif validation_status == ValidationStatus.NEEDS_REVISION:
-                    if revision_attempt < max_revision_attempts - 1:
-                        logger.info(f"Graph needs revision. Attempting revision {revision_attempt + 2}/{max_revision_attempts}")
-                        continue
-                    else:
-                        logger.warning(f"Graph needs revision but reached maximum attempts ({max_revision_attempts}). Accepting current graph.")
-                        break
-                else:  # failed or unknown
-                    if revision_attempt < max_revision_attempts - 1:
-                        logger.warning(f"Graph validation failed. Attempting revision {revision_attempt + 2}/{max_revision_attempts}")
-                        continue
-                    else:
-                        logger.warning(f"Graph validation failed but reached maximum attempts ({max_revision_attempts}). Accepting current graph.")
-                        break
-
-            except Exception as e:
-                error_msg = f"Failed to create graph: {str(e)}"
-                logger.error(error_msg, exc_info=True)
-
-                yield PlanningUpdate(
-                    phase=current_phase, status="Failed", content=error_msg
-                )
-
+            # Phase 4: Graph Validation
+            validation_phase = f"Graph Validation{attempt_suffix}"
+            logger.info(f"Starting Phase 4: {validation_phase}")
+            yield PlanningUpdate(phase=validation_phase, status="Starting", content=None)
+            
+            validation_result = None
+            planning_update = None
+            assert analysis_result is not None
+            async for item in self._run_graph_validation_phase(context, history, analysis_result, workflow_result):
+                if isinstance(item, tuple):
+                    # Final result tuple
+                    history, validation_result, planning_update = item
+                    if planning_update:
+                        yield planning_update
+                else:
+                    # Stream chunk or tool call to frontend
+                    yield item # type: ignore
+            
+            if planning_update and planning_update.status == "Failed":
+                error_msg = f"Graph validation phase failed: {planning_update.content}"
+                logger.error(error_msg)
                 if self.verbose:
                     logger.error(f"[Overall Status] Failed: {error_msg}")
+                # Don't raise here - validation failure shouldn't stop graph creation
+                validation_result = GraphValidationResult(
+                    validation_status=ValidationStatus.FAILED,
+                    objective_fulfillment=ValidationScore(score=1, analysis="Validation failed"),
+                    design_consistency=ValidationScore(score=1, analysis="Validation failed"), 
+                    flow_correctness=ValidationScore(score=1, analysis="Validation failed"),
+                    recommendations=["Review validation errors and retry"],
+                    overall_assessment="Validation process failed"
+                )
 
-                raise ValueError(error_msg)
+            # Pretty print validation results and yield as chunks
+            if self.verbose and validation_result:
+                logger.info("\n" + "=" * 60)
+                logger.info("GRAPH VALIDATION RESULTS")
+                logger.info("=" * 60)
+
+                # Build validation summary to send to client
+                validation_status = validation_result.validation_status
+                logger.info(f"Validation Status: {validation_status}")
+
+                # Objective Fulfillment
+                obj_fulfillment = validation_result.objective_fulfillment
+                obj_score = obj_fulfillment.score
+                obj_analysis = obj_fulfillment.analysis
+                logger.info(f"Objective Fulfillment Score: {obj_score}/10")
+                logger.info(f"Objective Analysis: {obj_analysis}")
+
+                # Design Consistency
+                design_consistency = validation_result.design_consistency
+                design_score = design_consistency.score
+                design_analysis = design_consistency.analysis
+                logger.info(f"Design Consistency Score: {design_score}/10")
+                logger.info(f"Design Analysis: {design_analysis}")
+
+                # Flow Correctness
+                flow_correctness = validation_result.flow_correctness
+                flow_score = flow_correctness.score
+                flow_analysis = flow_correctness.analysis
+                logger.info(f"Flow Correctness Score: {flow_score}/10")
+                logger.info(f"Flow Analysis: {flow_analysis}")
+
+                # Recommendations
+                recommendations = validation_result.recommendations
+                if recommendations:
+                    logger.info("Recommendations:")
+                    for rec in recommendations:
+                        logger.info(f"  • {rec}")
+
+                # Overall Assessment
+                overall_assessment = validation_result.overall_assessment
+                logger.info(f"Overall Assessment: {overall_assessment}")
+
+                logger.info("=" * 60)
+                
+            yield PlanningUpdate(
+                phase=validation_phase,
+                status="Success",
+                content=f"Graph validation completed with status: {validation_result.validation_status if validation_result else 'Unknown'}",
+            )
+
+            if self.verbose:
+                logger.info(
+                    f"[{validation_phase}] Success: Graph validation completed with status: {validation_result.validation_status if validation_result else 'Unknown'}"
+                )
+
+            # Check validation result and decide whether to continue or break
+            validation_status = validation_result.validation_status if validation_result else ValidationStatus.FAILED
+            
+            if validation_status == ValidationStatus.PASSED:
+                logger.info("Graph validation passed! Graph creation complete.")
+                break
+            elif validation_status == ValidationStatus.NEEDS_REVISION:
+                if revision_attempt < max_revision_attempts - 1:
+                    logger.info(f"Graph needs revision. Attempting revision {revision_attempt + 2}/{max_revision_attempts}")
+                    continue
+                else:
+                    logger.warning(f"Graph needs revision but reached maximum attempts ({max_revision_attempts}). Accepting current graph.")
+                    break
+            else:  # failed or unknown
+                if revision_attempt < max_revision_attempts - 1:
+                    logger.warning(f"Graph validation failed. Attempting revision {revision_attempt + 2}/{max_revision_attempts}")
+                    continue
+                else:
+                    logger.warning(f"Graph validation failed but reached maximum attempts ({max_revision_attempts}). Accepting current graph.")
+                    break
+
 
 
 async def main():
