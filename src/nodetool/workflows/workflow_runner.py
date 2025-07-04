@@ -1652,6 +1652,7 @@ class WorkflowRunner:
             if requires_gpu and self.device != "cpu":
                 await acquire_gpu_lock(node, context)
                 try:
+                    await node.preload_model(context)
                     await node.move_to_device(self.device)
                     self.log_vram_usage(
                         f"Node {node.get_title()} ({node._id}) VRAM after move to {self.device}"

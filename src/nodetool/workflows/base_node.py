@@ -35,7 +35,7 @@ from weakref import WeakKeyDictionary
 from pydantic import BaseModel, Field
 from pydantic.fields import FieldInfo
 import traceback
-from typing import Any, AsyncGenerator, Callable, Type, TypeVar
+from typing import Any, AsyncGenerator, Callable, Optional, Type, TypeVar
 
 from nodetool.types.graph import Edge
 from nodetool.common.environment import Environment
@@ -332,7 +332,7 @@ class BaseNode(BaseModel):
                 NameToType[name] = field_type
 
     @staticmethod
-    def from_dict(node: dict[str, Any], skip_errors: bool = False) -> tuple["BaseNode", list[str]]:
+    def from_dict(node: dict[str, Any], skip_errors: bool = False) -> tuple[Optional["BaseNode"], list[str]]:
         """
         Create a Node object from a dictionary representation.
 
@@ -966,6 +966,12 @@ class BaseNode(BaseModel):
         Initialize the node when workflow starts.
 
         Responsible for setting up the node, including loading any necessary GPU models.
+        """
+        pass
+
+    async def preload_model(self, context: Any):
+        """
+        Load the model for the node.
         """
         pass
 
