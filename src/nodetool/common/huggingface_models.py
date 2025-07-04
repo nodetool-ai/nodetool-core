@@ -25,8 +25,6 @@ import shutil
 import json
 import hashlib
 from pathlib import Path
-from fastapi import FastAPI
-
 from nodetool.common.environment import Environment
 from nodetool.metadata.types import CLASSNAME_TO_MODEL_TYPE, HuggingFaceModel
 from nodetool.workflows.base_node import get_recommended_models
@@ -35,7 +33,7 @@ log = Environment.get_logger()
 
 # Cache configuration
 CACHE_VERSION = "1.0"
-CACHE_EXPIRY_DAYS = 7
+CACHE_EXPIRY_DAYS = int(os.environ.get("NODETOOL_CACHE_EXPIRY_DAYS", "7"))
 
 
 def get_model_info_cache_directory() -> Path:
@@ -105,7 +103,7 @@ def is_cache_valid(cache_file: Path) -> bool:
         return False
 
 
-def read_cache_file(cache_file: Path) -> dict | None:
+def read_cache_file(cache_file: Path) -> dict[str, Any] | None:
     """
     Read and parse cache file.
     
@@ -126,7 +124,7 @@ def read_cache_file(cache_file: Path) -> dict | None:
         if data.get("version") != CACHE_VERSION:
             return None
             
-        return data.get("data")
+        return data.get("data")  # type: ignore[no-any-return]
     except Exception as e:
         log.debug(f"Failed to read cache file {cache_file}: {e}")
         return None
@@ -134,7 +132,7 @@ def read_cache_file(cache_file: Path) -> dict | None:
 
 def write_cache_file(cache_file: Path, data: Any) -> None:
     """
-    Write data to cache file.
+    Write data to cache file with size verification.
     
     Args:
         cache_file (Path): Path to cache file
@@ -150,8 +148,20 @@ def write_cache_file(cache_file: Path, data: Any) -> None:
         # Ensure directory exists
         cache_file.parent.mkdir(parents=True, exist_ok=True)
         
+        # Convert to JSON string first to check size
+        json_str = json.dumps(cache_data, indent=2, default=str)
+        expected_size = len(json_str.encode('utf-8'))
+        
         with open(cache_file, 'w', encoding='utf-8') as f:
-            json.dump(cache_data, f, indent=2, default=str)
+            f.write(json_str)
+            f.flush()
+            os.fsync(f.fileno())  # Ensure data is written to disk
+        
+        # Verify file was written completely
+        actual_size = cache_file.stat().st_size
+        if actual_size != expected_size:
+            log.warning(f"Cache file size mismatch for {cache_file}: expected {expected_size}, got {actual_size}")
+            cache_file.unlink()  # Remove potentially corrupted file
             
     except Exception as e:
         log.debug(f"Failed to write cache file {cache_file}: {e}")
@@ -309,9 +319,6 @@ async def fetch_model_info(model_id: str) -> ModelInfo | None:
         return model_info
 
 
-app = FastAPI()
-
-
 class CachedModel(BaseModel):
     repo_id: str
     repo_type: str
@@ -339,7 +346,7 @@ def model_type_from_model_info(
         and "_class_name" in model_info.config["diffusers"]
     ):
         return CLASSNAME_TO_MODEL_TYPE.get(
-            model_info.config["diffusers"]["_class_name"], None
+            model_info.config["diffusers"]["_class_name"], None  # type: ignore[no-any-return]
         )
     if model_info.pipeline_tag:
         name = model_info.pipeline_tag.replace("-", "_")
@@ -412,12 +419,11 @@ def delete_cached_hf_model(model_id: str) -> bool:
     return False
 
 
-async def main():
-    models = await read_cached_hf_models()
-    for model in models:
-        if model.the_model_info is not None:
-            print(model.repo_id, model.the_model_info.tags)
-
-
 if __name__ == "__main__":
+    async def main() -> None:
+        models = await read_cached_hf_models()
+        for model in models:
+            if model.the_model_info is not None:
+                print(model.repo_id, model.the_model_info.tags)
+    
     asyncio.run(main())
