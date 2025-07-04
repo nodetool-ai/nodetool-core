@@ -145,7 +145,7 @@ CORE_DOCS = [
         - Delete Node: Delete or Backspace
         - Copy/Paste: CTRL+C / CTRL+V / Cmd+C / Cmd+V
         - Select All: CTRL+A / Cmd+A
-        - Copy selected nodes: Shift + C and Paste selected nodes with Shift + V
+        - Copy selected nodes: CTRL / ⌘ + C and Paste selected nodes with CTRL / ⌘ + V
         - Select multiple Nodes: Drag area with left click, Shift + Left Click if using LMB for panning
         - Select multiple nodes: click on nodes with CTRL key or draw a rectangle around nodes
         """,
