@@ -66,13 +66,11 @@ async def abort(status_code: int, detail: Optional[str] = None) -> None:
     raise HTTPException(status_code=status_code, detail=detail)
 
 def flatten_models(
-    models: list[Any],
-) -> list[Union[HuggingFaceModel, CachedModel]]:
+    models: list[list[HuggingFaceModel]],
+) -> list[HuggingFaceModel]:
     """Flatten a list of models that may contain nested lists."""
     flat_list = []
     for item in models:
-        if isinstance(item, list):
-            flat_list.extend(flatten_models(item))
-        else:
-            flat_list.append(item)
+        for model in item:
+            flat_list.append(model)
     return flat_list

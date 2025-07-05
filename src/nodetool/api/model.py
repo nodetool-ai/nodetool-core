@@ -42,12 +42,6 @@ import shlex
 log = Environment.get_logger()
 router = APIRouter(prefix="/api/models", tags=["models"])
 
-# Simple module-level cache
-_cached_huggingface_models = None
-_cached_recommended_models = None
-# Cache for Ollama models directory (None = not found, Path = found, uninitialized = None)
-_cached_ollama_models_dir_path: Path | None = None
-
 
 # Internal helper to get Ollama models directory
 def _get_ollama_models_dir() -> Path | None:
@@ -60,10 +54,6 @@ def _get_ollama_models_dir() -> Path | None:
         Path | None: The resolved absolute path to the Ollama models directory if found
                       and valid, otherwise None.
     """
-    global _cached_ollama_models_dir_path
-    if _cached_ollama_models_dir_path is not None: # Check if cache is populated
-        return _cached_ollama_models_dir_path
-
     path = None
 
     # 1. Check explicit environment variable first. According to Ollama's
@@ -83,7 +73,6 @@ def _get_ollama_models_dir() -> Path | None:
 
             # Honour the env var regardless of whether the directory exists.
             log.debug(f"Using Ollama models directory from OLLAMA_MODELS env var: {p}")
-            _cached_ollama_models_dir_path = p
             return p
         except Exception as e:
             log.error(
@@ -103,14 +92,11 @@ def _get_ollama_models_dir() -> Path | None:
                 path = Path("/usr/share/ollama/.ollama/models")
         
         if path and path.exists() and path.is_dir():
-            _cached_ollama_models_dir_path = path.resolve()
-            return _cached_ollama_models_dir_path
+            return path.resolve()
         
-        _cached_ollama_models_dir_path = None # Cache that it wasn't found
         return None
     except Exception as e:
         log.error(f"Error determining Ollama models directory: {e}")
-        _cached_ollama_models_dir_path = None # Cache failure as None
         return None
 
 
@@ -159,14 +145,9 @@ class CachedRepo(BaseModel):
 async def recommended_models(
     user: str = Depends(current_user),
 ) -> list[HuggingFaceModel]:
-    global _cached_recommended_models
-    if _cached_recommended_models is not None:
-        return _cached_recommended_models
-
     recommended = get_recommended_models()
     # Flatten the list of lists into a single list
     models = flatten_models(list(recommended.values()))
-    _cached_recommended_models = models
     return models
 
 
@@ -174,14 +155,7 @@ async def recommended_models(
 async def get_huggingface_models(
     user: str = Depends(current_user),
 ) -> list[CachedModel]:
-    global _cached_huggingface_models
-
-    if _cached_huggingface_models is not None:
-        return _cached_huggingface_models
-
-    models = await read_cached_hf_models()
-    _cached_huggingface_models = models
-    return models
+    return await read_cached_hf_models()
 
 
 @router.delete("/huggingface_model")
@@ -398,6 +372,37 @@ if not Environment.is_production():
             return {
                 "status": "error",
                 "message": "Could not determine Ollama models path. Please check server logs for details.",
+            }
+
+    @router.get("/huggingface_base_path")
+    async def get_huggingface_base_path_endpoint(user: str = Depends(current_user)) -> dict:
+        """Retrieves the Hugging Face cache directory path.
+
+        The path is determined from the HF_HUB_CACHE constant which points to the
+        root of the Hugging Face cache directory.
+
+        Args:
+            user (str): The current user, injected by FastAPI dependency.
+
+        Returns:
+            dict: A dictionary containing the path if found (e.g., {"path": "/path/to/hf/cache"}),
+                  or an error message if not found (e.g., {"status": "error", "message": "..."}).
+        """
+        try:
+            hf_cache_path = Path(HF_HUB_CACHE).resolve()
+            if hf_cache_path.exists() and hf_cache_path.is_dir():
+                return {"path": str(hf_cache_path)}
+            else:
+                log.warning(f"Hugging Face cache directory {hf_cache_path} does not exist or is not a directory.")
+                return {
+                    "status": "error",
+                    "message": f"Hugging Face cache directory does not exist: {hf_cache_path}",
+                }
+        except Exception as e:
+            log.error(f"Error determining Hugging Face cache directory: {e}")
+            return {
+                "status": "error",
+                "message": "Could not determine Hugging Face cache path. Please check server logs for details.",
             }
 
     @router.post("/pull_ollama_model")

@@ -100,33 +100,27 @@ async def test_httpx_connect_error_in_help_messages():
     
     # Mock the provider to raise httpx.ConnectError
     with patch('nodetool.common.chat_websocket_runner.provider_from_model') as mock_provider_from_model:
-        mock_provider = AsyncMock()
-        mock_provider_from_model.return_value = mock_provider
+        async def raise_connect_error(*args, **kwargs):
+            raise httpx.ConnectError("[Errno 8] nodename nor servname provided, or not known")
         
-        # Mock create_help_answer to raise httpx.ConnectError
-        with patch('nodetool.common.chat_websocket_runner.create_help_answer') as mock_help:
-            async def raise_connect_error(*args, **kwargs):
-                raise httpx.ConnectError("[Errno 8] nodename nor servname provided, or not known")
-                yield  # pragma: no cover
-            
-            mock_help.return_value = raise_connect_error()
-            
-            # Process a help message
-            runner.chat_history = [Message(role="user", content="Help me", help_mode=True)]
-            response = await runner._process_help_messages("gpt-4")
-            
-            # Check that an error message was sent to the client
-            error_messages = [msg for msg in websocket.sent_messages if msg.get("type") == "error"]
-            assert len(error_messages) == 1
-            
-            error_msg = error_messages[0]
-            assert error_msg["type"] == "error"
-            assert "Unable to resolve hostname" in error_msg["message"]
-            assert error_msg["error_type"] == "connection_error"
-            
-            # Check that the response message contains the error
-            assert response.role == "assistant"
-            assert "connection error while processing the help request" in response.content.lower()
+        mock_provider_from_model.side_effect = raise_connect_error
+        
+        # Process a help message
+        runner.chat_history = [Message(role="user", content="Help me", help_mode=True)]
+        response = await runner._process_help_messages("gpt-4")
+        
+        # Check that an error message was sent to the client
+        error_messages = [msg for msg in websocket.sent_messages if msg.get("type") == "error"]
+        assert len(error_messages) == 1
+        
+        error_msg = error_messages[0]
+        assert error_msg["type"] == "error"
+        assert "Unable to resolve hostname" in error_msg["message"]
+        assert error_msg["error_type"] == "connection_error"
+        
+        # Check that the response message contains the error
+        assert response.role == "assistant"
+        assert "connection error while processing the help request" in response.content.lower()
 
 
 @pytest.mark.asyncio  

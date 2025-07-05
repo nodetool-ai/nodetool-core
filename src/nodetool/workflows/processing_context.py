@@ -16,6 +16,7 @@ import httpx
 import joblib
 import base64
 import PIL.Image
+import PIL.ImageOps
 import numpy as np
 import pandas as pd
 from pydub import AudioSegment
@@ -1115,7 +1116,19 @@ class ProcessingContext:
             PIL.Image.Image: The converted PIL Image object.
         """
         buffer = await self.asset_to_io(image_ref)
-        return PIL.Image.open(buffer).convert("RGB")
+        image = PIL.Image.open(buffer)
+        
+        # Apply EXIF orientation if present
+        try:
+            # Use PIL's built-in method to handle EXIF orientation
+            rotated_image = PIL.ImageOps.exif_transpose(image)
+            # exif_transpose can return None in some cases, so fallback to original
+            image = rotated_image if rotated_image is not None else image
+        except (AttributeError, KeyError, TypeError):
+            # If EXIF data is not available or malformed, continue without rotation
+            pass
+        
+        return image.convert("RGB")
 
     async def image_to_numpy(self, image_ref: ImageRef) -> np.ndarray:
         """
@@ -1176,7 +1189,19 @@ class ProcessingContext:
             str: The base64-encoded string representation of the image.
         """
         buffer = await self.asset_to_io(image_ref)
-        image = PIL.Image.open(buffer).convert("RGB")
+        image = PIL.Image.open(buffer)
+        
+        # Apply EXIF orientation if present
+        try:
+            # Use PIL's built-in method to handle EXIF orientation
+            rotated_image = PIL.ImageOps.exif_transpose(image)
+            # exif_transpose can return None in some cases, so fallback to original
+            image = rotated_image if rotated_image is not None else image
+        except (AttributeError, KeyError, TypeError):
+            # If EXIF data is not available or malformed, continue without rotation
+            pass
+        
+        image = image.convert("RGB")
         buffer = BytesIO()
         image.save(buffer, format="PNG")
         return base64.b64encode(buffer.getvalue()).decode("utf-8")
