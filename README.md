@@ -1,6 +1,6 @@
 # NodeTool Core <img src="https://img.shields.io/badge/version-0.6.0-blue.svg" alt="Version Badge">
 
-<h3>Agentic Workflows</h3>
+<h3>Swiss‑Army Knife for AI Builders</h3>
 
 <p align="center">
   <img src="https://img.shields.io/badge/Python-3.11%2B-blue.svg" alt="Python Version Badge">
@@ -9,18 +9,33 @@
   <img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg" alt="PRs Welcome Badge">
 </p>
 
-## 📚 Overview
+> **Drag, drop, deploy — the backend that snaps every AI blade into one graph.**
 
-NodeTool Core is the Python library behind [NodeTool App](https://github.com/nodetool-ai/nodetool) for building and running agentic workflows using a modular, node-based approach.
+NodeTool Core is the open‑source Python engine that powers [NodeTool Studio](https://github.com/nodetool-ai/nodetool) (desktop) and **NodeTool Scale** (cloud). It turns your laptop into an all‑terrain lab for **agentic, multi‑modal, production‑ready workflows.**
 
-### ✨ Key Features
+---
 
-- 🔄 **Node-based workflow system** - Compose complex workflows from simple building blocks
-- 🧠 **Advanced agent system** - Create intelligent agents with specialized capabilities
-- 🤖 **Multi-provider AI support** - Seamless integration with OpenAI, Anthropic, Ollama, and more
-- 🧩 **Modular architecture** - Easily extend with custom nodes and functionality
-- ⚡ **Workflow execution engine** - Run workflows efficiently on CPU or GPU
-- 📊 **RAG Support** -- Integrates with Chroma for vector storage
+## ✨ Why Nodetool?
+
+| Pillar    | What it means                                                                         |
+| --------- | ------------------------------------------------------------------------------------- |
+| **Snap**  | Compose LLMs, diffusers, audio models, REST calls & agents as Lego‑like nodes.        |
+| **Scale** | Run locally for privacy, then burst to the cloud or GPU farm with identical graphs.   |
+| **Ship**  | Expose any workflow as a REST/WebSocket API, CLI, or shareable template—zero rewrite. |
+
+---
+
+## 🔑 Feature Highlights
+
+* 🧩 **Node-Based DSL** – Declare graphs in pure Python or JSON; no vendor lock‑in.
+* 🤖 **First‑Class Agents** – Planner, browser, search & tool‑calling baked in.
+* 🌐 **Multi‑Provider Models** – OpenAI, Anthropic, Ollama, Mistral, Hugging Face, local GGUF—one line swap.
+* 🔄 **RAG & Vector Stores** – Native adapters for Chroma, Milvus, Weaviate.
+* ⚡ **Async Execution Engine** – Parallel node scheduling, GPU locking, result caching.
+* 🔌 **Plugin SDK** – Bring your own blade: custom nodes register in two lines.
+
+---
+
 
 ## 🚀 Quick Start
 
@@ -29,9 +44,6 @@ NodeTool Core is the Python library behind [NodeTool App](https://github.com/nod
 ```bash
 # Install using pip
 pip install nodetool-core
-
-# Or with Poetry
-poetry add nodetool-core
 ```
 
 ### Basic Usage
