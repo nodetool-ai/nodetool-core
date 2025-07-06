@@ -65,6 +65,8 @@ import httpx
 import asyncio
 import click
 import tomlkit
+import sys
+import shutil
 
 from nodetool.common.environment import Environment
 from nodetool.common.settings import get_system_file_path
@@ -130,6 +132,20 @@ def get_packages_dir() -> Path:
     packages_dir = get_system_file_path(PACKAGES_DIR)
     os.makedirs(packages_dir, exist_ok=True)
     return packages_dir
+
+
+def get_installed_packages_dir() -> Path:
+    """
+    Get the path to the directory where nodetool packages are installed.
+
+    This is a dedicated directory to avoid conflicts with the main Python environment,
+    especially on Windows where file locks can prevent updates of a running application.
+    """
+    installed_dir = get_system_file_path("installed_packages")
+    os.makedirs(installed_dir, exist_ok=True)
+    if str(installed_dir) not in sys.path:
+        sys.path.insert(0, str(installed_dir))
+    return installed_dir
 
 
 def get_package_metadata_from_github(github_repo: str) -> Optional[PackageModel]:
@@ -235,19 +251,66 @@ class Registry:
         """
         Call the pip install command.
         """
-        if upgrade:
-            subprocess.check_call([*self.pkg_mgr, "install", "--upgrade", install_path])
-        elif editable:
-            subprocess.check_call([*self.pkg_mgr, "install", "-e", install_path])
-        else:
-            subprocess.check_call([*self.pkg_mgr, "install", install_path])
+        # Install packages into a dedicated directory to avoid interfering with the running environment
+        target_dir = get_installed_packages_dir()
+        cmd = [*self.pkg_mgr, "install", f"--target={target_dir}"]
 
-    def pip_uninstall(self, package_name: str) -> None:
-        """
-        Call the pip uninstall command.
-        """
-        # Always use standard pip for uninstall operations, not uv
-        subprocess.check_call(["pip", "uninstall", package_name, "--yes"])
+        if upgrade:
+            cmd.append("--upgrade")
+        
+        if editable:
+            cmd.append("-e")
+
+        cmd.append(install_path)
+        
+        subprocess.check_call(cmd)
+
+    def uninstall_package(self, repo_id: str) -> bool:
+        """Uninstall a package by repository ID."""
+        is_valid, error_msg = validate_repo_id(repo_id)
+        if not is_valid:
+            raise ValueError(error_msg)
+
+        package_to_uninstall = next(
+            (
+                p
+                for p in self.list_installed_packages()
+                if hasattr(p, "repo_id") and p.repo_id == repo_id
+            ),
+            None,
+        )
+
+        if not package_to_uninstall or not package_to_uninstall.source_folder:
+            self.logger.warning(
+                f"Could not find installed package with repo_id {repo_id} or it has no source folder."
+            )
+            return False
+
+        package_path = Path(package_to_uninstall.source_folder)
+
+        # Ensure we are only deleting packages from our managed directory for safety
+        installed_dir = get_installed_packages_dir()
+        if not package_path.is_relative_to(installed_dir):
+             # Also check for editable installs from other locations, which pip can handle
+            try:
+                # Fallback to pip for editable packages installed from other locations
+                self.logger.info(f"Attempting to uninstall editable package '{package_to_uninstall.name}' via pip.")
+                subprocess.check_call([sys.executable, "-m", "pip", "uninstall", "-y", package_to_uninstall.name])
+                self.clear_packages_cache()
+                return True
+            except (subprocess.CalledProcessError, FileNotFoundError) as e:
+                self.logger.error(f"Pip uninstall failed for '{package_to_uninstall.name}': {e}")
+                return False
+
+        try:
+            shutil.rmtree(package_path)
+            self.logger.info(f"Successfully uninstalled package {repo_id} by removing directory {package_path}")
+            # Clear the cache since we've uninstalled a package
+            self.clear_packages_cache()
+            return True
+        except OSError as e:
+            self.logger.error(f"Error removing package directory {package_path}: {e}")
+            return False
 
     def list_installed_packages(self) -> List[PackageModel]:
         """List all installed node packages."""
@@ -295,23 +358,6 @@ class Registry:
             self.pip_install(install_path)
         # Clear the cache since we've installed a new package
         self.clear_packages_cache()
-
-    def uninstall_package(self, repo_id: str) -> bool:
-        """Uninstall a package by repository ID."""
-        is_valid, error_msg = validate_repo_id(repo_id)
-        if not is_valid:
-            raise ValueError(error_msg)
-
-        _, project = repo_id.split("/")
-        try:
-            self.pip_uninstall(project)
-            print(f"Successfully uninstalled package {repo_id}")
-            # Clear the cache since we've uninstalled a package
-            self.clear_packages_cache()
-            return True
-        except subprocess.CalledProcessError as e:
-            print(f"Error uninstalling package {repo_id}: {e}")
-            return False
 
     def update_package(self, repo_id: str) -> bool:
         """Update a package to the latest version."""
@@ -1038,6 +1084,7 @@ def discover_node_packages() -> list[PackageModel]:
     2. Filters for packages starting with 'nodetool-'
     3. Creates PackageModel instances for each discovered package
     4. Handles both regular installations and editable installs
+    5. Also scans the dedicated nodetool packages directory.
 
     Returns:
         List[PackageModel]: List of discovered packages with their node metadata
@@ -1047,6 +1094,10 @@ def discover_node_packages() -> list[PackageModel]:
 
     # First try to get the package's development location (for editable installs)
     for path in sys.path:
+        # Avoid scanning the main site-packages for performance and to avoid duplicates
+        if "site-packages" in path and "nodetool-packages" not in path:
+            continue
+            
         if "nodetool-" in path:
             package_path = Path(path) / "nodetool" / "package_metadata"
             metadata_files = list(package_path.glob("*.json"))
@@ -1059,9 +1110,14 @@ def discover_node_packages() -> list[PackageModel]:
                 except Exception as e:
                     print(f"Error processing {metadata_file}: {e}")
 
-    # Get all installed distributions
+    # Also discover packages from the dedicated installation directory
+    installed_packages_dir = get_installed_packages_dir()
+    if str(installed_packages_dir) not in sys.path:
+        sys.path.insert(0, str(installed_packages_dir))
+
+    # Get all installed distributions, which now includes our custom path
     visited_paths = set()
-    for dist in importlib.metadata.distributions():
+    for dist in importlib.metadata.distributions(path=[str(installed_packages_dir)]):
         package_name = dist.metadata["Name"]
         if not package_name.startswith("nodetool-"):
             continue
@@ -1078,7 +1134,9 @@ def discover_node_packages() -> list[PackageModel]:
                 try:
                     metadata = json.load(f)
                     metadata["source_folder"] = str(Path(base_path).parent.parent)
-                    packages.append(PackageModel(**metadata))
+                    # Avoid adding duplicates if it was found as an editable install
+                    if not any(p.name == metadata["name"] for p in packages):
+                        packages.append(PackageModel(**metadata))
                 except Exception as e:
                     print(f"Error processing {metadata_file}: {e}")
 
