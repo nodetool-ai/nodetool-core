@@ -9,7 +9,7 @@
   <img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg" alt="PRs Welcome Badge">
 </p>
 
-> **Drag, drop, deploy — the backend that snaps every AI blade into one graph.**
+> **Drag, drop, deploy — the backend that snaps every AI model into one graph.**
 
 NodeTool Core is the open‑source Python engine that powers [NodeTool Studio](https://github.com/nodetool-ai/nodetool) (desktop) and **NodeTool Scale** (cloud). It turns your laptop into an all‑terrain lab for **agentic, multi‑modal, production‑ready workflows.**
 
