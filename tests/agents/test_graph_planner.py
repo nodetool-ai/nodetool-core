@@ -21,8 +21,14 @@ from nodetool.workflows.types import Chunk
 class StringInputNode(InputNode):
     value: str = Field(default="", description="The value of the input.")
 
+    async def process(self, context: ProcessingContext) -> str:
+        return self.value
+
 class StringOutputNode(OutputNode):
     value: str = Field(default="", description="The value of the output.")
+
+    async def process(self, context: ProcessingContext) -> str:
+        return self.value
 
 
 @pytest.mark.asyncio
