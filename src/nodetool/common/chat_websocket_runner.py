@@ -175,6 +175,10 @@ async def provider_from_model(model: str) -> ChatProvider:
         provider = get_provider(Provider.Ollama)
         log.debug(f"Selected Ollama provider for model: {model}")
         return provider
+    elif "/" in model:  # HuggingFace models typically have org/model format
+        provider = get_provider(Provider.HuggingFace)
+        log.debug(f"Selected HuggingFace provider for model: {model}")
+        return provider
     else:
         log.error(f"Unsupported model: {model}")
         raise ValueError(f"Unsupported model: {model}")

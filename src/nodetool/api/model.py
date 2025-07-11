@@ -311,6 +311,39 @@ openai_models = [
     ),
 ]
 
+huggingface_models = [
+    LanguageModel(
+        id="HuggingFaceTB/SmolLM3-3B",
+        name="SmolLM3 3B",
+        provider=Provider.HuggingFace,
+    ),
+    LanguageModel(
+        id="deepseek-ai/DeepSeek-V3-0324",
+        name="DeepSeek V3 0324",
+        provider=Provider.HuggingFace,
+    ),
+    LanguageModel(
+        id="tngtech/DeepSeek-TNG-R1T2-Chimera",
+        name="DeepSeek TNG R1T2 Chimera",
+        provider=Provider.HuggingFace,
+    ),
+    LanguageModel(
+        id="mistralai/Devstral-Small-2507",
+        name="Devstral Small 2507",
+        provider=Provider.HuggingFace,
+    ),
+    LanguageModel(
+        id="tencent/Hunyuan-A13B-Instruct",
+        name="Hunyuan A13B Instruct",
+        provider=Provider.HuggingFace,
+    ),
+    LanguageModel(
+        id="agentica-org/DeepSWE-Preview",
+        name="DeepSWE Preview",
+        provider=Provider.HuggingFace,
+    ),
+]
+
 
 async def get_language_models() -> list[LanguageModel]:
     env = Environment.get_environment()
@@ -322,6 +355,8 @@ async def get_language_models() -> list[LanguageModel]:
         models.extend(gemini_models)
     if "OPENAI_API_KEY" in env:
         models.extend(openai_models)
+    if "HF_TOKEN" in env or "HUGGINGFACE_API_KEY" in env:
+        models.extend(huggingface_models)
 
     ollama_models = await get_ollama_models()
     models.extend(

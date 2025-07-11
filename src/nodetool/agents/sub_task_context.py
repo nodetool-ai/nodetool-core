@@ -357,7 +357,7 @@ class FinishTaskTool(Tool):
         }
 
     async def process(self, context: ProcessingContext, params: Dict[str, Any]):
-        return params["result"]
+        return params.get("result", None)
 
 
 class FinishSubTaskTool(Tool):

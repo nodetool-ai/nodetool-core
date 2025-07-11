@@ -711,7 +711,7 @@ class TaskPlanner:
         """
         Build a directed graph of dependencies between subtasks.
 
-        The graph nodes represent subtasks (identified by their `id`) and input keys.
+    The graph nodes represent subtasks (identified by their `id`) and input keys.
         An edge from node A to subtask B means B depends on the output of A
         (i.e., one of B's `input_tasks` is A's `id` or an input key).
 

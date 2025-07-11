@@ -372,7 +372,7 @@ class CustomTqdm(huggingface_hub.file_download.tqdm):
 
 
 # Replace the tqdm used by huggingface_hub
-huggingface_hub.file_download.tqdm = CustomTqdm
+huggingface_hub.file_download.tqdm = CustomTqdm # type: ignore
 
 # `huggingface_hub.utils.tqdm` is a class exported at package import time which
 # also needs to be replaced so that `_get_progress_bar_context` uses our custom
@@ -380,8 +380,8 @@ huggingface_hub.file_download.tqdm = CustomTqdm
 # defined in `huggingface_hub.utils` and gives access to the actual module
 # object.
 tqdm_module = importlib.import_module("huggingface_hub.utils.tqdm")
-tqdm_module.tqdm = CustomTqdm
-huggingface_hub.utils.tqdm = CustomTqdm
+tqdm_module.tqdm = CustomTqdm # type: ignore
+huggingface_hub.utils.tqdm = CustomTqdm # type: ignore
 
 
 async def huggingface_download_endpoint(websocket: WebSocket):

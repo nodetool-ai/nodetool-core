@@ -13,6 +13,7 @@ from nodetool.chat.providers.gemini_provider import GeminiProvider
 from nodetool.chat.providers.anthropic_provider import AnthropicProvider
 from nodetool.chat.providers.ollama_provider import OllamaProvider
 from nodetool.chat.providers.openai_provider import OpenAIProvider
+from nodetool.chat.providers.huggingface_provider import HuggingFaceProvider
 from nodetool.metadata.types import Provider as ProviderEnum
 from nodetool.workflows.types import Chunk
 
@@ -47,6 +48,8 @@ def get_provider(provider_type: ProviderEnum, **kwargs) -> ChatProvider:
         provider = AnthropicProvider(**kwargs)
     elif provider_type == ProviderEnum.Ollama:
         provider = OllamaProvider(**kwargs)
+    elif provider_type == ProviderEnum.HuggingFace:
+        provider = HuggingFaceProvider(**kwargs)
     else:
         raise ValueError(f"Provider {provider_type} not supported")
 
