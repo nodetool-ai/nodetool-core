@@ -90,13 +90,32 @@ class Graph(BaseModel):
             Graph: An instance of the Graph, potentially with fewer nodes/edges than specified
                    in the input if errors were encountered.
         """
+        # First pass: identify properties that have incoming edges
+        properties_with_edges = {}  # {node_id: set(property_names)}
+        for edge_data in graph.get("edges", []):
+            target_id = edge_data.get("target")
+            target_handle = edge_data.get("targetHandle")
+            if target_id and target_handle:
+                if target_id not in properties_with_edges:
+                    properties_with_edges[target_id] = set()
+                properties_with_edges[target_id].add(target_handle)
+
         valid_nodes = []
         valid_node_ids = set()
         
         # Process nodes, collecting valid ones
         for node_data in graph["nodes"]:
             try:
-                result = BaseNode.from_dict(node_data, skip_errors=skip_errors)
+                # Filter out properties that have incoming edges
+                node_id = node_data.get("id")
+                filtered_node_data = node_data.copy()
+                if node_id in properties_with_edges:
+                    data = filtered_node_data.get("data", {})
+                    connected_properties = properties_with_edges[node_id]
+                    filtered_data = {k: v for k, v in data.items() if k not in connected_properties}
+                    filtered_node_data["data"] = filtered_data
+                
+                result = BaseNode.from_dict(filtered_node_data, skip_errors=skip_errors)
                 if result is not None and result[0] is not None:
                     valid_nodes.append(result[0])
                     valid_node_ids.add(result[0].id)

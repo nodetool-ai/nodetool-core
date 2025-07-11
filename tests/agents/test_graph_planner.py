@@ -2,9 +2,8 @@
 
 import pytest
 import tempfile
-import json
+from pydantic import Field
 from unittest.mock import Mock, AsyncMock, patch
-from pathlib import Path
 
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.agents.graph_planner import (
@@ -14,10 +13,16 @@ from nodetool.agents.graph_planner import (
     get_node_type_for_metadata,
     _is_type_compatible,
 )
-from nodetool.metadata.types import TypeMetadata, Message, ToolCall
-from nodetool.workflows.base_node import BaseNode, InputNode, OutputNode
-from nodetool.workflows.types import PlanningUpdate, Chunk
-from nodetool.types.graph import Graph as APIGraph, Node as APINode, Edge as APIEdge
+from nodetool.metadata.types import TypeMetadata
+from nodetool.workflows.base_node import InputNode, OutputNode
+from nodetool.workflows.types import Chunk
+
+
+class StringInputNode(InputNode):
+    value: str = Field(default="", description="The value of the input.")
+
+class StringOutputNode(OutputNode):
+    value: str = Field(default="", description="The value of the output.")
 
 
 @pytest.mark.asyncio

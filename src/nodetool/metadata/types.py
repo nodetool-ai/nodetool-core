@@ -362,6 +362,7 @@ class HuggingFaceModel(BaseType):
     type: str = "hf.model"
     repo_id: str = ""
     path: str | None = None
+    variant: str | None = None
     allow_patterns: list[str] | None = None
     ignore_patterns: list[str] | None = None
 
