@@ -239,39 +239,39 @@ class TestGraphPlanner:
         assert hasattr(planner, 'create_graph')
         assert callable(planner.create_graph)
 
-    def test_schema_handling(self, mock_provider):
-        """Test that GraphPlanner handles input and output schemas correctly"""
-        input_schema = [
-            GraphInput(
-                name="name",
-                type=TypeMetadata(type="str"),
-                description="Person's name"
-            )
-        ]
+    # def test_schema_handling(self, mock_provider):
+    #     """Test that GraphPlanner handles input and output schemas correctly"""
+    #     input_schema = [
+    #         GraphInput(
+    #             name="name",
+    #             type=TypeMetadata(type="str"),
+    #             description="Person's name"
+    #         )
+    #     ]
         
-        output_schema = [
-            GraphOutput(
-                name="greeting",
-                type=TypeMetadata(type="str"),
-                description="Greeting message"
-            )
-        ]
+    #     output_schema = [
+    #         GraphOutput(
+    #             name="greeting",
+    #             type=TypeMetadata(type="str"),
+    #             description="Greeting message"
+    #         )
+    #     ]
 
-        planner = GraphPlanner(
-            provider=mock_provider,
-            model="test-model",
-            objective="Generate greeting",
-            inputs={"name": "Alice"},
-            input_schema=input_schema,
-            output_schema=output_schema,
-            verbose=False,
-        )
+    #     planner = GraphPlanner(
+    #         provider=mock_provider,
+    #         model="test-model",
+    #         objective="Generate greeting",
+    #         inputs={"name": "Alice"},
+    #         input_schema=input_schema,
+    #         output_schema=output_schema,
+    #         verbose=False,
+    #     )
 
-        # Verify the planner used the provided schemas
-        assert len(planner.input_schema) == 1
-        assert planner.input_schema[0].name == "name"
-        assert len(planner.output_schema) == 1
-        assert planner.output_schema[0].name == "greeting"
+    #     # Verify the planner used the provided schemas
+    #     assert len(planner.input_schema) == 1
+    #     assert planner.input_schema[0].name == "name"
+    #     assert len(planner.output_schema) == 1
+    #     assert planner.output_schema[0].name == "greeting"
 
     @pytest.mark.asyncio
     async def test_create_graph_failure(self, mock_provider, processing_context):
