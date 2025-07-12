@@ -35,6 +35,7 @@ Authentication errors result in connection closure with appropriate status codes
 - Client to Server:
   - Regular chat messages with optional tool specifications
   - Workflow execution requests with workflow_id and optional graph data
+  - Stop commands: {"type": "stop"} to interrupt ongoing generation
 
 - Server to Client:
   - Content chunks: Partial responses during generation
@@ -42,6 +43,7 @@ Authentication errors result in connection closure with appropriate status codes
   - Tool results: After a tool has been executed
   - Job updates: Status updates during workflow execution
   - Error messages: When exceptions occur during processing
+  - Generation stopped: When generation is interrupted by stop command
 
 ### Content Types
 The protocol supports multiple content formats:
@@ -68,6 +70,7 @@ import logging
 import uuid
 import json
 import msgpack
+import asyncio
 from typing import List, Sequence
 from enum import Enum
 from nodetool.models.workflow import Workflow
@@ -186,6 +189,8 @@ class ChatWebSocketRunner:
         self.all_tools = (
             []
         )  # Initialize empty list, will be populated after user_id is set
+        self.is_generating = False  # Flag to track if generation is in progress
+        self.current_generation_task: asyncio.Task | None = None  # Track the current generation task
 
     async def init_supabase(self):
         if self.supabase:
@@ -285,9 +290,23 @@ class ChatWebSocketRunner:
         """
         Closes the WebSocket connection if it is active.
         """
+        # Signal any ongoing generation to stop
+        if self.is_generating:
+            log.debug("Disconnect while generating - will cancel task")
+        
+        # Cancel any ongoing generation task
+        if self.current_generation_task and not self.current_generation_task.done():
+            self.current_generation_task.cancel()
+            try:
+                await self.current_generation_task
+            except asyncio.CancelledError:
+                log.debug("Generation task cancelled during disconnect")
+        
         if self.websocket:
             await self.websocket.close()
         self.websocket = None
+        self.is_generating = False
+        self.current_generation_task = None
         log.info("WebSocket disconnected for chat")
 
     async def run(self, websocket: WebSocket):
@@ -325,6 +344,18 @@ class ChatWebSocketRunner:
                     log.warning(f"Received message with unknown format: {message}")
                     continue
 
+                # Check if this is a stop command
+                if isinstance(data, dict) and data.get("type") == "stop":
+                    log.debug("Received stop command")
+                    if self.is_generating and self.current_generation_task:
+                        # Cancel the current generation task
+                        self.current_generation_task.cancel()
+                        await self.send_message({"type": "generation_stopped", "message": "Generation stopped by user"})
+                        log.info("Generation stopped by user command")
+                    else:
+                        await self.send_message({"type": "error", "message": "No generation in progress"})
+                    continue
+
                 log.debug(f"Creating Message object from data: {data}")
                 try:
                     message = Message(**data)
@@ -335,6 +366,9 @@ class ChatWebSocketRunner:
                     log.error(f"Failed to create Message object: {e}")
                     raise
 
+                # Reset generation flag for new messages
+                self.is_generating = True
+
                 # Add the new message to chat history
                 self.chat_history.append(message)
                 log.debug("Added message to chat history")
@@ -344,15 +378,27 @@ class ChatWebSocketRunner:
                     log.debug(
                         f"Processing workflow message with workflow_id: {message.workflow_id}"
                     )
-                    response_message = await self.process_messages_for_workflow()
+                    # Create a cancellable task for workflow processing
+                    self.current_generation_task = asyncio.create_task(
+                        self.process_messages_for_workflow()
+                    )
+                    response_message = await self.current_generation_task
                 else:
                     log.debug(
                         f"Processing regular chat message with model: {message.model}, agent_mode: {message.agent_mode}, workflow_assistant: {message.workflow_assistant}"
                     )
                     if message.agent_mode:
-                        response_message = await self.process_agent_messages()
+                        # Create a cancellable task for agent processing
+                        self.current_generation_task = asyncio.create_task(
+                            self.process_agent_messages()
+                        )
+                        response_message = await self.current_generation_task
                     else:
-                        response_message = await self.process_messages()
+                        # Create a cancellable task for message processing
+                        self.current_generation_task = asyncio.create_task(
+                            self.process_messages()
+                        )
+                        response_message = await self.current_generation_task
 
                 log.debug(
                     f"Response message created - role: {response_message.role}, content length: {len(str(response_message.content or ''))}"
@@ -364,13 +410,27 @@ class ChatWebSocketRunner:
                 self.chat_history.append(response_message)
                 log.debug("Appended response message to history")
 
+                # Reset generation flag after processing
+                self.is_generating = False
+                self.current_generation_task = None
+
                 # Send the response back to the client
                 # await self.send_message(response_message.model_dump())
 
+            except asyncio.CancelledError:
+                log.info("Generation cancelled by user")
+                # Reset generation state on cancellation
+                self.is_generating = False
+                self.current_generation_task = None
+                # Continue processing instead of breaking
+                continue
             except Exception as e:
                 log.error(f"Error processing message: {str(e)}", exc_info=True)
                 error_message = {"type": "error", "message": str(e)}
                 await self.send_message(error_message)
+                # Reset generation state on error
+                self.is_generating = False
+                self.current_generation_task = None
                 # Continue processing instead of breaking
                 continue
 
@@ -917,11 +977,11 @@ class ChatWebSocketRunner:
                     log.debug(
                         f"Calling provider.generate_messages with {len(messages_to_send)} messages"
                     )
-                    async for chunk in provider.generate_messages(
+                    async for chunk in provider.generate_messages(  # type: ignore
                         messages=messages_to_send,
                         model=last_message.model,
                         tools=selected_tools,
-                    ):  # type: ignore
+                    ):
                         log.debug(
                             f"Received chunk from provider: type={type(chunk).__name__}"
                         )
@@ -987,6 +1047,8 @@ class ChatWebSocketRunner:
                             f"Have {len(unprocessed_messages)} unprocessed messages, continuing loop"
                         )
 
+                # Signal completion
+                await self.send_message({"type": "chunk", "content": "", "done": True})
                 return Message(
                     role="assistant",
                     content=content if content else None,
@@ -1009,6 +1071,9 @@ class ChatWebSocketRunner:
                         "error_type": "connection_error",
                     }
                 )
+
+                # Signal completion even on error
+                await self.send_message({"type": "chunk", "content": "", "done": True})
 
                 # Return an error message
                 return Message(
@@ -1147,6 +1212,9 @@ class ChatWebSocketRunner:
             await self.send_message(
                 {"type": "error", "message": error_msg, "error_type": "agent_error"}
             )
+
+            # Signal completion even on error
+            await self.send_message({"type": "chunk", "content": "", "done": True})
 
             # Return error message
             return Message(role="assistant", content=error_msg)
@@ -1316,6 +1384,8 @@ class ChatWebSocketRunner:
             if isinstance(update, OutputUpdate):
                 result[update.node_name] = update.value
 
+        # Signal completion
+        await self.send_message({"type": "chunk", "content": "", "done": True})
         return self.create_response_message(result)
 
     def create_response_message(self, result: dict) -> Message:
@@ -1439,6 +1509,7 @@ class ChatWebSocketRunner:
                 message=tool.user_message(tool_call.args),
             ).model_dump()
         )
+        
         result = await tool.process(context, tool_call.args)
         log.debug(f"Tool {tool_call.name} returned: {result}")
 
