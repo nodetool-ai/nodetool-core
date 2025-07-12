@@ -123,11 +123,6 @@ huggingface_models = [
         provider=Provider.HuggingFace,
     ),
     LanguageModel(
-        id="mistralai/Devstral-Small-2507",
-        name="Devstral Small 2507",
-        provider=Provider.HuggingFace,
-    ),
-    LanguageModel(
         id="tencent/Hunyuan-A13B-Instruct",
         name="Hunyuan A13B Instruct",
         provider=Provider.HuggingFace,
@@ -181,11 +176,6 @@ huggingface_models = [
 
 huggingface_groq_models = [
     LanguageModel(
-        id="groq/llama-3.1-8b-versatile",
-        name="Llama 3.1 8B Versatile",
-        provider=Provider.HuggingFaceGroq,
-    ),
-    LanguageModel(
         id="meta-llama/Meta-Llama-3-70B-Instruct",
         name="Meta Llama 3 70B Instruct",
         provider=Provider.HuggingFaceGroq,
@@ -208,21 +198,6 @@ huggingface_groq_models = [
     LanguageModel(
         id="meta-llama/Llama-4-Maverick-17B-128E-Instruct",
         name="Llama 4 Maverick 17B 128E Instruct",
-        provider=Provider.HuggingFaceGroq,
-    ),
-    LanguageModel(
-        id="Qwen/QwQ-32B",
-        name="QwQ 32B",
-        provider=Provider.HuggingFaceGroq,
-    ),
-    LanguageModel(
-        id="Qwen/Qwen3-32B-Instruct",
-        name="Qwen 3 32B Instruct",
-        provider=Provider.HuggingFaceGroq,
-    ),
-    LanguageModel(
-        id="Qwen/Qwen3-7B-Instruct",
-        name="Qwen 3 7B Instruct",
         provider=Provider.HuggingFaceGroq,
     ),
 ]

@@ -359,7 +359,7 @@ def download_file(repo_id: str, filename: str, queue: Queue):
     return filename, local_path
 
 
-class CustomTqdm(huggingface_hub.file_download.tqdm):
+class CustomTqdm(huggingface_hub.file_download.tqdm): # type: ignore
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         if parent_queue and "initial" in kwargs:
