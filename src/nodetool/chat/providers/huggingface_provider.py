@@ -7,7 +7,7 @@ Inference Providers API with the AsyncInferenceClient from huggingface_hub.
 
 import json
 import traceback
-from typing import Any, AsyncGenerator, Sequence
+from typing import Any, AsyncGenerator, Literal, Sequence
 
 from huggingface_hub import AsyncInferenceClient
 
@@ -24,6 +24,24 @@ from nodetool.metadata.types import (
 from nodetool.common.environment import Environment
 from nodetool.workflows.types import Chunk
 
+PROVIDER_T = Literal[
+    "black-forest-labs",
+    "cerebras",
+    "cohere",
+    "fal-ai",
+    "featherless-ai",
+    "fireworks-ai",
+    "groq",
+    "hf-inference",
+    "hyperbolic",
+    "nebius",
+    "novita",
+    "nscale",
+    "openai",
+    "replicate",
+    "sambanova",
+    "together",
+]
 
 class HuggingFaceProvider(ChatProvider):
     """
@@ -56,12 +74,12 @@ class HuggingFaceProvider(ChatProvider):
 
     provider: Provider = Provider.HuggingFace
 
-    def __init__(self):
+    def __init__(self, inference_provider: PROVIDER_T | None = None):
         """Initialize the HuggingFace provider with AsyncInferenceClient."""
         super().__init__()
         env = Environment.get_environment()
-        self.api_key = env.get("HF_TOKEN") or env.get("HUGGINGFACE_API_KEY")
-        self.inference_provider = env.get("HUGGINGFACE_PROVIDER")  # Optional provider
+        self.api_key = env.get("HF_TOKEN")
+        self.inference_provider = inference_provider
         
         if not self.api_key:
             raise ValueError("HF_TOKEN or HUGGINGFACE_API_KEY is not set")

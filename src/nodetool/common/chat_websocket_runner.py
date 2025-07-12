@@ -157,33 +157,6 @@ async def cached_ollama_models() -> list[str]:
     return ollama_models
 
 
-async def provider_from_model(model: str) -> ChatProvider:
-    log.debug(f"Selecting provider for model: {model}")
-    if model.startswith("claude"):
-        provider = get_provider(Provider.Anthropic)
-        log.debug(f"Selected Anthropic provider for model: {model}")
-        return provider
-    elif model.startswith("gpt"):
-        provider = get_provider(Provider.OpenAI)
-        log.debug(f"Selected OpenAI provider for model: {model}")
-        return provider
-    elif model.startswith("gemini"):
-        provider = get_provider(Provider.Gemini)
-        log.debug(f"Selected Gemini provider for model: {model}")
-        return provider
-    elif model in await cached_ollama_models():
-        provider = get_provider(Provider.Ollama)
-        log.debug(f"Selected Ollama provider for model: {model}")
-        return provider
-    elif "/" in model:  # HuggingFace models typically have org/model format
-        provider = get_provider(Provider.HuggingFace)
-        log.debug(f"Selected HuggingFace provider for model: {model}")
-        return provider
-    else:
-        log.error(f"Unsupported model: {model}")
-        raise ValueError(f"Unsupported model: {model}")
-
-
 class WebSocketMode(str, Enum):
     BINARY = "binary"
     TEXT = "text"
@@ -441,7 +414,7 @@ class ChatWebSocketRunner:
         else:
             return ""
 
-    async def _process_help_messages(self, model: str) -> Message:
+    async def _process_help_messages(self, message: Message) -> Message:
         """
         Processes messages using the integrated help system with full tool access.
 
@@ -452,8 +425,10 @@ class ChatWebSocketRunner:
             Message: An assistant message containing the aggregated help content.
         """
         try:
-            provider = await provider_from_model(model)
-            log.debug(f"Processing help messages with model: {model}")
+            if not message.provider:
+                raise ValueError("Model provider is not set")
+            provider = get_provider(message.provider)
+            log.debug(f"Processing help messages with model: {message.model}")
             from nodetool.chat.help import SYSTEM_PROMPT
 
             # Create help tools combined with all available tools including CreateWorkflowTool
@@ -480,10 +455,11 @@ class ChatWebSocketRunner:
             while True:
                 messages_to_send = effective_messages + unprocessed_messages
                 unprocessed_messages = []
+                assert message.model, "Model is required"
 
                 async for chunk in provider.generate_messages(  # type: ignore
                     messages=messages_to_send,
-                    model=model,
+                    model=message.model,
                     tools=help_tools,
                 ):
                     if isinstance(chunk, Chunk):
@@ -591,7 +567,9 @@ class ChatWebSocketRunner:
             if not last_message.model:
                 raise ValueError("No model specified in the current conversation")
 
-            provider = await provider_from_model(last_message.model)
+            if not last_message.provider:
+                raise ValueError("No provider specified in the current conversation")
+            provider = get_provider(last_message.provider)
             log.debug(f"Triggering workflow creation with model: {last_message.model}")
 
             planner = GraphPlanner(
@@ -709,7 +687,10 @@ class ChatWebSocketRunner:
             if not last_message.model:
                 raise ValueError("No model specified in the current conversation")
 
-            provider = await provider_from_model(last_message.model)
+            if not last_message.provider:
+                raise ValueError("No provider specified in the current conversation")
+
+            provider = get_provider(last_message.provider)
             log.debug(f"Triggering workflow editing with model: {last_message.model}")
 
             planner = GraphPlanner(
@@ -827,7 +808,7 @@ class ChatWebSocketRunner:
         if last_message.help_mode:
             log.debug(f"Processing help request with model: {last_message.model}")
             assert last_message.model, "Model is required"
-            return await self._process_help_messages(last_message.model)
+            return await self._process_help_messages(last_message)
         # Check for workflow assistant mode
         else:
             # Existing logic for regular messages
@@ -895,7 +876,10 @@ class ChatWebSocketRunner:
             assert last_message.model, "Model is required"
 
             try:
-                provider = await provider_from_model(last_message.model)
+                if not last_message.provider:
+                    raise ValueError("No provider specified in the current conversation")
+
+                provider = get_provider(last_message.provider)
                 log.debug(
                     f"Using provider {provider.__class__.__name__} for model {last_message.model}"
                 )
@@ -1077,7 +1061,9 @@ class ChatWebSocketRunner:
         processing_context = ProcessingContext(user_id=self.user_id)
 
         try:
-            provider = await provider_from_model(last_message.model)
+            if not last_message.provider:
+                raise ValueError("No provider specified in the current conversation")
+            provider = get_provider(last_message.provider)
             agent = Agent(
                 name="Assistant",
                 objective=objective,

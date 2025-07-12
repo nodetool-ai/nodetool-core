@@ -1008,20 +1008,20 @@ class ChatCLI:
                         )
                         continue
 
-                    # Show "thinking" indicator while processing
-                    with self.console.status(
-                        "[bold green]Thinking...", spinner="dots"
-                    ) as status:
-                        self.messages = await process_regular_chat(
-                            user_input=user_input,
-                            messages=self.messages,
-                            model=self.selected_model.id,
-                            provider=get_provider(self.selected_model.provider),
-                            status=status,
-                            context=self.context,
-                            console=self.console,
-                            debug_mode=self.debug_mode,
-                        )
+                    # Process regular chat without status wrapper to allow streaming output
+                    from rich.status import Status
+                    # Create a dummy status object for tool execution
+                    status = Status("[bold green]Processing...", console=self.console, spinner="dots")
+                    self.messages = await process_regular_chat(
+                        user_input=user_input,
+                        messages=self.messages,
+                        model=self.selected_model.id,
+                        provider=get_provider(self.selected_model.provider),
+                        status=status,
+                        context=self.context,
+                        console=self.console,
+                        debug_mode=self.debug_mode,
+                    )
 
             except KeyboardInterrupt:
                 self.console.print(

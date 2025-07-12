@@ -1617,7 +1617,9 @@ class WorkflowRunner:
         # Assign input values to node properties
         for name, value in inputs.items():
             try:
-                node.assign_property(name, value)
+                error = node.assign_property(name, value)
+                if error:
+                    log.error(f"Error assigning property {name} to node {node.id}: {error}")
             except Exception as e:
                 log.error(f"Error assigning property {name} to node {node.id}")
                 raise ValueError(f"Error assigning property {name}: {str(e)}")

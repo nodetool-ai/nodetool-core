@@ -312,11 +312,100 @@ class Provider(str, enum.Enum):
     Anthropic = "anthropic"
     Replicate = "replicate"
     HuggingFace = "huggingface"
+    HuggingFaceGroq = "huggingface_groq"
+    HuggingFaceCerebras = "huggingface_cerebras"
     Ollama = "ollama"
     Comfy = "comfy"
     Local = "local"
     Gemini = "gemini"
     Empty = "empty"
+
+
+class InferenceProvider(str, Enum):
+    none = ""
+    black_forest_labs = "black-forest-labs"
+    cerebras = "cerebras"
+    cohere = "cohere"
+    fal_ai = "fal-ai"
+    featherless_ai = "featherless-ai"
+    fireworks_ai = "fireworks-ai"
+    groq = "groq"
+    hf_inference = "hf-inference"
+    hyperbolic = "hyperbolic"
+    nebius = "nebius"
+    novita = "novita"
+    nscale = "nscale"
+    openai = "openai"
+    replicate = "replicate"
+    sambanova = "sambanova"
+    together = "together"
+    
+
+class InferenceProviderAudioClassificationModel(BaseType):
+    type: Literal["inference_provider_audio_classification_model"] = "inference_provider_audio_classification_model"
+    provider: InferenceProvider = InferenceProvider.hf_inference
+    model_id: str = ""
+
+class InferenceProviderAutomaticSpeechRecognitionModel(BaseType):
+    type: Literal["inference_provider_automatic_speech_recognition_model"] = "inference_provider_automatic_speech_recognition_model"
+    provider: InferenceProvider = InferenceProvider.hf_inference
+    model_id: str = ""
+
+class InferenceProviderImageClassificationModel(BaseType):
+    type: Literal["inference_provider_image_classification_model"] = "inference_provider_image_classification_model"
+    provider: InferenceProvider = InferenceProvider.hf_inference
+    model_id: str = ""
+
+class InferenceProviderImageToImageModel(BaseType):
+    type: Literal["inference_provider_image_to_image_model"] = "inference_provider_image_to_image_model"
+    provider: InferenceProvider = InferenceProvider.hf_inference
+    model_id: str = ""
+
+class InferenceProviderImageSegmentationModel(BaseType):
+    type: Literal["inference_provider_image_segmentation_model"] = "inference_provider_image_segmentation_model"
+    provider: InferenceProvider = InferenceProvider.hf_inference
+    model_id: str = ""
+
+class InferenceProviderTextClassificationModel(BaseType):
+    type: Literal["inference_provider_text_classification_model"] = "inference_provider_text_classification_model"
+    provider: InferenceProvider = InferenceProvider.hf_inference
+    model_id: str = ""
+
+class InferenceProviderSummarizationModel(BaseType):
+    type: Literal["inference_provider_summarization_model"] = "inference_provider_summarization_model"
+    provider: InferenceProvider = InferenceProvider.hf_inference
+    model_id: str = ""
+
+class InferenceProviderTextToImageModel(BaseType):
+    type: Literal["inference_provider_text_to_image_model"] = "inference_provider_text_to_image_model"
+    provider: InferenceProvider = InferenceProvider.hf_inference
+    model_id: str = ""
+
+class InferenceProviderTranslationModel(BaseType):
+    type: Literal["inference_provider_translation_model"] = "inference_provider_translation_model"
+    provider: InferenceProvider = InferenceProvider.hf_inference
+    model_id: str = ""
+
+class InferenceProviderTextToTextModel(BaseType):
+    type: Literal["inference_provider_text_to_text_model"] = "inference_provider_text_to_text_model"
+    provider: InferenceProvider = InferenceProvider.hf_inference
+    model_id: str = ""
+
+class InferenceProviderTextToSpeechModel(BaseType):
+    type: Literal["inference_provider_text_to_speech_model"] = "inference_provider_text_to_speech_model"
+    provider: InferenceProvider = InferenceProvider.hf_inference
+    model_id: str = ""
+
+class InferenceProviderTextToAudioModel(BaseType):
+    type: Literal["inference_provider_text_to_audio_model"] = "inference_provider_text_to_audio_model"
+    provider: InferenceProvider = InferenceProvider.hf_inference
+    model_id: str = ""
+
+class InferenceProviderTextGenerationModel(BaseType):
+    type: Literal["inference_provider_text_generation_model"] = "inference_provider_text_generation_model"
+    provider: InferenceProvider = InferenceProvider.hf_inference
+    model_id: str = ""
+
 
 
 class OpenAIEmbeddingModel(str, enum.Enum):
@@ -1414,6 +1503,11 @@ class Message(BaseType):
     """
     The timestamp when the message was created.
     It is represented as a string in ISO 8601 format.
+    """
+
+    provider: Provider | None = None
+    """
+    The provider that was used to generate the message.
     """
 
     model: str | None = None

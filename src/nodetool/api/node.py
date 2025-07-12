@@ -12,6 +12,7 @@ from nodetool.metadata.types import (
     AssetRef,
     DocumentRef,
     HuggingFaceModel,
+    InferenceProvider,
     LanguageModel,
     NodeRef,
     Email,
@@ -73,6 +74,19 @@ from nodetool.metadata.types import (
     HFAudioClassification,
     HFZeroShotAudioClassification,
     HFVoiceActivityDetection,
+    InferenceProviderAutomaticSpeechRecognitionModel,
+    InferenceProviderAudioClassificationModel,
+    InferenceProviderImageClassificationModel,
+    InferenceProviderTextClassificationModel,
+    InferenceProviderSummarizationModel,
+    InferenceProviderTextToImageModel,
+    InferenceProviderTranslationModel,
+    InferenceProviderTextToTextModel,
+    InferenceProviderTextToSpeechModel,
+    InferenceProviderTextToAudioModel,
+    InferenceProviderTextGenerationModel,
+    InferenceProviderImageToImageModel,
+    InferenceProviderImageSegmentationModel,
 )
 from nodetool.workflows.base_node import get_node_class
 from nodetool.common.environment import Environment
@@ -153,6 +167,20 @@ UnionType = (
     | TaskPlan
     | PlotlyConfig
     | dict
+    | InferenceProvider
+    | InferenceProviderAutomaticSpeechRecognitionModel
+    | InferenceProviderAudioClassificationModel
+    | InferenceProviderImageClassificationModel
+    | InferenceProviderTextClassificationModel
+    | InferenceProviderSummarizationModel
+    | InferenceProviderTextToImageModel
+    | InferenceProviderTranslationModel
+    | InferenceProviderTextToTextModel
+    | InferenceProviderTextToSpeechModel
+    | InferenceProviderTextToAudioModel
+    | InferenceProviderTextGenerationModel
+    | InferenceProviderImageToImageModel
+    | InferenceProviderImageSegmentationModel
     | ProcessingMessage
 )
 

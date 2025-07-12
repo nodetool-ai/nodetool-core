@@ -50,6 +50,10 @@ def get_provider(provider_type: ProviderEnum, **kwargs) -> ChatProvider:
         provider = OllamaProvider(**kwargs)
     elif provider_type == ProviderEnum.HuggingFace:
         provider = HuggingFaceProvider(**kwargs)
+    elif provider_type == ProviderEnum.HuggingFaceGroq:
+        provider = HuggingFaceProvider("groq", **kwargs)
+    elif provider_type == ProviderEnum.HuggingFaceCerebras:
+        provider = HuggingFaceProvider("cerebras", **kwargs)
     else:
         raise ValueError(f"Provider {provider_type} not supported")
 

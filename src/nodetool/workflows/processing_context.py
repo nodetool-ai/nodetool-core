@@ -1048,7 +1048,7 @@ class ProcessingContext:
         response = await self.http_get(url)
         return BytesIO(response.content)
 
-    async def asset_to_io(self, asset_ref: AssetRef) -> IO:
+    async def asset_to_io(self, asset_ref: AssetRef) -> IO[bytes]:
         """
         Converts an AssetRef object to an IO object.
 
