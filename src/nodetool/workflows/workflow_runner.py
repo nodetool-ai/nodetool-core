@@ -284,7 +284,10 @@ class WorkflowRunner:
                 continue
 
             # 5 – target property must exist unless node is dynamic
-            if not target_cls.is_dynamic() and target_node.find_property(edge.targetHandle) is None:
+            if (
+                not target_cls.is_dynamic()
+                and target_node.find_property(edge.targetHandle) is None
+            ):
                 removed.append(edge.id or "<unknown>")
                 continue
 
@@ -355,7 +358,9 @@ class WorkflowRunner:
         graph = Graph.from_dict(req.graph.model_dump())
 
         log.info(
-            "Graph prepared: %d nodes, %d valid edges after filtering", len(graph.nodes), len(graph.edges)
+            "Graph prepared: %d nodes, %d valid edges after filtering",
+            len(graph.nodes),
+            len(graph.edges),
         )
 
         context.graph = graph
@@ -493,7 +498,9 @@ class WorkflowRunner:
             ValueError: If the graph contains validation errors. The error message will
                         summarize the issues found.
         """
-        log.info("Validating graph – %d nodes, %d edges", len(graph.nodes), len(graph.edges))
+        log.info(
+            "Validating graph – %d nodes, %d edges", len(graph.nodes), len(graph.edges)
+        )
         log.debug(f"validate_graph called with graph: {graph}")
         is_valid = True
         all_errors = []
@@ -699,7 +706,10 @@ class WorkflowRunner:
                         exc_info=True,
                     )
                     raise result_or_exc
-        log.info("Trigger node processing complete – processed %d trigger node(s)", len(initial_nodes_for_tasks))
+        log.info(
+            "Trigger node processing complete – processed %d trigger node(s)",
+            len(initial_nodes_for_tasks),
+        )
 
     def _get_ready_nodes_and_prepare_tasks(
         self,
@@ -741,6 +751,7 @@ class WorkflowRunner:
         tasks_to_run_this_iteration = []
         ready_node_task_details_list: list[tuple[BaseNode, dict[str, Any]]] = []
         any_progress_potential = False
+        inputs_for_this_run: dict[str, Any] = {}
 
         for node in graph.nodes:
             if node._id in self.active_processing_node_ids:
@@ -754,9 +765,7 @@ class WorkflowRunner:
                 log.debug(
                     f"Active streaming node {node.get_title()} ({node._id}) is ready to pull next item."
                 )
-                inputs_for_this_run: dict[str, Any] = (
-                    {}
-                )  # Inputs are internal to generator
+                inputs_for_this_run = {}  # Inputs are internal to generator
                 tasks_to_run_this_iteration.append(
                     self.process_node(context, node, inputs_for_this_run)
                 )
@@ -865,7 +874,6 @@ class WorkflowRunner:
             # --- Peek Phase: Check if all inputs are available ---
 
             # --- Consume Phase: If all inputs can be satisfied, now consume them ---
-            inputs_for_this_run: dict[str, Any] = {}
             messages_consumed_for_this_node = False
 
             if required_input_slots:  # Only try to consume if there are slots to fill
@@ -1052,7 +1060,7 @@ class WorkflowRunner:
                     pending_data_in_queues = True
 
             if pending_data_in_queues:
-                # If there is still data queued after sufficient idle iterations, 
+                # If there is still data queued after sufficient idle iterations,
                 # this indicates a potential deadlock or stall. Terminate with warning.
                 log.warning(
                     "Terminating workflow despite pending data in edge queues after idle iterations. "
@@ -1094,7 +1102,9 @@ class WorkflowRunner:
                                     contextual logging if this is a subgraph execution.
         """
         log.info(
-            "Entering main processing loop (%d nodes, %d edges)", len(graph.nodes), len(graph.edges)
+            "Entering main processing loop (%d nodes, %d edges)",
+            len(graph.nodes),
+            len(graph.edges),
         )
         log.debug(f"_main_processing_loop started for parent_id: {parent_id}")
         iterations_without_progress = 0
@@ -1619,7 +1629,9 @@ class WorkflowRunner:
             try:
                 error = node.assign_property(name, value)
                 if error:
-                    log.error(f"Error assigning property {name} to node {node.id}: {error}")
+                    log.error(
+                        f"Error assigning property {name} to node {node.id}: {error}"
+                    )
             except Exception as e:
                 log.error(f"Error assigning property {name} to node {node.id}")
                 raise ValueError(f"Error assigning property {name}: {str(e)}")
@@ -1670,6 +1682,7 @@ class WorkflowRunner:
                         )
                     release_gpu_lock()
             else:
+                await node.preload_model(context)
                 result = await node.process(context)
                 result = await node.convert_output(context, result)
 
