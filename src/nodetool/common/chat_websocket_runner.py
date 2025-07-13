@@ -1,7 +1,7 @@
 """
 WebSocket-based chat runner for handling real-time chat communications.
 
-This module provides a WebSocket implementation for managing chat sessions, supporting both
+This module provides a stateless WebSocket implementation for managing chat sessions, supporting both
 binary (MessagePack) and text (JSON) message formats. It handles:
 
 - Real-time bidirectional communication for chat messages
@@ -10,14 +10,16 @@ binary (MessagePack) and text (JSON) message formats. It handles:
 - Support for various content types (text, images, audio, video)
 - Database persistence of all messages via thread_id
 
-## Database Persistence
+## Database Persistence & Stateless Design
 
-All messages are automatically persisted to the database using the Message model:
+The ChatWebSocketRunner is stateless and fetches chat history from the database on demand:
 - Messages are stored in the `nodetool_messages` table
-- Each message is associated with a thread_id for conversation management
-- Chat history is loaded from the database when a connection is established
+- Each message contains a thread_id for conversation management
+- Thread IDs are extracted from incoming messages, not stored in runner state
+- Chat history is fetched from the database when needed for processing
 - New messages (both user and assistant) are saved to the database asynchronously
 - Database operations run in thread pools to avoid blocking WebSocket processing
+- No chat history or thread state is kept in memory between processing sessions
 
 ## Chat Protocol
 
@@ -66,14 +68,15 @@ The main class ChatWebSocketRunner manages the WebSocket connection lifecycle an
 message processing using specialized processor classes, including:
 - Connection management
 - Message reception and parsing
-- Chat history tracking and database persistence
+- Database persistence and stateless chat history fetching
 - Thread management for conversation continuity
 - Delegating to specialized message processors
 - Consuming processor message queues and streaming responses
 
 Example:
-    runner = ChatWebSocketRunner(thread_id="existing_thread_id")
+    runner = ChatWebSocketRunner()
     await runner.run(websocket)
+    # thread_id is extracted from each incoming message
 """
 
 import logging
@@ -162,18 +165,16 @@ class ChatWebSocketRunner:
     including:
     - Accepting and establishing connections.
     - Receiving, parsing, and processing messages in binary (MessagePack) or text (JSON) format.
-    - Maintaining chat history.
+    - Fetching chat history from database on demand (stateless design).
     - Executing tools requested by the language model.
     - Integrating with workflows for more complex interactions.
     - Streaming responses and tool results back to the client.
     """
 
-    def __init__(self, auth_token: str | None = None, thread_id: str | None = None):
+    def __init__(self, auth_token: str | None = None):
         self.websocket: WebSocket | None = None
-        self.chat_history: List[ApiMessage] = []
         self.mode: WebSocketMode = WebSocketMode.BINARY
         self.auth_token = auth_token
-        self.thread_id = thread_id
         self.user_id: str | None = None
         self.supabase: AsyncClient | None = None
         self.all_tools = (
@@ -212,7 +213,7 @@ class ChatWebSocketRunner:
             thread_id=db_message.thread_id,
             tools=db_message.tools,
             tool_call_id=db_message.tool_call_id,
-            role=db_message.role or "",  # Fix linter error: ensure role is never None
+            role=db_message.role or "", 
             name=db_message.name,
             content=db_message.content,
             tool_calls=db_message.tool_calls,
@@ -246,7 +247,7 @@ class ChatWebSocketRunner:
                 graph_dict = metadata_message.graph
         
         return DBMessage.create(
-            thread_id=metadata_message.thread_id or self.thread_id or "",
+            thread_id=metadata_message.thread_id or "",
             user_id=self.user_id or "",
             workflow_id=metadata_message.workflow_id,
             graph=graph_dict,
@@ -281,11 +282,10 @@ class ChatWebSocketRunner:
             data_copy = message_data.copy()
             data_copy.pop("id", None)  # Remove id if present to avoid conflicts
             data_copy.pop("type", None)  # Remove type field as it's not part of DBMessage
+            data_copy.pop("user_id", None)# Remove user_id from data to avoid conflicts since we set it explicitly
             
-            # Use thread_id from message data if available, otherwise use runner's thread_id
-            message_thread_id = data_copy.pop("thread_id", None) or self.thread_id or ""
-            # Remove user_id from data to avoid conflicts since we set it explicitly
-            data_copy.pop("user_id", None)
+            # Use thread_id from message data if available
+            message_thread_id = data_copy.pop("thread_id", None) or ""
             
             # Run the database operation in a thread pool to avoid blocking
             def _create_db_message():
@@ -307,72 +307,79 @@ class ChatWebSocketRunner:
             # Re-raise to allow caller to handle gracefully
             raise
 
-    async def load_chat_history_from_db(self):
+    async def get_chat_history_from_db(self, thread_id: str) -> List[ApiMessage]:
         """
-        Load chat history from the database using thread_id.
+        Fetch chat history from the database using thread_id.
+        
+        Args:
+            thread_id: The thread ID to fetch messages for
+        
+        Returns:
+            List[ApiMessage]: The chat history as a list of API messages
         """
-        if not self.thread_id or not self.user_id:
-            log.debug("No thread_id or user_id available, starting with empty chat history")
-            return
+        if not thread_id or not self.user_id:
+            log.debug("No thread_id or user_id available, returning empty chat history")
+            return []
         
         try:
             # Load messages from database using the paginate method
             db_messages, _ = DBMessage.paginate(
-                thread_id=self.thread_id,
+                thread_id=thread_id,
                 limit=1000,  # Adjust as needed
                 reverse=False  # Get messages in chronological order
             )
             
             # Convert database messages to metadata messages
-            self.chat_history = [
+            chat_history = [
                 self._db_message_to_metadata_message(db_msg) for db_msg in db_messages
             ]
-            log.debug(f"Loaded {len(db_messages)} messages from database for thread {self.thread_id}")
+            log.debug(f"Fetched {len(db_messages)} messages from database for thread {thread_id}")
+            return chat_history
         except Exception as e:
-            log.error(f"Error loading chat history from database: {e}", exc_info=True)
-            self.chat_history = []
+            log.error(f"Error fetching chat history from database: {e}", exc_info=True)
+            return []
 
 
 
-    async def ensure_thread_exists(self):
+    async def ensure_thread_exists(self, thread_id: str | None = None) -> str:
         """
         Ensure that a thread exists for this conversation.
         Creates a new thread if thread_id is None.
+        
+        Args:
+            thread_id: The thread ID to verify, or None to create a new one
+            
+        Returns:
+            str: The thread ID (existing or newly created)
         """
         if not self.user_id:
             log.warning("Cannot ensure thread: user_id not set")
-            return
+            raise ValueError("User ID not set")
         
-        if not self.thread_id:
+        if not thread_id:
             # Create a new thread
             try:
                 thread = Thread.create(user_id=self.user_id)
-                self.thread_id = thread.id
-                log.debug(f"Created new thread {self.thread_id}")
+                log.debug(f"Created new thread {thread.id}")
+                return thread.id
             except Exception as e:
                 log.error(f"Error creating new thread: {e}", exc_info=True)
-                return
+                raise
         else:
             # Verify the thread exists and belongs to the user
             try:
-                thread = Thread.find(user_id=self.user_id, id=self.thread_id)
+                thread = Thread.find(user_id=self.user_id, id=thread_id)
                 if not thread:
-                    log.warning(f"Thread {self.thread_id} not found for user {self.user_id}")
+                    log.warning(f"Thread {thread_id} not found for user {self.user_id}")
                     # Create a new thread as fallback
                     thread = Thread.create(user_id=self.user_id)
-                    self.thread_id = thread.id
-                    log.debug(f"Created new thread {self.thread_id} as fallback")
+                    log.debug(f"Created new thread {thread.id} as fallback")
+                    return thread.id
+                return thread_id
             except Exception as e:
                 log.error(f"Error verifying thread: {e}", exc_info=True)
+                raise
 
-    def get_thread_id(self) -> str | None:
-        """
-        Get the current thread ID.
-        
-        Returns:
-            The thread ID if available, None otherwise
-        """
-        return self.thread_id
 
     async def init_supabase(self):
         if self.supabase:
@@ -425,9 +432,6 @@ class ChatWebSocketRunner:
         log.info("WebSocket connection established for chat")
         log.debug("WebSocket connection ready")
 
-        # Ensure thread exists and load chat history
-        await self.ensure_thread_exists()
-        await self.load_chat_history_from_db()
 
         # Initialize tools after user_id is set
         self._initialize_tools()
@@ -442,12 +446,6 @@ class ChatWebSocketRunner:
         Returns:
             bool: True if the token is valid, False otherwise.
         """
-        # Implement your token validation logic here
-        # This is a placeholder - replace with your actual validation logic
-        # Example: Call your auth service, check JWT validity, etc.
-
-        # For demonstration purposes, we're returning True
-        # In a real implementation, you would verify the token against your auth system
         await self.init_supabase()
         assert self.supabase, "Supabase client not initialized"
         try:
@@ -584,29 +582,34 @@ class ChatWebSocketRunner:
         This runs as a background task to avoid blocking message reception.
         """
         try:
+            # Extract thread_id from message data and ensure thread exists
+            thread_id = data.get("thread_id")
+            thread_id = await self.ensure_thread_exists(thread_id)
+            
+            # Update message data with the thread_id (in case it was created)
+            data["thread_id"] = thread_id
+            
             # Save message to database asynchronously
             try:
                 db_message = await self._save_message_to_db_async(data)
-                # Convert to metadata message and add to chat history
+                # Convert to metadata message for processing
                 metadata_message = self._db_message_to_metadata_message(db_message)
-                self.chat_history.append(metadata_message)
-                log.debug("Added message to chat history and saved to database asynchronously")
+                log.debug("Saved message to database asynchronously")
             except Exception as db_error:
                 log.error(f"Database save failed, continuing with in-memory message: {db_error}")
                 # Create a fallback API message for processing even if DB save fails
                 from nodetool.metadata.types import Message as ApiMessage
                 metadata_message = ApiMessage(**data)
-                self.chat_history.append(metadata_message)
-                log.debug("Added message to chat history (in-memory only due to DB error)")
+                log.debug("Created fallback message for processing")
 
             # Process the message through the appropriate processor
             if metadata_message.workflow_id:
-                await self.process_messages_for_workflow()
+                await self.process_messages_for_workflow(thread_id)
             else:
                 if metadata_message.agent_mode:
-                    await self.process_agent_messages()
+                    await self.process_agent_messages(thread_id)
                 else:
-                    await self.process_messages()
+                    await self.process_messages(thread_id)
 
             # Reset processor references after processing
             self.current_task = None
@@ -627,46 +630,6 @@ class ChatWebSocketRunner:
                 pass  # Ignore errors when sending error message
             # Reset processor references on error
             self.current_task = None
-
-    async def _query_chroma_collections(
-        self, collections: list[str], query_text: str, n_results: int = 5
-    ) -> str:
-        """Query multiple ChromaDB collections and return concatenated results."""
-        if not collections or not query_text:
-            return ""
-
-        all_results = []
-
-        for collection_name in collections:
-            # Get the collection
-            collection = get_collection(name=collection_name)
-
-            # Perform query
-            results = collection.query(
-                query_texts=[query_text],
-                n_results=n_results,
-            )
-
-            if results["documents"] and results["documents"][0]:
-                # Format results from this collection
-                collection_results = f"\n\n### Results from {collection_name}:\n"
-                for doc, metadata in zip(
-                    results["documents"][0],
-                    (
-                        results["metadatas"][0]
-                        if results["metadatas"]
-                        else [{}] * len(results["documents"][0])
-                    ),
-                ):
-                    # Truncate long documents
-                    doc_preview = f"{doc[:200]}..." if len(doc) > 200 else doc
-                    collection_results += f"\n- {doc_preview}"
-                all_results.append(collection_results)
-
-        if all_results:
-            return "\n".join(all_results)
-        else:
-            return ""
 
     async def _run_processor(
         self,
@@ -697,16 +660,10 @@ class ChatWebSocketRunner:
                     if message["type"] == "message":
                         # Save assistant message to database asynchronously
                         try:
-                            db_message = await self._save_message_to_db_async(message)
-                            # Convert to metadata message and add to chat history
-                            metadata_message = self._db_message_to_metadata_message(db_message)
-                            self.chat_history.append(metadata_message)
+                            await self._save_message_to_db_async(message)
+                            log.debug("Saved assistant message to database")
                         except Exception as db_error:
-                            log.error(f"Assistant message DB save failed, continuing with in-memory: {db_error}")
-                            # Create a fallback API message for processing even if DB save fails
-                            from nodetool.metadata.types import Message as ApiMessage
-                            metadata_message = ApiMessage(**message)
-                            self.chat_history.append(metadata_message)
+                            log.error(f"Assistant message DB save failed: {db_error}")
                     else:
                         await self.send_message(message)
                 else:
@@ -725,7 +682,7 @@ class ChatWebSocketRunner:
                 pass
             raise
 
-    async def _trigger_workflow_creation(self, objective: str):
+    async def _trigger_workflow_creation(self, objective: str, thread_id: str):
         """
         Triggers workflow creation using the GraphPlanner for tool-initiated requests.
 
@@ -734,16 +691,18 @@ class ChatWebSocketRunner:
 
         Args:
             objective (str): The workflow objective/goal
+            thread_id (str): The thread ID to get chat history from
 
         Returns:
             dict: Result of the workflow creation process
         """
         try:
             # Get the current model from the last message in chat history
-            if not self.chat_history:
+            chat_history = await self.get_chat_history_from_db(thread_id)
+            if not chat_history:
                 raise ValueError("No chat history available to determine model")
 
-            last_message = self.chat_history[-1]
+            last_message = chat_history[-1]
             if not last_message.provider:
                 raise ValueError("No provider specified in the current conversation")
             
@@ -753,7 +712,7 @@ class ChatWebSocketRunner:
             
             await self._run_processor(
                 processor=processor,
-                chat_history=self.chat_history,
+                chat_history=chat_history,
                 processing_context=processing_context,
                 tools=self.all_tools,
                 objective=objective,
@@ -765,7 +724,7 @@ class ChatWebSocketRunner:
             return {"success": False, "error": error_msg}
 
     async def _trigger_workflow_editing(
-        self, objective: str, workflow_id: str | None = None, graph: Graph | None = None
+        self, objective: str, thread_id: str, workflow_id: str | None = None, graph: Graph | None = None
     ):
         """
         Triggers workflow editing using the GraphPlanner for tool-initiated requests.
@@ -775,6 +734,7 @@ class ChatWebSocketRunner:
 
         Args:
             objective (str): The workflow editing objective/goal
+            thread_id (str): The thread ID to get chat history from
             workflow_id (str | None): ID of the workflow to edit (if None, tries to get from message)
             graph (Graph | None): The graph to edit (if None, tries to get from message)
         Returns:
@@ -782,10 +742,11 @@ class ChatWebSocketRunner:
         """
         try:
             # Get the current model from the last message in chat history
-            if not self.chat_history:
+            chat_history = await self.get_chat_history_from_db(thread_id)
+            if not chat_history:
                 raise ValueError("No chat history available to determine model")
 
-            last_message = self.chat_history[-1]
+            last_message = chat_history[-1]
             if not last_message.provider:
                 raise ValueError("No provider specified in the current conversation")
             
@@ -795,7 +756,7 @@ class ChatWebSocketRunner:
             
             await self._run_processor(
                 processor=processor,
-                chat_history=self.chat_history,
+                chat_history=chat_history,
                 processing_context=processing_context,
                 tools=self.all_tools,
                 objective=objective,
@@ -808,7 +769,7 @@ class ChatWebSocketRunner:
             log.error(f"Error in _trigger_workflow_editing: {e}", exc_info=True)
             return {"success": False, "error": error_msg}
 
-    async def process_messages(self):
+    async def process_messages(self, thread_id: str):
         """
         Process messages without a workflow, typically for general chat interactions.
 
@@ -817,13 +778,20 @@ class ChatWebSocketRunner:
         It supports streaming responses and tool execution.
         It also handles requests for the integrated help system.
 
+        Args:
+            thread_id (str): The thread ID to get chat history from
+
         Returns:
             Message: The assistant's response message.
 
         Raises:
             ValueError: If a specified tool is not found or if the model is not specified in the last message.
         """
-        last_message = self.chat_history[-1]
+        chat_history = await self.get_chat_history_from_db(thread_id)
+        if not chat_history:
+            raise ValueError("No chat history available")
+        
+        last_message = chat_history[-1]
 
         processing_context = ProcessingContext(user_id=self.user_id)
         
@@ -838,7 +806,7 @@ class ChatWebSocketRunner:
             
             await self._run_processor(
                 processor=processor,
-                chat_history=self.chat_history,
+                chat_history=chat_history,
                 processing_context=processing_context,
                 tools=self.all_tools,
             )
@@ -890,14 +858,14 @@ class ChatWebSocketRunner:
                 log.debug(
                     f"Using provider {provider.__class__.__name__} for model {last_message.model}"
                 )
-                log.debug(f"Chat history length: {len(self.chat_history)} messages")
+                log.debug(f"Chat history length: {len(chat_history)} messages")
                 
                 # Create the regular chat processor
                 processor = RegularChatProcessor(provider, self.all_tools)
                 
                 await self._run_processor(
                     processor=processor,
-                    chat_history=self.chat_history,
+                    chat_history=chat_history,
                     processing_context=processing_context,
                     tools=selected_tools,
                     collections=last_message.collections,
@@ -907,14 +875,21 @@ class ChatWebSocketRunner:
                 # Re-raise exceptions to be handled by the outer try-catch
                 raise
 
-    async def process_agent_messages(self):
+    async def process_agent_messages(self, thread_id: str):
         """
         Process messages using the Agent, similar to the CLI implementation.
+
+        Args:
+            thread_id (str): The thread ID to get chat history from
 
         Returns:
             Message: The assistant's response message after agent execution.
         """
-        last_message = self.chat_history[-1]
+        chat_history = await self.get_chat_history_from_db(thread_id)
+        if not chat_history:
+            raise ValueError("No chat history available")
+        
+        last_message = chat_history[-1]
         assert last_message.model, "Model is required for agent mode"
         assert last_message.provider, "Provider is required for agent mode"
         
@@ -939,7 +914,7 @@ class ChatWebSocketRunner:
 
         await self._run_processor(
             processor=processor,
-            chat_history=self.chat_history,
+            chat_history=chat_history,
             processing_context=processing_context,
             tools=selected_tools,
         )
@@ -1063,7 +1038,7 @@ class ChatWebSocketRunner:
         self.all_tools = standard_tools + workflow_tools + node_tools
         log.debug(f"Initialized {len(self.all_tools)} total tools")
 
-    async def process_messages_for_workflow(self):
+    async def process_messages_for_workflow(self, thread_id: str):
         """
         Processes messages that are part of a defined workflow.
 
@@ -1071,18 +1046,22 @@ class ChatWebSocketRunner:
         initializes a WorkflowRunner, and executes the workflow. It streams
         updates (including job status and results) back to the client.
 
+        Args:
+            thread_id (str): The thread ID to get chat history from
+
         Returns:
             Message: A message containing the final result of the workflow execution.
 
         Raises:
             AssertionError: If the workflow ID is not present in the last message.
         """
+        chat_history = await self.get_chat_history_from_db(thread_id)
         processor = WorkflowMessageProcessor(self.user_id)
         processing_context = ProcessingContext(user_id=self.user_id)
         
         await self._run_processor(
             processor=processor,
-            chat_history=self.chat_history,
+            chat_history=chat_history,
             processing_context=processing_context,
             tools=self.all_tools,
         )

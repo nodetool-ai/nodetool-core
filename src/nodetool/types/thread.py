@@ -19,7 +19,7 @@ class Thread(BaseModel):
     """API response model for a thread."""
     id: str
     user_id: str
-    title: str
+    title: str | None
     created_at: datetime
     updated_at: datetime
 
