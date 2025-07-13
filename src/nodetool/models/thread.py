@@ -21,6 +21,7 @@ class Thread(DBModel):
 
     id: str = DBField(hash_key=True)
     user_id: str = DBField(default="")
+    title: str | None = DBField(default=None)
     created_at: datetime = DBField(default_factory=datetime.now)
     updated_at: datetime = DBField(default_factory=datetime.now)
 

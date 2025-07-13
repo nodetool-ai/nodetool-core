@@ -172,7 +172,15 @@ class DBModel(BaseModel):
             limit=limit,
             reverse=reverse,
         )
-        return [cls(**item) for item in items], key
+        def try_load_model(item: dict[str, Any]) -> Any:    
+            try:
+                return cls(**item)
+            except Exception as e:
+                log.error(f"Error loading model: {e}")
+                return None
+        def filter_none(items: list[Any]) -> list[Any]: 
+            return [item for item in items if item is not None]
+        return filter_none([try_load_model(item) for item in items]), key
 
     @classmethod
     def create(cls, **kwargs):

@@ -5,7 +5,6 @@ from typing import Optional
 from pydantic import BaseModel
 from fastapi import APIRouter, Depends, HTTPException
 from nodetool.api.utils import current_user
-from nodetool.chat.help import create_help_answer
 from nodetool.metadata.types import Message
 from nodetool.models.message import Message as MessageModel
 from nodetool.common.environment import Environment
@@ -13,8 +12,6 @@ from nodetool.common.environment import Environment
 from nodetool.models.thread import Thread
 from nodetool.types.chat import MessageCreateRequest, MessageList
 
-
-from fastapi.responses import StreamingResponse
 
 log = Environment.get_logger()
 router = APIRouter(prefix="/api/messages", tags=["messages"])
@@ -55,16 +52,6 @@ def ensure_alternating_roles(messages):
 class HelpRequest(BaseModel):
     messages: list[Message]
     model: str
-
-
-@router.post("/help")
-async def help(req: HelpRequest) -> StreamingResponse:
-    async def generate():
-        messages = ensure_alternating_roles(req.messages)
-        async for part in create_help_answer(messages, req.model):
-            yield part
-
-    return StreamingResponse(generate(), media_type="text/plain")
 
 
 @router.get("/{message_id}")
