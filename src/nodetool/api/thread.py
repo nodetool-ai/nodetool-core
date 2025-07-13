@@ -95,12 +95,22 @@ async def delete(thread_id: str, user: str = Depends(current_user)) -> None:
     if thread is None:
         raise HTTPException(status_code=404, detail="Thread not found")
     
-    # Delete all messages in the thread first
+    # Delete all messages in the thread using cursor-based pagination
     from nodetool.models.message import Message as MessageModel
-    messages, _ = MessageModel.paginate(thread_id=thread_id, limit=1000)
-    for message in messages:
-        if message.user_id == user:
-            message.delete()
+    
+    # Keep deleting messages until none are left
+    while True:
+        messages, _ = MessageModel.paginate(thread_id=thread_id, limit=100)
+        if not messages:
+            break
+        
+        for message in messages:
+            if message.user_id == user:
+                message.delete()
+        
+        # If we deleted fewer messages than the limit, we're done
+        if len(messages) < 100:
+            break
     
     # Delete the thread
     thread.delete()

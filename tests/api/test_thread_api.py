@@ -255,3 +255,43 @@ def test_thread_message_isolation(client: TestClient, headers: dict[str, str], t
     # Verify only the current user's message is deleted
     assert Message.get(my_message.id) is None
     assert Message.get(other_message.id) is not None  # Other user's message remains
+
+
+def test_delete_thread_with_many_messages(client: TestClient, headers: dict[str, str], thread, user_id: str):
+    """Test deleting a thread with more than 1000 messages to ensure pagination works."""
+    # Create 1050 messages to exceed the old 1000 message limit
+    message_ids = []
+    for i in range(1050):
+        message = Message.create(
+            user_id=user_id,
+            thread_id=thread.id,
+            role="user" if i % 2 == 0 else "assistant",
+            content=f"Message {i}"
+        )
+        message_ids.append(message.id)
+    
+    # Create a few messages from another user to verify isolation
+    other_user_message_ids = []
+    for i in range(5):
+        message = Message.create(
+            user_id="other-user",
+            thread_id=thread.id,
+            role="user",
+            content=f"Other user message {i}"
+        )
+        other_user_message_ids.append(message.id)
+    
+    # Delete the thread
+    response = client.delete(f"/api/threads/{thread.id}", headers=headers)
+    assert response.status_code == 200
+    
+    # Verify thread is deleted
+    assert Thread.get(thread.id) is None
+    
+    # Verify all current user's messages are deleted
+    for message_id in message_ids:
+        assert Message.get(message_id) is None
+    
+    # Verify other user's messages remain
+    for message_id in other_user_message_ids:
+        assert Message.get(message_id) is not None
