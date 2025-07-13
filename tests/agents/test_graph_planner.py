@@ -73,6 +73,8 @@ class TestGraphPlanner:
         assert planner.input_schema == []
         assert planner.output_schema == []
         assert planner.graph is None
+        assert planner.existing_graph is None
+        assert planner.max_tokens == 8192
 
     def test_type_compatibility(self):
         """Test type compatibility checking"""
@@ -96,37 +98,54 @@ class TestGraphPlanner:
         assert _is_type_compatible(any_type, str_type) is True
         assert _is_type_compatible(str_type, any_type) is True
 
-    def test_type_inference_from_values(self, mock_provider, temp_workspace):
-        """Test that GraphPlanner can infer input schema from provided values"""
-        # Test with various input types
-        test_inputs = {
-            "text": "Hello world",
-            "number": 42,
-            "float_num": 3.14,
-            "flag": True,
-            "items": ["a", "b", "c"],
-            "mapping": {"key1": "value1", "key2": "value2"},
-            "empty_list": [],
-            "empty_dict": {},
-            "nested": {"data": [1, 2, 3]},
-        }
+    def test_explicit_input_schema(self, mock_provider, temp_workspace):
+        """Test that GraphPlanner can work with explicit input schema"""
+        # Create explicit schema
+        input_schema = [
+            GraphInput(
+                name="text",
+                type=TypeMetadata(type="str"),
+                description="Text input"
+            ),
+            GraphInput(
+                name="number",
+                type=TypeMetadata(type="int"),
+                description="Number input"
+            ),
+            GraphInput(
+                name="float_num",
+                type=TypeMetadata(type="float"),
+                description="Float input"
+            ),
+            GraphInput(
+                name="flag",
+                type=TypeMetadata(type="bool"),
+                description="Boolean flag"
+            ),
+            GraphInput(
+                name="items",
+                type=TypeMetadata(type="list", type_args=[TypeMetadata(type="str")]),
+                description="List of strings"
+            ),
+            GraphInput(
+                name="mapping",
+                type=TypeMetadata(type="dict", type_args=[TypeMetadata(type="str"), TypeMetadata(type="str")]),
+                description="String to string mapping"
+            ),
+        ]
         
-        with patch(
-            "nodetool.agents.graph_planner.get_node_type_for_metadata",
-            return_value="dummy.input_node",
-        ):
-            planner = GraphPlanner(
-                provider=mock_provider,
-                model="test-model",
-                objective="Process various data types",
-                inputs=test_inputs,
-                verbose=False,
-            )
+        planner = GraphPlanner(
+            provider=mock_provider,
+            model="test-model",
+            objective="Process various data types",
+            input_schema=input_schema,
+            verbose=False,
+        )
 
-        # Check that input_schema was inferred
-        assert len(planner.input_schema) == len(test_inputs)
+        # Check that input_schema was set
+        assert len(planner.input_schema) == len(input_schema)
 
-        # Check specific type inferences
+        # Check specific types
         schema_by_name = {inp.name: inp for inp in planner.input_schema}
 
         assert schema_by_name["text"].type.type == "str"
@@ -143,88 +162,89 @@ class TestGraphPlanner:
         assert schema_by_name["mapping"].type.type_args[0].type == "str"
         assert schema_by_name["mapping"].type.type_args[1].type == "str"
 
-        # Check empty collections
-        assert schema_by_name["empty_list"].type.type == "list"
-        assert schema_by_name["empty_list"].type.type_args[0].type == "any"
-
-        assert schema_by_name["empty_dict"].type.type == "dict"
-        assert schema_by_name["empty_dict"].type.type_args[0].type == "str"
-        assert schema_by_name["empty_dict"].type.type_args[1].type == "any"
-
-    def test_type_inference_with_existing_schema(self, mock_provider, temp_workspace):
-        """Test that existing input_schema takes precedence over inferred types"""
-        test_inputs = {"text": "Hello world", "number": 42}
-
-        # Create explicit schema
-        input_schema = [
-            GraphInput(
-                name="text", type=TypeMetadata(type="str"), description="Text input"
+    def test_output_schema(self, mock_provider, temp_workspace):
+        """Test that GraphPlanner handles output schema correctly"""
+        # Create explicit output schema
+        output_schema = [
+            GraphOutput(
+                name="result",
+                type=TypeMetadata(type="str"),
+                description="Result text"
             ),
-            GraphInput(
-                name="number",
-                type=TypeMetadata(
-                    type="float"
-                ),  # Intentionally different from actual value type
-                description="Number input",
+            GraphOutput(
+                name="score",
+                type=TypeMetadata(type="float"),
+                description="Result score"
             ),
         ]
         
-        with patch(
-            "nodetool.agents.graph_planner.get_node_type_for_metadata",
-            return_value="dummy.input_node",
-        ):
-            planner = GraphPlanner(
-                provider=mock_provider,
-                model="test-model",
-                objective="Test with explicit schema",
-                inputs=test_inputs,
-                input_schema=input_schema,
-                verbose=False,
-            )
+        planner = GraphPlanner(
+            provider=mock_provider,
+            model="test-model",
+            objective="Test with output schema",
+            output_schema=output_schema,
+            verbose=False,
+        )
 
-        # Check that the explicit schema was used
-        assert len(planner.input_schema) == 2
-        schema_by_name = {inp.name: inp for inp in planner.input_schema}
+        # Check that the output schema was set
+        assert len(planner.output_schema) == 2
+        schema_by_name = {out.name: out for out in planner.output_schema}
 
-        # Should use the explicit types, not inferred ones
-        assert schema_by_name["text"].type.type == "str"
-        assert schema_by_name["number"].type.type == "float"  # Not "int"
+        # Should use the explicit types
+        assert schema_by_name["result"].type.type == "str"
+        assert schema_by_name["score"].type.type == "float"
 
-    def test_type_inference_special_types(self, mock_provider, temp_workspace):
-        """Test type inference for special types like None and asset references"""
-        test_inputs = {
-            "null_value": None,
-            "image_ref": {"type": "image", "uri": "path/to/image.jpg"},
-            "tuple_data": (1, "two", 3.0),
-        }
+    def test_mixed_schemas(self, mock_provider, temp_workspace):
+        """Test GraphPlanner with both input and output schemas"""
+        # Create schemas
+        input_schema = [
+            GraphInput(
+                name="input_text",
+                type=TypeMetadata(type="str"),
+                description="Input text"
+            ),
+            GraphInput(
+                name="threshold",
+                type=TypeMetadata(type="float"),
+                description="Processing threshold"
+            ),
+        ]
         
-        with patch(
-            "nodetool.agents.graph_planner.get_node_type_for_metadata",
-            return_value="dummy.input_node",
-        ):
-            planner = GraphPlanner(
-                provider=mock_provider,
-                model="test-model",
-                objective="Test special types",
-                inputs=test_inputs,
-                verbose=False,
-            )
+        output_schema = [
+            GraphOutput(
+                name="processed_text",
+                type=TypeMetadata(type="str"),
+                description="Processed text output"
+            ),
+            GraphOutput(
+                name="confidence",
+                type=TypeMetadata(type="float"),
+                description="Processing confidence"
+            ),
+        ]
+        
+        planner = GraphPlanner(
+            provider=mock_provider,
+            model="test-model",
+            objective="Process text with confidence scoring",
+            input_schema=input_schema,
+            output_schema=output_schema,
+            verbose=False,
+        )
 
-        schema_by_name = {inp.name: inp for inp in planner.input_schema}
-
-        # Check None type
-        assert schema_by_name["null_value"].type.type == "none"
-        assert schema_by_name["null_value"].type.optional is True
-
-        # Check asset reference
-        assert schema_by_name["image_ref"].type.type == "image"
-
-        # Check tuple type
-        assert schema_by_name["tuple_data"].type.type == "tuple"
-        assert len(schema_by_name["tuple_data"].type.type_args) == 3
-        assert schema_by_name["tuple_data"].type.type_args[0].type == "int"
-        assert schema_by_name["tuple_data"].type.type_args[1].type == "str"
-        assert schema_by_name["tuple_data"].type.type_args[2].type == "float"
+        # Check both schemas were set correctly
+        assert len(planner.input_schema) == 2
+        assert len(planner.output_schema) == 2
+        
+        # Verify input schema
+        input_by_name = {inp.name: inp for inp in planner.input_schema}
+        assert input_by_name["input_text"].type.type == "str"
+        assert input_by_name["threshold"].type.type == "float"
+        
+        # Verify output schema
+        output_by_name = {out.name: out for out in planner.output_schema}
+        assert output_by_name["processed_text"].type.type == "str"
+        assert output_by_name["confidence"].type.type == "float"
 
     def test_create_graph_method_exists(self, mock_provider):
         """Test that create_graph method exists"""
@@ -239,39 +259,6 @@ class TestGraphPlanner:
         assert hasattr(planner, 'create_graph')
         assert callable(planner.create_graph)
 
-    # def test_schema_handling(self, mock_provider):
-    #     """Test that GraphPlanner handles input and output schemas correctly"""
-    #     input_schema = [
-    #         GraphInput(
-    #             name="name",
-    #             type=TypeMetadata(type="str"),
-    #             description="Person's name"
-    #         )
-    #     ]
-        
-    #     output_schema = [
-    #         GraphOutput(
-    #             name="greeting",
-    #             type=TypeMetadata(type="str"),
-    #             description="Greeting message"
-    #         )
-    #     ]
-
-    #     planner = GraphPlanner(
-    #         provider=mock_provider,
-    #         model="test-model",
-    #         objective="Generate greeting",
-    #         inputs={"name": "Alice"},
-    #         input_schema=input_schema,
-    #         output_schema=output_schema,
-    #         verbose=False,
-    #     )
-
-    #     # Verify the planner used the provided schemas
-    #     assert len(planner.input_schema) == 1
-    #     assert planner.input_schema[0].name == "name"
-    #     assert len(planner.output_schema) == 1
-    #     assert planner.output_schema[0].name == "greeting"
 
     @pytest.mark.asyncio
     async def test_create_graph_failure(self, mock_provider, processing_context):
