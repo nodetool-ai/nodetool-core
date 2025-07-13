@@ -8,6 +8,16 @@ binary (MessagePack) and text (JSON) message formats. It handles:
 - Tool execution and streaming responses
 - Workflow processing with job updates
 - Support for various content types (text, images, audio, video)
+- Database persistence of all messages via thread_id
+
+## Database Persistence
+
+All messages are automatically persisted to the database using the Message model:
+- Messages are stored in the `nodetool_messages` table
+- Each message is associated with a thread_id for conversation management
+- Chat history is loaded from the database when a connection is established
+- New messages (both user and assistant) are saved to the database asynchronously
+- Database operations run in thread pools to avoid blocking WebSocket processing
 
 ## Chat Protocol
 
@@ -56,12 +66,13 @@ The main class ChatWebSocketRunner manages the WebSocket connection lifecycle an
 message processing using specialized processor classes, including:
 - Connection management
 - Message reception and parsing
-- Chat history tracking
+- Chat history tracking and database persistence
+- Thread management for conversation continuity
 - Delegating to specialized message processors
 - Consuming processor message queues and streaming responses
 
 Example:
-    runner = ChatWebSocketRunner()
+    runner = ChatWebSocketRunner(thread_id="existing_thread_id")
     await runner.run(websocket)
 """
 
@@ -106,9 +117,9 @@ from nodetool.chat.ollama_service import get_ollama_models
 from nodetool.chat.providers import get_provider
 from nodetool.agents.tools.base import Tool, get_tool_by_name
 from nodetool.common.environment import Environment
-from nodetool.metadata.types import (
-    Message,
-)
+from nodetool.models.message import Message as DBMessage
+from nodetool.models.thread import Thread
+from nodetool.metadata.types import Message as ApiMessage
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.common.message_processors import (
     MessageProcessor,
@@ -157,17 +168,211 @@ class ChatWebSocketRunner:
     - Streaming responses and tool results back to the client.
     """
 
-    def __init__(self, auth_token: str | None = None):
+    def __init__(self, auth_token: str | None = None, thread_id: str | None = None):
         self.websocket: WebSocket | None = None
-        self.chat_history: List[Message] = []
+        self.chat_history: List[ApiMessage] = []
         self.mode: WebSocketMode = WebSocketMode.BINARY
         self.auth_token = auth_token
+        self.thread_id = thread_id
         self.user_id: str | None = None
         self.supabase: AsyncClient | None = None
         self.all_tools = (
             []
         )  # Initialize empty list, will be populated after user_id is set
         self.current_task: asyncio.Task | None = None
+
+    def _db_message_to_metadata_message(self, db_message: DBMessage) -> ApiMessage:
+        """
+        Convert a database Message to a metadata Message.
+        
+        Args:
+            db_message: The database Message to convert
+            
+        Returns:
+            The converted metadata Message
+        """
+        # Convert graph dict to Graph object if needed
+        graph_obj = None
+        if db_message.graph:
+            try:
+                from nodetool.types.graph import Graph
+                if isinstance(db_message.graph, dict):
+                    graph_obj = Graph(**db_message.graph)
+                else:
+                    # Already a Graph object or other type
+                    graph_obj = db_message.graph
+            except Exception as e:
+                log.warning(f"Failed to convert graph to Graph object: {e}")
+                graph_obj = None
+        
+        return ApiMessage(
+            id=db_message.id,
+            workflow_id=db_message.workflow_id,
+            graph=graph_obj,
+            thread_id=db_message.thread_id,
+            tools=db_message.tools,
+            tool_call_id=db_message.tool_call_id,
+            role=db_message.role or "",  # Fix linter error: ensure role is never None
+            name=db_message.name,
+            content=db_message.content,
+            tool_calls=db_message.tool_calls,
+            collections=db_message.collections,
+            input_files=db_message.input_files,
+            output_files=db_message.output_files,
+            created_at=db_message.created_at.isoformat() if db_message.created_at else None,
+            provider=db_message.provider,
+            model=db_message.model,
+            agent_mode=db_message.agent_mode,
+            workflow_assistant=db_message.workflow_assistant,
+            help_mode=db_message.help_mode,
+        )
+
+    def _metadata_message_to_db_message(self, metadata_message: ApiMessage) -> DBMessage:
+        """
+        Convert a metadata Message to a database Message.
+        
+        Args:
+            metadata_message: The metadata Message to convert
+            
+        Returns:
+            The converted database Message
+        """
+        # Extract graph as dict if it's a Graph object
+        graph_dict = None
+        if metadata_message.graph:
+            if hasattr(metadata_message.graph, 'model_dump'):
+                graph_dict = metadata_message.graph.model_dump()
+            elif isinstance(metadata_message.graph, dict):
+                graph_dict = metadata_message.graph
+        
+        return DBMessage.create(
+            thread_id=metadata_message.thread_id or self.thread_id or "",
+            user_id=self.user_id or "",
+            workflow_id=metadata_message.workflow_id,
+            graph=graph_dict,
+            tools=metadata_message.tools,
+            tool_call_id=metadata_message.tool_call_id,
+            role=metadata_message.role,
+            name=metadata_message.name,
+            content=metadata_message.content,
+            tool_calls=metadata_message.tool_calls,
+            collections=metadata_message.collections,
+            input_files=metadata_message.input_files,
+            output_files=metadata_message.output_files,
+            provider=metadata_message.provider,
+            model=metadata_message.model,
+            agent_mode=metadata_message.agent_mode or False,
+            workflow_assistant=metadata_message.workflow_assistant or False,
+            help_mode=metadata_message.help_mode or False,
+        )
+
+    async def _save_message_to_db_async(self, message_data: dict) -> DBMessage:
+        """
+        Asynchronously create and save a message to the database.
+        
+        Args:
+            message_data: The message data to save
+            
+        Returns:
+            The created database message
+        """
+        try:
+            # Prepare data for database message creation
+            data_copy = message_data.copy()
+            data_copy.pop("id", None)  # Remove id if present to avoid conflicts
+            data_copy.pop("type", None)  # Remove type field as it's not part of DBMessage
+            
+            # Use thread_id from message data if available, otherwise use runner's thread_id
+            message_thread_id = data_copy.pop("thread_id", None) or self.thread_id or ""
+            # Remove user_id from data to avoid conflicts since we set it explicitly
+            data_copy.pop("user_id", None)
+            
+            # Run the database operation in a thread pool to avoid blocking
+            def _create_db_message():
+                return DBMessage.create(
+                    thread_id=message_thread_id,
+                    user_id=self.user_id or "",
+                    **data_copy
+                )
+            
+            # Execute in thread pool to make it non-blocking
+            loop = asyncio.get_event_loop()
+            db_message = await loop.run_in_executor(None, _create_db_message)
+            
+            log.debug(f"Saved message {db_message.id} to database asynchronously")
+            return db_message
+            
+        except Exception as e:
+            log.error(f"Error saving message to database: {e}", exc_info=True)
+            # Re-raise to allow caller to handle gracefully
+            raise
+
+    async def load_chat_history_from_db(self):
+        """
+        Load chat history from the database using thread_id.
+        """
+        if not self.thread_id or not self.user_id:
+            log.debug("No thread_id or user_id available, starting with empty chat history")
+            return
+        
+        try:
+            # Load messages from database using the paginate method
+            db_messages, _ = DBMessage.paginate(
+                thread_id=self.thread_id,
+                limit=1000,  # Adjust as needed
+                reverse=False  # Get messages in chronological order
+            )
+            
+            # Convert database messages to metadata messages
+            self.chat_history = [
+                self._db_message_to_metadata_message(db_msg) for db_msg in db_messages
+            ]
+            log.debug(f"Loaded {len(db_messages)} messages from database for thread {self.thread_id}")
+        except Exception as e:
+            log.error(f"Error loading chat history from database: {e}", exc_info=True)
+            self.chat_history = []
+
+
+
+    async def ensure_thread_exists(self):
+        """
+        Ensure that a thread exists for this conversation.
+        Creates a new thread if thread_id is None.
+        """
+        if not self.user_id:
+            log.warning("Cannot ensure thread: user_id not set")
+            return
+        
+        if not self.thread_id:
+            # Create a new thread
+            try:
+                thread = Thread.create(user_id=self.user_id)
+                self.thread_id = thread.id
+                log.debug(f"Created new thread {self.thread_id}")
+            except Exception as e:
+                log.error(f"Error creating new thread: {e}", exc_info=True)
+                return
+        else:
+            # Verify the thread exists and belongs to the user
+            try:
+                thread = Thread.find(user_id=self.user_id, id=self.thread_id)
+                if not thread:
+                    log.warning(f"Thread {self.thread_id} not found for user {self.user_id}")
+                    # Create a new thread as fallback
+                    thread = Thread.create(user_id=self.user_id)
+                    self.thread_id = thread.id
+                    log.debug(f"Created new thread {self.thread_id} as fallback")
+            except Exception as e:
+                log.error(f"Error verifying thread: {e}", exc_info=True)
+
+    def get_thread_id(self) -> str | None:
+        """
+        Get the current thread ID.
+        
+        Returns:
+            The thread ID if available, None otherwise
+        """
+        return self.thread_id
 
     async def init_supabase(self):
         if self.supabase:
@@ -219,6 +424,10 @@ class ChatWebSocketRunner:
         self.websocket = websocket
         log.info("WebSocket connection established for chat")
         log.debug("WebSocket connection ready")
+
+        # Ensure thread exists and load chat history
+        await self.ensure_thread_exists()
+        await self.load_chat_history_from_db()
 
         # Initialize tools after user_id is set
         self._initialize_tools()
@@ -375,17 +584,26 @@ class ChatWebSocketRunner:
         This runs as a background task to avoid blocking message reception.
         """
         try:
-            message = Message(**data)
-
-            # Add the new message to chat history
-            self.chat_history.append(message)
-            log.debug("Added message to chat history")
+            # Save message to database asynchronously
+            try:
+                db_message = await self._save_message_to_db_async(data)
+                # Convert to metadata message and add to chat history
+                metadata_message = self._db_message_to_metadata_message(db_message)
+                self.chat_history.append(metadata_message)
+                log.debug("Added message to chat history and saved to database asynchronously")
+            except Exception as db_error:
+                log.error(f"Database save failed, continuing with in-memory message: {db_error}")
+                # Create a fallback API message for processing even if DB save fails
+                from nodetool.metadata.types import Message as ApiMessage
+                metadata_message = ApiMessage(**data)
+                self.chat_history.append(metadata_message)
+                log.debug("Added message to chat history (in-memory only due to DB error)")
 
             # Process the message through the appropriate processor
-            if message.workflow_id:
+            if metadata_message.workflow_id:
                 await self.process_messages_for_workflow()
             else:
-                if message.agent_mode:
+                if metadata_message.agent_mode:
                     await self.process_agent_messages()
                 else:
                     await self.process_messages()
@@ -477,7 +695,18 @@ class ChatWebSocketRunner:
                 message = await processor.get_message()
                 if message:
                     if message["type"] == "message":
-                        self.chat_history.append(Message(**message))
+                        # Save assistant message to database asynchronously
+                        try:
+                            db_message = await self._save_message_to_db_async(message)
+                            # Convert to metadata message and add to chat history
+                            metadata_message = self._db_message_to_metadata_message(db_message)
+                            self.chat_history.append(metadata_message)
+                        except Exception as db_error:
+                            log.error(f"Assistant message DB save failed, continuing with in-memory: {db_error}")
+                            # Create a fallback API message for processing even if DB save fails
+                            from nodetool.metadata.types import Message as ApiMessage
+                            metadata_message = ApiMessage(**message)
+                            self.chat_history.append(metadata_message)
                     else:
                         await self.send_message(message)
                 else:
@@ -874,9 +1103,6 @@ class ChatWebSocketRunner:
             Exception: If an error occurs during message sending.
         """
         assert self.websocket, "WebSocket is not connected"
-        log.debug(
-            f"Sending message type: {message.get('type', 'unknown')}, mode: {self.mode}"
-        )
         try:
             if self.mode == WebSocketMode.BINARY:
                 packed_message = msgpack.packb(message, use_bin_type=True)

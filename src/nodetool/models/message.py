@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from nodetool.metadata.types import MessageContent, ToolCall
+from nodetool.metadata.types import MessageContent, MessageFile, Provider, ToolCall
 from nodetool.models.base_model import DBModel, DBField, create_time_ordered_uuid
 from nodetool.models.condition_builder import Field
 
@@ -13,19 +13,31 @@ class Message(DBModel):
         }
 
     id: str = DBField()
-    thread_id: str = DBField(default="")
     user_id: str = DBField(default="")
+    workflow_id: str | None = DBField(default=None)
+    graph: dict | None = DBField(default=None)
+    thread_id: str | None = DBField(default=None)
+    tools: list[str] | None = DBField(default=None)
     tool_call_id: str | None = DBField(default=None)
-    role: str = DBField(default="")
+    role: str | None = DBField(default=None)
     name: str | None = DBField(default=None)
     content: str | list[MessageContent] | None = DBField(default=None)
     tool_calls: list[ToolCall] | None = DBField(default=None)
-    created_at: datetime = DBField(default_factory=datetime.now)
+    collections: list[str] | None = DBField(default=None)
+    input_files: list[MessageFile] | None = DBField(default=None)
+    output_files: list[MessageFile] | None = DBField(default=None)
+    created_at: datetime | None = DBField(default=None)
+    provider: Provider | None = DBField(default=None)
+    model: str | None = DBField(default=None)
+    agent_mode: bool | None  = DBField(default=None)
+    workflow_assistant: bool | None = DBField(default=None)
+    help_mode: bool | None = DBField(default=None)
+
 
     @classmethod
     def create(cls, thread_id: str, user_id: str, **kwargs) -> "Message":
         return super().create(
-            id=create_time_ordered_uuid(),
+            id=kwargs.get("id", None) is None and create_time_ordered_uuid(),
             thread_id=thread_id,
             user_id=user_id,
             **kwargs,
@@ -35,7 +47,7 @@ class Message(DBModel):
     def paginate(
         cls,
         thread_id: str | None = None,
-        limit: int = 10,
+        limit: int = 100,
         start_key: str | None = None,
         reverse: bool = False,
     ):

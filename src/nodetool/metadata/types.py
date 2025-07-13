@@ -1549,7 +1549,12 @@ class Message(BaseType):
             name=message.name,
             content=message.content,
             tool_calls=message.tool_calls,
-            created_at=message.created_at.isoformat(),
+            created_at=message.created_at.isoformat() if message.created_at else None,
+            provider=message.provider,
+            model=message.model,
+            agent_mode=message.agent_mode,
+            workflow_assistant=message.workflow_assistant,
+            help_mode=message.help_mode,
         )
 
 
