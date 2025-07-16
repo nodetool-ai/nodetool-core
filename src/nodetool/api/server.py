@@ -10,7 +10,6 @@ from nodetool.common.environment import Environment
 
 from nodetool.common.huggingface_cache import huggingface_download_endpoint
 from nodetool.common.websocket_runner import WebSocketRunner
-from nodetool.common.runpod_websocket_runner import RunPodWebSocketRunner
 from nodetool.common.chat_websocket_runner import ChatWebSocketRunner
 
 from fastapi import APIRouter, FastAPI, Request, WebSocket
