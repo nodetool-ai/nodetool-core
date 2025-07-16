@@ -200,6 +200,11 @@ huggingface_groq_models = [
         name="Llama 4 Maverick 17B 128E Instruct",
         provider=Provider.HuggingFaceGroq,
     ),
+    LanguageModel(
+        id="moonshotai/Kimi-K2-Instruct",
+        name="Kimi K2 Instruct",
+        provider=Provider.HuggingFaceGroq,
+    ),
 ]
 
 huggingface_cerebras_models = [
