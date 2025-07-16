@@ -131,7 +131,7 @@ class OllamaProvider(ChatProvider):
             env_vars["OLLAMA_API_KEY"] = self.api_key
         return env_vars
 
-    def get_max_token_limit(self, model: str) -> int:
+    def get_context_length(self, model: str) -> int:
         """Get the maximum token limit for a given model."""
         try:
             client = get_ollama_sync_client()
@@ -141,17 +141,16 @@ class OllamaProvider(ChatProvider):
             if model_info is None:
                 return 4096
 
-            if model_info.get("llama.context_length"):
-                return model_info["llama.context_length"]
-            else:
-                # First try to get context length from model_info if available
+            for key, value in model_info.items():
+                if ".context_length" in key:
+                    return int(value)
 
-                # Otherwise, try to extract from modelfile parameters
-                if model_info["modelfile"]:
-                    modelfile = model_info["modelfile"]
-                    param_match = re.search(r"PARAMETER\s+num_ctx\s+(\d+)", modelfile)
-                    if param_match:
-                        return int(param_match.group(1))
+            # Otherwise, try to extract from modelfile parameters
+            if model_info["modelfile"]:
+                modelfile = model_info["modelfile"]
+                param_match = re.search(r"PARAMETER\s+num_ctx\s+(\d+)", modelfile)
+                if param_match:
+                    return int(param_match.group(1))
 
             # Default fallback if we can't determine the context length
             return 4096

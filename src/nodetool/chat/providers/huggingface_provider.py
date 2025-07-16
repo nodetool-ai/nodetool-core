@@ -122,7 +122,7 @@ class HuggingFaceProvider(ChatProvider):
             env_vars["HUGGINGFACE_PROVIDER"] = self.inference_provider
         return env_vars
 
-    def get_max_token_limit(self, model: str) -> int:
+    def get_context_length(self, model: str) -> int:
         """Get the maximum token limit for a given model."""
         # Common HuggingFace model limits - this can be expanded based on specific models
         if "llama" in model.lower():

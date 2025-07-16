@@ -657,6 +657,7 @@ class ChatWebSocketRunner:
             while processor.has_messages() or processor.is_processing:
                 message = await processor.get_message()
                 if message:
+                    print(message)
                     if message["type"] == "message":
                         # Save assistant message to database asynchronously
                         try:

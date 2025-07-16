@@ -43,9 +43,9 @@ class ChatProvider(ABC):
         """Return environment variables needed when running inside Docker."""
         return {}
 
-    def get_max_token_limit(self, model: str) -> int:
-        """Get the maximum token limit for a given model."""
-        return 8192
+    def get_context_length(self, model: str) -> int:
+        """Get the context length for a given model."""
+        return 4096
 
     def is_context_length_error(self, error: Exception) -> bool:
         """Return True if the given error indicates a context window overflow.

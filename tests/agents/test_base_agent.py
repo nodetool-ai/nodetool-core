@@ -11,7 +11,7 @@ class DummyProvider(ChatProvider):
         super().__init__()
         self.calls = 0
 
-    def get_max_token_limit(self, model: str) -> int:  # type: ignore[override]
+    def get_context_length(self, model: str) -> int:  # type: ignore[override]
         self.calls += 1
         return 42
 

@@ -478,7 +478,7 @@ class SubTaskContext:
         self.processing_context = processing_context
         self.model = model
         self.provider = provider
-        self.max_token_limit = max_token_limit or provider.get_max_token_limit(model)
+        self.max_token_limit = max_token_limit or provider.get_context_length(model)
         self.use_finish_task = use_finish_task
         self.message_compression_threshold = max(
             self.max_token_limit // 4,

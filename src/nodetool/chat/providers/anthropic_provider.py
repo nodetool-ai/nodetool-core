@@ -120,7 +120,7 @@ class AnthropicProvider(ChatProvider):
     def get_container_env(self) -> dict[str, str]:
         return {"ANTHROPIC_API_KEY": self.api_key} if self.api_key else {}
 
-    def get_max_token_limit(self, model: str) -> int:
+    def get_context_length(self, model: str) -> int:
         """Get the maximum token limit for a given model."""
         return 200000
 
