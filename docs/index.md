@@ -41,6 +41,8 @@ The documentation is organized into the following sections:
 - [**Chat Module**](chat.md) - Conversational interface
 - [**Chat Providers**](chat-providers.md) - Supported LLM backends
 - [**Examples**](../examples/README.md) - Example workflows
+- [**Runpod Deployment**](runpod-deployment.md) - Runpod Deployment
+- [**Runpod Testing Guide**](runpod_testing_guide.md) - Runpod Testing Guide
 
 ## Community
 

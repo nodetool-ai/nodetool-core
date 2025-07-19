@@ -932,5 +932,138 @@ def deploy(
             os.unlink(workflow_path)
 
 
+@cli.command("test-runpod")
+@click.option("--endpoint-id", required=True, help="RunPod endpoint ID")
+@click.option("--api-key", help="RunPod API key (can also use RUNPOD_API_KEY env var)")
+@click.option("--params", type=click.Path(exists=True), help="JSON file with workflow parameters")
+@click.option("--params-json", help="Inline JSON string with workflow parameters")
+@click.option("--output", help="Output file for results (default: auto-generated)")
+@click.option("--timeout", type=int, default=60, help="Timeout in seconds (default: 60)")
+def test_runpod(
+    endpoint_id: str,
+    api_key: str | None,
+    params: str | None,
+    params_json: str | None,
+    output: str | None,
+    timeout: int,
+):
+    """Test deployed NodeTool workflow on RunPod serverless infrastructure.
+    
+    Examples:
+      # Basic test with no parameters
+      nodetool test-runpod --endpoint-id abc123def456
+      
+      # Test with JSON file parameters
+      nodetool test-runpod --endpoint-id abc123def456 --params test_params.json
+      
+      # Test with inline JSON parameters
+      nodetool test-runpod --endpoint-id abc123def456 --params-json '{"text": "Hello World"}'
+      
+      # Test with custom timeout and output file
+      nodetool test-runpod --endpoint-id abc123def456 --timeout 120 --output results.json
+    """
+    import json
+    import time
+    import traceback
+    from datetime import datetime
+    from typing import Dict, Any
+    
+    try:
+        import runpod
+    except ImportError:
+        console.print("[bold red]❌ Error: runpod library not found[/]")
+        console.print("Install it with: pip install runpod")
+        sys.exit(1)
+    
+    # Get API key from argument or environment
+    api_key = api_key or os.getenv("RUNPOD_API_KEY")
+    if not api_key:
+        console.print("[bold red]❌ Error: RunPod API key is required[/]")
+        console.print("Provide it via --api-key argument or RUNPOD_API_KEY environment variable")
+        sys.exit(1)
+    
+    # Configure runpod library
+    runpod.api_key = api_key
+    endpoint = runpod.Endpoint(endpoint_id)
+    
+    # Get workflow parameters
+    workflow_params = {}
+    if params:
+        try:
+            with open(params, 'r') as f:
+                workflow_params = json.load(f)
+        except Exception as e:
+            console.print(f"[bold red]❌ Failed to load parameters from {params}: {e}[/]")
+            sys.exit(1)
+    elif params_json:
+        try:
+            workflow_params = json.loads(params_json)
+        except json.JSONDecodeError as e:
+            console.print(f"[bold red]❌ Invalid JSON in --params-json: {e}[/]")
+            sys.exit(1)
+    else:
+        console.print("[bold yellow]⚠️ No parameters provided, using empty parameters[/]")
+    
+    console.print(f"[bold cyan]🧪 Testing RunPod workflow...[/]")
+    console.print(f"Endpoint ID: {endpoint_id}")
+    console.print(f"Parameters: {json.dumps(workflow_params, indent=2)}")
+    console.print(f"Timeout: {timeout} seconds")
+    
+    try:
+        console.print(f"[bold blue]🚀 Starting workflow execution...[/]")
+        
+        job = endpoint.run(workflow_params)
+        
+        console.print(f"Job status: {job.status()}")
+        start_time = time.time()
+        
+        while job.status() in ("RUNNING", "IN_PROGRESS", "IN_QUEUE"):
+            time.sleep(1)
+            elapsed = int(time.time() - start_time)
+            
+            if elapsed >= timeout:
+                console.print(f"[bold red]⏰ Job timed out after {timeout} seconds[/]")
+                sys.exit(1)
+            
+            console.print(f"Job status: {job.status()} (elapsed: {elapsed}s)")
+
+        result = job.output()
+        
+        console.print(f"[bold green]✅ Job completed successfully![/]")
+        elapsed = int(time.time() - start_time)
+        console.print(f"Execution completed in {elapsed} seconds")
+        
+        # Display results
+        console.print(f"\n[bold cyan]📊 Job Results:[/]")
+        console.print(json.dumps(result, indent=2))
+        
+        # Save results
+        if output is None:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            output = f"runpod_result_{timestamp}.json"
+        
+        try:
+            with open(output, 'w') as f:
+                json.dump(result, f, indent=2)
+            
+            console.print(f"[bold green]💾 Results saved to: {output}[/]")
+            
+        except Exception as e:
+            console.print(f"[bold red]❌ Failed to save results: {e}[/]")
+        
+        console.print(f"\n[bold green]✅ Test completed successfully![/]")
+        
+    except TimeoutError:
+        console.print(f"\n[bold red]⏰ Job timed out[/]")
+        sys.exit(1)
+    except KeyboardInterrupt:
+        console.print(f"\n[bold yellow]🛑 Test interrupted by user[/]")
+        sys.exit(1)
+    except Exception as e:
+        console.print(f"\n[bold red]❌ Test failed: {e}[/]")
+        traceback.print_exc()
+        sys.exit(1)
+
+
 if __name__ == "__main__":
     cli()
