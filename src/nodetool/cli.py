@@ -253,6 +253,17 @@ def codegen_cmd():
     click.echo("✅ All DSL module generation complete!")
 
 
+@cli.command("codegen-csharp")
+@click.option("--output-dir", default="csharp_types", help="Directory for generated C# files.")
+@click.option("--namespace", default="Nodetool.Types", help="C# namespace for generated classes.")
+def codegen_csharp(output_dir: str, namespace: str) -> None:
+    """Generate C# classes for all ``BaseType`` subclasses."""
+    from nodetool.csharp_codegen import generate_csharp_types
+
+    generate_csharp_types(output_dir, namespace)
+    click.echo(f"✅ C# type generation complete in {output_dir}")
+
+
 @cli.group()
 def settings():
     """Commands for managing NodeTool settings and secrets."""
