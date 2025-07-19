@@ -264,6 +264,16 @@ def codegen_csharp(output_dir: str, namespace: str) -> None:
     click.echo(f"✅ C# type generation complete in {output_dir}")
 
 
+@cli.command("codegen-csharp-nodes")
+@click.option("--output-dir", default="csharp_nodes", help="Directory for generated C# node files.")
+def codegen_csharp_nodes(output_dir: str) -> None:
+    """Generate C# classes for all ``BaseNode`` subclasses from src/nodetool/nodes."""
+    from nodetool.csharp_codegen import generate_csharp_nodes
+
+    generate_csharp_nodes(output_dir)
+    click.echo(f"✅ C# node generation complete in {output_dir}")
+
+
 @cli.group()
 def settings():
     """Commands for managing NodeTool settings and secrets."""
