@@ -108,20 +108,20 @@ RUN echo "Upgrading pip in virtual environment..." && \
 # Install Python packages from GitHub repositories and PyPI
 # These will now use the pip from the Python 3.11 virtual environment
 RUN echo "Installing nodetool packages..." && \
-    pip install --no-cache-dir git+https://github.com/nodetool-ai/nodetool-core && \
-    pip install --no-cache-dir git+https://github.com/nodetool-ai/nodetool-base && \
-    pip install --no-cache-dir git+https://github.com/nodetool-ai/nodetool-lib-audio && \
-    pip install --no-cache-dir git+https://github.com/nodetool-ai/nodetool-lib-data && \
-    pip install --no-cache-dir git+https://github.com/nodetool-ai/nodetool-lib-image && \
-    pip install --no-cache-dir git+https://github.com/nodetool-ai/nodetool-lib-ml && \
-    pip install --no-cache-dir git+https://github.com/nodetool-ai/nodetool-lib-network
+    pip install --no-cache-dir git+https://github.com/nodetool-ai/nodetool-core 
+    # pip install --no-cache-dir git+https://github.com/nodetool-ai/nodetool-base && \
+    # pip install --no-cache-dir git+https://github.com/nodetool-ai/nodetool-lib-audio && \
+    # pip install --no-cache-dir git+https://github.com/nodetool-ai/nodetool-lib-data && \
+    # pip install --no-cache-dir git+https://github.com/nodetool-ai/nodetool-lib-image && \
+    # pip install --no-cache-dir git+https://github.com/nodetool-ai/nodetool-lib-ml && \
+    # pip install --no-cache-dir git+https://github.com/nodetool-ai/nodetool-lib-network
 
-RUN echo "Installing nodetool-huggingface with PyTorch..." && \
-    pip install --no-cache-dir git+https://github.com/nodetool-ai/nodetool-huggingface --extra-index-url https://download.pytorch.org/whl/cu121
+# RUN echo "Installing nodetool-huggingface with PyTorch..." && \
+#     pip install --no-cache-dir git+https://github.com/nodetool-ai/nodetool-huggingface --extra-index-url https://download.pytorch.org/whl/cu121
 
-# Install Playwright browser binaries
-RUN echo "Installing Playwright browser binaries..." && \
-    playwright install
+# # Install Playwright browser binaries
+# RUN echo "Installing Playwright browser binaries..." && \
+#     playwright install
 
 # Optional: Add commands to verify versions (uncomment to use during build for debugging)
 RUN python --version
