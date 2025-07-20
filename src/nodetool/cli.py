@@ -938,7 +938,7 @@ def deploy(
 @click.option("--params", type=click.Path(exists=True), help="JSON file with workflow parameters")
 @click.option("--params-json", help="Inline JSON string with workflow parameters")
 @click.option("--output", help="Output file for results (default: auto-generated)")
-@click.option("--timeout", type=int, default=60, help="Timeout in seconds (default: 60)")
+@click.option("--timeout", type=int, default=600, help="Timeout in seconds (default: 600)")
 def test_runpod(
     endpoint_id: str,
     api_key: str | None,

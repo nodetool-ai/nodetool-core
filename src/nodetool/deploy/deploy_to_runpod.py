@@ -405,6 +405,245 @@ def generate_image_tag() -> str:
     
     return f"{timestamp}-{short_hash}"
 
+def get_hf_cache_directory() -> str:
+    """
+    Get the HuggingFace cache directory path.
+    
+    Returns:
+        str: Path to the HuggingFace cache directory
+    """
+    import os
+    from pathlib import Path
+    
+    # Check environment variable first
+    if "HF_HUB_CACHE" in os.environ:
+        return os.environ["HF_HUB_CACHE"]
+    
+    # Default locations based on platform
+    if os.name == "nt":  # Windows
+        return os.path.expandvars(r"%USERPROFILE%\.cache\huggingface\hub")
+    else:  # Unix-like (macOS, Linux)
+        return os.path.expanduser("~/.cache/huggingface/hub")
+
+
+def copy_hf_models_to_build_dir(models: list[dict], build_dir: str) -> None:
+    """
+    Copy HuggingFace models from local cache to the Docker build directory.
+    
+    Args:
+        models (list[dict]): List of model dictionaries
+        build_dir (str): Path to the Docker build directory
+    """
+    import shutil
+    from pathlib import Path
+    
+    hf_cache_dir = get_hf_cache_directory()
+    hf_cache_path = Path(hf_cache_dir)
+    
+    if not hf_cache_path.exists():
+        print(f"Warning: HuggingFace cache directory not found at {hf_cache_dir}")
+        return
+    
+    build_hf_dir = Path(build_dir) / "huggingface" / "hub"
+    build_hf_dir.mkdir(parents=True, exist_ok=True)
+    
+    hf_models = [m for m in models if m.get("type", "").startswith("hf.")]
+    
+    if not hf_models:
+        print("No HuggingFace models found to copy")
+        return
+    
+    print(f"Copying {len(hf_models)} HuggingFace models from {hf_cache_dir}")
+    
+    for model in hf_models:
+        repo_id = model.get("repo_id")
+        if not repo_id:
+            continue
+            
+        # Find model directories in cache
+        # HF cache uses format: models--{org}--{model}
+        safe_repo_id = repo_id.replace("/", "--")
+        model_pattern = f"models--{safe_repo_id}"
+        
+        matching_dirs = list(hf_cache_path.glob(model_pattern))
+        
+        for model_dir in matching_dirs:
+            if model_dir.is_dir():
+                dest_dir = build_hf_dir / model_dir.name
+                print(f"  Copying {repo_id}: {model_dir} -> {dest_dir}")
+                try:
+                    shutil.copytree(model_dir, dest_dir, dirs_exist_ok=True)
+                except Exception as e:
+                    print(f"  Warning: Failed to copy {model_dir}: {e}")
+
+def create_ollama_pull_script(models: list[dict], build_dir: str) -> None:
+    """
+    Create a script to pull Ollama models during Docker build.
+    
+    Args:
+        models (list[dict]): List of model dictionaries
+        build_dir (str): Path to the Docker build directory
+    """
+    from pathlib import Path
+    
+    ollama_models = [m for m in models if m.get("type") == "language_model" and m.get("provider") == "ollama"]
+    
+    if not ollama_models:
+        print("No Ollama models found to pull")
+        # Create empty script so Docker build doesn't fail
+        script_path = Path(build_dir) / "pull_ollama_models.sh"
+        with open(script_path, 'w') as f:
+            f.write("#!/bin/bash\necho 'No Ollama models to pull'\n")
+        script_path.chmod(0o755)
+        return
+    
+    print(f"Creating script to pull {len(ollama_models)} Ollama models")
+    
+    script_content = ["#!/bin/bash", "set -e", ""]
+    script_content.append("echo 'Starting Ollama service...'")
+    script_content.append("ollama serve &")
+    script_content.append("OLLAMA_PID=$!")
+    script_content.append("")
+    script_content.append("echo 'Waiting for Ollama to start...'")
+    script_content.append("sleep 5")
+    script_content.append("")
+    
+    for model in ollama_models:
+        model_id = model.get("id")
+        if model_id:
+            script_content.append(f"echo 'Pulling Ollama model: {model_id}'")
+            script_content.append(f"ollama pull {model_id}")
+            script_content.append("")
+    
+    script_content.append("echo 'Stopping Ollama service...'")
+    script_content.append("kill $OLLAMA_PID")
+    script_content.append("wait $OLLAMA_PID 2>/dev/null || true")
+    script_content.append("")
+    script_content.append("echo 'All Ollama models pulled successfully'")
+    
+    script_path = Path(build_dir) / "pull_ollama_models.sh"
+    with open(script_path, 'w') as f:
+        f.write('\n'.join(script_content))
+    
+    # Make script executable
+    script_path.chmod(0o755)
+    
+    print(f"Created Ollama pull script: {script_path}")
+    for model in ollama_models:
+        model_id = model.get("id")
+        if model_id:
+            print(f"  - {model_id}")
+
+def extract_models(workflow_data: dict) -> list[dict]:
+    """
+    Extract both Hugging Face and Ollama models from a workflow graph.
+    
+    Scans through all nodes in the workflow graph to find models that need to be
+    pre-downloaded. This includes:
+    - Hugging Face models (type starts with "hf.")
+    - Ollama language models (type="language_model" and provider="ollama")
+    
+    Args:
+        workflow_data (dict): The complete workflow data dictionary
+        
+    Returns:
+        list[dict]: List of serialized model objects found in the workflow
+    """
+    models = []
+    seen_models = set()  # Track unique models
+    
+    if "graph" not in workflow_data or "nodes" not in workflow_data["graph"]:
+        return models
+    
+    for node in workflow_data["graph"]["nodes"]:
+        if "data" not in node:
+            continue
+            
+        node_data = node["data"]
+        
+        # Check for HuggingFace models (model field with type and repo_id)
+        if "model" in node_data and isinstance(node_data["model"], dict):
+            model = node_data["model"]
+            
+            # HuggingFace models
+            if "type" in model and model.get("type", "").startswith("hf.") and "repo_id" in model and model["repo_id"]:
+                # Create a unique key for this model
+                model_key = (
+                    "hf",
+                    model.get("type"),
+                    model.get("repo_id"),
+                    model.get("path"),
+                    model.get("variant")
+                )
+                
+                if model_key not in seen_models:
+                    seen_models.add(model_key)
+                    # Create a serialized HuggingFaceModel object
+                    hf_model = {
+                        "type": model.get("type", "hf.model"),
+                        "repo_id": model["repo_id"],
+                        "path": model.get("path"),
+                        "variant": model.get("variant"),
+                        "allow_patterns": model.get("allow_patterns"),
+                        "ignore_patterns": model.get("ignore_patterns")
+                    }
+                    models.append(hf_model)
+            
+            # Ollama language models
+            elif model.get("type") == "language_model" and model.get("provider") == "ollama" and model.get("id"):
+                model_key = ("ollama", model["id"])
+                
+                if model_key not in seen_models:
+                    seen_models.add(model_key)
+                    ollama_model = {
+                        "type": "language_model",
+                        "provider": "ollama",
+                        "id": model["id"]
+                    }
+                    models.append(ollama_model)
+        
+        # Check for language models at the root level (some nodes might have them directly)
+        if node_data.get("type") == "language_model" and node_data.get("provider") == "ollama" and node_data.get("id"):
+            model_key = ("ollama", node_data["id"])
+            
+            if model_key not in seen_models:
+                seen_models.add(model_key)
+                ollama_model = {
+                    "type": "language_model",
+                    "provider": "ollama",
+                    "id": node_data["id"]
+                }
+                models.append(ollama_model)
+        
+        # Check for nested model references (e.g., in arrays like loras)
+        for key, value in node_data.items():
+            if isinstance(value, list):
+                for item in value:
+                    if isinstance(item, dict):
+                        # HuggingFace models in arrays
+                        if "type" in item and item.get("type", "").startswith("hf.") and "repo_id" in item and item["repo_id"]:
+                            model_key = (
+                                "hf",
+                                item.get("type"),
+                                item.get("repo_id"),
+                                item.get("path"),
+                                item.get("variant")
+                            )
+                            
+                            if model_key not in seen_models:
+                                seen_models.add(model_key)
+                                hf_model = {
+                                    "type": item.get("type", "hf.model"),
+                                    "repo_id": item["repo_id"],
+                                    "path": item.get("path"),
+                                    "variant": item.get("variant"),
+                                    "allow_patterns": item.get("allow_patterns"),
+                                    "ignore_patterns": item.get("ignore_patterns")
+                                }
+                                models.append(hf_model)
+    
+    return models
+
 def fetch_workflow_from_db(workflow_id: str):
     """
     Fetch a workflow from the NodeTool database and save to a temporary file.
@@ -443,17 +682,20 @@ def fetch_workflow_from_db(workflow_id: str):
     print(f"Workflow '{workflow.name}' saved to {workflow_path}")
     return workflow_path, workflow.name
 
-def build_docker_image(workflow_path: str, image_name: str, tag: str, platform: str = "linux/amd64"):
+def build_docker_image(workflow_path: str, image_name: str, tag: str, platform: str = "linux/amd64", embed_models: bool = True):
     """
     Build a Docker image for RunPod deployment with an embedded workflow.
     
     This function creates a specialized Docker image by:
     1. Using the RunPod-specific Dockerfile from src/nodetool/deploy/
-    2. Creating a temporary build directory with all necessary files
-    3. Building the final image using Docker from the build directory
+    2. Extracting Hugging Face models from the workflow
+    3. Adding model copy instructions to pre-cache models from local HF cache
+    4. Creating a temporary build directory with all necessary files
+    5. Building the final image using Docker from the build directory
     
     The resulting image is self-contained and includes:
     - All NodeTool dependencies and runtime
+    - Pre-downloaded Hugging Face models in /huggingface/hub cache
     - The specific workflow JSON embedded at /app/workflow.json
     - The runpod_handler.py configured as the entry point
     - start.sh script for proper RunPod initialization
@@ -479,6 +721,22 @@ def build_docker_image(workflow_path: str, image_name: str, tag: str, platform: 
     print(f"Building Docker image with embedded workflow from {workflow_path}")
     print(f"Platform: {platform}")
     
+    # Load workflow data to extract all models
+    with open(workflow_path, 'r') as f:
+        workflow_data = json.load(f)
+    
+    models = extract_models(workflow_data)
+    
+    if models:
+        print(f"Found {len(models)} models to download at runtime:")
+        for model in models:
+            if model.get("type", "").startswith("hf."):
+                print(f"  - HuggingFace {model['type']}: {model['repo_id']}")
+                if model.get('path'):
+                    print(f"    Path: {model['path']}")
+            elif model.get("type") == "language_model" and model.get("provider") == "ollama":
+                print(f"  - Ollama: {model['id']}")
+    
     # Get the deploy directory where Dockerfile, runpod_handler.py, and start.sh are located
     script_dir = os.path.dirname(os.path.abspath(__file__))
     deploy_dockerfile_path = os.path.join(script_dir, "Dockerfile")
@@ -493,6 +751,21 @@ def build_docker_image(workflow_path: str, image_name: str, tag: str, platform: 
         shutil.copy(workflow_path, os.path.join(build_dir, "workflow.json"))
         shutil.copy(runpod_handler_path, os.path.join(build_dir, "runpod_handler.py"))
         shutil.copy(deploy_dockerfile_path, os.path.join(build_dir, "Dockerfile"))
+        
+        # Create models.json file with list of all models
+        models_file_path = os.path.join(build_dir, "models.json")
+        with open(models_file_path, 'w') as f:
+            json.dump(models, f, indent=2)
+        print(f"Created models.json with {len(models)} models")
+        
+        # Ensure HuggingFace model directory exists in build directory (even if empty)
+        os.makedirs(os.path.join(build_dir, "huggingface", "hub"), exist_ok=True)
+        
+        # Copy HuggingFace models from local cache
+        copy_hf_models_to_build_dir(models, build_dir)
+        
+        # Create script to pull Ollama models during Docker build
+        create_ollama_pull_script(models, build_dir)
         
         # Build with the Dockerfile from the build directory
         original_dir = os.getcwd()
