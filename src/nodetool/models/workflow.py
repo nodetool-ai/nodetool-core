@@ -202,8 +202,10 @@ class Workflow(DBModel):
         """
         return Graph(
             nodes=[
-                BaseNode.from_dict(node, skip_errors=True)[0]
-                for node in self.graph["nodes"]
+                node for node in [
+                    BaseNode.from_dict(node, skip_errors=True)[0]
+                    for node in self.graph["nodes"]
+                ] if node is not None
             ],
             edges=self.graph["edges"],
         )
