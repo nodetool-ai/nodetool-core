@@ -1,7 +1,7 @@
 from collections import deque
 import asyncio
 from typing import Any, AsyncGenerator, Optional
-from unittest.mock import Mock, patch, AsyncMock, MagicMock
+from unittest.mock import patch
 import pytest
 from nodetool.metadata.types import ImageRef, Message, TextRef, Event
 from nodetool.types.graph import Node, Edge
@@ -9,9 +9,13 @@ from nodetool.types.job import JobUpdate
 from nodetool.workflows.base_node import BaseNode, InputNode, OutputNode
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.workflows.workflow_runner import WorkflowRunner, acquire_gpu_lock, release_gpu_lock, get_available_vram
+from nodetool.workflows.workflow_runner import (
+    WorkflowRunner,
+    acquire_gpu_lock,
+    release_gpu_lock,
+)
 from nodetool.workflows.graph import Graph
-from nodetool.workflows.types import NodeUpdate, NodeProgress, OutputUpdate
+from nodetool.workflows.types import NodeUpdate, OutputUpdate
 from nodetool.types.graph import (
     Graph as APIGraph,
 )
@@ -70,6 +74,7 @@ class TextInput(InputNode):
 
 class ImageToText(BaseNode):
     """Converts image to text"""
+
     image: ImageRef = ImageRef()
 
     async def process(self, context: ProcessingContext) -> TextRef:
@@ -85,6 +90,7 @@ class TextOutput(OutputNode):
 
 class StringToInt(BaseNode):
     """Converts string to int"""
+
     text: str = ""
 
     async def process(self, context: ProcessingContext) -> int:
@@ -93,6 +99,7 @@ class StringToInt(BaseNode):
 
 class StringOutput(OutputNode):
     """Output node that accepts string values"""
+
     value: str = ""
 
     async def process(self, context: ProcessingContext) -> str:
@@ -357,10 +364,18 @@ async def test_initialize_node_error(workflow_runner: WorkflowRunner):
 async def test_edge_type_validation_compatible_types(workflow_runner: WorkflowRunner):
     """Test that compatible edge types pass validation"""
     # String -> String (compatible)
-    string_input = {"id": "1", "type": String.get_node_type(), "data": {"value": "test"}}
+    string_input = {
+        "id": "1",
+        "type": String.get_node_type(),
+        "data": {"value": "test"},
+    }
     string_to_int = {"id": "2", "type": StringToInt.get_node_type()}
-    int_output = {"id": "3", "type": IntegerOutput.get_node_type(), "data": {"name": "output"}}
-    
+    int_output = {
+        "id": "3",
+        "type": IntegerOutput.get_node_type(),
+        "data": {"name": "output"},
+    }
+
     nodes: list[dict[str, Any]] = [string_input, string_to_int, int_output]
     edges: list[dict[str, Any]] = [
         {
@@ -371,23 +386,23 @@ async def test_edge_type_validation_compatible_types(workflow_runner: WorkflowRu
             "targetHandle": "text",
         },
         {
-            "id": "2", 
+            "id": "2",
             "source": "2",
             "target": "3",
             "sourceHandle": "output",
             "targetHandle": "value",
-        }
+        },
     ]
-    
+
     graph = APIGraph(nodes=[Node(**n) for n in nodes], edges=[Edge(**e) for e in edges])
     req = RunJobRequest(
         user_id="1", workflow_id="", job_type="", params={}, graph=graph
     )
     context = ProcessingContext(user_id="1", auth_token="local_token")
-    
+
     # Should not raise any validation errors
     await workflow_runner.run(req, context)
-    
+
     # Check that validation passed
     workflow_updates = await get_workflow_updates(context)
     assert workflow_updates[1].status == "completed"
@@ -397,39 +412,42 @@ async def test_edge_type_validation_compatible_types(workflow_runner: WorkflowRu
 async def test_edge_type_validation_incompatible_types(workflow_runner: WorkflowRunner):
     """Test that incompatible edge types fail validation"""
     # Image -> String (incompatible - ImageRef cannot be assigned to str)
-    image_input = {"id": "1", "type": ImageInput.get_node_type(), "data": {"name": "image_input"}}
+    image_input = {
+        "id": "1",
+        "type": ImageInput.get_node_type(),
+        "data": {"name": "image_input"},
+    }
     string_to_int = {"id": "2", "type": StringToInt.get_node_type()}
-    
+
     nodes: list[dict[str, Any]] = [image_input, string_to_int]
     edges: list[dict[str, Any]] = [
         {
             "id": "1",
             "source": "1",
-            "target": "2", 
+            "target": "2",
             "sourceHandle": "output",
             "targetHandle": "text",  # Expects string, but gets ImageRef
         }
     ]
-    
+
     graph = APIGraph(nodes=[Node(**n) for n in nodes], edges=[Edge(**e) for e in edges])
     req = RunJobRequest(
         user_id="1", workflow_id="", job_type="", params={}, graph=graph
     )
     context = ProcessingContext(user_id="1", auth_token="local_token")
-    
+
     # Should raise validation error
     with pytest.raises(ValueError, match="Type mismatch"):
         await workflow_runner.run(req, context)
-    
+
     # Check error messages
     messages = []
     while context.has_messages():
         messages.append(await context.pop_message_async())
-    
+
     node_updates = [m for m in messages if isinstance(m, NodeUpdate)]
     assert any(
-        "Type mismatch" in update.error  # type: ignore
-        for update in node_updates
+        "Type mismatch" in update.error for update in node_updates  # type: ignore
     ), "NodeUpdate with type mismatch error not found"
 
 
@@ -437,28 +455,32 @@ async def test_edge_type_validation_incompatible_types(workflow_runner: Workflow
 async def test_edge_type_validation_float_to_int(workflow_runner: WorkflowRunner):
     """Test that float to int edge is allowed (numeric compatibility)"""
     float_input = {"id": "1", "type": Float.get_node_type(), "data": {"value": 3.14}}
-    int_output = {"id": "2", "type": IntegerOutput.get_node_type(), "data": {"name": "output"}}
-    
+    int_output = {
+        "id": "2",
+        "type": IntegerOutput.get_node_type(),
+        "data": {"name": "output"},
+    }
+
     nodes: list[dict[str, Any]] = [float_input, int_output]
     edges: list[dict[str, Any]] = [
         {
             "id": "1",
             "source": "1",
             "target": "2",
-            "sourceHandle": "output", 
+            "sourceHandle": "output",
             "targetHandle": "value",  # int property can accept float value
         }
     ]
-    
+
     graph = APIGraph(nodes=[Node(**n) for n in nodes], edges=[Edge(**e) for e in edges])
     req = RunJobRequest(
-        user_id="1", workflow_id="", job_type="", params={}, graph=graph  
+        user_id="1", workflow_id="", job_type="", params={}, graph=graph
     )
     context = ProcessingContext(user_id="1", auth_token="local_token")
-    
+
     # Should not raise validation errors (float is assignable to int in many cases)
     await workflow_runner.run(req, context)
-    
+
     workflow_updates = await get_workflow_updates(context)
     assert workflow_updates[1].status == "completed"
 
@@ -466,9 +488,13 @@ async def test_edge_type_validation_float_to_int(workflow_runner: WorkflowRunner
 @pytest.mark.asyncio
 async def test_edge_type_validation_missing_output(workflow_runner: WorkflowRunner):
     """Test that missing output slot fails validation"""
-    string_input = {"id": "1", "type": String.get_node_type(), "data": {"value": "test"}}
+    string_input = {
+        "id": "1",
+        "type": String.get_node_type(),
+        "data": {"value": "test"},
+    }
     int_output = {"id": "2", "type": IntegerOutput.get_node_type()}
-    
+
     nodes: list[dict[str, Any]] = [string_input, int_output]
     edges: list[dict[str, Any]] = [
         {
@@ -479,13 +505,13 @@ async def test_edge_type_validation_missing_output(workflow_runner: WorkflowRunn
             "targetHandle": "value",
         }
     ]
-    
+
     graph = APIGraph(nodes=[Node(**n) for n in nodes], edges=[Edge(**e) for e in edges])
     req = RunJobRequest(
         user_id="1", workflow_id="", job_type="", params={}, graph=graph
     )
     context = ProcessingContext(user_id="1", auth_token="local_token")
-    
+
     # Should raise validation error
     with pytest.raises(ValueError, match="Output.*not found"):
         await workflow_runner.run(req, context)
@@ -494,9 +520,13 @@ async def test_edge_type_validation_missing_output(workflow_runner: WorkflowRunn
 @pytest.mark.asyncio
 async def test_edge_type_validation_missing_property(workflow_runner: WorkflowRunner):
     """Test that missing target property fails validation"""
-    string_input = {"id": "1", "type": String.get_node_type(), "data": {"value": "test"}}
+    string_input = {
+        "id": "1",
+        "type": String.get_node_type(),
+        "data": {"value": "test"},
+    }
     int_output = {"id": "2", "type": IntegerOutput.get_node_type()}
-    
+
     nodes: list[dict[str, Any]] = [string_input, int_output]
     edges: list[dict[str, Any]] = [
         {
@@ -507,13 +537,13 @@ async def test_edge_type_validation_missing_property(workflow_runner: WorkflowRu
             "targetHandle": "nonexistent_property",  # This property doesn't exist
         }
     ]
-    
+
     graph = APIGraph(nodes=[Node(**n) for n in nodes], edges=[Edge(**e) for e in edges])
     req = RunJobRequest(
         user_id="1", workflow_id="", job_type="", params={}, graph=graph
     )
     context = ProcessingContext(user_id="1", auth_token="local_token")
-    
+
     # Should raise validation error
     with pytest.raises(ValueError, match="Property.*not found"):
         await workflow_runner.run(req, context)
@@ -521,20 +551,22 @@ async def test_edge_type_validation_missing_property(workflow_runner: WorkflowRu
 
 # ============= GPU-RELATED TESTS =============
 
+
 class GPUNode(BaseNode):
     """Node that requires GPU processing"""
+
     value: str = "gpu_test"
     device: str = "unknown"
-    
+
     def requires_gpu(self) -> bool:
         return True
-    
+
     async def move_to_device(self, device: str):
         self.device = device
-    
+
     async def process(self, context: ProcessingContext) -> str:
         return f"{self.value}_processed_on_{getattr(self, 'device', 'unknown')}"
-    
+
     @classmethod
     def get_node_type(cls):
         return "test.gpu.GPUNode"
@@ -542,22 +574,24 @@ class GPUNode(BaseNode):
 
 class GPUNodeWithGrad(GPUNode):
     """GPU node that requires gradient computation"""
+
     _requires_grad = True
 
 
 @pytest.mark.asyncio
 async def test_gpu_lock_acquisition():
     """Test GPU lock acquisition and release"""
-    node = GPUNode(id="1") # type: ignore
+    node = GPUNode(id="1")  # type: ignore
     context = ProcessingContext(user_id="1", auth_token="token")
-    
+
     # Test acquiring lock
     await acquire_gpu_lock(node, context)
-    
+
     # Verify lock is held
     from nodetool.workflows.workflow_runner import gpu_lock
+
     assert gpu_lock.locked()
-    
+
     # Test releasing lock
     release_gpu_lock()
     assert not gpu_lock.locked()
@@ -566,23 +600,24 @@ async def test_gpu_lock_acquisition():
 @pytest.mark.asyncio
 async def test_gpu_lock_contention():
     """Test GPU lock behavior with multiple nodes"""
-    node1 = GPUNode(id="1") # type: ignore
+    node1 = GPUNode(id="1")  # type: ignore
     context = ProcessingContext(user_id="1", auth_token="token")
-    
+
     # First node acquires lock
     await acquire_gpu_lock(node1, context)
-    
+
     # Verify lock is held
     from nodetool.workflows.workflow_runner import gpu_lock
+
     assert gpu_lock.locked()
-    
+
     # Try to check if it's locked (it should be)
     assert gpu_lock.locked()
-    
+
     # Release lock
     release_gpu_lock()
     assert not gpu_lock.locked()
-    
+
     # Can acquire again
     await acquire_gpu_lock(node1, context)
     assert gpu_lock.locked()
@@ -593,13 +628,13 @@ async def test_gpu_lock_contention():
 async def test_gpu_node_processing():
     """Test processing a node that requires GPU"""
     # This test verifies GPU node requirements are checked
-    node = GPUNode(id="1") # type: ignore
-    assert node.requires_gpu() == True
-    
+    node = GPUNode(id="1")  # type: ignore
+    assert node.requires_gpu()
+
     # Test move_to_device
     await node.move_to_device("cuda")
     assert node.device == "cuda"
-    
+
     # Test process returns expected format
     context = ProcessingContext(user_id="1", auth_token="token")
     result = await node.process(context)
@@ -610,17 +645,16 @@ async def test_gpu_node_processing():
 async def test_gpu_node_no_gpu_available(workflow_runner: WorkflowRunner):
     """Test error when GPU required but not available"""
     workflow_runner.device = "cpu"  # No GPU available
-    
+
     gpu_node = {"id": "1", "type": GPUNode.get_node_type()}
     nodes: list[dict[str, Any]] = [gpu_node]
-    edges: list[dict[str, Any]] = []
-    
+
     graph = APIGraph(nodes=[Node(**n) for n in nodes], edges=[])
     req = RunJobRequest(
         user_id="1", workflow_id="", job_type="", params={}, graph=graph
     )
     context = ProcessingContext(user_id="1", auth_token="token")
-    
+
     with pytest.raises(RuntimeError, match="requires a GPU"):
         await workflow_runner.run(req, context)
 
@@ -630,39 +664,44 @@ async def test_gpu_oom_retry():
     """Test VRAM OOM error handling and retry logic"""
     # Test that the retry mechanism exists in process_with_gpu
     workflow_runner = WorkflowRunner(job_id="1", device="cuda")
-    
+
     # Verify the method exists and has retry logic
-    assert hasattr(workflow_runner, 'process_with_gpu')
-    
+    assert hasattr(workflow_runner, "process_with_gpu")
+
     # Test that MAX_RETRIES is defined
     from nodetool.workflows import workflow_runner as wr
-    assert hasattr(wr, 'MAX_RETRIES')
+
+    assert hasattr(wr, "MAX_RETRIES")
     assert wr.MAX_RETRIES > 0
 
 
 # ============= STREAMING NODE TESTS =============
 
+
 class StreamingNode(BaseNode):
     """Test streaming node"""
+
     items: list[str] | None = None
-    
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         if self.items is None:
             self.items = ["item1", "item2", "item3"]
-    
+
     def is_streaming_output(self) -> bool:
         return True
-    
+
     @classmethod
     def return_type(cls):
         return {"output": str, "index": int}
-    
+
     @classmethod
     def get_node_type(cls):
         return "test.streaming.StreamingNode"
-    
-    async def gen_process(self, context: ProcessingContext) -> AsyncGenerator[tuple[str, Any], None]:
+
+    async def gen_process(
+        self, context: ProcessingContext
+    ) -> AsyncGenerator[tuple[str, Any], None]:
         assert self.items is not None
         for i, item in enumerate(self.items):
             yield "output", item
@@ -672,12 +711,14 @@ class StreamingNode(BaseNode):
 
 class StreamingErrorNode(StreamingNode):
     """Streaming node that errors partway through"""
-    
+
     @classmethod
     def get_node_type(cls):
         return "test.streaming.StreamingErrorNode"
-    
-    async def gen_process(self, context: ProcessingContext) -> AsyncGenerator[tuple[str, Any], None]:
+
+    async def gen_process(
+        self, context: ProcessingContext
+    ) -> AsyncGenerator[tuple[str, Any], None]:
         yield "output", "first"
         raise ValueError("Streaming error")
 
@@ -686,25 +727,31 @@ class StreamingErrorNode(StreamingNode):
 async def test_streaming_node_basic(workflow_runner: WorkflowRunner):
     """Test basic streaming node functionality"""
     streaming = {"id": "1", "type": StreamingNode.get_node_type()}
-    collector = {"id": "2", "type": StringOutput.get_node_type(), "data": {"name": "collected"}}
-    
+    collector = {
+        "id": "2",
+        "type": StringOutput.get_node_type(),
+        "data": {"name": "collected"},
+    }
+
     nodes: list[dict[str, Any]] = [streaming, collector]
-    edges: list[dict[str, Any]] = [{
-        "id": "1",
-        "source": "1",
-        "target": "2",
-        "sourceHandle": "output",
-        "targetHandle": "value",
-    }]
-    
+    edges: list[dict[str, Any]] = [
+        {
+            "id": "1",
+            "source": "1",
+            "target": "2",
+            "sourceHandle": "output",
+            "targetHandle": "value",
+        }
+    ]
+
     graph = APIGraph(nodes=[Node(**n) for n in nodes], edges=[Edge(**e) for e in edges])
     req = RunJobRequest(
         user_id="1", workflow_id="", job_type="", params={}, graph=graph
     )
     context = ProcessingContext(user_id="1", auth_token="token")
-    
+
     await workflow_runner.run(req, context)
-    
+
     # Should have collected all items
     assert workflow_runner.outputs["collected"] == ["item1", "item2", "item3"]
 
@@ -713,26 +760,32 @@ async def test_streaming_node_basic(workflow_runner: WorkflowRunner):
 async def test_streaming_node_error(workflow_runner: WorkflowRunner):
     """Test streaming node error handling"""
     streaming = {"id": "1", "type": StreamingErrorNode.get_node_type()}
-    collector = {"id": "2", "type": StringOutput.get_node_type(), "data": {"name": "collected"}}
-    
+    collector = {
+        "id": "2",
+        "type": StringOutput.get_node_type(),
+        "data": {"name": "collected"},
+    }
+
     nodes: list[dict[str, Any]] = [streaming, collector]
-    edges: list[dict[str, Any]] = [{
-        "id": "1",
-        "source": "1",
-        "target": "2",
-        "sourceHandle": "output",
-        "targetHandle": "value",
-    }]
-    
+    edges: list[dict[str, Any]] = [
+        {
+            "id": "1",
+            "source": "1",
+            "target": "2",
+            "sourceHandle": "output",
+            "targetHandle": "value",
+        }
+    ]
+
     graph = APIGraph(nodes=[Node(**n) for n in nodes], edges=[Edge(**e) for e in edges])
     req = RunJobRequest(
         user_id="1", workflow_id="", job_type="", params={}, graph=graph
     )
     context = ProcessingContext(user_id="1", auth_token="token")
-    
+
     with pytest.raises(ValueError, match="Streaming error"):
         await workflow_runner.run(req, context)
-    
+
     # Check that the streaming node was cleaned up
     assert "1" not in workflow_runner.active_generators
 
@@ -741,9 +794,17 @@ async def test_streaming_node_error(workflow_runner: WorkflowRunner):
 async def test_streaming_node_multiple_outputs(workflow_runner: WorkflowRunner):
     """Test streaming node with multiple output slots"""
     streaming = {"id": "1", "type": StreamingNode.get_node_type()}
-    string_out = {"id": "2", "type": StringOutput.get_node_type(), "data": {"name": "strings"}}
-    int_out = {"id": "3", "type": IntegerOutput.get_node_type(), "data": {"name": "indices"}}
-    
+    string_out = {
+        "id": "2",
+        "type": StringOutput.get_node_type(),
+        "data": {"name": "strings"},
+    }
+    int_out = {
+        "id": "3",
+        "type": IntegerOutput.get_node_type(),
+        "data": {"name": "indices"},
+    }
+
     nodes: list[dict[str, Any]] = [streaming, string_out, int_out]
     edges: list[dict[str, Any]] = [
         {
@@ -759,57 +820,61 @@ async def test_streaming_node_multiple_outputs(workflow_runner: WorkflowRunner):
             "target": "3",
             "sourceHandle": "index",
             "targetHandle": "value",
-        }
+        },
     ]
-    
+
     graph = APIGraph(nodes=[Node(**n) for n in nodes], edges=[Edge(**e) for e in edges])
     req = RunJobRequest(
         user_id="1", workflow_id="", job_type="", params={}, graph=graph
     )
     context = ProcessingContext(user_id="1", auth_token="token")
-    
+
     await workflow_runner.run(req, context)
-    
+
     assert workflow_runner.outputs["strings"] == ["item1", "item2", "item3"]
     assert workflow_runner.outputs["indices"] == [0, 1, 2]
 
 
 # ============= EVENT HANDLING TESTS =============
 
+
 class EventProducerNode(BaseNode):
     """Node that produces events"""
-    
+
     @classmethod
     def return_type(cls):
         return {"event": Event}
-    
+
     @classmethod
     def get_node_type(cls):
         return "test.event.EventProducerNode"
-    
+
     async def process(self, context: ProcessingContext) -> dict[str, Any]:
         return {"event": Event(name="test_event", payload={"data": "test"})}
 
 
 class EventConsumerNode(BaseNode):
     """Node that handles events"""
+
     event_input: Optional[Event] = None
     processed_events: list[str] | None = None
-    
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         if self.processed_events is None:
             self.processed_events = []
-    
-    @classmethod 
+
+    @classmethod
     def return_type(cls):
         return {"result": str}
-    
+
     @classmethod
     def get_node_type(cls):
         return "test.event.EventConsumerNode"
-    
-    async def handle_event(self, context: ProcessingContext, event: Event) -> AsyncGenerator[tuple[str, Any], None]:
+
+    async def handle_event(
+        self, context: ProcessingContext, event: Event
+    ) -> AsyncGenerator[tuple[str, Any], None]:
         assert self.processed_events is not None
         self.processed_events.append(event.name)
         yield "result", f"Processed: {event.name}"
@@ -820,8 +885,12 @@ async def test_event_handling(workflow_runner: WorkflowRunner):
     """Test event production and handling"""
     producer = {"id": "1", "type": EventProducerNode.get_node_type()}
     consumer = {"id": "2", "type": EventConsumerNode.get_node_type()}
-    output = {"id": "3", "type": StringOutput.get_node_type(), "data": {"name": "result"}}
-    
+    output = {
+        "id": "3",
+        "type": StringOutput.get_node_type(),
+        "data": {"name": "result"},
+    }
+
     nodes: list[dict[str, Any]] = [producer, consumer, output]
     edges: list[dict[str, Any]] = [
         {
@@ -837,52 +906,60 @@ async def test_event_handling(workflow_runner: WorkflowRunner):
             "target": "3",
             "sourceHandle": "result",
             "targetHandle": "value",
-        }
+        },
     ]
-    
+
     graph = APIGraph(nodes=[Node(**n) for n in nodes], edges=[Edge(**e) for e in edges])
     req = RunJobRequest(
         user_id="1", workflow_id="", job_type="", params={}, graph=graph
     )
     context = ProcessingContext(user_id="1", auth_token="token")
-    
+
     await workflow_runner.run(req, context)
-    
+
     assert workflow_runner.outputs["result"] == ["Processed: test_event"]
 
 
 @pytest.mark.asyncio
 async def test_event_immediate_processing(workflow_runner: WorkflowRunner):
     """Test that events trigger immediate processing"""
-    
+
     class SlowNode(BaseNode):
         """Node that takes time to process"""
+
         value: str = "slow"
-        
+
         @classmethod
         def get_node_type(cls):
             return "test.event.SlowNode"
-        
+
         async def process(self, context: ProcessingContext) -> str:
             await asyncio.sleep(0.1)  # Simulate slow processing
             return self.value
-    
+
     class EventWithDataNode(EventConsumerNode):
         """Event consumer that also needs regular data"""
+
         data_input: str = ""
-        
+
         @classmethod
         def get_node_type(cls):
             return "test.event.EventWithDataNode"
-        
-        async def handle_event(self, context: ProcessingContext, event: Event) -> AsyncGenerator[tuple[str, Any], None]:
+
+        async def handle_event(
+            self, context: ProcessingContext, event: Event
+        ) -> AsyncGenerator[tuple[str, Any], None]:
             yield "result", f"{self.data_input}:{event.name}"
-    
+
     slow = {"id": "1", "type": SlowNode.get_node_type()}
     producer = {"id": "2", "type": EventProducerNode.get_node_type()}
     consumer = {"id": "3", "type": EventWithDataNode.get_node_type()}
-    output = {"id": "4", "type": StringOutput.get_node_type(), "data": {"name": "result"}}
-    
+    output = {
+        "id": "4",
+        "type": StringOutput.get_node_type(),
+        "data": {"name": "result"},
+    }
+
     nodes: list[dict[str, Any]] = [slow, producer, consumer, output]
     edges: list[dict[str, Any]] = [
         {
@@ -905,75 +982,87 @@ async def test_event_immediate_processing(workflow_runner: WorkflowRunner):
             "target": "4",
             "sourceHandle": "result",
             "targetHandle": "value",
-        }
+        },
     ]
-    
+
     graph = APIGraph(nodes=[Node(**n) for n in nodes], edges=[Edge(**e) for e in edges])
     req = RunJobRequest(
         user_id="1", workflow_id="", job_type="", params={}, graph=graph
     )
     context = ProcessingContext(user_id="1", auth_token="token")
-    
+
     await workflow_runner.run(req, context)
-    
+
     # Event should process with whatever data is available
     assert workflow_runner.outputs["result"] == ["slow:test_event"]
 
 
 # ============= CACHING TESTS =============
 
+
 @pytest.mark.asyncio
 async def test_caching_functionality(workflow_runner: WorkflowRunner):
     """Test node result caching"""
     # Use the existing CacheableNode
-    cacheable = {"id": "1", "type": CacheableNode.get_node_type(), "data": {"value": "cached_value"}}
-    output = {"id": "2", "type": StringOutput.get_node_type(), "data": {"name": "result"}}
-    
-    nodes: list[dict[str, Any]] = [cacheable, output]
-    edges: list[dict[str, Any]] = [{
+    cacheable = {
         "id": "1",
-        "source": "1",
-        "target": "2",
-        "sourceHandle": "output",
-        "targetHandle": "value",
-    }]
-    
+        "type": CacheableNode.get_node_type(),
+        "data": {"value": "cached_value"},
+    }
+    output = {
+        "id": "2",
+        "type": StringOutput.get_node_type(),
+        "data": {"name": "result"},
+    }
+
+    nodes: list[dict[str, Any]] = [cacheable, output]
+    edges: list[dict[str, Any]] = [
+        {
+            "id": "1",
+            "source": "1",
+            "target": "2",
+            "sourceHandle": "output",
+            "targetHandle": "value",
+        }
+    ]
+
     graph = APIGraph(nodes=[Node(**n) for n in nodes], edges=[Edge(**e) for e in edges])
     req = RunJobRequest(
         user_id="1", workflow_id="", job_type="", params={}, graph=graph
     )
-    
+
     # Mock the context caching methods
     context = ProcessingContext(user_id="1", auth_token="token")
     cached_results = {}
-    
+
     def mock_get_cached(node):
         return cached_results.get(node.id)
-    
+
     def mock_cache_result(node, result, ttl=3600):
         cached_results[node.id] = result
-    
+
     context.get_cached_result = mock_get_cached
     context.cache_result = mock_cache_result
-    
+
     # First run - should process and cache
     await workflow_runner.run(req, context)
-    
+
     # Get the node instance to check process count
     assert workflow_runner.context is not None
     cacheable_node = workflow_runner.context.graph.find_node("1")
     assert isinstance(cacheable_node, CacheableNode)
     assert cacheable_node.process_count == 1
-    
+
     # Second run with same context - should use cache
     workflow_runner2 = WorkflowRunner(job_id="2")
     await workflow_runner2.run(req, context)
-    
+
     # Process count should still be 1 (not incremented)
     assert cacheable_node.process_count == 1
 
 
 # ============= EDGE QUEUE TESTS =============
+
 
 @pytest.mark.asyncio
 async def test_edge_queue_initialization(workflow_runner: WorkflowRunner):
@@ -984,19 +1073,31 @@ async def test_edge_queue_initialization(workflow_runner: WorkflowRunner):
         {"id": "3", "type": String.get_node_type()},
     ]
     edges: list[dict[str, Any]] = [
-        {"id": "e1", "source": "1", "target": "2", "sourceHandle": "output", "targetHandle": "value"},
-        {"id": "e2", "source": "2", "target": "3", "sourceHandle": "output", "targetHandle": "value"},
+        {
+            "id": "e1",
+            "source": "1",
+            "target": "2",
+            "sourceHandle": "output",
+            "targetHandle": "value",
+        },
+        {
+            "id": "e2",
+            "source": "2",
+            "target": "3",
+            "sourceHandle": "output",
+            "targetHandle": "value",
+        },
     ]
-    
+
     graph = APIGraph(nodes=[Node(**n) for n in nodes], edges=[Edge(**e) for e in edges])
     req = RunJobRequest(
         user_id="1", workflow_id="", job_type="", params={}, graph=graph
     )
     context = ProcessingContext(user_id="1", auth_token="token")
-    
+
     # Clear any existing queues
     workflow_runner.edge_queues.clear()
-    
+
     # Just initialize, don't run
     assert context.graph is not None
     assert req.graph is not None
@@ -1006,7 +1107,7 @@ async def test_edge_queue_initialization(workflow_runner: WorkflowRunner):
         base_nodes.append(node)
     graph_obj = Graph(nodes=base_nodes, edges=req.graph.edges)
     workflow_runner._initialize_edge_queues(graph_obj)
-    
+
     # Check queues are initialized
     assert len(workflow_runner.edge_queues) == 2
     assert ("1", "output", "2", "value") in workflow_runner.edge_queues
@@ -1016,94 +1117,103 @@ async def test_edge_queue_initialization(workflow_runner: WorkflowRunner):
 @pytest.mark.asyncio
 async def test_multiple_messages_in_queue():
     """Test handling multiple messages in edge queues"""
-    
+
     class MultiProducerNode(BaseNode):
         """Produces multiple values"""
+
         @classmethod
         def get_node_type(cls):
             return "test.queue.MultiProducerNode"
-            
+
         async def process(self, context: ProcessingContext) -> dict[str, Any]:
             return {"output": "value1"}  # First call
-    
+
     class CollectorNode(BaseNode):
         """Collects all values"""
+
         values: list[str] | None = None
         value: str = ""
-        
+
         def __init__(self, **kwargs):
             super().__init__(**kwargs)
             if self.values is None:
                 self.values = []
-        
+
         @classmethod
         def get_node_type(cls):
             return "test.queue.CollectorNode"
-        
+
         async def process(self, context: ProcessingContext) -> str:
             assert self.values is not None
             self.values.append(self.value)
             return f"collected_{len(self.values)}"
-    
+
     # Create a scenario where multiple messages queue up
     workflow_runner = WorkflowRunner(job_id="1")
-    
-    producer = MultiProducerNode(id="1") # type: ignore
-    collector = CollectorNode(id="2") # type: ignore
-    
-    context = ProcessingContext(user_id="1", auth_token="token", graph=Graph(nodes=[producer, collector], edges=[]))
-    
+
+    producer = MultiProducerNode(id="1")  # type: ignore
+    collector = CollectorNode(id="2")  # type: ignore
+
+    context = ProcessingContext(
+        user_id="1",
+        auth_token="token",
+        graph=Graph(nodes=[producer, collector], edges=[]),
+    )
+
     # Manually queue multiple messages
     edge_key = ("1", "output", "2", "value")
     workflow_runner.edge_queues[edge_key] = deque(["msg1", "msg2", "msg3"])
-    
+
     # Process collector with first message
-    await workflow_runner.process_node(context, collector, {"value": workflow_runner.edge_queues[edge_key].popleft()})
-    
+    await workflow_runner.process_node(
+        context, collector, {"value": workflow_runner.edge_queues[edge_key].popleft()}
+    )
+
     assert collector.values == ["msg1"]
     assert len(workflow_runner.edge_queues[edge_key]) == 2
 
 
 # ============= PROCESSING LOOP TESTS =============
 
+
 @pytest.mark.asyncio
 async def test_loop_termination_idle():
     """Test loop termination due to idle state"""
     workflow_runner = WorkflowRunner(job_id="1")
-    
+
     # Create simple graph
-    nodes = [String(id="1", value="test")] # type: ignore
+    nodes = [String(id="1", value="test")]  # type: ignore
     edges = []
     graph = Graph(nodes=nodes, edges=edges)
     context = ProcessingContext(user_id="1", auth_token="token", graph=graph)
-    
+
     # Test termination condition check
     should_terminate = workflow_runner._check_loop_termination_conditions(
         context, graph, iterations_without_progress=3, max_iterations_limit=100
     )
-    
+
     assert should_terminate
 
 
-@pytest.mark.asyncio 
+@pytest.mark.asyncio
 async def test_loop_termination_pending_data():
     """Test loop termination with pending data in queues"""
     workflow_runner = WorkflowRunner(job_id="1")
-    
-    nodes = [String(id="1"), String(id="2")] # type: ignore
+
+    nodes = [String(id="1"), String(id="2")]  # type: ignore
     edges = []
     graph = Graph(nodes=nodes, edges=edges)
     context = ProcessingContext(user_id="1", auth_token="token", graph=graph)
-    
+
     # Add pending data
     workflow_runner.edge_queues[("1", "output", "2", "value")] = deque(["pending"])
-    
+
     # Should terminate but with warning
     with patch("nodetool.workflows.workflow_runner.log") as mock_log:
         should_terminate = workflow_runner._check_loop_termination_conditions(
             context, graph, iterations_without_progress=3, max_iterations_limit=100
         )
-        
+
         assert should_terminate
         # Check warning was logged
         mock_log.warning.assert_called()
@@ -1111,35 +1221,46 @@ async def test_loop_termination_pending_data():
 
 # ============= OUTPUT NODE TESTS =============
 
+
 @pytest.mark.asyncio
 async def test_output_node_processing(workflow_runner: WorkflowRunner):
     """Test OutputNode specific processing"""
-    input_node = {"id": "1", "type": String.get_node_type(), "data": {"value": "test_output"}}
-    output = {"id": "2", "type": StringOutput.get_node_type(), "data": {"name": "my_output"}}
-    
-    nodes: list[dict[str, Any]] = [input_node, output]
-    edges: list[dict[str, Any]] = [{
+    input_node = {
         "id": "1",
-        "source": "1",
-        "target": "2",
-        "sourceHandle": "output",
-        "targetHandle": "value",
-    }]
-    
+        "type": String.get_node_type(),
+        "data": {"value": "test_output"},
+    }
+    output = {
+        "id": "2",
+        "type": StringOutput.get_node_type(),
+        "data": {"name": "my_output"},
+    }
+
+    nodes: list[dict[str, Any]] = [input_node, output]
+    edges: list[dict[str, Any]] = [
+        {
+            "id": "1",
+            "source": "1",
+            "target": "2",
+            "sourceHandle": "output",
+            "targetHandle": "value",
+        }
+    ]
+
     graph = APIGraph(nodes=[Node(**n) for n in nodes], edges=[Edge(**e) for e in edges])
     req = RunJobRequest(
         user_id="1", workflow_id="", job_type="", params={}, graph=graph
     )
-    
+
     messages = []
     context = ProcessingContext(user_id="1", auth_token="token")
     context.post_message = lambda message: messages.append(message)
-    
+
     await workflow_runner.run(req, context)
-    
+
     # Check outputs
     assert workflow_runner.outputs["my_output"] == ["test_output"]
-    
+
     # Check OutputUpdate message was sent
     output_updates = [m for m in messages if isinstance(m, OutputUpdate)]
     assert len(output_updates) == 1
@@ -1150,47 +1271,69 @@ async def test_output_node_processing(workflow_runner: WorkflowRunner):
 
 # ============= COMPLEX GRAPH TESTS =============
 
+
 @pytest.mark.asyncio
 async def test_parallel_node_execution():
     """Test parallel execution of independent nodes"""
-    
+
     class SlowNode(BaseNode):
         delay: float = 0.1
         value: str = ""
-        
+
         @classmethod
         def get_node_type(cls):
             return "test.parallel.SlowNode"
-        
+
         async def process(self, context: ProcessingContext) -> str:
             await asyncio.sleep(self.delay)
             return f"{self.value}_processed"
-    
+
     workflow_runner = WorkflowRunner(job_id="1")
-    
+
     # Two independent paths that should run in parallel
-    slow1 = {"id": "1", "type": SlowNode.get_node_type(), "data": {"value": "path1", "delay": 0.1}}
-    slow2 = {"id": "2", "type": SlowNode.get_node_type(), "data": {"value": "path2", "delay": 0.1}}
+    slow1 = {
+        "id": "1",
+        "type": SlowNode.get_node_type(),
+        "data": {"value": "path1", "delay": 0.1},
+    }
+    slow2 = {
+        "id": "2",
+        "type": SlowNode.get_node_type(),
+        "data": {"value": "path2", "delay": 0.1},
+    }
     out1 = {"id": "3", "type": StringOutput.get_node_type(), "data": {"name": "out1"}}
     out2 = {"id": "4", "type": StringOutput.get_node_type(), "data": {"name": "out2"}}
-    
+
     nodes: list[dict[str, Any]] = [slow1, slow2, out1, out2]
     edges: list[dict[str, Any]] = [
-        {"id": "e1", "source": "1", "target": "3", "sourceHandle": "output", "targetHandle": "value"},
-        {"id": "e2", "source": "2", "target": "4", "sourceHandle": "output", "targetHandle": "value"},
+        {
+            "id": "e1",
+            "source": "1",
+            "target": "3",
+            "sourceHandle": "output",
+            "targetHandle": "value",
+        },
+        {
+            "id": "e2",
+            "source": "2",
+            "target": "4",
+            "sourceHandle": "output",
+            "targetHandle": "value",
+        },
     ]
-    
+
     graph = APIGraph(nodes=[Node(**n) for n in nodes], edges=[Edge(**e) for e in edges])
     req = RunJobRequest(
         user_id="1", workflow_id="", job_type="", params={}, graph=graph
     )
     context = ProcessingContext(user_id="1", auth_token="token")
-    
+
     import time
+
     start = time.time()
     await workflow_runner.run(req, context)
     duration = time.time() - start
-    
+
     # Should complete in ~0.1s if parallel, ~0.2s if serial
     assert duration < 0.15  # Allow some overhead
     assert workflow_runner.outputs["out1"] == ["path1_processed"]
@@ -1205,42 +1348,61 @@ async def test_complex_dependency_graph():
     n2 = {"id": "2", "type": String.get_node_type()}
     n3 = {"id": "3", "type": String.get_node_type()}
     n4 = {"id": "4", "type": StringOutput.get_node_type(), "data": {"name": "final"}}
-    
+
     nodes: list[dict[str, Any]] = [n1, n2, n3, n4]
     edges: list[dict[str, Any]] = [
-        {"id": "e1", "source": "1", "target": "2", "sourceHandle": "output", "targetHandle": "value"},
-        {"id": "e2", "source": "1", "target": "3", "sourceHandle": "output", "targetHandle": "value"},
-        {"id": "e3", "source": "2", "target": "4", "sourceHandle": "output", "targetHandle": "value"},
+        {
+            "id": "e1",
+            "source": "1",
+            "target": "2",
+            "sourceHandle": "output",
+            "targetHandle": "value",
+        },
+        {
+            "id": "e2",
+            "source": "1",
+            "target": "3",
+            "sourceHandle": "output",
+            "targetHandle": "value",
+        },
+        {
+            "id": "e3",
+            "source": "2",
+            "target": "4",
+            "sourceHandle": "output",
+            "targetHandle": "value",
+        },
         # Note: n3 output is not connected, testing partial dependencies
     ]
-    
+
     workflow_runner = WorkflowRunner(job_id="1")
     graph = APIGraph(nodes=[Node(**n) for n in nodes], edges=[Edge(**e) for e in edges])
     req = RunJobRequest(
         user_id="1", workflow_id="", job_type="", params={}, graph=graph
     )
     context = ProcessingContext(user_id="1", auth_token="token")
-    
+
     await workflow_runner.run(req, context)
-    
+
     assert workflow_runner.outputs["final"] == ["start"]
 
 
 # ============= EDGE CASE TESTS =============
 
+
 @pytest.mark.asyncio
 async def test_empty_graph():
     """Test handling of empty graph"""
     workflow_runner = WorkflowRunner(job_id="1")
-    
+
     graph = APIGraph(nodes=[], edges=[])
     req = RunJobRequest(
         user_id="1", workflow_id="", job_type="", params={}, graph=graph
     )
     context = ProcessingContext(user_id="1", auth_token="token")
-    
+
     await workflow_runner.run(req, context)
-    
+
     assert workflow_runner.status == "completed"
     assert workflow_runner.outputs == {}
 
@@ -1248,33 +1410,33 @@ async def test_empty_graph():
 @pytest.mark.asyncio
 async def test_node_finalization():
     """Test that node finalize is called"""
-    
+
     class FinalizableNode(BaseNode):
         finalized: bool = False
-        
+
         @classmethod
         def get_node_type(cls):
             return "test.finalize.FinalizableNode"
-        
+
         async def process(self, context: ProcessingContext) -> str:
             return "processed"
-        
+
         async def finalize(self, context: ProcessingContext):
             self.finalized = True
-    
+
     workflow_runner = WorkflowRunner(job_id="1")
-    
+
     node: dict[str, Any] = {"id": "1", "type": FinalizableNode.get_node_type()}
     nodes: list[dict[str, Any]] = [node]
-    
+
     graph = APIGraph(nodes=[Node(**n) for n in nodes], edges=[])
     req = RunJobRequest(
         user_id="1", workflow_id="", job_type="", params={}, graph=graph
     )
     context = ProcessingContext(user_id="1", auth_token="token")
-    
+
     await workflow_runner.run(req, context)
-    
+
     # Get the actual node instance
     assert workflow_runner.context is not None
     node_instance = workflow_runner.context.graph.find_node("1")
@@ -1287,23 +1449,21 @@ async def test_chat_input_handling():
     """Test handling of chat messages input"""
     # Test that messages require a ChatInput node
     workflow_runner = WorkflowRunner(job_id="1")
-    
+
     # No ChatInput node
     graph = APIGraph(nodes=[], edges=[])
-    messages: list[Message] = [
-        Message(role="user", content="Hello")
-    ]
+    messages: list[Message] = [Message(role="user", content="Hello")]
     req = RunJobRequest(
-        user_id="1", 
-        workflow_id="", 
-        job_type="", 
+        user_id="1",
+        workflow_id="",
+        job_type="",
         params={},
         messages=messages,
-        graph=graph
+        graph=graph,
     )
-    
+
     context = ProcessingContext(user_id="1", auth_token="token")
-    
+
     # Should raise error when messages provided but no ChatInput node
     with pytest.raises(ValueError, match="Chat input node not found"):
         await workflow_runner.run(req, context)
@@ -1313,22 +1473,22 @@ async def test_chat_input_handling():
 async def test_missing_input_node_for_param():
     """Test error when parameter has no corresponding input node"""
     workflow_runner = WorkflowRunner(job_id="1")
-    
-    nodes = []  # No input nodes
+
     graph = APIGraph(nodes=[], edges=[])
-    
+
     req = RunJobRequest(
         user_id="1",
         workflow_id="",
         job_type="",
         params={"missing_input": "value"},  # No node for this param
-        graph=graph
+        graph=graph,
     )
     context = ProcessingContext(user_id="1", auth_token="token")
-    
-    with pytest.raises(ValueError, match="No input node found for param: missing_input"):
-        await workflow_runner.run(req, context)
 
+    with pytest.raises(
+        ValueError, match="No input node found for param: missing_input"
+    ):
+        await workflow_runner.run(req, context)
 
 
 @pytest.mark.asyncio
@@ -1336,9 +1496,314 @@ async def test_is_running_method():
     """Test is_running status check"""
     runner = WorkflowRunner(job_id="1")
     assert runner.is_running()
-    
+
     runner.status = "completed"
     assert not runner.is_running()
-    
+
     runner.status = "error"
     assert not runner.is_running()
+
+
+class AddAny(Add):
+    """Add node that triggers on any input."""
+
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault("trigger_mode", "any_input")
+        super().__init__(*args, **kwargs)
+
+
+class SlowAdd(Add):
+    """Add node with a processing delay to test parallelism."""
+
+    delay: float = 0.1
+
+    @classmethod
+    def get_node_type(cls):
+        return "test.parallel.SlowAdd"
+
+    async def process(self, context: ProcessingContext) -> float:
+        await asyncio.sleep(self.delay)
+        return self.a + self.b
+
+
+@pytest.mark.asyncio
+async def test_trigger_mode_any_input():
+    """Node should run when any input arrives."""
+    workflow_runner = WorkflowRunner(job_id="1")
+
+    src1 = String(id="1", value="1")  # type: ignore
+    src2 = String(id="4", value="2")  # type: ignore
+    add = AddAny(id="2")  # type: ignore
+    out = IntegerOutput(id="3", name="out")  # type: ignore
+
+    graph = Graph(
+        nodes=[src1, src2, add, out],
+        edges=[
+            Edge(
+                id="e1", source="1", target="2", sourceHandle="output", targetHandle="a"
+            ),
+            Edge(
+                id="e2", source="4", target="2", sourceHandle="output", targetHandle="b"
+            ),
+            Edge(
+                id="e3",
+                source="2",
+                target="3",
+                sourceHandle="output",
+                targetHandle="value",
+            ),
+        ],
+    )
+
+    context = ProcessingContext(user_id="1", auth_token="token", graph=graph)
+    workflow_runner._initialize_edge_queues(graph)
+    workflow_runner.edge_queues[("1", "output", "2", "a")].append(1)
+
+    ready, tasks, _ = workflow_runner._get_ready_nodes_and_prepare_tasks(context, graph)
+    assert not ready
+
+    workflow_runner.edge_queues[("4", "output", "2", "b")].append(2)
+    ready1, tasks1, _ = workflow_runner._get_ready_nodes_and_prepare_tasks(context, graph)
+    assert ready1 and ready1[0][0] is add
+    await workflow_runner._execute_node_batch(context, ready1, tasks1)
+
+    ready2, tasks2, _ = workflow_runner._get_ready_nodes_and_prepare_tasks(context, graph)
+    await workflow_runner._execute_node_batch(context, ready2, tasks2)
+
+    assert workflow_runner.outputs["out"] == [3]
+
+    # second run triggered by only one input
+    workflow_runner.edge_queues[("1", "output", "2", "a")].append(10)
+    ready3, tasks3, _ = workflow_runner._get_ready_nodes_and_prepare_tasks(context, graph)
+    assert ready3 and ready3[0][0] is add
+    await workflow_runner._execute_node_batch(context, ready3, tasks3)
+    ready4, tasks4, _ = workflow_runner._get_ready_nodes_and_prepare_tasks(context, graph)
+    await workflow_runner._execute_node_batch(context, ready4, tasks4)
+
+    assert workflow_runner.outputs["out"] == [3, 12]
+
+
+@pytest.mark.asyncio
+async def test_parallel_add_nodes():
+    """Two add nodes with delays should run concurrently."""
+
+    workflow_runner = WorkflowRunner(job_id="1")
+
+    add1 = {
+        "id": "1",
+        "type": SlowAdd.get_node_type(),
+        "data": {"a": 1, "b": 2, "delay": 0.1},
+    }
+    add2 = {
+        "id": "2",
+        "type": SlowAdd.get_node_type(),
+        "data": {"a": 3, "b": 4, "delay": 0.1},
+    }
+    out1 = {
+        "id": "3",
+        "type": IntegerOutput.get_node_type(),
+        "data": {"name": "o1"},
+    }
+    out2 = {
+        "id": "4",
+        "type": IntegerOutput.get_node_type(),
+        "data": {"name": "o2"},
+    }
+
+    nodes: list[dict[str, Any]] = [add1, add2, out1, out2]
+    edges: list[dict[str, Any]] = [
+        {
+            "id": "e1",
+            "source": "1",
+            "target": "3",
+            "sourceHandle": "output",
+            "targetHandle": "value",
+        },
+        {
+            "id": "e2",
+            "source": "2",
+            "target": "4",
+            "sourceHandle": "output",
+            "targetHandle": "value",
+        },
+    ]
+
+    graph = APIGraph(nodes=[Node(**n) for n in nodes], edges=[Edge(**e) for e in edges])
+    req = RunJobRequest(user_id="1", workflow_id="", job_type="", params={}, graph=graph)
+    context = ProcessingContext(user_id="1", auth_token="token")
+
+    import time
+
+    start = time.time()
+    await workflow_runner.run(req, context)
+    duration = time.time() - start
+
+    assert duration < 0.15
+    assert workflow_runner.outputs["o1"] == [3]
+    assert workflow_runner.outputs["o2"] == [7]
+
+
+@pytest.mark.asyncio
+async def test_parallel_mixed_trigger_modes():
+    """Parallel nodes with different trigger modes run correctly."""
+
+    workflow_runner = WorkflowRunner(job_id="1")
+
+    nodes: list[dict[str, Any]] = [
+        {"id": "i1", "type": Float.get_node_type(), "data": {"value": 1.0}},
+        {"id": "i2", "type": Float.get_node_type(), "data": {"value": 2.0}},
+        {"id": "i3", "type": Float.get_node_type(), "data": {"value": 3.0}},
+        {
+            "id": "a",
+            "type": SlowAdd.get_node_type(),
+            "trigger_mode": "any_input",
+            "data": {},
+        },
+        {"id": "b", "type": SlowAdd.get_node_type(), "data": {}},
+        {
+            "id": "o1",
+            "type": IntegerOutput.get_node_type(),
+            "data": {"name": "o1"},
+        },
+        {
+            "id": "o2",
+            "type": IntegerOutput.get_node_type(),
+            "data": {"name": "o2"},
+        },
+    ]
+
+    edges = [
+        Edge(id="e1", source="i1", target="a", sourceHandle="output", targetHandle="a"),
+        Edge(id="e2", source="i2", target="a", sourceHandle="output", targetHandle="b"),
+        Edge(id="e3", source="i1", target="b", sourceHandle="output", targetHandle="a"),
+        Edge(id="e4", source="i3", target="b", sourceHandle="output", targetHandle="b"),
+        Edge(id="e5", source="a", target="o1", sourceHandle="output", targetHandle="value"),
+        Edge(id="e6", source="b", target="o2", sourceHandle="output", targetHandle="value"),
+    ]
+
+    graph = APIGraph(nodes=[Node(**n) for n in nodes], edges=edges)
+
+    req = RunJobRequest(user_id="1", workflow_id="", job_type="", params={}, graph=graph)
+    context = ProcessingContext(user_id="1", auth_token="token")
+
+    await workflow_runner.run(req, context)
+
+    assert workflow_runner.outputs["o1"] == [3]
+    assert workflow_runner.outputs["o2"] == [4]
+
+
+
+
+@pytest.mark.asyncio
+async def test_trigger_mode_all_inputs():
+    """Node waits for all inputs before running."""
+    workflow_runner = WorkflowRunner(job_id="1")
+
+    src1 = String(id="1", value="1")  # type: ignore
+    src2 = String(id="4", value="2")  # type: ignore
+    add = Add(id="2")  # type: ignore
+    out = IntegerOutput(id="3", name="out")  # type: ignore
+
+    graph = Graph(
+        nodes=[src1, src2, add, out],
+        edges=[
+            Edge(
+                id="e1", source="1", target="2", sourceHandle="output", targetHandle="a"
+            ),
+            Edge(
+                id="e2", source="4", target="2", sourceHandle="output", targetHandle="b"
+            ),
+            Edge(
+                id="e3",
+                source="2",
+                target="3",
+                sourceHandle="output",
+                targetHandle="value",
+            ),
+        ],
+    )
+
+    context = ProcessingContext(user_id="1", auth_token="token", graph=graph)
+    workflow_runner._initialize_edge_queues(graph)
+    workflow_runner.edge_queues[("1", "output", "2", "a")].append(1)
+
+    ready, tasks, _ = workflow_runner._get_ready_nodes_and_prepare_tasks(context, graph)
+    assert not ready  # should not run yet
+
+    workflow_runner.edge_queues[("4", "output", "2", "b")].append(2)
+    ready2, tasks2, _ = workflow_runner._get_ready_nodes_and_prepare_tasks(
+        context, graph
+    )
+    assert ready2 and ready2[0][0] is add
+    await workflow_runner._execute_node_batch(context, ready2, tasks2)
+    ready3, tasks3, _ = workflow_runner._get_ready_nodes_and_prepare_tasks(
+        context, graph
+    )
+    await workflow_runner._execute_node_batch(context, ready3, tasks3)
+
+    assert workflow_runner.outputs["out"] == [3]
+
+
+class StreamingAddAny(AddAny):
+    """Streaming add node with any-input trigger."""
+
+    def is_streaming_output(self) -> bool:
+        return True
+
+    @classmethod
+    def return_type(cls):
+        return {"output": int}
+
+    async def gen_process(
+        self, context: ProcessingContext
+    ) -> AsyncGenerator[tuple[str, Any], None]:
+        yield "output", self.a + self.b
+
+
+@pytest.mark.asyncio
+async def test_trigger_mode_streaming_any_input():
+    """Streaming node should start with a single input message."""
+    workflow_runner = WorkflowRunner(job_id="1")
+
+    src1 = String(id="1", value="1")  # type: ignore
+    src2 = String(id="4", value="2")  # type: ignore
+    stream = StreamingAddAny(id="2")  # type: ignore
+    out = IntegerOutput(id="3", name="out")  # type: ignore
+
+    graph = Graph(
+        nodes=[src1, src2, stream, out],
+        edges=[
+            Edge(
+                id="e1", source="1", target="2", sourceHandle="output", targetHandle="a"
+            ),
+            Edge(
+                id="e2", source="4", target="2", sourceHandle="output", targetHandle="b"
+            ),
+            Edge(
+                id="e3",
+                source="2",
+                target="3",
+                sourceHandle="output",
+                targetHandle="value",
+            ),
+        ],
+    )
+
+    context = ProcessingContext(user_id="1", auth_token="token", graph=graph)
+    workflow_runner._initialize_edge_queues(graph)
+    workflow_runner.edge_queues[("1", "output", "2", "a")].append(1)
+
+    ready, tasks, _ = workflow_runner._get_ready_nodes_and_prepare_tasks(context, graph)
+    assert not ready
+
+    workflow_runner.edge_queues[("4", "output", "2", "b")].append(2)
+    ready1, tasks1, _ = workflow_runner._get_ready_nodes_and_prepare_tasks(context, graph)
+    assert ready1 and ready1[0][0] is stream
+
+    await workflow_runner._execute_node_batch(context, ready1, tasks1)
+    ready2, tasks2, _ = workflow_runner._get_ready_nodes_and_prepare_tasks(
+        context, graph
+    )
+    await workflow_runner._execute_node_batch(context, ready2, tasks2)
+
+    assert workflow_runner.outputs["out"] == [3]

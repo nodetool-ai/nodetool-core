@@ -55,6 +55,7 @@ import time
 from typing import Any, AsyncGenerator, Optional
 from collections import deque
 import random
+from builtins import anext
 
 from nodetool.common.model_manager import ModelManager
 from nodetool.types.job import JobUpdate
@@ -202,6 +203,7 @@ class WorkflowRunner:
         self.active_generators: dict[str, tuple[AsyncGenerator, dict[str, Any]]] = (
             {}
         )  # Stores (generator_iterator, initial_config_properties)
+        self.nodes_have_run: set[str] = set()
         if device:
             self.device = device
         else:
@@ -751,9 +753,8 @@ class WorkflowRunner:
         tasks_to_run_this_iteration = []
         ready_node_task_details_list: list[tuple[BaseNode, dict[str, Any]]] = []
         any_progress_potential = False
-        inputs_for_this_run: dict[str, Any] = {}
-
         for node in graph.nodes:
+            inputs_for_this_run: dict[str, Any] = {}
             if node._id in self.active_processing_node_ids:
                 log.debug(
                     f"Node {node.get_title()} ({node._id}) is already active. Skipping."
@@ -871,67 +872,99 @@ class WorkflowRunner:
             ):
                 continue
 
-            # --- Peek Phase: Check if all inputs are available ---
-
-            # --- Consume Phase: If all inputs can be satisfied, now consume them ---
+            # --- Peek & Consume Phase ---
             messages_consumed_for_this_node = False
 
-            if required_input_slots:  # Only try to consume if there are slots to fill
-                # First check if we can satisfy all required input slots in this run
-                all_slots_can_be_satisfied = True
+            if required_input_slots:
+                if node._id in self.nodes_have_run:
+                    trigger_mode = node.trigger_mode
+                else:
+                    trigger_mode = "all_inputs"
 
-                for slot_name in required_input_slots:
-                    slot_has_available_data = False
-                    for edge in graph.edges:
-                        if edge.target == node._id and edge.targetHandle == slot_name:
-                            edge_key = (
-                                edge.source,
-                                edge.sourceHandle,
-                                edge.target,
-                                edge.targetHandle,
-                            )
+                if trigger_mode == "any_input":
+                    found_any = False
+                    for slot_name in required_input_slots:
+                        for edge in graph.edges:
                             if (
-                                edge_key in self.edge_queues
-                                and self.edge_queues[edge_key]
+                                edge.target == node._id
+                                and edge.targetHandle == slot_name
                             ):
-                                slot_has_available_data = True
-                                break
-
-                    if not slot_has_available_data:
-                        all_slots_can_be_satisfied = False
-                        break
-
-                # Only consume if ALL required slots can be satisfied
-                if not all_slots_can_be_satisfied:
-                    continue
-
-                # Now actually consume the inputs
-                for slot_name in required_input_slots:
-                    for edge in graph.edges:
-                        if edge.target == node._id and edge.targetHandle == slot_name:
-                            edge_key = (
-                                edge.source,
-                                edge.sourceHandle,
-                                edge.target,
-                                edge.targetHandle,
-                            )
-                            if (
-                                edge_key in self.edge_queues
-                                and self.edge_queues[edge_key]
-                            ):
-                                item = self.edge_queues[edge_key].popleft()
-                                inputs_for_this_run[slot_name] = item
-                                messages_consumed_for_this_node = True
-                                log.debug(
-                                    f"Consumed message for {node.get_title()} slot '{slot_name}' from edge {edge_key}. "
-                                    f"Queue for edge {edge_key} now has {len(self.edge_queues[edge_key])} items."
+                                edge_key = (
+                                    edge.source,
+                                    edge.sourceHandle,
+                                    edge.target,
+                                    edge.targetHandle,
                                 )
-                                break  # Found an edge and consumed for this slot_name, move to next slot_name
+                                if (
+                                    edge_key in self.edge_queues
+                                    and self.edge_queues[edge_key]
+                                ):
+                                    item = self.edge_queues[edge_key].popleft()
+                                    inputs_for_this_run[slot_name] = item
+                                    messages_consumed_for_this_node = True
+                                    found_any = True
+                                    log.debug(
+                                        f"Consumed message for {node.get_title()} slot '{slot_name}' from edge {edge_key}. "
+                                        f"Queue for edge {edge_key} now has {len(self.edge_queues[edge_key])} items."
+                                    )
+                                    break
+                    if not found_any:
+                        continue
+                else:  # all_inputs
+                    all_slots_can_be_satisfied = True
+                    for slot_name in required_input_slots:
+                        slot_has_available_data = False
+                        for edge in graph.edges:
+                            if (
+                                edge.target == node._id
+                                and edge.targetHandle == slot_name
+                            ):
+                                edge_key = (
+                                    edge.source,
+                                    edge.sourceHandle,
+                                    edge.target,
+                                    edge.targetHandle,
+                                )
+                                if (
+                                    edge_key in self.edge_queues
+                                    and self.edge_queues[edge_key]
+                                ):
+                                    slot_has_available_data = True
+                                    break
+                        if not slot_has_available_data:
+                            all_slots_can_be_satisfied = False
+                            break
 
-                if (
-                    not messages_consumed_for_this_node and required_input_slots
-                ):  # If consumption failed for a node that needs inputs
-                    continue  # Skip to next node
+                    if not all_slots_can_be_satisfied:
+                        continue
+
+                    for slot_name in required_input_slots:
+                        for edge in graph.edges:
+                            if (
+                                edge.target == node._id
+                                and edge.targetHandle == slot_name
+                            ):
+                                edge_key = (
+                                    edge.source,
+                                    edge.sourceHandle,
+                                    edge.target,
+                                    edge.targetHandle,
+                                )
+                                if (
+                                    edge_key in self.edge_queues
+                                    and self.edge_queues[edge_key]
+                                ):
+                                    item = self.edge_queues[edge_key].popleft()
+                                    inputs_for_this_run[slot_name] = item
+                                    messages_consumed_for_this_node = True
+                                    log.debug(
+                                        f"Consumed message for {node.get_title()} slot '{slot_name}' from edge {edge_key}. "
+                                        f"Queue for edge {edge_key} now has {len(self.edge_queues[edge_key])} items."
+                                    )
+                                    break
+
+                    if not messages_consumed_for_this_node and required_input_slots:
+                        continue
 
             # Node is ready if:
             # 1. It's a non-active streaming node and its initial inputs are now consumed (or it's a trigger with no edge inputs).
@@ -1026,6 +1059,8 @@ class WorkflowRunner:
                     exc_info=True,
                 )
                 raise results[i]  # Propagate the error to halt graph processing
+            else:
+                self.nodes_have_run.add(node_processed._id)
 
         log.debug("Batch execution completed. Success=%s", executed_something)
         log.debug(
