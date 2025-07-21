@@ -14,6 +14,7 @@ import subprocess
 from nodetool.metadata.types import BaseType
 from nodetool.metadata.utils import is_enum_type
 from nodetool.workflows.base_node import BaseNode
+from nodetool.packages.discovery import walk_source_modules
 
 
 """
@@ -274,35 +275,7 @@ def create_dsl_modules(source_path: str, target_path: str):
         >>> create_dsl_modules("nodetool/nodes/package", "/path/to/output")
         # This will generate DSL modules in the specified output directory
     """
-    source_module = source_path.replace("src/", "").replace("/", ".")
-    source_root_module = importlib.import_module(source_module)
-
-    # Get the absolute path of the source directory
-    source_abs_path = os.path.abspath(source_path)
-
-    for _, module_name, _ in pkgutil.walk_packages(
-        source_root_module.__path__, prefix=source_root_module.__name__ + "."
-    ):
-        # Import the module to get its file path
-        try:
-            module = importlib.import_module(module_name)
-            if not hasattr(module, "__file__") or module.__file__ is None:
-                continue
-
-            # Check if the module file is actually within the source_path
-            module_abs_path = os.path.abspath(module.__file__)
-            if not module_abs_path.startswith(source_abs_path):
-                continue
-
-        except ImportError as e:
-            print(f"Could not import {module_name}: {e}")
-            continue
-
-        # Get the relative part of the module path
-        relative_module = module_name[len(source_module) + 1 :]
-        # Convert to filesystem path
-        relative_path = relative_module.replace(".", "/")
-
+    for relative_module, module, relative_path in walk_source_modules(source_path):
         # Create the full target path
         full_target_path = os.path.join(target_path, relative_path)
         print(f"Processing {relative_module} -> {full_target_path}")
