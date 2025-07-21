@@ -1,0 +1,23 @@
+FROM pytorch/pytorch:2.1.0-cuda11.8-cudnn8-runtime
+
+# Install dependencies
+RUN apt-get update && apt-get install -y git curl && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --no-cache-dir hf-transfer huggingface-hub \
+    git+https://github.com/nodetool-ai/nodetool-core \
+    git+https://github.com/nodetool-ai/nodetool-base \
+    git+https://github.com/nodetool-ai/nodetool-huggingface
+
+WORKDIR /app
+
+ENV HF_HUB_CACHE=/app/.cache/huggingface/hub
+RUN mkdir -p $HF_HUB_CACHE
+
+COPY hf_inference.py /app/inference.py
+COPY workflow.json /app/workflow.json
+COPY models.json /app/models.json
+COPY download_models.py /app/download_models.py
+
+RUN python /app/download_models.py /app/models.json || echo "Model download completed with some errors"
+
+CMD ["python", "-u", "/app/inference.py"]
