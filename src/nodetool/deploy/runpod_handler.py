@@ -66,7 +66,7 @@ async def workflow_handler(job):
         if isinstance(msg, JobUpdate) and msg.status == "error":
             raise Exception(msg.error)
         if isinstance(msg, OutputUpdate):
-            value = context.upload_assets_to_temp(msg.value)
+            value = context.encode_assets_as_uri(msg.value)
             if hasattr(value, "model_dump"):
                 value = value.model_dump()
             results[msg.node_name] = value
