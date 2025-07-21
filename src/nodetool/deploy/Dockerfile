@@ -10,7 +10,7 @@ ENV WORKSPACE_DIR=${WORKSPACE_DIR}
 WORKDIR $WORKSPACE_DIR
 
 RUN uv venv
-RUN uv pip install --no-cache-dir runpod hf-transfer \
+RUN uv pip install --no-cache-dir runpod hf-transfer huggingface-hub \
        git+https://github.com/nodetool-ai/nodetool-core \
        git+https://github.com/nodetool-ai/nodetool-base \
        git+https://github.com/nodetool-ai/nodetool-huggingface
@@ -25,9 +25,10 @@ ENV HF_HUB_CACHE=/app/.cache/huggingface/hub
 COPY runpod_handler.py $WORKSPACE_DIR/handler.py
 COPY workflow.json $WORKSPACE_DIR/workflow.json
 COPY models.json $WORKSPACE_DIR/models.json
+COPY download_models.py $WORKSPACE_DIR/download_models.py
 
-# Copy HuggingFace models from local cache if they exist
-COPY huggingface/hub/ /app/.cache/huggingface/hub/
+# Download HuggingFace models using the models.json specification
+RUN /app/.venv/bin/python $WORKSPACE_DIR/download_models.py $WORKSPACE_DIR/models.json || echo "Model download completed with some errors"
 
 # Copy and run Ollama model pull script
 COPY pull_ollama_models.sh $WORKSPACE_DIR/pull_ollama_models.sh

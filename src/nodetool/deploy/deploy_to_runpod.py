@@ -405,76 +405,6 @@ def generate_image_tag() -> str:
     
     return f"{timestamp}-{short_hash}"
 
-def get_hf_cache_directory() -> str:
-    """
-    Get the HuggingFace cache directory path.
-    
-    Returns:
-        str: Path to the HuggingFace cache directory
-    """
-    import os
-    from pathlib import Path
-    
-    # Check environment variable first
-    if "HF_HUB_CACHE" in os.environ:
-        return os.environ["HF_HUB_CACHE"]
-    
-    # Default locations based on platform
-    if os.name == "nt":  # Windows
-        return os.path.expandvars(r"%USERPROFILE%\.cache\huggingface\hub")
-    else:  # Unix-like (macOS, Linux)
-        return os.path.expanduser("~/.cache/huggingface/hub")
-
-
-def copy_hf_models_to_build_dir(models: list[dict], build_dir: str) -> None:
-    """
-    Copy HuggingFace models from local cache to the Docker build directory.
-    
-    Args:
-        models (list[dict]): List of model dictionaries
-        build_dir (str): Path to the Docker build directory
-    """
-    import shutil
-    from pathlib import Path
-    
-    hf_cache_dir = get_hf_cache_directory()
-    hf_cache_path = Path(hf_cache_dir)
-    
-    if not hf_cache_path.exists():
-        print(f"Warning: HuggingFace cache directory not found at {hf_cache_dir}")
-        return
-    
-    build_hf_dir = Path(build_dir) / "huggingface" / "hub"
-    build_hf_dir.mkdir(parents=True, exist_ok=True)
-    
-    hf_models = [m for m in models if m.get("type", "").startswith("hf.")]
-    
-    if not hf_models:
-        print("No HuggingFace models found to copy")
-        return
-    
-    print(f"Copying {len(hf_models)} HuggingFace models from {hf_cache_dir}")
-    
-    for model in hf_models:
-        repo_id = model.get("repo_id")
-        if not repo_id:
-            continue
-            
-        # Find model directories in cache
-        # HF cache uses format: models--{org}--{model}
-        safe_repo_id = repo_id.replace("/", "--")
-        model_pattern = f"models--{safe_repo_id}"
-        
-        matching_dirs = list(hf_cache_path.glob(model_pattern))
-        
-        for model_dir in matching_dirs:
-            if model_dir.is_dir():
-                dest_dir = build_hf_dir / model_dir.name
-                print(f"  Copying {repo_id}: {model_dir} -> {dest_dir}")
-                try:
-                    shutil.copytree(model_dir, dest_dir, dirs_exist_ok=True)
-                except Exception as e:
-                    print(f"  Warning: Failed to copy {model_dir}: {e}")
 
 def create_ollama_pull_script(models: list[dict], build_dir: str) -> None:
     """
@@ -728,19 +658,22 @@ def build_docker_image(workflow_path: str, image_name: str, tag: str, platform: 
     models = extract_models(workflow_data)
     
     if models:
-        print(f"Found {len(models)} models to download at runtime:")
+        print(f"Found {len(models)} models to download during Docker build:")
         for model in models:
             if model.get("type", "").startswith("hf."):
                 print(f"  - HuggingFace {model['type']}: {model['repo_id']}")
                 if model.get('path'):
                     print(f"    Path: {model['path']}")
+                if model.get('variant'):
+                    print(f"    Variant: {model['variant']}")
             elif model.get("type") == "language_model" and model.get("provider") == "ollama":
                 print(f"  - Ollama: {model['id']}")
     
-    # Get the deploy directory where Dockerfile, runpod_handler.py, and start.sh are located
+    # Get the deploy directory where Dockerfile, runpod_handler.py, download_models.py are located
     script_dir = os.path.dirname(os.path.abspath(__file__))
     deploy_dockerfile_path = os.path.join(script_dir, "Dockerfile")
     runpod_handler_path = os.path.join(script_dir, "runpod_handler.py")
+    download_models_path = os.path.join(script_dir, "download_models.py")
     
     # Create a temporary build directory
     build_dir = tempfile.mkdtemp(prefix='nodetool_build_')
@@ -751,6 +684,7 @@ def build_docker_image(workflow_path: str, image_name: str, tag: str, platform: 
         shutil.copy(workflow_path, os.path.join(build_dir, "workflow.json"))
         shutil.copy(runpod_handler_path, os.path.join(build_dir, "runpod_handler.py"))
         shutil.copy(deploy_dockerfile_path, os.path.join(build_dir, "Dockerfile"))
+        shutil.copy(download_models_path, os.path.join(build_dir, "download_models.py"))
         
         # Create models.json file with list of all models
         models_file_path = os.path.join(build_dir, "models.json")
@@ -758,11 +692,6 @@ def build_docker_image(workflow_path: str, image_name: str, tag: str, platform: 
             json.dump(models, f, indent=2)
         print(f"Created models.json with {len(models)} models")
         
-        # Ensure HuggingFace model directory exists in build directory (even if empty)
-        os.makedirs(os.path.join(build_dir, "huggingface", "hub"), exist_ok=True)
-        
-        # Copy HuggingFace models from local cache
-        copy_hf_models_to_build_dir(models, build_dir)
         
         # Create script to pull Ollama models during Docker build
         create_ollama_pull_script(models, build_dir)

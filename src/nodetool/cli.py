@@ -937,14 +937,12 @@ def deploy(
 @click.option("--api-key", help="RunPod API key (can also use RUNPOD_API_KEY env var)")
 @click.option("--params", type=click.Path(exists=True), help="JSON file with workflow parameters")
 @click.option("--params-json", help="Inline JSON string with workflow parameters")
-@click.option("--output", help="Output file for results (default: auto-generated)")
 @click.option("--timeout", type=int, default=600, help="Timeout in seconds (default: 600)")
 def test_runpod(
     endpoint_id: str,
     api_key: str | None,
     params: str | None,
     params_json: str | None,
-    output: str | None,
     timeout: int,
 ):
     """Test deployed NodeTool workflow on RunPod serverless infrastructure.
@@ -958,9 +956,6 @@ def test_runpod(
       
       # Test with inline JSON parameters
       nodetool test-runpod --endpoint-id abc123def456 --params-json '{"text": "Hello World"}'
-      
-      # Test with custom timeout and output file
-      nodetool test-runpod --endpoint-id abc123def456 --timeout 120 --output results.json
     """
     import json
     import time
@@ -1036,20 +1031,6 @@ def test_runpod(
         # Display results
         console.print(f"\n[bold cyan]📊 Job Results:[/]")
         console.print(json.dumps(result, indent=2))
-        
-        # Save results
-        if output is None:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            output = f"runpod_result_{timestamp}.json"
-        
-        try:
-            with open(output, 'w') as f:
-                json.dump(result, f, indent=2)
-            
-            console.print(f"[bold green]💾 Results saved to: {output}[/]")
-            
-        except Exception as e:
-            console.print(f"[bold red]❌ Failed to save results: {e}[/]")
         
         console.print(f"\n[bold green]✅ Test completed successfully![/]")
         
