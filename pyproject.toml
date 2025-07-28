@@ -52,7 +52,7 @@ tqdm = "4.67.0"
 
 # Document processing dependencies
 bs4 = "0.0.2"
-langchain-text-splitters = "0.3.4"
+langchain-text-splitters = "0.3.9"
 html2text = "*"
 markitdown = "*"
 PyMuPDF = "1.25.2"
