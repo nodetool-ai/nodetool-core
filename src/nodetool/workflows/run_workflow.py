@@ -129,11 +129,14 @@ async def run_workflow(
             except Exception as e:
                 log.exception(e)
                 run_future.cancel()
+                yield Error(error=str(e), error_type="workflow_error")
                 yield JobUpdate(job_id=runner.job_id, status="failed", error=str(e))
             try:
                 run_future.result()
             except Exception as e:
-                print(f"An error occurred during workflow execution: {e}")
+                log.exception(e)
+                yield Error(error=str(e), error_type="workflow_error")
+                yield JobUpdate(job_id=runner.job_id, status="failed", error=str(e))
 
     else:
         run_task = asyncio.create_task(run())
