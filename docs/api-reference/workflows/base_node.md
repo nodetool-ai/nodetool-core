@@ -36,6 +36,10 @@ _parent_id (str | None): Identifier of the parent node, if any.
 _ui_properties (dict[str, Any]): UI-specific properties for the node.
 _visible (bool): Whether the node is visible in the UI.
 _layout (str): The layout style for the node in the UI.
+_trigger_mode (str): Determines when the node executes after its first run.
+``"all_inputs"`` waits for messages from every input before each run,
+while ``"any_input"`` allows subsequent runs when any single input receives a
+message. The initial run always waits for all inputs.
 
 Methods:
 Includes methods for initialization, property management, metadata generation,
