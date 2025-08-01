@@ -42,6 +42,7 @@ The documentation is organized into the following sections:
 - [**Chat Providers**](chat-providers.md) - Supported LLM backends
 - [**Examples**](../examples/README.md) - Example workflows
 - [**Runpod Deployment**](runpod-deployment.md) - Runpod Deployment
+- [**Hugging Face Deployment**](hf-deployment.md) - Deploy to HF Inference Endpoints
 - [**Runpod Testing Guide**](runpod_testing_guide.md) - Runpod Testing Guide
 
 ## Community
