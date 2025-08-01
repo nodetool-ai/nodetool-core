@@ -64,7 +64,7 @@ from nodetool.workflows.base_node import (
     OutputNode,
 )
 from nodetool.workflows.types import NodeProgress, NodeUpdate, OutputUpdate
-from nodetool.metadata.types import Event
+from nodetool.metadata.types import Event, MessageTextContent
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.common.environment import Environment
@@ -385,21 +385,7 @@ class WorkflowRunner:
                         node = input_nodes[key]
                         node.assign_property("value", value)
 
-                if req.messages:
-                    # find chat input node
-                    chat_input_node = next(
-                        (
-                            node
-                            for node in context.graph.nodes
-                            if node.get_node_type() == "nodetool.input.ChatInput"
-                        ),
-                        None,
-                    )
-                    if chat_input_node is None:
-                        raise ValueError(
-                            "Chat input node not found. Make sure you have a ChatInput node in your graph."
-                        )
-                    chat_input_node.assign_property("value", req.messages)
+                self._handle_messages(req, context)
                 await self.validate_graph(context, graph)
                 await self.initialize_graph(context, graph)
                 await self.process_graph(context, graph)
@@ -1884,6 +1870,61 @@ class WorkflowRunner:
                 f"Torch not available, falling back to regular process for node: {node.get_title()}"
             )
             return await node.process(context)
+
+    def _handle_messages(self, req: RunJobRequest, context: ProcessingContext):
+        """
+        Handles message assignment to appropriate input nodes.
+        
+        Args:
+            req (RunJobRequest): The request containing messages to be processed.
+            context (ProcessingContext): The processing context containing the graph.
+            
+        Raises:
+            ValueError: If no suitable input node is found or message content is invalid.
+        """
+        if not req.messages:
+            return
+            
+        chat_input_node = next(
+            (
+                node
+                for node in context.graph.nodes
+                if node.get_node_type() == "nodetool.input.ChatInput"
+            ),
+            None,
+        )
+        if chat_input_node is None:
+            string_input_node = next(
+                (
+                    node
+                    for node in context.graph.nodes
+                    if node.get_node_type() == "nodetool.input.StringInput"
+                ),
+                None,
+            )
+            if string_input_node is None:
+                raise ValueError(
+                    "Neither ChatInput nor StringInput node found. Make sure you have a ChatInput or StringInput node in your graph."
+                )
+            last_message_content = req.messages[-1].content
+            if isinstance(last_message_content, str):
+                string_input_node.assign_property("value", last_message_content)
+            elif isinstance(last_message_content, list):
+                text_content = next(
+                    (
+                        item.text
+                        for item in last_message_content
+                        if isinstance(item, MessageTextContent)
+                    ),
+                    None,
+                )
+                string_input_node.assign_property("value", text_content)
+            else:
+                raise ValueError(
+                    "Last message content is not a string or list. Make sure you have a ChatInput or StringInput node in your graph."
+                )
+        else:
+            chat_input_node.assign_property("value", req.messages)
 
 
 async def main():

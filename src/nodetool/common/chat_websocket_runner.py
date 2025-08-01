@@ -137,7 +137,7 @@ from nodetool.common.message_processors import (
 log = logging.getLogger(__name__)
 
 # Enable debug logging for this module
-log.setLevel(logging.DEBUG)
+# log.setLevel(logging.DEBUG)
 
 ollama_models: list[str] = []
 

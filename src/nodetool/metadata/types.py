@@ -1479,11 +1479,6 @@ class Message(BaseType):
     Text content or a list of message content objects, which can be text, images, or other types of content.
     """
 
-    error: str | None = None
-    """
-    The error message if the message is an error.
-    """
-
     error_type: str | None = None
     """
     The type of error if the message is an error.
