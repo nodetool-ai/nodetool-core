@@ -27,7 +27,7 @@ import json
 import asyncio
 from typing import AsyncGenerator, Optional, Dict, Any, List
 
-from nodetool.common.base_chat_runner import BaseChatRunner
+from nodetool.chat.base_chat_runner import BaseChatRunner
 from nodetool.metadata.types import Message as ApiMessage
 from nodetool.common.environment import Environment
 

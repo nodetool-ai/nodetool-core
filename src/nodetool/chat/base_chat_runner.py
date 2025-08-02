@@ -227,56 +227,31 @@ class BaseChatRunner(ABC):
             The created database message
         """
         if not self.use_database:
-            # Create a mock database message for compatibility
-            data_copy = message_data.copy()
-            data_copy.pop("id", None)
-            data_copy.pop("type", None)
-            data_copy.pop("user_id", None)
-            
-            # Use thread_id from message data if available
-            message_thread_id = data_copy.pop("thread_id", None) or ""
-            
-            # Create a mock DB message with a generated ID
-            import uuid
-            mock_db_message = type('MockDBMessage', (), {
-                'id': str(uuid.uuid4()),
-                'thread_id': message_thread_id,
-                'user_id': self.user_id or "",
-                'created_at': None,
-                **{k: v for k, v in data_copy.items()}
-            })()
-            
-            log.debug(f"Created mock message {mock_db_message.id} (database disabled)")
-            return mock_db_message
+            raise ValueError("Database is disabled")
         
-        try:
-            # Prepare data for database message creation
-            data_copy = message_data.copy()
-            data_copy.pop("id", None)
-            data_copy.pop("type", None)
-            data_copy.pop("user_id", None)
-            
-            # Use thread_id from message data if available
-            message_thread_id = data_copy.pop("thread_id", None) or ""
-            
-            # Run the database operation in a thread pool to avoid blocking
-            def _create_db_message():
-                return DBMessage.create(
-                    thread_id=message_thread_id,
-                    user_id=self.user_id or "",
-                    **data_copy
-                )
-            
-            # Execute in thread pool to make it non-blocking
-            loop = asyncio.get_event_loop()
-            db_message = await loop.run_in_executor(None, _create_db_message)
-            
-            log.debug(f"Saved message {db_message.id} to database asynchronously")
-            return db_message
-            
-        except Exception as e:
-            log.error(f"Error saving message to database: {e}", exc_info=True)
-            raise
+        # Prepare data for database message creation
+        data_copy = message_data.copy()
+        data_copy.pop("id", None)
+        data_copy.pop("type", None)
+        data_copy.pop("user_id", None)
+        
+        # Use thread_id from message data if available
+        message_thread_id = data_copy.pop("thread_id", None) or ""
+        
+        # Run the database operation in a thread pool to avoid blocking
+        def _create_db_message():
+            return DBMessage.create(
+                thread_id=message_thread_id,
+                user_id=self.user_id or "",
+                **data_copy
+            )
+        
+        # Execute in thread pool to make it non-blocking
+        loop = asyncio.get_event_loop()
+        db_message = await loop.run_in_executor(None, _create_db_message)
+        
+        log.debug(f"Saved message {db_message.id} to database asynchronously")
+        return db_message
 
     async def get_chat_history_from_db(self, thread_id: str) -> List[ApiMessage]:
         """
