@@ -271,6 +271,6 @@ See [`examples/chat_server_examples.py`](../examples/chat_server_examples.py) fo
 The chat server can be deployed standalone or integrated into existing FastAPI applications by importing the runner classes directly:
 
 ```python
-from nodetool.common.chat_websocket_runner import ChatWebSocketRunner
-from nodetool.common.chat_sse_runner import ChatSSERunner
+from nodetool.chat.chat_websocket_runner import ChatWebSocketRunner
+from nodetool.chat.chat_sse_runner import ChatSSERunner
 ```

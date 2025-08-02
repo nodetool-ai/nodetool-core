@@ -90,13 +90,15 @@ class BaseChatRunner(ABC):
     tool management. Subclasses need to implement transport-specific methods.
     """
 
-    def __init__(self, auth_token: str | None = None, use_database: bool = True):
+    def __init__(self, auth_token: str | None = None, use_database: bool = True, default_model: str = "gemma3n:latest", default_provider: str = "ollama"):
         self.auth_token = auth_token
         self.user_id: str | None = None
         self.supabase: AsyncClient | None = None
         self.all_tools: List[Tool] = []
         self.current_task: asyncio.Task | None = None
         self.use_database = use_database
+        self.default_model = default_model
+        self.default_provider = default_provider
 
     @abstractmethod
     async def connect(self, **kwargs) -> None:
@@ -769,6 +771,12 @@ class BaseChatRunner(ABC):
             
             # Update message data with the thread_id (in case it was created)
             data["thread_id"] = thread_id
+            
+            # Apply defaults if not specified
+            if not data.get("model"):
+                data["model"] = self.default_model
+            if not data.get("provider"):
+                data["provider"] = self.default_provider
             
             # Save message to database asynchronously (if enabled)
             if self.use_database:

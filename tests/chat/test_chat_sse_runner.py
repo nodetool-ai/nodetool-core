@@ -6,7 +6,7 @@ import pytest
 import json
 import asyncio
 from unittest.mock import Mock, AsyncMock, patch, MagicMock
-from nodetool.common.chat_sse_runner import ChatSSERunner
+from nodetool.chat.chat_sse_runner import ChatSSERunner
 from nodetool.common.environment import Environment
 
 

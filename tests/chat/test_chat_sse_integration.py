@@ -9,7 +9,7 @@ from fastapi.responses import StreamingResponse
 from fastapi.testclient import TestClient
 from unittest.mock import patch, AsyncMock, Mock
 
-from nodetool.common.chat_sse_runner import ChatSSERunner
+from nodetool.chat.chat_sse_runner import ChatSSERunner
 from nodetool.common.environment import Environment
 
 
@@ -63,8 +63,8 @@ class TestChatSSEIntegration:
             # Simulate some processing
             await asyncio.sleep(0.01)
             
-        with patch('nodetool.common.chat_sse_runner.ChatSSERunner.handle_message', side_effect=mock_handle_message):
-            with patch('nodetool.common.chat_sse_runner.ChatSSERunner._initialize_tools'):
+        with patch('nodetool.char.chat_sse_runner.ChatSSERunner.handle_message', side_effect=mock_handle_message):
+            with patch('nodetool.chat.chat_sse_runner.ChatSSERunner._initialize_tools'):
                 # Make the request
                 response = self.client.post(
                     "/chat/sse",

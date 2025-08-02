@@ -24,7 +24,7 @@ from typing import Optional, Dict, List
 from enum import Enum
 
 from fastapi import WebSocket
-from nodetool.common.base_chat_runner import BaseChatRunner
+from nodetool.chat.base_chat_runner import BaseChatRunner
 from nodetool.common.environment import Environment
 from nodetool.metadata.types import Message as ApiMessage
 
@@ -44,8 +44,8 @@ class ChatWebSocketRunner(BaseChatRunner):
     WebSocket-specific transport methods for real-time bidirectional communication.
     """
 
-    def __init__(self, auth_token: str | None = None, use_database: bool = True):
-        super().__init__(auth_token, use_database)
+    def __init__(self, auth_token: str | None = None, use_database: bool = True, default_model: str = "gemma3n:latest", default_provider: str = "ollama"):
+        super().__init__(auth_token, use_database, default_model, default_provider)
         self.websocket: WebSocket | None = None
         self.mode: WebSocketMode = WebSocketMode.BINARY
         # In-memory storage for chat history when database is disabled

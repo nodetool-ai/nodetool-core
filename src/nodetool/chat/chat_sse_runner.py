@@ -45,8 +45,8 @@ class ChatSSERunner(BaseChatRunner):
     sends a single request with all necessary data, and the server streams back events.
     """
 
-    def __init__(self, auth_token: str | None = None, use_database: bool = True):
-        super().__init__(auth_token, use_database)
+    def __init__(self, auth_token: str | None = None, use_database: bool = True, default_model: str = "gemma3n:latest", default_provider: str = "ollama"):
+        super().__init__(auth_token, use_database, default_model, default_provider)
         self.message_queue: asyncio.Queue[Optional[dict]] = asyncio.Queue()
         self.is_connected: bool = False
         # Store the provided chat history for this request
@@ -140,27 +140,6 @@ class ChatSSERunner(BaseChatRunner):
         # Use parent implementation for database mode
         return await super().get_chat_history_from_db(thread_id)
 
-    def format_sse_message(self, message: dict) -> str:
-        """
-        Format a message according to SSE protocol.
-
-        Args:
-            message: The message to format
-
-        Returns:
-            SSE-formatted string
-        """
-        # Determine event type
-        event_type = message.get("type", "message")
-        
-        # Format as SSE
-        if event_type in ["error", "end", "generation_stopped"]:
-            # Use named events for special types
-            return f"event: {event_type}\ndata: {json.dumps(message)}\n\n"
-        else:
-            # Default data-only format
-            return f"data: {json.dumps(message)}\n\n"
-
     async def stream_response(self, request_data: dict) -> AsyncGenerator[str, None]:
         """
         Process a chat request and stream SSE responses.
@@ -209,7 +188,7 @@ class ChatSSERunner(BaseChatRunner):
                         break
                         
                     # Format and yield SSE message
-                    yield self.format_sse_message(message)
+                    yield json.dumps(message) + "\n"
                     
                 except asyncio.TimeoutError:
                     # Check if processing task is done
@@ -220,7 +199,7 @@ class ChatSSERunner(BaseChatRunner):
                         except Exception as e:
                             # Send error and break
                             error_msg = {"type": "error", "message": str(e)}
-                            yield self.format_sse_message(error_msg)
+                            yield json.dumps(error_msg) + "\n"
                         break
                     continue
                     
@@ -228,11 +207,11 @@ class ChatSSERunner(BaseChatRunner):
             log.info("SSE streaming cancelled")
             # Send cancellation message
             cancel_msg = {"type": "generation_stopped", "message": "Generation stopped"}
-            yield self.format_sse_message(cancel_msg)
+            yield json.dumps(cancel_msg) + "\n"
         except Exception as e:
             log.error(f"Error in SSE streaming: {str(e)}", exc_info=True)
             error_msg = {"type": "error", "message": str(e)}
-            yield self.format_sse_message(error_msg)
+            yield json.dumps(error_msg) + "\n"
         finally:
             # Ensure cleanup
             await self.disconnect()
@@ -273,6 +252,6 @@ class ChatSSERunner(BaseChatRunner):
         except Exception as e:
             log.error(f"Error processing SSE request: {str(e)}", exc_info=True)
             error_msg = {"type": "error", "message": str(e)}
-            yield self.format_sse_message(error_msg)
+            yield json.dumps(error_msg)
         finally:
             await self.disconnect()

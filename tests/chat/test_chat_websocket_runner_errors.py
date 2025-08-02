@@ -6,7 +6,7 @@ import msgpack
 from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 
-from nodetool.common.chat_websocket_runner import ChatWebSocketRunner
+from nodetool.chat.chat_websocket_runner import ChatWebSocketRunner
 from nodetool.metadata.types import Message, Provider
 
 

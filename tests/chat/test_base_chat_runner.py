@@ -4,7 +4,7 @@ Tests for BaseChatRunner functionality
 
 import pytest
 from unittest.mock import Mock, AsyncMock, patch, MagicMock
-from nodetool.common.base_chat_runner import BaseChatRunner
+from nodetool.chat.base_chat_runner import BaseChatRunner
 from nodetool.common.environment import Environment
 from nodetool.models.message import Message as DBMessage
 from nodetool.metadata.types import Message as ApiMessage
@@ -252,7 +252,7 @@ class TestBaseChatRunner:
         self.runner.user_id = "user_123"
         
         # Mock workflow tools creation
-        with patch('nodetool.common.base_chat_runner.create_workflow_tools', return_value=[]):
+        with patch('nodetool.chat.base_chat_runner.create_workflow_tools', return_value=[]):
             # Mock package loading
             with patch('nodetool.packages.registry.Registry') as mock_registry:
                 mock_registry_instance = Mock()

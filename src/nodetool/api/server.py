@@ -10,7 +10,7 @@ from nodetool.common.environment import Environment
 
 from nodetool.common.huggingface_cache import huggingface_download_endpoint
 from nodetool.common.websocket_runner import WebSocketRunner
-from nodetool.common.chat_websocket_runner import ChatWebSocketRunner
+from nodetool.chat.chat_websocket_runner import ChatWebSocketRunner
 
 from fastapi import APIRouter, FastAPI, Request, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
@@ -180,11 +180,7 @@ def create_app(
 
         @app.websocket("/predict")
         async def websocket_endpoint(websocket: WebSocket):
-            runpod_endpoint_id = os.getenv("WORKFLOW_ENDPOINT_ID")
-            if runpod_endpoint_id:
-                await RunPodWebSocketRunner(runpod_endpoint_id).run(websocket)
-            else:
-                await WebSocketRunner().run(websocket)
+            await WebSocketRunner().run(websocket)
 
         @app.websocket("/chat")
         async def chat_websocket_endpoint(websocket: WebSocket):
