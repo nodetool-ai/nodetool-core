@@ -1,0 +1,361 @@
+"""
+Tests for BaseChatRunner functionality
+"""
+
+import pytest
+from unittest.mock import Mock, AsyncMock, patch, MagicMock
+from nodetool.common.base_chat_runner import BaseChatRunner
+from nodetool.common.environment import Environment
+from nodetool.models.message import Message as DBMessage
+from nodetool.metadata.types import Message as ApiMessage
+from nodetool.models.thread import Thread
+from nodetool.types.graph import Graph
+
+
+class TestChatRunner(BaseChatRunner):
+    """Concrete implementation of BaseChatRunner for testing"""
+    
+    def __init__(self, auth_token: str | None = None):
+        super().__init__(auth_token)
+        self.sent_messages = []
+        self.connection_state = False
+        
+    async def connect(self, **kwargs):
+        self.connection_state = True
+        
+    async def disconnect(self):
+        self.connection_state = False
+        
+    async def send_message(self, message: dict):
+        self.sent_messages.append(message)
+        
+    async def receive_message(self):
+        return None
+
+
+@pytest.mark.asyncio
+class TestBaseChatRunner:
+    """Test suite for BaseChatRunner functionality"""
+
+    def setup_method(self):
+        """Set up test fixtures"""
+        self.runner = TestChatRunner()
+
+    async def test_init(self):
+        """Test initialization of BaseChatRunner"""
+        runner = TestChatRunner("test_token")
+        assert runner.auth_token == "test_token"
+        assert runner.user_id is None
+        assert runner.supabase is None
+        assert runner.all_tools == []
+        assert runner.current_task is None
+
+    async def test_db_message_to_metadata_message(self):
+        """Test conversion from database message to metadata message"""
+        # Create a mock DB message
+        db_message = Mock(spec=DBMessage)
+        db_message.id = "test_id"
+        db_message.workflow_id = "workflow_123"
+        db_message.graph = {"nodes": [], "edges": []}
+        db_message.thread_id = "thread_123"
+        db_message.tools = ["tool1", "tool2"]
+        db_message.tool_call_id = "tool_call_123"
+        db_message.role = "user"
+        db_message.name = "test_user"
+        db_message.content = "Test content"
+        db_message.tool_calls = []
+        db_message.collections = []
+        db_message.input_files = []
+        db_message.output_files = []
+        db_message.created_at = Mock(isoformat=Mock(return_value="2024-01-01T00:00:00"))
+        db_message.provider = "openai"
+        db_message.model = "gpt-4"
+        db_message.agent_mode = True
+        db_message.workflow_assistant = False
+        db_message.help_mode = False
+
+        # Convert to metadata message
+        api_message = self.runner._db_message_to_metadata_message(db_message)
+
+        # Verify conversion
+        assert api_message.id == "test_id"
+        assert api_message.workflow_id == "workflow_123"
+        assert isinstance(api_message.graph, Graph)
+        assert api_message.thread_id == "thread_123"
+        assert api_message.tools == ["tool1", "tool2"]
+        assert api_message.role == "user"
+        assert api_message.content == "Test content"
+        assert api_message.provider == "openai"
+        assert api_message.model == "gpt-4"
+        assert api_message.agent_mode is True
+
+    async def test_metadata_message_to_db_message(self):
+        """Test conversion from metadata message to database message"""
+        self.runner.user_id = "user_123"
+        
+        # Create a metadata message
+        api_message = ApiMessage(
+            id="test_id",
+            workflow_id="workflow_123",
+            graph=Graph(nodes=[], edges=[]),
+            thread_id="thread_123",
+            tools=["tool1", "tool2"],
+            role="assistant",
+            content="Test response",
+            provider="anthropic",
+            model="claude-3",
+            agent_mode=False
+        )
+
+        # Mock DBMessage.create
+        with patch.object(DBMessage, 'create') as mock_create:
+            mock_db_message = Mock()
+            mock_create.return_value = mock_db_message
+            
+            # Convert to DB message
+            db_message = self.runner._metadata_message_to_db_message(api_message)
+            
+            # Verify DBMessage.create was called with correct arguments
+            mock_create.assert_called_once()
+            call_args = mock_create.call_args[1]
+            assert call_args['thread_id'] == "thread_123"
+            assert call_args['user_id'] == "user_123"
+            assert call_args['workflow_id'] == "workflow_123"
+            assert call_args['role'] == "assistant"
+            assert call_args['content'] == "Test response"
+            assert call_args['provider'] == "anthropic"
+            assert call_args['model'] == "claude-3"
+
+    async def test_save_message_to_db_async(self):
+        """Test asynchronous message saving to database"""
+        self.runner.user_id = "user_123"
+        
+        message_data = {
+            "thread_id": "thread_123",
+            "role": "user",
+            "content": "Test message",
+            "model": "gpt-4",
+            "provider": "openai"
+        }
+
+        # Mock DBMessage.create
+        with patch.object(DBMessage, 'create') as mock_create:
+            mock_db_message = Mock()
+            mock_db_message.id = "msg_123"
+            mock_create.return_value = mock_db_message
+            
+            # Save message
+            result = await self.runner._save_message_to_db_async(message_data)
+            
+            # Verify result
+            assert result == mock_db_message
+            mock_create.assert_called_once()
+
+    async def test_get_chat_history_from_db(self):
+        """Test fetching chat history from database"""
+        self.runner.user_id = "user_123"
+        
+        # Mock database messages
+        mock_messages = [
+            Mock(spec=DBMessage, id=f"msg_{i}", content=f"Message {i}", role="user")
+            for i in range(3)
+        ]
+        
+        # Set attributes for proper conversion
+        for msg in mock_messages:
+            msg.workflow_id = None
+            msg.graph = None
+            msg.thread_id = "thread_123"
+            msg.tools = []
+            msg.tool_call_id = None
+            msg.name = None
+            msg.tool_calls = []
+            msg.collections = []
+            msg.input_files = []
+            msg.output_files = []
+            msg.created_at = None
+            msg.provider = "openai"
+            msg.model = "gpt-4"
+            msg.agent_mode = False
+            msg.workflow_assistant = False
+            msg.help_mode = False
+
+        # Mock DBMessage.paginate
+        with patch.object(DBMessage, 'paginate', return_value=(mock_messages, None)):
+            # Get chat history
+            history = await self.runner.get_chat_history_from_db("thread_123")
+            
+            # Verify results
+            assert len(history) == 3
+            assert all(isinstance(msg, ApiMessage) for msg in history)
+            assert history[0].content == "Message 0"
+            assert history[1].content == "Message 1"
+            assert history[2].content == "Message 2"
+
+    async def test_ensure_thread_exists_create_new(self):
+        """Test thread creation when no thread_id is provided"""
+        self.runner.user_id = "user_123"
+        
+        # Mock Thread.create
+        with patch.object(Thread, 'create') as mock_create:
+            mock_thread = Mock()
+            mock_thread.id = "new_thread_123"
+            mock_create.return_value = mock_thread
+            
+            # Ensure thread exists
+            thread_id = await self.runner.ensure_thread_exists(None)
+            
+            # Verify new thread was created
+            assert thread_id == "new_thread_123"
+            mock_create.assert_called_once_with(user_id="user_123")
+
+    async def test_ensure_thread_exists_verify_existing(self):
+        """Test thread verification for existing thread"""
+        self.runner.user_id = "user_123"
+        
+        # Mock Thread.find
+        with patch.object(Thread, 'find') as mock_find:
+            mock_thread = Mock()
+            mock_thread.id = "existing_thread_123"
+            mock_find.return_value = mock_thread
+            
+            # Ensure thread exists
+            thread_id = await self.runner.ensure_thread_exists("existing_thread_123")
+            
+            # Verify existing thread was found
+            assert thread_id == "existing_thread_123"
+            mock_find.assert_called_once_with(user_id="user_123", id="existing_thread_123")
+
+    async def test_validate_token_success(self):
+        """Test successful token validation"""
+        # Mock supabase client
+        mock_supabase = Mock()
+        mock_session = Mock()
+        mock_session.access_token = "valid_token"
+        mock_supabase.auth.get_session = AsyncMock(return_value=mock_session)
+        
+        mock_user_response = Mock()
+        mock_user_response.user = Mock(id="user_123")
+        mock_supabase.auth.get_user = AsyncMock(return_value=mock_user_response)
+        
+        self.runner.supabase = mock_supabase
+        
+        # Validate token
+        is_valid = await self.runner.validate_token("valid_token")
+        
+        # Verify validation
+        assert is_valid is True
+        assert self.runner.user_id == "user_123"
+
+    async def test_initialize_tools(self):
+        """Test tool initialization"""
+        self.runner.user_id = "user_123"
+        
+        # Mock workflow tools creation
+        with patch('nodetool.common.base_chat_runner.create_workflow_tools', return_value=[]):
+            # Mock package loading
+            with patch('nodetool.packages.registry.Registry') as mock_registry:
+                mock_registry_instance = Mock()
+                mock_registry_instance.list_installed_packages.return_value = []
+                mock_registry.return_value = mock_registry_instance
+                
+                # Mock NODE_BY_TYPE
+                with patch('nodetool.workflows.base_node.NODE_BY_TYPE', {}):
+                    # Initialize tools
+                    self.runner._initialize_tools()
+                    
+                    # Verify tools were initialized
+                    assert isinstance(self.runner.all_tools, list)
+                    assert len(self.runner.all_tools) > 0  # Standard tools should be present
+
+    async def test_handle_message_regular_chat(self):
+        """Test handling a regular chat message"""
+        self.runner.user_id = "user_123"
+        
+        message_data = {
+            "thread_id": "thread_123",
+            "role": "user",
+            "content": "Test message",
+            "model": "gpt-4",
+            "provider": "openai"
+        }
+
+        # Mock dependencies
+        with patch.object(self.runner, 'ensure_thread_exists', return_value="thread_123"):
+            with patch.object(self.runner, '_save_message_to_db_async') as mock_save:
+                with patch.object(self.runner, 'process_messages') as mock_process:
+                    mock_db_message = Mock()
+                    mock_save.return_value = mock_db_message
+                    
+                    # Handle message
+                    await self.runner.handle_message(message_data)
+                    
+                    # Verify processing
+                    mock_save.assert_called_once()
+                    mock_process.assert_called_once_with("thread_123")
+
+    async def test_handle_message_agent_mode(self):
+        """Test handling a message in agent mode"""
+        self.runner.user_id = "user_123"
+        
+        message_data = {
+            "thread_id": "thread_123",
+            "role": "user",
+            "content": "Test message",
+            "model": "gpt-4",
+            "provider": "openai",
+            "agent_mode": True
+        }
+
+        # Mock dependencies
+        with patch.object(self.runner, 'ensure_thread_exists', return_value="thread_123"):
+            with patch.object(self.runner, '_save_message_to_db_async') as mock_save:
+                with patch.object(self.runner, 'process_agent_messages') as mock_process:
+                    mock_db_message = Mock()
+                    mock_db_message.agent_mode = True
+                    mock_save.return_value = mock_db_message
+                    
+                    # Mock the conversion method
+                    with patch.object(self.runner, '_db_message_to_metadata_message') as mock_convert:
+                        mock_api_message = Mock()
+                        mock_api_message.workflow_id = None
+                        mock_api_message.agent_mode = True
+                        mock_convert.return_value = mock_api_message
+                        
+                        # Handle message
+                        await self.runner.handle_message(message_data)
+                        
+                        # Verify agent processing
+                        mock_process.assert_called_once_with("thread_123")
+
+    async def test_handle_message_workflow(self):
+        """Test handling a workflow message"""
+        self.runner.user_id = "user_123"
+        
+        message_data = {
+            "thread_id": "thread_123",
+            "role": "user",
+            "content": "Test message",
+            "workflow_id": "workflow_123"
+        }
+
+        # Mock dependencies
+        with patch.object(self.runner, 'ensure_thread_exists', return_value="thread_123"):
+            with patch.object(self.runner, '_save_message_to_db_async') as mock_save:
+                with patch.object(self.runner, 'process_messages_for_workflow') as mock_process:
+                    mock_db_message = Mock()
+                    mock_db_message.workflow_id = "workflow_123"
+                    mock_save.return_value = mock_db_message
+                    
+                    # Mock the conversion method
+                    with patch.object(self.runner, '_db_message_to_metadata_message') as mock_convert:
+                        mock_api_message = Mock()
+                        mock_api_message.workflow_id = "workflow_123"
+                        mock_api_message.agent_mode = False
+                        mock_convert.return_value = mock_api_message
+                        
+                        # Handle message
+                        await self.runner.handle_message(message_data)
+                        
+                        # Verify workflow processing
+                        mock_process.assert_called_once_with("thread_123")

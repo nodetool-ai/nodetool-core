@@ -195,6 +195,144 @@ def chat():
     asyncio.run(chat_cli())
 
 
+@cli.command("chat-server")
+@click.option("--host", default="127.0.0.1", help="Host address to serve on.")
+@click.option("--port", default=8080, help="Port to serve on.", type=int)
+@click.option(
+    "--protocol", 
+    default="websocket", 
+    type=click.Choice(["websocket", "sse"]), 
+    help="Protocol to use: websocket or sse (Server-Sent Events)."
+)
+@click.option("--remote-auth", is_flag=True, help="Use remote authentication (Supabase).")
+@click.option("--no-database", is_flag=True, help="Run without database (in-memory for WebSocket, history in request for SSE).")
+def chat_server(host: str, port: int, protocol: str, remote_auth: bool, no_database: bool):
+    """Start a chat server using WebSocket or SSE protocol.
+    
+    Examples:
+      # Start WebSocket server on default port 8080
+      nodetool chat-server
+      
+      # Start SSE server on port 3000
+      nodetool chat-server --port 3000 --protocol sse
+      
+      # Start with remote authentication
+      nodetool chat-server --remote-auth
+    """
+    import asyncio
+    import uvicorn
+    from fastapi import FastAPI, WebSocket, Request, HTTPException
+    from fastapi.responses import StreamingResponse
+    from nodetool.common.environment import Environment
+    from nodetool.common.chat_websocket_runner import ChatWebSocketRunner
+    from nodetool.common.chat_sse_runner import ChatSSERunner
+
+    # Set authentication mode
+    Environment.set_remote_auth(remote_auth)
+
+    app = FastAPI(title="NodeTool Chat Server", version="1.0.0")
+
+    if protocol == "websocket":
+        @app.websocket("/chat")
+        async def websocket_chat(websocket: WebSocket):
+            """WebSocket endpoint for chat communication."""
+            # Get auth token from query parameters or headers
+            auth_token = websocket.query_params.get("token")
+            if not auth_token and "authorization" in websocket.headers:
+                auth_header = websocket.headers["authorization"]
+                if auth_header.startswith("Bearer "):
+                    auth_token = auth_header[7:]
+            
+            runner = ChatWebSocketRunner(auth_token, use_database=not no_database)
+            try:
+                await runner.run(websocket)
+            except Exception as e:
+                console.print(f"WebSocket error: {e}")
+            finally:
+                await runner.disconnect()
+
+        console.print(f"🚀 Starting WebSocket chat server on {host}:{port}")
+        console.print(f"WebSocket endpoint: ws://{host}:{port}/chat")
+        console.print("Authentication mode:", "Remote (Supabase)" if remote_auth else "Local (user_id=1)")
+        console.print("Database mode:", "Disabled (in-memory)" if no_database else "Enabled")
+        console.print("\nTo connect with auth token: ws://host:port/chat?token=YOUR_TOKEN")
+
+    else:  # SSE
+        @app.post("/chat/sse")
+        async def sse_chat(request: Request):
+            """SSE endpoint for chat communication."""
+            try:
+                # Get request data
+                data = await request.json()
+                
+                # Extract auth token from headers
+                auth_header = request.headers.get("authorization", "")
+                auth_token = auth_header.replace("Bearer ", "") if auth_header.startswith("Bearer ") else None
+                
+                # Add auth token to request data if provided
+                if auth_token:
+                    data["auth_token"] = auth_token
+                
+                # Create SSE runner and stream response
+                runner = ChatSSERunner(auth_token, use_database=not no_database)
+                
+                return StreamingResponse(
+                    runner.process_single_request(data),
+                    media_type="text/event-stream",
+                    headers={
+                        "Cache-Control": "no-cache",
+                        "Connection": "keep-alive",
+                        "Access-Control-Allow-Origin": "*",
+                        "Access-Control-Allow-Headers": "Authorization, Content-Type",
+                        "Access-Control-Allow-Methods": "POST, OPTIONS"
+                    }
+                )
+            except Exception as e:
+                console.print(f"SSE error: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @app.options("/chat/sse")
+        async def sse_chat_options():
+            """Handle CORS preflight requests."""
+            return {
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Headers": "Authorization, Content-Type",
+                "Access-Control-Allow-Methods": "POST, OPTIONS"
+            }
+
+        console.print(f"🚀 Starting SSE chat server on {host}:{port}")
+        console.print(f"SSE endpoint: http://{host}:{port}/chat/sse")
+        console.print("Authentication mode:", "Remote (Supabase)" if remote_auth else "Local (user_id=1)")
+        console.print("Database mode:", "Disabled (history in request)" if no_database else "Enabled")
+        console.print("\nSend POST requests with Authorization: Bearer YOUR_TOKEN header")
+        if no_database:
+            console.print("Include 'history' field in request payload with full conversation history")
+
+    @app.get("/health")
+    async def health_check():
+        """Health check endpoint."""
+        return {"status": "healthy", "protocol": protocol}
+
+    # Add graceful shutdown
+    @app.on_event("startup")
+    async def startup_event():
+        console.print(f"Chat server started successfully using {protocol.upper()} protocol")
+
+    @app.on_event("shutdown")
+    async def shutdown_event():
+        console.print("Chat server shutting down...")
+
+    # Run the server
+    try:
+        uvicorn.run(app, host=host, port=port, log_level="info")
+    except KeyboardInterrupt:
+        console.print("\n👋 Chat server stopped by user")
+    except Exception as e:
+        console.print(f"❌ Server error: {e}")
+        import sys
+        sys.exit(1)
+
+
 @cli.command("explorer")
 @click.option("--dir", "-d", default=".", help="Directory to start exploring from.")
 def explorer(dir: str):

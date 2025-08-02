@@ -1,4 +1,3 @@
-from chunk import Chunk
 from collections.abc import Sequence
 from datetime import datetime
 from enum import Enum
@@ -48,6 +47,7 @@ from nodetool.metadata.types import (
 )
 from nodetool.workflows.graph import Graph
 from nodetool.workflows.types import (
+    Chunk,
     NodeProgress,
     NodeUpdate,
     ProcessingMessage,
@@ -1407,7 +1407,7 @@ class ProcessingContext:
         """
         if df.columns:
             column_names = [col.name for col in df.columns]
-            return pd.DataFrame(df.data, columns=column_names)
+            return pd.DataFrame(df.data, columns=column_names) # type: ignore
         else:
             io = await self.asset_to_io(df)
             df = loads(io.read())

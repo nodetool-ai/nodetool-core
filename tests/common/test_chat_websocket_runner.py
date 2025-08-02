@@ -1,26 +1,46 @@
 """
-Tests for ChatWebSocketRunner authentication with Supabase
+Tests for ChatWebSocketRunner functionality
 """
 
 import pytest
+import json
+import msgpack
+import asyncio
 from unittest.mock import Mock, AsyncMock, patch, MagicMock
-from nodetool.common.chat_websocket_runner import ChatWebSocketRunner
+from fastapi import WebSocket
+from nodetool.common.chat_websocket_runner import ChatWebSocketRunner, WebSocketMode
 from nodetool.common.environment import Environment
 
 
 @pytest.mark.asyncio
-class TestChatWebSocketRunnerAuth:
-    """Test suite for ChatWebSocketRunner authentication functionality"""
+class TestChatWebSocketRunner:
+    """Test suite for ChatWebSocketRunner functionality"""
 
+    def setup_method(self):
+        """Set up test fixtures"""
+        self.runner = ChatWebSocketRunner("test_token")
+
+    async def test_init(self):
+        """Test initialization of ChatWebSocketRunner"""
+        runner = ChatWebSocketRunner("test_token")
+        assert runner.auth_token == "test_token"
+        assert runner.websocket is None
+        assert runner.mode == WebSocketMode.BINARY
+        # Inherited attributes
+        assert runner.user_id is None
+        assert runner.supabase is None
+        assert runner.all_tools == []
+
+    # Authentication Tests
     async def test_local_development_no_auth_required(self):
         """Test that authentication is bypassed in local development mode"""
-        with patch(
-            "nodetool.common.environment.Environment.use_remote_auth",
-            return_value=False,
-        ):
+        with patch.object(Environment, 'use_remote_auth', return_value=False):
             runner = ChatWebSocketRunner()
             websocket = Mock()
             websocket.accept = AsyncMock()
+            
+            # Mock _initialize_tools
+            runner._initialize_tools = Mock()
 
             await runner.connect(websocket)
 
@@ -33,9 +53,7 @@ class TestChatWebSocketRunnerAuth:
 
     async def test_missing_auth_token_when_required(self):
         """Test that missing auth token is rejected when authentication is required"""
-        with patch(
-            "nodetool.common.environment.Environment.use_remote_auth", return_value=True
-        ):
+        with patch.object(Environment, 'use_remote_auth', return_value=True):
             runner = ChatWebSocketRunner()  # No auth token provided
             websocket = Mock()
             websocket.close = AsyncMock()
@@ -51,9 +69,7 @@ class TestChatWebSocketRunnerAuth:
 
     async def test_invalid_auth_token(self):
         """Test that invalid auth token is rejected"""
-        with patch(
-            "nodetool.common.environment.Environment.use_remote_auth", return_value=True
-        ):
+        with patch.object(Environment, 'use_remote_auth', return_value=True):
             runner = ChatWebSocketRunner(auth_token="invalid_token")
             websocket = Mock()
             websocket.close = AsyncMock()
@@ -71,9 +87,7 @@ class TestChatWebSocketRunnerAuth:
 
     async def test_valid_auth_token(self):
         """Test that valid auth token is accepted"""
-        with patch(
-            "nodetool.common.environment.Environment.use_remote_auth", return_value=True
-        ):
+        with patch.object(Environment, 'use_remote_auth', return_value=True):
             runner = ChatWebSocketRunner(auth_token="valid_token")
             websocket = Mock()
             websocket.accept = AsyncMock()
@@ -84,6 +98,8 @@ class TestChatWebSocketRunnerAuth:
                 return True
 
             with patch.object(runner, "validate_token", side_effect=mock_validate):
+                # Mock _initialize_tools
+                runner._initialize_tools = Mock()
                 await runner.connect(websocket)
 
             # Verify connection was accepted
@@ -109,80 +125,229 @@ class TestChatWebSocketRunnerAuth:
         mock_supabase.auth.get_session = AsyncMock(return_value=mock_session)
         mock_supabase.auth.get_user = AsyncMock(return_value=mock_user_response)
 
-        # Mock the async client creation
-        with patch(
-            "nodetool.common.chat_websocket_runner.create_async_client",
-            AsyncMock(return_value=mock_supabase),
-        ):
-            with patch(
-                "nodetool.common.environment.Environment.get_supabase_url",
-                return_value="https://test.supabase.co",
-            ):
-                with patch(
-                    "nodetool.common.environment.Environment.get_supabase_key",
-                    return_value="test_key",
-                ):
-                    result = await runner.validate_token("test_jwt_token")
+        runner.supabase = mock_supabase
+
+        result = await runner.validate_token("test_jwt_token")
 
         # Verify the token validation was successful
         assert result is True
         assert runner.user_id == "user-123"
         mock_supabase.auth.get_user.assert_called_once_with("test_jwt_token")
 
-    async def test_validate_token_invalid_response(self):
-        """Test validate_token with invalid Supabase response"""
-        runner = ChatWebSocketRunner(auth_token="test_jwt_token")
+    # Connection Management Tests
+    async def test_disconnect(self):
+        """Test disconnect functionality"""
+        # Set up a connected state
+        websocket = Mock(spec=WebSocket)
+        websocket.close = AsyncMock()
+        self.runner.websocket = websocket
+        
+        # Create a proper asyncio task
+        async def dummy_task():
+            await asyncio.sleep(1)
+            
+        task = asyncio.create_task(dummy_task())
+        self.runner.current_task = task
+        
+        await self.runner.disconnect()
+        
+        # Verify cleanup
+        # Task should be cancelled but we need to handle the CancelledError
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass  # Expected
+        assert task.cancelled()
+        # Websocket should have been closed
+        websocket.close.assert_called_once()
+        # And then set to None
+        assert self.runner.websocket is None
+        assert self.runner.current_task is None
 
-        # Mock Supabase client with invalid response
-        mock_supabase = Mock()
-        mock_session = Mock()
-        mock_session.access_token = "different_token"  # Different token
-        mock_supabase.auth.get_session = AsyncMock(return_value=mock_session)
+    # Message Sending Tests
+    async def test_send_message_binary(self):
+        """Test sending binary messages"""
+        self.runner.websocket = Mock(spec=WebSocket)
+        self.runner.websocket.send_bytes = AsyncMock()
+        self.runner.mode = WebSocketMode.BINARY
+        
+        message = {"type": "test", "content": "Hello"}
+        await self.runner.send_message(message)
+        
+        # Verify message was packed and sent
+        expected_packed = msgpack.packb(message, use_bin_type=True)
+        self.runner.websocket.send_bytes.assert_called_once_with(expected_packed)
 
-        # Mock the async client creation
-        with patch(
-            "nodetool.common.chat_websocket_runner.create_async_client",
-            AsyncMock(return_value=mock_supabase),
-        ):
-            with patch(
-                "nodetool.common.environment.Environment.get_supabase_url",
-                return_value="https://test.supabase.co",
-            ):
-                with patch(
-                    "nodetool.common.environment.Environment.get_supabase_key",
-                    return_value="test_key",
-                ):
-                    result = await runner.validate_token("test_jwt_token")
+    async def test_send_message_text(self):
+        """Test sending text messages"""
+        self.runner.websocket = Mock(spec=WebSocket)
+        self.runner.websocket.send_text = AsyncMock()
+        self.runner.mode = WebSocketMode.TEXT
+        
+        message = {"type": "test", "content": "Hello"}
+        await self.runner.send_message(message)
+        
+        # Verify message was JSON encoded and sent
+        expected_json = json.dumps(message)
+        self.runner.websocket.send_text.assert_called_once_with(expected_json)
 
-        # Verify the token validation failed
-        assert result is False
+    # Message Receiving Tests
+    async def test_receive_message_binary(self):
+        """Test receiving binary messages"""
+        self.runner.websocket = Mock(spec=WebSocket)
+        
+        test_data = {"type": "chat", "content": "Hello"}
+        packed_data = msgpack.packb(test_data)
+        
+        self.runner.websocket.receive = AsyncMock(return_value={
+            "type": "websocket.message",
+            "bytes": packed_data
+        })
+        
+        # Receive message
+        result = await self.runner.receive_message()
+        
+        # Verify unpacking and mode setting
+        assert result == test_data
+        assert self.runner.mode == WebSocketMode.BINARY
 
-    async def test_validate_token_exception_handling(self):
-        """Test validate_token handles exceptions gracefully"""
-        runner = ChatWebSocketRunner(auth_token="test_jwt_token")
+    async def test_receive_message_text(self):
+        """Test receiving text messages"""
+        self.runner.websocket = Mock(spec=WebSocket)
+        
+        test_data = {"type": "chat", "content": "Hello"}
+        json_data = json.dumps(test_data)
+        
+        self.runner.websocket.receive = AsyncMock(return_value={
+            "type": "websocket.message",
+            "text": json_data
+        })
+        
+        # Receive message
+        result = await self.runner.receive_message()
+        
+        # Verify parsing and mode setting
+        assert result == test_data
+        assert self.runner.mode == WebSocketMode.TEXT
 
-        # Mock Supabase client to raise an exception
-        mock_supabase = Mock()
-        mock_supabase.auth.get_session = AsyncMock(side_effect=Exception("Supabase error"))
+    async def test_receive_message_disconnect(self):
+        """Test receiving disconnect message"""
+        self.runner.websocket = Mock(spec=WebSocket)
+        
+        self.runner.websocket.receive = AsyncMock(return_value={
+            "type": "websocket.disconnect"
+        })
+        
+        # Receive message
+        result = await self.runner.receive_message()
+        
+        # Verify None is returned for disconnect
+        assert result is None
 
-        # Mock the async client creation
-        with patch(
-            "nodetool.common.chat_websocket_runner.create_async_client",
-            AsyncMock(return_value=mock_supabase),
-        ):
-            with patch(
-                "nodetool.common.environment.Environment.get_supabase_url",
-                return_value="https://test.supabase.co",
-            ):
-                with patch(
-                    "nodetool.common.environment.Environment.get_supabase_key",
-                    return_value="test_key",
-                ):
-                    result = await runner.validate_token("test_jwt_token")
+    # Main Loop Tests
+    async def test_run_main_loop(self):
+        """Test the main run loop"""
+        websocket = Mock(spec=WebSocket)
+        self.runner.websocket = websocket  # Set websocket to avoid assertion error
+        
+        # Mock connect method
+        with patch.object(self.runner, 'connect', new_callable=AsyncMock) as mock_connect:
+            # Mock _receive_messages to simulate immediate completion
+            async def mock_receive():
+                await asyncio.sleep(0.01)  # Small delay to simulate work
+                return
+            
+            with patch.object(self.runner, '_receive_messages', side_effect=mock_receive):
+                await self.runner.run(websocket)
+                
+                # Verify connect was called
+                mock_connect.assert_called_once_with(websocket)
 
-        # Verify the token validation failed gracefully
-        assert result is False
+    # Message Handling Tests
+    async def test_receive_messages_stop_command(self):
+        """Test handling stop command in receive loop"""
+        self.runner.websocket = Mock(spec=WebSocket)
+        
+        # Create a mock current task
+        mock_task = Mock()
+        mock_task.done.return_value = False
+        mock_task.cancel = Mock()
+        self.runner.current_task = mock_task
+        
+        # Simulate receiving stop command then disconnect
+        messages = [
+            {"type": "stop"},
+            None  # Disconnect
+        ]
+        
+        with patch.object(self.runner, 'receive_message', side_effect=messages):
+            with patch.object(self.runner, 'send_message', new_callable=AsyncMock) as mock_send:
+                await self.runner._receive_messages()
+                
+                # Verify task was cancelled
+                mock_task.cancel.assert_called_once()
+                # Verify stop message was sent
+                mock_send.assert_called_once_with({
+                    "type": "generation_stopped", 
+                    "message": "Generation stopped by user"
+                })
 
+    async def test_receive_messages_normal_message(self):
+        """Test handling normal message in receive loop"""
+        self.runner.websocket = Mock(spec=WebSocket)
+        
+        test_message = {"type": "chat", "content": "Hello"}
+        
+        # Simulate receiving one message then disconnect
+        messages = [test_message, None]
+        
+        with patch.object(self.runner, 'receive_message', side_effect=messages):
+            with patch.object(self.runner, 'handle_message', new_callable=AsyncMock) as mock_handle:
+                await self.runner._receive_messages()
+                
+                # Verify message was handled
+                mock_handle.assert_called_once_with(test_message)
+
+    async def test_receive_messages_error_handling(self):
+        """Test error handling in receive loop"""
+        self.runner.websocket = Mock(spec=WebSocket)
+        
+        # Create a side effect that raises an exception on first call, then returns None
+        side_effects = [Exception("Test error"), None]
+        
+        with patch.object(self.runner, 'receive_message', side_effect=side_effects):
+            with patch.object(self.runner, 'send_message', new_callable=AsyncMock) as mock_send:
+                await self.runner._receive_messages()
+                
+                # Verify error message was sent
+                mock_send.assert_called_once()
+                error_msg = mock_send.call_args[0][0]
+                assert error_msg["type"] == "error"
+                assert "Test error" in error_msg["message"]
+
+    async def test_concurrent_message_handling(self):
+        """Test that new messages cancel ongoing processing"""
+        self.runner.websocket = Mock(spec=WebSocket)
+        
+        # Create a mock task that's still running
+        old_task = Mock()
+        old_task.done.return_value = False
+        old_task.cancel = Mock()
+        self.runner.current_task = old_task
+        
+        new_message = {"type": "chat", "content": "New message"}
+        
+        # Simulate receiving new message then disconnect
+        messages = [new_message, None]
+        
+        with patch.object(self.runner, 'receive_message', side_effect=messages):
+            with patch.object(self.runner, 'handle_message', new_callable=AsyncMock):
+                await self.runner._receive_messages()
+                
+                # Verify old task was cancelled
+                old_task.cancel.assert_called_once()
+
+    # Context Passing Tests
     async def test_user_id_passed_to_processing_context(self):
         """Test that user_id is correctly passed to ProcessingContext"""
         runner = ChatWebSocketRunner()

@@ -37,6 +37,7 @@ The documentation is organized into the following sections:
 - [**Chat WebSocket API**](chat-api.md) - Real time chat endpoint
 - [**CLI Reference**](cli.md) - Command line usage
 - [**Chat CLI**](chat-cli.md) - Interactive chat application
+- [**Chat Server**](chat-server.md) - Standalone chat server with WebSocket and SSE support
 - [**Agents**](agents.md) - Multi-step agent framework
 - [**Chat Module**](chat.md) - Conversational interface
 - [**Chat Providers**](chat-providers.md) - Supported LLM backends

@@ -43,6 +43,20 @@ Run a workflow by its ID.
 
 Start a nodetool chat session.
 
+### chat-server
+`nodetool chat-server [OPTIONS]`
+
+Start a chat server using WebSocket or SSE protocol.
+
+Options:
+- `--host` Host address to serve on (default: `127.0.0.1`)
+- `--port` Port to serve on (default: `8080`)
+- `--protocol` Protocol to use: `websocket` or `sse` (default: `websocket`)
+- `--remote-auth` Use remote authentication (Supabase)
+- `--no-database` Run without database (in-memory for WebSocket, history in request for SSE)
+
+See [Chat Server](chat-server.md) for detailed documentation and usage examples.
+
 ### explorer
 `nodetool explorer --dir DIR`
 
