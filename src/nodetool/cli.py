@@ -882,6 +882,9 @@ cli.add_command(settings)
 @click.option(
     "--local-docker", is_flag=True, help="Run local docker container instead of deploying to RunPod"
 )
+@click.option(
+    "--local", is_flag=True, help="Run local server without Docker"
+)
 def deploy(
     workflow_id: str | None,
     chat_handler: bool,
@@ -918,6 +921,7 @@ def deploy(
     list_data_centers: bool,
     list_all_options: bool,
     local_docker: bool,
+    local: bool,
 ):
     """Deploy workflow or chat handler to RunPod serverless infrastructure.
 
@@ -933,6 +937,9 @@ def deploy(
 
       # Run chat handler locally in Docker container
       nodetool deploy --chat-handler --local-docker
+
+      # Run chat handler locally without Docker
+      nodetool deploy --chat-handler --local
 
       # With specific GPU and regions
       nodetool deploy --workflow-id abc123 --gpu-types AMPERE_24 --gpu-types ADA_48_PRO --data-centers US-CA-2 --data-centers US-GA-1
@@ -1175,6 +1182,50 @@ def deploy(
                                  provider=provider, default_model=default_model)
             else:
                 build_docker_image(workflow_path, full_image_name, image_tag, platform)
+
+        # If local option is enabled, run RunPod handler as subprocess without Docker
+        if local:
+            console.print(f"[bold green]🚀 Starting local RunPod handler...[/]")
+            import subprocess
+            import sys
+            import os
+            
+            # Set environment variables for the handler
+            env = os.environ.copy()
+            env["RUNTIMEENV"] = "RUNPOD"
+            
+            if chat_handler:
+                env["NODETOOL_PROVIDER"] = provider
+                env["NODETOOL_DEFAULT_MODEL"] = default_model
+                env["CHAT_HANDLER"] = "true"
+                console.print(f"Chat handler mode: provider={provider}, model={default_model}")
+            else:
+                env["WORKFLOW_PATH"] = workflow_path
+                console.print(f"Workflow mode: {workflow_name}")
+
+            handler_path = "nodetool.deploy.runpod_chat_handler" if chat_handler else "nodetool.deploy.runpod_handler"
+            
+            # Run the handler with RunPod parameters
+            handler_cmd = [
+                sys.executable, "-m", handler_path,
+                "--rp_serve_api",
+                "--rp_api_port", "8080",
+                "--rp_api_host", "0.0.0.0",
+                "--rp_log_level", "DEBUG"
+            ]
+            
+            console.print(f"API available at: http://localhost:8080")
+            console.print(f"Press Ctrl+C to stop the server")
+            console.print(f"Command: {' '.join(handler_cmd)}")
+            
+            try:
+                subprocess.run(handler_cmd, env=env, check=True)
+            except KeyboardInterrupt:
+                console.print(f"[bold yellow]🛑 Server stopped by user[/]")
+            except subprocess.CalledProcessError as e:
+                console.print(f"[bold red]❌ Handler failed with exit code {e.returncode}[/]")
+                sys.exit(1)
+            return
 
         # If local docker option is enabled, run container locally instead of deploying to RunPod
         if local_docker:
