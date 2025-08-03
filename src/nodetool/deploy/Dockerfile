@@ -21,11 +21,8 @@ RUN curl -fsSL https://ollama.com/install.sh | sh
 RUN mkdir -p /app/.cache/huggingface/hub
 ENV HF_HUB_CACHE=/app/.cache/huggingface/hub
     
-# Copy all of our files into the container
-COPY runpod_handler.py $WORKSPACE_DIR/handler.py
-COPY workflow.json $WORKSPACE_DIR/workflow.json
-COPY models.json $WORKSPACE_DIR/models.json
-COPY download_models.py $WORKSPACE_DIR/download_models.py
+# Copy all available files into the container
+COPY . $WORKSPACE_DIR/
 
 # Download HuggingFace models using the models.json specification
 RUN /app/.venv/bin/python $WORKSPACE_DIR/download_models.py $WORKSPACE_DIR/models.json || echo "Model download completed with some errors"
@@ -34,5 +31,9 @@ RUN /app/.venv/bin/python $WORKSPACE_DIR/download_models.py $WORKSPACE_DIR/model
 COPY pull_ollama_models.sh $WORKSPACE_DIR/pull_ollama_models.sh
 RUN chmod +x $WORKSPACE_DIR/pull_ollama_models.sh && $WORKSPACE_DIR/pull_ollama_models.sh
 
-# Run the handler
-CMD ollama serve & /app/.venv/bin/python -u /app/handler.py --rp_log_level=DEBUG
+# Copy startup script
+COPY start.sh $WORKSPACE_DIR/start.sh
+RUN chmod +x $WORKSPACE_DIR/start.sh
+
+# Run the startup script
+CMD ["/app/start.sh"]

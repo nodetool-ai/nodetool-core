@@ -742,7 +742,12 @@ cli.add_command(settings)
 
 @cli.command("deploy")
 @click.option(
-    "--workflow-id", help="Workflow ID to deploy (required unless using list options)"
+    "--workflow-id", help="Workflow ID to deploy (required unless using --chat-handler)"
+)
+@click.option(
+    "--chat-handler", 
+    is_flag=True, 
+    help="Deploy chat handler instead of workflow (provides OpenAI-compatible chat API)"
 )
 @click.option(
     "--docker-username",
@@ -850,6 +855,17 @@ cli.add_command(settings)
     multiple=True,
     help="Allowed CUDA versions (can specify multiple)",
 )
+# Chat handler specific options
+@click.option(
+    "--provider",
+    default="ollama",
+    help="AI provider to use for chat handler (default: ollama)",
+)
+@click.option(
+    "--default-model",
+    default="gemma3n:latest",
+    help="Default AI model to use for chat handler (default: gemma3n:latest)",
+)
 # List options
 @click.option(
     "--list-gpu-types", is_flag=True, help="List all available GPU types and exit"
@@ -863,8 +879,12 @@ cli.add_command(settings)
 @click.option(
     "--list-all-options", is_flag=True, help="List all available options and exit"
 )
+@click.option(
+    "--local-docker", is_flag=True, help="Run local docker container instead of deploying to RunPod"
+)
 def deploy(
     workflow_id: str | None,
+    chat_handler: bool,
     docker_username: str | None,
     docker_registry: str,
     image_name: str | None,
@@ -891,16 +911,28 @@ def deploy(
     flashboot: bool,
     network_volume_id: str | None,
     allowed_cuda_versions: tuple,
+    provider: str,
+    default_model: str,
     list_gpu_types: bool,
     list_cpu_flavors: bool,
     list_data_centers: bool,
     list_all_options: bool,
+    local_docker: bool,
 ):
-    """Deploy workflow to RunPod serverless infrastructure.
+    """Deploy workflow or chat handler to RunPod serverless infrastructure.
 
     Examples:
-      # Basic deployment
+      # Basic workflow deployment
       nodetool deploy --workflow-id abc123
+
+      # Deploy chat handler (OpenAI-compatible API)
+      nodetool deploy --chat-handler
+
+      # Deploy chat handler with custom provider and model
+      nodetool deploy --chat-handler --provider anthropic --default-model claude-3-opus-20240229
+
+      # Run chat handler locally in Docker container
+      nodetool deploy --chat-handler --local-docker
 
       # With specific GPU and regions
       nodetool deploy --workflow-id abc123 --gpu-types AMPERE_24 --gpu-types ADA_48_PRO --data-centers US-CA-2 --data-centers US-GA-1
@@ -1024,15 +1056,21 @@ def deploy(
 
         sys.exit(0)
 
-    # Validate that workflow-id is provided for deployment operations
-    if not workflow_id:
-        console.print("❌ Error: --workflow-id is required for deployment operations")
+    # Validate that either workflow-id or chat-handler is provided
+    if not workflow_id and not chat_handler:
+        console.print("❌ Error: Either --workflow-id or --chat-handler is required for deployment operations")
         console.print(
             "Use --help to see available options or use one of the list commands:"
         )
         console.print(
             "  --list-gpu-types, --list-cpu-flavors, --list-data-centers, --list-all-options"
         )
+        sys.exit(1)
+
+    # Validate that both workflow-id and chat-handler are not provided together
+    if workflow_id and chat_handler:
+        console.print("❌ Error: Cannot use both --workflow-id and --chat-handler options together")
+        console.print("Choose either workflow deployment or chat handler deployment")
         sys.exit(1)
 
     # Get Docker username from multiple sources
@@ -1075,11 +1113,42 @@ def deploy(
             console.print("Error: Docker is not installed or not running")
             sys.exit(1)
 
-    # Fetch workflow from database
-    workflow_path, workflow_name = fetch_workflow_from_db(workflow_id)
-
-    # Set defaults based on workflow name
-    base_image_name = image_name or sanitize_name(workflow_name)
+    # Handle chat handler vs workflow deployment
+    if chat_handler:
+        # For chat handler, create a dummy workflow file and set names
+        import tempfile
+        import json
+        
+        workflow_fd, workflow_path = tempfile.mkstemp(suffix='.json', prefix='chat_handler_')
+        with os.fdopen(workflow_fd, 'w') as f:
+            # Create minimal structure for chat handler
+            dummy_workflow = {
+                "name": "chat-handler",
+                "graph": {"nodes": [], "edges": []}
+            }
+            f.write(json.dumps(dummy_workflow))
+        
+        workflow_name = "chat-handler"
+        base_image_name = image_name or "nodetool-chat-handler"
+        console.print(f"Deploying chat handler with provider: {provider}, model: {default_model}")
+        if provider == "ollama":
+            embed_models = [
+                {
+                    "id": default_model,
+                    "type": "language_model",
+                    "provider": provider,
+                    "model": default_model,
+                }
+            ]
+        else:
+            embed_models = []
+    else:
+        # Fetch workflow from database
+        assert workflow_id, "Workflow ID is required for workflow deployment"
+        workflow_path, workflow_name = fetch_workflow_from_db(workflow_id)
+        base_image_name = image_name or sanitize_name(workflow_name)
+        embed_models = []
+    
     console.print(f"Using base image name: {base_image_name}")
 
     # Format full image name with registry and username
@@ -1098,9 +1167,40 @@ def deploy(
     endpoint_id = None
 
     try:
-        # Build Docker image with embedded workflow
+        # Build Docker image with embedded workflow or chat handler
         if not skip_build:
-            build_docker_image(workflow_path, full_image_name, image_tag, platform)
+            if chat_handler:
+                build_docker_image(workflow_path, full_image_name, image_tag, platform, 
+                                 embed_models=embed_models, chat_handler=True, 
+                                 provider=provider, default_model=default_model)
+            else:
+                build_docker_image(workflow_path, full_image_name, image_tag, platform)
+
+        # If local docker option is enabled, run container locally instead of deploying to RunPod
+        if local_docker:
+            console.print(f"[bold green]🐳 Starting local Docker container...[/]")
+            from nodetool.deploy.deploy_to_runpod import run_command
+            
+            # Run the docker container using start.sh with RunPod parameters
+            docker_run_cmd = [
+                "docker", "run", "-d", 
+                "-p", "8080:8080",
+                "--name", f"{base_image_name}-{image_tag}",
+                f"{full_image_name}:{image_tag}",
+                "/app/start.sh",
+                "--rp_serve_api", 
+                "--rp_api_port", "8080", 
+                "--rp_api_host", "0.0.0.0", 
+                "--rp_log_level", "DEBUG"
+            ]
+            
+            result = run_command(" ".join(docker_run_cmd))
+            console.print(f"[bold green]✅ Local Docker container started successfully![/]")
+            console.print(f"Container name: {base_image_name}-{image_tag}")
+            console.print(f"API available at: http://localhost:8080")
+            console.print(f"To stop the container: docker stop {base_image_name}-{image_tag}")
+            console.print(f"To remove the container: docker rm {base_image_name}-{image_tag}")
+            return
 
         if not skip_push:
             push_to_registry(full_image_name, image_tag, docker_registry)
@@ -1119,9 +1219,10 @@ def deploy(
                 list(allowed_cuda_versions) if allowed_cuda_versions else None
             )
 
+            endpoint_name = workflow_id if workflow_id else f"chat-handler-{provider}-{default_model.replace(':', '-').replace('/', '-')}"
             endpoint_id = create_runpod_endpoint(
                 template_id=template_id,
-                name=workflow_id,
+                name=endpoint_name,
                 compute_type=compute_type,
                 gpu_type_ids=gpu_type_ids,
                 gpu_count=gpu_count,
@@ -1140,13 +1241,20 @@ def deploy(
             )
 
         console.print(f"\n🎉 Deployment completed successfully!")
-        console.print(f"Workflow ID: {workflow_id}")
+        if chat_handler:
+            console.print(f"Chat Handler: {provider} provider with {default_model} model")
+        else:
+            console.print(f"Workflow ID: {workflow_id}")
         console.print(f"Image: {full_image_name}:{image_tag}")
         console.print(f"Platform: {platform}")
         if template_id:
             console.print(f"Template ID: {template_id}")
         if endpoint_id:
             console.print(f"Endpoint ID: {endpoint_id}")
+            if chat_handler:
+                console.print(f"\nThe chat handler provides OpenAI-compatible endpoints:")
+                console.print(f"- Models: POST /v1/models")
+                console.print(f"- Chat: POST /v1/chat/completions")
 
     except Exception as e:
         console.print(f"[bold red]Deployment failed: {e}[/]")
