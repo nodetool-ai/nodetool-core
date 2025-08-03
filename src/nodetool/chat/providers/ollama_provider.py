@@ -226,11 +226,14 @@ class OllamaProvider(ChatProvider):
                 if isinstance(message.content, BaseModel):
                     content = message.content.model_dump_json()
                 else:
-                    content = (
-                        json.dumps(message.content)
-                        if isinstance(message.content, (dict, list))
-                        else str(message.content)
-                    )
+                    if isinstance(message.content, dict):
+                        content = json.dumps(message.content)
+                    elif isinstance(message.content, list):
+                        content = json.dumps(
+                            [part.model_dump() for part in message.content]
+                        )
+                    else:
+                        content = str(message.content)
                 return {"role": "tool", "content": content, "name": message.name}
         elif message.role == "system":
             return {"role": "system", "content": message.content}
