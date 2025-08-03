@@ -99,6 +99,22 @@ class ChatWebSocketRunner(BaseChatRunner):
         self.in_memory_history[thread_id].append(message)
         log.debug(f"Saved message to in-memory storage for thread {thread_id}")
 
+    async def _save_message_to_db_async(self, message_data: dict) -> ApiMessage:
+        """
+        Override to save to in-memory storage when database is disabled.
+        """
+        if not self.use_database:
+            # Create API message directly and save to memory
+            metadata_message = ApiMessage(**message_data)
+            thread_id = message_data.get("thread_id", "")
+            if thread_id:
+                self._save_message_to_memory(thread_id, metadata_message)
+            log.debug("Created and saved message to in-memory storage")
+            return metadata_message
+        
+        # Use parent implementation for database mode
+        return await super()._save_message_to_db_async(message_data)
+
     async def get_chat_history_from_db(self, thread_id: str) -> List[ApiMessage]:
         """
         Override to provide in-memory chat history when database is disabled.
@@ -114,7 +130,7 @@ class ChatWebSocketRunner(BaseChatRunner):
 
     async def handle_message(self, data: dict):
         """
-        Override to save messages to in-memory storage when database is disabled.
+        Override to save messages to in-memory storage when database is disabled and load messages before calling handle_message_impl.
         """
         try:
             # Extract thread_id from message data and ensure thread exists
@@ -124,24 +140,39 @@ class ChatWebSocketRunner(BaseChatRunner):
             # Update message data with the thread_id (in case it was created)
             data["thread_id"] = thread_id
             
-            # Handle message storage based on database mode
+            # Apply defaults if not specified
+            if not data.get("model"):
+                data["model"] = self.default_model
+            if not data.get("provider"):
+                data["provider"] = self.default_provider
+            
+            # Handle message storage and loading based on database mode
             if self.use_database:
-                # Use parent implementation for database mode
-                await super().handle_message(data)
+                # Save message to database asynchronously (if enabled)
+                try:
+                    db_message = await self._save_message_to_db_async(data)
+                    # Convert to metadata message for processing
+                    metadata_message = self._db_message_to_metadata_message(db_message)
+                    log.debug("Saved message to database asynchronously")
+                except Exception as db_error:
+                    log.error(f"Database save failed, continuing with in-memory message: {db_error}")
+                    # Create a fallback API message for processing even if DB save fails
+                    metadata_message = ApiMessage(**data)
+                    log.debug("Created fallback message for processing")
+                
+                # Load messages from database
+                chat_history = await self.get_chat_history_from_db(thread_id)
             else:
                 # Create API message directly and save to memory
                 metadata_message = ApiMessage(**data)
                 self._save_message_to_memory(thread_id, metadata_message)
                 log.debug("Created and saved message to in-memory storage")
+                
+                # Load messages from in-memory storage
+                chat_history = await self.get_chat_history_from_db(thread_id)
 
-                # Process the message through the appropriate processor
-                if metadata_message.workflow_id:
-                    await self.process_messages_for_workflow(thread_id)
-                else:
-                    if metadata_message.agent_mode:
-                        await self.process_agent_messages(thread_id)
-                    else:
-                        await self.process_messages(thread_id)
+            # Call the implementation method with the loaded messages
+            await self.handle_message_impl(chat_history)
 
         except asyncio.CancelledError:
             log.info("Message processing cancelled by user")

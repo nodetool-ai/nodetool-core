@@ -525,7 +525,6 @@ class BaseChatRunner(ABC):
             while processor.has_messages() or processor.is_processing:
                 message = await processor.get_message()
                 if message:
-                    print(message)
                     if message["type"] == "message":
                         # Save assistant message to database asynchronously (if enabled)
                         if self.use_database:
@@ -552,11 +551,11 @@ class BaseChatRunner(ABC):
                 pass
             raise
 
-    async def process_messages(self, thread_id: str):
+    async def process_messages(self, messages: list[ApiMessage]):
         """
         Process messages without a workflow, typically for general chat interactions.
         """
-        chat_history = await self.get_chat_history_from_db(thread_id)
+        chat_history = messages
         if not chat_history:
             raise ValueError("No chat history available")
         
@@ -641,11 +640,11 @@ class BaseChatRunner(ABC):
             except Exception:
                 raise
 
-    async def process_agent_messages(self, thread_id: str):
+    async def process_agent_messages(self, messages: list[ApiMessage]):
         """
         Process messages using the Agent, similar to the CLI implementation.
         """
-        chat_history = await self.get_chat_history_from_db(thread_id)
+        chat_history = messages
         if not chat_history:
             raise ValueError("No chat history available")
         
@@ -679,11 +678,11 @@ class BaseChatRunner(ABC):
             tools=selected_tools,
         )
 
-    async def process_messages_for_workflow(self, thread_id: str):
+    async def process_messages_for_workflow(self, messages: list[ApiMessage]):
         """
         Processes messages that are part of a defined workflow.
         """
-        chat_history = await self.get_chat_history_from_db(thread_id)
+        chat_history = messages
         processor = WorkflowMessageProcessor(self.user_id)
         processing_context = ProcessingContext(user_id=self.user_id)
         
@@ -760,51 +759,24 @@ class BaseChatRunner(ABC):
             log.error(f"Error in _trigger_workflow_editing: {e}", exc_info=True)
             return {"success": False, "error": error_msg}
 
-    async def handle_message(self, data: dict):
+    async def handle_message_impl(self, messages: list[ApiMessage]):
         """
         Handle a single message by parsing it and dispatching to the appropriate processor.
+        This implementation method should be called by subclasses with the full message list.
         """
+        if not messages:
+            raise ValueError("No messages provided")
+        
+        last_message = messages[-1]
         try:
-            # Extract thread_id from message data and ensure thread exists
-            thread_id = data.get("thread_id")
-            thread_id = await self.ensure_thread_exists(thread_id)
-            
-            # Update message data with the thread_id (in case it was created)
-            data["thread_id"] = thread_id
-            
-            # Apply defaults if not specified
-            if not data.get("model"):
-                data["model"] = self.default_model
-            if not data.get("provider"):
-                data["provider"] = self.default_provider
-            
-            # Save message to database asynchronously (if enabled)
-            if self.use_database:
-                try:
-                    db_message = await self._save_message_to_db_async(data)
-                    # Convert to metadata message for processing
-                    metadata_message = self._db_message_to_metadata_message(db_message)
-                    log.debug("Saved message to database asynchronously")
-                except Exception as db_error:
-                    log.error(f"Database save failed, continuing with in-memory message: {db_error}")
-                    # Create a fallback API message for processing even if DB save fails
-                    from nodetool.metadata.types import Message as ApiMessage
-                    metadata_message = ApiMessage(**data)
-                    log.debug("Created fallback message for processing")
-            else:
-                # Create API message directly when database is disabled
-                from nodetool.metadata.types import Message as ApiMessage
-                metadata_message = ApiMessage(**data)
-                log.debug("Created message for processing (database disabled)")
-
             # Process the message through the appropriate processor
-            if metadata_message.workflow_id:
-                await self.process_messages_for_workflow(thread_id)
+            if last_message.workflow_id:
+                await self.process_messages_for_workflow(messages)
             else:
-                if metadata_message.agent_mode:
-                    await self.process_agent_messages(thread_id)
+                if last_message.agent_mode:
+                    await self.process_agent_messages(messages)
                 else:
-                    await self.process_messages(thread_id)
+                    await self.process_messages(messages)
 
         except asyncio.CancelledError:
             log.info("Message processing cancelled by user")

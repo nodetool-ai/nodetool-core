@@ -83,7 +83,7 @@ assert RUNPOD_API_KEY, "RUNPOD_API_KEY environment variable is not set"
 
 
 # RunPod API Enums and Constants
-class ComputeType(Enum):
+class ComputeType(str, Enum):
     """Compute types for RunPod endpoints."""
     CPU = "CPU"
     GPU = "GPU"
@@ -96,7 +96,7 @@ class ComputeType(Enum):
         return [item.value for item in cls]
 
 
-class ScalerType(Enum):
+class ScalerType(str, Enum):
     """Scaler types for RunPod endpoints."""
     QUEUE_DELAY = "QUEUE_DELAY"
     REQUEST_COUNT = "REQUEST_COUNT"
@@ -109,7 +109,7 @@ class ScalerType(Enum):
         return [item.value for item in cls]
 
 
-class GPUType(Enum):
+class GPUType(str, Enum):
     """GPU types available in RunPod using their official GPU ID codes."""
     # Ada Lovelace Architecture
     ADA_24 = "ADA_24"  # L4, RTX 4000 series consumer cards
@@ -134,7 +134,7 @@ class GPUType(Enum):
         return [item.value for item in cls]
 
 
-class CPUFlavor(Enum):
+class CPUFlavor(str, Enum):
     """CPU flavor IDs for RunPod endpoints."""
     CPU_3C = "cpu3c"
     CPU_3G = "cpu3g"
@@ -149,7 +149,7 @@ class CPUFlavor(Enum):
         return [item.value for item in cls]
 
 
-class DataCenter(Enum):
+class DataCenter(str, Enum):
     """Data center locations for RunPod endpoints."""
     # United States
     US_CALIFORNIA_2 = "US-CA-2"
@@ -197,7 +197,7 @@ class DataCenter(Enum):
         return [item.value for item in cls]
 
 
-class CUDAVersion(Enum):
+class CUDAVersion(str, Enum):
     """CUDA versions available in RunPod."""
     CUDA_11_8 = "11.8"
     CUDA_12_0 = "12.0"

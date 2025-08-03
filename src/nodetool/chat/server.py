@@ -234,19 +234,20 @@ from nodetool.common.environment import Environment
 from nodetool.chat.chat_websocket_runner import ChatWebSocketRunner
 from nodetool.chat.chat_sse_runner import ChatSSERunner
 from rich.console import Console
+from nodetool.api.model import get_language_models
+import json
 
 console = Console()
 
 
-def create_chat_server(protocol: str, remote_auth: bool, no_database: bool, default_model: str = "gemma3n:latest", default_provider: str = "ollama") -> FastAPI:
+def create_chat_server(remote_auth: bool, use_database: bool, provider: str, default_model: str = "gemma3n:latest") -> FastAPI:
     """Create a FastAPI chat server instance.
     
     Args:
-        protocol: Protocol to use ('websocket' or 'sse')
         remote_auth: Whether to use remote authentication
-        no_database: Whether to run without database
+        use_database: Whether to run without database
+        provider: Provider to use
         default_model: Default model to use when not specified by client
-        default_provider: Default provider to use when not specified by client
         
     Returns:
         FastAPI application instance
@@ -255,45 +256,34 @@ def create_chat_server(protocol: str, remote_auth: bool, no_database: bool, defa
     Environment.set_remote_auth(remote_auth)
 
     app = FastAPI(title="NodeTool Chat Server", version="1.0.0")
+    # OpenAI-compatible chat completions endpoint
+    @app.post("/v1/chat/completions")
+    async def openai_chat_completions(request: Request):
+        """OpenAI-compatible chat completions endpoint mirroring /chat/sse behaviour."""
+        try:
+            data = await request.json()
+            auth_header = request.headers.get("authorization", "")
+            auth_token = auth_header.replace("Bearer ", "") if auth_header.startswith("Bearer ") else None
+            if auth_token:
+                data["auth_token"] = auth_token
 
-    if protocol == "websocket":
-        @app.websocket("/chat")
-        async def websocket_chat(websocket: WebSocket):
-            """WebSocket endpoint for chat communication."""
-            # Get auth token from query parameters or headers
-            auth_token = websocket.query_params.get("token")
-            if not auth_token and "authorization" in websocket.headers:
-                auth_header = websocket.headers["authorization"]
-                if auth_header.startswith("Bearer "):
-                    auth_token = auth_header[7:]
-            
-            runner = ChatWebSocketRunner(auth_token, use_database=not no_database, default_model=default_model, default_provider=default_provider)
-            try:
-                await runner.run(websocket)
-            except Exception as e:
-                console.print(f"WebSocket error: {e}")
-            finally:
-                await runner.disconnect()
+            runner = ChatSSERunner(auth_token, use_database=use_database, default_model=default_model, default_provider=provider)
 
-    else:  # SSE
-        @app.post("/chat/sse")
-        async def sse_chat(request: Request):
-            """SSE endpoint for chat communication."""
-            try:
-                # Get request data
-                data = await request.json()
-                
-                # Extract auth token from headers
-                auth_header = request.headers.get("authorization", "")
-                auth_token = auth_header.replace("Bearer ", "") if auth_header.startswith("Bearer ") else None
-                
-                # Add auth token to request data if provided
-                if auth_token:
-                    data["auth_token"] = auth_token
-                
-                # Create SSE runner and stream response
-                runner = ChatSSERunner(auth_token, use_database=not no_database, default_model=default_model, default_provider=default_provider)
-                
+            # Determine if the client requested streaming (default true)
+            stream = data.get("stream", True)
+            if not stream:
+                # Collect the streamed chunks into a single response object
+                chunks = []
+                async for event in runner.process_single_request(data):
+                    if event.startswith("data: "):
+                        payload = event[len("data: "):].strip()
+                        if payload == "[DONE]":
+                            break
+                        chunks.append(payload)
+                if chunks:
+                    return json.loads(chunks[-1])
+                return {}
+            else:
                 return StreamingResponse(
                     runner.process_single_request(data),
                     media_type="text/event-stream",
@@ -305,28 +295,40 @@ def create_chat_server(protocol: str, remote_auth: bool, no_database: bool, defa
                         "Access-Control-Allow-Methods": "POST, OPTIONS"
                     }
                 )
-            except Exception as e:
-                console.print(f"SSE error: {e}")
-                raise HTTPException(status_code=500, detail=str(e))
+        except Exception as e:
+            console.print(f"OpenAI Chat error: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
 
-        @app.options("/chat/sse")
-        async def sse_chat_options():
-            """Handle CORS preflight requests."""
-            return {
-                "Access-Control-Allow-Origin": "*",
-                "Access-Control-Allow-Headers": "Authorization, Content-Type",
-                "Access-Control-Allow-Methods": "POST, OPTIONS"
-            }
+    # OpenAI-compatible models endpoint
+    @app.get("/v1/models")
+    async def openai_models():
+        """Returns list of models filtered by provider in OpenAI format."""
+        try:
+            all_models = await get_language_models()
+            filtered = [m for m in all_models if ((m.provider.value if hasattr(m.provider, 'value') else m.provider) == provider)]
+            data = [
+                {
+                    "id": m.id or m.name,
+                    "object": "model",
+                    "created": 0,
+                    "owned_by": provider,
+                }
+                for m in filtered
+            ]
+            return {"object": "list", "data": data}
+        except Exception as e:
+            console.print(f"OpenAI Models error: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
 
     @app.get("/health")
     async def health_check():
         """Health check endpoint."""
-        return {"status": "healthy", "protocol": protocol}
+        return {"status": "healthy"}
 
     # Add graceful shutdown
     @app.on_event("startup")
     async def startup_event():
-        console.print(f"Chat server started successfully using {protocol.upper()} protocol")
+        console.print(f"Chat server started successfully")
 
     @app.on_event("shutdown")
     async def shutdown_event():
@@ -335,7 +337,7 @@ def create_chat_server(protocol: str, remote_auth: bool, no_database: bool, defa
     return app
 
 
-def run_chat_server(host: str, port: int, protocol: str, remote_auth: bool, no_database: bool, default_model: str = "gemma3n:latest", default_provider: str = "ollama"):
+def run_chat_server(host: str, port: int, remote_auth: bool, use_database: bool, provider: str, default_model: str = "gemma3n:latest"):
     """Run the chat server.
     
     Args:
@@ -343,28 +345,21 @@ def run_chat_server(host: str, port: int, protocol: str, remote_auth: bool, no_d
         port: Port to serve on
         protocol: Protocol to use ('websocket' or 'sse')
         remote_auth: Whether to use remote authentication
-        no_database: Whether to run without database
+        use_database: Whether to run without database
+        provider: Provider to use
         default_model: Default model to use when not specified by client
-        default_provider: Default provider to use when not specified by client
     """
-    app = create_chat_server(protocol, remote_auth, no_database, default_model, default_provider)
+    app = create_chat_server(remote_auth, use_database, provider, default_model)
     
-    if protocol == "websocket":
-        console.print(f"🚀 Starting WebSocket chat server on {host}:{port}")
-        console.print(f"WebSocket endpoint: ws://{host}:{port}/chat")
-        console.print("Authentication mode:", "Remote (Supabase)" if remote_auth else "Local (user_id=1)")
-        console.print("Database mode:", "Disabled (in-memory)" if no_database else "Enabled")
-        console.print("Default model:", f"{default_model} (provider: {default_provider})")
-        console.print("\nTo connect with auth token: ws://host:port/chat?token=YOUR_TOKEN")
-    else:  # SSE
-        console.print(f"🚀 Starting SSE chat server on {host}:{port}")
-        console.print(f"SSE endpoint: http://{host}:{port}/chat/sse")
-        console.print("Authentication mode:", "Remote (Supabase)" if remote_auth else "Local (user_id=1)")
-        console.print("Database mode:", "Disabled (history in request)" if no_database else "Enabled")
-        console.print("Default model:", f"{default_model} (provider: {default_provider})")
-        console.print("\nSend POST requests with Authorization: Bearer YOUR_TOKEN header")
-        if no_database:
-            console.print("Include 'history' field in request payload with full conversation history")
+    console.print(f"🚀 Starting opena-ai compatible chat server on {host}:{port}")
+    console.print(f"Chat completions endpoint: http://{host}:{port}/v1/chat/completions")
+    console.print(f"Models endpoint: http://{host}:{port}/v1/models")
+    console.print("Authentication mode:", "Remote (Supabase)" if remote_auth else "Local (user_id=1)")
+    console.print("Database mode:", "Disabled (history in request)" if use_database else "Enabled")
+    console.print("Default model:", f"{default_model} (provider: {provider})")
+    console.print("\nSend POST requests with Authorization: Bearer YOUR_TOKEN header")
+    if use_database:
+        console.print("Include 'history' field in request payload with full conversation history")
 
     # Run the server
     try:

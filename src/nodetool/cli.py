@@ -17,7 +17,6 @@ from rich.panel import Panel
 from rich.text import Text
 from typing import List, Optional
 
-
 # Create console instance
 console = Console()
 
@@ -172,7 +171,9 @@ def run(workflow: str):
                 print(message)
                 # Pretty-print each message coming from the runner
                 if isinstance(message, JobUpdate) and message.status == "error":
-                    console.print(Panel.fit(f"Error: {message.error}", style="bold red"))
+                    console.print(
+                        Panel.fit(f"Error: {message.error}", style="bold red")
+                    )
                     sys.exit(1)
                 else:
                     msg_type = Text(message.type, style="bold cyan")
@@ -199,58 +200,115 @@ def chat():
 @click.option("--host", default="127.0.0.1", help="Host address to serve on.")
 @click.option("--port", default=8080, help="Port to serve on.", type=int)
 @click.option(
-    "--protocol", 
-    default="websocket", 
-    type=click.Choice(["websocket", "sse"]), 
-    help="Protocol to use: websocket or sse (Server-Sent Events)."
+    "--remote-auth", is_flag=True, help="Use remote authentication (Supabase)."
 )
-@click.option("--remote-auth", is_flag=True, help="Use remote authentication (Supabase).")
-@click.option("--no-database", is_flag=True, help="Run without database (in-memory for WebSocket, history in request for SSE).")
-@click.option("--default-model", default="gemma3n:latest", help="Default AI model to use when not specified by client.")
-@click.option("--default-provider", default="ollama", help="Default AI provider to use when not specified by client.")
-def chat_server(host: str, port: int, protocol: str, remote_auth: bool, no_database: bool, default_model: str, default_provider: str):
+@click.option(
+    "--use-database",
+    is_flag=False,
+    help="Run with database (in-memory for WebSocket, history in request for SSE).",
+)
+@click.option(
+    "--default-model",
+    default="gemma3n:latest",
+    help="Default AI model to use when not specified by client.",
+)
+@click.option(
+    "--provider",
+    default="ollama",
+    help="AI provider to use.",
+)
+def chat_server(
+    host: str,
+    port: int,
+    remote_auth: bool,
+    use_database: bool,
+    provider: str,
+    default_model: str,
+):
     """Start a chat server using WebSocket or SSE protocol.
-    
+
     Examples:
       # Start WebSocket server on default port 8080
       nodetool chat-server
-      
+
       # Start SSE server on port 3000
       nodetool chat-server --port 3000 --protocol sse
-      
+
       # Start with remote authentication
       nodetool chat-server --remote-auth
     """
     from nodetool.chat.server import run_chat_server
-    
-    run_chat_server(host, port, protocol, remote_auth, no_database, default_model, default_provider)
+
+    run_chat_server(
+        host, port, remote_auth, use_database, provider, default_model
+    )
 
 
 @cli.command("chat-client")
-@click.option("--server-url", default="http://localhost:8080", help="URL of the chat server to connect to.")
-@click.option("--auth-token", help="Authentication token for the server.")
+@click.option(
+    "--server-url",
+    help="URL of the chat server to connect to. If not provided, uses OpenAI API directly.",
+)
+@click.option(
+    "--auth-token",
+    help="Authentication token"
+)
 @click.option("--message", help="Send a single message (non-interactive mode).")
-@click.option("--model", help="AI model to use (e.g., 'gemma3n:latest', 'claude-3-opus-20240229').")
-def chat_client(server_url: str, auth_token: Optional[str], message: Optional[str], model: Optional[str]):
-    """Connect to a NodeTool chat server using SSE protocol.
-    
+@click.option(
+    "--model",
+    default="gpt-4o-mini",
+    help="AI model to use (default: gpt-4o-mini for OpenAI, gemma3n:latest for local server).",
+)
+@click.option(
+    "--provider",
+    help="AI provider to use when connecting to local server (e.g., 'openai', 'anthropic', 'ollama').",
+)
+def chat_client(
+    server_url: Optional[str],
+    auth_token: Optional[str],
+    message: Optional[str],
+    model: Optional[str],
+    provider: Optional[str],
+):
+    """Connect to OpenAI API or a NodeTool chat server using OpenAI Chat Completions API.
+
+    By default (no --server-url), connects directly to OpenAI API.
+    With --server-url, connects to a NodeTool chat server with OpenAI compatibility.
+
     Examples:
-      # Interactive chat with local server
-      nodetool chat-client
-      
-      # Connect with specific model
-      nodetool chat-client --model claude-3-opus-20240229
-      
-      # Connect to remote server with authentication
-      nodetool chat-client --server-url https://my-server.com:8080 --auth-token my_token
-      
-      # Send single message (non-interactive)
-      nodetool chat-client --message "Hello, AI!" --auth-token my_token --model gpt-4
+      # Interactive chat with OpenAI API (default)
+      nodetool chat-client --auth-token sk-your-openai-key
+
+      # Use different OpenAI model
+      nodetool chat-client --auth-token sk-your-openai-key --model gpt-4
+
+      # Connect to local NodeTool server
+      nodetool chat-client --server-url http://localhost:8080
+
+      # Connect to local server with specific model and provider
+      nodetool chat-client --server-url http://localhost:8080 --model claude-3-opus-20240229 --provider anthropic
+
+      # Send single message to OpenAI
+      nodetool chat-client --message "Hello, AI!" --auth-token sk-your-openai-key
     """
     import asyncio
     from nodetool.chat.chat_client import run_chat_client
-    
-    asyncio.run(run_chat_client(server_url, auth_token, message, model))
+
+    if not auth_token:
+        auth_token = Environment.get("OPENAI_API_KEY")
+
+    # If no server URL provided, use OpenAI API directly
+    if not server_url:
+        server_url = "https://api.openai.com"
+        # Use provided model or default to gpt-4o-mini for OpenAI
+        if not model:
+            model = "gpt-4o-mini"
+    else:
+        # For local server, use provided model or default to gemma3n:latest
+        if not model:
+            model = "gemma3n:latest"
+
+    asyncio.run(run_chat_client(server_url, auth_token, message, model, provider))
 
 
 @cli.command("explorer")
@@ -683,42 +741,128 @@ cli.add_command(settings)
 
 
 @cli.command("deploy")
-@click.option("--workflow-id", help="Workflow ID to deploy (required unless using list options)")
-@click.option("--docker-username", help="Docker Hub username or organization (auto-detected from docker login if not provided)")
-@click.option("--docker-registry", default="docker.io", help="Docker registry URL (default: docker.io for Docker Hub)")
-@click.option("--image-name", help="Base name of the Docker image (defaults to sanitized workflow name)")
+@click.option(
+    "--workflow-id", help="Workflow ID to deploy (required unless using list options)"
+)
+@click.option(
+    "--docker-username",
+    help="Docker Hub username or organization (auto-detected from docker login if not provided)",
+)
+@click.option(
+    "--docker-registry",
+    default="docker.io",
+    help="Docker registry URL (default: docker.io for Docker Hub)",
+)
+@click.option(
+    "--image-name",
+    help="Base name of the Docker image (defaults to sanitized workflow name)",
+)
 @click.option("--tag", help="Tag of the Docker image (default: auto-generated hash)")
-@click.option("--platform", default="linux/amd64", help="Docker build platform (default: linux/amd64 for RunPod compatibility)")
-@click.option("--template-name", help="Name of the RunPod template (defaults to image name)")
+@click.option(
+    "--platform",
+    default="linux/amd64",
+    help="Docker build platform (default: linux/amd64 for RunPod compatibility)",
+)
+@click.option(
+    "--template-name", help="Name of the RunPod template (defaults to image name)"
+)
 # Skip options
 @click.option("--skip-build", is_flag=True, help="Skip Docker build")
 @click.option("--skip-push", is_flag=True, help="Skip pushing to registry")
 @click.option("--skip-template", is_flag=True, help="Skip creating RunPod template")
 @click.option("--skip-endpoint", is_flag=True, help="Skip creating RunPod endpoint")
-@click.option("--check-docker-config", is_flag=True, help="Check Docker configuration and exit")
+@click.option(
+    "--check-docker-config", is_flag=True, help="Check Docker configuration and exit"
+)
 # Endpoint compute configuration
-@click.option("--compute-type", type=click.Choice(["CPU", "GPU"]), default="GPU", help="Compute type for the endpoint")
-@click.option("--gpu-types", multiple=True, type=click.Choice(["ADA_24", "ADA_32_PRO", "ADA_48_PRO", "ADA_80_PRO", "AMPERE_16", "AMPERE_24", "AMPERE_48", "AMPERE_80", "HOPPER_141"]), help="GPU types to use (can specify multiple)")
+@click.option(
+    "--compute-type",
+    type=click.Choice(["CPU", "GPU"]),
+    default="GPU",
+    help="Compute type for the endpoint",
+)
+@click.option(
+    "--gpu-types",
+    multiple=True,
+    type=click.Choice(
+        [
+            "ADA_24",
+            "ADA_32_PRO",
+            "ADA_48_PRO",
+            "ADA_80_PRO",
+            "AMPERE_16",
+            "AMPERE_24",
+            "AMPERE_48",
+            "AMPERE_80",
+            "HOPPER_141",
+        ]
+    ),
+    help="GPU types to use (can specify multiple)",
+)
 @click.option("--gpu-count", type=int, help="Number of GPUs per worker")
-@click.option("--cpu-flavors", multiple=True, type=click.Choice(["cpu3c", "cpu3g", "cpu5c", "cpu5g"]), help="CPU flavors to use for CPU compute (can specify multiple)")
+@click.option(
+    "--cpu-flavors",
+    multiple=True,
+    type=click.Choice(["cpu3c", "cpu3g", "cpu5c", "cpu5g"]),
+    help="CPU flavors to use for CPU compute (can specify multiple)",
+)
 @click.option("--vcpu-count", type=int, help="Number of vCPUs for CPU compute")
-@click.option("--data-centers", multiple=True, help="Preferred data center locations (can specify multiple)")
+@click.option(
+    "--data-centers",
+    multiple=True,
+    help="Preferred data center locations (can specify multiple)",
+)
 # Endpoint scaling configuration
-@click.option("--workers-min", type=int, default=0, help="Minimum number of workers (default: 0)")
-@click.option("--workers-max", type=int, default=3, help="Maximum number of workers (default: 3)")
-@click.option("--idle-timeout", type=int, default=5, help="Seconds before scaling down idle workers (default: 5)")
-@click.option("--scaler-type", type=click.Choice(["QUEUE_DELAY", "REQUEST_COUNT"]), default="QUEUE_DELAY", help="Type of auto-scaler (default: QUEUE_DELAY)")
-@click.option("--scaler-value", type=int, default=4, help="Threshold value for the scaler (default: 4)")
+@click.option(
+    "--workers-min", type=int, default=0, help="Minimum number of workers (default: 0)"
+)
+@click.option(
+    "--workers-max", type=int, default=3, help="Maximum number of workers (default: 3)"
+)
+@click.option(
+    "--idle-timeout",
+    type=int,
+    default=5,
+    help="Seconds before scaling down idle workers (default: 5)",
+)
+@click.option(
+    "--scaler-type",
+    type=click.Choice(["QUEUE_DELAY", "REQUEST_COUNT"]),
+    default="QUEUE_DELAY",
+    help="Type of auto-scaler (default: QUEUE_DELAY)",
+)
+@click.option(
+    "--scaler-value",
+    type=int,
+    default=4,
+    help="Threshold value for the scaler (default: 4)",
+)
 # Endpoint advanced configuration
-@click.option("--execution-timeout", type=int, help="Maximum execution time in milliseconds")
-@click.option("--flashboot", is_flag=True, help="Enable flashboot for faster worker startup")
+@click.option(
+    "--execution-timeout", type=int, help="Maximum execution time in milliseconds"
+)
+@click.option(
+    "--flashboot", is_flag=True, help="Enable flashboot for faster worker startup"
+)
 @click.option("--network-volume-id", help="Network volume ID to attach to workers")
-@click.option("--allowed-cuda-versions", multiple=True, help="Allowed CUDA versions (can specify multiple)")
+@click.option(
+    "--allowed-cuda-versions",
+    multiple=True,
+    help="Allowed CUDA versions (can specify multiple)",
+)
 # List options
-@click.option("--list-gpu-types", is_flag=True, help="List all available GPU types and exit")
-@click.option("--list-cpu-flavors", is_flag=True, help="List all available CPU flavors and exit")
-@click.option("--list-data-centers", is_flag=True, help="List all available data centers and exit")
-@click.option("--list-all-options", is_flag=True, help="List all available options and exit")
+@click.option(
+    "--list-gpu-types", is_flag=True, help="List all available GPU types and exit"
+)
+@click.option(
+    "--list-cpu-flavors", is_flag=True, help="List all available CPU flavors and exit"
+)
+@click.option(
+    "--list-data-centers", is_flag=True, help="List all available data centers and exit"
+)
+@click.option(
+    "--list-all-options", is_flag=True, help="List all available options and exit"
+)
 def deploy(
     workflow_id: str | None,
     docker_username: str | None,
@@ -753,20 +897,20 @@ def deploy(
     list_all_options: bool,
 ):
     """Deploy workflow to RunPod serverless infrastructure.
-    
+
     Examples:
       # Basic deployment
       nodetool deploy --workflow-id abc123
-      
+
       # With specific GPU and regions
       nodetool deploy --workflow-id abc123 --gpu-types AMPERE_24 --gpu-types ADA_48_PRO --data-centers US-CA-2 --data-centers US-GA-1
-      
+
       # CPU-only endpoint
       nodetool deploy --workflow-id abc123 --compute-type CPU --cpu-flavors cpu3c --cpu-flavors cpu5c
-      
+
       # Check Docker configuration
       nodetool deploy --check-docker-config
-      
+
       # List available options
       nodetool deploy --list-gpu-types
       nodetool deploy --list-all-options
@@ -775,32 +919,43 @@ def deploy(
     import os
     import traceback
     from nodetool.deploy.deploy_to_runpod import (
-        ComputeType, GPUType, CPUFlavor, DataCenter, ScalerType, CUDAVersion,
-        check_docker_auth, get_docker_username_from_config,
-        format_image_name, sanitize_name, generate_image_tag, fetch_workflow_from_db,
-        build_docker_image, push_to_registry, create_or_update_runpod_template,
-        create_runpod_endpoint
+        ComputeType,
+        GPUType,
+        CPUFlavor,
+        DataCenter,
+        ScalerType,
+        CUDAVersion,
+        check_docker_auth,
+        get_docker_username_from_config,
+        format_image_name,
+        sanitize_name,
+        generate_image_tag,
+        fetch_workflow_from_db,
+        build_docker_image,
+        push_to_registry,
+        create_or_update_runpod_template,
+        create_runpod_endpoint,
     )
-    
+
     # Handle list options (these don't require workflow-id)
     if list_gpu_types:
         console.print("[bold cyan]Available GPU Types:[/]")
         for gpu_type in GPUType:
             console.print(f"  {gpu_type.value}")
         sys.exit(0)
-    
+
     if list_cpu_flavors:
         console.print("[bold cyan]Available CPU Flavors:[/]")
         for cpu_flavor in CPUFlavor:
             console.print(f"  {cpu_flavor.value}")
         sys.exit(0)
-    
+
     if list_data_centers:
         console.print("[bold cyan]Available Data Centers:[/]")
         for data_center in DataCenter:
             console.print(f"  {data_center.value}")
         sys.exit(0)
-    
+
     if list_all_options:
         console.print("[bold cyan]Available Options:[/]")
         console.print("\n[bold]Compute Types:[/]")
@@ -822,80 +977,86 @@ def deploy(
         for cuda_version in CUDAVersion:
             console.print(f"  {cuda_version.value}")
         sys.exit(0)
-    
+
     # Handle Docker config check (doesn't require workflow-id)
     if check_docker_config:
         console.print("🔍 Checking Docker configuration...")
-        
+
         # Check Docker authentication
         is_authenticated = check_docker_auth(docker_registry)
         console.print(f"Registry: {docker_registry}")
         console.print(f"Authenticated: {'✅ Yes' if is_authenticated else '❌ No'}")
-        
+
         # Check Docker username from config
         config_username = get_docker_username_from_config(docker_registry)
         if config_username:
             console.print(f"Username from Docker config: {config_username}")
         else:
             console.print("Username from Docker config: ❌ Not found")
-        
+
         # Check environment and arguments
         env_username = os.getenv("DOCKER_USERNAME")
         if env_username:
             console.print(f"Username from DOCKER_USERNAME env: {env_username}")
         else:
             console.print("Username from DOCKER_USERNAME env: ❌ Not set")
-            
+
         if docker_username:
             console.print(f"Username from --docker-username arg: {docker_username}")
         else:
             console.print("Username from --docker-username arg: ❌ Not provided")
-        
+
         # Show final resolved username
-        final_username = (
-            docker_username or 
-            env_username or 
-            config_username
-        )
-        
+        final_username = docker_username or env_username or config_username
+
         if final_username:
             console.print(f"\n🎉 Final resolved username: {final_username}")
-            
+
             # Show what the full image name would be
-            example_image = format_image_name("my-workflow", final_username, docker_registry)
+            example_image = format_image_name(
+                "my-workflow", final_username, docker_registry
+            )
             example_tag = generate_image_tag()
             console.print(f"Example image name: {example_image}:{example_tag}")
         else:
             console.print("\n❌ No Docker username found!")
             console.print("To fix this, run: docker login")
-            
+
         sys.exit(0)
-    
+
     # Validate that workflow-id is provided for deployment operations
     if not workflow_id:
         console.print("❌ Error: --workflow-id is required for deployment operations")
-        console.print("Use --help to see available options or use one of the list commands:")
-        console.print("  --list-gpu-types, --list-cpu-flavors, --list-data-centers, --list-all-options")
+        console.print(
+            "Use --help to see available options or use one of the list commands:"
+        )
+        console.print(
+            "  --list-gpu-types, --list-cpu-flavors, --list-data-centers, --list-all-options"
+        )
         sys.exit(1)
-    
+
     # Get Docker username from multiple sources
     docker_username = (
-        docker_username or 
-        os.getenv("DOCKER_USERNAME") or 
-        get_docker_username_from_config(docker_registry)
+        docker_username
+        or os.getenv("DOCKER_USERNAME")
+        or get_docker_username_from_config(docker_registry)
     )
-    
+
     if not docker_username and not (skip_build and skip_push):
-        console.print("Error: Docker username is required for building and pushing images.")
+        console.print(
+            "Error: Docker username is required for building and pushing images."
+        )
         console.print("Provide it via one of these methods:")
         console.print("1. Command line: --docker-username myusername")
         console.print("2. Environment variable: export DOCKER_USERNAME=myusername")
-        console.print("3. Docker login: docker login (will be read from ~/.docker/config.json)")
+        console.print(
+            "3. Docker login: docker login (will be read from ~/.docker/config.json)"
+        )
         sys.exit(1)
-    
+
     if docker_username:
         console.print(f"Using Docker username: {docker_username}")
-    
+
     # Generate unique tag if not provided
     if tag:
         image_tag = tag
@@ -903,54 +1064,61 @@ def deploy(
     else:
         image_tag = generate_image_tag()
         console.print(f"Generated unique tag: {image_tag}")
-    
+
     # Check if Docker is running
     if not skip_build:
         try:
             from nodetool.deploy.deploy_to_runpod import run_command
+
             run_command("docker --version", capture_output=True)
         except:
             console.print("Error: Docker is not installed or not running")
             sys.exit(1)
-    
+
     # Fetch workflow from database
     workflow_path, workflow_name = fetch_workflow_from_db(workflow_id)
-    
+
     # Set defaults based on workflow name
     base_image_name = image_name or sanitize_name(workflow_name)
     console.print(f"Using base image name: {base_image_name}")
-    
+
     # Format full image name with registry and username
     if docker_username:
-        full_image_name = format_image_name(base_image_name, docker_username, docker_registry)
+        full_image_name = format_image_name(
+            base_image_name, docker_username, docker_registry
+        )
         console.print(f"Full image name: {full_image_name}")
     else:
         full_image_name = base_image_name
-    
+
     template_name = template_name or base_image_name
     console.print(f"Using template name: {template_name}")
-    
+
     template_id = None
     endpoint_id = None
-    
+
     try:
         # Build Docker image with embedded workflow
         if not skip_build:
             build_docker_image(workflow_path, full_image_name, image_tag, platform)
-        
+
         if not skip_push:
             push_to_registry(full_image_name, image_tag, docker_registry)
-        
+
         if not skip_template:
-            template_id = create_or_update_runpod_template(template_name, full_image_name, image_tag)
-        
+            template_id = create_or_update_runpod_template(
+                template_name, full_image_name, image_tag
+            )
+
         if not skip_endpoint and template_id:
             # Convert GPU types from string values
             gpu_type_ids = list(gpu_types) if gpu_types else None
             cpu_flavor_ids = list(cpu_flavors) if cpu_flavors else None
             data_center_ids = list(data_centers) if data_centers else None
-            allowed_cuda_versions_list = list(allowed_cuda_versions) if allowed_cuda_versions else None
-            
+            allowed_cuda_versions_list = (
+                list(allowed_cuda_versions) if allowed_cuda_versions else None
+            )
+
             endpoint_id = create_runpod_endpoint(
                 template_id=template_id,
                 name=workflow_id,
@@ -970,7 +1138,7 @@ def deploy(
                 network_volume_id=network_volume_id,
                 allowed_cuda_versions=allowed_cuda_versions_list,
             )
-        
+
         console.print(f"\n🎉 Deployment completed successfully!")
         console.print(f"Workflow ID: {workflow_id}")
         console.print(f"Image: {full_image_name}:{image_tag}")
@@ -979,23 +1147,27 @@ def deploy(
             console.print(f"Template ID: {template_id}")
         if endpoint_id:
             console.print(f"Endpoint ID: {endpoint_id}")
-        
+
     except Exception as e:
         console.print(f"[bold red]Deployment failed: {e}[/]")
         traceback.print_exc()
         sys.exit(1)
     finally:
         # Clean up workflow file
-        if 'workflow_path' in locals() and os.path.exists(workflow_path):
+        if "workflow_path" in locals() and os.path.exists(workflow_path):
             os.unlink(workflow_path)
 
 
 @cli.command("test-runpod")
 @click.option("--endpoint-id", required=True, help="RunPod endpoint ID")
 @click.option("--api-key", help="RunPod API key (can also use RUNPOD_API_KEY env var)")
-@click.option("--params", type=click.Path(exists=True), help="JSON file with workflow parameters")
+@click.option(
+    "--params", type=click.Path(exists=True), help="JSON file with workflow parameters"
+)
 @click.option("--params-json", help="Inline JSON string with workflow parameters")
-@click.option("--timeout", type=int, default=600, help="Timeout in seconds (default: 600)")
+@click.option(
+    "--timeout", type=int, default=600, help="Timeout in seconds (default: 600)"
+)
 def test_runpod(
     endpoint_id: str,
     api_key: str | None,
@@ -1004,14 +1176,14 @@ def test_runpod(
     timeout: int,
 ):
     """Test deployed NodeTool workflow on RunPod serverless infrastructure.
-    
+
     Examples:
       # Basic test with no parameters
       nodetool test-runpod --endpoint-id abc123def456
-      
+
       # Test with JSON file parameters
       nodetool test-runpod --endpoint-id abc123def456 --params test_params.json
-      
+
       # Test with inline JSON parameters
       nodetool test-runpod --endpoint-id abc123def456 --params-json '{"text": "Hello World"}'
     """
@@ -1020,33 +1192,37 @@ def test_runpod(
     import traceback
     from datetime import datetime
     from typing import Dict, Any
-    
+
     try:
         import runpod
     except ImportError:
         console.print("[bold red]❌ Error: runpod library not found[/]")
         console.print("Install it with: pip install runpod")
         sys.exit(1)
-    
+
     # Get API key from argument or environment
     api_key = api_key or os.getenv("RUNPOD_API_KEY")
     if not api_key:
         console.print("[bold red]❌ Error: RunPod API key is required[/]")
-        console.print("Provide it via --api-key argument or RUNPOD_API_KEY environment variable")
+        console.print(
+            "Provide it via --api-key argument or RUNPOD_API_KEY environment variable"
+        )
         sys.exit(1)
-    
+
     # Configure runpod library
     runpod.api_key = api_key
     endpoint = runpod.Endpoint(endpoint_id)
-    
+
     # Get workflow parameters
     workflow_params = {}
     if params:
         try:
-            with open(params, 'r') as f:
+            with open(params, "r") as f:
                 workflow_params = json.load(f)
         except Exception as e:
-            console.print(f"[bold red]❌ Failed to load parameters from {params}: {e}[/]")
+            console.print(
+                f"[bold red]❌ Failed to load parameters from {params}: {e}[/]"
+            )
             sys.exit(1)
     elif params_json:
         try:
@@ -1055,43 +1231,45 @@ def test_runpod(
             console.print(f"[bold red]❌ Invalid JSON in --params-json: {e}[/]")
             sys.exit(1)
     else:
-        console.print("[bold yellow]⚠️ No parameters provided, using empty parameters[/]")
-    
+        console.print(
+            "[bold yellow]⚠️ No parameters provided, using empty parameters[/]"
+        )
+
     console.print(f"[bold cyan]🧪 Testing RunPod workflow...[/]")
     console.print(f"Endpoint ID: {endpoint_id}")
     console.print(f"Parameters: {json.dumps(workflow_params, indent=2)}")
     console.print(f"Timeout: {timeout} seconds")
-    
+
     try:
         console.print(f"[bold blue]🚀 Starting workflow execution...[/]")
-        
+
         job = endpoint.run(workflow_params)
-        
+
         console.print(f"Job status: {job.status()}")
         start_time = time.time()
-        
+
         while job.status() in ("RUNNING", "IN_PROGRESS", "IN_QUEUE"):
             time.sleep(1)
             elapsed = int(time.time() - start_time)
-            
+
             if elapsed >= timeout:
                 console.print(f"[bold red]⏰ Job timed out after {timeout} seconds[/]")
                 sys.exit(1)
-            
+
             console.print(f"Job status: {job.status()} (elapsed: {elapsed}s)")
 
         result = job.output()
-        
+
         console.print(f"[bold green]✅ Job completed successfully![/]")
         elapsed = int(time.time() - start_time)
         console.print(f"Execution completed in {elapsed} seconds")
-        
+
         # Display results
         console.print(f"\n[bold cyan]📊 Job Results:[/]")
         console.print(json.dumps(result, indent=2))
-        
+
         console.print(f"\n[bold green]✅ Test completed successfully![/]")
-        
+
     except TimeoutError:
         console.print(f"\n[bold red]⏰ Job timed out[/]")
         sys.exit(1)
