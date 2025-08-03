@@ -258,11 +258,6 @@ class HuggingFaceProvider(ChatProvider):
         if response_format:
             request_params["response_format"] = response_format
 
-        # Add any additional kwargs
-        for key, value in kwargs.items():
-            if key not in request_params:  # Don't override existing keys
-                request_params[key] = value
-
         # Make the request using AsyncInferenceClient.chat_completion (as per HF docs)
         try:
             completion = await self.client.chat_completion(
@@ -362,94 +357,70 @@ class HuggingFaceProvider(ChatProvider):
         if response_format:
             request_params["response_format"] = response_format
 
-        # Add any additional kwargs
-        for key, value in kwargs.items():
-            if key not in request_params:  # Don't override existing keys
-                request_params[key] = value
+        # Create streaming completion using chat_completion method
+        stream = await self.client.chat_completion(
+            model=model,
+            **request_params
+        )
+        
+        # Track tool calls during streaming
+        accumulated_tool_calls = {}
+        
+        async for chunk in stream:
+            # Update usage statistics if available
+            if hasattr(chunk, 'usage') and chunk.usage:
+                self.usage["prompt_tokens"] = chunk.usage.prompt_tokens or 0
+                self.usage["completion_tokens"] = chunk.usage.completion_tokens or 0
+                self.usage["total_tokens"] = chunk.usage.total_tokens or 0
 
-        try:
-            # Create streaming completion using chat_completion method
-            stream = await self.client.chat_completion(
-                model=model,
-                **request_params
-            )
-            
-            # Track tool calls during streaming
-            accumulated_tool_calls = {}
-            
-            async for chunk in stream:
-                # Update usage statistics if available
-                if hasattr(chunk, 'usage') and chunk.usage:
-                    self.usage["prompt_tokens"] = chunk.usage.prompt_tokens or 0
-                    self.usage["completion_tokens"] = chunk.usage.completion_tokens or 0
-                    self.usage["total_tokens"] = chunk.usage.total_tokens or 0
+            if not chunk.choices:
+                continue
 
-                if not chunk.choices:
-                    continue
+            choice = chunk.choices[0]
+            delta = choice.delta
 
-                choice = chunk.choices[0]
-                delta = choice.delta
-
-                # Handle content chunks
-                if hasattr(delta, 'content') and delta.content:
-                    yield Chunk(
-                        content=delta.content,
-                        done=choice.finish_reason == "stop",
-                    )
-
-                # Handle tool call deltas
-                if hasattr(delta, 'tool_calls') and delta.tool_calls:
-                    for tool_call_delta in delta.tool_calls:
-                        index = tool_call_delta.index
-                        
-                        if index not in accumulated_tool_calls:
-                            accumulated_tool_calls[index] = {
-                                "id": tool_call_delta.id or "",
-                                "name": "",
-                                "arguments": ""
-                            }
-                        
-                        # Accumulate tool call data
-                        if tool_call_delta.id:
-                            accumulated_tool_calls[index]["id"] = tool_call_delta.id
-                        
-                        if tool_call_delta.function:
-                            if tool_call_delta.function.name:
-                                accumulated_tool_calls[index]["name"] = tool_call_delta.function.name
-                            if tool_call_delta.function.arguments:
-                                accumulated_tool_calls[index]["arguments"] += tool_call_delta.function.arguments
-
-                # If streaming is complete and we have tool calls, yield them
-                if choice.finish_reason == "tool_calls" and accumulated_tool_calls:
-                    for tool_call_data in accumulated_tool_calls.values():
-                        try:
-                            args = json.loads(tool_call_data["arguments"])
-                        except json.JSONDecodeError:
-                            args = {}
-                        
-                        yield ToolCall(
-                            id=tool_call_data["id"],
-                            name=tool_call_data["name"],
-                            args=args,
-                        )
-
-        except Exception as e:
-            # Fall back to non-streaming if streaming fails
-            message = await self.generate_message(
-                messages, model, tools, max_tokens, context_window, response_format, **kwargs
-            )
-            
-            # If there are tool calls, yield them first
-            if message.tool_calls:
-                for tool_call in message.tool_calls:
-                    yield tool_call
-            
-            # Yield the content as a single chunk
-            if message.content:
+            # Handle content chunks
+            if hasattr(delta, 'content') and delta.content:
                 yield Chunk(
-                    content=str(message.content),
-                    done=True,
+                    content=delta.content,
+                    done=choice.finish_reason == "stop",
                 )
+
+            # Handle tool call deltas
+            if hasattr(delta, 'tool_calls') and delta.tool_calls:
+                for tool_call_delta in delta.tool_calls:
+                    index = tool_call_delta.index
+                    
+                    if index not in accumulated_tool_calls:
+                        accumulated_tool_calls[index] = {
+                            "id": tool_call_delta.id or "",
+                            "name": "",
+                            "arguments": ""
+                        }
+                    
+                    # Accumulate tool call data
+                    if tool_call_delta.id:
+                        accumulated_tool_calls[index]["id"] = tool_call_delta.id
+                    
+                    if tool_call_delta.function:
+                        if tool_call_delta.function.name:
+                            accumulated_tool_calls[index]["name"] = tool_call_delta.function.name
+                        if tool_call_delta.function.arguments:
+                            accumulated_tool_calls[index]["arguments"] += tool_call_delta.function.arguments
+
+            # If streaming is complete and we have tool calls, yield them
+            if choice.finish_reason == "tool_calls" and accumulated_tool_calls:
+                for tool_call_data in accumulated_tool_calls.values():
+                    try:
+                        args = json.loads(tool_call_data["arguments"])
+                    except json.JSONDecodeError:
+                        args = {}
+                    
+                    yield ToolCall(
+                        id=tool_call_data["id"],
+                        name=tool_call_data["name"],
+                        args=args,
+                    )
 
     def get_usage(self) -> dict:
         """Get token usage statistics."""

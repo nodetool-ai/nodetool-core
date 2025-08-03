@@ -1,7 +1,51 @@
 #!/usr/bin/env python
 
+import asyncio
+import logging
+from typing import List, Dict, Any
+import aiohttp
 from nodetool.metadata.types import LanguageModel, Provider
+from nodetool.common.environment import Environment
+from nodetool.storage.memory_node_cache import MemoryNodeCache
 
+log = logging.getLogger(__name__)
+
+# Cache TTL: 60 minutes = 3600 seconds
+CACHE_TTL = 3600
+
+from typing import Any
+import time
+
+
+class LanguageModelCache:
+    """
+    A class to manage caching of language models.
+    """
+
+    def __init__(self):
+        self.cache = {}
+
+    def get(self, key: str) -> Any:
+        if key in self.cache:
+            value, expiry_time = self.cache[key]
+            if expiry_time is None or time.time() < expiry_time:
+                return value
+            else:
+                del self.cache[key]  # Remove expired entry
+        return None
+
+    def set(self, key: str, value: Any, ttl: int = 3600):
+        expiry_time = time.time() + ttl
+        self.cache[key] = (value, expiry_time)
+
+    def clear(self):
+        self.cache.clear()
+
+
+# Dedicated in-memory cache for language models
+_language_model_cache = LanguageModelCache()
+
+# Hardcoded models for providers that don't support HF Hub API
 anthropic_models = [
     LanguageModel(
         id="claude-3-5-haiku-latest",
@@ -106,121 +150,144 @@ openai_models = [
     ),
 ]
 
-huggingface_models = [
-    LanguageModel(
-        id="HuggingFaceTB/SmolLM3-3B",
-        name="SmolLM3 3B",
-        provider=Provider.HuggingFace,
-    ),
-    LanguageModel(
-        id="deepseek-ai/DeepSeek-V3-0324",
-        name="DeepSeek V3 0324",
-        provider=Provider.HuggingFace,
-    ),
-    LanguageModel(
-        id="tngtech/DeepSeek-TNG-R1T2-Chimera",
-        name="DeepSeek TNG R1T2 Chimera",
-        provider=Provider.HuggingFace,
-    ),
-    LanguageModel(
-        id="tencent/Hunyuan-A13B-Instruct",
-        name="Hunyuan A13B Instruct",
-        provider=Provider.HuggingFace,
-    ),
-    LanguageModel(
-        id="agentica-org/DeepSWE-Preview",
-        name="DeepSWE Preview",
-        provider=Provider.HuggingFace,
-    ),
-    LanguageModel(
-        id="google/gemma-2-2b-it",
-        name="Gemma 2 2B IT",
-        provider=Provider.HuggingFace,
-    ),
-    LanguageModel(
-        id="deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B",
-        name="DeepSeek R1 Distill Qwen 1.5B",
-        provider=Provider.HuggingFace,
-    ),
-    LanguageModel(
-        id="meta-llama/Meta-Llama-3.1-8B-Instruct",
-        name="Meta Llama 3.1 8B Instruct",
-        provider=Provider.HuggingFace,
-    ),
-    LanguageModel(
-        id="microsoft/phi-4",
-        name="Phi 4",
-        provider=Provider.HuggingFace,
-    ),
-    LanguageModel(
-        id="Qwen/Qwen2.5-7B-Instruct-1M",
-        name="Qwen 2.5 7B Instruct 1M",
-        provider=Provider.HuggingFace,
-    ),
-    LanguageModel(
-        id="Qwen/Qwen2.5-Coder-32B-Instruct",
-        name="Qwen 2.5 Coder 32B Instruct",
-        provider=Provider.HuggingFace,
-    ),
-    LanguageModel(
-        id="deepseek-ai/DeepSeek-R1",
-        name="DeepSeek R1",
-        provider=Provider.HuggingFace,
-    ),
-    LanguageModel(
-        id="Qwen/Qwen2.5-VL-7B-Instruct",
-        name="Qwen 2.5 VL 7B Instruct",
-        provider=Provider.HuggingFace,
-    ),
-]
+# Provider mapping for HuggingFace Hub API
+HF_PROVIDER_MAPPING = {
+    "black-forest-labs": Provider.HuggingFaceBlackForestLabs,
+    "cerebras": Provider.HuggingFaceCerebras,
+    "cohere": Provider.HuggingFaceCohere,
+    "fal-ai": Provider.HuggingFaceFalAI,
+    "featherless-ai": Provider.HuggingFaceFeatherlessAI,
+    "fireworks-ai": Provider.HuggingFaceFireworksAI,
+    "groq": Provider.HuggingFaceGroq,
+    "hf-inference": Provider.HuggingFaceHFInference,
+    "hyperbolic": Provider.HuggingFaceHyperbolic,
+    "nebius": Provider.HuggingFaceNebius,
+    "novita": Provider.HuggingFaceNovita,
+    "nscale": Provider.HuggingFaceNscale,
+    "openai": Provider.HuggingFaceOpenAI,
+    "replicate": Provider.HuggingFaceReplicate,
+    "sambanova": Provider.HuggingFaceSambanova,
+    "together": Provider.HuggingFaceTogether,
+}
 
-huggingface_groq_models = [
-    LanguageModel(
-        id="meta-llama/Meta-Llama-3-70B-Instruct",
-        name="Meta Llama 3 70B Instruct",
-        provider=Provider.HuggingFaceGroq,
-    ),
-    LanguageModel(
-        id="meta-llama/Llama-3.3-70B-Instruct",
-        name="Llama 3.3 70B Instruct",
-        provider=Provider.HuggingFaceGroq,
-    ),
-    LanguageModel(
-        id="meta-llama/Llama-Guard-4-12B",
-        name="Llama Guard 4 12B",
-        provider=Provider.HuggingFaceGroq,
-    ),
-    LanguageModel(
-        id="meta-llama/Llama-4-Scout-17B-16E-Instruct",
-        name="Llama 4 Scout 17B 16E Instruct",
-        provider=Provider.HuggingFaceGroq,
-    ),
-    LanguageModel(
-        id="meta-llama/Llama-4-Maverick-17B-128E-Instruct",
-        name="Llama 4 Maverick 17B 128E Instruct",
-        provider=Provider.HuggingFaceGroq,
-    ),
-    LanguageModel(
-        id="moonshotai/Kimi-K2-Instruct",
-        name="Kimi K2 Instruct",
-        provider=Provider.HuggingFaceGroq,
-    ),
-]
+async def fetch_models_from_hf_provider(provider: str) -> List[LanguageModel]:
+    """
+    Fetch models from HuggingFace Hub API for a specific provider.
+    
+    Args:
+        provider: The provider value (e.g., "groq", "cerebras", etc.)
+        
+    Returns:
+        List of LanguageModel instances
+    """
+    try:
+        url = f"https://huggingface.co/api/models?inference_provider={provider}&pipeline_tag=text-generation&limit=1000"
+        
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url) as response:
+                if response.status == 200:
+                    models_data = await response.json()
+                    
+                    models = []
+                    for model_data in models_data:
+                        model_id = model_data.get("id", "")
+                        if model_id:
+                            # Use the model name from the API if available, otherwise use the ID
+                            model_name = model_data.get("name") or model_id.split("/")[-1] if "/" in model_id else model_id
+                            
+                            # Get the appropriate provider enum value
+                            provider_enum = HF_PROVIDER_MAPPING.get(provider, Provider.HuggingFace)
+                            
+                            models.append(LanguageModel(
+                                id=model_id,
+                                name=model_name,
+                                provider=provider_enum,
+                            ))
+                    
+                    models.sort(key=lambda m: m.name)
+                    log.debug(f"Fetched {len(models)} models from HF provider: {provider}")
+                    return models
+                else:
+                    log.warning(f"Failed to fetch models for provider {provider}: HTTP {response.status}")
+                    return []
+                    
+    except Exception as e:
+        log.error(f"Error fetching models for provider {provider}: {e}")
+        return []
 
-huggingface_cerebras_models = [
-    LanguageModel(
-        id="cerebras/Cerebras-GPT-2.5-12B-Instruct",
-        name="Cerebras GPT 2.5 12B Instruct",
-        provider=Provider.HuggingFaceCerebras,
-    ),
-    LanguageModel(
-        id="meta-llama/Llama-3.3-70B-Instruct",
-        name="Llama 3.3 70B Instruct",
-        provider=Provider.HuggingFaceCerebras,
-    ),
-    LanguageModel(
-        id="meta-llama/Llama-4-Scout-17B-16E-Instruct",
-        name="Llama 4 Scout 17B 16E Instruct",
-        provider=Provider.HuggingFaceCerebras,
-    ),
-]
+async def get_cached_hf_models() -> List[LanguageModel]:
+    """
+    Get HuggingFace models from in-memory cache or fetch them dynamically.
+    
+    Returns:
+        List of LanguageModel instances from HuggingFace providers
+    """
+    cache_key = "hf_language_models"
+    
+    # Try to get from cache first
+    cached_models = _language_model_cache.get(cache_key)
+    if cached_models is not None:
+        log.debug("Using cached HuggingFace models")
+        return cached_models
+    
+    log.debug("Fetching HuggingFace models from API")
+    
+    # List of providers to fetch from
+    providers = [
+        "black-forest-labs", "cerebras", "cohere", "fal-ai", "featherless-ai",
+        "fireworks-ai", "groq", "hf-inference", "hyperbolic", "nebius",
+        "novita", "nscale", "replicate", "sambanova", "together"
+    ]
+    
+    # Fetch models from all providers concurrently
+    tasks = [fetch_models_from_hf_provider(provider) for provider in providers]
+    provider_results = await asyncio.gather(*tasks, return_exceptions=True)
+    
+    # Combine all models
+    all_models = []
+    for i, result in enumerate(provider_results):
+        if isinstance(result, Exception):
+            log.error(f"Error fetching models for provider {providers[i]}: {result}")
+        elif isinstance(result, list):
+            all_models.extend(result)
+    
+    # Cache the results in memory
+    _language_model_cache.set(cache_key, all_models, ttl=CACHE_TTL)
+    log.info(f"Cached {len(all_models)} HuggingFace models in memory")
+    
+    return all_models
+
+async def get_all_language_models() -> List[LanguageModel]:
+    """
+    Get all language models from all providers, including dynamically fetched HF models.
+    
+    Returns:
+        List of all available LanguageModel instances
+    """
+    env = Environment.get_environment()
+    models = []
+
+    # Add static models based on API keys
+    if "ANTHROPIC_API_KEY" in env:
+        models.extend(anthropic_models)
+    if "GEMINI_API_KEY" in env:
+        models.extend(gemini_models)
+    if "OPENAI_API_KEY" in env:
+        models.extend(openai_models)
+    
+    # Add dynamic HuggingFace models if HF token is available
+    if "HF_TOKEN" in env or "HUGGINGFACE_API_KEY" in env:
+        hf_models = await get_cached_hf_models()
+        models.extend(hf_models)
+
+    return models
+
+
+def clear_language_model_cache() -> None:
+    """
+    Clear the in-memory language model cache.
+    
+    This will force the next call to get_cached_hf_models() to fetch fresh data from the API.
+    """
+    _language_model_cache.clear()
+    log.info("Language model cache cleared")

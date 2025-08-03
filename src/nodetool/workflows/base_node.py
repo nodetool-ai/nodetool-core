@@ -246,7 +246,6 @@ class BaseNode(BaseModel):
     _id: str = ""
     _parent_id: str | None = ""
     _ui_properties: dict[str, Any] = {}
-    _visible: bool = True
     _layout: str = "default"
     _dynamic_properties: dict[str, Any] = {}
     _is_dynamic: bool = False
@@ -271,29 +270,15 @@ class BaseNode(BaseModel):
 
     @classmethod
     def is_visible(cls):
-        """Return whether the node class should be listed in UIs.
-
-        Historically ``_visible`` was stored either as a plain Python
-        ``bool`` *or* as a Pydantic ``Field``/``FieldInfo`` (whose default
-        value lives in the ``default`` attribute).  Accessing ``.default`` on
-        a raw boolean raises ``AttributeError`` which broke API calls that
-        enumerate all registered nodes.
-
-        This implementation tolerates both representations:
-
-        * If the attribute is a plain ``bool`` -> return it directly.
-        * Otherwise fall back to ``getattr(attr, "default", True)``.
-        """
-        attr = getattr(cls, "_visible", True)
-        if isinstance(attr, bool):
-            return attr
-        return bool(getattr(attr, "default", True))
+        """Return whether the node class should be listed in UIs."""
+        return True
 
     @classmethod
     def is_dynamic(cls):
         attr = getattr(cls, "_is_dynamic", False)
         if isinstance(attr, bool):
             return attr
+        # If it's a Pydantic Field / FieldInfo return its default, else direct.
         return bool(getattr(attr, "default", False))
 
     @classmethod

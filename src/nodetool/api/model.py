@@ -8,14 +8,7 @@ from nodetool.common.huggingface_file import (
     get_huggingface_file_infos,
 )
 from nodetool.common.environment import Environment
-from nodetool.common.language_models import (
-    anthropic_models,
-    gemini_models,
-    openai_models,
-    huggingface_models,
-    huggingface_groq_models,
-    huggingface_cerebras_models,
-)
+from nodetool.common.language_models import get_all_language_models
 from nodetool.metadata.types import (
     LanguageModel,
     ModelFile,
@@ -192,19 +185,7 @@ async def delete_ollama_model_endpoint(model_name: str) -> bool:
 
 
 async def get_language_models() -> list[LanguageModel]:
-    env = Environment.get_environment()
-    models = []
-
-    if "ANTHROPIC_API_KEY" in env:
-        models.extend(anthropic_models)
-    if "GEMINI_API_KEY" in env:
-        models.extend(gemini_models)
-    if "OPENAI_API_KEY" in env:
-        models.extend(openai_models)
-    if "HF_TOKEN" in env or "HUGGINGFACE_API_KEY" in env:
-        models.extend(huggingface_models)
-        models.extend(huggingface_groq_models)
-        models.extend(huggingface_cerebras_models)
+    models = await get_all_language_models()
 
     ollama_models = await get_ollama_models()
     models.extend(
