@@ -236,7 +236,20 @@ class OllamaProvider(ChatProvider):
                         content = str(message.content)
                 return {"role": "tool", "content": content, "name": message.name}
         elif message.role == "system":
-            return {"role": "system", "content": message.content}
+            # Handle system message content conversion
+            if message.content is None:
+                content = ""
+            elif isinstance(message.content, str):
+                content = message.content
+            else:
+                # Handle list content by extracting text from MessageTextContent objects
+                text_parts = [
+                    part.text
+                    for part in message.content
+                    if isinstance(part, MessageTextContent)
+                ]
+                content = "\n".join(text_parts)
+            return {"role": "system", "content": content}
         elif message.role == "user":
             assert message.content is not None, "User message content must not be None"
             message_dict: Dict[str, Any] = {"role": "user"}
