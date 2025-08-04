@@ -22,6 +22,8 @@ RUN curl -fsSL https://ollama.com/install.sh | sh
 
 RUN uv venv
 
+RUN touch .x
+
 # Install Python dependencies with cache mount
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv pip install --no-cache-dir runpod hf-transfer huggingface-hub \

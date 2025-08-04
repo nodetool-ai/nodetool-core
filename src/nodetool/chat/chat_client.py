@@ -124,7 +124,6 @@ class OpenAIChatClient:
 
         try:
             # Create OpenAI-compatible request using the SDK
-            # For OpenAI API, don't send provider in extra_body
             stream = await self.client.chat.completions.create(
                 model=self.current_model,
                 messages=self.history,
@@ -170,51 +169,13 @@ class OpenAIChatClient:
             True if connection is successful, False otherwise
         """
         try:
-            # For OpenAI API, just test the models endpoint
-            if "api.openai.com" in self.server_url:
-                try:
-                    models = await self.client.models.list()
-                    console.print(
-                        f"[bold green]✅ Connected to OpenAI API[/bold green]"
-                    )
-                    console.print(f"Available models: {len(models.data)} found")
-                    return True
-                except Exception as e:
-                    console.print(
-                        f"[bold red]❌ OpenAI API connection failed:[/bold red] {e}"
-                    )
-                    return False
+            models = await self.client.models.list()
+            console.print(
+                f"[bold green]✅ Connected to OpenAI API[/bold green]"
+            )
+            console.print(f"Available models: {len(models.data)} found")
+            return True
 
-            # For local servers, test health endpoint first
-            import httpx
-
-            async with httpx.AsyncClient() as test_client:
-                response = await test_client.get(f"{self.server_url}/health")
-                if response.status_code == 200:
-                    health_data = response.json()
-                    console.print(
-                        f"[bold green]✅ Connected to chat server[/bold green]"
-                    )
-                    console.print(f"Status: {health_data.get('status', 'unknown')}")
-                    console.print(f"Protocol: {health_data.get('protocol', 'unknown')}")
-
-                    # Test OpenAI endpoint compatibility
-                    try:
-                        models = await self.client.models.list()
-                        console.print(
-                            f"[bold green]✅ OpenAI API endpoint accessible[/bold green]"
-                        )
-                        return True
-                    except Exception as e:
-                        console.print(
-                            f"[bold yellow]⚠️ Health check passed but OpenAI endpoint failed:[/bold yellow] {e}"
-                        )
-                        return False
-                else:
-                    console.print(
-                        f"[bold red]❌ Server returned status {response.status_code}[/bold red]"
-                    )
-                    return False
         except Exception as e:
             console.print(f"[bold red]❌ Connection failed:[/bold red] {e}")
             return False

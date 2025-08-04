@@ -949,12 +949,12 @@ def _handle_docker_config_check(
     "--workers-min", type=int, default=0, help="Minimum number of workers (default: 0)"
 )
 @click.option(
-    "--workers-max", type=int, default=3, help="Maximum number of workers (default: 3)"
+    "--workers-max", type=int, default=1, help="Maximum number of workers (default: 3)"
 )
 @click.option(
     "--idle-timeout",
     type=int,
-    default=5,
+    default=60,
     help="Seconds before scaling down idle workers (default: 5)",
 )
 @click.option(

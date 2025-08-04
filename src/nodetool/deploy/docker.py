@@ -285,12 +285,12 @@ def create_start_script(build_dir: str, chat_handler: bool = False, chat_env: di
         script_content = base_script + chat_env_vars + [
             "",
             'echo "Starting chat handler..."',
-            'exec /app/.venv/bin/python -u /app/runpod_chat_handler.py "$@"'
+            'exec /app/.venv/bin/python -m nodetool.deploy.runpod_chat_handler "$@"'
         ]
     else:
         script_content = base_script + [
             'echo "Starting workflow handler..."',
-            'exec /app/.venv/bin/python -u /app/runpod_handler.py "$@"'
+            'exec /app/.venv/bin/python -m nodetool.deploy.runpod_handler "$@"'
         ]
     
     script_path = Path(build_dir) / "start.sh"
@@ -513,9 +513,6 @@ def build_docker_image(
     # Get the deploy directory where Dockerfile, handlers, and scripts are located
     script_dir = os.path.dirname(os.path.abspath(__file__))
     deploy_dockerfile_path = os.path.join(script_dir, "Dockerfile")
-    runpod_handler_path = os.path.join(script_dir, "runpod_handler.py")
-    runpod_chat_handler_path = os.path.join(script_dir, "runpod_chat_handler.py")
-    download_models_path = os.path.join(script_dir, "download_models.py")
 
     # Create a temporary build directory
     build_dir = tempfile.mkdtemp(prefix="nodetool_build_")
@@ -525,15 +522,8 @@ def build_docker_image(
         # Copy all necessary files to the build directory
         if not chat_handler:
             shutil.copy(workflow_path, os.path.join(build_dir, "workflow.json"))
-            shutil.copy(
-                runpod_handler_path, os.path.join(build_dir, "runpod_handler.py")
-            )
         else:
             # For chat handler, copy the chat handler
-            shutil.copy(
-                runpod_chat_handler_path,
-                os.path.join(build_dir, "runpod_chat_handler.py"),
-            )
 
             # Prepare environment configuration for chat handler
             env_config = {
@@ -544,17 +534,12 @@ def build_docker_image(
             }
 
         shutil.copy(deploy_dockerfile_path, os.path.join(build_dir, "Dockerfile"))
-        shutil.copy(download_models_path, os.path.join(build_dir, "download_models.py"))
 
         # Create models.json file with list of all models for runtime download
         models_file_path = os.path.join(build_dir, "models.json")
         with open(models_file_path, "w") as f:
             json.dump(models, f, indent=2)
         print(f"Created models.json with {len(models)} models for runtime download")
-
-        # Skip creating Ollama pull script - models will be downloaded at runtime
-        # Note: create_ollama_pull_script(models, build_dir) is commented out
-        # Models will be downloaded on startup when not available in /runpod-volume
         
         # Create start.sh script with environment variables
         if chat_handler:

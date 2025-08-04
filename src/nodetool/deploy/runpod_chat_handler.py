@@ -192,6 +192,5 @@ if __name__ == "__main__":
     runpod.serverless.start(
         {
             "handler": chat_handler,
-            "return_aggregate_stream": True,
         }
     )
