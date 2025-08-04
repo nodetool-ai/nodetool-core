@@ -26,12 +26,40 @@ import json
 import os
 import runpod
 import datetime
+from typing import Dict, Any
+from pathlib import Path
 from nodetool.common.environment import Environment
 from nodetool.chat.chat_sse_runner import ChatSSERunner
 from nodetool.api.model import get_language_models
+from nodetool.deploy.download_models import download_models_from_spec
 
 
 log = Environment.get_logger()
+
+
+def download_models_on_startup() -> None:
+    """
+    Download missing models on container startup.
+    
+    Reads model specifications from /app/models.json and downloads
+    any models that are not available in the network volume.
+    """
+    models_file = "/app/models.json"
+    
+    if not os.path.exists(models_file):
+        log.info("No models.json file found, skipping model downloads")
+        return
+    
+    try:
+        with open(models_file, 'r') as f:
+            models = json.load(f)
+    except (json.JSONDecodeError, IOError) as e:
+        log.error(f"Failed to read models file: {e}")
+        return
+    
+    # Use consolidated download function
+    hf_cache_dir = "/runpod-volume/.cache/huggingface/hub"
+    download_models_from_spec(models, hf_cache_dir, log)
 
 
 async def chat_handler(job):
@@ -157,6 +185,10 @@ async def chat_handler(job):
 
 
 if __name__ == "__main__":
+    # Download models on startup
+    log.info("Starting RunPod chat handler...")
+    download_models_on_startup()
+    
     runpod.serverless.start(
         {
             "handler": chat_handler,
