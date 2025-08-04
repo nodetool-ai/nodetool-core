@@ -776,6 +776,9 @@ cli.add_command(settings)
 @click.option("--skip-push", is_flag=True, help="Skip pushing to registry")
 @click.option("--skip-template", is_flag=True, help="Skip creating RunPod template")
 @click.option("--skip-endpoint", is_flag=True, help="Skip creating RunPod endpoint")
+# Cache options
+@click.option("--no-cache", is_flag=True, help="Disable Docker Hub cache optimization")
+@click.option("--no-auto-push", is_flag=True, help="Disable automatic push during optimized build")
 @click.option(
     "--check-docker-config", is_flag=True, help="Check Docker configuration and exit"
 )
@@ -898,6 +901,8 @@ def deploy(
     skip_push: bool,
     skip_template: bool,
     skip_endpoint: bool,
+    no_cache: bool,
+    no_auto_push: bool,
     check_docker_config: bool,
     compute_type: str,
     gpu_types: tuple,
@@ -1175,13 +1180,18 @@ def deploy(
 
     try:
         # Build Docker image with embedded workflow or chat handler
+        image_pushed_during_build = False
         if not skip_build:
             if chat_handler:
-                build_docker_image(workflow_path, full_image_name, image_tag, platform, 
-                                 embed_models=embed_models, chat_handler=True, 
-                                 provider=provider, default_model=default_model)
+                image_pushed_during_build = build_docker_image(
+                    workflow_path, full_image_name, image_tag, platform, 
+                    embed_models=embed_models, chat_handler=True, 
+                    provider=provider, default_model=default_model,
+                    use_cache=not no_cache, auto_push=not no_auto_push)
             else:
-                build_docker_image(workflow_path, full_image_name, image_tag, platform)
+                image_pushed_during_build = build_docker_image(
+                    workflow_path, full_image_name, image_tag, platform,
+                    use_cache=not no_cache, auto_push=not no_auto_push)
 
         # If local option is enabled, run RunPod handler as subprocess without Docker
         if local:
@@ -1253,8 +1263,10 @@ def deploy(
             console.print(f"To remove the container: docker rm {base_image_name}-{image_tag}")
             return
 
-        if not skip_push:
+        if not skip_push and not image_pushed_during_build:
             push_to_registry(full_image_name, image_tag, docker_registry)
+        elif image_pushed_during_build:
+            console.print(f"[bold green]✅ Image {full_image_name}:{image_tag} already pushed during optimized build[/]")
 
         if not skip_template:
             template_id = create_or_update_runpod_template(

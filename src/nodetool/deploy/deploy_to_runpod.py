@@ -724,7 +724,9 @@ def build_docker_image(
     chat_handler: bool = False,
     provider: str = "ollama",
     default_model: str = "gemma3n:latest",
-):
+    use_cache: bool = True,
+    auto_push: bool = True,
+) -> bool:
     """
     Build a Docker image for RunPod deployment with an embedded workflow.
 
@@ -733,7 +735,7 @@ def build_docker_image(
     2. Extracting Hugging Face models from the workflow
     3. Adding model copy instructions to pre-cache models from local HF cache
     4. Creating a temporary build directory with all necessary files
-    5. Building the final image using Docker from the build directory
+    5. Building the final image using Docker buildx with Docker Hub cache optimization
 
     The resulting image is self-contained and includes:
     - All NodeTool dependencies and runtime
@@ -750,12 +752,22 @@ def build_docker_image(
         image_name (str): Name of the Docker image (including registry/username)
         tag (str): Tag of the Docker image
         platform (str): Docker build platform (default: linux/amd64)
+        embed_models (list[dict]): Additional models to embed
+        chat_handler (bool): Whether to use chat handler
+        provider (str): Chat provider
+        default_model (str): Default model for chat
+        use_cache (bool): Whether to use Docker Hub cache optimization (default: True)
+        auto_push (bool): Whether to automatically push to registry during build (default: True)
+
+    Returns:
+        bool: True if the image was pushed to registry, False if only built locally
 
     Raises:
         SystemExit: If Docker build fails or required files are missing
 
     Note:
         Creates and cleans up temporary build directory during the process.
+        When use_cache=True and auto_push=True, the image is automatically pushed.
     """
     import tempfile
     import shutil
@@ -837,10 +849,59 @@ def build_docker_image(
         # Build with the Dockerfile from the build directory
         original_dir = os.getcwd()
         os.chdir(build_dir)
-        run_command(f"docker build --platform {platform} -t {image_name}:{tag} .")
+        image_pushed = False
+        
+        if use_cache:
+            print(f"Building with Docker Hub cache optimization...")
+            
+            # Ensure docker buildx is available
+            run_command("docker buildx create --use --name nodetool-builder --driver docker-container || true")
+            
+            # Try to build with cache from/to Docker Hub registry
+            cache_from = f"--cache-from=type=registry,ref={image_name}:buildcache"
+            cache_to = f"--cache-to=type=registry,ref={image_name}:buildcache,mode=max"
+            
+            push_flag = "--push" if auto_push else "--load"
+            
+            build_cmd_with_cache = (
+                f"docker buildx build "
+                f"--platform {platform} "
+                f"-t {image_name}:{tag} "
+                f"{cache_from} "
+                f"{cache_to} "
+                f"{push_flag} "
+                f"."
+            )
+            
+            print(f"Cache image: {image_name}:buildcache")
+            
+            try:
+                # Try building with cache first
+                run_command(build_cmd_with_cache)
+                image_pushed = auto_push
+            except subprocess.CalledProcessError as e:
+                print("Cache build failed, falling back to build without cache import...")
+                # Fallback to build without cache import (but still export cache)
+                build_cmd_fallback = (
+                    f"docker buildx build "
+                    f"--platform {platform} "
+                    f"-t {image_name}:{tag} "
+                    f"{cache_to} "
+                    f"{push_flag} "
+                    f"."
+                )
+                run_command(build_cmd_fallback)
+                image_pushed = auto_push
+        else:
+            # Traditional docker build without cache optimization
+            print("Building without cache optimization...")
+            run_command(f"docker build --platform {platform} -t {image_name}:{tag} .")
+            image_pushed = False
+        
         os.chdir(original_dir)
 
         print("Docker image built successfully")
+        return image_pushed
     finally:
         # Clean up temporary build directory
         shutil.rmtree(build_dir, ignore_errors=True)
