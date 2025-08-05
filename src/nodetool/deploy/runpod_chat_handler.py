@@ -133,8 +133,7 @@ async def chat_handler(job):
                     default_provider=provider
                 )
                 
-                # Determine if streaming is requested (default True)
-                stream = request_data.get("stream", True)
+                stream = request_data.get("stream", False)
                 
                 if not stream:
                     # Non-streaming: collect all chunks into single response
@@ -167,7 +166,7 @@ async def chat_handler(job):
                             if payload == "[DONE]":
                                 break
                             try:
-                                yield json.loads(payload)
+                                yield [json.loads(payload)]
                             except json.JSONDecodeError:
                                 # Skip malformed JSON
                                 continue
