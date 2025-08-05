@@ -161,16 +161,7 @@ async def chat_handler(job):
                 else:
                     # Streaming: yield each chunk as it comes
                     async for event in runner.process_single_request(request_data):
-                        if event.startswith("data: "):
-                            payload = event[len("data: "):].strip()
-                            if payload == "[DONE]":
-                                break
-                            try:
-                                yield [json.loads(payload)]
-                            except json.JSONDecodeError:
-                                # Skip malformed JSON
-                                continue
-                                
+                        yield event
             except Exception as e:
                 log.error(f"Chat completions error: {e}")
                 yield {"error": {"message": str(e), "type": "chat_completion_error"}}
