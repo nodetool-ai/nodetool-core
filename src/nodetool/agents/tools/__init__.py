@@ -56,7 +56,7 @@ from .chroma_tools import ChromaHybridSearchTool, ChromaIndexTool, ChromaTextSea
 
 # Email tools
 from nodetool.agents.tools.email_tools import (
-    AddLabelTool,
+    AddLabelToEmailTool,
     ArchiveEmailTool,
     SearchEmailTool,
     create_gmail_connection,
@@ -95,7 +95,7 @@ from .edit_workflow_tool import EditWorkflowTool
 
 # Names to be exported (dunder all)
 __all__ = [
-    "AddLabelTool",
+    "AddLabelToEmailTool",
     "ArchiveEmailTool",
     "BrowserTool",
     "BrowserUseTool",

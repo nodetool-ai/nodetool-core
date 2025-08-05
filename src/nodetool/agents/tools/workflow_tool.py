@@ -11,9 +11,9 @@ from typing import Any, Dict
 from uuid import uuid4
 
 from nodetool.agents.tools.base import Tool
-from nodetool.metadata.types import AssetRef
-from nodetool.models.asset import Asset
-from nodetool.models.workflow import Workflow
+from nodetool.common.environment import Environment
+from nodetool.types.workflow import Workflow
+from nodetool.models.workflow import Workflow as WorkflowModel
 from nodetool.types.graph import get_input_schema, get_output_schema
 from nodetool.types.job import JobUpdate
 from nodetool.workflows.processing_context import ProcessingContext
@@ -21,6 +21,25 @@ from nodetool.workflows.run_workflow import run_workflow
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.types import NodeUpdate, OutputUpdate
 
+def from_model(workflow: WorkflowModel):
+    api_graph = workflow.get_api_graph()
+
+    return Workflow(
+        id=workflow.id,
+        access=workflow.access,
+        created_at=workflow.created_at.isoformat(),
+        updated_at=workflow.updated_at.isoformat(),
+        name=workflow.name,
+        package_name=workflow.package_name,
+        tags=workflow.tags,
+        description=workflow.description or "",
+        thumbnail=workflow.thumbnail or "",
+        graph=api_graph,
+        input_schema=get_input_schema(api_graph),
+        output_schema=get_output_schema(api_graph),
+        settings=workflow.settings,
+        run_mode=workflow.run_mode,
+    )
 
 class WorkflowTool(Tool):
     """Tool that executes a specific workflow using its input schema."""
@@ -40,9 +59,8 @@ class WorkflowTool(Tool):
         if workflow.description:
             self.description += f" - {workflow.description}"
         
-        graph = workflow.get_api_graph()
-        schema = get_input_schema(graph)
-        self.input_schema = schema
+        assert workflow.input_schema is not None, "Workflow input schema is required"
+        self.input_schema = workflow.input_schema
 
     async def process(self, context: ProcessingContext, params: Dict[str, Any]) -> Any:
         """
@@ -56,15 +74,11 @@ class WorkflowTool(Tool):
             The workflow execution results
         """
         try:
-            # Get the workflow graph
-            graph = self.workflow.get_api_graph()
-            
-            # Create workflow request
             req = RunJobRequest(
                 user_id=context.user_id,
                 auth_token=context.auth_token,
                 workflow_id=self.workflow.id,
-                graph=graph,
+                graph=self.workflow.graph,
                 params=params
             )
             
@@ -109,12 +123,10 @@ def create_workflow_tools(user_id: str, limit: int = 1000) -> list[WorkflowTool]
     Returns:
         List of WorkflowTool instances
     """
-    try:
-        workflows, _ = Workflow.paginate(user_id=user_id, limit=limit)
-        return [WorkflowTool(workflow) for workflow in workflows if workflow.run_mode == "tool"]
-    except Exception as e:
-        print(f"Warning: Could not load workflows for user {user_id}: {e}")
+    if not Environment.has_database():
         return []
+    workflows, _ = WorkflowModel.paginate(user_id=user_id, limit=limit)
+    return [WorkflowTool(from_model(workflow)) for workflow in workflows]
 
 
 def create_workflow_tool_by_name(user_id: str, workflow_name: str) -> WorkflowTool | None:
@@ -129,11 +141,11 @@ def create_workflow_tool_by_name(user_id: str, workflow_name: str) -> WorkflowTo
         WorkflowTool instance if found, None otherwise
     """
     try:
-        workflows, _ = Workflow.paginate(user_id=user_id, limit=1000)
+        workflows, _ = WorkflowModel.paginate(user_id=user_id, limit=1000)
         
         for workflow in workflows:
             if workflow.name == workflow_name:
-                return WorkflowTool(workflow)
+                return WorkflowTool(from_model(workflow))
         
         return None
     except Exception as e:

@@ -1,6 +1,66 @@
-# Chat WebSocket API
+# Chat API
 
-NodeTool exposes a `/chat` WebSocket endpoint for real time conversations.
+NodeTool provides both OpenAI-compatible HTTP endpoints and WebSocket endpoints for chat interactions.
+
+## OpenAI-Compatible HTTP API
+
+NodeTool exposes OpenAI-compatible endpoints that allow you to use standard OpenAI client libraries and tools.
+
+### Chat Completions: `POST /v1/chat/completions`
+
+**URL:** `http://localhost:8000/v1/chat/completions`
+
+**Headers:**
+- `Content-Type: application/json`
+- `Authorization: Bearer YOUR_TOKEN`
+
+**Request Body:**
+```json
+{
+  "model": "gpt-4",
+  "messages": [
+    {"role": "user", "content": "Hello, how are you?"}
+  ],
+  "stream": true
+}
+```
+
+**Example using OpenAI Python client:**
+```python
+import openai
+
+client = openai.OpenAI(
+    api_key="YOUR_TOKEN",
+    base_url="http://localhost:8000/v1"
+)
+
+response = client.chat.completions.create(
+    model="gpt-4",
+    messages=[
+        {"role": "user", "content": "Hello, how are you?"}
+    ],
+    stream=True
+)
+
+for chunk in response:
+    if chunk.choices[0].delta.content is not None:
+        print(chunk.choices[0].delta.content, end="")
+```
+
+### Models: `GET /v1/models`
+
+**URL:** `http://localhost:8000/v1/models`
+
+List all available models for the configured provider.
+
+```bash
+curl http://localhost:8000/v1/models \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+## WebSocket API
+
+NodeTool also exposes a `/chat` WebSocket endpoint for real time conversations.
 The server side is implemented by `ChatWebSocketRunner` which handles message
 parsing, tool execution and streaming responses.
 
@@ -8,7 +68,7 @@ The connection supports both binary (MessagePack) and text (JSON) messages.
 Authentication can be provided via `Authorization: Bearer <token>` headers or
 an `api_key` query parameter.
 
-## Example usage
+### WebSocket Example usage
 
 ```javascript
 const socket = new WebSocket("ws://localhost:8000/chat?api_key=YOUR_KEY");

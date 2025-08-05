@@ -40,46 +40,85 @@ Messages are sent and received as JSON objects over the WebSocket connection.
 }
 ```
 
-### SSE Protocol
+### OpenAI-Compatible Protocol
 
-#### SSE Chat Endpoint: `POST /chat/sse`
+#### Chat Completions Endpoint: `POST /v1/chat/completions`
 
-**URL:** `http://host:port/chat/sse`
+**URL:** `http://host:port/v1/chat/completions`
 
 **Headers:**
 - `Content-Type: application/json`
-- `Authorization: Bearer YOUR_TOKEN` (optional)
+- `Authorization: Bearer YOUR_TOKEN`
 
 **Request Body:**
 ```json
 {
-  "message": "Your message here",
-  "auth_token": "YOUR_TOKEN",
-  "history": [
-    {"role": "user", "content": "Previous message"},
-    {"role": "assistant", "content": "Previous response"}
+  "model": "gpt-4",
+  "messages": [
+    {"role": "user", "content": "Hello, how are you?"}
+  ],
+  "stream": true
+}
+```
+
+**Response (Streaming):**
+Server-Sent Events stream with OpenAI-compatible format:
+
+```
+data: {"id": "chatcmpl-123", "object": "chat.completion.chunk", "created": 1694268190, "model": "gpt-4", "choices": [{"index": 0, "delta": {"content": "Hello"}, "finish_reason": null}]}
+
+data: {"id": "chatcmpl-123", "object": "chat.completion.chunk", "created": 1694268190, "model": "gpt-4", "choices": [{"index": 0, "delta": {"content": "!"}, "finish_reason": null}]}
+
+data: {"id": "chatcmpl-123", "object": "chat.completion.chunk", "created": 1694268190, "model": "gpt-4", "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]}
+
+data: [DONE]
+```
+
+**Response (Non-streaming):**
+```json
+{
+  "id": "chatcmpl-123",
+  "object": "chat.completion",
+  "created": 1694268190,
+  "model": "gpt-4",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "Hello! I'm doing well, thank you for asking."
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 12,
+    "completion_tokens": 15,
+    "total_tokens": 27
+  }
+}
+```
+
+### Models Endpoint: `GET /v1/models`
+
+**URL:** `http://host:port/v1/models`
+
+**Response:**
+```json
+{
+  "object": "list",
+  "data": [
+    {
+      "id": "gpt-4",
+      "object": "model",
+      "created": 0,
+      "owned_by": "openai"
+    }
   ]
 }
 ```
 
-**Response:**
-Server-Sent Events stream with the following event types:
-
-```
-event: message
-data: {"type": "response", "content": "Partial response...", "status": "streaming"}
-
-event: message
-data: {"type": "response", "content": "Complete response", "status": "complete"}
-
-event: error
-data: {"type": "error", "message": "Error description"}
-
-event: close
-data: {"type": "close"}
-```
-
-#### CORS Preflight: `OPTIONS /chat/sse`
+#### CORS Preflight: `OPTIONS /v1/chat/completions`
 
 Handles CORS preflight requests for web browser compatibility.
 
@@ -114,33 +153,17 @@ Handles CORS preflight requests for web browser compatibility.
 - Persistent chat sessions
 - Full context retention
 
-### Without Database (--no-database)
-- **WebSocket:** In-memory conversation storage
-- **SSE:** History must be included in each request
-- Suitable for stateless deployments
-
 ## Usage Examples
 
-### Start WebSocket Server
+### Start Chat Server
 ```bash
 nodetool chat-server
 nodetool chat-server --host 0.0.0.0 --port 8080
 ```
 
-### Start SSE Server
-```bash
-nodetool chat-server --protocol sse
-nodetool chat-server --protocol sse --port 3000
-```
-
 ### With Authentication
 ```bash
 nodetool chat-server --remote-auth
-```
-
-### Without Database
-```bash
-nodetool chat-server --no-database
 ```
 
 ### With Custom Default Model
@@ -149,55 +172,106 @@ nodetool chat-server --default-model gpt-4 --default-provider openai
 nodetool chat-server --default-model claude-3-opus-20240229 --default-provider anthropic
 ```
 
-### WebSocket Client Example (JavaScript)
+### Client Example (JavaScript)
 ```javascript
-const ws = new WebSocket('ws://localhost:8080/chat?token=YOUR_TOKEN');
-
-ws.onopen = function() {
-    ws.send(JSON.stringify({
-        type: 'message',
-        content: 'Hello, AI!',
-        history: []
-    }));
-};
-
-ws.onmessage = function(event) {
-    const data = JSON.parse(event.data);
-    console.log('AI Response:', data.content);
-};
-```
-
-### SSE Client Example (JavaScript)
-```javascript
-const eventSource = new EventSource('http://localhost:8080/chat/sse');
-
-eventSource.addEventListener('message', function(event) {
-    const data = JSON.parse(event.data);
-    console.log('AI Response:', data.content);
-});
-
-// Send message via fetch
-fetch('http://localhost:8080/chat/sse', {
+// Streaming request using fetch
+const response = await fetch('http://localhost:8080/v1/chat/completions', {
     method: 'POST',
     headers: {
         'Content-Type': 'application/json',
         'Authorization': 'Bearer YOUR_TOKEN'
     },
     body: JSON.stringify({
-        message: 'Hello, AI!',
-        history: []
+        model: 'gpt-4',
+        messages: [
+            {role: 'user', content: 'Hello, AI!'}
+        ],
+        stream: true
     })
 });
+
+const reader = response.body.getReader();
+const decoder = new TextDecoder();
+
+while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    
+    const chunk = decoder.decode(value);
+    const lines = chunk.split('\n');
+    
+    for (const line of lines) {
+        if (line.startsWith('data: ')) {
+            const data = line.slice(6);
+            if (data === '[DONE]') break;
+            
+            try {
+                const parsed = JSON.parse(data);
+                const content = parsed.choices[0]?.delta?.content;
+                if (content) {
+                    console.log('AI Response:', content);
+                }
+            } catch (e) {
+                // Skip malformed JSON
+            }
+        }
+    }
+}
+
+// Non-streaming request
+const nonStreamingResponse = await fetch('http://localhost:8080/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer YOUR_TOKEN'
+    },
+    body: JSON.stringify({
+        model: 'gpt-4',
+        messages: [
+            {role: 'user', content: 'Hello, AI!'}
+        ],
+        stream: false
+    })
+});
+
+const result = await nonStreamingResponse.json();
+console.log('AI Response:', result.choices[0].message.content);
 ```
 
 ### cURL Examples
 
-#### SSE Request
+#### Chat Completions (Streaming)
 ```bash
-curl -X POST http://localhost:8080/chat/sse \
+curl -X POST http://localhost:8080/v1/chat/completions \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_TOKEN" \
-  -d '{"message": "Hello, AI!", "history": []}'
+  -d '{
+    "model": "gpt-4",
+    "messages": [
+      {"role": "user", "content": "Hello, AI!"}
+    ],
+    "stream": true
+  }'
+```
+
+#### Chat Completions (Non-streaming)
+```bash
+curl -X POST http://localhost:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -d '{
+    "model": "gpt-4",
+    "messages": [
+      {"role": "user", "content": "Hello, AI!"}
+    ],
+    "stream": false
+  }'
+```
+
+#### List Models
+```bash
+curl http://localhost:8080/v1/models \
+  -H "Authorization: Bearer YOUR_TOKEN"
 ```
 
 #### Health Check
@@ -226,29 +300,34 @@ curl http://localhost:8080/health
 - Use secure token storage practices
 """
 
-import asyncio
 import uvicorn
-from fastapi import FastAPI, WebSocket, Request, HTTPException
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import StreamingResponse
 from nodetool.common.environment import Environment
-from nodetool.chat.chat_websocket_runner import ChatWebSocketRunner
 from nodetool.chat.chat_sse_runner import ChatSSERunner
 from rich.console import Console
 from nodetool.api.model import get_language_models
 import json
 
+from nodetool.types.workflow import Workflow
+
 console = Console()
 
 
-def create_chat_server(remote_auth: bool, use_database: bool, provider: str, default_model: str = "gemma3n:latest") -> FastAPI:
+def create_chat_server(
+    remote_auth: bool,
+    provider: str,
+    default_model: str = "gemma3n:latest",
+    tools: list[str] = [],
+    workflows: list[Workflow] = [],
+) -> FastAPI:
     """Create a FastAPI chat server instance.
-    
+
     Args:
         remote_auth: Whether to use remote authentication
-        use_database: Whether to run without database
         provider: Provider to use
         default_model: Default model to use when not specified by client
-        
+
     Returns:
         FastAPI application instance
     """
@@ -256,6 +335,7 @@ def create_chat_server(remote_auth: bool, use_database: bool, provider: str, def
     Environment.set_remote_auth(remote_auth)
 
     app = FastAPI(title="NodeTool Chat Server", version="1.0.0")
+
     # OpenAI-compatible chat completions endpoint
     @app.post("/v1/chat/completions")
     async def openai_chat_completions(request: Request):
@@ -263,11 +343,21 @@ def create_chat_server(remote_auth: bool, use_database: bool, provider: str, def
         try:
             data = await request.json()
             auth_header = request.headers.get("authorization", "")
-            auth_token = auth_header.replace("Bearer ", "") if auth_header.startswith("Bearer ") else None
+            auth_token = (
+                auth_header.replace("Bearer ", "")
+                if auth_header.startswith("Bearer ")
+                else None
+            )
             if auth_token:
                 data["auth_token"] = auth_token
 
-            runner = ChatSSERunner(auth_token, use_database=use_database, default_model=default_model, default_provider=provider)
+            runner = ChatSSERunner(
+                auth_token,
+                default_model=default_model,
+                default_provider=provider,
+                tools=tools,
+                workflows=workflows,
+            )
 
             # Determine if the client requested streaming (default true)
             stream = data.get("stream", True)
@@ -276,7 +366,7 @@ def create_chat_server(remote_auth: bool, use_database: bool, provider: str, def
                 chunks = []
                 async for event in runner.process_single_request(data):
                     if event.startswith("data: "):
-                        payload = event[len("data: "):].strip()
+                        payload = event[len("data: ") :].strip()
                         if payload == "[DONE]":
                             break
                         chunks.append(payload)
@@ -292,8 +382,8 @@ def create_chat_server(remote_auth: bool, use_database: bool, provider: str, def
                         "Connection": "keep-alive",
                         "Access-Control-Allow-Origin": "*",
                         "Access-Control-Allow-Headers": "Authorization, Content-Type",
-                        "Access-Control-Allow-Methods": "POST, OPTIONS"
-                    }
+                        "Access-Control-Allow-Methods": "POST, OPTIONS",
+                    },
                 )
         except Exception as e:
             console.print(f"OpenAI Chat error: {e}")
@@ -305,7 +395,14 @@ def create_chat_server(remote_auth: bool, use_database: bool, provider: str, def
         """Returns list of models filtered by provider in OpenAI format."""
         try:
             all_models = await get_language_models()
-            filtered = [m for m in all_models if ((m.provider.value if hasattr(m.provider, 'value') else m.provider) == provider)]
+            filtered = [
+                m
+                for m in all_models
+                if (
+                    (m.provider.value if hasattr(m.provider, "value") else m.provider)
+                    == provider
+                )
+            ]
             data = [
                 {
                     "id": m.id or m.name,
@@ -337,29 +434,45 @@ def create_chat_server(remote_auth: bool, use_database: bool, provider: str, def
     return app
 
 
-def run_chat_server(host: str, port: int, remote_auth: bool, use_database: bool, provider: str, default_model: str = "gemma3n:latest"):
+def run_chat_server(
+    host: str,
+    port: int,
+    remote_auth: bool,
+    provider: str,
+    default_model: str = "gemma3n:latest",
+    tools: list[str] = [],
+    workflows: list[Workflow] = [],
+):
     """Run the chat server.
-    
+
     Args:
         host: Host address to serve on
         port: Port to serve on
         protocol: Protocol to use ('websocket' or 'sse')
         remote_auth: Whether to use remote authentication
-        use_database: Whether to run without database
         provider: Provider to use
         default_model: Default model to use when not specified by client
+        tools: List of tool names to use
+        workflows: List of workflows to use
     """
-    app = create_chat_server(remote_auth, use_database, provider, default_model)
-    
-    console.print(f"🚀 Starting opena-ai compatible chat server on {host}:{port}")
-    console.print(f"Chat completions endpoint: http://{host}:{port}/v1/chat/completions")
+    import dotenv
+    dotenv.load_dotenv()
+
+    app = create_chat_server(remote_auth, provider, default_model, tools, workflows)
+
+    console.print(f"🚀 Starting OpenAI-compatible chat server on {host}:{port}")
+    console.print(
+        f"Chat completions endpoint: http://{host}:{port}/v1/chat/completions"
+    )
     console.print(f"Models endpoint: http://{host}:{port}/v1/models")
-    console.print("Authentication mode:", "Remote (Supabase)" if remote_auth else "Local (user_id=1)")
-    console.print("Database mode:", "Disabled (history in request)" if use_database else "Enabled")
+    console.print(
+        "Authentication mode:",
+        "Remote (Supabase)" if remote_auth else "Local (user_id=1)",
+    )
     console.print("Default model:", f"{default_model} (provider: {provider})")
+    console.print("Tools:", tools)
+    console.print("Workflows:", [w.name for w in workflows])
     console.print("\nSend POST requests with Authorization: Bearer YOUR_TOKEN header")
-    if use_database:
-        console.print("Include 'history' field in request payload with full conversation history")
 
     # Run the server
     try:
@@ -369,4 +482,5 @@ def run_chat_server(host: str, port: int, remote_auth: bool, use_database: bool,
     except Exception as e:
         console.print(f"❌ Server error: {e}")
         import sys
+
         sys.exit(1)

@@ -1318,6 +1318,53 @@ def update_pyproject_include(package: PackageModel, verbose: bool = False) -> No
         print(f"Updated {pyproject_path} include section with asset files")
 
 
+def load_node_packages():
+    from nodetool.metadata.node_metadata import get_node_classes_from_namespace
+    import importlib
+
+    registry = Registry()
+    packages = registry.list_installed_packages()
+
+    total_loaded = 0
+    for package in packages:
+        if package.nodes:
+            # Collect unique namespaces from this package
+            namespaces = set()
+            for node_metadata in package.nodes:
+                node_type = node_metadata.node_type
+                namespace_parts = node_type.split(".")[:-1]
+                if len(namespace_parts) >= 2:
+                    namespace = ".".join(namespace_parts)
+                    namespaces.add(namespace)
+
+            # Load each unique namespace from this package
+            for namespace in namespaces:
+                try:
+                    # Try to import the module directly
+                    if namespace.startswith("nodetool.nodes."):
+                        module_path = namespace
+                    else:
+                        module_path = f"nodetool.nodes.{namespace}"
+
+                    importlib.import_module(module_path)
+                    total_loaded += 1
+                except ImportError:
+                    # Try alternative approach
+                    try:
+                        if namespace.startswith("nodetool."):
+                            namespace_suffix = namespace[9:]
+                            get_node_classes_from_namespace(
+                                f"nodetool.nodes.{namespace_suffix}"
+                            )
+                            total_loaded += 1
+                        else:
+                            get_node_classes_from_namespace(
+                                f"nodetool.nodes.{namespace}"
+                            )
+                            total_loaded += 1
+                    except Exception:
+                        pass
+
 async def main():
     """
     Main function to run smoke tests for the registry module.

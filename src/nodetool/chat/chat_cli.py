@@ -47,7 +47,7 @@ from nodetool.chat.regular_chat import process_regular_chat
 from nodetool.metadata.types import Message, ToolCall, LanguageModel
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.agents.tools import (
-    AddLabelTool,
+    AddLabelToEmailTool,
     ArchiveEmailTool,
     BrowserTool,
     ConvertPDFToMarkdownTool,
@@ -288,7 +288,7 @@ class ChatCLI:
 
         # Initialize standard tools
         standard_tools = [
-            AddLabelTool(),
+            AddLabelToEmailTool(),
             ArchiveEmailTool(),
             BrowserTool(),
             ConvertPDFToMarkdownTool(),

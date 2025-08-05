@@ -229,7 +229,7 @@ class DBModel(BaseModel):
         """
         Reload the model instance from the DB.
         """
-        item = self.adapter.get(self.partition_value())
+        item = self.adapter().get(self.partition_value())
         if item is None:
             raise ValueError(f"Item not found: {self.partition_value()}")
         for key, value in item.items():

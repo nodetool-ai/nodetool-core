@@ -351,8 +351,8 @@ class ArchiveEmailTool(Tool):
             return {"error": str(e)}
 
 
-class AddLabelTool(Tool):
-    name = "add_label"
+class AddLabelToEmailTool(Tool):
+    name = "add_label_to_email"
     description = "Add a label to a Gmail message"
     input_schema = {
         "type": "object",

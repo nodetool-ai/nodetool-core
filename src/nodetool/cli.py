@@ -227,11 +227,6 @@ def chat():
     "--remote-auth", is_flag=True, help="Use remote authentication (Supabase)."
 )
 @click.option(
-    "--use-database",
-    is_flag=False,
-    help="Run with database (in-memory for WebSocket, history in request for SSE).",
-)
-@click.option(
     "--default-model",
     default="gemma3n:latest",
     help="Default AI model to use when not specified by client.",
@@ -241,29 +236,51 @@ def chat():
     default="ollama",
     help="AI provider to use.",
 )
+@click.option(
+    "--tools",
+    default=[],
+    help="Tools to use.",
+)
+@click.option(
+    "--workflow",
+    "workflows",
+    multiple=True,
+    type=click.Path(exists=True, resolve_path=True, file_okay=True, dir_okay=False),
+    help="One or more workflow files to use.",
+)
 def chat_server(
     host: str,
     port: int,
     remote_auth: bool,
-    use_database: bool,
     provider: str,
     default_model: str,
+    tools: list[str],
+    workflows: list[str],
 ):
-    """Start a chat server using WebSocket or SSE protocol.
+    """Start a chat server SSE protocol.
 
     Examples:
       # Start WebSocket server on default port 8080
       nodetool chat-server
 
-      # Start SSE server on port 3000
-      nodetool chat-server --port 3000 --protocol sse
+      # Start chat server on port 3000
+      nodetool chat-server --port 3000
 
-      # Start with remote authentication
-      nodetool chat-server --remote-auth
+      # Start with tools
+      nodetool chat-server --tools "google_search,google_news,google_images"
     """
     from nodetool.chat.server import run_chat_server
+    import json
+    from nodetool.types.workflow import Workflow
 
-    run_chat_server(host, port, remote_auth, use_database, provider, default_model)
+    def load_workflow(path: str) -> Workflow:
+        with open(path, "r") as f:
+            workflow = json.load(f)
+        return Workflow.model_validate(workflow)
+
+    loaded_workflows = [load_workflow(f) for f in workflows]
+
+    run_chat_server(host, port, remote_auth, provider, default_model, tools, loaded_workflows)
 
 
 @cli.command("chat-client")

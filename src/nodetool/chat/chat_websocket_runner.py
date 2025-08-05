@@ -24,9 +24,11 @@ from typing import Optional, Dict, List
 from enum import Enum
 
 from fastapi import WebSocket
+from nodetool.agents.tools.workflow_tool import create_workflow_tools
 from nodetool.chat.base_chat_runner import BaseChatRunner
 from nodetool.common.environment import Environment
 from nodetool.metadata.types import Message as ApiMessage
+from nodetool.models.message import Message as DBMessage
 
 log = logging.getLogger(__name__)
 
@@ -44,12 +46,59 @@ class ChatWebSocketRunner(BaseChatRunner):
     WebSocket-specific transport methods for real-time bidirectional communication.
     """
 
-    def __init__(self, auth_token: str | None = None, use_database: bool = True, default_model: str = "gemma3n:latest", default_provider: str = "ollama"):
-        super().__init__(auth_token, use_database, default_model, default_provider)
+    def __init__(self, auth_token: str | None = None, default_model: str = "gemma3n:latest", default_provider: str = "ollama"):
+        super().__init__(auth_token, default_model, default_provider)
         self.websocket: WebSocket | None = None
         self.mode: WebSocketMode = WebSocketMode.BINARY
         # In-memory storage for chat history when database is disabled
         self.in_memory_history: Dict[str, List[ApiMessage]] = {}
+
+    def _initialize_standard_tools(self):
+        from nodetool.agents.tools import (
+            AddLabelToEmailTool,
+            ArchiveEmailTool,
+            BrowserTool,
+            ConvertPDFToMarkdownTool,
+            CreateWorkflowTool,
+            DownloadFileTool,
+            EditWorkflowTool,
+            ExtractPDFTablesTool,
+            ExtractPDFTextTool,
+            GoogleGroundedSearchTool,
+            GoogleImageGenerationTool,
+            GoogleImagesTool,
+            GoogleNewsTool,
+            GoogleSearchTool,
+            ListAssetsDirectoryTool,
+            OpenAIImageGenerationTool,
+            OpenAITextToSpeechTool,
+            OpenAIWebSearchTool,
+            ScreenshotTool,
+            SearchEmailTool,
+        )
+        # Initialize tools after user_id is set
+        self.all_tools += [
+            AddLabelToEmailTool(),
+            ArchiveEmailTool(),
+            BrowserTool(),
+            ConvertPDFToMarkdownTool(),
+            CreateWorkflowTool(),
+            DownloadFileTool(),
+            EditWorkflowTool(),
+            ExtractPDFTablesTool(),
+            ExtractPDFTextTool(),
+            GoogleGroundedSearchTool(),
+            GoogleImageGenerationTool(),
+            GoogleImagesTool(),
+            GoogleNewsTool(),
+            GoogleSearchTool(),
+            ListAssetsDirectoryTool(),
+            OpenAIImageGenerationTool(),
+            OpenAITextToSpeechTool(),
+            OpenAIWebSearchTool(),
+            ScreenshotTool(),
+            SearchEmailTool(),
+        ]   
 
     async def connect(self, websocket: WebSocket):
         """
@@ -89,8 +138,12 @@ class ChatWebSocketRunner(BaseChatRunner):
         log.info("WebSocket connection established for chat")
         log.debug("WebSocket connection ready")
 
-        # Initialize tools after user_id is set
-        self._initialize_tools()
+        self.all_tools = []
+        self._initialize_standard_tools()
+        self._initialize_node_tools()
+
+        if self.user_id:
+            self.all_tools += create_workflow_tools(self.user_id, limit=200)
 
     def _save_message_to_memory(self, thread_id: str, message: ApiMessage) -> None:
         """Save a message to in-memory storage for the thread."""
@@ -98,35 +151,6 @@ class ChatWebSocketRunner(BaseChatRunner):
             self.in_memory_history[thread_id] = []
         self.in_memory_history[thread_id].append(message)
         log.debug(f"Saved message to in-memory storage for thread {thread_id}")
-
-    async def _save_message_to_db_async(self, message_data: dict) -> ApiMessage:
-        """
-        Override to save to in-memory storage when database is disabled.
-        """
-        if not self.use_database:
-            # Create API message directly and save to memory
-            metadata_message = ApiMessage(**message_data)
-            thread_id = message_data.get("thread_id", "")
-            if thread_id:
-                self._save_message_to_memory(thread_id, metadata_message)
-            log.debug("Created and saved message to in-memory storage")
-            return metadata_message
-        
-        # Use parent implementation for database mode
-        return await super()._save_message_to_db_async(message_data)
-
-    async def get_chat_history_from_db(self, thread_id: str) -> List[ApiMessage]:
-        """
-        Override to provide in-memory chat history when database is disabled.
-        """
-        if not self.use_database:
-            # Return in-memory history for this thread
-            history = self.in_memory_history.get(thread_id, [])
-            log.debug(f"Retrieved {len(history)} messages from in-memory storage for thread {thread_id}")
-            return history
-        
-        # Use parent implementation for database mode
-        return await super().get_chat_history_from_db(thread_id)
 
     async def handle_message(self, data: dict):
         """
@@ -146,30 +170,9 @@ class ChatWebSocketRunner(BaseChatRunner):
             if not data.get("provider"):
                 data["provider"] = self.default_provider
             
-            # Handle message storage and loading based on database mode
-            if self.use_database:
-                # Save message to database asynchronously (if enabled)
-                try:
-                    db_message = await self._save_message_to_db_async(data)
-                    # Convert to metadata message for processing
-                    metadata_message = self._db_message_to_metadata_message(db_message)
-                    log.debug("Saved message to database asynchronously")
-                except Exception as db_error:
-                    log.error(f"Database save failed, continuing with in-memory message: {db_error}")
-                    # Create a fallback API message for processing even if DB save fails
-                    metadata_message = ApiMessage(**data)
-                    log.debug("Created fallback message for processing")
-                
-                # Load messages from database
-                chat_history = await self.get_chat_history_from_db(thread_id)
-            else:
-                # Create API message directly and save to memory
-                metadata_message = ApiMessage(**data)
-                self._save_message_to_memory(thread_id, metadata_message)
-                log.debug("Created and saved message to in-memory storage")
-                
-                # Load messages from in-memory storage
-                chat_history = await self.get_chat_history_from_db(thread_id)
+            # Save message to database asynchronously (if enabled)
+            await self._save_message_to_db_async(data)
+            chat_history = await self.get_chat_history_from_db(thread_id)
 
             # Call the implementation method with the loaded messages
             await self.handle_message_impl(chat_history)
@@ -189,64 +192,6 @@ class ChatWebSocketRunner(BaseChatRunner):
             except:
                 pass
 
-    async def _run_processor(self, processor, chat_history, processing_context, tools, **kwargs):
-        """Override to save assistant messages to in-memory storage when database is disabled."""
-        if not self.use_database:
-            # Custom implementation for in-memory mode
-            log.debug(f"Running processor {processor.__class__.__name__} (in-memory mode)")
-            
-            # Create the processor task
-            processor_task = asyncio.create_task(
-                processor.process(
-                    chat_history=chat_history,
-                    processing_context=processing_context,
-                    tools=tools,
-                    **kwargs
-                )
-            )
-            
-            try:
-                # Process messages while the processor is running
-                while processor.has_messages() or processor.is_processing:
-                    message = await processor.get_message()
-                    if message:
-                        print(message)
-                        if message["type"] == "message":
-                            # Save assistant message to in-memory storage
-                            try:
-                                # Create an ApiMessage from the assistant response
-                                thread_id = kwargs.get('thread_id') or chat_history[-1].thread_id if chat_history else ""
-                                assistant_message = ApiMessage(
-                                    thread_id=thread_id,
-                                    role="assistant",
-                                    content=message.get("content", ""),
-                                    **{k: v for k, v in message.items() if k not in ["type", "content"]}
-                                )
-                                if thread_id:
-                                    self._save_message_to_memory(thread_id, assistant_message)
-                                log.debug("Saved assistant message to in-memory storage")
-                            except Exception as memory_error:
-                                log.error(f"Assistant message memory save failed: {memory_error}")
-                        else:
-                            await self.send_message(message)
-                    else:
-                        # Small delay to avoid busy waiting
-                        await asyncio.sleep(0.01)
-                
-                # Wait for the processor task to complete
-                await processor_task
-                
-            except asyncio.CancelledError:
-                # If cancelled, make sure the processor task is also cancelled
-                processor_task.cancel()
-                try:
-                    await processor_task
-                except asyncio.CancelledError:
-                    pass
-                raise
-        else:
-            # Use parent implementation for database mode
-            await super()._run_processor(processor, chat_history, processing_context, tools, **kwargs)
 
     async def disconnect(self):
         """

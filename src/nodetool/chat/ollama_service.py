@@ -12,12 +12,7 @@ def get_ollama_client() -> AsyncClient:
     api_url = Environment.get("OLLAMA_API_URL")
     assert api_url, "OLLAMA_API_URL not set"
 
-    api_key = Environment.get("OLLAMA_API_KEY")
-    if api_key:
-        headers = {"Authorization": f"Bearer {api_key}"}
-    else:
-        headers = {}
-    return AsyncClient(api_url, headers=headers)
+    return AsyncClient(api_url)
 
 
 async def get_ollama_models() -> list[LlamaModel]:

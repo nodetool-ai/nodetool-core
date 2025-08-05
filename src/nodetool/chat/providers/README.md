@@ -42,7 +42,7 @@ The following providers are currently implemented:
 | **JSON Mode**                | Yes ✅                        | Yes ✅ (Via Tool)                   | Yes ✅                        | Yes ✅ (Model Dependent)                  |
 | **API Key Required**         | Yes ✅                        | Yes ✅                              | Yes ✅                        | Optional                                  |
 | **Backend Type**             | Cloud ☁️                      | Cloud ☁️                            | Cloud ☁️                      | Local/Self-Hosted 🏠                      |
-| **Configuration**            | `OPENAI_API_KEY`              | `ANTHROPIC_API_KEY`                 | `GEMINI_API_KEY`              | `OLLAMA_API_URL`, `OLLAMA_API_KEY`        |
+| **Configuration**            | `OPENAI_API_KEY`              | `ANTHROPIC_API_KEY`                 | `GEMINI_API_KEY`              | `OLLAMA_API_URL`               |
 
 **Notes:**
 

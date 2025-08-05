@@ -26,12 +26,11 @@ import json
 import os
 import runpod
 import datetime
-from typing import Dict, Any
-from pathlib import Path
 from nodetool.common.environment import Environment
 from nodetool.chat.chat_sse_runner import ChatSSERunner
 from nodetool.api.model import get_language_models
 from nodetool.deploy.download_models import download_models_from_spec
+from nodetool.types.workflow import Workflow
 
 
 log = Environment.get_logger()
@@ -62,6 +61,14 @@ def download_models_on_startup() -> None:
     download_models_from_spec(models, hf_cache_dir, log)
 
 
+def load_workflow(path: str) -> Workflow:
+    """
+    Load a workflow from a file.
+    """
+    with open(path, "r") as f:
+        workflow = json.load(f)
+    return Workflow.model_validate(workflow)
+
 async def chat_handler(job):
     """
     Chat handler for RunPod serverless chat completions.
@@ -87,7 +94,8 @@ async def chat_handler(job):
         provider = os.getenv("CHAT_PROVIDER", "ollama")
         default_model = os.getenv("DEFAULT_MODEL", "gemma3n:latest")
         remote_auth = os.getenv("REMOTE_AUTH", "false").lower() == "true"
-        use_database = os.getenv("USE_DATABASE", "false").lower() == "true"
+        tools = os.getenv("TOOLS", "").split(",")
+        workflows = [load_workflow(f) for f in os.listdir("/workflows") if f.endswith(".json")]
         
         # Set authentication mode
         Environment.set_remote_auth(remote_auth)
@@ -128,9 +136,10 @@ async def chat_handler(job):
                 # Create chat runner
                 runner = ChatSSERunner(
                     auth_token=auth_token,
-                    use_database=use_database,
                     default_model=default_model,
-                    default_provider=provider
+                    default_provider=provider,
+                    tools=tools,
+                    workflows=workflows,
                 )
                 
                 stream = request_data.get("stream", False)

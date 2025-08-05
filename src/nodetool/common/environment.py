@@ -298,6 +298,17 @@ class Environment(object):
         return create_async_client(supabase_url, supabase_key)
 
     @classmethod
+    def has_database(cls):
+        """
+        Check if the database is configured.
+        """
+        return (
+            cls.get("POSTGRES_DB", None) is not None
+            or cls.get("SUPABASE_URL", None) is not None
+            or cls.get_db_path() is not None
+        )
+
+    @classmethod
     def get_database_adapter(
         cls,
         fields: dict[str, Any],

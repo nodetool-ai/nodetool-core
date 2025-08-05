@@ -41,6 +41,7 @@ from openai.types.chat.chat_completion_chunk import (
 )
 from openai.types.chat.chat_completion_assistant_message_param import ContentArrayOfContentPart
 
+from nodetool.agents.tools.workflow_tool import WorkflowTool
 from nodetool.chat.base_chat_runner import BaseChatRunner
 from nodetool.metadata.types import (
     Message as ApiMessage,
@@ -48,16 +49,13 @@ from nodetool.metadata.types import (
     MessageTextContent,
     MessageImageContent,
     MessageAudioContent,
-    MessageVideoContent,
-    MessageDocumentContent,
     Provider,
     ToolCall,
     ImageRef,
     AudioRef,
-    VideoRef,
-    DocumentRef,
 )
 from nodetool.common.environment import Environment
+from nodetool.types.workflow import Workflow
 from nodetool.workflows.types import Chunk
 
 log = logging.getLogger(__name__)
@@ -78,15 +76,67 @@ class ChatSSERunner(BaseChatRunner):
     def __init__(
         self,
         auth_token: str | None = None,
-        use_database: bool = True,
         default_model: str = "gemma3n:latest",
         default_provider: str = "ollama",
+        tools: list[str] = [],
+        workflows: list[Workflow] = [],
     ):
-        super().__init__(auth_token, use_database, default_model, default_provider)
+        super().__init__(auth_token, default_model, default_provider)
         self.message_queue: asyncio.Queue[Optional[dict]] = asyncio.Queue()
         self.is_connected: bool = False
         # Store the provided chat history for this request (used when database is disabled)
         self.provided_history: List[ApiMessage] = []
+
+        from nodetool.agents.tools import (
+            AddLabelToEmailTool,
+            ArchiveEmailTool,
+            BrowserTool,
+            ConvertPDFToMarkdownTool,
+            CreateWorkflowTool,
+            DownloadFileTool,
+            EditWorkflowTool,
+            ExtractPDFTablesTool,
+            ExtractPDFTextTool,
+            GoogleGroundedSearchTool,
+            GoogleImageGenerationTool,
+            GoogleImagesTool,
+            GoogleNewsTool,
+            GoogleSearchTool,
+            ListAssetsDirectoryTool,
+            OpenAIImageGenerationTool,
+            OpenAITextToSpeechTool,
+            OpenAIWebSearchTool,
+            ScreenshotTool,
+            SearchEmailTool,
+        )
+        # Initialize tools after user_id is set
+        available_tools = [
+            AddLabelToEmailTool(),
+            ArchiveEmailTool(),
+            BrowserTool(),
+            ConvertPDFToMarkdownTool(),
+            CreateWorkflowTool(),
+            DownloadFileTool(),
+            EditWorkflowTool(),
+            ExtractPDFTablesTool(),
+            ExtractPDFTextTool(),
+            GoogleGroundedSearchTool(),
+            GoogleImageGenerationTool(),
+            GoogleImagesTool(),
+            GoogleNewsTool(),
+            GoogleSearchTool(),
+            ListAssetsDirectoryTool(),
+            OpenAIImageGenerationTool(),
+            OpenAITextToSpeechTool(),
+            OpenAIWebSearchTool(),
+            ScreenshotTool(),
+            SearchEmailTool(),
+        ]   
+
+        self.all_tools = [tool for tool in available_tools if tool.name in tools]
+
+        for workflow in workflows:
+            self.all_tools.append(WorkflowTool(workflow))
 
     async def connect(self, user_id: str | None = None, **kwargs) -> None:
         """
@@ -119,9 +169,6 @@ class ChatSSERunner(BaseChatRunner):
 
         self.is_connected = True
         log.info("SSE connection established for chat")
-
-        # Initialize tools after user_id is set
-        self._initialize_tools()
 
     async def disconnect(self) -> None:
         """

@@ -15,7 +15,7 @@ from nodetool.chat.chat import default_serializer
 from nodetool.metadata.types import Message, ToolCall
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.agents.tools import (
-    AddLabelTool,
+    AddLabelToEmailTool,
     ArchiveEmailTool,
     BrowserTool,
     ConvertPDFToMarkdownTool,
@@ -119,7 +119,7 @@ async def process_regular_chat(
     messages_to_send = messages
 
     tools: List[Tool] = [
-        AddLabelTool(),
+        AddLabelToEmailTool(),
         ArchiveEmailTool(),
         BrowserTool(),
         ConvertPDFToMarkdownTool(),

@@ -23,28 +23,6 @@ import asyncio
 from supabase import create_async_client, AsyncClient
 
 from nodetool.agents.tools import (
-    AddLabelTool,
-    ArchiveEmailTool,
-    BrowserTool,
-    ConvertPDFToMarkdownTool,
-    CreateWorkflowTool,
-    DownloadFileTool,
-    EditWorkflowTool,
-    ExtractPDFTablesTool,
-    ExtractPDFTextTool,
-    GoogleGroundedSearchTool,
-    GoogleImageGenerationTool,
-    GoogleImagesTool,
-    GoogleNewsTool,
-    GoogleSearchTool,
-    ListAssetsDirectoryTool,
-    OpenAIImageGenerationTool,
-    OpenAITextToSpeechTool,
-    OpenAIWebSearchTool,
-    ReadAssetTool,
-    SaveAssetTool,
-    ScreenshotTool,
-    SearchEmailTool,
     create_workflow_tools,
 )
 from nodetool.chat.ollama_service import get_ollama_models
@@ -54,6 +32,7 @@ from nodetool.common.environment import Environment
 from nodetool.models.message import Message as DBMessage
 from nodetool.models.thread import Thread
 from nodetool.metadata.types import Message as ApiMessage
+from nodetool.packages.registry import load_node_packages
 from nodetool.types.graph import Graph
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.common.message_processors import (
@@ -90,13 +69,12 @@ class BaseChatRunner(ABC):
     tool management. Subclasses need to implement transport-specific methods.
     """
 
-    def __init__(self, auth_token: str | None = None, use_database: bool = True, default_model: str = "gemma3n:latest", default_provider: str = "ollama"):
+    def __init__(self, auth_token: str | None = None, default_model: str = "gemma3n:latest", default_provider: str = "ollama"):
         self.auth_token = auth_token
         self.user_id: str | None = None
         self.supabase: AsyncClient | None = None
         self.all_tools: List[Tool] = []
         self.current_task: asyncio.Task | None = None
-        self.use_database = use_database
         self.default_model = default_model
         self.default_provider = default_provider
 
@@ -228,9 +206,6 @@ class BaseChatRunner(ABC):
         Returns:
             The created database message
         """
-        if not self.use_database:
-            raise ValueError("Database is disabled")
-        
         # Prepare data for database message creation
         data_copy = message_data.copy()
         data_copy.pop("id", None)
@@ -266,10 +241,6 @@ class BaseChatRunner(ABC):
         Returns:
             List[ApiMessage]: The chat history as a list of API messages
         """
-        if not self.use_database:
-            log.debug("Database disabled, returning empty chat history")
-            return []
-            
         if not thread_id or not self.user_id:
             log.debug("No thread_id or user_id available, returning empty chat history")
             return []
@@ -306,14 +277,6 @@ class BaseChatRunner(ABC):
         if not self.user_id:
             log.warning("Cannot ensure thread: user_id not set")
             raise ValueError("User ID not set")
-        
-        if not self.use_database:
-            # When database is disabled, generate or return thread_id
-            if not thread_id:
-                import uuid
-                thread_id = str(uuid.uuid4())
-                log.debug(f"Generated new thread ID {thread_id} (database disabled)")
-            return thread_id
         
         if not thread_id:
             # Create a new thread
@@ -387,96 +350,10 @@ class BaseChatRunner(ABC):
             log.error(f"Error during Supabase token validation: {e}")
             return False
 
-    def _initialize_tools(self):
-        """Initialize all available tools."""
-        # Initialize standard tools
-        standard_tools = [
-            AddLabelTool(),
-            ArchiveEmailTool(),
-            BrowserTool(),
-            ConvertPDFToMarkdownTool(),
-            CreateWorkflowTool(),
-            DownloadFileTool(),
-            EditWorkflowTool(),
-            ExtractPDFTablesTool(),
-            ExtractPDFTextTool(),
-            GoogleGroundedSearchTool(),
-            GoogleImageGenerationTool(),
-            GoogleImagesTool(),
-            GoogleNewsTool(),
-            GoogleSearchTool(),
-            ListAssetsDirectoryTool(),
-            OpenAIImageGenerationTool(),
-            OpenAITextToSpeechTool(),
-            OpenAIWebSearchTool(),
-            ReadAssetTool(),
-            SaveAssetTool(),
-            ScreenshotTool(),
-            SearchEmailTool(),
-        ]
 
-        # Initialize workflow tools if user_id is available
-        workflow_tools = []
-        if self.user_id:
-            try:
-                workflow_tools = create_workflow_tools(self.user_id, limit=200)
-                log.debug(f"Loaded {len(workflow_tools)} workflow tools")
-            except Exception as e:
-                log.warning(f"Failed to load workflow tools: {e}")
-
+    def _initialize_node_tools(self):
         # Load all node packages to populate NODE_BY_TYPE registry
-        try:
-            from nodetool.packages.registry import Registry
-            from nodetool.metadata.node_metadata import get_node_classes_from_namespace
-            import importlib
-
-            registry = Registry()
-            packages = registry.list_installed_packages()
-
-            total_loaded = 0
-            for package in packages:
-                if package.nodes:
-                    # Collect unique namespaces from this package
-                    namespaces = set()
-                    for node_metadata in package.nodes:
-                        node_type = node_metadata.node_type
-                        namespace_parts = node_type.split(".")[:-1]
-                        if len(namespace_parts) >= 2:
-                            namespace = ".".join(namespace_parts)
-                            namespaces.add(namespace)
-
-                    # Load each unique namespace from this package
-                    for namespace in namespaces:
-                        try:
-                            # Try to import the module directly
-                            if namespace.startswith("nodetool.nodes."):
-                                module_path = namespace
-                            else:
-                                module_path = f"nodetool.nodes.{namespace}"
-
-                            importlib.import_module(module_path)
-                            total_loaded += 1
-                        except ImportError:
-                            # Try alternative approach
-                            try:
-                                if namespace.startswith("nodetool."):
-                                    namespace_suffix = namespace[9:]
-                                    get_node_classes_from_namespace(
-                                        f"nodetool.nodes.{namespace_suffix}"
-                                    )
-                                    total_loaded += 1
-                                else:
-                                    get_node_classes_from_namespace(
-                                        f"nodetool.nodes.{namespace}"
-                                    )
-                                    total_loaded += 1
-                            except Exception:
-                                pass
-
-            log.debug(f"Loaded {len(packages)} packages with node types")
-
-        except Exception as e:
-            log.warning(f"Failed to load all packages: {e}")
+        load_node_packages()
 
         # Initialize node tools
         from nodetool.workflows.base_node import NODE_BY_TYPE
@@ -496,7 +373,7 @@ class BaseChatRunner(ABC):
             )
 
         # Store all available tools
-        self.all_tools = standard_tools + workflow_tools + node_tools
+        self.all_tools += node_tools
         log.debug(f"Initialized {len(self.all_tools)} total tools")
 
     async def _run_processor(
@@ -526,13 +403,8 @@ class BaseChatRunner(ABC):
                 message = await processor.get_message()
                 if message:
                     if message["type"] == "message":
-                        # Save assistant message to database asynchronously (if enabled)
-                        if self.use_database:
-                            try:
-                                await self._save_message_to_db_async(message)
-                                log.debug("Saved assistant message to database")
-                            except Exception as db_error:
-                                log.error(f"Assistant message DB save failed: {db_error}")
+                        await self._save_message_to_db_async(message)
+                        log.debug("Saved assistant message to database")
                     else:
                         await self.send_message(message)
                 else:
@@ -612,33 +484,30 @@ class BaseChatRunner(ABC):
                     f"Initialized tools: {[tool.name for tool in selected_tools]}"
                 )
             else:
-                selected_tools = []
+                selected_tools = self.all_tools
 
             assert last_message.model, "Model is required"
 
-            try:
-                if not last_message.provider:
-                    raise ValueError("No provider specified in the current conversation")
+            if not last_message.provider:
+                raise ValueError("No provider specified in the current conversation")
 
-                provider = get_provider(last_message.provider)
-                log.debug(
-                    f"Using provider {provider.__class__.__name__} for model {last_message.model}"
-                )
-                log.debug(f"Chat history length: {len(chat_history)} messages")
-                
-                # Create the regular chat processor
-                processor = RegularChatProcessor(provider, self.all_tools)
-                
-                await self._run_processor(
-                    processor=processor,
-                    chat_history=chat_history,
-                    processing_context=processing_context,
-                    tools=selected_tools,
-                    collections=last_message.collections,
-                    graph=last_message.graph,
-                )
-            except Exception:
-                raise
+            provider = get_provider(last_message.provider)
+            log.debug(
+                f"Using provider {provider.__class__.__name__} for model {last_message.model}"
+            )
+            log.debug(f"Chat history length: {len(chat_history)} messages")
+            
+            # Create the regular chat processor
+            processor = RegularChatProcessor(provider, self.all_tools)
+            
+            await self._run_processor(
+                processor=processor,
+                chat_history=chat_history,
+                processing_context=processing_context,
+                tools=selected_tools,
+                collections=last_message.collections,
+                graph=last_message.graph,
+            )
 
     async def process_agent_messages(self, messages: list[ApiMessage]):
         """
@@ -651,10 +520,6 @@ class BaseChatRunner(ABC):
         last_message = chat_history[-1]
         assert last_message.model, "Model is required for agent mode"
         assert last_message.provider, "Provider is required for agent mode"
-        
-        # Ensure tools are initialized
-        if not self.all_tools:
-            self._initialize_tools()
         
         provider = get_provider(last_message.provider)
         processor = AgentMessageProcessor(provider, self.all_tools)

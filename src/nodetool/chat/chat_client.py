@@ -55,7 +55,7 @@ class OpenAIChatClient:
         self.server_url = server_url.rstrip("/")
         self.auth_token = auth_token
         self.history: List[ChatCompletionMessageParam] = []
-        self.current_model = model or "gpt-4o-mini"  # Default model
+        self.current_model = model or "gemma3n:latest"  # Default model
 
         # Determine provider based on server URL if not specified
         if provider:

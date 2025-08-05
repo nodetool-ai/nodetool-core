@@ -23,7 +23,7 @@ RUN curl -fsSL https://ollama.com/install.sh | sh
 RUN uv venv
 
 # Install Python dependencies with cache mount
-RUN uv pip install --no-cache-dir runpod hf-transfer huggingface-hub \
+RUN uv pip install --no-cache-dir runpod hf-transfer huggingface-hub --upgrade \
        git+https://github.com/nodetool-ai/nodetool-core \
        git+https://github.com/nodetool-ai/nodetool-base
 

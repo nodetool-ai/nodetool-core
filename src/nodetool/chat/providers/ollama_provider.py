@@ -34,12 +34,7 @@ def get_ollama_sync_client() -> Client:
     api_url = Environment.get("OLLAMA_API_URL")
     assert api_url, "OLLAMA_API_URL not set"
 
-    api_key = Environment.get("OLLAMA_API_KEY")
-    if api_key:
-        headers = {"Authorization": f"Bearer {api_key}"}
-    else:
-        headers = {}
-    return Client(api_url, headers=headers)
+    return Client(api_url)
 
 
 @asynccontextmanager
@@ -48,13 +43,7 @@ async def get_ollama_client() -> AsyncGenerator[AsyncClient, None]:
     api_url = Environment.get("OLLAMA_API_URL")
     assert api_url, "OLLAMA_API_URL not set"
 
-    api_key = Environment.get("OLLAMA_API_KEY")
-    if api_key:
-        headers = {"Authorization": f"Bearer {api_key}"}
-    else:
-        headers = {}
-
-    client = AsyncClient(api_url, headers=headers)
+    client = AsyncClient(api_url)
     try:
         yield client
     finally:
@@ -112,9 +101,7 @@ class OllamaProvider(ChatProvider):
                 If None, no logging will be performed.
         """
         super().__init__()
-        env = Environment.get_environment()
-        self.api_url = env.get("OLLAMA_API_URL")
-        self.api_key = env.get("OLLAMA_API_KEY")
+        self.api_url = Environment.get("OLLAMA_API_URL")
         self.usage = {
             "prompt_tokens": 0,
             "completion_tokens": 0,
@@ -127,8 +114,6 @@ class OllamaProvider(ChatProvider):
         env_vars = {}
         if self.api_url:
             env_vars["OLLAMA_API_URL"] = self.api_url
-        if self.api_key:
-            env_vars["OLLAMA_API_KEY"] = self.api_key
         return env_vars
 
     def get_context_length(self, model: str) -> int:
@@ -384,24 +369,6 @@ class OllamaProvider(ChatProvider):
             if len(tools) > 0:
                 params["tools"] = self.format_tools(tools)
 
-        if model.startswith("granite") or model.startswith("qwen"):
-            if "options" not in params:
-                params["options"] = {}
-
-            # Calculate appropriate context size based on token count
-            min_ctx = 8192  # Keep current minimum
-            max_ctx = 128000  # Maximum context of 128k
-            suggested_ctx = self._count_tokens(messages)
-
-            # Round up to nearest power of 2 for better performance
-            # but cap at max_ctx and ensure at least min_ctx
-            power = 13  # 2^13 = 8192 (our minimum)
-            while (1 << power) < suggested_ctx and (1 << power) < max_ctx:
-                power += 1
-
-            ctx_size = min(max_ctx, max((1 << power), min_ctx))
-            params["options"]["num_ctx"] = ctx_size
-
         if response_format:
             if (
                 response_format.get("type") == "json_schema"
@@ -496,6 +463,8 @@ class OllamaProvider(ChatProvider):
                     **kwargs,
                 )
                 params["stream"] = True
+
+                print(params)
 
                 completion = await client.chat(**params)
                 async for response in completion:
