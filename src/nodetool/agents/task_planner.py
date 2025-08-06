@@ -13,7 +13,6 @@ a specified workspace. Validation is a key aspect of the planner's role to
 ensure the generated plan is robust and executable.
 """
 
-import asyncio
 import traceback
 from nodetool.chat.providers import ChatProvider
 from nodetool.agents.tools.base import Tool
@@ -30,7 +29,6 @@ import json
 # Add jsonschema import for validation
 from jsonschema import validate, ValidationError
 import yaml
-import os
 import re  # Added import re
 from pathlib import Path
 from typing import (
@@ -544,8 +542,6 @@ class TaskPlanner:
                                         overall task (not individual subtasks).
         enable_analysis_phase (bool): Controls whether the analysis phase runs.
         enable_data_contracts_phase (bool): Controls whether the data contract phase runs.
-        use_structured_output (bool): If True, attempts to use LLM's structured output
-                                      features for plan generation, otherwise uses tool calls.
         verbose (bool): Enables detailed logging and progress display during planning.
         display_manager (AgentConsole): Handles Rich display output.
         jinja_env (Environment): Jinja2 environment for rendering prompts.
@@ -565,7 +561,6 @@ class TaskPlanner:
         output_schema: dict | None = None,
         enable_analysis_phase: bool = True,
         enable_data_contracts_phase: bool = True,
-        use_structured_output: bool = False,
         verbose: bool = True,
     ):
         """
@@ -583,7 +578,6 @@ class TaskPlanner:
             output_schema (dict, optional): JSON schema for the final task output
             enable_analysis_phase (bool, optional): Whether to run the analysis phase (PHASE 0)
             enable_data_contracts_phase (bool, optional): Whether to run the data contracts phase (PHASE 1)
-            use_structured_output (bool, optional): Whether to use structured output for plan creation
             verbose (bool, optional): Whether to print planning progress table (default: True)
         """
         # Note: debug logging will be handled by display_manager initialization
@@ -600,7 +594,6 @@ class TaskPlanner:
         self.output_schema: Optional[dict] = output_schema
         self.enable_analysis_phase: bool = enable_analysis_phase
         self.enable_data_contracts_phase: bool = enable_data_contracts_phase
-        self.use_structured_output: bool = use_structured_output
         self.verbose: bool = verbose
         self.tasks_file_path: Path = Path(workspace_dir) / "tasks.yaml"
         self.display_manager = AgentConsole(verbose=self.verbose)
@@ -609,7 +602,7 @@ class TaskPlanner:
             f"objective='{objective[:100]}...', workspace_dir={workspace_dir}, "
             f"enable_analysis_phase={enable_analysis_phase}, "
             f"enable_data_contracts_phase={enable_data_contracts_phase}, "
-            f"use_structured_output={use_structured_output}, verbose={verbose}"
+            f"verbose={verbose}"
         )
         self.jinja_env: Environment = Environment(loader=BaseLoader())
 
@@ -1029,20 +1022,16 @@ class TaskPlanner:
         """Handles Phase 2: Plan Creation.
 
         This is the final planning phase where the LLM generates the concrete,
-        executable task plan. It does this either by making a call to the
-        `create_task` tool (if `self.use_structured_output` is False) or
-        by generating structured JSON output directly if the LLM and provider
-        support it.
+        executable task plan. It does this by making a call to the
+        `create_task` tool.
 
         The complexity of the plan generated depends on the information
         gathered in preceding phases (Analysis, Data Flow).
 
         Args:
             history: The list of messages from previous planning phases.
-                     The LLM's prompt and response for this phase are appended if
-                     using tool-based generation.
-            objective: The original user objective, used as a fallback title
-                       and for context in structured output.
+                     The LLM's prompt and response for this phase are appended.
+            objective: The original user objective, used as a fallback title.
             max_retries: The maximum number of retries for LLM generation if
                          initial attempts fail validation or don't produce
                          the expected output.
@@ -1055,7 +1044,7 @@ class TaskPlanner:
                 - A `PlanningUpdate` object summarizing the outcome of this phase.
         """
         self.display_manager.debug(
-            f"Starting plan creation phase with max_retries={max_retries}, use_structured_output={self.use_structured_output}"
+            f"Starting plan creation phase with max_retries={max_retries}"
         )
 
         task: Optional[Task] = None
@@ -1070,108 +1059,83 @@ class TaskPlanner:
         # For now, we use the same template but the LLM will have less preceding context from skipped phases.
         # The main effect of Tier 1 will be the lack of Analysis and Data Flow history.
 
-        if self.use_structured_output:
-            self.display_manager.debug("Using structured output for plan creation")
-            self.display_manager.update_planning_display(
-                current_phase_name,
-                "Running",
-                "Attempting plan creation using structured output...",
+        # Use tool-based generation
+        self.display_manager.debug("Using tool-based generation for plan creation")
+        plan_creation_prompt_content = self._render_prompt(PLAN_CREATION_TEMPLATE)
+        agent_task_prompt_content = await self._build_agent_task_prompt_content()
+        self.display_manager.debug(
+            f"Plan creation prompt length: {len(plan_creation_prompt_content)} chars"
+        )
+        self.display_manager.debug(
+            f"Agent task prompt length: {len(agent_task_prompt_content)} chars"
+        )
+
+        history.append(
+            Message(
+                role="user",
+                content=f"{plan_creation_prompt_content}\n{agent_task_prompt_content}",
             )
-            try:
-                task = await self._create_task_with_structured_output(
-                    objective, max_retries
-                )
+        )
+        self.display_manager.update_planning_display(
+            current_phase_name,
+            "Running",
+            "Attempting plan creation using the 'create_task' tool...",
+        )
+        try:
+            self.display_manager.debug(
+                "Starting tool-based plan generation with retry logic"
+            )
+            task, final_message = await self._generate_with_retry(
+                history,
+                tools=[CreateTaskTool()],
+                max_retries=max_retries,
+            )
+
+            if task:
                 phase_status = "Success"
-                phase_content = f"Plan created with {len(task.subtasks)} subtasks using structured output."
+                phase_content = (
+                    self._format_message_content(final_message)
+                    if final_message
+                    else "Plan created using tool calls."
+                )
                 self.display_manager.debug(
-                    f"Structured output plan creation successful: {len(task.subtasks)} subtasks"
+                    f"Tool-based plan creation successful: {len(task.subtasks)} subtasks"
                 )
-                final_message = None  # Not applicable for structured output path
-            except Exception as e:
-                self.display_manager.error(
-                    f"Structured output plan creation failed: {e}", exc_info=True
-                )
-                plan_creation_error = e
-                phase_status = "Failed"
-                phase_content = f"Structured output failed: {str(e)}\n{traceback.format_exc()}"  # Keep traceback for display
-
-        else:  # Use tool-based generation
-            self.display_manager.debug("Using tool-based generation for plan creation")
-            plan_creation_prompt_content = self._render_prompt(PLAN_CREATION_TEMPLATE)
-            agent_task_prompt_content = await self._build_agent_task_prompt_content()
-            self.display_manager.debug(
-                f"Plan creation prompt length: {len(plan_creation_prompt_content)} chars"
-            )
-            self.display_manager.debug(
-                f"Agent task prompt length: {len(agent_task_prompt_content)} chars"
-            )
-
-            history.append(
-                Message(
-                    role="user",
-                    content=f"{plan_creation_prompt_content}\n{agent_task_prompt_content}",
-                )
-            )
-            self.display_manager.update_planning_display(
-                current_phase_name,
-                "Running",
-                "Attempting plan creation using the 'create_task' tool...",
-            )
-            try:
-                self.display_manager.debug(
-                    "Starting tool-based plan generation with retry logic"
-                )
-                task, final_message = await self._generate_with_retry(
-                    history,
-                    tools=[CreateTaskTool()],
-                    max_retries=max_retries,
-                )
-
-                if task:
-                    phase_status = "Success"
-                    phase_content = (
-                        self._format_message_content(final_message)
-                        if final_message
-                        else "Plan created using tool calls."
-                    )
-                    self.display_manager.debug(
-                        f"Tool-based plan creation successful: {len(task.subtasks)} subtasks"
-                    )
-                else:
-                    failure_reason = "Unknown failure after retries."
-                    if final_message and (
-                        final_message.content or final_message.tool_calls
+            else:
+                failure_reason = "Unknown failure after retries."
+                if final_message and (
+                    final_message.content or final_message.tool_calls
+                ):
+                    formatted_content = self._format_message_content(final_message)
+                    if (
+                        "error" in str(formatted_content).lower()
+                        or "fail" in str(formatted_content).lower()
                     ):
-                        formatted_content = self._format_message_content(final_message)
-                        if (
-                            "error" in str(formatted_content).lower()
-                            or "fail" in str(formatted_content).lower()
-                        ):
-                            failure_reason = (
-                                f"LLM indicated failure: {formatted_content}"
-                            )
-                        else:
-                            failure_reason = f"LLM did not produce a valid 'create_task' tool call. Last message: {formatted_content}"
-                    elif (
-                        plan_creation_error
-                    ):  # Check if _generate_with_retry raised an error internally
-                        failure_reason = f"Tool call generation failed internally: {plan_creation_error}"
+                        failure_reason = (
+                            f"LLM indicated failure: {formatted_content}"
+                        )
+                    else:
+                        failure_reason = f"LLM did not produce a valid 'create_task' tool call. Last message: {formatted_content}"
+                elif (
+                    plan_creation_error
+                ):  # Check if _generate_with_retry raised an error internally
+                    failure_reason = f"Tool call generation failed internally: {plan_creation_error}"
 
-                    self.display_manager.warning(
-                        f"Tool-based plan creation failed: {failure_reason}"
-                    )
-                    plan_creation_error = ValueError(
-                        f"Tool call generation failed: {failure_reason}"
-                    )
-                    phase_content = f"Tool call generation failed: {failure_reason}"
-                    phase_status = "Failed"
-            except Exception as e:
-                self.display_manager.error(
-                    f"Tool-based plan creation failed: {e}", exc_info=True
+                self.display_manager.warning(
+                    f"Tool-based plan creation failed: {failure_reason}"
                 )
-                plan_creation_error = e
+                plan_creation_error = ValueError(
+                    f"Tool call generation failed: {failure_reason}"
+                )
+                phase_content = f"Tool call generation failed: {failure_reason}"
                 phase_status = "Failed"
-                phase_content = f"Tool call generation failed: {str(e)}\n{traceback.format_exc()}"  # Keep traceback for display
+        except Exception as e:
+            self.display_manager.error(
+                f"Tool-based plan creation failed: {e}", exc_info=True
+            )
+            plan_creation_error = e
+            phase_status = "Failed"
+            phase_content = f"Tool call generation failed: {str(e)}\n{traceback.format_exc()}"  # Keep traceback for display
 
         # Update Table for Phase 2
         self.display_manager.debug(
@@ -2010,131 +1974,6 @@ class TaskPlanner:
             all_validation_errors,
         )  # Return task and any non-fatal errors
 
-    async def _create_task_with_structured_output(
-        self, objective: str, max_retries: int = 3
-    ) -> Task:
-        """
-        Create a task plan using structured output from the LLM.
-
-        This method attempts to have the LLM generate a complete task plan
-        as a JSON object that conforms to the schema of the `CreateTaskTool`.
-        It includes retry logic: if the LLM's output is not valid JSON or
-        fails plan validation (`_validate_structured_output_plan`), it re-prompts
-        the LLM with error feedback.
-
-        Args:
-            objective: The user's objective for the task plan.
-            max_retries: The maximum number of attempts to get a valid plan.
-
-        Returns:
-            A `Task` object representing the validated plan.
-
-        Raises:
-            ValueError: If a valid task plan cannot be generated after all retries,
-                        or if other critical errors occur.
-        """
-        create_task_tool = CreateTaskTool()
-        response_schema: dict = create_task_tool.input_schema
-        base_prompt: str = self._render_prompt(
-            f"{PLAN_CREATION_TEMPLATE}\n{DEFAULT_AGENT_TASK_TEMPLATE}"
-        )
-
-        prompt: str = base_prompt  # Initial prompt
-        current_retry: int = 0
-        last_error: Optional[Exception] = None
-
-        while current_retry < max_retries:
-            attempt = current_retry + 1
-            self.display_manager.print(  # Use display manager print
-                f"[yellow]Attempt {attempt}/{max_retries} for structured output...[/yellow]"
-            )
-
-            # Prepare messages for this attempt
-            messages_for_attempt: List[Message] = [
-                Message(role="system", content=self.system_prompt),
-                Message(role="user", content=prompt),  # Use potentially updated prompt
-            ]
-
-            try:
-                # 1. Generate Response
-                message = await self.provider.generate_message(
-                    messages=messages_for_attempt,
-                    model=self.model,
-                    response_format={
-                        "type": "json_schema",
-                        "json_schema": {
-                            "name": "TaskPlan",
-                            "schema": response_schema,
-                            "strict": True,
-                        },
-                    },
-                )
-
-                if not isinstance(message.content, str) or not message.content.strip():
-                    raise ValueError(
-                        "LLM returned empty or non-string content for structured output."
-                    )
-
-                # 2. Parse JSON
-                try:
-                    task_data: dict = json.loads(message.content)
-                except json.JSONDecodeError as json_err:
-                    error_detail = f"Failed to decode JSON from LLM response: {json_err}.\nRaw Response:\n---\n{message.content}\n---"
-                    self.display_manager.print(  # Use display manager print
-                        f"[red]JSON Decode Error:[/red]\n{error_detail}"
-                    )
-                    # Raise a ValueError containing the raw response for retry feedback
-                    raise ValueError(error_detail) from json_err
-
-                self.display_manager.debug(f"Task data: {task_data}")
-
-                # 3. Validate Plan (Subtasks & Dependencies)
-                validated_task, validation_errors = (
-                    await self._validate_structured_output_plan(task_data, objective)
-                )
-
-                if validation_errors:
-                    error_feedback = "\n".join(validation_errors)
-                    self.display_manager.print(  # Use display manager print
-                        f"[red]Validation Errors (Structured):[/red]\n{error_feedback}"
-                    )
-                    # Raise ValueError with validation errors for retry feedback
-                    raise ValueError(
-                        f"Validation failed for structured output plan:\n{error_feedback}"
-                    )
-
-                # 4. Success
-                if validated_task:
-                    self.display_manager.print(  # Use display manager print
-                        "[green]Structured output plan created and validated successfully.[/green]"
-                    )
-                    return validated_task  # Success!
-                else:
-                    # Should not happen if validation_errors was empty, but handle defensively
-                    raise ValueError(
-                        "Plan validation reported no errors, but no task object was returned."
-                    )
-
-            except Exception as e:
-                last_error = e
-                current_retry += 1  # Increment retry count
-                if current_retry < max_retries:
-                    # Prepare prompt for the next retry, including the error message
-                    prompt = f"{base_prompt}\n\nPREVIOUS ATTEMPT FAILED WITH ERROR (Attempt {attempt}/{max_retries}):\n{str(e)}\n\nPlease fix the errors and regenerate the full plan according to the schema."
-                    self.display_manager.print(  # Use display manager print
-                        f"[yellow]Retrying structured output ({current_retry + 1}/{max_retries})...[/yellow]"
-                    )
-                    await asyncio.sleep(1)  # Optional delay before retry
-                else:
-                    # Raise the last error encountered after exhausting retries
-                    raise ValueError(
-                        f"Failed structured output after {max_retries} attempts."
-                    ) from last_error
-
-        # Should ideally not be reached if max_retries > 0
-        raise ValueError(
-            f"Failed to create task with structured output after {max_retries} attempts (unexpected exit). Last error: {str(last_error)}"
-        ) from last_error
 
     async def _validate_and_build_task_from_tool_calls(
         self, tool_calls: List[ToolCall], history: List[Message]

@@ -17,7 +17,6 @@ The implementation provides:
 import datetime
 import json
 import os
-import shutil
 import asyncio
 from typing import AsyncGenerator, List, Sequence, Union, Any, Optional
 
@@ -209,7 +208,6 @@ class Agent(BaseAgent):
                 output_schema=self.output_schema,
                 enable_analysis_phase=self.enable_analysis_phase,
                 enable_data_contracts_phase=self.enable_data_contracts_phase,
-                use_structured_output=True,
                 verbose=self.verbose,
             )
 

@@ -36,8 +36,6 @@ Tasks:
 async def test_reddit_journey_deconstructor_agent(  # Renamed for clarity
     provider: ChatProvider,
     model: str,
-    reasoning_model: str,
-    planning_model: str,
 ):
     context = ProcessingContext()
     search_agent = Agent(
@@ -45,10 +43,8 @@ async def test_reddit_journey_deconstructor_agent(  # Renamed for clarity
         objective=objective,
         provider=provider,
         model=model,
-        reasoning_model=reasoning_model,
-        planning_model=planning_model,
-        enable_analysis_phase=True,
-        enable_data_contracts_phase=True,  # Ensures the agent tries to stick to the output structure
+        enable_analysis_phase=False,
+        enable_data_contracts_phase=False,
         tools=[
             GoogleSearchTool(),
             BrowserTool(),
@@ -88,15 +84,11 @@ async def test_reddit_journey_deconstructor_agent(  # Renamed for clarity
 
 
 if __name__ == "__main__":
-    # Ensure you have your OpenAI API key set in your environment variables
-    # or configure the provider appropriately.
     asyncio.run(
         test_reddit_journey_deconstructor_agent(
             provider=get_provider(
-                Provider.OpenAI
+                Provider.Ollama
             ),  # Or Provider.Gemini, Provider.Anthropic
-            model="gpt-4o-mini",
-            planning_model="gpt-4o-mini",
-            reasoning_model="gpt-4o-mini",
+            model="gpt-oss:20b",
         )
     )
