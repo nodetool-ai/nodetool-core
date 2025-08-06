@@ -185,118 +185,6 @@ def generate_image_tag() -> str:
     return f"{timestamp}-{short_hash}"
 
 
-def create_ollama_pull_script(models: list[dict], build_dir: str) -> None:
-    """
-    Create a script to pull Ollama models during Docker build.
-
-    Args:
-        models (list[dict]): List of model dictionaries
-        build_dir (str): Path to the Docker build directory
-    """
-    ollama_models = [
-        m
-        for m in models
-        if m.get("type") == "language_model" and m.get("provider") == "ollama"
-    ]
-
-    if not ollama_models:
-        print("No Ollama models found to pull")
-        # Create empty script so Docker build doesn't fail
-        script_path = Path(build_dir) / "pull_ollama_models.sh"
-        with open(script_path, "w") as f:
-            f.write("#!/bin/bash\necho 'No Ollama models to pull'\n")
-        script_path.chmod(0o755)
-        return
-
-    print(f"Creating script to pull {len(ollama_models)} Ollama models")
-
-    script_content = ["#!/bin/bash", "set -e", ""]
-    script_content.append("echo 'Starting Ollama service...'")
-    script_content.append("ollama serve &")
-    script_content.append("OLLAMA_PID=$!")
-    script_content.append("")
-    script_content.append("echo 'Waiting for Ollama to start...'")
-    script_content.append("sleep 5")
-    script_content.append("")
-
-    for model in ollama_models:
-        model_id = model.get("id")
-        if model_id:
-            script_content.append(f"echo 'Pulling Ollama model: {model_id}'")
-            script_content.append(f"ollama pull {model_id}")
-            script_content.append("")
-
-    script_content.append("echo 'Stopping Ollama service...'")
-    script_content.append("kill $OLLAMA_PID")
-    script_content.append("wait $OLLAMA_PID 2>/dev/null || true")
-    script_content.append("")
-    script_content.append("echo 'All Ollama models pulled successfully'")
-
-    script_path = Path(build_dir) / "pull_ollama_models.sh"
-    with open(script_path, "w") as f:
-        f.write("\n".join(script_content))
-
-    # Make script executable
-    script_path.chmod(0o755)
-
-    print(f"Created Ollama pull script: {script_path}")
-    for model in ollama_models:
-        model_id = model.get("id")
-        if model_id:
-            print(f"  - {model_id}")
-
-
-def create_start_script(build_dir: str, chat_handler: bool = False, chat_env: dict | None = None) -> None:
-    """
-    Create a start.sh script for container startup with network volume support.
-    
-    Args:
-        build_dir (str): Path to the Docker build directory
-        chat_handler (bool): Whether this is for a chat handler deployment
-        chat_env (dict): Environment variables for chat handler (if chat_handler=True)
-    """
-    # Set up environment variables for network volume support
-    env_vars = [
-        "# Set up model cache directories to use network volume",
-        "export HUGGINGFACE_HUB_CACHE=/runpod-volume/.cache/huggingface",
-        "export HF_HOME=/runpod-volume/.cache/huggingface", 
-        "export OLLAMA_MODELS=/runpod-volume/.ollama/models",
-        ""
-    ]
-    
-    base_script = [
-        "#!/bin/bash",
-        "set -e",
-        ""
-    ] + env_vars + [
-        "# Start Ollama service in background with network volume models directory",
-        "ollama serve &",
-        "OLLAMA_PID=$!",
-        ""
-    ]
-    
-    # Add environment variables if provided (for chat functionality)
-    chat_env_vars = []
-    if chat_handler and chat_env:
-        for key, value in chat_env.items():
-            chat_env_vars.append(f'export {key}="{value}"')
-    
-    # Always use the universal handler which can handle workflows, chat, and admin operations
-    script_content = base_script + chat_env_vars + [
-        "",
-        'echo "Starting universal handler (workflows, chat, admin operations)..."',
-        'exec /app/.venv/bin/python -m nodetool.deploy.runpod_handler "$@"'
-    ]
-    
-    script_path = Path(build_dir) / "start.sh"
-    with open(script_path, "w") as f:
-        f.write("\n".join(script_content) + "\n")
-    
-    # Make script executable
-    script_path.chmod(0o755)
-    
-    print(f"Created start.sh script: {script_path}")
-
 
 def extract_models(workflow_data: dict) -> list[dict]:
     """
@@ -428,48 +316,37 @@ def extract_models(workflow_data: dict) -> list[dict]:
 
 
 def build_docker_image(
-    workflow_path: str,
+    workflows_source: str,
     image_name: str,
     tag: str,
     platform: str = "linux/amd64",
-    embed_models: list[dict] = [],
-    chat_handler: bool = False,
-    provider: str = "ollama",
-    default_model: str = "gemma3n:latest",
-    tools: Optional[list[str]] = None,
     use_cache: bool = True,
     auto_push: bool = True,
 ) -> bool:
     """
-    Build a Docker image for RunPod deployment with an embedded workflow.
+    Build a Docker image for RunPod deployment with embedded workflow(s).
+
+    Always expects workflows_source to be a directory containing workflow JSON files.
 
     This function creates a specialized Docker image by:
     1. Using the RunPod-specific Dockerfile from src/nodetool/deploy/
-    2. Extracting Hugging Face models from the workflow
-    3. Adding model copy instructions to pre-cache models from local HF cache
-    4. Creating a temporary build directory with all necessary files
-    5. Building the final image using Docker buildx with Docker Hub cache optimization
+    2. Creating a temporary build directory with all necessary files
+    3. Building the final image using Docker buildx with Docker Hub cache optimization
 
     The resulting image is self-contained and includes:
     - All NodeTool dependencies and runtime
-    - Pre-downloaded Hugging Face models in /huggingface/hub cache
-    - The specific workflow JSON embedded at /app/workflow.json
-    - The runpod_handler.py configured as the entry point
+    - Workflow(s) in /app/workflows/ directory
+    - The fastapi_server.py configured as the entry point
     - start.sh script for proper RunPod initialization
 
     The image is built with --platform linux/amd64 to ensure compatibility with
     RunPod's Linux servers, regardless of the build machine's architecture.
 
     Args:
-        workflow_path (str): Path to the temporary workflow JSON file
+        workflows_source (str): Path to workflows directory
         image_name (str): Name of the Docker image (including registry/username)
         tag (str): Tag of the Docker image
         platform (str): Docker build platform (default: linux/amd64)
-        embed_models (list[dict]): Additional models to embed
-        chat_handler (bool): Whether to use chat handler
-        provider (str): Chat provider
-        default_model (str): Default model for chat
-        tools (Optional[list[str]]): List of tool names to enable
         use_cache (bool): Whether to use Docker Hub cache optimization (default: True)
         auto_push (bool): Whether to automatically push to registry during build (default: True)
 
@@ -483,29 +360,8 @@ def build_docker_image(
         Creates and cleans up temporary build directory during the process.
         When use_cache=True and auto_push=True, the image is automatically pushed.
     """
-    print(f"Building Docker image with embedded workflow from {workflow_path}")
+    print(f"Building Docker image with embedded workflow(s) from {workflows_source}")
     print(f"Platform: {platform}")
-
-    # Load workflow data to extract all models
-    with open(workflow_path, "r") as f:
-        workflow_data = json.load(f)
-
-    models = extract_models(workflow_data) + embed_models
-
-    if models:
-        print(f"Found {len(models)} models to download during Docker build:")
-        for model in models:
-            if model.get("type", "").startswith("hf."):
-                print(f"  - HuggingFace {model['type']}: {model['repo_id']}")
-                if model.get("path"):
-                    print(f"    Path: {model['path']}")
-                if model.get("variant"):
-                    print(f"    Variant: {model['variant']}")
-            elif (
-                model.get("type") == "language_model"
-                and model.get("provider") == "ollama"
-            ):
-                print(f"  - Ollama: {model['id']}")
 
     # Get the deploy directory where Dockerfile, handlers, and scripts are located
     script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -516,47 +372,35 @@ def build_docker_image(
     print(f"Using build directory: {build_dir}")
 
     try:
-        # Copy all necessary files to the build directory
-        if not chat_handler:
-            shutil.copy(workflow_path, os.path.join(build_dir, "workflow.json"))
-        else:
-            # For chat handler, copy the chat handler
-
-            # Prepare environment configuration for chat handler
-            env_config = {
-                "CHAT_PROVIDER": provider,
-                "DEFAULT_MODEL": default_model,
-                "REMOTE_AUTH": "false",
-                "USE_DATABASE": "false",
-            }
-            if tools:
-                env_config["NODETOOL_TOOLS"] = ",".join(tools)
+        # Copy workflow files to build directory
+        workflows_build_dir = os.path.join(build_dir, "workflows")
+        shutil.copytree(workflows_source, workflows_build_dir)
+        workflow_count = len(
+            [f for f in os.listdir(workflows_source) if f.endswith(".json")]
+        )
+        print(f"Copied workflows directory with {workflow_count} workflow(s)")
 
         shutil.copy(deploy_dockerfile_path, os.path.join(build_dir, "Dockerfile"))
-
-        # Create start.sh script with environment variables
-        if chat_handler:
-            create_start_script(build_dir, chat_handler, env_config)
-        else:
-            create_start_script(build_dir, chat_handler)
 
         # Build with the Dockerfile from the build directory
         original_dir = os.getcwd()
         os.chdir(build_dir)
         image_pushed = False
-        
+
         if use_cache:
             print("Building with Docker Hub cache optimization...")
-            
+
             # Ensure docker buildx is available
-            run_command("docker buildx create --use --name nodetool-builder --driver docker-container || true")
-            
+            run_command(
+                "docker buildx create --use --name nodetool-builder --driver docker-container || true"
+            )
+
             # Try to build with cache from/to Docker Hub registry
             cache_from = f"--cache-from=type=registry,ref={image_name}:buildcache"
             cache_to = f"--cache-to=type=registry,ref={image_name}:buildcache,mode=max"
-            
+
             push_flag = "--push" if auto_push else "--load"
-            
+
             build_cmd_with_cache = (
                 f"docker buildx build "
                 f"--platform {platform} "
@@ -566,15 +410,17 @@ def build_docker_image(
                 f"{push_flag} "
                 f"."
             )
-            
+
             print(f"Cache image: {image_name}:buildcache")
-            
+
             try:
                 # Try building with cache first
                 run_command(build_cmd_with_cache)
                 image_pushed = auto_push
             except subprocess.CalledProcessError:
-                print("Cache build failed, falling back to build without cache import...")
+                print(
+                    "Cache build failed, falling back to build without cache import..."
+                )
                 # Fallback to build without cache import (but still export cache)
                 build_cmd_fallback = (
                     f"docker buildx build "
@@ -591,7 +437,7 @@ def build_docker_image(
             print("Building without cache optimization...")
             run_command(f"docker build --platform {platform} -t {image_name}:{tag} .")
             image_pushed = False
-        
+
         os.chdir(original_dir)
 
         print("Docker image built successfully")

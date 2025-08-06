@@ -13,7 +13,7 @@ It performs the following operations:
 The resulting Docker image contains:
 - Complete NodeTool runtime environment
 - Embedded workflow JSON with all metadata
-- Configured runpod_handler for serverless execution
+- Configured FastAPI server for HTTP API access
 - Environment variables for workflow identification
 
 Requirements:
@@ -152,9 +152,60 @@ def fetch_workflow_from_db(workflow_id: str):
     return workflow_path, workflow.name
 
 
+def fetch_workflows_from_db(workflow_ids: list[str]):
+    """
+    Fetch multiple workflows from the NodeTool database and save to a temporary directory.
+
+    This function connects to the NodeTool database, retrieves the specified workflows
+    (respecting user permissions), and saves all workflow data to individual JSON files
+    in a temporary directory that will be embedded in the Docker image.
+
+    Args:
+        workflow_ids (list[str]): List of workflow IDs to fetch
+
+    Returns:
+        tuple: (workflows_dir, workflow_names) - Path to the temporary directory and list of workflow names
+
+    Raises:
+        SystemExit: If any workflow is not found, not accessible, or database connection fails
+
+    Note:
+        The returned directory path should be cleaned up after use.
+        All workflow fields from the database model are included in the JSON files.
+    """
+    from nodetool.models.workflow import Workflow
+
+    # Create temporary workflows directory
+    workflows_dir = tempfile.mkdtemp(prefix="workflows_")
+    workflow_names = []
+
+    print(f"Fetching {len(workflow_ids)} workflows from database...")
+
+    for workflow_id in workflow_ids:
+        # Fetch workflow
+        workflow = Workflow.get(workflow_id)
+        if not workflow:
+            print(f"Error: Workflow {workflow_id} not found or not accessible")
+            sys.exit(1)
+
+        # Save workflow to directory with workflow ID as filename
+        workflow_filename = f"{workflow_id}.json"
+        workflow_path = os.path.join(workflows_dir, workflow_filename)
+
+        with open(workflow_path, "w") as f:
+            f.write(workflow.model_dump_json())
+
+        workflow_names.append(workflow.name)
+        print(
+            f"Workflow '{workflow.name}' (ID: {workflow_id}) saved to {workflow_path}"
+        )
+
+    print(f"All {len(workflow_ids)} workflows saved to {workflows_dir}")
+    return workflows_dir, workflow_names
+
+
 def deploy_to_runpod(
-    workflow_id: Optional[str] = None,
-    chat_handler: bool = False,
+    workflow_ids: Optional[list[str]] = None,
     docker_username: Optional[str] = None,
     docker_registry: str = "docker.io",
     image_name: Optional[str] = None,
@@ -182,11 +233,8 @@ def deploy_to_runpod(
     flashboot: bool = False,
     network_volume_id: Optional[str] = None,
     allowed_cuda_versions: tuple = (),
-    provider: str = "ollama",
-    default_model: str = "gemma3n:latest",
     name: Optional[str] = None,
     local_docker: bool = False,
-    local: bool = False,
     tools: Optional[list[str]] = None,
 ) -> None:
     """
@@ -195,8 +243,7 @@ def deploy_to_runpod(
     This is the main deployment function that orchestrates the entire deployment process.
 
     Args:
-        workflow_id: Workflow ID to deploy (required unless using chat_handler)
-        chat_handler: Deploy chat handler instead of workflow
+        workflow_ids: List of workflow IDs to deploy
         docker_username: Docker Hub username or organization
         docker_registry: Docker registry URL
         image_name: Base name of the Docker image
@@ -224,9 +271,7 @@ def deploy_to_runpod(
         flashboot: Enable flashboot for faster worker startup
         network_volume_id: Network volume to attach
         allowed_cuda_versions: Allowed CUDA versions
-        provider: AI provider to use for chat handler
-        default_model: Default AI model to use for chat handler
-        name: Name for the endpoint (required for chat handlers, defaults to workflow name for workflows)
+        name: Name for the endpoint (required for all deployments)
         local_docker: Run local Docker container instead of deploying
         local: Run local server without Docker
         tools: List of tool names to enable for chat handler
@@ -234,13 +279,10 @@ def deploy_to_runpod(
     import traceback
     from rich.console import Console
     from .deploy import (
-        validate_deployment_args,
-        prepare_workflow_data,
-        run_local_handler,
         run_local_docker,
         get_docker_username,
         print_deployment_summary,
-        cleanup_workflow_file,
+        cleanup_workflows_dir,
     )
     from .docker import (
         format_image_name,
@@ -256,9 +298,6 @@ def deploy_to_runpod(
     )
 
     console = Console()
-
-    # Validate arguments
-    validate_deployment_args(workflow_id, chat_handler, name)
 
     # Get Docker username
     docker_username = get_docker_username(
@@ -282,59 +321,43 @@ def deploy_to_runpod(
             sys.exit(1)
 
     # Prepare workflow data
-    workflow_path, workflow_name, base_image_name, embed_models = prepare_workflow_data(
-        workflow_id, chat_handler, provider, default_model, tools
-    )
+    if workflow_ids:
+        workflows_dir, _ = fetch_workflows_from_db(workflow_ids)
+    else:
+        workflows_dir = tempfile.mkdtemp(prefix="workflows_")
 
-    # Use provided image name or generated one
-    if image_name:
-        base_image_name = image_name
-
-    console.print(f"Using base image name: {base_image_name}")
+    console.print(f"Using workflows directory: {workflows_dir}")
 
     # Format full image name with registry and username
-    if docker_username:
-        full_image_name = format_image_name(
-            base_image_name, docker_username, docker_registry
-        )
-        console.print(f"Full image name: {full_image_name}")
-    else:
-        full_image_name = base_image_name
+    assert image_name, "Image name is required"
+    assert docker_username, "Docker username is required"
+    full_image_name = format_image_name(
+        image_name, docker_username, docker_registry
+    )
+    console.print(f"Full image name: {full_image_name}")
 
-    template_name = template_name or base_image_name
+    template_name = template_name or image_name
     console.print(f"Using template name: {template_name}")
 
     template_id = None
     endpoint_id = None
 
     try:
-        # Handle local execution modes
-        if local:
-            run_local_handler(
-                chat_handler, workflow_path, workflow_name, provider, default_model, tools
-            )
-            return
-
         # Build Docker image with embedded workflow - universal handler can handle all cases
         image_pushed_during_build = False
         if not skip_build:
             image_pushed_during_build = build_docker_image(
-                workflow_path,
+                workflows_dir,
                 full_image_name,
                 image_tag,
                 platform,
-                embed_models=embed_models,
-                chat_handler=chat_handler,
-                provider=provider,
-                default_model=default_model,
-                tools=tools,
                 use_cache=not no_cache,
                 auto_push=not no_auto_push,
             )
 
         # Handle local Docker execution
         if local_docker:
-            run_local_docker(full_image_name, image_tag, base_image_name)
+            run_local_docker(full_image_name, image_tag)
             return
 
         # Push to registry if needed
@@ -351,7 +374,6 @@ def deploy_to_runpod(
                 template_name, full_image_name, image_tag
             )
 
-
         # Create RunPod endpoint
         if not skip_endpoint and template_id:
             # Convert GPU types from string values
@@ -362,16 +384,11 @@ def deploy_to_runpod(
                 list(allowed_cuda_versions) if allowed_cuda_versions else None
             )
 
-            if name:
-                endpoint_name = name
-            elif workflow_id:
-                endpoint_name = workflow_id
-            else:
-                # This shouldn't happen due to validation, but just in case
-                endpoint_name = f"nodetool-handler-{provider}-{default_model.replace(':', '-').replace('/', '-')}"
+            assert name, "Name is required"
+
             endpoint_id = create_or_update_runpod_endpoint(
                 template_id=template_id,
-                name=endpoint_name,
+                name=name,
                 compute_type=compute_type,
                 gpu_type_ids=gpu_type_ids,
                 gpu_count=gpu_count,
@@ -389,33 +406,9 @@ def deploy_to_runpod(
                 allowed_cuda_versions=allowed_cuda_versions_list,
             )
 
-            # Download models using the main endpoint if we have model specifications and network volume
-            if embed_models and network_volume_id and endpoint_id:
-
-                # Perform health check before starting downloads
-                if not check_endpoint_health(endpoint_id):
-                    print("❌ Endpoint health check failed. Aborting model downloads.")
-                    return
-                
-                print("✅ Endpoint is healthy, proceeding with model downloads...")
-
-                console.print(
-                    "[bold blue]📦 Downloading models via main endpoint...[/]"
-                )
-                for chunk in run_model_download_via_admin(
-                    endpoint_id=endpoint_id,
-                    models=embed_models,
-                    cache_dir="/runpod-volume/.cache/huggingface/hub",
-                ):
-                    console.print(chunk)
-                console.print("[bold green]✅ Models downloaded successfully[/]")
-
         # Print deployment summary
         print_deployment_summary(
-            chat_handler,
-            workflow_id,
-            provider,
-            default_model,
+            workflow_ids,
             full_image_name,
             image_tag,
             platform,
@@ -428,5 +421,5 @@ def deploy_to_runpod(
         traceback.print_exc()
         sys.exit(1)
     finally:
-        # Clean up workflow file
-        cleanup_workflow_file(workflow_path)
+        # Clean up workflows directory
+        cleanup_workflows_dir(workflows_dir)
