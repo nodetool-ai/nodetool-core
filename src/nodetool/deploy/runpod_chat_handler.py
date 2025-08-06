@@ -20,6 +20,7 @@ Environment Variables:
     - DEFAULT_MODEL: Default model to use (default: "gemma3n:latest")
     - REMOTE_AUTH: Enable remote authentication (default: False)
     - USE_DATABASE: Enable database storage (default: False)
+    - NODETOOL_TOOLS: Comma-separated list of tools to enable
 """
 
 import json
@@ -29,36 +30,12 @@ import datetime
 from nodetool.common.environment import Environment
 from nodetool.chat.chat_sse_runner import ChatSSERunner
 from nodetool.api.model import get_language_models
-from nodetool.deploy.download_models import download_models_from_spec
 from nodetool.types.workflow import Workflow
+from nodetool.deploy.admin_operations import handle_admin_operation
 
 
 log = Environment.get_logger()
 
-
-def download_models_on_startup() -> None:
-    """
-    Download missing models on container startup.
-    
-    Reads model specifications from /app/models.json and downloads
-    any models that are not available in the network volume.
-    """
-    models_file = "/app/models.json"
-    
-    if not os.path.exists(models_file):
-        log.info("No models.json file found, skipping model downloads")
-        return
-    
-    try:
-        with open(models_file, 'r') as f:
-            models = json.load(f)
-    except (json.JSONDecodeError, IOError) as e:
-        log.error(f"Failed to read models file: {e}")
-        return
-    
-    # Use consolidated download function
-    hf_cache_dir = "/runpod-volume/.cache/huggingface/hub"
-    download_models_from_spec(models, hf_cache_dir, log)
 
 
 def load_workflow(path: str) -> Workflow:
@@ -71,22 +48,32 @@ def load_workflow(path: str) -> Workflow:
 
 async def chat_handler(job):
     """
-    Chat handler for RunPod serverless chat completions.
+    Unified chat handler for RunPod serverless operations including chat completions and admin tasks.
     
-    This function processes OpenAI-compatible chat requests on RunPod infrastructure.
+    This function processes OpenAI-compatible chat requests and admin operations 
+    (model downloads, cache management) on RunPod infrastructure.
     
     Args:
         job (dict): RunPod job dictionary containing:
             - input (dict): Request data with keys:
+                - operation (str): Admin operation type (optional)
                 - openai_route (str): The endpoint route ("/v1/models" or "/v1/chat/completions")
                 - openai_input (dict): The request parameters
     
     Yields:
-        dict: Response data - either model list or chat completion chunks
+        dict: Response data - either model list, chat completion chunks, or admin operation results
     """
     try:
         # Extract request data from job input
         input_data = job.get("input", {})
+        
+        # Check if this is an admin operation
+        if "operation" in input_data:
+            log.info(f"Handling admin operation: {input_data.get('operation')}")
+            async for chunk in handle_admin_operation(input_data):
+                yield chunk
+            return
+        
         route = input_data.get("openai_route")
         request_data = input_data.get("openai_input", {})
         
@@ -94,7 +81,8 @@ async def chat_handler(job):
         provider = os.getenv("CHAT_PROVIDER", "ollama")
         default_model = os.getenv("DEFAULT_MODEL", "gemma3n:latest")
         remote_auth = os.getenv("REMOTE_AUTH", "false").lower() == "true"
-        tools = os.getenv("TOOLS", "").split(",")
+        tools_str = os.getenv("NODETOOL_TOOLS", "")
+        tools = [tool.strip() for tool in tools_str.split(",") if tool.strip()] if tools_str else []
         workflows = [load_workflow(f) for f in os.listdir("/workflows") if f.endswith(".json")]
         
         # Set authentication mode
@@ -184,9 +172,7 @@ async def chat_handler(job):
 
 
 if __name__ == "__main__":
-    # Download models on startup
     log.info("Starting RunPod chat handler...")
-    download_models_on_startup()
     
     runpod.serverless.start(
         {

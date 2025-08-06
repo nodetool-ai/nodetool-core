@@ -16,7 +16,8 @@ Usage:
     from nodetool.deploy.runpod_api import (
         make_runpod_api_call,
         create_or_update_runpod_template,
-        create_runpod_endpoint
+        create_runpod_endpoint,
+        invoke_streaming_endpoint
     )
 """
 import os
@@ -24,8 +25,9 @@ import sys
 import json
 import traceback
 import requests
+import time
 from enum import Enum
-from typing import List, Optional
+from typing import AsyncGenerator, Generator, List, Optional
 
 # Configuration
 RUNPOD_API_KEY = os.getenv("RUNPOD_API_KEY")
@@ -93,28 +95,24 @@ def make_runpod_api_call(
 def create_network_volume(name: str, size: int, data_center_id: str) -> dict:
     """
     Create a new network volume.
-    
+
     Args:
         name (str): Name of the network volume
         size (int): Size in GB
         data_center_id (str): Data center ID where volume should be created
-    
+
     Returns:
         dict: Created network volume data
     """
-    data = {
-        "dataCenterId": data_center_id,
-        "name": name,
-        "size": size
-    }
-    
+    data = {"dataCenterId": data_center_id, "name": name, "size": size}
+
     return make_runpod_api_call("networkvolumes", "POST", data)
 
 
 def list_network_volumes() -> dict:
     """
     List all network volumes.
-    
+
     Returns:
         dict: List of network volumes
     """
@@ -124,25 +122,27 @@ def list_network_volumes() -> dict:
 def get_network_volume(volume_id: str) -> dict:
     """
     Get details of a specific network volume.
-    
+
     Args:
         volume_id (str): ID of the network volume
-    
+
     Returns:
         dict: Network volume details
     """
     return make_runpod_api_call(f"networkvolumes/{volume_id}", "GET")
 
 
-def update_network_volume(volume_id: str, name: str | None = None, size: int | None = None) -> dict:
+def update_network_volume(
+    volume_id: str, name: str | None = None, size: int | None = None
+) -> dict:
     """
     Update a network volume.
-    
+
     Args:
         volume_id (str): ID of the network volume
         name (str, optional): New name for the volume
         size (int, optional): New size in GB
-    
+
     Returns:
         dict: Updated network volume data
     """
@@ -151,7 +151,7 @@ def update_network_volume(volume_id: str, name: str | None = None, size: int | N
         data["name"] = name
     if size is not None:
         data["size"] = size
-    
+
     return make_runpod_api_call(f"networkvolumes/{volume_id}", "PATCH", data)
 
 
@@ -302,13 +302,95 @@ def delete_runpod_template_by_name(template_name: str) -> bool:
         template_id = template.get("id")
 
         # Delete the template using REST API
-        result = make_runpod_api_call(f"templates/{template_id}", "DELETE")
+        make_runpod_api_call(f"templates/{template_id}", "DELETE")
 
         print(f"Template '{template_name}' (ID: {template_id}) deleted successfully")
         return True
 
     except Exception as e:
         print(f"Error deleting template '{template_name}': {e}")
+        return False
+
+
+def get_runpod_endpoint_by_name(endpoint_name: str) -> dict | None:
+    """
+    Get a RunPod endpoint by name using REST API.
+
+    Args:
+        endpoint_name (str): The endpoint name to find
+
+    Returns:
+        dict | None: Endpoint data if found, None otherwise
+    """
+    try:
+        # Get all endpoints to find the one with matching name
+        result = make_runpod_api_call("endpoints", "GET")
+        endpoints = result.get("endpoints", [])
+
+        print(f"🔍 Looking for endpoint: '{endpoint_name}'")
+        print(f"📝 Found {len(endpoints)} total endpoints")
+        
+        # Debug: List all endpoint names
+        if endpoints:
+            print("📋 Available endpoints:")
+            for i, endpoint in enumerate(endpoints):
+                name = endpoint.get("name", "<no name>")
+                endpoint_id = endpoint.get("id", "<no id>")
+                print(f"  [{i+1}] Name: '{name}' (ID: {endpoint_id})")
+
+        # Find endpoint with matching name (exact match first)
+        for endpoint in endpoints:
+            if endpoint.get("name") == endpoint_name:
+                print(f"✅ Found exact match for endpoint: '{endpoint_name}'")
+                return endpoint
+
+        # Try case-insensitive match as fallback
+        for endpoint in endpoints:
+            if endpoint.get("name", "").lower() == endpoint_name.lower():
+                print(f"✅ Found case-insensitive match for endpoint: '{endpoint_name}' -> '{endpoint.get('name')}'")
+                return endpoint
+
+        print(f"❌ No endpoint found with name: '{endpoint_name}'")
+        return None
+
+    except Exception as e:
+        print(f"Error fetching endpoint '{endpoint_name}': {e}")
+        return None
+
+
+def update_runpod_endpoint(endpoint_id: str, template_id: str, **kwargs) -> bool:
+    """
+    Update an existing RunPod endpoint with a new template.
+
+    Args:
+        endpoint_id (str): The endpoint ID to update
+        template_id (str): The new template ID
+        **kwargs: Additional endpoint configuration options
+
+    Returns:
+        bool: True if update was successful
+    """
+    try:
+        # Prepare update data with the new template
+        update_data = {
+            "templateId": template_id,
+        }
+
+        # Add any additional configuration options
+        for key, value in kwargs.items():
+            if value is not None:
+                update_data[key] = value
+
+        print(f"Updating endpoint {endpoint_id} with template {template_id}")
+        make_runpod_api_call(f"endpoints/{endpoint_id}", "PATCH", update_data)
+
+        print(
+            f"Endpoint '{endpoint_id}' updated successfully with template: {template_id}"
+        )
+        return True
+
+    except Exception as e:
+        print(f"Error updating endpoint '{endpoint_id}': {e}")
         return False
 
 
@@ -332,20 +414,32 @@ def delete_runpod_endpoint_by_name(endpoint_name: str) -> bool:
         endpoints = result.get("endpoints", [])
         endpoint_id = None
 
-        # Find endpoint with matching name
+        print(f"🗑️ Looking for endpoint to delete: '{endpoint_name}'")
+        print(f"📝 Found {len(endpoints)} total endpoints")
+
+        # Find endpoint with matching name (exact match first)
         for endpoint in endpoints:
             if endpoint.get("name") == endpoint_name:
                 endpoint_id = endpoint.get("id")
+                print(f"✅ Found exact match for deletion: '{endpoint_name}' (ID: {endpoint_id})")
                 break
 
+        # Try case-insensitive match as fallback
         if not endpoint_id:
-            print(f"Endpoint '{endpoint_name}' not found (may not exist)")
+            for endpoint in endpoints:
+                if endpoint.get("name", "").lower() == endpoint_name.lower():
+                    endpoint_id = endpoint.get("id")
+                    print(f"✅ Found case-insensitive match for deletion: '{endpoint_name}' -> '{endpoint.get('name')}' (ID: {endpoint_id})")
+                    break
+
+        if not endpoint_id:
+            print(f"❌ Endpoint '{endpoint_name}' not found (may not exist)")
             return True  # Treat as success if endpoint doesn't exist
 
         # Delete the endpoint using REST API
-        delete_result = make_runpod_api_call(f"endpoints/{endpoint_id}", "DELETE")
+        make_runpod_api_call(f"endpoints/{endpoint_id}", "DELETE")
 
-        print(f"Endpoint '{endpoint_name}' (ID: {endpoint_id}) deleted successfully")
+        print(f"🗑️ Endpoint '{endpoint_name}' (ID: {endpoint_id}) deleted successfully")
         return True
 
     except Exception as e:
@@ -434,10 +528,10 @@ def update_runpod_template(template_data: dict, image_name: str, tag: str) -> bo
         if template_data.get("readme"):
             update_data["readme"] = template_data["readme"]
 
-        print(f"Updating template with data:")
+        print("Updating template with data:")
         print(json.dumps(update_data, indent=2))
 
-        result = make_runpod_api_call(f"templates/{template_id}", "PATCH", update_data)
+        make_runpod_api_call(f"templates/{template_id}", "PATCH", update_data)
 
         print(
             f"Template '{template_data.get('name')}' updated with image: {image_name}:{tag}"
@@ -514,14 +608,14 @@ def create_or_update_runpod_template(
                 "env": {"PYTHONPATH": "/app"},
             }
 
-            print(f"Creating template with data:")
+            print("Creating template with data:")
             print(json.dumps(template_data, indent=2))
 
             result = make_runpod_api_call("templates", "POST", template_data)
             template_id = result.get("id")
 
             if not template_id:
-                print(f"Error: No template ID returned")
+                print("Error: No template ID returned")
                 print(f"Response data: {json.dumps(result, indent=2)}")
                 sys.exit(1)
 
@@ -539,7 +633,7 @@ def create_or_update_runpod_template(
             sys.exit(1)
 
 
-def create_runpod_endpoint(
+def create_or_update_runpod_endpoint(
     template_id: str,
     name: str,
     compute_type: str = ComputeType.GPU.value,
@@ -559,12 +653,12 @@ def create_runpod_endpoint(
     allowed_cuda_versions: Optional[List[str]] = None,
 ):
     """
-    Create a RunPod serverless endpoint using REST API.
+    Create or update a RunPod serverless endpoint using REST API.
 
     Creates a serverless endpoint that can execute the NodeTool workflow
     with auto-scaling capabilities and optional GPU acceleration.
 
-    If an endpoint with the same name already exists, it will be deleted first.
+    If an endpoint with the same name already exists, it will be updated with the new template.
 
     Args:
         template_id (str): The RunPod template ID from create_or_update_runpod_template()
@@ -613,12 +707,23 @@ def create_runpod_endpoint(
     if data_center_ids is None:
         data_center_ids = []
 
-    # Delete existing endpoint if it exists
+    # Check if endpoint already exists
     print(f"Checking for existing endpoint: {name}")
-    if delete_runpod_endpoint_by_name(name):
-        print(f"Existing endpoint '{name}' deleted successfully")
-    else:
-        print(f"Note: Endpoint '{name}' may not have existed")
+    existing_endpoint = get_runpod_endpoint_by_name(name)
+
+    if existing_endpoint:
+        endpoint_id = existing_endpoint["id"]
+        print(f"Found existing endpoint (ID: {endpoint_id})")
+        print(f"Current template: {existing_endpoint.get('templateId', 'unknown')}")
+        print(f"Updating with new template: {template_id}")
+
+        if update_runpod_endpoint(endpoint_id, template_id):
+            print(f"Endpoint '{name}' updated successfully")
+            return endpoint_id
+        else:
+            print(f"Failed to update endpoint '{name}', creating new one...")
+            # Fall through to create new endpoint after deleting the problematic one
+            delete_runpod_endpoint_by_name(name)
 
     try:
         print(f"Creating new endpoint: {name}")
@@ -672,18 +777,18 @@ def create_runpod_endpoint(
         if network_volume_id:
             endpoint_data["networkVolumeId"] = network_volume_id
 
-        print(f"\nCreating endpoint with data:")
+        print("\nCreating endpoint with data:")
         print(json.dumps(endpoint_data, indent=2))
 
         result = make_runpod_api_call("endpoints", "POST", endpoint_data)
 
         endpoint_id = result.get("id")
         if not endpoint_id:
-            print(f"Error: No endpoint ID returned")
+            print("Error: No endpoint ID returned")
             print(f"Response data: {json.dumps(result, indent=2)}")
             sys.exit(1)
 
-        print(f"\nEndpoint created successfully!")
+        print("\nEndpoint created successfully!")
         print(f"  ID: {endpoint_id}")
         print(f"  Name: {result.get('name', name)}")
         print(f"  GPU Configuration: {result.get('gpuTypeIds')}")
@@ -700,3 +805,303 @@ def create_runpod_endpoint(
         print("3. Ensure the specified GPU types are available in your chosen regions")
         print("4. Check your RunPod account limits and quotas")
         sys.exit(1)
+
+
+# Backward compatibility alias
+create_runpod_endpoint = create_or_update_runpod_endpoint
+
+
+def check_endpoint_health(endpoint_id: str, max_retries: int = 3, timeout: int = 300) -> bool:
+    """
+    Perform a health check on a RunPod endpoint to ensure it's ready before operations.
+    
+    Args:
+        endpoint_id (str): The endpoint ID to check
+        max_retries (int): Maximum number of retry attempts (default: 3)
+        timeout (int): Timeout in seconds for each health check attempt (default: 300)
+    
+    Returns:
+        bool: True if endpoint is healthy, False otherwise
+    """
+    print(f"🏥 Performing health check on endpoint: {endpoint_id}")
+    
+    for attempt in range(1, max_retries + 1):
+        print(f"  Attempt {attempt}/{max_retries}")
+        
+        try:
+            # Send a simple health check payload
+            health_payload = {
+                "input": {
+                    "operation": "health_check"
+                }
+            }
+            
+            response = requests.post(
+                f"https://api.runpod.ai/v2/{endpoint_id}/runsync",
+                headers={
+                    "Authorization": f"Bearer {RUNPOD_API_KEY}",
+                    "Content-Type": "application/json",
+                },
+                json=health_payload,
+                timeout=timeout
+            )
+            
+            # Check if request was successful
+            if response.status_code == 200:
+                result = response.json()
+                
+                # Check if there's an error in the response
+                if "error" not in result:
+                    # Consider it healthy if we get any valid response structure
+                    print(f"  ✅ Health check passed on attempt {attempt}")
+                    return True
+                else:
+                    error_msg = result.get("error", "Unknown error")
+                    print(f"  ⚠️ Health check returned error: {error_msg}")
+            else:
+                print(f"  ⚠️ Health check failed with status {response.status_code}: {response.text}")
+                
+        except requests.exceptions.Timeout:
+            print(f"  ⏰ Health check timed out after {timeout} seconds (attempt {attempt})")
+        except requests.exceptions.RequestException as e:
+            print(f"  ❌ Health check failed with request error: {e}")
+        except Exception as e:
+            print(f"  ❌ Health check failed with unexpected error: {e}")
+        
+        # Wait before next attempt (exponential backoff)
+        if attempt < max_retries:
+            wait_time = min(30, 5 * attempt)  # Wait 5, 10, then 30 seconds
+            print(f"  ⏳ Waiting {wait_time} seconds before next attempt...")
+            time.sleep(wait_time)
+    
+    print(f"❌ Health check failed after {max_retries} attempts")
+    return False
+
+
+def run_model_download_via_admin(
+    endpoint_id: str,
+    models: List[dict],
+    cache_dir: str = "/runpod-volume/.cache/huggingface/hub",
+) -> Generator[dict, None, None]:
+    """
+    Trigger individual model downloads via the unified endpoint.
+
+    Args:
+        endpoint_id (str): The endpoint ID (main workflow/chat endpoint)
+        models (List[dict]): List of model specifications to download
+        cache_dir (str): Cache directory path on the network volume
+
+    Returns:
+        bool: True if all downloads were successful
+    """
+    print(f"Triggering individual model downloads via endpoint: {endpoint_id}")
+    print(f"Downloading {len(models)} models to: {cache_dir}")
+    success_count = 0
+    total_models = len(models)
+
+    for i, model in enumerate(models, 1):
+        model_type = model.get("type", "")
+        print(f"\n[{i}/{total_models}] Processing model: {model}")
+
+        try:
+            if model_type.startswith("hf."):
+                # HuggingFace model download
+                payload = {
+                    "operation": "download_hf",
+                    "repo_id": model.get("repo_id"),
+                    "cache_dir": cache_dir,
+                }
+                
+                # Add optional parameters
+                if model.get("file_path"):
+                    payload["file_path"] = model["file_path"]
+                if model.get("ignore_patterns"):
+                    payload["ignore_patterns"] = model["ignore_patterns"]
+                if model.get("allow_patterns"):
+                    payload["allow_patterns"] = model["allow_patterns"]
+                    
+            elif model_type == "language_model" and model.get("provider") == "ollama":
+                # Ollama model download
+                payload = {
+                    "operation": "download_ollama",
+                    "model_name": model.get("id"),
+                }
+            else:
+                print(f"⚠️ Skipping unsupported model type: {model_type}")
+                continue
+
+            # Make the API call
+            print(f"Making API call to endpoint: {endpoint_id}")
+            print(f"Payload: {payload}")
+            for chunk in invoke_streaming_endpoint(endpoint_id, payload):
+                yield chunk
+
+            print(f"✅ Successfully downloaded {model_type} model: {model.get('id')}")
+            success_count += 1
+
+        except requests.exceptions.Timeout:
+            print("❌ Model download timed out after 5 minutes")
+        except Exception as e:
+            print(f"❌ Error downloading model: {str(e)}")
+
+    print(f"\n📊 Download Summary: {success_count}/{total_models} models successful")
+
+
+def invoke_streaming_endpoint(
+    endpoint_id: str,
+    payload: dict,
+    timeout: int = 300,
+    poll_interval: int = 2
+) -> Generator[dict, None, None]:
+    """
+    Invoke a RunPod endpoint with streaming output support.
+    
+    This function starts a job, polls for status, and yields streaming output chunks
+    as they become available. It handles the complete workflow of:
+    1. Starting the job via /run endpoint
+    2. Checking job status in a loop
+    3. Fetching streaming output via /stream endpoint
+    4. Yielding each chunk as it arrives
+    
+    Args:
+        endpoint_id (str): The RunPod endpoint ID
+        payload (dict): The input payload for the job
+        timeout (int): Maximum time to wait for job completion (seconds)
+        poll_interval (int): Time between status checks (seconds)
+    
+    Returns:
+        dict: Generator yielding chunks with metadata
+        
+    Yields:
+        dict: Each chunk contains:
+            - chunk: The actual output chunk
+            - status: Current job status
+            - job_id: The job ID for reference
+    
+    Raises:
+        requests.RequestException: If API calls fail
+        TimeoutError: If job exceeds timeout
+    """
+    # Start the job
+    start_url = f"https://api.runpod.ai/v2/{endpoint_id}/run"
+    headers = {
+        "Authorization": f"Bearer {RUNPOD_API_KEY}",
+        "Content-Type": "application/json",
+    }
+    
+    print(f"🚀 Starting streaming job on endpoint: {endpoint_id}")
+    
+    try:
+        # Submit the job
+        response = requests.post(start_url, headers=headers, json={"input": payload})
+        response.raise_for_status()
+        
+        job_data = response.json()
+        job_id = job_data.get("id")
+        
+        if not job_id:
+            raise ValueError(f"No job ID returned: {job_data}")
+            
+        print(f"✅ Job started successfully: {job_id}")
+        
+        # Poll for status and stream results
+        status_url = f"https://api.runpod.ai/v2/{endpoint_id}/status/{job_id}"
+        stream_url = f"https://api.runpod.ai/v2/{endpoint_id}/stream/{job_id}"
+        
+        start_time = time.time()
+        last_chunk_index = 0
+        
+        while True:
+            # Check if we've exceeded timeout
+            if time.time() - start_time > timeout:
+                raise TimeoutError(f"Job {job_id} exceeded timeout of {timeout} seconds")
+            
+            # Check job status
+            status_response = requests.get(status_url, headers=headers)
+            status_response.raise_for_status()
+            
+            status_data = status_response.json()
+            job_status = status_data.get("status", "UNKNOWN")
+            
+            print(f"📊 Job status: {job_status}")
+            
+            # Handle different job states
+            if job_status == "FAILED":
+                error = status_data.get("error", "Unknown error")
+                raise RuntimeError(f"Job {job_id} failed: {error}")
+            
+            elif job_status in ["COMPLETED", "IN_PROGRESS", "IN_QUEUE"]:
+                # Try to fetch streaming output
+                try:
+                    stream_response = requests.get(stream_url, headers=headers)
+                    stream_response.raise_for_status()
+                    
+                    stream_data = stream_response.json()
+                    
+                    # Check for streaming output chunks
+                    if "stream" in stream_data:
+                        chunks = stream_data["stream"]
+                        
+                        # Yield new chunks only
+                        for i, chunk in enumerate(chunks[last_chunk_index:], last_chunk_index):
+                            yield {
+                                "chunk": chunk,
+                                "status": job_status,
+                                "job_id": job_id,
+                                "chunk_index": i
+                            }
+                        
+                        last_chunk_index = len(chunks)
+                    
+                    # Check for final output if job is completed
+                    if job_status == "COMPLETED":
+                        if "output" in stream_data:
+                            yield {
+                                "chunk": stream_data["output"],
+                                "status": "COMPLETED",
+                                "job_id": job_id,
+                                "chunk_index": "final",
+                                "final": True
+                            }
+                        break
+                        
+                except requests.RequestException as e:
+                    print(f"⚠️ Could not fetch stream data: {e}")
+                    # Continue polling, streaming might not be available yet
+            
+            # Wait before next poll
+            time.sleep(poll_interval)
+            
+    except requests.RequestException as e:
+        print(f"❌ API request failed: {e}")
+        if hasattr(e, 'response') and e.response is not None:
+            print(f"Response status: {e.response.status_code}")
+            print(f"Response body: {e.response.text}")
+        raise
+    except Exception as e:
+        print(f"❌ Unexpected error: {e}")
+        raise
+
+
+def invoke_streaming_endpoint_simple(endpoint_id: str, payload: dict, **kwargs):
+    """
+    Simple wrapper for streaming endpoint invocation that yields just the chunks.
+    
+    Args:
+        endpoint_id (str): The RunPod endpoint ID
+        payload (dict): The input payload for the job
+        **kwargs: Additional arguments passed to invoke_streaming_endpoint
+        
+    Yields:
+        Any: The actual chunk content without metadata
+    """
+    for result in invoke_streaming_endpoint(endpoint_id, payload, **kwargs):
+        yield result["chunk"]
+
+
+
+
+
+
+
+

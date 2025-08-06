@@ -238,8 +238,8 @@ def chat():
 )
 @click.option(
     "--tools",
-    default=[],
-    help="Tools to use.",
+    default="",
+    help="Comma-separated list of tools to use (e.g., 'google_search,google_news,google_images').",
 )
 @click.option(
     "--workflow",
@@ -254,7 +254,7 @@ def chat_server(
     remote_auth: bool,
     provider: str,
     default_model: str,
-    tools: list[str],
+    tools: str,
     workflows: list[str],
 ):
     """Start a chat server SSE protocol.
@@ -279,8 +279,13 @@ def chat_server(
         return Workflow.model_validate(workflow)
 
     loaded_workflows = [load_workflow(f) for f in workflows]
+    
+    # Parse comma-separated tools string into list
+    tools_list = [tool.strip() for tool in tools.split(",") if tool.strip()] if tools else []
 
-    run_chat_server(host, port, remote_auth, provider, default_model, tools, loaded_workflows)
+    run_chat_server(
+        host, port, remote_auth, provider, default_model, tools_list, loaded_workflows
+    )
 
 
 @cli.command("chat-client")
@@ -776,6 +781,543 @@ cli.add_command(package)
 cli.add_command(settings)
 
 
+@cli.group()
+def admin():
+    """Commands for admin operations (model downloads, cache management, health checks)."""
+    pass
+
+
+async def execute_admin_operation_runpod(job_input: dict, endpoint_id: str, api_key: str | None = None, timeout: int = 600):
+    """Execute admin operation on RunPod endpoint."""
+    try:
+        import runpod
+    except ImportError:
+        console.print("[bold red]❌ Error: runpod library not found[/]")
+        console.print("Install it with: pip install runpod")
+        sys.exit(1)
+    
+    # Get API key from argument or environment
+    api_key = api_key or os.getenv("RUNPOD_API_KEY")
+    if not api_key:
+        console.print("[bold red]❌ Error: RunPod API key is required[/]")
+        console.print("Provide it via --api-key argument or RUNPOD_API_KEY environment variable")
+        sys.exit(1)
+    
+    # Configure runpod library
+    runpod.api_key = api_key
+    endpoint = runpod.Endpoint(endpoint_id)
+    
+    console.print(f"[bold cyan]🚀 Executing admin operation on RunPod endpoint {endpoint_id}...[/]")
+    
+    try:
+        import time
+        job = endpoint.run(job_input)
+        start_time = time.time()
+        
+        # Wait for job to start
+        while job.status() == "IN_QUEUE":
+            time.sleep(1)
+            elapsed = int(time.time() - start_time)
+            if elapsed >= timeout:
+                console.print(f"[bold red]⏰ Job timed out after {timeout} seconds[/]")
+                sys.exit(1)
+            console.print(f"[yellow]⏳ Job queued... (elapsed: {elapsed}s)[/]")
+        
+        # Stream results if the job supports streaming
+        if job_input.get("stream", False):
+            console.print(f"[blue]📡 Streaming results from RunPod...[/]")
+            
+            # Poll for streaming results
+            while job.status() in ("RUNNING", "IN_PROGRESS"):
+                time.sleep(0.5)
+                elapsed = int(time.time() - start_time)
+                if elapsed >= timeout:
+                    console.print(f"[bold red]⏰ Job timed out after {timeout} seconds[/]")
+                    sys.exit(1)
+                
+                # Try to get partial output for streaming
+                try:
+                    output = job.output()
+                    if output:
+                        # Handle streaming output
+                        if isinstance(output, list):
+                            for item in output:
+                                if isinstance(item, dict):
+                                    yield item
+                        elif isinstance(output, dict):
+                            yield output
+                except:
+                    # Continue if no output available yet
+                    pass
+            
+            # Get final output
+            final_output = job.output()
+            if final_output:
+                if isinstance(final_output, list):
+                    for item in final_output:
+                        if isinstance(item, dict):
+                            yield item
+                elif isinstance(final_output, dict):
+                    yield final_output
+        else:
+            # Non-streaming: wait for completion
+            while job.status() in ("RUNNING", "IN_PROGRESS"):
+                time.sleep(2)
+                elapsed = int(time.time() - start_time)
+                if elapsed >= timeout:
+                    console.print(f"[bold red]⏰ Job timed out after {timeout} seconds[/]")
+                    sys.exit(1)
+                console.print(f"[yellow]⚙️ Job running... (elapsed: {elapsed}s)[/]")
+            
+            # Get final results
+            result = job.output()
+            if result:
+                if isinstance(result, list):
+                    for item in result:
+                        if isinstance(item, dict):
+                            yield item
+                elif isinstance(result, dict):
+                    yield result
+        
+        elapsed = int(time.time() - start_time)
+        console.print(f"[green]✅ RunPod job completed in {elapsed} seconds[/]")
+        
+    except Exception as e:
+        console.print(f"[bold red]❌ RunPod execution failed: {e}[/]")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
+
+
+@admin.command("download-hf")
+@click.option("--repo-id", required=True, help="HuggingFace repository ID to download")
+@click.option("--cache-dir", default="/app/.cache/huggingface/hub", help="Cache directory path")
+@click.option("--file-path", help="Specific file to download (optional)")
+@click.option("--allow-patterns", multiple=True, help="Patterns to allow (can specify multiple)")
+@click.option("--ignore-patterns", multiple=True, help="Patterns to ignore (can specify multiple)")
+@click.option("--stream", is_flag=True, help="Enable streaming progress updates")
+@click.option("--endpoint-id", help="RunPod endpoint ID to execute on (local execution if not provided)")
+@click.option("--api-key", help="RunPod API key (can also use RUNPOD_API_KEY env var)")
+@click.option("--timeout", type=int, default=600, help="Timeout in seconds for RunPod execution (default: 600)")
+def download_hf(repo_id: str, cache_dir: str, file_path: str | None, allow_patterns: tuple, ignore_patterns: tuple, stream: bool, endpoint_id: str | None, api_key: str | None, timeout: int):
+    """Download HuggingFace models with progress tracking.
+    
+    Examples:
+        # Download entire model repository locally
+        nodetool admin download-hf --repo-id microsoft/DialoGPT-small
+        
+        # Download with streaming progress locally
+        nodetool admin download-hf --repo-id microsoft/DialoGPT-small --stream
+        
+        # Download on RunPod endpoint with streaming
+        nodetool admin download-hf --repo-id microsoft/DialoGPT-small --stream --endpoint-id abc123def456
+        
+        # Download specific file on RunPod endpoint
+        nodetool admin download-hf --repo-id microsoft/DialoGPT-small --file-path config.json --endpoint-id abc123def456
+        
+        # Download with pattern filtering on RunPod endpoint
+        nodetool admin download-hf --repo-id microsoft/DialoGPT-small --allow-patterns "*.json" --allow-patterns "*.txt" --ignore-patterns "*.bin" --endpoint-id abc123def456
+    """
+    import asyncio
+    
+    job_input = {
+        "operation": "download_hf",
+        "repo_id": repo_id,
+        "cache_dir": cache_dir,
+        "stream": stream
+    }
+    
+    if file_path:
+        job_input["file_path"] = file_path
+    if allow_patterns:
+        job_input["allow_patterns"] = list(allow_patterns)
+    if ignore_patterns:
+        job_input["ignore_patterns"] = list(ignore_patterns)
+    
+    async def run_download():
+        console.print(f"[bold cyan]📥 Starting HuggingFace download...[/]")
+        console.print(f"Repository: {repo_id}")
+        console.print(f"Cache directory: {cache_dir}")
+        if file_path:
+            console.print(f"File: {file_path}")
+        if allow_patterns:
+            console.print(f"Allow patterns: {', '.join(allow_patterns)}")
+        if ignore_patterns:
+            console.print(f"Ignore patterns: {', '.join(ignore_patterns)}")
+        console.print(f"Streaming: {'✅ Yes' if stream else '❌ No'}")
+        if endpoint_id:
+            console.print(f"RunPod Endpoint: {endpoint_id}")
+        else:
+            console.print("Execution: 🖥️ Local")
+        console.print()
+        
+        try:
+            await _execute_admin_operation(job_input, endpoint_id, api_key, timeout)
+                    
+        except Exception as e:
+            console.print(f"[red]❌ Failed: {e}[/]")
+            import traceback
+            traceback.print_exc()
+            sys.exit(1)
+    
+    asyncio.run(run_download())
+
+
+def _display_progress_update(progress_update):
+    """Shared function to display progress updates in consistent format."""
+    status = progress_update.get("status", "unknown")
+    message = progress_update.get("message", "")
+    
+    if status == "starting":
+        console.print(f"[blue]🚀 {message}[/]")
+    elif status == "progress":
+        if "current_file" in progress_update:
+            current_file = progress_update["current_file"]
+            if "file_progress" in progress_update:
+                file_num = progress_update["file_progress"]
+                total_files = progress_update["total_files"]
+                console.print(f"[yellow]📁 [{file_num}/{total_files}] {current_file}[/]")
+            else:
+                console.print(f"[yellow]📁 {current_file}[/]")
+        else:
+            console.print(f"[yellow]⚙️ {message}[/]")
+        
+        # Show progress info if available
+        if "downloaded_size" in progress_update and "total_size" in progress_update:
+            downloaded = progress_update["downloaded_size"]
+            total = progress_update["total_size"]
+            if total > 0:
+                pct = (downloaded / total) * 100
+                downloaded_mb = downloaded / (1024 * 1024)
+                total_mb = total / (1024 * 1024)
+                console.print(f"[cyan]📊 Progress: {downloaded_mb:.1f}/{total_mb:.1f} MB ({pct:.1f}%)[/]")
+                
+    elif status == "completed":
+        console.print(f"[green]✅ {message}[/]")
+        if "downloaded_files" in progress_update:
+            console.print(f"[green]📋 Downloaded {progress_update['downloaded_files']} files[/]")
+    elif status == "error":
+        error = progress_update.get("error", "Unknown error")
+        console.print(f"[red]❌ Error: {error}[/]")
+        sys.exit(1)
+    elif status == "healthy":
+        console.print(f"[green]✅ System is healthy[/]")
+        
+        # Display system information for health checks
+        console.print(f"[cyan]🖥️ Platform: {progress_update.get('platform', 'Unknown')}[/]")
+        console.print(f"[cyan]🐍 Python: {progress_update.get('python_version', 'Unknown')}[/]")
+        console.print(f"[cyan]🏠 Hostname: {progress_update.get('hostname', 'Unknown')}[/]")
+        
+        # Memory info
+        memory = progress_update.get("memory", {})
+        if isinstance(memory, dict):
+            console.print(f"[cyan]💾 Memory: {memory.get('available_gb', 0):.1f}GB available / {memory.get('total_gb', 0):.1f}GB total ({memory.get('used_percent', 0)}% used)[/]")
+        
+        # Disk info
+        disk = progress_update.get("disk", {})
+        if isinstance(disk, dict):
+            console.print(f"[cyan]💿 Disk: {disk.get('free_gb', 0):.1f}GB free / {disk.get('total_gb', 0):.1f}GB total ({disk.get('used_percent', 0)}% used)[/]")
+        
+        # GPU info
+        gpus = progress_update.get("gpus", [])
+        if isinstance(gpus, list) and gpus:
+            console.print(f"[cyan]🎮 GPUs:[/]")
+            for i, gpu in enumerate(gpus):
+                name = gpu.get("name", "Unknown")
+                used_mb = gpu.get("memory_used_mb", 0)
+                total_mb = gpu.get("memory_total_mb", 0)
+                used_pct = (used_mb / total_mb * 100) if total_mb > 0 else 0
+                console.print(f"[cyan]  GPU {i}: {name} - {used_mb}MB/{total_mb}MB ({used_pct:.1f}% used)[/]")
+        elif gpus == "unavailable":
+            console.print(f"[yellow]🎮 GPUs: Not available[/]")
+
+
+async def _execute_admin_operation(job_input, endpoint_id, api_key, timeout):
+    """Execute admin operation locally or on RunPod endpoint."""
+    if endpoint_id:
+        # Execute on RunPod endpoint
+        async for progress_update in execute_admin_operation_runpod(job_input, endpoint_id, api_key, timeout):
+            _display_progress_update(progress_update)
+    else:
+        # Execute locally
+        from nodetool.deploy.admin_operations import handle_admin_operation
+        async for progress_update in handle_admin_operation(job_input):
+            _display_progress_update(progress_update)
+
+
+@admin.command("download-ollama")
+@click.option("--model-name", required=True, help="Ollama model name to download")
+@click.option("--stream", is_flag=True, help="Enable streaming progress updates")
+@click.option("--endpoint-id", help="RunPod endpoint ID to execute on (local execution if not provided)")
+@click.option("--api-key", help="RunPod API key (can also use RUNPOD_API_KEY env var)")
+@click.option("--timeout", type=int, default=600, help="Timeout in seconds for RunPod execution (default: 600)")
+def download_ollama(model_name: str, stream: bool, endpoint_id: str | None, api_key: str | None, timeout: int):
+    """Download Ollama models with progress tracking.
+    
+    Examples:
+        # Download Ollama model locally
+        nodetool admin download-ollama --model-name llama3.2:latest
+        
+        # Download with streaming progress locally
+        nodetool admin download-ollama --model-name llama3.2:latest --stream
+        
+        # Download on RunPod endpoint
+        nodetool admin download-ollama --model-name llama3.2:latest --stream --endpoint-id abc123def456
+    """
+    import asyncio
+    
+    job_input = {
+        "operation": "download_ollama",
+        "model_name": model_name,
+        "stream": stream
+    }
+    
+    async def run_download():
+        console.print(f"[bold cyan]📥 Starting Ollama download...[/]")
+        console.print(f"Model: {model_name}")
+        console.print(f"Streaming: {'✅ Yes' if stream else '❌ No'}")
+        if endpoint_id:
+            console.print(f"RunPod Endpoint: {endpoint_id}")
+        else:
+            console.print("Execution: 🖥️ Local")
+        console.print()
+        
+        try:
+            await _execute_admin_operation(job_input, endpoint_id, api_key, timeout)
+        except Exception as e:
+            console.print(f"[red]❌ Failed: {e}[/]")
+            import traceback
+            traceback.print_exc()
+            sys.exit(1)
+    
+    asyncio.run(run_download())
+
+
+@admin.command("scan-cache")
+@click.option("--endpoint-id", help="RunPod endpoint ID to execute on (local execution if not provided)")
+@click.option("--api-key", help="RunPod API key (can also use RUNPOD_API_KEY env var)")
+@click.option("--timeout", type=int, default=600, help="Timeout in seconds for RunPod execution (default: 600)")
+def scan_cache(endpoint_id: str | None, api_key: str | None, timeout: int):
+    """Scan HuggingFace cache and display information."""
+    import asyncio
+    
+    job_input = {
+        "operation": "scan_cache"
+    }
+    
+    async def run_scan():
+        console.print(f"[bold cyan]🔍 Scanning HuggingFace cache...[/]")
+        if endpoint_id:
+            console.print(f"RunPod Endpoint: {endpoint_id}")
+        else:
+            console.print("Execution: 🖥️ Local")
+        console.print()
+        
+        try:
+            if endpoint_id:
+                # Execute on RunPod endpoint
+                async for progress_update in execute_admin_operation_runpod(job_input, endpoint_id, api_key, timeout):
+                    _handle_scan_cache_output(progress_update)
+            else:
+                # Execute locally
+                from nodetool.deploy.admin_operations import handle_admin_operation
+                async for progress_update in handle_admin_operation(job_input):
+                    _handle_scan_cache_output(progress_update)
+                    
+        except Exception as e:
+            console.print(f"[red]❌ Failed: {e}[/]")
+            import traceback
+            traceback.print_exc()
+            sys.exit(1)
+    
+    def _handle_scan_cache_output(progress_update):
+        """Handle scan cache specific output."""
+        status = progress_update.get("status", "unknown")
+        
+        if status == "completed":
+            cache_info = progress_update.get("cache_info", {})
+            console.print(f"[green]✅ Cache scan completed[/]")
+            
+            # Display cache information
+            size_on_disk = cache_info.get("size_on_disk", 0)
+            size_gb = size_on_disk / (1024 ** 3) if size_on_disk else 0
+            
+            console.print(f"[cyan]📊 Total cache size: {size_gb:.2f} GB[/]")
+            
+            repos = cache_info.get("repos", [])
+            if repos:
+                console.print(f"[cyan]📋 Found {len(repos)} cached repositories:[/]")
+                
+                table = Table()
+                table.add_column("Repository", style="cyan")
+                table.add_column("Size (GB)", style="green")
+                table.add_column("Files", style="yellow")
+                
+                for repo in repos:
+                    repo_size_gb = repo.get("size_on_disk", 0) / (1024 ** 3)
+                    table.add_row(
+                        repo.get("repo_id", "Unknown"),
+                        f"{repo_size_gb:.2f}",
+                        str(repo.get("nb_files", 0))
+                    )
+                
+                console.print(table)
+            else:
+                console.print("[yellow]No cached repositories found[/]")
+                
+        elif status == "error":
+            error = progress_update.get("error", "Unknown error")
+            console.print(f"[red]❌ Error: {error}[/]")
+            sys.exit(1)
+    
+    asyncio.run(run_scan())
+
+
+@admin.command("delete-hf")
+@click.option("--repo-id", required=True, help="HuggingFace repository ID to delete from cache")
+@click.option("--endpoint-id", help="RunPod endpoint ID to execute on (local execution if not provided)")
+@click.option("--api-key", help="RunPod API key (can also use RUNPOD_API_KEY env var)")
+@click.option("--timeout", type=int, default=600, help="Timeout in seconds for RunPod execution (default: 600)")
+def delete_hf(repo_id: str, endpoint_id: str | None, api_key: str | None, timeout: int):
+    """Delete HuggingFace model from cache.
+    
+    Examples:
+        nodetool admin delete-hf --repo-id microsoft/DialoGPT-small
+        nodetool admin delete-hf --repo-id microsoft/DialoGPT-small --endpoint-id abc123def456
+    """
+    import asyncio
+    
+    job_input = {
+        "operation": "delete_hf",
+        "repo_id": repo_id
+    }
+    
+    async def run_delete():
+        console.print(f"[bold yellow]🗑️ Deleting HuggingFace model from cache...[/]")
+        console.print(f"Repository: {repo_id}")
+        if endpoint_id:
+            console.print(f"RunPod Endpoint: {endpoint_id}")
+        else:
+            console.print("Execution: 🖥️ Local")
+        console.print()
+        
+        if not click.confirm(f"Are you sure you want to delete {repo_id} from the cache?"):
+            console.print("[yellow]❌ Operation cancelled[/]")
+            return
+        
+        try:
+            await _execute_admin_operation(job_input, endpoint_id, api_key, timeout)
+        except Exception as e:
+            console.print(f"[red]❌ Failed: {e}[/]")
+            import traceback
+            traceback.print_exc()
+            sys.exit(1)
+    
+    asyncio.run(run_delete())
+
+
+@admin.command("cache-size")
+@click.option("--cache-dir", default="/app/.cache/huggingface/hub", help="Cache directory path")
+@click.option("--endpoint-id", help="RunPod endpoint ID to execute on (local execution if not provided)")
+@click.option("--api-key", help="RunPod API key (can also use RUNPOD_API_KEY env var)")
+@click.option("--timeout", type=int, default=600, help="Timeout in seconds for RunPod execution (default: 600)")
+def cache_size(cache_dir: str, endpoint_id: str | None, api_key: str | None, timeout: int):
+    """Calculate total cache size.
+    
+    Examples:
+        nodetool admin cache-size
+        nodetool admin cache-size --cache-dir /custom/cache/path
+        nodetool admin cache-size --endpoint-id abc123def456
+    """
+    import asyncio
+    
+    job_input = {
+        "operation": "calculate_cache_size",
+        "cache_dir": cache_dir
+    }
+    
+    async def run_calculate():
+        console.print(f"[bold cyan]📏 Calculating cache size...[/]")
+        console.print(f"Cache directory: {cache_dir}")
+        if endpoint_id:
+            console.print(f"RunPod Endpoint: {endpoint_id}")
+        else:
+            console.print("Execution: 🖥️ Local")
+        console.print()
+        
+        try:
+            if endpoint_id:
+                # Execute on RunPod endpoint
+                async for progress_update in execute_admin_operation_runpod(job_input, endpoint_id, api_key, timeout):
+                    _handle_cache_size_output(progress_update)
+            else:
+                # Execute locally
+                from nodetool.deploy.admin_operations import handle_admin_operation
+                async for progress_update in handle_admin_operation(job_input):
+                    _handle_cache_size_output(progress_update)
+                    
+        except Exception as e:
+            console.print(f"[red]❌ Failed: {e}[/]")
+            import traceback
+            traceback.print_exc()
+            sys.exit(1)
+    
+    def _handle_cache_size_output(progress_update):
+        """Handle cache size specific output."""
+        if "success" in progress_update and progress_update["success"]:
+            total_size = progress_update.get("total_size_bytes", 0)
+            size_gb = progress_update.get("size_gb", 0)
+            
+            console.print(f"[green]✅ Cache size calculation completed[/]")
+            console.print(f"[cyan]📊 Total size: {size_gb} GB ({total_size:,} bytes)[/]")
+        elif "status" in progress_update and progress_update["status"] == "error":
+            error = progress_update.get("error", "Unknown error")
+            console.print(f"[red]❌ Error: {error}[/]")
+            sys.exit(1)
+    
+    asyncio.run(run_calculate())
+
+
+@admin.command("health-check")
+@click.option("--endpoint-id", help="RunPod endpoint ID to execute on (local execution if not provided)")
+@click.option("--api-key", help="RunPod API key (can also use RUNPOD_API_KEY env var)")
+@click.option("--timeout", type=int, default=600, help="Timeout in seconds for RunPod execution (default: 600)")
+def health_check(endpoint_id: str | None, api_key: str | None, timeout: int):
+    """Perform system health check.
+    
+    Examples:
+        nodetool admin health-check
+        nodetool admin health-check --endpoint-id abc123def456
+    """
+    import asyncio
+    
+    job_input = {
+        "operation": "health_check"
+    }
+    
+    async def run_health_check():
+        console.print(f"[bold cyan]🏥 Running system health check...[/]")
+        if endpoint_id:
+            console.print(f"RunPod Endpoint: {endpoint_id}")
+        else:
+            console.print("Execution: 🖥️ Local")
+        console.print()
+        
+        try:
+            await _execute_admin_operation(job_input, endpoint_id, api_key, timeout)
+        except Exception as e:
+            console.print(f"[red]❌ Health check failed: {e}[/]")
+            import traceback
+            traceback.print_exc()
+            sys.exit(1)
+    
+    asyncio.run(run_health_check())
+
+
+# Add admin group to the main CLI
+cli.add_command(admin)
+
+
 def _handle_list_options(
     list_gpu_types: bool,
     list_cpu_flavors: bool,
@@ -1013,6 +1555,15 @@ def _handle_docker_config_check(
     default="gemma3n:latest",
     help="Default AI model to use for chat handler (default: gemma3n:latest)",
 )
+@click.option(
+    "--tools",
+    default="",
+    help="Comma-separated list of tools to use for chat handler (e.g., 'google_search,google_news,google_images').",
+)
+@click.option(
+    "--name",
+    help="Name for the endpoint (required for chat handlers, defaults to workflow name for workflows)",
+)
 # List options
 @click.option(
     "--list-gpu-types", is_flag=True, help="List all available GPU types and exit"
@@ -1065,6 +1616,8 @@ def deploy(
     allowed_cuda_versions: tuple,
     provider: str,
     default_model: str,
+    tools: str,
+    name: str | None,
     list_gpu_types: bool,
     list_cpu_flavors: bool,
     list_data_centers: bool,
@@ -1104,6 +1657,7 @@ def deploy(
       nodetool deploy --list-all-options
     """
     import dotenv
+
     dotenv.load_dotenv()
 
     # Handle list options (these don't require workflow-id)
@@ -1116,6 +1670,9 @@ def deploy(
 
     # Call the main deployment function
     from nodetool.deploy.deploy_to_runpod import deploy_to_runpod
+    
+    # Parse comma-separated tools string into list
+    tools_list = [tool.strip() for tool in tools.split(",") if tool.strip()] if tools else None
 
     deploy_to_runpod(
         workflow_id=workflow_id,
@@ -1149,8 +1706,10 @@ def deploy(
         allowed_cuda_versions=allowed_cuda_versions,
         provider=provider,
         default_model=default_model,
+        name=name,
         local_docker=local_docker,
         local=local,
+        tools=tools_list,
     )
 
 

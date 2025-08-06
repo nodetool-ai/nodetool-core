@@ -69,12 +69,13 @@ Examples:
 """
 import os
 import sys
-import json
 import tempfile
 from typing import Optional
 import re
 
 import dotenv
+
+from nodetool.deploy.runpod_api import check_endpoint_health
 
 dotenv.load_dotenv()
 
@@ -183,8 +184,10 @@ def deploy_to_runpod(
     allowed_cuda_versions: tuple = (),
     provider: str = "ollama",
     default_model: str = "gemma3n:latest",
+    name: Optional[str] = None,
     local_docker: bool = False,
     local: bool = False,
+    tools: Optional[list[str]] = None,
 ) -> None:
     """
     Deploy workflow or chat handler to RunPod serverless infrastructure.
@@ -223,8 +226,10 @@ def deploy_to_runpod(
         allowed_cuda_versions: Allowed CUDA versions
         provider: AI provider to use for chat handler
         default_model: Default AI model to use for chat handler
+        name: Name for the endpoint (required for chat handlers, defaults to workflow name for workflows)
         local_docker: Run local Docker container instead of deploying
         local: Run local server without Docker
+        tools: List of tool names to enable for chat handler
     """
     import traceback
     from rich.console import Console
@@ -246,14 +251,14 @@ def deploy_to_runpod(
     )
     from .runpod_api import (
         create_or_update_runpod_template,
-        create_runpod_endpoint,
-        ComputeType,
+        create_or_update_runpod_endpoint,
+        run_model_download_via_admin,
     )
 
     console = Console()
 
     # Validate arguments
-    validate_deployment_args(workflow_id, chat_handler)
+    validate_deployment_args(workflow_id, chat_handler, name)
 
     # Get Docker username
     docker_username = get_docker_username(
@@ -272,13 +277,13 @@ def deploy_to_runpod(
     if not skip_build:
         try:
             run_command("docker --version", capture_output=True)
-        except:
+        except Exception:
             console.print("Error: Docker is not installed or not running")
             sys.exit(1)
 
     # Prepare workflow data
     workflow_path, workflow_name, base_image_name, embed_models = prepare_workflow_data(
-        workflow_id, chat_handler, provider, default_model
+        workflow_id, chat_handler, provider, default_model, tools
     )
 
     # Use provided image name or generated one
@@ -306,35 +311,26 @@ def deploy_to_runpod(
         # Handle local execution modes
         if local:
             run_local_handler(
-                chat_handler, workflow_path, workflow_name, provider, default_model
+                chat_handler, workflow_path, workflow_name, provider, default_model, tools
             )
             return
 
-        # Build Docker image with embedded workflow or chat handler
+        # Build Docker image with embedded workflow - universal handler can handle all cases
         image_pushed_during_build = False
         if not skip_build:
-            if chat_handler:
-                image_pushed_during_build = build_docker_image(
-                    workflow_path,
-                    full_image_name,
-                    image_tag,
-                    platform,
-                    embed_models=embed_models,
-                    chat_handler=True,
-                    provider=provider,
-                    default_model=default_model,
-                    use_cache=not no_cache,
-                    auto_push=not no_auto_push,
-                )
-            else:
-                image_pushed_during_build = build_docker_image(
-                    workflow_path,
-                    full_image_name,
-                    image_tag,
-                    platform,
-                    use_cache=not no_cache,
-                    auto_push=not no_auto_push,
-                )
+            image_pushed_during_build = build_docker_image(
+                workflow_path,
+                full_image_name,
+                image_tag,
+                platform,
+                embed_models=embed_models,
+                chat_handler=chat_handler,
+                provider=provider,
+                default_model=default_model,
+                tools=tools,
+                use_cache=not no_cache,
+                auto_push=not no_auto_push,
+            )
 
         # Handle local Docker execution
         if local_docker:
@@ -355,6 +351,7 @@ def deploy_to_runpod(
                 template_name, full_image_name, image_tag
             )
 
+
         # Create RunPod endpoint
         if not skip_endpoint and template_id:
             # Convert GPU types from string values
@@ -365,12 +362,14 @@ def deploy_to_runpod(
                 list(allowed_cuda_versions) if allowed_cuda_versions else None
             )
 
-            endpoint_name = (
-                workflow_id
-                if workflow_id
-                else f"chat-handler-{provider}-{default_model.replace(':', '-').replace('/', '-')}"
-            )
-            endpoint_id = create_runpod_endpoint(
+            if name:
+                endpoint_name = name
+            elif workflow_id:
+                endpoint_name = workflow_id
+            else:
+                # This shouldn't happen due to validation, but just in case
+                endpoint_name = f"nodetool-handler-{provider}-{default_model.replace(':', '-').replace('/', '-')}"
+            endpoint_id = create_or_update_runpod_endpoint(
                 template_id=template_id,
                 name=endpoint_name,
                 compute_type=compute_type,
@@ -389,6 +388,27 @@ def deploy_to_runpod(
                 network_volume_id=network_volume_id,
                 allowed_cuda_versions=allowed_cuda_versions_list,
             )
+
+            # Download models using the main endpoint if we have model specifications and network volume
+            if embed_models and network_volume_id and endpoint_id:
+
+                # Perform health check before starting downloads
+                if not check_endpoint_health(endpoint_id):
+                    print("❌ Endpoint health check failed. Aborting model downloads.")
+                    return
+                
+                print("✅ Endpoint is healthy, proceeding with model downloads...")
+
+                console.print(
+                    "[bold blue]📦 Downloading models via main endpoint...[/]"
+                )
+                for chunk in run_model_download_via_admin(
+                    endpoint_id=endpoint_id,
+                    models=embed_models,
+                    cache_dir="/runpod-volume/.cache/huggingface/hub",
+                ):
+                    console.print(chunk)
+                console.print("[bold green]✅ Models downloaded successfully[/]")
 
         # Print deployment summary
         print_deployment_summary(

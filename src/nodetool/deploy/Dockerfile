@@ -33,5 +33,7 @@ RUN uv pip install --no-cache-dir runpod hf-transfer huggingface-hub --upgrade \
 COPY . $WORKSPACE_DIR/
 RUN chmod +x $WORKSPACE_DIR/start.sh
 
+RUN mkdir /workflows
+
 # Run the startup script
 CMD ["/app/start.sh"]

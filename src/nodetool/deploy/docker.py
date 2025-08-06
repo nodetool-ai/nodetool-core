@@ -14,7 +14,7 @@ import json
 import tempfile
 import shutil
 from pathlib import Path
-from typing import List
+from typing import Optional
 
 
 def run_command(command: str, capture_output: bool = False) -> str:
@@ -275,23 +275,18 @@ def create_start_script(build_dir: str, chat_handler: bool = False, chat_env: di
         ""
     ]
     
-    if chat_handler:
-        # Add chat environment variables to the script
-        chat_env_vars = []
-        if chat_env:
-            for key, value in chat_env.items():
-                chat_env_vars.append(f'export {key}="{value}"')
-        
-        script_content = base_script + chat_env_vars + [
-            "",
-            'echo "Starting chat handler..."',
-            'exec /app/.venv/bin/python -m nodetool.deploy.runpod_chat_handler "$@"'
-        ]
-    else:
-        script_content = base_script + [
-            'echo "Starting workflow handler..."',
-            'exec /app/.venv/bin/python -m nodetool.deploy.runpod_handler "$@"'
-        ]
+    # Add environment variables if provided (for chat functionality)
+    chat_env_vars = []
+    if chat_handler and chat_env:
+        for key, value in chat_env.items():
+            chat_env_vars.append(f'export {key}="{value}"')
+    
+    # Always use the universal handler which can handle workflows, chat, and admin operations
+    script_content = base_script + chat_env_vars + [
+        "",
+        'echo "Starting universal handler (workflows, chat, admin operations)..."',
+        'exec /app/.venv/bin/python -m nodetool.deploy.runpod_handler "$@"'
+    ]
     
     script_path = Path(build_dir) / "start.sh"
     with open(script_path, "w") as f:
@@ -441,6 +436,7 @@ def build_docker_image(
     chat_handler: bool = False,
     provider: str = "ollama",
     default_model: str = "gemma3n:latest",
+    tools: Optional[list[str]] = None,
     use_cache: bool = True,
     auto_push: bool = True,
 ) -> bool:
@@ -473,6 +469,7 @@ def build_docker_image(
         chat_handler (bool): Whether to use chat handler
         provider (str): Chat provider
         default_model (str): Default model for chat
+        tools (Optional[list[str]]): List of tool names to enable
         use_cache (bool): Whether to use Docker Hub cache optimization (default: True)
         auto_push (bool): Whether to automatically push to registry during build (default: True)
 
@@ -532,15 +529,11 @@ def build_docker_image(
                 "REMOTE_AUTH": "false",
                 "USE_DATABASE": "false",
             }
+            if tools:
+                env_config["NODETOOL_TOOLS"] = ",".join(tools)
 
         shutil.copy(deploy_dockerfile_path, os.path.join(build_dir, "Dockerfile"))
 
-        # Create models.json file with list of all models for runtime download
-        models_file_path = os.path.join(build_dir, "models.json")
-        with open(models_file_path, "w") as f:
-            json.dump(models, f, indent=2)
-        print(f"Created models.json with {len(models)} models for runtime download")
-        
         # Create start.sh script with environment variables
         if chat_handler:
             create_start_script(build_dir, chat_handler, env_config)
@@ -553,7 +546,7 @@ def build_docker_image(
         image_pushed = False
         
         if use_cache:
-            print(f"Building with Docker Hub cache optimization...")
+            print("Building with Docker Hub cache optimization...")
             
             # Ensure docker buildx is available
             run_command("docker buildx create --use --name nodetool-builder --driver docker-container || true")
@@ -580,7 +573,7 @@ def build_docker_image(
                 # Try building with cache first
                 run_command(build_cmd_with_cache)
                 image_pushed = auto_push
-            except subprocess.CalledProcessError as e:
+            except subprocess.CalledProcessError:
                 print("Cache build failed, falling back to build without cache import...")
                 # Fallback to build without cache import (but still export cache)
                 build_cmd_fallback = (
