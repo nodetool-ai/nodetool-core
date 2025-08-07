@@ -16,6 +16,7 @@ from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
 from rich.text import Text
+from rich.progress import Progress, BarColumn, TextColumn, TimeRemainingColumn, TaskProgressColumn, SpinnerColumn
 from typing import Optional
 
 import dotenv
@@ -24,6 +25,112 @@ dotenv.load_dotenv()
 
 # Create console instance
 console = Console()
+
+# Global progress manager for persistent progress bars
+class ProgressManager:
+    """Manages persistent progress bars for different operations."""
+    
+    def __init__(self):
+        self.progress = None
+        self.tasks = {}  # Maps operation IDs to task IDs
+        self.current_operations = {}  # Maps operation IDs to operation info
+        
+    def start(self):
+        """Start the progress display."""
+        if self.progress is None:
+            self.progress = Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                BarColumn(),
+                TaskProgressColumn(),
+                TextColumn("•"),
+                TimeRemainingColumn(),
+                console=console,
+                transient=False,
+            )
+            self.progress.start()
+    
+    def stop(self):
+        """Stop the progress display."""
+        if self.progress:
+            self.progress.stop()
+            self.progress = None
+            self.tasks.clear()
+            self.current_operations.clear()
+    
+    def add_task(self, operation_id: str, description: str, total: Optional[float] = None):
+        """Add a new progress task."""
+        self.start()
+        if operation_id not in self.tasks:
+            task_id = self.progress.add_task(description, total=total)
+            self.tasks[operation_id] = task_id
+            self.current_operations[operation_id] = {
+                "description": description,
+                "total": total,
+                "completed": 0
+            }
+        return self.tasks[operation_id]
+    
+    def update_task(self, operation_id: str, completed: Optional[float] = None, description: Optional[str] = None):
+        """Update a progress task."""
+        if operation_id in self.tasks and self.progress:
+            task_id = self.tasks[operation_id]
+            update_kwargs = {}
+            
+            if completed is not None:
+                # Calculate advance amount
+                current_completed = self.current_operations[operation_id]["completed"]
+                advance = completed - current_completed
+                if advance > 0:
+                    update_kwargs["advance"] = advance
+                self.current_operations[operation_id]["completed"] = completed
+            
+            if description is not None:
+                update_kwargs["description"] = description
+                self.current_operations[operation_id]["description"] = description
+            
+            if update_kwargs:
+                self.progress.update(task_id, **update_kwargs)
+    
+    def complete_task(self, operation_id: str):
+        """Mark a task as completed."""
+        if operation_id in self.tasks and self.progress:
+            task_id = self.tasks[operation_id]
+            op_info = self.current_operations[operation_id]
+            if op_info["total"]:
+                # Complete the progress bar
+                self.progress.update(task_id, completed=op_info["total"])
+            # Remove the task after a brief moment
+            self.progress.remove_task(task_id)
+            del self.tasks[operation_id]
+            del self.current_operations[operation_id]
+            
+            # If no more tasks, stop the progress display
+            if not self.tasks:
+                self.stop()
+    
+    def remove_task(self, operation_id: str):
+        """Remove a task without completing it."""
+        if operation_id in self.tasks and self.progress:
+            task_id = self.tasks[operation_id]
+            self.progress.remove_task(task_id)
+            del self.tasks[operation_id]
+            del self.current_operations[operation_id]
+            
+            # If no more tasks, stop the progress display
+            if not self.tasks:
+                self.stop()
+
+# Global progress manager instance
+progress_manager = ProgressManager()
+
+def cleanup_progress():
+    """Cleanup function to ensure progress bars are stopped on exit."""
+    progress_manager.stop()
+
+# Register cleanup function
+import atexit
+atexit.register(cleanup_progress)
 
 warnings.filterwarnings("ignore")
 log = Environment.get_logger()
@@ -877,75 +984,118 @@ def download_hf(
 
 
 def _display_progress_update(progress_update):
-    """Shared function to display progress updates in consistent format."""
+    """Shared function to display progress updates using Rich progress bars."""
     status = progress_update.get("status", "unknown")
     message = progress_update.get("message", "")
 
     if status == "starting":
         console.print(f"[blue]🚀 {message}[/]")
+        
     elif status == "progress":
+        # Handle different types of progress updates with proper progress bars
+        
         if "current_file" in progress_update:
             current_file = progress_update["current_file"]
-            if "file_progress" in progress_update:
+            
+            if "file_progress" in progress_update and "total_files" in progress_update:
+                # File-based progress with progress bar
                 file_num = progress_update["file_progress"]
                 total_files = progress_update["total_files"]
-                console.print(
-                    f"[yellow]📁 [{file_num}/{total_files}] {current_file}[/]"
-                )
+                operation_id = f"files_{current_file}"
+                
+                description = f"📁 Downloading files ({file_num}/{total_files}): {current_file}"
+                
+                # Add or update file progress task
+                if operation_id not in progress_manager.tasks:
+                    progress_manager.add_task(operation_id, description, total=total_files)
+                progress_manager.update_task(operation_id, completed=file_num, description=description)
             else:
+                # Single file progress without known total
                 console.print(f"[yellow]📁 {current_file}[/]")
-        else:
-            console.print(f"[yellow]⚙️ {message}[/]")
-
-        # Show progress info if available
+        
+        # Handle download progress with size information
         if "downloaded_size" in progress_update and "total_size" in progress_update:
             downloaded = progress_update["downloaded_size"]
             total = progress_update["total_size"]
+            
             if total > 0:
-                pct = (downloaded / total) * 100
+                # Create a unique operation ID for this download
+                operation_id = progress_update.get("operation_id", "download")
+                current_file = progress_update.get("current_file", "")
+                
                 downloaded_mb = downloaded / (1024 * 1024)
                 total_mb = total / (1024 * 1024)
-                console.print(
-                    f"[cyan]📊 Progress: {downloaded_mb:.1f}/{total_mb:.1f} MB ({pct:.1f}%)[/]"
-                )
+                
+                description = f"📊 Downloading"
+                if current_file:
+                    description += f" {current_file}"
+                description += f" ({downloaded_mb:.1f}/{total_mb:.1f} MB)"
+                
+                # Add or update download progress task
+                if operation_id not in progress_manager.tasks:
+                    progress_manager.add_task(operation_id, description, total=total)
+                progress_manager.update_task(operation_id, completed=downloaded, description=description)
+        
+        # Handle general progress messages
+        if not any(key in progress_update for key in ["current_file", "downloaded_size"]):
+            console.print(f"[yellow]⚙️ {message}[/]")
 
     elif status == "completed":
         console.print(f"[green]✅ {message}[/]")
+        
+        # Complete any active progress tasks related to downloads/files
+        for operation_id in list(progress_manager.tasks.keys()):
+            if "download" in operation_id or "files_" in operation_id:
+                progress_manager.complete_task(operation_id)
+        
         if "downloaded_files" in progress_update:
             console.print(
                 f"[green]📋 Downloaded {progress_update['downloaded_files']} files[/]"
             )
+            
     elif status.startswith("pulling"):
-        # Handle Ollama pulling status with digest info
+        # Handle Docker/Ollama pulling status with progress bars
         digest = progress_update.get("digest", "")
         total = progress_update.get("total")
         completed = progress_update.get("completed")
         
         # Extract the layer ID from status (e.g., "pulling aeda25e63ebd")
         layer_id = status.replace("pulling ", "") if " " in status else "unknown"
+        operation_id = f"pull_{layer_id}"
         
+        # Create description with layer info
+        description = f"🐋 Pulling layer {layer_id}"
         if digest and "sha256:" in digest:
-            # Show shortened digest for readability
             short_digest = digest.split(":")[-1][:12] if ":" in digest else digest[:12]
-            console.print(f"[yellow]🐋 Pulling layer {layer_id} (sha256:{short_digest})[/]")
-        else:
-            console.print(f"[yellow]🐋 Pulling layer {layer_id}[/]")
+            description += f" (sha256:{short_digest})"
         
-        # Show size information if available
-        if total:
+        # Show progress with progress bar if size information is available
+        if total and completed is not None:
             total_mb = total / (1024 * 1024)
-            if completed:
-                completed_mb = completed / (1024 * 1024)
-                pct = (completed / total) * 100 if total > 0 else 0
-                console.print(
-                    f"[cyan]📊 Progress: {completed_mb:.1f}/{total_mb:.1f} MB ({pct:.1f}%)[/]"
-                )
-            else:
-                console.print(f"[cyan]📦 Size: {total_mb:.1f} MB[/]")
+            completed_mb = completed / (1024 * 1024)
+            description += f" ({completed_mb:.1f}/{total_mb:.1f} MB)"
+            
+            # Add or update pulling progress task
+            if operation_id not in progress_manager.tasks:
+                progress_manager.add_task(operation_id, description, total=total)
+            progress_manager.update_task(operation_id, completed=completed, description=description)
+        elif total:
+            # Just show size without progress bar
+            total_mb = total / (1024 * 1024)
+            description += f" ({total_mb:.1f} MB)"
+            console.print(f"[yellow]{description}[/]")
+        else:
+            # No size info available
+            console.print(f"[yellow]{description}[/]")
+            
     elif status == "error":
         error = progress_update.get("error", "Unknown error")
         console.print(f"[red]❌ Error: {error}[/]")
+        
+        # Stop any active progress bars on error
+        progress_manager.stop()
         sys.exit(1)
+        
     elif status == "healthy":
         console.print("[green]✅ System is healthy[/]")
 
@@ -1298,6 +1448,36 @@ def _handle_list_options(
         sys.exit(0)
 
 
+@cli.command("list-gcp-options")
+def list_gcp_options():
+    """List available Google Cloud Run options."""
+    from nodetool.deploy.google_cloud_run_api import (
+        CloudRunRegion,
+        CloudRunCPU,
+        CloudRunMemory,
+    )
+
+    console.print("[bold cyan]Google Cloud Run Options:[/]")
+    
+    console.print("\n[bold]Regions:[/]")
+    for region in CloudRunRegion:
+        console.print(f"  {region.value}")
+    
+    console.print("\n[bold]CPU Options:[/]")
+    for cpu in CloudRunCPU:
+        console.print(f"  {cpu.value}")
+    
+    console.print("\n[bold]Memory Options:[/]")
+    for memory in CloudRunMemory:
+        console.print(f"  {memory.value}")
+    
+    console.print("\n[bold]Registry Options:[/]")
+    console.print("  gcr.io")
+    console.print("  us-docker.pkg.dev")
+    console.print("  europe-docker.pkg.dev") 
+    console.print("  asia-docker.pkg.dev")
+
+
 def _handle_docker_config_check(
     check_docker_config: bool, docker_registry: str, docker_username: str | None
 ) -> None:
@@ -1582,6 +1762,217 @@ def deploy(
         network_volume_id=network_volume_id,
         allowed_cuda_versions=allowed_cuda_versions,
         name=name,
+        local_docker=local_docker,
+        tools=tools_list,
+    )
+
+
+@cli.command("deploy-gcp")
+@click.option(
+    "--workflow-id",
+    "workflow_ids",
+    multiple=True,
+    help="Workflow ID to deploy (can specify multiple).",
+)
+@click.option(
+    "--service-name",
+    required=True,
+    help="Name of the Cloud Run service (required for all deployments)",
+)
+@click.option(
+    "--project-id",
+    help="Google Cloud project ID (auto-detected from gcloud config if not provided)",
+)
+@click.option(
+    "--region",
+    type=click.Choice([
+        "us-central1", "us-east1", "us-east4", "us-west1", "us-west2", "us-west3", "us-west4",
+        "europe-west1", "europe-west2", "europe-west3", "europe-west4", "europe-west6",
+        "europe-north1", "asia-east1", "asia-east2", "asia-northeast1", "asia-northeast2",
+        "asia-northeast3", "asia-south1", "asia-southeast1", "asia-southeast2",
+        "australia-southeast1", "northamerica-northeast1", "southamerica-east1"
+    ]),
+    default="us-central1",
+    help="Google Cloud region (default: us-central1)",
+)
+@click.option(
+    "--registry",
+    type=click.Choice(["gcr.io", "us-docker.pkg.dev", "europe-docker.pkg.dev", "asia-docker.pkg.dev"]),
+    default="gcr.io",
+    help="Container registry to use (default: gcr.io)",
+)
+@click.option(
+    "--cpu",
+    type=click.Choice(["1", "2", "4", "6", "8"]),
+    default="1",
+    help="CPU allocation for Cloud Run service (default: 1)",
+)
+@click.option(
+    "--memory",
+    type=click.Choice(["512Mi", "1Gi", "2Gi", "4Gi", "8Gi", "16Gi", "32Gi"]),
+    default="2Gi", 
+    help="Memory allocation for Cloud Run service (default: 2Gi)",
+)
+@click.option(
+    "--min-instances",
+    type=int,
+    default=0,
+    help="Minimum number of instances (default: 0)",
+)
+@click.option(
+    "--max-instances", 
+    type=int,
+    default=10,
+    help="Maximum number of instances (default: 10)",
+)
+@click.option(
+    "--concurrency",
+    type=int,
+    default=80,
+    help="Maximum concurrent requests per instance (default: 80)",
+)
+@click.option(
+    "--timeout",
+    type=int,
+    default=3600,
+    help="Request timeout in seconds (default: 3600)",
+)
+@click.option(
+    "--no-auth",
+    is_flag=True,
+    help="Require authentication for access (default: allow unauthenticated)",
+)
+@click.option(
+    "--env",
+    multiple=True,
+    help="Environment variables in KEY=VALUE format (can specify multiple)",
+)
+# Docker build options
+@click.option(
+    "--docker-username",
+    help="Docker Hub username for building base image (auto-detected from docker login if not provided)",
+)
+@click.option(
+    "--docker-registry",
+    default="docker.io",
+    help="Docker registry URL for building base image (default: docker.io)",
+)
+@click.option("--tag", help="Tag of the Docker image (default: auto-generated hash)")
+@click.option(
+    "--platform",
+    default="linux/amd64",
+    help="Docker build platform (default: linux/amd64)",
+)
+# Skip options
+@click.option("--skip-build", is_flag=True, help="Skip Docker build")
+@click.option("--skip-push", is_flag=True, help="Skip pushing to registry") 
+@click.option("--skip-deploy", is_flag=True, help="Skip deploying to Cloud Run")
+# Cache options
+@click.option("--no-cache", is_flag=True, help="Disable Docker cache optimization")
+@click.option(
+    "--no-auto-push", is_flag=True, help="Disable automatic push during build"
+)
+@click.option(
+    "--local-docker",
+    is_flag=True,
+    help="Run local docker container instead of deploying to Cloud Run",
+)
+@click.option(
+    "--tools",
+    default="",
+    help="Comma-separated list of tools to use for chat handler (e.g., 'google_search,google_news,google_images').",
+)
+def deploy_gcp(
+    workflow_ids: tuple[str, ...],
+    service_name: str,
+    project_id: str | None,
+    region: str,
+    registry: str,
+    cpu: str,
+    memory: str,
+    min_instances: int,
+    max_instances: int,
+    concurrency: int,
+    timeout: int,
+    no_auth: bool,
+    env: tuple,
+    docker_username: str | None,
+    docker_registry: str,
+    tag: str | None,
+    platform: str,
+    skip_build: bool,
+    skip_push: bool,
+    skip_deploy: bool,
+    no_cache: bool,
+    no_auto_push: bool,
+    local_docker: bool,
+    tools: str,
+):
+    """Deploy workflow or chat handler to Google Cloud Run.
+
+    Examples:
+      # Basic workflow deployment
+      nodetool deploy-gcp --workflow-id abc123 --service-name my-workflow
+
+      # Deploy multiple workflows
+      nodetool deploy-gcp --workflow-id abc123 --workflow-id def456 --service-name multi-workflow
+
+      # With specific region and resources
+      nodetool deploy-gcp --workflow-id abc123 --service-name my-workflow --region us-west1 --cpu 2 --memory 4Gi
+
+      # Deploy chat handler
+      nodetool deploy-gcp --service-name my-chat --tools "google_search,google_news"
+
+      # Run local Docker container
+      nodetool deploy-gcp --workflow-id abc123 --service-name my-workflow --local-docker
+    """
+    import dotenv
+
+    dotenv.load_dotenv()
+
+    # Parse environment variables
+    env_vars = {}
+    for env_var in env:
+        if "=" in env_var:
+            key, value = env_var.split("=", 1)
+            env_vars[key] = value
+        else:
+            console.print(f"[bold red]❌ Invalid environment variable format: {env_var}[/]")
+            console.print("Use KEY=VALUE format")
+            sys.exit(1)
+
+    # Parse comma-separated tools string into list
+    tools_list = (
+        [tool.strip() for tool in tools.split(",") if tool.strip()] if tools else None
+    )
+
+    # Call the main deployment function
+    from nodetool.deploy.deploy_to_gcp import deploy_to_gcp
+
+    deploy_to_gcp(
+        workflow_ids=list(workflow_ids) if workflow_ids else None,
+        service_name=service_name,
+        project_id=project_id,
+        region=region,
+        registry=registry,
+        cpu=cpu,
+        memory=memory,
+        min_instances=min_instances,
+        max_instances=max_instances,
+        concurrency=concurrency,
+        timeout=timeout,
+        allow_unauthenticated=not no_auth,
+        env_vars=env_vars,
+        docker_username=docker_username,
+        docker_registry=docker_registry,
+        image_name=service_name,
+        tag=tag,
+        platform=platform,
+        skip_build=skip_build,
+        skip_push=skip_push,
+        skip_deploy=skip_deploy,
+        no_cache=no_cache,
+        no_auto_push=no_auto_push,
         local_docker=local_docker,
         tools=tools_list,
     )
