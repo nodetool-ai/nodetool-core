@@ -523,6 +523,10 @@ def update_runpod_template(template_data: dict, image_name: str, tag: str) -> bo
     """
     try:
         template_id = template_data["id"]
+        env = template_data.get("env", {})
+
+        env["PORT"] = "8000"
+        env["PORT_HEALTH"] = "8000"
 
         # Prepare the update data - preserve existing settings but update image
         update_data = {
@@ -533,26 +537,8 @@ def update_runpod_template(template_data: dict, image_name: str, tag: str) -> bo
             "volumeInGb": template_data.get("volumeInGb", 0),
             "volumeMountPath": template_data.get("volumeMountPath", "/workspace"),
             "isPublic": template_data.get("isPublic", False),
+            "env": env
         }
-
-        # Handle environment variables - convert from GraphQL format to REST format if needed
-        if template_data.get("env"):
-            # Check if it's in GraphQL format (list of {key, value} objects)
-            if (
-                isinstance(template_data["env"], list)
-                and template_data["env"]
-                and "key" in template_data["env"][0]
-            ):
-                # Convert from GraphQL format to REST format (object with key-value pairs)
-                env_dict = {}
-                for env_item in template_data["env"]:
-                    env_dict[env_item["key"]] = env_item["value"]
-                update_data["env"] = env_dict
-            else:
-                # Already in REST format
-                update_data["env"] = template_data["env"]
-        else:
-            update_data["env"] = {"PYTHONPATH": "/app"}
 
         # Add optional fields if they exist
         if template_data.get("dockerEntrypoint"):
@@ -922,7 +908,7 @@ def create_runpod_endpoint_graphql(
         # Build the GraphQL mutation for saveEndpoint
         # Build the mutation
         mutation_parts = []
-        mutation_parts.append(f'name: "{name}"')
+        mutation_parts.append(f'name: "{name if not flashboot else f"{name}-fb"}"')
         mutation_parts.append(f'templateId: "{template_id}"')
         mutation_parts.append('type: "LB"')  # Load Balancer type
         mutation_parts.append(f"workersMin: {workers_min}")
