@@ -329,7 +329,7 @@ def build_docker_image(
     Always expects workflows_source to be a directory containing workflow JSON files.
 
     This function creates a specialized Docker image by:
-    1. Using the RunPod-specific Dockerfile from src/nodetool/deploy/
+    1. Using the Dockerfile from src/nodetool/deploy/
     2. Creating a temporary build directory with all necessary files
     3. Building the final image using Docker buildx with Docker Hub cache optimization
 
@@ -547,3 +547,7 @@ def get_docker_username_from_config(registry: str = "docker.io") -> str | None:
     except Exception as e:
         print(f"Warning: Could not read Docker config: {e}")
         return None
+
+
+if __name__ == "__main__":
+    print(get_docker_username_from_config())

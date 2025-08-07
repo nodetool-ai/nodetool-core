@@ -564,7 +564,7 @@ def update_runpod_template(template_data: dict, image_name: str, tag: str) -> bo
 
 
 def create_or_update_runpod_template(
-    template_name: str, image_name: str, tag: str
+    template_name: str, image_name: str, tag: str, env: dict[str, str] = {}
 ) -> str:
     """
     Create or update a RunPod template with the latest Docker image using REST API.
@@ -586,6 +586,7 @@ def create_or_update_runpod_template(
         template_name (str): Name of the template
         image_name (str): Name of the Docker image
         tag (str): Tag of the Docker image
+        env (dict[str, str]): Environment variables to set in the template
 
     Returns:
         str: The template ID for use in endpoint creation
@@ -625,7 +626,7 @@ def create_or_update_runpod_template(
                 "volumeInGb": 0,
                 "volumeMountPath": "/workspace",
                 "isPublic": False,
-                "env": {},
+                "env": env,
             }
 
             print("Creating template with data:")

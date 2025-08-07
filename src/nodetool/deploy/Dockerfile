@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-FROM nvidia/cuda:12.9.1-cudnn-runtime-ubuntu24.04 AS base
+FROM nvidia/cuda:12.1.0-base-ubuntu22.04 AS base
 COPY --from=ghcr.io/astral-sh/uv:0.8.5 /uv /uvx /bin/
 
 # Environment variables

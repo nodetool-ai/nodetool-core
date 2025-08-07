@@ -224,7 +224,7 @@ def deploy_to_runpod(
     allowed_cuda_versions: tuple = (),
     name: Optional[str] = None,
     local_docker: bool = False,
-    tools: Optional[list[str]] = None,
+    env: dict[str, str] = {},
 ) -> None:
     """
     Deploy workflow or chat handler to RunPod serverless infrastructure.
@@ -355,8 +355,10 @@ def deploy_to_runpod(
 
         # Create or update RunPod template
         if not skip_template:
+            env["PORT"] = "8000"
+            env["PORT_HEALTH"] = "8000"
             template_id = create_or_update_runpod_template(
-                template_name, full_image_name, image_tag
+                template_name, full_image_name, image_tag, env=env
             )
 
         # Create RunPod endpoint
@@ -397,6 +399,7 @@ def deploy_to_runpod(
             platform,
             template_id,
             endpoint_id,
+            "RunPod",
         )
 
     except Exception as e:

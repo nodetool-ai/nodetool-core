@@ -448,10 +448,15 @@ def chat_client(
       nodetool chat-client --message "Hello, AI!" --auth-token sk-your-openai-key
     """
     import asyncio
+    import dotenv
     from nodetool.chat.chat_client import run_chat_client
+    dotenv.load_dotenv()
 
     if not auth_token:
-        auth_token = Environment.get("OPENAI_API_KEY")
+        if server_url and "api.runpod.ai" in server_url:
+            auth_token = Environment.get("RUNPOD_API_KEY")
+        else:
+            auth_token = Environment.get("OPENAI_API_KEY")
 
     # If no server URL provided, use OpenAI API directly
     if not server_url:
@@ -1537,12 +1542,22 @@ def _handle_docker_config_check(
     sys.exit(0)
 
 
-@cli.command("deploy")
+@cli.command("deploy-runpod")
 @click.option(
     "--workflow-id",
     "workflow_ids",
     multiple=True,
     help="Workflow ID to deploy (can specify multiple).",
+)
+@click.option(
+    "--chat-provider",
+    default="ollama",
+    help="Chat provider to use (default: ollama).",
+)
+@click.option(
+    "--default-model",
+    default="gemma3n:latest",
+    help="Default model to use (default: gemma3n:latest).",
 )
 @click.option(
     "--docker-username",
@@ -1575,7 +1590,6 @@ def _handle_docker_config_check(
 @click.option(
     "--check-docker-config", is_flag=True, help="Check Docker configuration and exit"
 )
-# Endpoint compute configuration
 @click.option(
     "--compute-type",
     type=click.Choice(["CPU", "GPU"]),
@@ -1664,6 +1678,8 @@ def deploy(
     tag: str | None,
     platform: str,
     template_name: str | None,
+    chat_provider: str,
+    default_model: str,
     skip_build: bool,
     skip_push: bool,
     skip_template: bool,
@@ -1733,6 +1749,11 @@ def deploy(
     tools_list = (
         [tool.strip() for tool in tools.split(",") if tool.strip()] if tools else None
     )
+    env = {
+        "NODETOOL_TOOLS": ",".join(tools_list) if tools_list else None,
+        "CHAT_PROVIDER": chat_provider,
+        "DEFAULT_MODEL": default_model,
+    }
 
     deploy_to_runpod(
         workflow_ids=list(workflow_ids) if workflow_ids else None,
@@ -1763,7 +1784,7 @@ def deploy(
         allowed_cuda_versions=allowed_cuda_versions,
         name=name,
         local_docker=local_docker,
-        tools=tools_list,
+        env=env,
     )
 
 
@@ -1773,6 +1794,16 @@ def deploy(
     "workflow_ids",
     multiple=True,
     help="Workflow ID to deploy (can specify multiple).",
+)
+@click.option(
+    "--chat-provider",
+    default="ollama",
+    help="Chat provider to use (default: ollama).",
+)
+@click.option(
+    "--default-model",
+    default="gemma3n:latest",
+    help="Default model to use (default: gemma3n:latest).",
 )
 @click.option(
     "--service-name",
@@ -1798,20 +1829,19 @@ def deploy(
 @click.option(
     "--registry",
     type=click.Choice(["gcr.io", "us-docker.pkg.dev", "europe-docker.pkg.dev", "asia-docker.pkg.dev"]),
-    default="gcr.io",
-    help="Container registry to use (default: gcr.io)",
+    help="Container registry to use (default: auto-infer from region)",
 )
 @click.option(
     "--cpu",
     type=click.Choice(["1", "2", "4", "6", "8"]),
-    default="1",
-    help="CPU allocation for Cloud Run service (default: 1)",
+    default="4",
+    help="CPU allocation for Cloud Run service (default: 4)",
 )
 @click.option(
     "--memory",
     type=click.Choice(["512Mi", "1Gi", "2Gi", "4Gi", "8Gi", "16Gi", "32Gi"]),
-    default="2Gi", 
-    help="Memory allocation for Cloud Run service (default: 2Gi)",
+    default="16Gi", 
+    help="Memory allocation for Cloud Run service (default: 16Gi)",
 )
 @click.option(
     "--min-instances",
@@ -1822,8 +1852,8 @@ def deploy(
 @click.option(
     "--max-instances", 
     type=int,
-    default=10,
-    help="Maximum number of instances (default: 10)",
+    default=3,
+    help="Maximum number of instances (default: 3)",
 )
 @click.option(
     "--concurrency",
@@ -1841,11 +1871,6 @@ def deploy(
     "--no-auth",
     is_flag=True,
     help="Require authentication for access (default: allow unauthenticated)",
-)
-@click.option(
-    "--env",
-    multiple=True,
-    help="Environment variables in KEY=VALUE format (can specify multiple)",
 )
 # Docker build options
 @click.option(
@@ -1882,12 +1907,23 @@ def deploy(
     default="",
     help="Comma-separated list of tools to use for chat handler (e.g., 'google_search,google_news,google_images').",
 )
+@click.option(
+    "--skip-permission-setup",
+    is_flag=True,
+    help="Skip automatic IAM permission setup",
+)
+@click.option(
+    "--service-account",
+    help="Service account email to run the Cloud Run service under (e.g., my-service@project.iam.gserviceaccount.com)",
+)
 def deploy_gcp(
     workflow_ids: tuple[str, ...],
+    chat_provider: str,
+    default_model: str,
     service_name: str,
     project_id: str | None,
     region: str,
-    registry: str,
+    registry: str | None,
     cpu: str,
     memory: str,
     min_instances: int,
@@ -1895,7 +1931,6 @@ def deploy_gcp(
     concurrency: int,
     timeout: int,
     no_auth: bool,
-    env: tuple,
     docker_username: str | None,
     docker_registry: str,
     tag: str | None,
@@ -1907,6 +1942,8 @@ def deploy_gcp(
     no_auto_push: bool,
     local_docker: bool,
     tools: str,
+    skip_permission_setup: bool,
+    service_account: str | None,
 ):
     """Deploy workflow or chat handler to Google Cloud Run.
 
@@ -1930,21 +1967,13 @@ def deploy_gcp(
 
     dotenv.load_dotenv()
 
-    # Parse environment variables
-    env_vars = {}
-    for env_var in env:
-        if "=" in env_var:
-            key, value = env_var.split("=", 1)
-            env_vars[key] = value
-        else:
-            console.print(f"[bold red]❌ Invalid environment variable format: {env_var}[/]")
-            console.print("Use KEY=VALUE format")
-            sys.exit(1)
-
     # Parse comma-separated tools string into list
-    tools_list = (
-        [tool.strip() for tool in tools.split(",") if tool.strip()] if tools else None
-    )
+    env = {}
+    if tools:
+        env["NODETOOL_TOOLS"] = ",".join(tools)
+
+    env["CHAT_PROVIDER"] = chat_provider
+    env["DEFAULT_MODEL"] = default_model
 
     # Call the main deployment function
     from nodetool.deploy.deploy_to_gcp import deploy_to_gcp
@@ -1962,7 +1991,7 @@ def deploy_gcp(
         concurrency=concurrency,
         timeout=timeout,
         allow_unauthenticated=not no_auth,
-        env_vars=env_vars,
+        env=env,
         docker_username=docker_username,
         docker_registry=docker_registry,
         image_name=service_name,
@@ -1974,7 +2003,8 @@ def deploy_gcp(
         no_cache=no_cache,
         no_auto_push=no_auto_push,
         local_docker=local_docker,
-        tools=tools_list,
+        skip_permission_setup=skip_permission_setup,
+        service_account=service_account,
     )
 
 

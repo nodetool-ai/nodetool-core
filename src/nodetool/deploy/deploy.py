@@ -14,9 +14,6 @@ Key Features:
 """
 import os
 import sys
-import json
-import tempfile
-import subprocess
 from typing import Optional, Tuple
 from rich.console import Console
 
@@ -109,6 +106,7 @@ def print_deployment_summary(
     platform: str,
     template_id: Optional[str] = None,
     endpoint_id: Optional[str] = None,
+    deployment_platform: str = "RunPod",
 ) -> None:
     """
     Print a summary of the deployment results.
@@ -120,14 +118,16 @@ def print_deployment_summary(
         platform: Build platform
         template_id: RunPod template ID (if created)
         endpoint_id: RunPod endpoint ID (if created)
+        deployment_platform: Target deployment platform name
     """
-    console.print("\n🎉 Deployment completed successfully!")
+    console.print(f"\n🎉 {deployment_platform} Deployment completed successfully!")
     console.print(f"Image: {full_image_name}:{image_tag}")
     console.print(f"Platform: {platform}")
 
     if workflow_ids:
-        for workflow_id in workflow_ids:
-            console.print(f"Workflow ID: {workflow_id}")
+        console.print(f"Workflows: {len(workflow_ids)}")
+        for i, workflow_id in enumerate(workflow_ids):
+            console.print(f"  [{i+1}] {workflow_id}")
 
     if template_id:
         console.print(f"Template ID: {template_id}")
