@@ -78,7 +78,7 @@ RUN mkdir -p /runpod-volume/.ollama/models
 RUN mkdir -p /runpod-volume/.cache/transformers
 
 RUN echo "Installing nodetool packages..." && \
-    uv pip install --no-cache-dir git+https://github.com/nodetool-ai/nodetool-core@44b9600cfaf61e30b0f1e9b9c71388cef24ecaf5 && \
+    uv pip install --no-cache-dir git+https://github.com/nodetool-ai/nodetool-core@cb3299e70064a6fbde1683d920b5bbaf0d05b3a6 && \
     uv pip install --no-cache-dir git+https://github.com/nodetool-ai/nodetool-base
 
 # Install Ollama
