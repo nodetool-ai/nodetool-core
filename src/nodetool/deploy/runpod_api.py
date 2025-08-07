@@ -27,14 +27,68 @@ import traceback
 import requests
 import time
 from enum import Enum
-from typing import Generator, List, Optional
+from typing import Any, Generator, List, Optional
 
-# Configuration
-RUNPOD_API_KEY = os.getenv("RUNPOD_API_KEY")
 RUNPOD_REST_BASE_URL = "https://rest.runpod.io/v1"
 
-assert RUNPOD_API_KEY, "RUNPOD_API_KEY environment variable is not set"
+from runpod import error
+from runpod.user_agent import USER_AGENT
 
+HTTP_STATUS_UNAUTHORIZED = 401
+
+
+def run_graphql_query(query: str) -> dict[str, Any]:
+    """
+    Run a GraphQL query
+    """
+    api_url_base = os.environ.get("RUNPOD_API_BASE_URL", "https://api.runpod.io")
+    url = f"{api_url_base}/graphql"
+    api_key = os.getenv("RUNPOD_API_KEY")
+    assert api_key, "RUNPOD_API_KEY environment variable is not set"
+
+    headers = {
+        "Content-Type": "application/json",
+        "User-Agent": USER_AGENT,
+        "Authorization": f"Bearer {api_key}",
+    }
+
+    data = json.dumps({"query": query})
+    response = requests.post(url, headers=headers, data=data, timeout=30)
+
+    if response.status_code == HTTP_STATUS_UNAUTHORIZED:
+        raise error.AuthenticationError(
+            "Unauthorized request, please check your API key."
+        )
+
+    if "errors" in response.json():
+        raise error.QueryError(response.json()["errors"][0]["message"], query)
+
+    return response.json()
+
+class GPUType(str, Enum):
+    """GPU types available in RunPod using their official GPU ID codes."""
+
+    # Ada Lovelace Architecture
+    ADA_24 = "ADA_24"  # L4, RTX 4000 series consumer cards
+    ADA_32_PRO = "ADA_32_PRO"  # Professional Ada cards with 32GB
+    ADA_48_PRO = "ADA_48_PRO"  # L40, L40S, RTX 6000 Ada
+    ADA_80_PRO = "ADA_80_PRO"  # High-end Ada professional cards
+
+    # Ampere Architecture
+    AMPERE_16 = "AMPERE_16"  # RTX 3060, A2000, A4000
+    AMPERE_24 = "AMPERE_24"  # RTX 3070/3080/3090, A4500, A5000
+    AMPERE_48 = "AMPERE_48"  # A40, RTX A6000
+    AMPERE_80 = "AMPERE_80"  # A100 80GB
+
+    # Hopper Architecture
+    HOPPER_141 = "HOPPER_141"  # H200 with 141GB memory
+
+    def __str__(self):
+        return self.value
+
+    @classmethod
+    def list_values(cls):
+        return [item.value for item in cls]
 
 def make_runpod_api_call(
     endpoint: str, method: str = "GET", data: dict | None = None
@@ -54,8 +108,10 @@ def make_runpod_api_call(
         SystemExit: If API call fails
     """
     url = f"{RUNPOD_REST_BASE_URL}/{endpoint}"
+    api_key = os.getenv("RUNPOD_API_KEY")
+    assert api_key, "RUNPOD_API_KEY environment variable is not set"
     headers = {
-        "Authorization": f"Bearer {RUNPOD_API_KEY}",
+        "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
     }
 
@@ -161,20 +217,6 @@ class ComputeType(str, Enum):
 
     CPU = "CPU"
     GPU = "GPU"
-
-    def __str__(self):
-        return self.value
-
-    @classmethod
-    def list_values(cls):
-        return [item.value for item in cls]
-
-
-class ScalerType(str, Enum):
-    """Scaler types for RunPod endpoints."""
-
-    QUEUE_DELAY = "QUEUE_DELAY"
-    REQUEST_COUNT = "REQUEST_COUNT"
 
     def __str__(self):
         return self.value
@@ -593,11 +635,11 @@ def create_or_update_runpod_template(
                 "containerDiskInGb": 20,
                 "imageName": f"{image_name}:{tag}",
                 "name": template_name,
-                "ports": ["8000/http"],
+                "ports": ["8000/http", "22/ssh"],
                 "volumeInGb": 0,
                 "volumeMountPath": "/workspace",
                 "isPublic": False,
-                "env": {"PYTHONPATH": "/app"},
+                "env": {},
             }
 
             print("Creating template with data:")
@@ -637,8 +679,6 @@ def create_or_update_runpod_endpoint(
     workers_min: int = 0,
     workers_max: int = 3,
     idle_timeout: int = 5,
-    scaler_type: str = ScalerType.QUEUE_DELAY.value,
-    scaler_value: int = 4,
     execution_timeout_ms: Optional[int] = None,
     flashboot: bool = False,
     network_volume_id: Optional[str] = None,
@@ -664,8 +704,6 @@ def create_or_update_runpod_endpoint(
         workers_min (int): Minimum number of workers (0 for auto-scaling)
         workers_max (int): Maximum number of workers
         idle_timeout (int): Seconds before scaling down idle workers
-        scaler_type (str): Type of auto-scaler (QUEUE_DELAY or REQUEST_COUNT)
-        scaler_value (int): Threshold value for the scaler
         execution_timeout_ms (int, optional): Maximum execution time in milliseconds
         flashboot (bool): Enable flashboot for faster worker startup
         network_volume_id (str, optional): Network volume to attach
@@ -732,7 +770,6 @@ def create_or_update_runpod_endpoint(
             f"  Data centers: {data_center_ids if data_center_ids else 'Auto-selected'}"
         )
         print(f"  Workers: {workers_min}-{workers_max}")
-        print(f"  Scaler: {scaler_type} (threshold: {scaler_value})")
 
         # Prepare the request data according to RunPod REST API format
         endpoint_data = {
@@ -741,8 +778,8 @@ def create_or_update_runpod_endpoint(
             "name": name,
             "workersMin": workers_min,
             "workersMax": workers_max,
-            "scalerType": scaler_type,
-            "scalerValue": scaler_value,
+            "scalerType": "REQUEST_COUNT",
+            "scalerValue": 4,
             "idleTimeout": idle_timeout,
             "flashboot": flashboot,
         }
@@ -798,297 +835,185 @@ def create_or_update_runpod_endpoint(
         print("4. Check your RunPod account limits and quotas")
         sys.exit(1)
 
-
-# Backward compatibility alias
-create_runpod_endpoint = create_or_update_runpod_endpoint
-
-
-def check_endpoint_health(
-    endpoint_id: str, max_retries: int = 3, timeout: int = 300
-) -> bool:
+    
+def create_runpod_endpoint_graphql(
+    template_id: str,
+    name: str,
+    compute_type: str = ComputeType.GPU.value,
+    gpu_type_ids: Optional[List[str]] = None,
+    gpu_count: Optional[int] = None,
+    cpu_flavor_ids: Optional[List[str]] = None,
+    vcpu_count: Optional[int] = None,
+    data_center_ids: Optional[List[str]] = None,
+    workers_min: int = 0,
+    workers_max: int = 3,
+    idle_timeout: int = 5,
+    execution_timeout_ms: Optional[int] = None,
+    flashboot: bool = False,
+    network_volume_id: Optional[str] = None,
+    allowed_cuda_versions: Optional[List[str]] = None,
+):
     """
-    Perform a health check on a RunPod endpoint to ensure it's ready before operations.
+    Create a RunPod serverless endpoint using raw GraphQL queries.
+
+    Creates a serverless endpoint that can execute the NodeTool workflow
+    with auto-scaling capabilities and optional GPU acceleration.
+
+    If an endpoint with the same name already exists, it will be deleted first.
 
     Args:
-        endpoint_id (str): The endpoint ID to check
-        max_retries (int): Maximum number of retry attempts (default: 3)
-        timeout (int): Timeout in seconds for each health check attempt (default: 300)
+        template_id (str): The RunPod template ID from create_or_update_runpod_template()
+        name (str): Name of the endpoint
+        compute_type (str): Type of compute (CPU or GPU)
+        gpu_type_ids (List[str], optional): List of GPU type IDs (e.g. AMPERE_24, ADA_48_PRO)
+        gpu_count (int, optional): Number of GPUs per worker
+        cpu_flavor_ids (List[str], optional): List of CPU flavors for CPU compute
+        vcpu_count (int, optional): Number of vCPUs for CPU compute
+        data_center_ids (List[str], optional): Preferred data center locations
+        workers_min (int): Minimum number of workers (0 for auto-scaling)
+        workers_max (int): Maximum number of workers
+        idle_timeout (int): Seconds before scaling down idle workers
+        execution_timeout_ms (int, optional): Maximum execution time in milliseconds
+        flashboot (bool): Enable flashboot for faster worker startup
+        network_volume_id (str, optional): Network volume to attach
+        allowed_cuda_versions (List[str], optional): Allowed CUDA versions
 
     Returns:
-        bool: True if endpoint is healthy, False otherwise
-    """
-    print(f"🏥 Performing health check on endpoint: {endpoint_id}")
-
-    for attempt in range(1, max_retries + 1):
-        print(f"  Attempt {attempt}/{max_retries}")
-
-        try:
-            # Send a simple health check payload
-            health_payload = {"input": {"operation": "health_check"}}
-
-            response = requests.post(
-                f"https://api.runpod.ai/v2/{endpoint_id}/runsync",
-                headers={
-                    "Authorization": f"Bearer {RUNPOD_API_KEY}",
-                    "Content-Type": "application/json",
-                },
-                json=health_payload,
-                timeout=timeout,
-            )
-
-            # Check if request was successful
-            if response.status_code == 200:
-                result = response.json()
-
-                # Check if there's an error in the response
-                if "error" not in result:
-                    # Consider it healthy if we get any valid response structure
-                    print(f"  ✅ Health check passed on attempt {attempt}")
-                    return True
-                else:
-                    error_msg = result.get("error", "Unknown error")
-                    print(f"  ⚠️ Health check returned error: {error_msg}")
-            else:
-                print(
-                    f"  ⚠️ Health check failed with status {response.status_code}: {response.text}"
-                )
-
-        except requests.exceptions.Timeout:
-            print(
-                f"  ⏰ Health check timed out after {timeout} seconds (attempt {attempt})"
-            )
-        except requests.exceptions.RequestException as e:
-            print(f"  ❌ Health check failed with request error: {e}")
-        except Exception as e:
-            print(f"  ❌ Health check failed with unexpected error: {e}")
-
-        # Wait before next attempt (exponential backoff)
-        if attempt < max_retries:
-            wait_time = min(30, 5 * attempt)  # Wait 5, 10, then 30 seconds
-            print(f"  ⏳ Waiting {wait_time} seconds before next attempt...")
-            time.sleep(wait_time)
-
-    print(f"❌ Health check failed after {max_retries} attempts")
-    return False
-
-
-def run_model_download_via_admin(
-    endpoint_id: str,
-    models: List[dict],
-    cache_dir: str = "/runpod-volume/.cache/huggingface/hub",
-) -> Generator[dict, None, None]:
-    """
-    Trigger individual model downloads via the unified endpoint.
-
-    Args:
-        endpoint_id (str): The endpoint ID (main workflow/chat endpoint)
-        models (List[dict]): List of model specifications to download
-        cache_dir (str): Cache directory path on the network volume
-
-    Returns:
-        bool: True if all downloads were successful
-    """
-    print(f"Triggering individual model downloads via endpoint: {endpoint_id}")
-    print(f"Downloading {len(models)} models to: {cache_dir}")
-    success_count = 0
-    total_models = len(models)
-
-    for i, model in enumerate(models, 1):
-        model_type = model.get("type", "")
-        print(f"\n[{i}/{total_models}] Processing model: {model}")
-
-        try:
-            if model_type.startswith("hf."):
-                # HuggingFace model download
-                payload = {
-                    "operation": "download_hf",
-                    "repo_id": model.get("repo_id"),
-                    "cache_dir": cache_dir,
-                }
-
-                # Add optional parameters
-                if model.get("file_path"):
-                    payload["file_path"] = model["file_path"]
-                if model.get("ignore_patterns"):
-                    payload["ignore_patterns"] = model["ignore_patterns"]
-                if model.get("allow_patterns"):
-                    payload["allow_patterns"] = model["allow_patterns"]
-
-            elif model_type == "language_model" and model.get("provider") == "ollama":
-                # Ollama model download
-                payload = {
-                    "operation": "download_ollama",
-                    "model_name": model.get("id"),
-                }
-            else:
-                print(f"⚠️ Skipping unsupported model type: {model_type}")
-                continue
-
-            # Make the API call
-            print(f"Making API call to endpoint: {endpoint_id}")
-            print(f"Payload: {payload}")
-            for chunk in invoke_streaming_endpoint(endpoint_id, payload):
-                yield chunk
-
-            print(f"✅ Successfully downloaded {model_type} model: {model.get('id')}")
-            success_count += 1
-
-        except requests.exceptions.Timeout:
-            print("❌ Model download timed out after 5 minutes")
-        except Exception as e:
-            print(f"❌ Error downloading model: {str(e)}")
-
-    print(f"\n📊 Download Summary: {success_count}/{total_models} models successful")
-
-
-def invoke_streaming_endpoint(
-    endpoint_id: str, payload: dict, timeout: int = 300, poll_interval: int = 2
-) -> Generator[dict, None, None]:
-    """
-    Invoke a RunPod endpoint with streaming output support.
-
-    This function starts a job, polls for status, and yields streaming output chunks
-    as they become available. It handles the complete workflow of:
-    1. Starting the job via /run endpoint
-    2. Checking job status in a loop
-    3. Fetching streaming output via /stream endpoint
-    4. Yielding each chunk as it arrives
-
-    Args:
-        endpoint_id (str): The RunPod endpoint ID
-        payload (dict): The input payload for the job
-        timeout (int): Maximum time to wait for job completion (seconds)
-        poll_interval (int): Time between status checks (seconds)
-
-    Returns:
-        dict: Generator yielding chunks with metadata
-
-    Yields:
-        dict: Each chunk contains:
-            - chunk: The actual output chunk
-            - status: Current job status
-            - job_id: The job ID for reference
+        str: The endpoint ID for workflow execution
 
     Raises:
-        requests.RequestException: If API calls fail
-        TimeoutError: If job exceeds timeout
-    """
-    # Start the job
-    start_url = f"https://api.runpod.ai/v2/{endpoint_id}/run"
-    headers = {
-        "Authorization": f"Bearer {RUNPOD_API_KEY}",
-        "Content-Type": "application/json",
-    }
+        SystemExit: If endpoint creation fails or template is invalid
 
-    print(f"🚀 Starting streaming job on endpoint: {endpoint_id}")
+    Note:
+        The endpoint will automatically scale workers based on incoming requests.
+        Workers are terminated after idle_timeout seconds of inactivity to minimize costs.
+    """
+    api_key = os.getenv("RUNPOD_API_KEY")
+    assert api_key, "RUNPOD_API_KEY environment variable is not set"
+
+    if data_center_ids is None:
+        # Leave empty for RunPod to choose optimal data centers automatically
+        data_center_ids = []
+
+    # Delete existing endpoint if it exists
+    print(f"Checking for existing endpoint: {name}")
+    if delete_runpod_endpoint_by_name(name):
+        print(f"Existing endpoint '{name}' deleted successfully")
+    else:
+        print(f"Note: Endpoint '{name}' may not have existed")
 
     try:
-        # Submit the job
-        response = requests.post(start_url, headers=headers, json={"input": payload})
-        response.raise_for_status()
+        print(f"Creating new endpoint: {name}")
+        print(f"  Compute type: {compute_type}")
+        print(f"  GPU types: {gpu_type_ids}")
+        print(f"  GPU count: {gpu_count}")
+        print(f"  CPU flavors: {cpu_flavor_ids}")
+        print(f"  vCPU count: {vcpu_count}")
+        print(
+            f"  Data centers: {data_center_ids if data_center_ids else 'Auto-selected'}"
+        )
+        print(f"  Workers: {workers_min}-{workers_max}")
+        print(f"  Idle timeout: {idle_timeout}s")
+        print(f"  Execution timeout: {execution_timeout_ms}ms")
+        print(f"  Flashboot: {flashboot}")
+        print(f"  Network volume: {network_volume_id}")
+        print(f"  Allowed CUDA versions: {allowed_cuda_versions}")
+        gpu_ids_str = ",".join(list(gpu_type_ids)) if gpu_type_ids else "AMPERE_24"
+        # Build the GraphQL mutation for saveEndpoint
+        # Build the mutation
+        mutation_parts = []
+        mutation_parts.append(f'name: "{name}"')
+        mutation_parts.append(f'templateId: "{template_id}"')
+        mutation_parts.append('type: "LB"')  # Load Balancer type
+        mutation_parts.append(f"workersMin: {workers_min}")
+        mutation_parts.append(f"workersMax: {workers_max}")
+        mutation_parts.append(f"idleTimeout: {idle_timeout}")
+        mutation_parts.append(f'scalerType: "REQUEST_COUNT"')
+        mutation_parts.append(f"scalerValue: 4")
+        mutation_parts.append(f"executionTimeoutMs: {execution_timeout_ms or 300000}")
+        mutation_parts.append(f"gpuIds: \"{gpu_ids_str}\"")
+        mutation_parts.append(f"gpuCount: {gpu_count or 1}")
+        # mutation_parts.append(f"cpuFlavorIds: {json.dumps(cpu_flavor_ids)}")
+        if vcpu_count:
+            mutation_parts.append(f"vcpuCount: {vcpu_count}")
 
-        job_data = response.json()
-        job_id = job_data.get("id")
+        # Add optional fields
+        if data_center_ids:
+            # Format locations as JSON array string
+            locations_str = json.dumps(data_center_ids)
+            mutation_parts.append(f"locations: {locations_str}")
+        else:
+            mutation_parts.append("locations: null")
 
-        if not job_id:
-            raise ValueError(f"No job ID returned: {job_data}")
+        if network_volume_id:
+            mutation_parts.append(f'networkVolumeId: "{network_volume_id}"')
+        else:
+            mutation_parts.append("networkVolumeId: null")
 
-        print(f"✅ Job started successfully: {job_id}")
+        # Build the complete mutation
+        mutation = f"""
+        mutation {{
+            saveEndpoint(input: {{
+                {', '.join(mutation_parts)}
+            }}) {{
+                id
+                name
+                gpuIds
+                idleTimeout
+                locations
+                type
+                networkVolumeId
+                executionTimeoutMs
+                scalerType
+                scalerValue
+                templateId
+                userId
+                workersMax
+                workersMin
+                gpuCount
+                __typename
+            }}
+        }}
+        """
 
-        # Poll for status and stream results
-        status_url = f"https://api.runpod.ai/v2/{endpoint_id}/status/{job_id}"
-        stream_url = f"https://api.runpod.ai/v2/{endpoint_id}/stream/{job_id}"
+        print(f"\nExecuting GraphQL mutation:")
+        print(mutation)
 
-        start_time = time.time()
-        last_chunk_index = 0
+        result = run_graphql_query(mutation)
 
-        while True:
-            # Check if we've exceeded timeout
-            if time.time() - start_time > timeout:
-                raise TimeoutError(
-                    f"Job {job_id} exceeded timeout of {timeout} seconds"
-                )
+        if "errors" in result:
+            error_msg = result["errors"][0].get("message", "Unknown error")
+            print(f"Error creating endpoint: {error_msg}")
+            print(f"Full error response: {json.dumps(result, indent=2)}")
+            sys.exit(1)
 
-            # Check job status
-            status_response = requests.get(status_url, headers=headers)
-            status_response.raise_for_status()
+        endpoint_data = result.get("data", {}).get("saveEndpoint", {})
+        endpoint_id = endpoint_data.get("id")
 
-            status_data = status_response.json()
-            job_status = status_data.get("status", "UNKNOWN")
+        if not endpoint_id:
+            print(f"Error: No endpoint ID returned")
+            print(f"Response data: {json.dumps(result, indent=2)}")
+            sys.exit(1)
 
-            print(f"📊 Job status: {job_status}")
+        print(f"\nEndpoint created successfully!")
+        print(f"  ID: {endpoint_id}")
+        print(f"  Name: {endpoint_data.get('name')}")
+        print(f"  GPU Configuration: {endpoint_data.get('gpuIds')}")
+        print(
+            f"  Workers: {endpoint_data.get('workersMin')}-{endpoint_data.get('workersMax')}"
+        )
+        print(
+            f"  Scaler: {endpoint_data.get('scalerType')}"
+        )
 
-            # Handle different job states
-            if job_status == "FAILED":
-                error = status_data.get("error", "Unknown error")
-                raise RuntimeError(f"Job {job_id} failed: {error}")
+        return endpoint_id
 
-            elif job_status in ["COMPLETED", "IN_PROGRESS", "IN_QUEUE"]:
-                # Try to fetch streaming output
-                try:
-                    stream_response = requests.get(stream_url, headers=headers)
-                    stream_response.raise_for_status()
-
-                    stream_data = stream_response.json()
-
-                    # Check for streaming output chunks
-                    if "stream" in stream_data:
-                        chunks = stream_data["stream"]
-
-                        # Yield new chunks only
-                        for i, chunk in enumerate(
-                            chunks[last_chunk_index:], last_chunk_index
-                        ):
-                            yield {
-                                "chunk": chunk,
-                                "status": job_status,
-                                "job_id": job_id,
-                                "chunk_index": i,
-                            }
-
-                        last_chunk_index = len(chunks)
-
-                    # Check for final output if job is completed
-                    if job_status == "COMPLETED":
-                        if "output" in stream_data:
-                            yield {
-                                "chunk": stream_data["output"],
-                                "status": "COMPLETED",
-                                "job_id": job_id,
-                                "chunk_index": "final",
-                                "final": True,
-                            }
-                        break
-
-                except requests.RequestException as e:
-                    print(f"⚠️ Could not fetch stream data: {e}")
-                    # Continue polling, streaming might not be available yet
-
-            # Wait before next poll
-            time.sleep(poll_interval)
-
-    except requests.RequestException as e:
-        print(f"❌ API request failed: {e}")
-        if hasattr(e, "response") and e.response is not None:
-            print(f"Response status: {e.response.status_code}")
-            print(f"Response body: {e.response.text}")
-        raise
     except Exception as e:
-        print(f"❌ Unexpected error: {e}")
-        raise
-
-
-def invoke_streaming_endpoint_simple(endpoint_id: str, payload: dict, **kwargs):
-    """
-    Simple wrapper for streaming endpoint invocation that yields just the chunks.
-
-    Args:
-        endpoint_id (str): The RunPod endpoint ID
-        payload (dict): The input payload for the job
-        **kwargs: Additional arguments passed to invoke_streaming_endpoint
-
-    Yields:
-        Any: The actual chunk content without metadata
-    """
-    for result in invoke_streaming_endpoint(endpoint_id, payload, **kwargs):
-        yield result["chunk"]
+        traceback.print_exc()
+        print(f"Failed to create endpoint: {e}")
+        print("\nTroubleshooting:")
+        print("1. Check that your RunPod API key is valid")
+        print("2. Verify the template ID exists and is accessible")
+        print("3. Ensure the specified GPU types are available in your chosen regions")
+        print("4. Check your RunPod account limits and quotas")
+        sys.exit(1)

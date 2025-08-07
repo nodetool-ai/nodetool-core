@@ -366,6 +366,7 @@ def build_docker_image(
     # Get the deploy directory where Dockerfile, handlers, and scripts are located
     script_dir = os.path.dirname(os.path.abspath(__file__))
     deploy_dockerfile_path = os.path.join(script_dir, "Dockerfile")
+    start_script_path = os.path.join(script_dir, "start.sh")
 
     # Create a temporary build directory
     build_dir = tempfile.mkdtemp(prefix="nodetool_build_")
@@ -375,12 +376,9 @@ def build_docker_image(
         # Copy workflow files to build directory
         workflows_build_dir = os.path.join(build_dir, "workflows")
         shutil.copytree(workflows_source, workflows_build_dir)
-        workflow_count = len(
-            [f for f in os.listdir(workflows_source) if f.endswith(".json")]
-        )
-        print(f"Copied workflows directory with {workflow_count} workflow(s)")
 
         shutil.copy(deploy_dockerfile_path, os.path.join(build_dir, "Dockerfile"))
+        shutil.copy(start_script_path, os.path.join(build_dir, "start.sh"))
 
         # Build with the Dockerfile from the build directory
         original_dir = os.getcwd()

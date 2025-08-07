@@ -73,16 +73,7 @@ import tempfile
 from typing import Optional
 import re
 
-import dotenv
-
-from nodetool.deploy.runpod_api import check_endpoint_health
-
-dotenv.load_dotenv()
-
-# Configuration
-RUNPOD_API_KEY = os.getenv("RUNPOD_API_KEY")
-
-assert RUNPOD_API_KEY, "RUNPOD_API_KEY environment variable is not set"
+from nodetool.deploy.runpod_api import create_runpod_endpoint_graphql
 
 
 def sanitize_name(name: str) -> str:
@@ -227,8 +218,6 @@ def deploy_to_runpod(
     workers_min: int = 0,
     workers_max: int = 3,
     idle_timeout: int = 5,
-    scaler_type: str = "QUEUE_DELAY",
-    scaler_value: int = 4,
     execution_timeout: Optional[int] = None,
     flashboot: bool = False,
     network_volume_id: Optional[str] = None,
@@ -265,8 +254,6 @@ def deploy_to_runpod(
         workers_min: Minimum number of workers
         workers_max: Maximum number of workers
         idle_timeout: Seconds before scaling down idle workers
-        scaler_type: Type of auto-scaler
-        scaler_value: Threshold value for the scaler
         execution_timeout: Maximum execution time in milliseconds
         flashboot: Enable flashboot for faster worker startup
         network_volume_id: Network volume to attach
@@ -293,8 +280,6 @@ def deploy_to_runpod(
     )
     from .runpod_api import (
         create_or_update_runpod_template,
-        create_or_update_runpod_endpoint,
-        run_model_download_via_admin,
     )
 
     console = Console()
@@ -386,7 +371,7 @@ def deploy_to_runpod(
 
             assert name, "Name is required"
 
-            endpoint_id = create_or_update_runpod_endpoint(
+            endpoint_id = create_runpod_endpoint_graphql(
                 template_id=template_id,
                 name=name,
                 compute_type=compute_type,
@@ -398,8 +383,6 @@ def deploy_to_runpod(
                 workers_min=workers_min,
                 workers_max=workers_max,
                 idle_timeout=idle_timeout,
-                scaler_type=scaler_type,
-                scaler_value=scaler_value,
                 execution_timeout_ms=execution_timeout,
                 flashboot=flashboot,
                 network_volume_id=network_volume_id,

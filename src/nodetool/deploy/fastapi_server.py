@@ -562,10 +562,12 @@ if __name__ == "__main__":
         if tools_str
         else []
     )
+    port = int(os.getenv("PORT", 8000))
     
     run_nodetool_server(
         remote_auth=remote_auth,
         provider=provider,
         default_model=default_model,
-        tools=tools
+        tools=tools,
+        port=port
     )

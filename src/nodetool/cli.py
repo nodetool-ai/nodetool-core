@@ -4,6 +4,7 @@ import shutil
 import click
 from nodetool.common.configuration import get_settings_registry
 from nodetool.common.environment import Environment
+from nodetool.deploy.runpod_api import GPUType
 from nodetool.dsl.codegen import create_dsl_modules
 
 # silence warnings on the command line
@@ -17,6 +18,10 @@ from rich.panel import Panel
 from rich.text import Text
 from typing import Optional
 
+import dotenv
+
+dotenv.load_dotenv()
+
 # Create console instance
 console = Console()
 
@@ -24,28 +29,30 @@ warnings.filterwarnings("ignore")
 log = Environment.get_logger()
 
 # Define supported GPU types for RunPod REST API
-SUPPORTED_GPU_TYPES = [
-    "NVIDIA GeForce RTX 4090",
-    "NVIDIA GeForce RTX 4080",
-    "NVIDIA GeForce RTX 4070 Ti",
-    "NVIDIA GeForce RTX 4070",
-    "NVIDIA GeForce RTX 4060 Ti",
-    "NVIDIA GeForce RTX 4060",
-    "NVIDIA GeForce RTX 3090",
-    "NVIDIA GeForce RTX 3080",
-    "NVIDIA GeForce RTX 3070",
-    "NVIDIA GeForce RTX 3060",
-    "NVIDIA RTX A6000",
-    "NVIDIA RTX A5000",
-    "NVIDIA RTX A4000",
-    "NVIDIA L40S",
-    "NVIDIA L40",
-    "NVIDIA L4",
-    "NVIDIA A100 80GB PCIe",
-    "NVIDIA A100 40GB PCIe",
-    "NVIDIA H100 PCIe",
-    "NVIDIA H100 SXM5",
-]
+# SUPPORTED_GPU_TYPES = [
+#     "NVIDIA GeForce RTX 4090",
+#     "NVIDIA GeForce RTX 4080",
+#     "NVIDIA GeForce RTX 4070 Ti",
+#     "NVIDIA GeForce RTX 4070",
+#     "NVIDIA GeForce RTX 4060 Ti",
+#     "NVIDIA GeForce RTX 4060",
+#     "NVIDIA GeForce RTX 3090",
+#     "NVIDIA GeForce RTX 3080",
+#     "NVIDIA GeForce RTX 3070",
+#     "NVIDIA GeForce RTX 3060",
+#     "NVIDIA RTX A6000",
+#     "NVIDIA RTX A5000",
+#     "NVIDIA RTX A4000",
+#     "NVIDIA L40S",
+#     "NVIDIA L40",
+#     "NVIDIA L4",
+#     "NVIDIA A100 80GB PCIe",
+#     "NVIDIA A100 40GB PCIe",
+#     "NVIDIA H100 PCIe",
+#     "NVIDIA H100 SXM5",
+# ]
+
+SUPPORTED_GPU_TYPES = GPUType.list_values()
 
 
 @click.group()
@@ -798,21 +805,18 @@ def admin():
 @click.option(
     "--ignore-patterns", multiple=True, help="Patterns to ignore (can specify multiple)"
 )
-@click.option("--stream", is_flag=True, help="Enable streaming progress updates")
 @click.option(
     "--server-url",
+    required=True,
     help="HTTP API server URL to execute on (e.g., http://localhost:8000)",
 )
-@click.option("--api-key", help="API key for HTTP requests")
 def download_hf(
     repo_id: str,
     cache_dir: str,
     file_path: str | None,
     allow_patterns: tuple,
     ignore_patterns: tuple,
-    stream: bool,
-    server_url: str | None,
-    api_key: str | None,
+    server_url: str,
 ):
     """Download HuggingFace models with progress tracking.
 
@@ -821,10 +825,10 @@ def download_hf(
         nodetool admin download-hf --repo-id microsoft/DialoGPT-small
 
         # Download with streaming progress locally
-        nodetool admin download-hf --repo-id microsoft/DialoGPT-small --stream
+        nodetool admin download-hf --repo-id microsoft/DialoGPT-small 
 
         # Download via HTTP API server
-        nodetool admin download-hf --repo-id microsoft/DialoGPT-small --stream --server-url http://localhost:8000
+        nodetool admin download-hf --repo-id microsoft/DialoGPT-small --server-url http://localhost:8000
 
         # Download specific file via HTTP API
         nodetool admin download-hf --repo-id microsoft/DialoGPT-small --file-path config.json --server-url http://localhost:8000
@@ -833,20 +837,6 @@ def download_hf(
         nodetool admin download-hf --repo-id microsoft/DialoGPT-small --allow-patterns "*.json" --allow-patterns "*.txt" --ignore-patterns "*.bin" --server-url http://localhost:8000
     """
     import asyncio
-
-    job_input = {
-        "operation": "download_hf",
-        "repo_id": repo_id,
-        "cache_dir": cache_dir,
-        "stream": stream,
-    }
-
-    if file_path:
-        job_input["file_path"] = file_path
-    if allow_patterns:
-        job_input["allow_patterns"] = list(allow_patterns)
-    if ignore_patterns:
-        job_input["ignore_patterns"] = list(ignore_patterns)
 
     async def run_download():
         console.print("[bold cyan]📥 Starting HuggingFace download...[/]")
@@ -858,15 +848,23 @@ def download_hf(
             console.print(f"Allow patterns: {', '.join(allow_patterns)}")
         if ignore_patterns:
             console.print(f"Ignore patterns: {', '.join(ignore_patterns)}")
-        console.print(f"Streaming: {'✅ Yes' if stream else '❌ No'}")
-        if server_url:
-            console.print(f"HTTP API Server: {server_url}")
-        else:
-            console.print("Execution: 🖥️ Local")
+        console.print(f"HTTP API Server: {server_url}")
         console.print()
 
         try:
-            await _execute_admin_operation(job_input, server_url, api_key)
+            # Execute via HTTP API
+            from nodetool.deploy.admin_client import AdminHTTPClient
+            api_key = os.getenv("RUNPOD_API_KEY")
+            
+            client = AdminHTTPClient(server_url, auth_token=api_key)
+            async for progress_update in client.download_huggingface_model(
+                repo_id=repo_id,
+                cache_dir=cache_dir,
+                file_path=file_path,
+                ignore_patterns=list(ignore_patterns) if ignore_patterns else None,
+                allow_patterns=list(allow_patterns) if allow_patterns else None
+            ):
+                _display_progress_update(progress_update)
 
         except Exception as e:
             console.print(f"[red]❌ Failed: {e}[/]")
@@ -917,6 +915,33 @@ def _display_progress_update(progress_update):
             console.print(
                 f"[green]📋 Downloaded {progress_update['downloaded_files']} files[/]"
             )
+    elif status.startswith("pulling"):
+        # Handle Ollama pulling status with digest info
+        digest = progress_update.get("digest", "")
+        total = progress_update.get("total")
+        completed = progress_update.get("completed")
+        
+        # Extract the layer ID from status (e.g., "pulling aeda25e63ebd")
+        layer_id = status.replace("pulling ", "") if " " in status else "unknown"
+        
+        if digest and "sha256:" in digest:
+            # Show shortened digest for readability
+            short_digest = digest.split(":")[-1][:12] if ":" in digest else digest[:12]
+            console.print(f"[yellow]🐋 Pulling layer {layer_id} (sha256:{short_digest})[/]")
+        else:
+            console.print(f"[yellow]🐋 Pulling layer {layer_id}[/]")
+        
+        # Show size information if available
+        if total:
+            total_mb = total / (1024 * 1024)
+            if completed:
+                completed_mb = completed / (1024 * 1024)
+                pct = (completed / total) * 100 if total > 0 else 0
+                console.print(
+                    f"[cyan]📊 Progress: {completed_mb:.1f}/{total_mb:.1f} MB ({pct:.1f}%)[/]"
+                )
+            else:
+                console.print(f"[cyan]📦 Size: {total_mb:.1f} MB[/]")
     elif status == "error":
         error = progress_update.get("error", "Unknown error")
         console.print(f"[red]❌ Error: {error}[/]")
@@ -965,73 +990,17 @@ def _display_progress_update(progress_update):
             console.print("[yellow]🎮 GPUs: Not available[/]")
 
 
-async def _execute_admin_operation(job_input, server_url, api_key):
-    """Execute admin operation locally or via HTTP API."""
-    if server_url:
-        # Execute via HTTP API
-        from nodetool.deploy.admin_client import AdminHTTPClient
-        
-        client = AdminHTTPClient(server_url, auth_token=api_key)
-        operation = job_input.get("operation")
-        
-        try:
-            if operation == "health_check":
-                result = await client.health_check()
-                _display_progress_update(result)
-            elif operation == "download_hf":
-                async for progress_update in client.download_huggingface_model(
-                    repo_id=job_input["repo_id"],
-                    cache_dir=job_input.get("cache_dir", "/app/.cache/huggingface/hub"),
-                    file_path=job_input.get("file_path"),
-                    ignore_patterns=job_input.get("ignore_patterns"),
-                    allow_patterns=job_input.get("allow_patterns")
-                ):
-                    _display_progress_update(progress_update)
-            elif operation == "download_ollama":
-                async for progress_update in client.download_ollama_model(
-                    model_name=job_input["model_name"]
-                ):
-                    _display_progress_update(progress_update)
-            elif operation == "scan_cache":
-                result = await client.scan_cache()
-                _display_progress_update(result)
-            elif operation == "calculate_cache_size":
-                result = await client.get_cache_size(
-                    cache_dir=job_input.get("cache_dir", "/app/.cache/huggingface/hub")
-                )
-                _display_progress_update(result)
-            elif operation == "delete_hf":
-                result = await client.delete_huggingface_model(repo_id=job_input["repo_id"])
-                _display_progress_update(result)
-            else:
-                # Use legacy endpoint for other operations
-                async for progress_update in client.admin_operation(operation, **job_input):
-                    _display_progress_update(progress_update)
-                    
-        except Exception as e:
-            console.print(f"[red]❌ HTTP request failed: {e}[/]")
-            raise
-    else:
-        # Execute locally
-        from nodetool.deploy.admin_operations import handle_admin_operation
-
-        async for progress_update in handle_admin_operation(job_input):
-            _display_progress_update(progress_update)
-
 
 @admin.command("download-ollama")
 @click.option("--model-name", required=True, help="Ollama model name to download")
-@click.option("--stream", is_flag=True, help="Enable streaming progress updates")
 @click.option(
     "--server-url",
+    required=True,
     help="HTTP API server URL to execute on (e.g., http://localhost:8000)",
 )
-@click.option("--api-key", help="API key for HTTP requests")
 def download_ollama(
     model_name: str,
-    stream: bool,
-    server_url: str | None,
-    api_key: str | None,
+    server_url: str,
 ):
     """Download Ollama models with progress tracking.
 
@@ -1040,31 +1009,30 @@ def download_ollama(
         nodetool admin download-ollama --model-name llama3.2:latest
 
         # Download with streaming progress locally
-        nodetool admin download-ollama --model-name llama3.2:latest --stream
+        nodetool admin download-ollama --model-name llama3.2:latest 
 
         # Download via HTTP API server
-        nodetool admin download-ollama --model-name llama3.2:latest --stream --server-url http://localhost:8000
+        nodetool admin download-ollama --model-name llama3.2:latest --server-url http://localhost:8000
     """
     import asyncio
-
-    job_input = {
-        "operation": "download_ollama",
-        "model_name": model_name,
-        "stream": stream,
-    }
 
     async def run_download():
         console.print("[bold cyan]📥 Starting Ollama download...[/]")
         console.print(f"Model: {model_name}")
-        console.print(f"Streaming: {'✅ Yes' if stream else '❌ No'}")
-        if server_url:
-            console.print(f"HTTP API Server: {server_url}")
-        else:
-            console.print("Execution: 🖥️ Local")
+        console.print(f"HTTP API Server: {server_url}")
         console.print()
 
         try:
-            await _execute_admin_operation(job_input, server_url, api_key)
+            # Execute via HTTP API
+            from nodetool.deploy.admin_client import AdminHTTPClient
+            api_key = os.getenv("RUNPOD_API_KEY")
+            
+            client = AdminHTTPClient(server_url, auth_token=api_key)
+            async for progress_update in client.download_ollama_model(
+                model_name=model_name
+            ):
+                _display_progress_update(progress_update)
+
         except Exception as e:
             console.print(f"[red]❌ Failed: {e}[/]")
             import traceback
@@ -1078,10 +1046,10 @@ def download_ollama(
 @admin.command("scan-cache")
 @click.option(
     "--server-url",
+    required=True,
     help="HTTP API server URL to execute on (e.g., http://localhost:8000)",
 )
-@click.option("--api-key", help="API key for HTTP requests")
-def scan_cache(server_url: str | None, api_key: str | None):
+def scan_cache(server_url: str):
     """Scan HuggingFace cache and display information.
 
     Examples:
@@ -1093,30 +1061,19 @@ def scan_cache(server_url: str | None, api_key: str | None):
     """
     import asyncio
 
-    job_input = {"operation": "scan_cache"}
-
     async def run_scan():
         console.print("[bold cyan]🔍 Scanning HuggingFace cache...[/]")
-        if server_url:
-            console.print(f"HTTP API Server: {server_url}")
-        else:
-            console.print("Execution: 🖥️ Local")
+        console.print(f"HTTP API Server: {server_url}")
         console.print()
 
         try:
-            if server_url:
-                # Execute via HTTP API
-                from nodetool.deploy.admin_client import AdminHTTPClient
-                
-                client = AdminHTTPClient(server_url, auth_token=api_key)
-                result = await client.scan_cache()
-                _handle_scan_cache_output(result)
-            else:
-                # Execute locally
-                from nodetool.deploy.admin_operations import handle_admin_operation
-
-                async for progress_update in handle_admin_operation(job_input):
-                    _handle_scan_cache_output(progress_update)
+            # Execute via HTTP API
+            from nodetool.deploy.admin_client import AdminHTTPClient
+            api_key = os.getenv("RUNPOD_API_KEY")
+            
+            client = AdminHTTPClient(server_url, auth_token=api_key)
+            result = await client.scan_cache()
+            _handle_scan_cache_output(result)
 
         except Exception as e:
             console.print(f"[red]❌ Failed: {e}[/]")
@@ -1174,10 +1131,10 @@ def scan_cache(server_url: str | None, api_key: str | None):
 )
 @click.option(
     "--server-url",
+    required=True,
     help="HTTP API server URL to execute on (e.g., http://localhost:8000)",
 )
-@click.option("--api-key", help="API key for HTTP requests")
-def delete_hf(repo_id: str, server_url: str | None, api_key: str | None):
+def delete_hf(repo_id: str, server_url: str):
     """Delete HuggingFace model from cache.
 
     Examples:
@@ -1189,15 +1146,10 @@ def delete_hf(repo_id: str, server_url: str | None, api_key: str | None):
     """
     import asyncio
 
-    job_input = {"operation": "delete_hf", "repo_id": repo_id}
-
     async def run_delete():
         console.print("[bold yellow]🗑️ Deleting HuggingFace model from cache...[/]")
         console.print(f"Repository: {repo_id}")
-        if server_url:
-            console.print(f"HTTP API Server: {server_url}")
-        else:
-            console.print("Execution: 🖥️ Local")
+        console.print(f"HTTP API Server: {server_url}")
         console.print()
 
         if not click.confirm(
@@ -1207,7 +1159,13 @@ def delete_hf(repo_id: str, server_url: str | None, api_key: str | None):
             return
 
         try:
-            await _execute_admin_operation(job_input, server_url, api_key)
+            # Execute via HTTP API
+            from nodetool.deploy.admin_client import AdminHTTPClient
+            api_key = os.getenv("RUNPOD_API_KEY")
+            
+            client = AdminHTTPClient(server_url, auth_token=api_key)
+            result = await client.delete_huggingface_model(repo_id=repo_id)
+            _display_progress_update(result)
         except Exception as e:
             console.print(f"[red]❌ Failed: {e}[/]")
             import traceback
@@ -1224,11 +1182,11 @@ def delete_hf(repo_id: str, server_url: str | None, api_key: str | None):
 )
 @click.option(
     "--server-url",
+    required=True,
     help="HTTP API server URL to execute on (e.g., http://localhost:8000)",
 )
-@click.option("--api-key", help="API key for HTTP requests")
 def cache_size(
-    cache_dir: str, server_url: str | None, api_key: str | None
+    cache_dir: str, server_url: str, api_key: str | None
 ):
     """Calculate total cache size.
 
@@ -1244,31 +1202,20 @@ def cache_size(
     """
     import asyncio
 
-    job_input = {"operation": "calculate_cache_size", "cache_dir": cache_dir}
-
     async def run_calculate():
         console.print("[bold cyan]📏 Calculating cache size...[/]")
         console.print(f"Cache directory: {cache_dir}")
-        if server_url:
-            console.print(f"HTTP API Server: {server_url}")
-        else:
-            console.print("Execution: 🖥️ Local")
+        console.print(f"HTTP API Server: {server_url}")
         console.print()
 
         try:
-            if server_url:
-                # Execute via HTTP API
-                from nodetool.deploy.admin_client import AdminHTTPClient
-                
-                client = AdminHTTPClient(server_url, auth_token=api_key)
-                result = await client.get_cache_size(cache_dir=cache_dir)
-                _handle_cache_size_output(result)
-            else:
-                # Execute locally
-                from nodetool.deploy.admin_operations import handle_admin_operation
-
-                async for progress_update in handle_admin_operation(job_input):
-                    _handle_cache_size_output(progress_update)
+            # Execute via HTTP API
+            from nodetool.deploy.admin_client import AdminHTTPClient
+            api_key = os.getenv("RUNPOD_API_KEY")
+            
+            client = AdminHTTPClient(server_url, auth_token=api_key)
+            result = await client.get_cache_size(cache_dir=cache_dir)
+            _handle_cache_size_output(result)
 
         except Exception as e:
             console.print(f"[red]❌ Failed: {e}[/]")
@@ -1295,46 +1242,6 @@ def cache_size(
     asyncio.run(run_calculate())
 
 
-@admin.command("health-check")
-@click.option(
-    "--server-url",
-    help="HTTP API server URL to execute on (e.g., http://localhost:8000)",
-)
-@click.option("--api-key", help="API key for HTTP requests")
-def health_check(server_url: str | None, api_key: str | None):
-    """Perform system health check.
-
-    Examples:
-        # Health check locally
-        nodetool admin health-check
-
-        # Health check via HTTP API server
-        nodetool admin health-check --server-url http://localhost:8000
-    """
-    import asyncio
-
-    job_input = {"operation": "health_check"}
-
-    async def run_health_check():
-        console.print("[bold cyan]🏥 Running system health check...[/]")
-        if server_url:
-            console.print(f"HTTP API Server: {server_url}")
-        else:
-            console.print("Execution: 🖥️ Local")
-        console.print()
-
-        try:
-            await _execute_admin_operation(job_input, server_url, api_key)
-        except Exception as e:
-            console.print(f"[red]❌ Health check failed: {e}[/]")
-            import traceback
-
-            traceback.print_exc()
-            sys.exit(1)
-
-    asyncio.run(run_health_check())
-
-
 # Add admin group to the main CLI
 cli.add_command(admin)
 
@@ -1350,7 +1257,6 @@ def _handle_list_options(
         ComputeType,
         CPUFlavor,
         DataCenter,
-        ScalerType,
         CUDAVersion,
     )
 
@@ -1386,9 +1292,6 @@ def _handle_list_options(
         console.print("\n[bold]Data Centers:[/]")
         for data_center in DataCenter:
             console.print(f"  {data_center.value}")
-        console.print("\n[bold]Scaler Types:[/]")
-        for scaler_type in ScalerType:
-            console.print(f"  {scaler_type.value}")
         console.print("\n[bold]CUDA Versions:[/]")
         for cuda_version in CUDAVersion:
             console.print(f"  {cuda_version.value}")
@@ -1531,18 +1434,6 @@ def _handle_docker_config_check(
     default=60,
     help="Seconds before scaling down idle workers (default: 5)",
 )
-@click.option(
-    "--scaler-type",
-    type=click.Choice(["QUEUE_DELAY", "REQUEST_COUNT"]),
-    default="QUEUE_DELAY",
-    help="Type of auto-scaler (default: QUEUE_DELAY)",
-)
-@click.option(
-    "--scaler-value",
-    type=int,
-    default=4,
-    help="Threshold value for the scaler (default: 4)",
-)
 # Endpoint advanced configuration
 @click.option(
     "--execution-timeout", type=int, help="Maximum execution time in milliseconds"
@@ -1609,8 +1500,6 @@ def deploy(
     workers_min: int,
     workers_max: int,
     idle_timeout: int,
-    scaler_type: str,
-    scaler_value: int,
     execution_timeout: int | None,
     flashboot: bool,
     network_volume_id: str | None,
@@ -1688,8 +1577,6 @@ def deploy(
         workers_min=workers_min,
         workers_max=workers_max,
         idle_timeout=idle_timeout,
-        scaler_type=scaler_type,
-        scaler_value=scaler_value,
         execution_timeout=execution_timeout,
         flashboot=flashboot,
         network_volume_id=network_volume_id,

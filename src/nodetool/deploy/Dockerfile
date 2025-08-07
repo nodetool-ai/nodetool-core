@@ -1,6 +1,5 @@
 # syntax=docker/dockerfile:1
-# Base image with CUDA and cuDNN runtime
-FROM nvcr.io/nvidia/cuda:12.9.0-cudnn-runtime-ubuntu22.04 AS base
+FROM nvidia/cuda:12.9.1-cudnn-runtime-ubuntu24.04 AS base
 COPY --from=ghcr.io/astral-sh/uv:0.8.5 /uv /uvx /bin/
 
 # Environment variables
@@ -57,11 +56,7 @@ RUN apt-get update && \
     libxslt1-dev \
     libsqlite3-dev \
     # Document Processing
-    tesseract-ocr \
-    # Other System Libraries
-    libcairo2-dev \
-    libgl1 \
-    libgl1-mesa-glx && \
+    tesseract-ocr && \
     # Clean up apt cache
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* && \
@@ -69,8 +64,8 @@ RUN apt-get update && \
     echo "en_US.UTF-8 UTF-8" > /etc/locale.gen && \
     locale-gen en_US.UTF-8
 
-RUN uv python install 3.11 
-RUN uv venv
+RUN uv python install $PYTHON_VERSION
+RUN uv venv $VIRTUAL_ENV
 
 # Set up the working directory
 WORKDIR /app
@@ -83,18 +78,18 @@ RUN mkdir -p /runpod-volume/.ollama/models
 RUN mkdir -p /runpod-volume/.cache/transformers
 
 RUN echo "Installing nodetool packages..." && \
-    uv pip install --no-cache-dir git+https://github.com/nodetool-ai/nodetool-core && \
+    uv pip install --no-cache-dir git+https://github.com/nodetool-ai/nodetool-core@44b9600cfaf61e30b0f1e9b9c71388cef24ecaf5 && \
     uv pip install --no-cache-dir git+https://github.com/nodetool-ai/nodetool-base
 
 # Install Ollama
 RUN curl --fail --show-error --location --progress-bar \
         "https://github.com/ollama/ollama/releases/download/v0.11.3/ollama-linux-amd64.tgz" \
-        | tar -xzf - -C /usr/local && \
-    ln -sf /usr/local/ollama/ollama /usr/local/bin/ollama
+        | tar -xzf - -C /opt
 
 COPY . /app
+ADD start.sh /app/start.sh
+ADD workflows /app/workflows
 RUN chmod +x /app/start.sh
-RUN mkdir -p /app/workflows
 
 # Run the startup script
 CMD ["/app/start.sh"]

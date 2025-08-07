@@ -44,13 +44,13 @@ def run_local_docker(
         "run",
         "-d",
         "-p",
-        "8080:8080",
+        "8000:8000",
         f"{full_image_name}:{image_tag}",
     ]
 
     run_command(" ".join(docker_run_cmd))
     console.print("[bold green]✅ Local Docker container started successfully![/]")
-    console.print("API available at: http://localhost:8080")
+    console.print("API available at: http://localhost:8000")
     console.print(f"To stop the container: docker stop {full_image_name}:{image_tag}")
     console.print(f"To remove the container: docker rm {full_image_name}:{image_tag}")
 
