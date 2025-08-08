@@ -23,8 +23,10 @@ from openai.types.chat import (
     ChatCompletionContentPartParam,
     ChatCompletionChunk,
 )
-from openai.types.chat.chat_completion_message_tool_call_param import Function
-from openai.types.chat.chat_completion_tool_param import ChatCompletionToolParam
+from openai.types.chat.chat_completion_message_function_tool_call_param import (
+    Function,
+    ChatCompletionMessageFunctionToolCallParam,
+)
 from pydantic import BaseModel
 import requests
 from pydub import AudioSegment
@@ -254,7 +256,7 @@ class OpenAIProvider(ChatProvider):
             return ChatCompletionUserMessageParam(role=message.role, content=content)
         elif message.role == "assistant":
             tool_calls = [
-                ChatCompletionMessageToolCallParam(
+                ChatCompletionMessageFunctionToolCallParam(
                     type="function",
                     id=tool_call.id,
                     function=Function(
@@ -293,7 +295,7 @@ class OpenAIProvider(ChatProvider):
             return obj.model_dump()
         raise TypeError("Type not serializable")
 
-    def format_tools(self, tools: Sequence[Tool]) -> list[ChatCompletionToolParam]:
+    def format_tools(self, tools: Sequence[Tool]) -> list[ChatCompletionMessageFunctionToolCallParam]:
         """Convert tools to OpenAI's format."""
         formatted_tools = []
 
@@ -563,8 +565,8 @@ class OpenAIProvider(ChatProvider):
             tool_calls = [
                 ToolCall(
                     id=tool_call.id,
-                    name=tool_call.function.name,
-                    args=try_parse_args(tool_call.function.arguments),
+                    name=tool_call.function.name, # type: ignore
+                    args=try_parse_args(tool_call.function.arguments), # type: ignore
                 )
                 for tool_call in response_message.tool_calls
             ]
