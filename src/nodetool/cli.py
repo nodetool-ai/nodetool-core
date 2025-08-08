@@ -408,6 +408,7 @@ def chat_server(
     "--server-url",
     help="URL of the chat server to connect to. If not provided, uses OpenAI API directly.",
 )
+@click.option("--runpod-endpoint", help="RunPod endpoint to use. Convenience option to not specify --server-url.")
 @click.option("--auth-token", help="Authentication token")
 @click.option("--message", help="Send a single message (non-interactive mode).")
 @click.option(
@@ -425,6 +426,7 @@ def chat_client(
     message: Optional[str],
     model: Optional[str],
     provider: Optional[str],
+    runpod_endpoint: Optional[str],
 ):
     """Connect to OpenAI API or a NodeTool chat server using OpenAI Chat Completions API.
 
@@ -446,6 +448,9 @@ def chat_client(
 
       # Send single message to OpenAI
       nodetool chat-client --message "Hello, AI!" --auth-token sk-your-openai-key
+
+      # Connect to RunPod endpoint
+      nodetool chat-client --runpod-endpoint my-runpod-endpoint-id
     """
     import asyncio
     import dotenv
@@ -460,10 +465,13 @@ def chat_client(
 
     # If no server URL provided, use OpenAI API directly
     if not server_url:
-        server_url = "https://api.openai.com"
-        # Use provided model or default to gpt-4o-mini for OpenAI
-        if not model:
-            model = "gpt-4o-mini"
+        if runpod_endpoint:
+            server_url = f"https://{runpod_endpoint}.api.runpod.ai"
+        else:
+            server_url = "https://api.openai.com"
+            # Use provided model or default to gpt-5-mini for OpenAI
+            if not model:
+                model = "gpt-5-mini"
     else:
         # For local server, use provided model or default to gemma3n:latest
         if not model:
@@ -2019,128 +2027,6 @@ def deploy_gcp(
         gcs_bucket=gcs_bucket,
         gcs_mount_path=gcs_mount_path,
     )
-
-
-@cli.command("test-runpod")
-@click.option("--endpoint-id", required=True, help="RunPod endpoint ID")
-@click.option("--api-key", help="RunPod API key (can also use RUNPOD_API_KEY env var)")
-@click.option(
-    "--params", type=click.Path(exists=True), help="JSON file with workflow parameters"
-)
-@click.option("--params-json", help="Inline JSON string with workflow parameters")
-@click.option(
-    "--timeout", type=int, default=600, help="Timeout in seconds (default: 600)"
-)
-def test_runpod(
-    endpoint_id: str,
-    api_key: str | None,
-    params: str | None,
-    params_json: str | None,
-    timeout: int,
-):
-    """Test deployed NodeTool workflow on RunPod serverless infrastructure.
-
-    Examples:
-      # Basic test with no parameters
-      nodetool test-runpod --endpoint-id abc123def456
-
-      # Test with JSON file parameters
-      nodetool test-runpod --endpoint-id abc123def456 --params test_params.json
-
-      # Test with inline JSON parameters
-      nodetool test-runpod --endpoint-id abc123def456 --params-json '{"text": "Hello World"}'
-    """
-    import json
-    import time
-    import traceback
-
-    try:
-        import runpod
-    except ImportError:
-        console.print("[bold red]❌ Error: runpod library not found[/]")
-        console.print("Install it with: pip install runpod")
-        sys.exit(1)
-
-    # Get API key from argument or environment
-    api_key = api_key or os.getenv("RUNPOD_API_KEY")
-    if not api_key:
-        console.print("[bold red]❌ Error: RunPod API key is required[/]")
-        console.print(
-            "Provide it via --api-key argument or RUNPOD_API_KEY environment variable"
-        )
-        sys.exit(1)
-
-    # Configure runpod library
-    runpod.api_key = api_key
-    endpoint = runpod.Endpoint(endpoint_id)
-
-    # Get workflow parameters
-    workflow_params = {}
-    if params:
-        try:
-            with open(params, "r") as f:
-                workflow_params = json.load(f)
-        except Exception as e:
-            console.print(
-                f"[bold red]❌ Failed to load parameters from {params}: {e}[/]"
-            )
-            sys.exit(1)
-    elif params_json:
-        try:
-            workflow_params = json.loads(params_json)
-        except json.JSONDecodeError as e:
-            console.print(f"[bold red]❌ Invalid JSON in --params-json: {e}[/]")
-            sys.exit(1)
-    else:
-        console.print(
-            "[bold yellow]⚠️ No parameters provided, using empty parameters[/]"
-        )
-
-    console.print("[bold cyan]🧪 Testing RunPod workflow...[/]")
-    console.print(f"Endpoint ID: {endpoint_id}")
-    console.print(f"Parameters: {json.dumps(workflow_params, indent=2)}")
-    console.print(f"Timeout: {timeout} seconds")
-
-    try:
-        console.print("[bold blue]🚀 Starting workflow execution...[/]")
-
-        job = endpoint.run(workflow_params)
-
-        console.print(f"Job status: {job.status()}")
-        start_time = time.time()
-
-        while job.status() in ("RUNNING", "IN_PROGRESS", "IN_QUEUE"):
-            time.sleep(1)
-            elapsed = int(time.time() - start_time)
-
-            if elapsed >= timeout:
-                console.print(f"[bold red]⏰ Job timed out after {timeout} seconds[/]")
-                sys.exit(1)
-
-            console.print(f"Job status: {job.status()} (elapsed: {elapsed}s)")
-
-        result = job.output()
-
-        console.print("[bold green]✅ Job completed successfully![/]")
-        elapsed = int(time.time() - start_time)
-        console.print(f"Execution completed in {elapsed} seconds")
-
-        # Display results
-        console.print("\n[bold cyan]📊 Job Results:[/]")
-        console.print(json.dumps(result, indent=2))
-
-        console.print("\n[bold green]✅ Test completed successfully![/]")
-
-    except TimeoutError:
-        console.print("\n[bold red]⏰ Job timed out[/]")
-        sys.exit(1)
-    except KeyboardInterrupt:
-        console.print("\n[bold yellow]🛑 Test interrupted by user[/]")
-        sys.exit(1)
-    except Exception as e:
-        console.print(f"\n[bold red]❌ Test failed: {e}[/]")
-        traceback.print_exc()
-        sys.exit(1)
 
 
 if __name__ == "__main__":
