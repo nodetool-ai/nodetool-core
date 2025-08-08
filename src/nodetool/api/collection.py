@@ -2,10 +2,6 @@
 
 from typing import List, Optional
 from fastapi import APIRouter, HTTPException, Header, UploadFile, File
-from langchain_text_splitters import (
-    ExperimentalMarkdownSyntaxTextSplitter,
-    RecursiveCharacterTextSplitter,
-)
 from nodetool.common.environment import Environment
 from nodetool.types.job import JobUpdate
 from pydantic import BaseModel
@@ -14,9 +10,6 @@ from nodetool.common.chroma_client import (
     get_collection,
 )
 import chromadb
-from markitdown import MarkItDown
-import pymupdf
-import pymupdf4llm
 import os
 import shutil
 import tempfile
@@ -24,9 +17,11 @@ import traceback
 
 from nodetool.metadata.types import Collection, FilePath
 from nodetool.models.workflow import Workflow
-from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.workflows.run_workflow import run_workflow
-from nodetool.workflows.run_job_request import RunJobRequest
+from nodetool.indexing.service import index_file_to_collection
+from nodetool.indexing.ingestion import (
+    default_ingestion_workflow,
+    find_input_nodes,
+)
 
 router = APIRouter(prefix="/api/collections", tags=["collections"])
 
@@ -170,162 +165,12 @@ class IndexResponse(BaseModel):
     error: Optional[str] = None
 
 
-def chunk_documents_recursive(
-    documents: List[Document],
-    chunk_size: int = 4096,
-    chunk_overlap: int = 2048,
-) -> tuple[dict[str, str], list[dict]]:
-    """Split documents into chunks using LangChain's recursive character splitting.
-    This method provides more semantic splitting by attempting to break at natural
-    text boundaries.
-
-    Args:
-        documents: List of documents to split
-        chunk_size: Maximum size of each chunk in characters
-        chunk_overlap: Number of characters to overlap between chunks
-
-    Returns:
-        Tuple of (id_to_text_mapping, metadata_list)
-    """
-    from langchain_text_splitters import RecursiveCharacterTextSplitter
-
-    # Initialize the splitter with common text boundaries
-    splitter = RecursiveCharacterTextSplitter(
-        chunk_size=chunk_size,
-        chunk_overlap=chunk_overlap,
-        separators=["\n\n", "\n", ".", "!", "?", " ", ""],
-        length_function=len,
-        add_start_index=True,
-    )
-
-    ids_docs = {}
-    metadatas = []
-
-    for doc in documents:
-        # Convert to LangChain document format and split
-        splits = splitter.split_text(doc.text)
-
-        # Create document IDs and collect metadata
-        for i, text in enumerate(splits):
-            doc_id = f"{doc.doc_id}:{i}"
-            ids_docs[doc_id] = text
-            metadatas.append(doc.metadata)
-
-    return ids_docs, metadatas
-
-
-def chunk_documents_markdown(
-    documents: List[Document],
-    chunk_size: int = 1000,
-    chunk_overlap: int = 200,
-) -> tuple[dict[str, str], list[dict]]:
-    """Split markdown documents based on headers and then recursively.
-
-    Args:
-        documents: List of documents to split
-        chunk_size: Maximum size of each chunk in characters after header splitting
-        chunk_overlap: Number of characters to overlap between recursive chunks
-
-    Returns:
-        Tuple of (id_to_text_mapping, metadata_list)
-    """
-    headers_to_split_on = [
-        ("#", "Header 1"),
-        ("##", "Header 2"),
-        ("###", "Header 3"),
-    ]
-
-    # Initialize markdown splitter
-    markdown_splitter = ExperimentalMarkdownSyntaxTextSplitter(
-        headers_to_split_on=headers_to_split_on,
-    )
-
-    # Initialize recursive splitter for further chunking
-    recursive_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=chunk_size, chunk_overlap=chunk_overlap
-    )
-
-    ids_docs = {}
-    metadatas = []
-    chunk_index = 0
-
-    for doc in documents:
-        # Split by headers first
-        md_splits = markdown_splitter.split_text(doc.text)
-
-        # Further split the header-based chunks recursively
-        final_splits = recursive_splitter.split_documents(md_splits)
-
-        # Create document IDs and collect metadata for final chunks
-        for split_doc in final_splits:
-            # Use a running index to ensure unique IDs across header splits
-            doc_id = f"{doc.doc_id}:{chunk_index}"
-            ids_docs[doc_id] = split_doc.page_content
-            # Carry over original document metadata, potentially add header metadata later
-            metadatas.append(doc.metadata.copy())
-            chunk_index += 1
-        chunk_index = 0  # Reset chunk index for the next document
-
-    return ids_docs, metadatas
-
-
-def default_ingestion_workflow(
-    collection: chromadb.Collection, file_path: str, mime_type: str
-) -> None:
-    """Process a file and add it to the collection using the default ingestion workflow.
-
-    Args:
-        collection: ChromaDB collection to add documents to
-        file_path: Path to the file to process
-        mime_type: MIME type of the file
-    """
-    # Convert file to documents
-    if mime_type == "application/pdf":
-        with open(file_path, "rb") as f:
-            pdf_data = f.read()
-            doc = pymupdf.open(stream=pdf_data, filetype="pdf")
-            md_text = pymupdf4llm.to_markdown(doc)
-            documents = [Document(text=md_text, doc_id=file_path)]
-    else:
-        md = MarkItDown()
-        documents = [
-            Document(text=md.convert(file_path).text_content, doc_id=file_path)
-        ]
-
-    # Chunk documents and upsert to collection
-    ids_docs, _ = chunk_documents_markdown(
-        documents,
-        chunk_size=4096,
-        chunk_overlap=256,
-    )
-    collection.upsert(
-        documents=list(ids_docs.values()),
-        ids=list(ids_docs.keys()),
-    )
 
 
 def find_input_nodes(graph: dict) -> tuple[str | None, str | None]:
-    """Find the collection input and file input node names from a workflow graph.
-
-    Args:
-        graph: The workflow graph to search
-
-    Returns:
-        Tuple of (collection_input_name, file_input_name) where each may be None if not found
-    """
-    collection_input = None
-    file_input = None
-
-    for node in graph["nodes"]:
-        if node["type"] == "nodetool.input.CollectionInput":
-            collection_input = node["data"]["name"]
-        elif node["type"] in (
-            "nodetool.input.FileInput",
-            "nodetool.input.DocumentFileInput",
-        ):
-            file_input = node["data"]["name"]
-
-    return collection_input, file_input
+    # Re-exported for backward compatibility; actual implementation moved.
+    from nodetool.indexing.ingestion import find_input_nodes as _find
+    return _find(graph)
 
 
 @router.post("/{name}/index", response_model=IndexResponse)
@@ -347,39 +192,9 @@ async def index(
         file_path = tmp_path
         mime_type = file.content_type or "application/octet-stream"
 
-        if collection.metadata and (workflow_id := collection.metadata.get("workflow")):
-            processing_context = ProcessingContext(
-                user_id="1",
-                auth_token=token,
-                workflow_id=workflow_id,
-            )
-            req = RunJobRequest(
-                workflow_id=workflow_id,
-                user_id="1",
-                auth_token=token,
-            )
-            workflow = await processing_context.get_workflow(workflow_id)
-            req.graph = workflow.graph
-            req.params = {}
-
-            collection_input, file_input = find_input_nodes(req.graph.model_dump())
-            if collection_input:
-                req.params[collection_input] = Collection(name=name)
-            if file_input:
-                # Use the temporary file path
-                req.params[file_input] = FilePath(path=file_path)
-
-            async for msg in run_workflow(req):
-                if isinstance(msg, JobUpdate):
-                    if msg.status == "completed":
-                        break
-                    elif msg.status == "failed":
-                        return IndexResponse(
-                            path=file.filename or "unknown", error=msg.error
-                        )
-        else:
-            # Use the temporary file path and determined mime type
-            default_ingestion_workflow(collection, file_path, mime_type)
+        error = await index_file_to_collection(name, file_path, mime_type, token)
+        if error:
+            return IndexResponse(path=file.filename or "unknown", error=error)
 
         return IndexResponse(path=file.filename or "unknown", error=None)
     except Exception as e:

@@ -27,6 +27,7 @@ from nodetool.deploy.workflow_routes import (
     initialize_workflow_registry,
 )
 from nodetool.deploy.admin_routes import create_admin_router
+from nodetool.deploy.collection_routes import create_collection_router
 
 
 console = Console()
@@ -81,9 +82,10 @@ def create_nodetool_server(
                     workflows=aggregated_workflows,
                 )
             )
-            # Include lightweight workflow and admin routers
+            # Include lightweight workflow, admin, and collection routers
             app.include_router(create_workflow_router())
             app.include_router(create_admin_router())
+            app.include_router(create_collection_router())
         except Exception as e:  # noqa: BLE001
             log.error(f"Failed to include OpenAI router: {e}")
 
