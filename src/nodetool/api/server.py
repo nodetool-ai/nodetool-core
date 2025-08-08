@@ -4,7 +4,7 @@ import dotenv
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
-from nodetool.api import collection, file, package, prediction, font
+from nodetool.api import collection, file, prediction, font
 from nodetool.common.websocket_proxy import WebSocketProxy
 from nodetool.common.environment import Environment
 
@@ -97,7 +97,6 @@ if not Environment.is_production():
     DEFAULT_ROUTERS.append(file.router)
     DEFAULT_ROUTERS.append(settings.router)
     DEFAULT_ROUTERS.append(collection.router)
-    DEFAULT_ROUTERS.append(package.router)
 
 
 def create_app(
