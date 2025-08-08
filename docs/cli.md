@@ -67,6 +67,11 @@ Explore files in an interactive text UI.
 
 Generate DSL modules from node definitions.
 
+### codegen-csharp
+`nodetool codegen-csharp [--output-dir DIR] [--namespace NAME]`
+
+Generate C# types for all BaseType subclasses. The generated classes are annotated with MessagePack attributes for serialization.
+
 ## Settings commands
 
 ### settings show
