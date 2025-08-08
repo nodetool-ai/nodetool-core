@@ -237,6 +237,9 @@ class BaseNode(BaseModel):
         _ui_properties (dict[str, Any]): UI-specific properties for the node.
         _visible (bool): Whether the node is visible in the UI.
         _layout (str): The layout style for the node in the UI.
+        _trigger_mode (str): When to trigger processing. ``"all_inputs"`` waits
+            for messages on every input before running, while ``"any_input"``
+            starts processing as soon as at least one input arrives.
 
     Methods:
         Includes methods for initialization, property management, metadata generation,
@@ -250,6 +253,7 @@ class BaseNode(BaseModel):
     _dynamic_properties: dict[str, Any] = {}
     _is_dynamic: bool = False
     _requires_grad: bool = False
+    _trigger_mode: str = "all_inputs"
 
     def __init__(
         self,
@@ -257,6 +261,7 @@ class BaseNode(BaseModel):
         parent_id: str | None = None,
         ui_properties: dict[str, Any] = {},
         dynamic_properties: dict[str, Any] = {},
+        trigger_mode: str = "all_inputs",
         **data: Any,
     ):
         super().__init__(**data)
@@ -264,6 +269,7 @@ class BaseNode(BaseModel):
         self._parent_id = parent_id
         self._ui_properties = ui_properties
         self._dynamic_properties = dynamic_properties
+        self._trigger_mode = trigger_mode
 
     def required_inputs(self):
         return []
@@ -288,9 +294,14 @@ class BaseNode(BaseModel):
         return getattr(attr, "default", attr)  # type: ignore
 
     @property
+    def trigger_mode(self) -> str:
+        """Return the node instance's trigger mode."""
+        return self._trigger_mode
+
+    @property
     def id(self):
         return self._id
-    
+
     @property
     def parent_id(self):
         return self._parent_id
@@ -303,6 +314,7 @@ class BaseNode(BaseModel):
             "id": self._id,
             "parent_id": self._parent_id,
             "type": self.get_node_type(),
+            "trigger_mode": self._trigger_mode,
             "data": self.node_properties(),
         }
 
@@ -317,7 +329,9 @@ class BaseNode(BaseModel):
                 NameToType[name] = field_type
 
     @staticmethod
-    def from_dict(node: dict[str, Any], skip_errors: bool = False) -> tuple[Optional["BaseNode"], list[str]]:
+    def from_dict(
+        node: dict[str, Any], skip_errors: bool = False
+    ) -> tuple[Optional["BaseNode"], list[str]]:
         """
         Create a Node object from a dictionary representation.
 
@@ -342,7 +356,7 @@ class BaseNode(BaseModel):
                 return None, [f"Invalid node type: {node_type_str}"]
             else:
                 raise ValueError(f"Invalid node type: {node_type_str}")
-        
+
         node_id = node.get("id")
         if not node_id:
             # Node ID is critical for instantiation, raise if missing.
@@ -353,6 +367,7 @@ class BaseNode(BaseModel):
             parent_id=node.get("parent_id"),
             ui_properties=node.get("ui_properties", {}),
             dynamic_properties=node.get("dynamic_properties", {}),
+            trigger_mode=node.get("trigger_mode", "all_inputs"),
         )
         data = node.get("data", {})
         # `set_node_properties` will raise ValueError if skip_errors is False and an error occurs.
@@ -486,9 +501,7 @@ class BaseNode(BaseModel):
         type_args = prop.type.type_args
 
         if not is_assignable(prop.type, value):
-            return (
-                f"[{self.__class__.__name__}] Invalid value for property `{name}`: {type(value)} (expected {prop.type})"
-            )
+            return f"[{self.__class__.__name__}] Invalid value for property `{name}`: {type(value)} (expected {prop.type})"
 
         try:
             if prop.type.is_enum_type():
@@ -528,7 +541,7 @@ class BaseNode(BaseModel):
         else:
             # This case should ideally not be reached if find_property works correctly
             return f"[{self.__class__.__name__}] Property {name} does not exist and node is not dynamic"
-        return None # Indicates success
+        return None  # Indicates success
 
     def read_property(self, name: str) -> Any:
         """
@@ -574,9 +587,11 @@ class BaseNode(BaseModel):
             error_msg = self.assign_property(name, value)
             if error_msg:
                 if not skip_errors:
-                    raise ValueError(f"Error setting property '{name}' on node '{self.id}': {error_msg}")
+                    raise ValueError(
+                        f"Error setting property '{name}' on node '{self.id}': {error_msg}"
+                    )
                 error_messages.append(error_msg)
-        
+
         # Removed logging from here; caller will decide what to do with errors.
         return error_messages
 
@@ -1312,7 +1327,9 @@ def get_recommended_models() -> dict[str, list[HuggingFaceModel]]:
             if model is None:
                 continue
             model_id = (
-                f"{model.repo_id}/{model.path}" if model.path is not None else model.repo_id
+                f"{model.repo_id}/{model.path}"
+                if model.path is not None
+                else model.repo_id
             )
             if model_id in model_ids:
                 continue

@@ -1,4 +1,4 @@
-from typing import Any, List, Annotated
+from typing import Any, List
 import json
 import importlib
 import pkgutil
@@ -27,9 +27,20 @@ class NodeMetadata(BaseModel):
     """
     Metadata for a node.
     """
+
     model_config = ConfigDict(
         json_schema_extra={
-            "required": ["title", "description", "namespace", "node_type", "outputs", "properties", "the_model_info", "recommended_models", "basic_fields"]
+            "required": [
+                "title",
+                "description",
+                "namespace",
+                "node_type",
+                "outputs",
+                "properties",
+                "the_model_info",
+                "recommended_models",
+                "basic_fields",
+            ]
         }
     )
 
