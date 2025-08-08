@@ -23,6 +23,21 @@ from nodetool.deploy.admin_operations import (
     delete_hf_model,
 )
 from nodetool.deploy.workflow_routes import get_workflow_registry
+from nodetool.common.environment import Environment
+from typing import Any, Dict
+
+from nodetool.models.asset import Asset
+from nodetool.models.database_adapter import DatabaseAdapter
+from nodetool.models.workflow import Workflow
+
+
+def get_model_adapter(table: str) -> DatabaseAdapter:
+    if table == "workflows":
+        return Workflow.adapter()
+    elif table == "assets":
+        return Asset.adapter()
+    else:
+        raise ValueError(f"Unknown table: {table}")
 
 
 def create_admin_router() -> APIRouter:
@@ -155,6 +170,41 @@ def create_admin_router() -> APIRouter:
             "available_workflows": list(registry.keys()),
             "timestamp": __import__("datetime").datetime.now().isoformat(),
         }
+
+    # Database adapter operations
+    @router.post("/admin/db/{table}/save")
+    async def db_save(table: str, item: Dict[str, Any]):
+        """Save an item to the specified table using the database adapter."""
+        try:
+            adapter = get_model_adapter(table)
+            adapter.save(item)
+            return {"status": "ok"}
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @router.get("/admin/db/{table}/{key}")
+    async def db_get(table: str, key: str):
+        """Get an item by primary key from the specified table."""
+        try:
+            adapter = get_model_adapter(table)
+            item = adapter.get(key)
+            if item is None:
+                raise HTTPException(status_code=404, detail="Not found")
+            return item
+        except HTTPException:
+            raise
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @router.delete("/admin/db/{table}/{key}")
+    async def db_delete(table: str, key: str):
+        """Delete an item by primary key from the specified table."""
+        try:
+            adapter = get_model_adapter(table)
+            adapter.delete(key)
+            return {"status": "ok"}
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(status_code=500, detail=str(e))
 
     return router
 

@@ -2,20 +2,17 @@
 """
 Google Cloud Run Deployment Script for NodeTool Workflows
 
-This script automates the deployment of NodeTool workflows to Google Cloud Run infrastructure.
+This script automates the deployment of NodeTool services to Google Cloud Run infrastructure.
 It performs the following operations:
 
-1. Fetches a specific workflow from the NodeTool database
-2. Embeds the complete workflow data into a Docker image
-3. Builds a specialized Docker container for Cloud Run execution
-4. Pushes the image to Google Container Registry or Artifact Registry
-5. Deploys the service to Google Cloud Run
+1. Builds a Docker container for Cloud Run execution
+2. Pushes the image to Google Container Registry or Artifact Registry
+3. Deploys the service to Google Cloud Run
 
 The resulting deployment contains:
 - Complete NodeTool runtime environment
-- Embedded workflow JSON with all metadata
 - Configured FastAPI server for HTTP API access
-- Environment variables for workflow identification
+- Environment variables for service configuration
 
 Requirements:
     - Docker installed and running
@@ -30,19 +27,6 @@ Important Notes:
 Environment Variables:
     GOOGLE_CLOUD_PROJECT: Google Cloud project ID
     GOOGLE_APPLICATION_CREDENTIALS: Path to service account key file (optional)
-
-Examples:
-    # Basic workflow deployment
-    nodetool deploy-gcp --workflow-id abc123 --service-name my-workflow
-
-    # Deploy chat handler (OpenAI-compatible API)
-    nodetool deploy-gcp --chat-handler --service-name my-chat
-
-    # With specific region and resources
-    nodetool deploy-gcp --workflow-id abc123 --service-name my-workflow --region us-central1 --cpu 2 --memory 4Gi
-
-    # Local Docker deployment
-    nodetool deploy-gcp --workflow-id abc123 --service-name my-workflow --local-docker
 """
 import os
 import sys
@@ -58,9 +42,6 @@ from .google_cloud_run_api import (
     enable_required_apis,
     deploy_to_cloud_run,
     push_to_gcr,
-    CloudRunRegion,
-    CloudRunCPU,
-    CloudRunMemory,
 )
 
 console = Console()
@@ -126,8 +107,7 @@ def infer_registry_from_region(region: str) -> str:
 
 
 def deploy_to_gcp(
-    workflow_ids: Optional[list[str]] = None,
-    service_name: str = "nodetool-workflow",
+    service_name: str = "nodetool-service",
     project_id: Optional[str] = None,
     region: str = "us-central1",
     registry: Optional[str] = None,
@@ -151,19 +131,17 @@ def deploy_to_gcp(
     skip_deploy: bool = False,
     no_cache: bool = False,
     no_auto_push: bool = False,
-    local_docker: bool = False,
     skip_permission_setup: bool = False,
     service_account: Optional[str] = None,
     gcs_bucket: Optional[str] = None,
     gcs_mount_path: str = "/mnt/gcs",
 ) -> None:
     """
-    Deploy workflow to Google Cloud Run infrastructure.
+    Deploy nodetool service to Google Cloud Run infrastructure.
 
     This is the main deployment function that orchestrates the entire deployment process.
 
     Args:
-        workflow_ids: List of workflow IDs to deploy
         service_name: Name of the Cloud Run service
         project_id: Google Cloud project ID
         region: Google Cloud region
@@ -186,14 +164,11 @@ def deploy_to_gcp(
         skip_deploy: Skip deploying to Cloud Run
         no_cache: Disable Docker cache optimization
         no_auto_push: Disable automatic push during build
-        local_docker: Run local Docker container instead of deploying
         tools: List of tool names to enable for chat handler
     """
     from .deploy import (
-        run_local_docker,
         get_docker_username,
         print_deployment_summary,
-        cleanup_workflows_dir,
     )
     from .docker import (
         format_image_name,
@@ -201,9 +176,7 @@ def deploy_to_gcp(
         build_docker_image,
         run_command,
     )
-    from .deploy_to_runpod import (
-        fetch_workflows_from_db,
-    )
+    # Note: No workflow embedding; generic builds only.
 
     # Sanitize service name for Cloud Run
     service_name = sanitize_service_name(service_name)
@@ -255,16 +228,6 @@ def deploy_to_gcp(
             console.print("[bold red]❌ Docker is not installed or not running[/]")
             sys.exit(1)
 
-    # Prepare workflow data
-    if workflow_ids:
-        workflows_dir, workflow_names = fetch_workflows_from_db(workflow_ids)
-        console.print(f"Prepared {len(workflow_ids)} workflows")
-    else:
-        workflows_dir = tempfile.mkdtemp(prefix="workflows_")
-        workflow_names = []
-
-    console.print(f"Using workflows directory: {workflows_dir}")
-
     # Format image names for both local and cloud use
     if docker_username:
         local_image_name = format_image_name(image_name, docker_username, docker_registry)
@@ -276,23 +239,16 @@ def deploy_to_gcp(
     deployment_info = None
 
     try:
-        # Build Docker image with embedded workflow
-        # For GCP deployments, we need the image locally to push to GCR
-        # So we disable auto_push to ensure the image is loaded locally
+        # Build Docker image (no embedded workflows). For GCP deployments, we need the
+        # image locally to push to GCR, so disable auto_push to ensure it's loaded locally.
         if not skip_build:
             build_docker_image(
-                workflows_dir,
                 local_image_name,
                 image_tag,
                 platform,
                 use_cache=not no_cache,
                 auto_push=False,  # Always disable auto_push for GCP to keep image local
             )
-
-        # Handle local Docker execution
-        if local_docker:
-            run_local_docker(local_image_name, image_tag)
-            return
 
         # Push to Google Container Registry
         gcp_image_url = None
@@ -335,8 +291,6 @@ def deploy_to_gcp(
 
         # Print deployment summary
         print_gcp_deployment_summary(
-            workflow_ids=workflow_ids,
-            workflow_names=workflow_names,
             image_name=local_image_name,
             image_tag=image_tag,
             gcp_image_url=gcp_image_url,
@@ -351,13 +305,10 @@ def deploy_to_gcp(
         traceback.print_exc()
         sys.exit(1)
     finally:
-        # Clean up workflows directory
-        cleanup_workflows_dir(workflows_dir)
+        pass
 
 
 def print_gcp_deployment_summary(
-    workflow_ids: Optional[list[str]],
-    workflow_names: Optional[list[str]],
     image_name: str,
     image_tag: str,
     gcp_image_url: Optional[str],
@@ -390,11 +341,6 @@ def print_gcp_deployment_summary(
     console.print(f"[cyan]Region: {region}[/]")
     console.print(f"[cyan]Service: {service_name}[/]")
 
-    if workflow_ids:
-        console.print(f"[cyan]Workflows: {len(workflow_ids)}[/]")
-        for i, (workflow_id, name) in enumerate(zip(workflow_ids, workflow_names or [])):
-            console.print(f"  [{i+1}] {workflow_id} - {name}")
-    
     if deployment_info:
         service_url = deployment_info.get("status", {}).get("url")
         if service_url:

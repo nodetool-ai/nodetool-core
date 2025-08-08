@@ -3,18 +3,17 @@
 Docker utilities for NodeTool deployment.
 
 This module contains all Docker-related functionality for building, pushing,
-and managing Docker images for NodeTool workflows.
+and managing Docker images for NodeTool deployments.
 """
 import os
+import shlex
 import subprocess
 import sys
 import hashlib
 import time
-import json
 import tempfile
 import shutil
 from pathlib import Path
-from typing import Optional
 
 
 def run_command(command: str, capture_output: bool = False) -> str:
@@ -185,138 +184,7 @@ def generate_image_tag() -> str:
     return f"{timestamp}-{short_hash}"
 
 
-
-def extract_models(workflow_data: dict) -> list[dict]:
-    """
-    Extract both Hugging Face and Ollama models from a workflow graph.
-
-    Scans through all nodes in the workflow graph to find models that need to be
-    pre-downloaded. This includes:
-    - Hugging Face models (type starts with "hf.")
-    - Ollama language models (type="language_model" and provider="ollama")
-
-    Args:
-        workflow_data (dict): The complete workflow data dictionary
-
-    Returns:
-        list[dict]: List of serialized model objects found in the workflow
-    """
-    models = []
-    seen_models = set()  # Track unique models
-
-    if "graph" not in workflow_data or "nodes" not in workflow_data["graph"]:
-        return models
-
-    for node in workflow_data["graph"]["nodes"]:
-        if "data" not in node:
-            continue
-
-        node_data = node["data"]
-
-        # Check for HuggingFace models (model field with type and repo_id)
-        if "model" in node_data and isinstance(node_data["model"], dict):
-            model = node_data["model"]
-
-            # HuggingFace models
-            if (
-                "type" in model
-                and model.get("type", "").startswith("hf.")
-                and "repo_id" in model
-                and model["repo_id"]
-            ):
-                # Create a unique key for this model
-                model_key = (
-                    "hf",
-                    model.get("type"),
-                    model.get("repo_id"),
-                    model.get("path"),
-                    model.get("variant"),
-                )
-
-                if model_key not in seen_models:
-                    seen_models.add(model_key)
-                    # Create a serialized HuggingFaceModel object
-                    hf_model = {
-                        "type": model.get("type", "hf.model"),
-                        "repo_id": model["repo_id"],
-                        "path": model.get("path"),
-                        "variant": model.get("variant"),
-                        "allow_patterns": model.get("allow_patterns"),
-                        "ignore_patterns": model.get("ignore_patterns"),
-                    }
-                    models.append(hf_model)
-
-            # Ollama language models
-            elif (
-                model.get("type") == "language_model"
-                and model.get("provider") == "ollama"
-                and model.get("id")
-            ):
-                model_key = ("ollama", model["id"])
-
-                if model_key not in seen_models:
-                    seen_models.add(model_key)
-                    ollama_model = {
-                        "type": "language_model",
-                        "provider": "ollama",
-                        "id": model["id"],
-                    }
-                    models.append(ollama_model)
-
-        # Check for language models at the root level (some nodes might have them directly)
-        if (
-            node_data.get("type") == "language_model"
-            and node_data.get("provider") == "ollama"
-            and node_data.get("id")
-        ):
-            model_key = ("ollama", node_data["id"])
-
-            if model_key not in seen_models:
-                seen_models.add(model_key)
-                ollama_model = {
-                    "type": "language_model",
-                    "provider": "ollama",
-                    "id": node_data["id"],
-                }
-                models.append(ollama_model)
-
-        # Check for nested model references (e.g., in arrays like loras)
-        for key, value in node_data.items():
-            if isinstance(value, list):
-                for item in value:
-                    if isinstance(item, dict):
-                        # HuggingFace models in arrays
-                        if (
-                            "type" in item
-                            and item.get("type", "").startswith("hf.")
-                            and "repo_id" in item
-                            and item["repo_id"]
-                        ):
-                            model_key = (
-                                "hf",
-                                item.get("type"),
-                                item.get("repo_id"),
-                                item.get("path"),
-                                item.get("variant"),
-                            )
-
-                            if model_key not in seen_models:
-                                seen_models.add(model_key)
-                                hf_model = {
-                                    "type": item.get("type", "hf.model"),
-                                    "repo_id": item["repo_id"],
-                                    "path": item.get("path"),
-                                    "variant": item.get("variant"),
-                                    "allow_patterns": item.get("allow_patterns"),
-                                    "ignore_patterns": item.get("ignore_patterns"),
-                                }
-                                models.append(hf_model)
-
-    return models
-
-
 def build_docker_image(
-    workflows_source: str,
     image_name: str,
     tag: str,
     platform: str = "linux/amd64",
@@ -324,26 +192,17 @@ def build_docker_image(
     auto_push: bool = True,
 ) -> bool:
     """
-    Build a Docker image for RunPod deployment with embedded workflow(s).
+    Build a Docker image for deployment.
 
-    Always expects workflows_source to be a directory containing workflow JSON files.
-
-    This function creates a specialized Docker image by:
+    This function creates a Docker image by:
     1. Using the Dockerfile from src/nodetool/deploy/
-    2. Creating a temporary build directory with all necessary files
-    3. Building the final image using Docker buildx with Docker Hub cache optimization
-
-    The resulting image is self-contained and includes:
-    - All NodeTool dependencies and runtime
-    - Workflow(s) in /app/workflows/ directory
-    - The fastapi_server.py configured as the entry point
-    - start.sh script for proper RunPod initialization
+    2. Creating a temporary build directory with necessary files
+    3. Building the final image using Docker buildx with optional cache optimization
 
     The image is built with --platform linux/amd64 to ensure compatibility with
     RunPod's Linux servers, regardless of the build machine's architecture.
 
     Args:
-        workflows_source (str): Path to workflows directory
         image_name (str): Name of the Docker image (including registry/username)
         tag (str): Tag of the Docker image
         platform (str): Docker build platform (default: linux/amd64)
@@ -360,7 +219,7 @@ def build_docker_image(
         Creates and cleans up temporary build directory during the process.
         When use_cache=True and auto_push=True, the image is automatically pushed.
     """
-    print(f"Building Docker image with embedded workflow(s) from {workflows_source}")
+    print(f"Building Docker image")
     print(f"Platform: {platform}")
 
     # Get the deploy directory where Dockerfile, handlers, and scripts are located
@@ -373,10 +232,6 @@ def build_docker_image(
     print(f"Using build directory: {build_dir}")
 
     try:
-        # Copy workflow files to build directory
-        workflows_build_dir = os.path.join(build_dir, "workflows")
-        shutil.copytree(workflows_source, workflows_build_dir)
-
         shutil.copy(deploy_dockerfile_path, os.path.join(build_dir, "Dockerfile"))
         shutil.copy(start_script_path, os.path.join(build_dir, "start.sh"))
 
@@ -547,6 +402,83 @@ def get_docker_username_from_config(registry: str = "docker.io") -> str | None:
     except Exception as e:
         print(f"Warning: Could not read Docker config: {e}")
         return None
+
+
+def run_docker_image(
+    image_name: str,
+    tag: str,
+    host_port: int,
+    container_port: int = 80,
+    *,
+    container_name: str | None = None,
+    env: dict[str, str] | None = None,
+    volumes: list[tuple[str, str]] | None = None,
+    detach: bool = True,
+    gpus: str | bool | None = None,
+    remove: bool = True,
+    extra_args: list[str] | None = None,
+) -> None:
+    """
+    Run a Docker image and map it to a given host port.
+
+    Args:
+        image_name (str): The Docker image repository/name (e.g., "myuser/myapp").
+        tag (str): The Docker image tag (e.g., "latest").
+        host_port (int): The host port to bind.
+        container_port (int): The container port to expose (default: 80).
+        container_name (str | None): Optional container name.
+        env (dict[str, str] | None): Environment variables to pass to the container.
+        volumes (list[tuple[str, str]] | None): Host to container volume mounts [(host, container)].
+        detach (bool): Run container in detached mode (default: True).
+        gpus (str | bool | None): GPU option (e.g., "all" or count). True implies "all".
+        remove (bool): Automatically remove the container when it exits (default: True).
+        extra_args (list[str] | None): Additional raw args to append to `docker run`.
+
+    Raises:
+        SystemExit: If `docker run` fails.
+    """
+    args: list[str] = [
+        "docker",
+        "run",
+    ]
+
+    if remove:
+        args.append("--rm")
+    if detach:
+        args.append("-d")
+    if container_name:
+        args.extend(["--name", container_name])
+
+    # Port mapping
+    args.extend(["-p", f"{host_port}:{container_port}"])
+
+    # Environment variables
+    if env:
+        for key, value in env.items():
+            # Use shlex.quote to avoid shell injection issues in values
+            quoted_value = shlex.quote(str(value))
+            args.extend(["-e", f"{key}={quoted_value}"])
+
+    # Volumes
+    if volumes:
+        for host_path, container_path in volumes:
+            args.extend(["-v", f"{host_path}:{container_path}"])
+
+    # GPUs
+    if gpus:
+        gpu_arg = "all" if gpus is True else str(gpus)
+        args.extend(["--gpus", gpu_arg])
+
+    if extra_args:
+        args.extend(extra_args)
+
+    # Image reference
+    args.append(f"{image_name}:{tag}")
+
+    # Build final command string
+    # We join with spaces; individual values are already safe as we avoided shell interpolation for env values.
+    command = " ".join(args)
+    run_command(command)
 
 
 if __name__ == "__main__":

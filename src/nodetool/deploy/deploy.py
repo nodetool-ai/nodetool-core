@@ -8,7 +8,6 @@ across different deployment targets (RunPod, local, etc.).
 Key Features:
 - Docker image management
 - Environment variable handling
-- Workflow file operations
 - Local testing capabilities
 - Common deployment utilities
 """
@@ -100,7 +99,6 @@ def get_docker_username(
 
 
 def print_deployment_summary(
-    workflow_ids: Optional[list[str]],
     full_image_name: str,
     image_tag: str,
     platform: str,
@@ -124,11 +122,6 @@ def print_deployment_summary(
     console.print(f"Image: {full_image_name}:{image_tag}")
     console.print(f"Platform: {platform}")
 
-    if workflow_ids:
-        console.print(f"Workflows: {len(workflow_ids)}")
-        for i, workflow_id in enumerate(workflow_ids):
-            console.print(f"  [{i+1}] {workflow_id}")
-
     if template_id:
         console.print(f"Template ID: {template_id}")
 
@@ -136,14 +129,4 @@ def print_deployment_summary(
         console.print(f"Endpoint ID: {endpoint_id}")
 
 
-def cleanup_workflows_dir(workflows_dir: str) -> None:
-    """
-    Clean up temporary workflows directory.
-
-    Args:
-        workflows_dir: Path to workflows directory to clean up
-    """
-    import shutil
-
-    if os.path.exists(workflows_dir):
-        shutil.rmtree(workflows_dir)
+# Note: Workflow directory cleanup removed since workflows are no longer embedded.

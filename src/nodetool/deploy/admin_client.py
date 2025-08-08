@@ -199,3 +199,45 @@ class AdminHTTPClient:
                             yield item
                     else:
                         yield result
+
+    async def db_save(self, table: str, item: Dict[str, Any]) -> Dict[str, Any]:
+        """Save an item to a specified table using admin DB endpoint."""
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{self.base_url}/admin/db/{table}/save",
+                headers=self.headers,
+                json=item,
+            ) as response:
+                if response.status != 200:
+                    raise Exception(
+                        f"DB save failed: {response.status} {await response.text()}"
+                    )
+                return await response.json()
+
+    async def db_get(self, table: str, key: str) -> Dict[str, Any]:
+        """Get an item by key from the specified table using admin DB endpoint."""
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                f"{self.base_url}/admin/db/{table}/{key}",
+                headers=self.headers,
+            ) as response:
+                if response.status == 404:
+                    raise Exception("Not found")
+                if response.status != 200:
+                    raise Exception(
+                        f"DB get failed: {response.status} {await response.text()}"
+                    )
+                return await response.json()
+
+    async def db_delete(self, table: str, key: str) -> Dict[str, Any]:
+        """Delete an item by key from the specified table using admin DB endpoint."""
+        async with aiohttp.ClientSession() as session:
+            async with session.delete(
+                f"{self.base_url}/admin/db/{table}/{key}",
+                headers=self.headers,
+            ) as response:
+                if response.status != 200:
+                    raise Exception(
+                        f"DB delete failed: {response.status} {await response.text()}"
+                    )
+                return await response.json()

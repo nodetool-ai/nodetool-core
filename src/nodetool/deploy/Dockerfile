@@ -82,7 +82,6 @@ RUN curl --fail --show-error --location --progress-bar \
 
 COPY . /app
 ADD start.sh /app/start.sh
-ADD workflows /app/workflows
 RUN chmod +x /app/start.sh
 
 # Run the startup script

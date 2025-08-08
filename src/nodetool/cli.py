@@ -4,8 +4,15 @@ import shutil
 import click
 from nodetool.common.configuration import get_settings_registry
 from nodetool.common.environment import Environment
+from nodetool.common.settings import load_settings
+from nodetool.deploy.docker import (
+    generate_image_tag,
+    build_docker_image,
+    run_docker_image,
+)
 from nodetool.deploy.runpod_api import GPUType
 from nodetool.dsl.codegen import create_dsl_modules
+from nodetool.deploy.progress import ProgressManager
 
 # silence warnings on the command line
 import warnings
@@ -16,9 +23,7 @@ from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
 from rich.text import Text
-from rich.progress import Progress, BarColumn, TextColumn, TimeRemainingColumn, TaskProgressColumn, SpinnerColumn
 from typing import Optional
-from nodetool.common.progress import ProgressManager
 
 import dotenv
 
@@ -890,7 +895,7 @@ def download_hf(
                 ignore_patterns=list(ignore_patterns) if ignore_patterns else None,
                 allow_patterns=list(allow_patterns) if allow_patterns else None
             ):
-                _display_progress_update(progress_update)
+                progress_manager._display_progress_update(progress_update)
 
         except Exception as e:
             console.print(f"[red]❌ Failed: {e}[/]")
@@ -900,163 +905,6 @@ def download_hf(
             sys.exit(1)
 
     asyncio.run(run_download())
-
-
-def _display_progress_update(progress_update):
-    """Shared function to display progress updates using Rich progress bars."""
-    status = progress_update.get("status", "unknown")
-    message = progress_update.get("message", "")
-
-    if status == "starting":
-        console.print(f"[blue]🚀 {message}[/]")
-        
-    elif status == "progress":
-        # Handle different types of progress updates with proper progress bars
-        
-        if "current_file" in progress_update:
-            current_file = progress_update["current_file"]
-            
-            if "file_progress" in progress_update and "total_files" in progress_update:
-                # File-based progress with progress bar
-                file_num = progress_update["file_progress"]
-                total_files = progress_update["total_files"]
-                operation_id = f"files_{current_file}"
-                
-                description = f"📁 Downloading files ({file_num}/{total_files}): {current_file}"
-                
-                # Add or update file progress task
-                if operation_id not in progress_manager.tasks:
-                    progress_manager.add_task(operation_id, description, total=total_files)
-                progress_manager.update_task(operation_id, completed=file_num, description=description)
-            else:
-                # Single file progress without known total
-                console.print(f"[yellow]📁 {current_file}[/]")
-        
-        # Handle download progress with size information
-        if "downloaded_size" in progress_update and "total_size" in progress_update:
-            downloaded = progress_update["downloaded_size"]
-            total = progress_update["total_size"]
-            
-            if total > 0:
-                # Create a unique operation ID for this download
-                operation_id = progress_update.get("operation_id", "download")
-                current_file = progress_update.get("current_file", "")
-                
-                downloaded_mb = downloaded / (1024 * 1024)
-                total_mb = total / (1024 * 1024)
-                
-                description = f"📊 Downloading"
-                if current_file:
-                    description += f" {current_file}"
-                description += f" ({downloaded_mb:.1f}/{total_mb:.1f} MB)"
-                
-                # Add or update download progress task
-                if operation_id not in progress_manager.tasks:
-                    progress_manager.add_task(operation_id, description, total=total)
-                progress_manager.update_task(operation_id, completed=downloaded, description=description)
-        
-        # Handle general progress messages
-        if not any(key in progress_update for key in ["current_file", "downloaded_size"]):
-            console.print(f"[yellow]⚙️ {message}[/]")
-
-    elif status == "completed":
-        console.print(f"[green]✅ {message}[/]")
-        
-        # Complete any active progress tasks related to downloads/files
-        for operation_id in list(progress_manager.tasks.keys()):
-            if "download" in operation_id or "files_" in operation_id:
-                progress_manager.complete_task(operation_id)
-        
-        if "downloaded_files" in progress_update:
-            console.print(
-                f"[green]📋 Downloaded {progress_update['downloaded_files']} files[/]"
-            )
-            
-    elif status.startswith("pulling"):
-        # Handle Docker/Ollama pulling status with progress bars
-        digest = progress_update.get("digest", "")
-        total = progress_update.get("total")
-        completed = progress_update.get("completed")
-        
-        # Extract the layer ID from status (e.g., "pulling aeda25e63ebd")
-        layer_id = status.replace("pulling ", "") if " " in status else "unknown"
-        operation_id = f"pull_{layer_id}"
-        
-        # Create description with layer info
-        description = f"🐋 Pulling layer {layer_id}"
-        if digest and "sha256:" in digest:
-            short_digest = digest.split(":")[-1][:12] if ":" in digest else digest[:12]
-            description += f" (sha256:{short_digest})"
-        
-        # Show progress with progress bar if size information is available
-        if total and completed is not None:
-            total_mb = total / (1024 * 1024)
-            completed_mb = completed / (1024 * 1024)
-            description += f" ({completed_mb:.1f}/{total_mb:.1f} MB)"
-            
-            # Add or update pulling progress task
-            if operation_id not in progress_manager.tasks:
-                progress_manager.add_task(operation_id, description, total=total)
-            progress_manager.update_task(operation_id, completed=completed, description=description)
-        elif total:
-            # Just show size without progress bar
-            total_mb = total / (1024 * 1024)
-            description += f" ({total_mb:.1f} MB)"
-            console.print(f"[yellow]{description}[/]")
-        else:
-            # No size info available
-            console.print(f"[yellow]{description}[/]")
-            
-    elif status == "error":
-        error = progress_update.get("error", "Unknown error")
-        console.print(f"[red]❌ Error: {error}[/]")
-        
-        # Stop any active progress bars on error
-        progress_manager.stop()
-        sys.exit(1)
-        
-    elif status == "healthy":
-        console.print("[green]✅ System is healthy[/]")
-
-        # Display system information for health checks
-        console.print(
-            f"[cyan]🖥️ Platform: {progress_update.get('platform', 'Unknown')}[/]"
-        )
-        console.print(
-            f"[cyan]🐍 Python: {progress_update.get('python_version', 'Unknown')}[/]"
-        )
-        console.print(
-            f"[cyan]🏠 Hostname: {progress_update.get('hostname', 'Unknown')}[/]"
-        )
-
-        # Memory info
-        memory = progress_update.get("memory", {})
-        if isinstance(memory, dict):
-            console.print(
-                f"[cyan]💾 Memory: {memory.get('available_gb', 0):.1f}GB available / {memory.get('total_gb', 0):.1f}GB total ({memory.get('used_percent', 0)}% used)[/]"
-            )
-
-        # Disk info
-        disk = progress_update.get("disk", {})
-        if isinstance(disk, dict):
-            console.print(
-                f"[cyan]💿 Disk: {disk.get('free_gb', 0):.1f}GB free / {disk.get('total_gb', 0):.1f}GB total ({disk.get('used_percent', 0)}% used)[/]"
-            )
-
-        # GPU info
-        gpus = progress_update.get("gpus", [])
-        if isinstance(gpus, list) and gpus:
-            console.print("[cyan]🎮 GPUs:[/]")
-            for i, gpu in enumerate(gpus):
-                name = gpu.get("name", "Unknown")
-                used_mb = gpu.get("memory_used_mb", 0)
-                total_mb = gpu.get("memory_total_mb", 0)
-                used_pct = (used_mb / total_mb * 100) if total_mb > 0 else 0
-                console.print(
-                    f"[cyan]  GPU {i}: {name} - {used_mb}MB/{total_mb}MB ({used_pct:.1f}% used)[/]"
-                )
-        elif gpus == "unavailable":
-            console.print("[yellow]🎮 GPUs: Not available[/]")
 
 
 
@@ -1100,7 +948,7 @@ def download_ollama(
             async for progress_update in client.download_ollama_model(
                 model_name=model_name
             ):
-                _display_progress_update(progress_update)
+                progress_manager._display_progress_update(progress_update)
 
         except Exception as e:
             console.print(f"[red]❌ Failed: {e}[/]")
@@ -1234,7 +1082,7 @@ def delete_hf(repo_id: str, server_url: str):
             
             client = AdminHTTPClient(server_url, auth_token=api_key)
             result = await client.delete_huggingface_model(repo_id=repo_id)
-            _display_progress_update(result)
+            progress_manager._display_progress_update(result)
         except Exception as e:
             console.print(f"[red]❌ Failed: {e}[/]")
             import traceback
@@ -1456,13 +1304,120 @@ def _handle_docker_config_check(
     sys.exit(0)
 
 
-@cli.command("deploy-runpod")
+def env_for_deploy(
+    chat_provider: str,
+    default_model: str,
+    tools: str,
+):
+    """Get environment variables for deploy."""
+    # Parse comma-separated tools string into list
+    tools_list = (
+        [tool.strip() for tool in tools.split(",") if tool.strip()] if tools else None
+    )
+    env = {
+        "NODETOOL_TOOLS": ",".join(tools_list) if tools_list else None,
+        "CHAT_PROVIDER": chat_provider,
+        "DEFAULT_MODEL": default_model,
+    }
+
+    # Merge settings and secrets from settings.yaml and secrets.yaml into env
+    # without overriding explicitly provided values
+
+    _settings, _secrets = load_settings()
+    for _k, _v in (_settings or {}).items():
+        if _v is not None and str(_v) != "" and _k not in env:
+            env[_k] = str(_v)
+    for _k, _v in (_secrets or {}).items():
+        if _v is not None and str(_v) != "" and _k not in env:
+            env[_k] = str(_v)
+
+    return env
+
+
+@cli.command("deploy-local")
+@click.option("--port", default=8000, type=int, help="Host port to expose (default: 8000)")
 @click.option(
-    "--workflow-id",
-    "workflow_ids",
-    multiple=True,
-    help="Workflow ID to deploy (can specify multiple).",
+    "--chat-provider",
+    default="ollama",
+    help="Chat provider to use (default: ollama).",
 )
+@click.option(
+    "--default-model",
+    default="gemma3n:latest",
+    help="Default model to use (default: gemma3n:latest).",
+)
+@click.option(
+    "--tools",
+    default="",
+    help="Comma-separated list of tools to use (e.g., 'google_search,google_news,google_images').",
+)
+@click.option("--tag", help="Optional tag for the Docker image (default: auto-generated)")
+@click.option(
+    "--name",
+    help="Optional container name (default: auto-generated)",
+)
+@click.option(
+    "--gpus",
+    default=None,
+    help="GPU option for docker run (e.g., 'all' or 'device=0'). Omit to run without GPUs.",
+)
+def deploy_local(
+    port: int,
+    chat_provider: str,
+    default_model: str,
+    tools: str,
+    tag: str | None,
+    name: str | None,
+    gpus: str | None,
+):
+    """Build and run a local Docker container for NodeTool."""
+    console.print("[bold cyan]🐳 Building local Docker image...[/]")
+
+    env = env_for_deploy(
+        chat_provider=chat_provider,
+        default_model=default_model,
+        tools=tools,
+    )
+    # Drop unset values
+    env = {k: v for k, v in (env or {}).items() if v is not None and str(v) != ""}
+
+    # Ensure the FastAPI server listens on the expected container port
+    container_port = 8000
+    env["PORT"] = str(container_port)
+
+    full_image_name = "nodetool-ai/nodetool"
+    image_tag = tag or generate_image_tag()
+
+    # Build Docker image locally
+    build_docker_image(
+        image_name=full_image_name,
+        tag=image_tag,
+        platform="linux/amd64",
+        use_cache=False,
+        auto_push=False,
+    )
+
+    console.print("[bold green]✅ Build complete. Starting container...[/]")
+
+    # Run container mapping host port to container port
+    container_name = name or f"nodetool-local-{image_tag}"
+    run_docker_image(
+        image_name=full_image_name,
+        tag=image_tag,
+        host_port=port,
+        container_port=container_port,
+        container_name=container_name,
+        env=env,
+        gpus=gpus,
+        detach=True,
+        remove=True,
+    )
+
+    console.print(
+        f"[green]🚀 Container '{container_name}' is running at http://localhost:{port}[/]"
+    )
+
+@cli.command("deploy-runpod")
 @click.option(
     "--chat-provider",
     default="ollama",
@@ -1580,13 +1535,7 @@ def _handle_docker_config_check(
 @click.option(
     "--list-all-options", is_flag=True, help="List all available options and exit"
 )
-@click.option(
-    "--local-docker",
-    is_flag=True,
-    help="Run local docker container instead of deploying to RunPod",
-)
-def deploy(
-    workflow_ids: tuple[str, ...],
+def deploy_runpod(
     docker_username: str | None,
     docker_registry: str,
     tag: str | None,
@@ -1620,7 +1569,6 @@ def deploy(
     list_cpu_flavors: bool,
     list_data_centers: bool,
     list_all_options: bool,
-    local_docker: bool,
 ):
     """Deploy workflow or chat handler to RunPod serverless infrastructure.
 
@@ -1660,29 +1608,13 @@ def deploy(
     # Call the main deployment function
     from nodetool.deploy.deploy_to_runpod import deploy_to_runpod
 
-    # Parse comma-separated tools string into list
-    tools_list = (
-        [tool.strip() for tool in tools.split(",") if tool.strip()] if tools else None
+    env = env_for_deploy(
+        chat_provider=chat_provider,
+        default_model=default_model,
+        tools=tools,
     )
-    env = {
-        "NODETOOL_TOOLS": ",".join(tools_list) if tools_list else None,
-        "CHAT_PROVIDER": chat_provider,
-        "DEFAULT_MODEL": default_model,
-    }
-
-    # Merge settings and secrets from settings.yaml and secrets.yaml into env
-    # without overriding explicitly provided values
-
-    _settings, _secrets = load_settings()
-    for _k, _v in (_settings or {}).items():
-        if _v is not None and str(_v) != "" and _k not in env:
-            env[_k] = str(_v)
-    for _k, _v in (_secrets or {}).items():
-        if _v is not None and str(_v) != "" and _k not in env:
-            env[_k] = str(_v)
 
     deploy_to_runpod(
-        workflow_ids=list(workflow_ids) if workflow_ids else None,
         docker_username=docker_username,
         docker_registry=docker_registry,
         image_name=name,
@@ -1709,18 +1641,11 @@ def deploy(
         network_volume_id=network_volume_id,
         allowed_cuda_versions=allowed_cuda_versions,
         name=name,
-        local_docker=local_docker,
         env=env,
     )
 
 
 @cli.command("deploy-gcp")
-@click.option(
-    "--workflow-id",
-    "workflow_ids",
-    multiple=True,
-    help="Workflow ID to deploy (can specify multiple).",
-)
 @click.option(
     "--chat-provider",
     default="ollama",
@@ -1824,11 +1749,6 @@ def deploy(
     "--no-auto-push", is_flag=True, help="Disable automatic push during build"
 )
 @click.option(
-    "--local-docker",
-    is_flag=True,
-    help="Run local docker container instead of deploying to Cloud Run",
-)
-@click.option(
     "--tools",
     default="",
     help="Comma-separated list of tools to use for chat handler (e.g., 'google_search,google_news,google_images').",
@@ -1852,7 +1772,6 @@ def deploy(
     help="Container path to mount the GCS bucket (default: /mnt/gcs)",
 )
 def deploy_gcp(
-    workflow_ids: tuple[str, ...],
     chat_provider: str,
     default_model: str,
     service_name: str,
@@ -1875,7 +1794,6 @@ def deploy_gcp(
     skip_deploy: bool,
     no_cache: bool,
     no_auto_push: bool,
-    local_docker: bool,
     tools: str,
     skip_permission_setup: bool,
     service_account: str | None,
@@ -1904,32 +1822,16 @@ def deploy_gcp(
 
     dotenv.load_dotenv()
 
-    # Parse comma-separated tools string into list
-    env = {}
-    if tools:
-        env["NODETOOL_TOOLS"] = ",".join(tools)
-
-    env["CHAT_PROVIDER"] = chat_provider
-    env["DEFAULT_MODEL"] = default_model
-
-    # Merge settings and secrets from settings.yaml and secrets.yaml into env
-    # without overriding explicitly provided values
-
-    from nodetool.common.settings import load_settings
-    _settings, _secrets = load_settings()
-    for _k, _v in (_settings or {}).items():
-        if _v is not None and str(_v) != "" and _k not in env:
-            env[_k] = str(_v)
-    for _k, _v in (_secrets or {}).items():
-        if _v is not None and str(_v) != "" and _k not in env:
-            env[_k] = str(_v)
-
+    env = env_for_deploy(
+        chat_provider=chat_provider,
+        default_model=default_model,
+        tools=tools,
+    )
 
     # Call the main deployment function
     from nodetool.deploy.deploy_to_gcp import deploy_to_gcp
 
     deploy_to_gcp(
-        workflow_ids=list(workflow_ids) if workflow_ids else None,
         service_name=service_name,
         project_id=project_id,
         region=region,
@@ -1952,12 +1854,66 @@ def deploy_gcp(
         skip_deploy=skip_deploy,
         no_cache=no_cache,
         no_auto_push=no_auto_push,
-        local_docker=local_docker,
         skip_permission_setup=skip_permission_setup,
         service_account=service_account,
         gcs_bucket=gcs_bucket,
         gcs_mount_path=gcs_mount_path,
     )
+
+
+@cli.group()
+def sync():
+    """Commands to sync local database items with a remote NodeTool server."""
+    pass
+
+
+@sync.command("workflow")
+@click.option("--id", "workflow_id", required=True, help="Workflow ID to sync")
+@click.option(
+    "--server-url",
+    required=True,
+    help="Remote NodeTool server base URL (e.g., http://localhost:8000)",
+)
+def sync_workflow(workflow_id: str, server_url: str):
+    """Sync a local workflow to a remote database via admin routes."""
+    import asyncio
+
+    from nodetool.deploy.admin_client import AdminHTTPClient
+    from nodetool.models.workflow import Workflow
+    import dotenv
+    dotenv.load_dotenv()
+
+    async def run_sync():
+        try:
+            console.print("[bold cyan]🔄 Syncing workflow to remote...[/]")
+            # Get local workflow as a dict directly from the adapter
+            workflow = Workflow.get(workflow_id)
+            if workflow is None:
+                console.print(f"[red]❌ Workflow not found: {workflow_id}[/]")
+                raise SystemExit(1)
+
+            # Convert to Workflow model and dump as JSON-serializable dict
+            payload = workflow.model_dump(mode="json")
+
+            # Use optional API key for auth if present
+            api_key = os.getenv("RUNPOD_API_KEY")
+            client = AdminHTTPClient(server_url, auth_token=api_key)
+            res = await client.db_save("workflows", payload)
+
+            status = res.get("status", "ok")
+            if status == "ok":
+                console.print("[green]✅ Workflow synced successfully[/]")
+            else:
+                console.print(f"[yellow]⚠️ Remote response: {res}[/]")
+        except Exception as e:
+            console.print(f"[red]❌ Failed to sync workflow: {e}[/]")
+            raise SystemExit(1)
+
+    asyncio.run(run_sync())
+
+
+# Add sync group to the main CLI
+cli.add_command(sync)
 
 
 if __name__ == "__main__":
