@@ -72,7 +72,7 @@ WORKDIR /app
 
 
 RUN echo "Installing nodetool packages..." && \
-    uv pip install --no-cache-dir git+https://github.com/nodetool-ai/nodetool-core@cb3299e70064a6fbde1683d920b5bbaf0d05b3a6 && \
+    uv pip install --no-cache-dir git+https://github.com/nodetool-ai/nodetool-core@9e45c14ddb51a8931d9ac489fae08b38371978ed && \
     uv pip install --no-cache-dir git+https://github.com/nodetool-ai/nodetool-base
 
 # Install Ollama

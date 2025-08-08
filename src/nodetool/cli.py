@@ -18,6 +18,7 @@ from rich.panel import Panel
 from rich.text import Text
 from rich.progress import Progress, BarColumn, TextColumn, TimeRemainingColumn, TaskProgressColumn, SpinnerColumn
 from typing import Optional
+from nodetool.common.progress import ProgressManager
 
 import dotenv
 
@@ -26,103 +27,8 @@ dotenv.load_dotenv()
 # Create console instance
 console = Console()
 
-# Global progress manager for persistent progress bars
-class ProgressManager:
-    """Manages persistent progress bars for different operations."""
-    
-    def __init__(self):
-        self.progress = None
-        self.tasks = {}  # Maps operation IDs to task IDs
-        self.current_operations = {}  # Maps operation IDs to operation info
-        
-    def start(self):
-        """Start the progress display."""
-        if self.progress is None:
-            self.progress = Progress(
-                SpinnerColumn(),
-                TextColumn("[progress.description]{task.description}"),
-                BarColumn(),
-                TaskProgressColumn(),
-                TextColumn("•"),
-                TimeRemainingColumn(),
-                console=console,
-                transient=False,
-            )
-            self.progress.start()
-    
-    def stop(self):
-        """Stop the progress display."""
-        if self.progress:
-            self.progress.stop()
-            self.progress = None
-            self.tasks.clear()
-            self.current_operations.clear()
-    
-    def add_task(self, operation_id: str, description: str, total: Optional[float] = None):
-        """Add a new progress task."""
-        self.start()
-        if operation_id not in self.tasks:
-            task_id = self.progress.add_task(description, total=total)
-            self.tasks[operation_id] = task_id
-            self.current_operations[operation_id] = {
-                "description": description,
-                "total": total,
-                "completed": 0
-            }
-        return self.tasks[operation_id]
-    
-    def update_task(self, operation_id: str, completed: Optional[float] = None, description: Optional[str] = None):
-        """Update a progress task."""
-        if operation_id in self.tasks and self.progress:
-            task_id = self.tasks[operation_id]
-            update_kwargs = {}
-            
-            if completed is not None:
-                # Calculate advance amount
-                current_completed = self.current_operations[operation_id]["completed"]
-                advance = completed - current_completed
-                if advance > 0:
-                    update_kwargs["advance"] = advance
-                self.current_operations[operation_id]["completed"] = completed
-            
-            if description is not None:
-                update_kwargs["description"] = description
-                self.current_operations[operation_id]["description"] = description
-            
-            if update_kwargs:
-                self.progress.update(task_id, **update_kwargs)
-    
-    def complete_task(self, operation_id: str):
-        """Mark a task as completed."""
-        if operation_id in self.tasks and self.progress:
-            task_id = self.tasks[operation_id]
-            op_info = self.current_operations[operation_id]
-            if op_info["total"]:
-                # Complete the progress bar
-                self.progress.update(task_id, completed=op_info["total"])
-            # Remove the task after a brief moment
-            self.progress.remove_task(task_id)
-            del self.tasks[operation_id]
-            del self.current_operations[operation_id]
-            
-            # If no more tasks, stop the progress display
-            if not self.tasks:
-                self.stop()
-    
-    def remove_task(self, operation_id: str):
-        """Remove a task without completing it."""
-        if operation_id in self.tasks and self.progress:
-            task_id = self.tasks[operation_id]
-            self.progress.remove_task(task_id)
-            del self.tasks[operation_id]
-            del self.current_operations[operation_id]
-            
-            # If no more tasks, stop the progress display
-            if not self.tasks:
-                self.stop()
-
 # Global progress manager instance
-progress_manager = ProgressManager()
+progress_manager = ProgressManager(console=console)
 
 def cleanup_progress():
     """Cleanup function to ensure progress bars are stopped on exit."""
@@ -1738,6 +1644,7 @@ def deploy(
       nodetool deploy --list-gpu-types
       nodetool deploy --list-all-options
     """
+    from nodetool.common.settings import load_settings
     import dotenv
 
     dotenv.load_dotenv()
@@ -1762,6 +1669,17 @@ def deploy(
         "CHAT_PROVIDER": chat_provider,
         "DEFAULT_MODEL": default_model,
     }
+
+    # Merge settings and secrets from settings.yaml and secrets.yaml into env
+    # without overriding explicitly provided values
+
+    _settings, _secrets = load_settings()
+    for _k, _v in (_settings or {}).items():
+        if _v is not None and str(_v) != "" and _k not in env:
+            env[_k] = str(_v)
+    for _k, _v in (_secrets or {}).items():
+        if _v is not None and str(_v) != "" and _k not in env:
+            env[_k] = str(_v)
 
     deploy_to_runpod(
         workflow_ids=list(workflow_ids) if workflow_ids else None,
@@ -1993,6 +1911,19 @@ def deploy_gcp(
 
     env["CHAT_PROVIDER"] = chat_provider
     env["DEFAULT_MODEL"] = default_model
+
+    # Merge settings and secrets from settings.yaml and secrets.yaml into env
+    # without overriding explicitly provided values
+
+    from nodetool.common.settings import load_settings
+    _settings, _secrets = load_settings()
+    for _k, _v in (_settings or {}).items():
+        if _v is not None and str(_v) != "" and _k not in env:
+            env[_k] = str(_v)
+    for _k, _v in (_secrets or {}).items():
+        if _v is not None and str(_v) != "" and _k not in env:
+            env[_k] = str(_v)
+
 
     # Call the main deployment function
     from nodetool.deploy.deploy_to_gcp import deploy_to_gcp

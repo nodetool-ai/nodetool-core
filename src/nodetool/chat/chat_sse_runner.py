@@ -531,6 +531,13 @@ class ChatSSERunner(BaseChatRunner):
                             self._convert_internal_to_openai_chunk(chunk, validated_request["model"])
                         )
                         yield f"data: {openai_chunk.model_dump_json()}\n\n"
+                    elif message.get("type") == "error":
+                        # Stream provider/internal errors as OpenAI-compatible chunks
+                        error_text = str(message.get("message", "Unknown error"))
+                        openai_error = self._create_openai_error_chunk(
+                            error_text, validated_request["model"]
+                        )
+                        yield f"data: {openai_error.model_dump_json()}\n\n"
 
                 except asyncio.TimeoutError:
                     # Check if processing task is done
@@ -600,7 +607,10 @@ class ChatSSERunner(BaseChatRunner):
 
         except Exception as e:
             log.error(f"Error processing SSE request: {str(e)}", exc_info=True)
-            error_msg = {"type": "error", "message": str(e)}
-            yield json.dumps(error_msg)
+            # Stream error as OpenAI-compatible chunk
+            model = request_data.get("model", self.default_model)
+            openai_error = self._create_openai_error_chunk(str(e), model)
+            yield f"data: {openai_error.model_dump_json()}\n\n"
+            yield "data: [DONE]\n\n"
         finally:
             await self.disconnect()
