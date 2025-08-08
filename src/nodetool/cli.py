@@ -1637,7 +1637,7 @@ def _handle_docker_config_check(
 )
 @click.option(
     "--network-volume-id",
-    help="Network volume ID to attach to workers (models will be stored at /runpod-volume)",
+    help="Network volume ID to attach to workers (models and caches will be stored under /workspace)",
 )
 @click.option(
     "--allowed-cuda-versions",
@@ -1916,6 +1916,15 @@ def deploy(
     "--service-account",
     help="Service account email to run the Cloud Run service under (e.g., my-service@project.iam.gserviceaccount.com)",
 )
+@click.option(
+    "--gcs-bucket",
+    help="GCS bucket name to mount into the service via Cloud Storage FUSE",
+)
+@click.option(
+    "--gcs-mount-path",
+    default="/mnt/gcs",
+    help="Container path to mount the GCS bucket (default: /mnt/gcs)",
+)
 def deploy_gcp(
     workflow_ids: tuple[str, ...],
     chat_provider: str,
@@ -1944,6 +1953,8 @@ def deploy_gcp(
     tools: str,
     skip_permission_setup: bool,
     service_account: str | None,
+    gcs_bucket: str | None,
+    gcs_mount_path: str,
 ):
     """Deploy workflow or chat handler to Google Cloud Run.
 
@@ -2005,6 +2016,8 @@ def deploy_gcp(
         local_docker=local_docker,
         skip_permission_setup=skip_permission_setup,
         service_account=service_account,
+        gcs_bucket=gcs_bucket,
+        gcs_mount_path=gcs_mount_path,
     )
 
 

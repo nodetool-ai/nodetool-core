@@ -310,7 +310,9 @@ def deploy_to_cloud_run(
     timeout: int = 3600,
     allow_unauthenticated: bool = True,
     env_vars: Optional[Dict[str, str]] = None,
-    service_account: Optional[str] = None
+    service_account: Optional[str] = None,
+    gcs_bucket: Optional[str] = None,
+    gcs_mount_path: str = "/mnt/gcs",
 ) -> Dict[str, Any]:
     """
     Deploy a service to Google Cloud Run.
@@ -363,6 +365,10 @@ def deploy_to_cloud_run(
             "--format", "json",
             "--quiet"
         ]
+        # If a GCS bucket is provided, mount it via Cloud Storage FUSE
+        if gcs_bucket:
+            cmd.extend(["--add-volume", f"name=gcs,type=cloud-storage,bucket={gcs_bucket}"])
+            cmd.extend(["--add-volume-mount", f"volume=gcs,mount-path={gcs_mount_path}"])
         if gpu_type:
             cmd.extend(["--gpu-type", gpu_type])
             cmd.extend(["--no-cpu-throttling"])
@@ -408,6 +414,10 @@ def deploy_to_cloud_run(
             "--format", "json",
             "--quiet"
         ]
+        # Update or add volume mounts for GCS if specified
+        if gcs_bucket:
+            cmd.extend(["--add-volume", f"name=gcs,type=cloud-storage,bucket={gcs_bucket}"])
+            cmd.extend(["--add-volume-mount", f"volume=gcs,mount-path={gcs_mount_path}"])
         # GPU-related flags (if supported in your region/tier)
         if gpu_type:
             cmd.extend(["--gpu-type", gpu_type])

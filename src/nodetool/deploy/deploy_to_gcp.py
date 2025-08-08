@@ -154,6 +154,8 @@ def deploy_to_gcp(
     local_docker: bool = False,
     skip_permission_setup: bool = False,
     service_account: Optional[str] = None,
+    gcs_bucket: Optional[str] = None,
+    gcs_mount_path: str = "/mnt/gcs",
 ) -> None:
     """
     Deploy workflow to Google Cloud Run infrastructure.
@@ -300,6 +302,12 @@ def deploy_to_gcp(
             )
             console.print(f"[bold green]✅ Image pushed to registry: {gcp_image_url}[/]")
 
+        # Set default cache envs (respect provided values)
+        env.setdefault("HF_HOME", f"{gcs_mount_path}/.cache/huggingface" if gcs_bucket else "/workspace/.cache/huggingface")
+        env.setdefault("HF_HUB_CACHE", f"{gcs_mount_path}/.cache/huggingface/hub" if gcs_bucket else "/workspace/.cache/huggingface/hub")
+        env.setdefault("TRANSFORMERS_CACHE", f"{gcs_mount_path}/.cache/transformers" if gcs_bucket else "/workspace/.cache/transformers")
+        env.setdefault("OLLAMA_MODELS", f"{gcs_mount_path}/.ollama/models" if gcs_bucket else "/workspace/.ollama/models")
+
         # Deploy to Cloud Run
         if not skip_deploy and gcp_image_url:
             console.print(f"[bold cyan]🚀 Deploying to Cloud Run...[/]")
@@ -321,6 +329,8 @@ def deploy_to_gcp(
                 allow_unauthenticated=allow_unauthenticated,
                 env_vars=env,
                 service_account=service_account,
+                gcs_bucket=gcs_bucket,
+                gcs_mount_path=gcs_mount_path,
             )
 
         # Print deployment summary

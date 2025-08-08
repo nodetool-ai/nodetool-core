@@ -355,6 +355,11 @@ def deploy_to_runpod(
 
         # Create or update RunPod template
         if not skip_template:
+            # Set cache-related env defaults if not provided
+            env.setdefault("HF_HOME", "/workspace/.cache/huggingface")
+            env.setdefault("HF_HUB_CACHE", "/workspace/.cache/huggingface/hub")
+            env.setdefault("TRANSFORMERS_CACHE", "/workspace/.cache/transformers")
+            env.setdefault("OLLAMA_MODELS", "/workspace/.ollama/models")
             env["PORT"] = "8000"
             env["PORT_HEALTH"] = "8000"
             template_id = create_or_update_runpod_template(

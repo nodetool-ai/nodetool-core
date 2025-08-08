@@ -69,13 +69,7 @@ RUN uv venv $VIRTUAL_ENV
 
 # Set up the working directory
 WORKDIR /app
-ENV HF_HUB_CACHE=/runpod-volume/.cache/huggingface/hub
-ENV HF_HOME=/runpod-volume/.cache/huggingface
-ENV OLLAMA_MODELS=/runpod-volume/.ollama/models
 
-RUN mkdir -p /runpod-volume/.cache/huggingface
-RUN mkdir -p /runpod-volume/.ollama/models
-RUN mkdir -p /runpod-volume/.cache/transformers
 
 RUN echo "Installing nodetool packages..." && \
     uv pip install --no-cache-dir git+https://github.com/nodetool-ai/nodetool-core@cb3299e70064a6fbde1683d920b5bbaf0d05b3a6 && \
