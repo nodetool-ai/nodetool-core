@@ -441,7 +441,7 @@ class BaseChatRunner(ABC):
             assert last_message.provider, "Provider is required"
             
             provider = get_provider(last_message.provider)
-            processor = HelpMessageProcessor(provider, self.all_tools)
+            processor = HelpMessageProcessor(provider)
             
             await self._run_processor(
                 processor=processor,
@@ -498,7 +498,7 @@ class BaseChatRunner(ABC):
             log.debug(f"Chat history length: {len(chat_history)} messages")
             
             # Create the regular chat processor
-            processor = RegularChatProcessor(provider, self.all_tools)
+            processor = RegularChatProcessor(provider)
             
             await self._run_processor(
                 processor=processor,
@@ -522,7 +522,7 @@ class BaseChatRunner(ABC):
         assert last_message.provider, "Provider is required for agent mode"
         
         provider = get_provider(last_message.provider)
-        processor = AgentMessageProcessor(provider, self.all_tools)
+        processor = AgentMessageProcessor(provider)
         processing_context = ProcessingContext(user_id=self.user_id)
         
         # Get selected tools based on message.tools
@@ -550,12 +550,18 @@ class BaseChatRunner(ABC):
         chat_history = messages
         processor = WorkflowMessageProcessor(self.user_id)
         processing_context = ProcessingContext(user_id=self.user_id)
+        last_message = chat_history[-1]
+        tools = []
+        if last_message.tools:
+            tools = [
+                tool for tool in self.all_tools if tool.name in list(last_message.tools)
+            ]
         
         await self._run_processor(
             processor=processor,
             chat_history=chat_history,
             processing_context=processing_context,
-            tools=self.all_tools,
+            tools=tools,
         )
 
     async def _trigger_workflow_creation(self, objective: str, thread_id: str):
