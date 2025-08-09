@@ -66,17 +66,11 @@ def create_workflow_router() -> APIRouter:
 
         return updated_workflow
 
-    @router.post("/workflows/execute")
-    async def execute_workflow(request: Request):
+    @router.post("/workflows/{id}/run")
+    async def execute_workflow(id: str, request: Request):   
         try:
-            data = await request.json()
-            workflow_id = data.get("workflow_id")
-            params = data.get("params", {})
-
-            if not workflow_id:
-                raise HTTPException(status_code=400, detail="workflow_id is required")
-
-            req = RunJobRequest(params=params, workflow_id=workflow_id)
+            params = await request.json()
+            req = RunJobRequest(params=params, workflow_id=id)
 
             context = ProcessingContext(upload_assets_to_s3=True)
 
@@ -100,17 +94,11 @@ def create_workflow_router() -> APIRouter:
             print(f"Workflow execution error: {e}")
             raise HTTPException(status_code=500, detail=str(e))
 
-    @router.post("/workflows/execute/stream")
-    async def execute_workflow_stream(request: Request):
+    @router.post("/workflows/{id}/run/stream")
+    async def execute_workflow_stream(id: str, request: Request):
         try:
-            data = await request.json()
-            workflow_id = data.get("workflow_id")
-            params = data.get("params", {})
-
-            if not workflow_id:
-                raise HTTPException(status_code=400, detail="workflow_id is required")
-
-            req = RunJobRequest(params=params, workflow_id=workflow_id)
+            params = await request.json()
+            req = RunJobRequest(params=params, workflow_id=id)
 
             context = ProcessingContext(upload_assets_to_s3=True)
 
