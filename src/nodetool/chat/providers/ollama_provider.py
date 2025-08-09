@@ -5,9 +5,9 @@ This module implements the ChatProvider interface for Ollama models,
 handling message conversion, streaming, and tool integration.
 """
 
+import asyncio
 import json
 import re
-import ast
 from typing import Any, AsyncGenerator, Sequence, Dict
 from contextlib import asynccontextmanager
 
@@ -184,9 +184,7 @@ class OllamaProvider(ChatProvider):
 
         return token_count
 
-    def convert_message(
-        self, message: Message, use_textual_tools: bool
-    ) -> Dict[str, Any]:
+    def convert_message(self, message: Message) -> Dict[str, Any]:
         """
         Convert an internal message to Ollama's format.
 
@@ -194,32 +192,19 @@ class OllamaProvider(ChatProvider):
             message: The message to convert
         """
         if message.role == "tool":
-            if use_textual_tools:
-                # For textual tool calling, format tool responses as user messages with tool_output syntax
-                if isinstance(message.content, BaseModel):
-                    content = message.content.model_dump_json()
-                else:
-                    content = (
-                        json.dumps(message.content)
-                        if isinstance(message.content, (dict, list))
-                        else str(message.content)
-                    )
-
-                return {"role": "user", "content": content}
+            # Standard tool message format
+            if isinstance(message.content, BaseModel):
+                content = message.content.model_dump_json()
             else:
-                # Standard tool message format
-                if isinstance(message.content, BaseModel):
-                    content = message.content.model_dump_json()
+                if isinstance(message.content, dict):
+                    content = json.dumps(message.content)
+                elif isinstance(message.content, list):
+                    content = json.dumps(
+                        [part.model_dump() for part in message.content]
+                    )
                 else:
-                    if isinstance(message.content, dict):
-                        content = json.dumps(message.content)
-                    elif isinstance(message.content, list):
-                        content = json.dumps(
-                            [part.model_dump() for part in message.content]
-                        )
-                    else:
-                        content = str(message.content)
-                return {"role": "tool", "content": content, "name": message.name}
+                    content = str(message.content)
+            return {"role": "tool", "content": content, "name": message.name}
         elif message.role == "system":
             # Handle system message content conversion
             if message.content is None:
@@ -302,7 +287,6 @@ class OllamaProvider(ChatProvider):
         tools: Sequence[Any] = [],
         response_format: dict | None = None,
         max_tokens: int = 4096,
-        use_textual_tools: bool = True,
         context_window: int = 4096,
         **kwargs,
     ) -> Dict[str, Any]:
@@ -318,56 +302,20 @@ class OllamaProvider(ChatProvider):
         Returns:
             Dict[str, Any]: Parameters ready for Ollama API request
         """
-        # Use textual tool calling if configured
-        if use_textual_tools and tools:
-            # Modify the first system or user message to include tool instructions
-            tool_instructions = self._create_textual_tools_prompt(tools)
-            messages_list = list(messages)
+        # Regular message conversion only
+        ollama_messages = [self.convert_message(m) for m in messages]
 
-            if isinstance(messages_list[-1].content, str):
-                messages_list[-1].content += tool_instructions
-            elif isinstance(messages_list[-1].content, list):
-                messages_list[-1].content.append(
-                    MessageTextContent(text=tool_instructions)
-                )
-            else:
-                raise ValueError(
-                    f"Unexpected message content type: {type(messages_list[-1].content)}"
-                )
+        params = {
+            "model": model,
+            "messages": ollama_messages,
+            "options": {
+                "num_predict": max_tokens,
+                "num_ctx": context_window,
+            },
+        }
 
-            # Use the modified messages and don't pass tools parameter
-            ollama_messages = [
-                self.convert_message(m, use_textual_tools) for m in messages_list
-            ]
-
-            params = {
-                "model": model,
-                "messages": ollama_messages,
-                "options": {
-                    "num_predict": max_tokens,
-                    "num_ctx": context_window,
-                },
-            }
-
-            # Don't include tools param for textual tool calling
-            tools = []
-        else:
-            # Regular message conversion
-            ollama_messages = [
-                self.convert_message(m, use_textual_tools) for m in messages
-            ]
-
-            params = {
-                "model": model,
-                "messages": ollama_messages,
-                "options": {
-                    "num_predict": max_tokens,
-                    "num_ctx": context_window,
-                },
-            }
-
-            if len(tools) > 0:
-                params["tools"] = self.format_tools(tools)
+        if len(tools) > 0:
+            params["tools"] = self.format_tools(tools)
 
         if response_format:
             if (
@@ -417,71 +365,33 @@ class OllamaProvider(ChatProvider):
         """
         self._log_api_request("chat_stream", messages, model, tools)
 
-        use_textual_tools = (
-            len(tools) > 0 and model.startswith("gemma") and not response_format
-        )
-
         async with get_ollama_client() as client:
-            if use_textual_tools and tools:
-                params = self._prepare_request_params(
-                    messages,
-                    model,
-                    tools,
-                    max_tokens=max_tokens,
-                    use_textual_tools=use_textual_tools,
-                    context_window=context_window,
+            params = self._prepare_request_params(
+                messages,
+                model,
+                tools,
+                max_tokens=max_tokens,
+                context_window=context_window,
+                **kwargs,
+            )
+            params["stream"] = True
+
+            completion = await client.chat(**params)
+            async for response in completion:
+                # Track usage metrics when we receive the final response
+                if response.done:
+                    self._update_usage_stats(response)
+
+                if response.message.tool_calls is not None:
+                    for tool_call in response.message.tool_calls:
+                        yield ToolCall(
+                            name=tool_call.function.name,
+                            args=dict(tool_call.function.arguments),
+                        )
+                yield Chunk(
+                    content=response.message.content or "",
+                    done=response.done or False,
                 )
-                params["stream"] = True
-
-                completion = await client.chat(**params)
-                buffer = ""
-
-                async for response in completion:
-                    # Track usage metrics when we receive the final response
-                    if response.done:
-                        self._update_usage_stats(response)
-
-                    new_content = response.message.content or ""
-                    buffer += new_content
-
-                    tool_calls = self._extract_tool_calls(buffer)
-
-                    if tool_calls:
-                        for tool_call in tool_calls:
-                            yield tool_call
-
-                    yield Chunk(content=new_content, done=response.done or False)
-            else:
-                # Standard tool calling handling
-                params = self._prepare_request_params(
-                    messages,
-                    model,
-                    tools,
-                    use_textual_tools=False,
-                    max_tokens=max_tokens,
-                    context_window=context_window,
-                    **kwargs,
-                )
-                params["stream"] = True
-
-                print(params)
-
-                completion = await client.chat(**params)
-                async for response in completion:
-                    # Track usage metrics when we receive the final response
-                    if response.done:
-                        self._update_usage_stats(response)
-
-                    if response.message.tool_calls is not None:
-                        for tool_call in response.message.tool_calls:
-                            yield ToolCall(
-                                name=tool_call.function.name,
-                                args=dict(tool_call.function.arguments),
-                            )
-                    yield Chunk(
-                        content=response.message.content or "",
-                        done=response.done or False,
-                    )
 
     async def generate_message(
         self,
@@ -507,198 +417,42 @@ class OllamaProvider(ChatProvider):
         """
         self._log_api_request("chat", messages, model, tools)
 
-        use_textual_tools = (
-            len(tools) > 0 and model.startswith("gemma") and not response_format
-        )
-
         async with get_ollama_client() as client:
-            if use_textual_tools and tools:
-                params = self._prepare_request_params(
-                    messages,
-                    model,
-                    tools,
-                    response_format=response_format,
-                    max_tokens=max_tokens,
-                    use_textual_tools=use_textual_tools,
-                    context_window=context_window,
-                )
-                params["stream"] = False
+            params = self._prepare_request_params(
+                messages,
+                model,
+                tools,
+                response_format=response_format,
+                max_tokens=max_tokens,
+            )
+            params["stream"] = False
 
-                # Call API without streaming
-                response = await client.chat(**params)
+            response = await client.chat(**params)
 
-                # Update token usage
-                self._update_usage_stats(response)
+            self._update_usage_stats(response)
+            content = response.message.content or ""
 
-                content = response.message.content or ""
-
-                # Check for tool calls in the response
-                tool_calls = self._extract_tool_calls(content)
-
-                if tool_calls:
-                    res = Message(
-                        role="assistant",
-                        content=content,
-                        tool_calls=tool_calls,
+            tool_calls = None
+            if response.message.tool_calls:
+                tool_calls = [
+                    ToolCall(
+                        name=tool_call.function.name,
+                        args=dict(tool_call.function.arguments),
                     )
-                else:
-                    res = Message(
-                        role="assistant",
-                        content=content,
-                    )
-            else:
-                # Standard tool calling handling
-                params = self._prepare_request_params(
-                    messages,
-                    model,
-                    tools,
-                    response_format=response_format,
-                    max_tokens=max_tokens,
-                    use_textual_tools=use_textual_tools,
-                )
-                params["stream"] = False
+                    for tool_call in response.message.tool_calls
+                ]
 
-                response = await client.chat(**params)
-
-                self._update_usage_stats(response)
-                content = response.message.content or ""
-
-                tool_calls = None
-                if response.message.tool_calls:
-                    tool_calls = [
-                        ToolCall(
-                            name=tool_call.function.name,
-                            args=dict(tool_call.function.arguments),
-                        )
-                        for tool_call in response.message.tool_calls
-                    ]
-
-                res = Message(
-                    role="assistant",
-                    content=response.message.content or "",
-                    tool_calls=tool_calls,
-                )
+            res = Message(
+                role="assistant",
+                content=content,
+                tool_calls=tool_calls,
+            )
 
             self._log_api_response("chat", res)
 
             return res
 
-    def _create_textual_tools_prompt(self, tools: Sequence[Tool]) -> str:
-        """Create a textual prompt with tool instructions and function signatures."""
-        prompt = """
-You have access to functions. If you decide to invoke any of the function(s),
-you MUST put it in the format of
-{"name": function name, "parameters": dictionary of argument name and its value}
-
-You SHOULD NOT include any other text in the response if you call a function
-
-Following functions are available:
-"""
-        tool_schemas = [
-            {
-                "name": tool.name,
-                "description": tool.description,
-                "parameters": tool.input_schema,
-            }
-            for tool in tools
-        ]
-        return prompt + json.dumps(tool_schemas, indent=2)
-
-    def _extract_tool_calls(self, text: str) -> list[ToolCall]:
-        """
-        Extract all tool calls from the model response text using JSON parsing.
-        Always searches for matching braces to find JSON objects in the text.
-
-        Returns:
-            list[ToolCall]: A list of tool calls extracted from the response.
-        """
-        tool_calls = []
-
-        # Always search for JSON objects by looking for matching braces
-        start_idx = text.find("{")
-        while start_idx != -1:
-            # Find potential JSON objects
-            brace_count = 1
-            end_idx = start_idx + 1
-
-            while end_idx < len(text) and brace_count > 0:
-                if text[end_idx] == "{":
-                    brace_count += 1
-                elif text[end_idx] == "}":
-                    brace_count -= 1
-                end_idx += 1
-
-            if brace_count == 0:  # Found a complete JSON object
-                potential_json = text[start_idx:end_idx]
-                try:
-                    data = json.loads(potential_json)
-                    if (
-                        isinstance(data, dict)
-                        and "name" in data
-                        and "parameters" in data
-                    ):
-                        tool_calls.append(
-                            ToolCall(
-                                name=data["name"],
-                                args=data["parameters"],
-                            )
-                        )
-                except json.JSONDecodeError:
-                    pass
-            # Look for the next potential JSON object
-            start_idx = text.find("{", end_idx)
-
-        return tool_calls
-
-    # Keep the original method for backward compatibility but make it use the new implementation
-    def _extract_tool_call(self, text: str) -> ToolCall | None:
-        """
-        Extract the first tool call from the model response text.
-
-        Returns:
-            ToolCall: The first tool call if found, otherwise None.
-        """
-        tool_calls = self._extract_tool_calls(text)
-        return tool_calls[0] if tool_calls else None
-
-    def _extract_ast_value(self, node: ast.AST) -> Any:
-        """
-        Recursively extract Python literal values from AST nodes.
-
-        Handles constants, lists, dictionaries, and nested structures.
-
-        Args:
-            node: The AST node to extract value from
-
-        Returns:
-            The Python value represented by the AST node
-        """
-        if isinstance(node, (ast.Constant, ast.Str, ast.Num)):
-            return node.value
-        elif isinstance(node, ast.List):
-            return [self._extract_ast_value(elt) for elt in node.elts]
-        elif isinstance(node, ast.Dict):
-            return {
-                self._extract_ast_value(key): self._extract_ast_value(value)
-                for key, value in zip(node.keys, node.values)
-                if key is not None and value is not None
-            }
-        elif isinstance(node, ast.Tuple):
-            return tuple(self._extract_ast_value(elt) for elt in node.elts)
-        elif isinstance(node, ast.Set):
-            return {self._extract_ast_value(elt) for elt in node.elts}
-        elif isinstance(node, ast.Name):
-            # Handle special constants like True, False, None
-            if node.id == "True":
-                return True
-            elif node.id == "False":
-                return False
-            elif node.id == "None":
-                return None
-            else:
-                raise ValueError(f"Cannot extract value from name: {node.id}")
-        else:
-            raise ValueError(f"Unsupported AST node type: {type(node).__name__}")
+    # Textual tools support removed
 
     def _process_image_content(self, image: ImageRef) -> str:
         """
@@ -808,135 +562,60 @@ Following functions are available:
         )
 
 
-async def run_smoke_test():
-    """Run a smoke test for textual tool calling with all possible AST value types."""
+async def main():
+    from nodetool.agents.tools.math_tools import CalculatorTool
+    from nodetool.workflows.processing_context import ProcessingContext
 
-    class ComplexDataTool(Tool):
-        name = "process_complex_data"
-        description = "Process data of various types to test AST extraction."
-        input_schema = {
-            "type": "object",
-            "properties": {
-                "list_data": {"type": "array"},
-                "dict_data": {"type": "object"},
-                "tuple_data": {"type": "array"},
-                "set_data": {"type": "array"},
-                "bool_values": {"type": "array"},
-                "none_value": {"type": "null"},
-                "nested_data": {"type": "object"},
-            },
-        }
-
-    class SimpleDataTool(Tool):
-        name = "process_simple_data"
-        description = "Process simple data types."
-        input_schema = {
-            "type": "object",
-            "properties": {
-                "text": {"type": "string"},
-                "number": {"type": "number"},
-                "flag": {"type": "boolean"},
-            },
-        }
-
-    # Initialize the provider
     provider = OllamaProvider()
+    tools = [CalculatorTool()]
+    context = ProcessingContext()
 
-    # Create test messages with prompts that will trigger multiple tool calls
-    messages = [
-        Message(role="system", content="You are a helpful AI assistant."),
+    messages: list[Message] = [
+        Message(
+            role="system",
+            content=(
+                "You are a helpful assistant. Use tools when calculations are needed."
+            ),
+        ),
         Message(
             role="user",
-            content="""Please help me test multiple tool calls in a single message.
-            
-            First, call process_complex_data with:
-            - list_data=[1, 2, 3, "text"]
-            - dict_data={"key": "value", "number": 42}
-            - nested_data={"list": [1, 2, {"nested": True}]}
-            
-            Then, call process_simple_data with:
-            - text="Hello, world!"
-            - number=42
-            - flag=True
-            
-            Make sure to make both function calls in your response.
-            """,
+            content=(
+                "Please compute 12.3 * (7 - 5) + 10 / 2 and provide the numeric result."
+            ),
         ),
     ]
 
-    tools = [
-        ComplexDataTool(),
-        SimpleDataTool(),
-    ]
+    model_name = "gpt-oss:20b"
 
-    print("Running smoke test for multiple textual tool calls in a single message...")
+    response = await provider.generate_message(
+        messages=messages,
+        model=model_name,
+        tools=tools,
+    )
+    print(response.content)
 
-    try:
-        # Non-streaming test
-        print("\n=== Testing non-streaming API with multiple tool calls ===")
-        response = await provider.generate_message(
-            messages=messages,
-            model="gemma3:4b",
-            tools=tools,
-        )
-
-        print(f"Response content: {response.content}")
-        if response.tool_calls:
-            print(f"Number of tool calls extracted: {len(response.tool_calls)}")
-            for i, tool_call in enumerate(response.tool_calls):
-                print(f"\nTool call #{i+1}: {tool_call.name}")
-                print(f"Args: {tool_call.args}")
-                print(
-                    f"Args types: {', '.join([f'{k}: {type(v).__name__}' for k, v in tool_call.args.items()])}"
+    while response.tool_calls:
+        print(response.tool_calls)
+        for tool_call in response.tool_calls:
+            matching_tool = next((t for t in tools if t.name == tool_call.name), None)
+            if matching_tool is None:
+                continue
+            tool_result = await matching_tool.process(context, tool_call.args or {})
+            messages.append(
+                Message(
+                    role="tool",
+                    name=matching_tool.name,
+                    content=json.dumps(tool_result),
                 )
-
-        # Streaming test
-        print("\n=== Testing streaming API with multiple tool calls ===")
-        chunks = []
-        tool_calls_seen = []
-
-        async for chunk in provider.generate_messages(
-            messages=messages,
-            model="gemma3:12b",
-            tools=tools,
-        ):
-            if isinstance(chunk, Chunk):
-                chunks.append(chunk.content)
-                print(chunk.content, end="", flush=True)
-            elif isinstance(chunk, ToolCall):
-                tool_calls_seen.append(chunk)
-                print(f"\nTool Call: {chunk.name}")
-                print(f"Args: {chunk.args}")
-                print(
-                    f"Args types: {', '.join([f'{k}: {type(v).__name__}' for k, v in chunk.args.items()])}"
-                )
-
-        print("\n\nTest complete.")
-        print(f"Saw {len(tool_calls_seen)} tool calls during streaming.")
-
-        # Test for different tool names to verify multiple distinct calls were made
-        tool_names = set(call.name for call in tool_calls_seen)
-        print(f"Distinct tool names called: {', '.join(tool_names)}")
-        if len(tool_names) > 1:
-            print("SUCCESS: Multiple different tools were called!")
-
-        # Check if we have both expected tool calls
-        expected_tools = {"process_complex_data", "process_simple_data"}
-        if expected_tools.issubset(tool_names):
-            print("SUCCESS: All expected tools were called!")
-        else:
-            print(
-                f"WARNING: Not all expected tools were called. Missing: {expected_tools - tool_names}"
             )
 
-    except Exception as e:
-        print(f"Error during smoke test: {e}")
-        import traceback
-
-        traceback.print_exc()
+        response = await provider.generate_message(
+            messages=messages,
+            model=model_name,
+            tools=tools,
+        )
+        print(response.content)
 
 
 if __name__ == "__main__":
-    import asyncio
-
-    asyncio.run(run_smoke_test())
+    asyncio.run(main())
