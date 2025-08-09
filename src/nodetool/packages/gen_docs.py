@@ -3,11 +3,9 @@ import json
 import os
 from typing import Any, Type, Union
 from pydantic import BaseModel
-import dotenv
 import logging
 from nodetool.workflows.base_node import BaseNode
 
-dotenv.load_dotenv()
 
 # Configure logging
 logging.basicConfig(

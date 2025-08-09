@@ -14,11 +14,13 @@ import time
 import tempfile
 import shutil
 from pathlib import Path
+import json
+# Note: no need for urllib.parse after removing editable support
+from importlib import metadata as importlib_metadata
 
 
 def run_command(command: str, capture_output: bool = False) -> str:
     """Run a shell command with streaming output and return output if requested."""
-    print(f"Running: {command}")
     try:
         if capture_output:
             # For commands that need to return output, capture but still stream
@@ -234,6 +236,106 @@ def build_docker_image(
     try:
         shutil.copy(deploy_dockerfile_path, os.path.join(build_dir, "Dockerfile"))
         shutil.copy(start_script_path, os.path.join(build_dir, "start.sh"))
+
+        # Discover installed nodetool-* packages from the current environment
+        def _read_direct_url_info(dist: importlib_metadata.Distribution) -> dict | None:
+            try:
+                files = list(dist.files or [])
+            except Exception:
+                files = []
+            direct_url_rel = None
+            for file_path in files:
+                # importlib.metadata returns PackagePath objects
+                if str(file_path).endswith(".dist-info/direct_url.json"):
+                    direct_url_rel = file_path
+                    break
+            if direct_url_rel is None:
+                # Try a fallback: locate the .dist-info directory and probe for direct_url.json
+                dist_info_dir = None
+                for file_path in files:
+                    path_str = str(file_path)
+                    if path_str.endswith(".dist-info/METADATA"):
+                        dist_info_dir = Path(path_str).parent
+                        break
+                if dist_info_dir is None:
+                    return None
+                direct_url_rel = dist_info_dir / "direct_url.json"
+            try:
+                direct_url_abs = dist.locate_file(direct_url_rel)
+                if not os.path.exists(str(direct_url_abs)):
+                    return None
+                with open(str(direct_url_abs), "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception:
+                return None
+
+        def _discover_nodetool_packages() -> list[dict]:
+            discovered: list[dict] = []
+            for dist in importlib_metadata.distributions():
+                try:
+                    raw_name = dist.metadata.get("Name") or dist.metadata.get("Summary") or ""
+                except Exception:
+                    continue
+                if not raw_name:
+                    continue
+                name_normalized = raw_name.strip()
+                if not name_normalized.lower().startswith("nodetool-"):
+                    continue
+
+                info: dict[str, str] = {"name": name_normalized}
+
+                direct_info = _read_direct_url_info(dist)
+                if direct_info:
+                    url = direct_info.get("url")
+                    # Installed from VCS or URL; if local file/editable, ignore and fall back
+                    if isinstance(url, str) and url and not url.startswith("file:"):
+                        # Prefix with git+ if it looks like a Git URL and not already prefixed
+                        install_url = url
+                        if install_url.startswith("https://github.com/") and not install_url.startswith("git+"):
+                            install_url = f"git+{install_url}"
+                        info["install_url"] = install_url
+                        discovered.append(info)
+                        continue
+
+                # Fallback to canonical GitHub repo under nodetool-ai org
+                info["install_url"] = f"git+https://github.com/nodetool-ai/{name_normalized}"
+                discovered.append(info)
+
+            # Stable order for reproducible Dockerfiles
+            discovered.sort(key=lambda d: str(d.get("name")).lower())
+            return discovered
+
+        nodetool_packages = _discover_nodetool_packages()
+
+        # Inject a cache-optimized install block for nodetool packages into Dockerfile (before CMD)
+        if nodetool_packages:
+            dockerfile_path = os.path.join(build_dir, "Dockerfile")
+            with open(dockerfile_path, "r", encoding="utf-8") as f:
+                dockerfile_contents = f.read()
+
+            lines = dockerfile_contents.splitlines()
+            try:
+                cmd_index = max(i for i, ln in enumerate(lines) if ln.strip().startswith("CMD "))
+            except ValueError:
+                cmd_index = len(lines)
+
+            # Build RUN command
+            run_lines: list[str] = []
+            run_lines.append("RUN --mount=type=cache,target=/root/.cache/uv \\\n")
+            run_lines.append("    echo \"Installing nodetool packages...\" \\\n")
+
+            for idx, pkg in enumerate(nodetool_packages):
+                install_url = str(pkg.get("install_url") or "").strip()
+                install_arg = install_url
+                # Add continuation except for the last line
+                is_last = idx == len(nodetool_packages) - 1
+                suffix = "" if is_last else " \\\n"
+                run_lines.append(f"    && uv pip install {install_arg}{suffix}")
+
+            # Insert before CMD
+            new_lines = lines[:cmd_index] + run_lines + lines[cmd_index:]
+            with open(dockerfile_path, "w", encoding="utf-8") as f:
+                f.write("\n".join(new_lines) + ("\n" if not new_lines[-1].endswith("\n") else ""))
 
         # Build with the Dockerfile from the build directory
         original_dir = os.getcwd()

@@ -228,32 +228,31 @@ async def test_openai_sse_streaming_performance():
             await runner.message_queue.put(None)
 
         with patch.object(runner, "handle_message", side_effect=mock_handle):
-            with patch.object(runner, "_initialize_tools"):
-                # Process OpenAI-compatible request
-                request = {
-                    "messages": [{"role": "user", "content": "Performance test"}],
-                    "model": "gpt-4o-mini",
-                }
+            # Process OpenAI-compatible request
+            request = {
+                "messages": [{"role": "user", "content": "Performance test"}],
+                "model": "gpt-4o-mini",
+            }
 
-                # Collect events
-                events = []
-                async for event in runner.process_single_request(request):
-                    events.append(event)
+            # Collect events
+            events = []
+            async for event in runner.process_single_request(request):
+                events.append(event)
 
-                # Calculate performance
-                end_time = asyncio.get_event_loop().time()
-                duration = end_time - start_time
+            # Calculate performance
+            end_time = asyncio.get_event_loop().time()
+            duration = end_time - start_time
 
-                # Verify all messages were streamed plus [DONE]
-                assert len(events) == message_count + 1
+            # Verify all messages were streamed plus [DONE]
+            assert len(events) == message_count + 1
 
-                # Should be able to stream messages quickly
-                assert duration < 2.0
+            # Should be able to stream messages quickly
+            assert duration < 2.0
 
-                # Verify OpenAI format and message ordering
-                for i in range(message_count):
-                    assert "chat.completion.chunk" in events[i]
-                    assert f"Message {i}" in events[i]
+            # Verify OpenAI format and message ordering
+            for i in range(message_count):
+                assert "chat.completion.chunk" in events[i]
+                assert f"Message {i}" in events[i]
 
-                # Verify [DONE] termination
-                assert events[-1] == "data: [DONE]\n\n"
+            # Verify [DONE] termination
+            assert events[-1] == "data: [DONE]\n\n"

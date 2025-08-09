@@ -50,7 +50,6 @@ def create_openai_compatible_router(
                 auth_token,
                 default_model=default_model,
                 default_provider=provider,
-                tools=tools,
                 workflows=[from_model(workflow) for workflow in workflows],
             )
 

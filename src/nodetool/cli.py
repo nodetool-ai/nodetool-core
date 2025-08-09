@@ -2,6 +2,7 @@ import os
 import sys
 import shutil
 import click
+from nodetool.api.workflow import from_model
 from nodetool.common.configuration import get_settings_registry
 from nodetool.common.environment import Environment
 from nodetool.common.settings import load_settings
@@ -24,10 +25,6 @@ from rich.table import Table
 from rich.panel import Panel
 from rich.text import Text
 from typing import Optional
-
-import dotenv
-
-dotenv.load_dotenv()
 
 # Create console instance
 console = Console()
@@ -296,6 +293,9 @@ def chat_server(
     from nodetool.chat.server import run_chat_server
     import json
     from nodetool.types.workflow import Workflow
+    import dotenv
+
+    dotenv.load_dotenv()
 
     def load_workflow(path: str) -> Workflow:
         with open(path, "r") as f:
@@ -389,20 +389,6 @@ def chat_client(
             model = "gemma3n:latest"
 
     asyncio.run(run_chat_client(server_url, auth_token, message, model, provider))
-
-
-@cli.command("explorer")
-@click.option("--dir", "-d", default=".", help="Directory to start exploring from.")
-def explorer(dir: str):
-    """Explore files in an interactive text UI."""
-    from nodetool.file_explorer import FileExplorer
-    import curses
-
-    explorer = FileExplorer(dir)
-    curses.wrapper(explorer.run)
-
-
-# Add this after the other @cli commands but before the package group
 
 
 @cli.command("codegen")
@@ -869,6 +855,10 @@ def download_hf(
     """
     import asyncio
 
+    import dotenv
+    dotenv.load_dotenv()
+
+
     async def run_download():
         console.print("[bold cyan]📥 Starting HuggingFace download...[/]")
         console.print(f"Repository: {repo_id}")
@@ -977,6 +967,8 @@ def scan_cache(server_url: str):
         nodetool admin scan-cache --server-url http://localhost:8000
     """
     import asyncio
+    import dotenv
+    dotenv.load_dotenv()
 
     async def run_scan():
         console.print("[bold cyan]🔍 Scanning HuggingFace cache...[/]")
@@ -1062,6 +1054,8 @@ def delete_hf(repo_id: str, server_url: str):
         nodetool admin delete-hf --repo-id microsoft/DialoGPT-small --server-url http://localhost:8000
     """
     import asyncio
+    import dotenv
+    dotenv.load_dotenv()
 
     async def run_delete():
         console.print("[bold yellow]🗑️ Deleting HuggingFace model from cache...[/]")
@@ -1118,6 +1112,8 @@ def cache_size(
         nodetool admin cache-size --server-url http://localhost:8000
     """
     import asyncio
+    import dotenv
+    dotenv.load_dotenv()
 
     async def run_calculate():
         console.print("[bold cyan]📏 Calculating cache size...[/]")
@@ -1307,15 +1303,10 @@ def _handle_docker_config_check(
 def env_for_deploy(
     chat_provider: str,
     default_model: str,
-    tools: str,
 ):
     """Get environment variables for deploy."""
     # Parse comma-separated tools string into list
-    tools_list = (
-        [tool.strip() for tool in tools.split(",") if tool.strip()] if tools else None
-    )
     env = {
-        "NODETOOL_TOOLS": ",".join(tools_list) if tools_list else None,
         "CHAT_PROVIDER": chat_provider,
         "DEFAULT_MODEL": default_model,
     }
@@ -1346,11 +1337,6 @@ def env_for_deploy(
     default="gemma3n:latest",
     help="Default model to use (default: gemma3n:latest).",
 )
-@click.option(
-    "--tools",
-    default="",
-    help="Comma-separated list of tools to use (e.g., 'google_search,google_news,google_images').",
-)
 @click.option("--tag", help="Optional tag for the Docker image (default: auto-generated)")
 @click.option(
     "--name",
@@ -1365,7 +1351,6 @@ def deploy_local(
     port: int,
     chat_provider: str,
     default_model: str,
-    tools: str,
     tag: str | None,
     name: str | None,
     gpus: str | None,
@@ -1376,7 +1361,6 @@ def deploy_local(
     env = env_for_deploy(
         chat_provider=chat_provider,
         default_model=default_model,
-        tools=tools,
     )
     # Drop unset values
     env = {k: v for k, v in (env or {}).items() if v is not None and str(v) != ""}
@@ -1514,11 +1498,6 @@ def deploy_local(
     help="Allowed CUDA versions (can specify multiple)",
 )
 @click.option(
-    "--tools",
-    default="",
-    help="Comma-separated list of tools to use for chat handler (e.g., 'google_search,google_news,google_images').",
-)
-@click.option(
     "--name",
     help="Name for the endpoint (required for all deployments)",
 )
@@ -1563,7 +1542,6 @@ def deploy_runpod(
     flashboot: bool,
     network_volume_id: str | None,
     allowed_cuda_versions: tuple,
-    tools: str,
     name: str | None,
     list_gpu_types: bool,
     list_cpu_flavors: bool,
@@ -1611,7 +1589,6 @@ def deploy_runpod(
     env = env_for_deploy(
         chat_provider=chat_provider,
         default_model=default_model,
-        tools=tools,
     )
 
     deploy_to_runpod(
@@ -1749,11 +1726,6 @@ def deploy_runpod(
     "--no-auto-push", is_flag=True, help="Disable automatic push during build"
 )
 @click.option(
-    "--tools",
-    default="",
-    help="Comma-separated list of tools to use for chat handler (e.g., 'google_search,google_news,google_images').",
-)
-@click.option(
     "--skip-permission-setup",
     is_flag=True,
     help="Skip automatic IAM permission setup",
@@ -1794,7 +1766,6 @@ def deploy_gcp(
     skip_deploy: bool,
     no_cache: bool,
     no_auto_push: bool,
-    tools: str,
     skip_permission_setup: bool,
     service_account: str | None,
     gcs_bucket: str | None,
@@ -1825,7 +1796,6 @@ def deploy_gcp(
     env = env_for_deploy(
         chat_provider=chat_provider,
         default_model=default_model,
-        tools=tools,
     )
 
     # Call the main deployment function
@@ -1862,6 +1832,18 @@ def deploy_gcp(
 
 
 @cli.group()
+def provision():
+    """Provision infrastructure targets (RunPod, GCP, Docker)."""
+    pass
+
+
+# Register existing deploy commands under the new `provision` group
+provision.add_command(deploy_runpod, name="runpod")
+provision.add_command(deploy_gcp, name="gcp")
+provision.add_command(deploy_local, name="docker")
+
+
+@cli.group()
 def sync():
     """Commands to sync local database items with a remote NodeTool server."""
     pass
@@ -1894,7 +1876,7 @@ def sync_workflow(workflow_id: str, server_url: str):
             # Use optional API key for auth if present
             api_key = os.getenv("RUNPOD_API_KEY")
             client = AdminHTTPClient(server_url, auth_token=api_key)
-            res = await client.update_workflow(workflow_id, workflow)
+            res = await client.update_workflow(workflow_id, from_model(workflow).model_dump())
 
             status = res.get("status", "ok")
             if status == "ok":

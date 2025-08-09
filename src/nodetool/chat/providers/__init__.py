@@ -7,13 +7,6 @@ to interact with various LLM APIs including OpenAI, Anthropic, and Ollama.
 
 # Base provider class
 from nodetool.chat.providers.base import ChatProvider
-
-# Provider factory
-from nodetool.chat.providers.gemini_provider import GeminiProvider
-from nodetool.chat.providers.anthropic_provider import AnthropicProvider
-from nodetool.chat.providers.ollama_provider import OllamaProvider
-from nodetool.chat.providers.openai_provider import OpenAIProvider
-from nodetool.chat.providers.huggingface_provider import HuggingFaceProvider
 from nodetool.metadata.types import Provider as ProviderEnum
 from nodetool.workflows.types import Chunk
 
@@ -40,19 +33,27 @@ def get_provider(provider_type: ProviderEnum, **kwargs) -> ChatProvider:
         return _provider_cache[provider_type]
 
     provider: ChatProvider
+    # Lazy-import providers to avoid importing optional dependencies at module import time
     if provider_type == ProviderEnum.OpenAI:
+        from nodetool.chat.providers.openai_provider import OpenAIProvider
         provider = OpenAIProvider(**kwargs)
     elif provider_type == ProviderEnum.Gemini:
+        from nodetool.chat.providers.gemini_provider import GeminiProvider
         provider = GeminiProvider(**kwargs)
     elif provider_type == ProviderEnum.Anthropic:
+        from nodetool.chat.providers.anthropic_provider import AnthropicProvider
         provider = AnthropicProvider(**kwargs)
     elif provider_type == ProviderEnum.Ollama:
+        from nodetool.chat.providers.ollama_provider import OllamaProvider
         provider = OllamaProvider(**kwargs)
     elif provider_type == ProviderEnum.HuggingFace:
+        from nodetool.chat.providers.huggingface_provider import HuggingFaceProvider
         provider = HuggingFaceProvider(**kwargs)
     elif provider_type == ProviderEnum.HuggingFaceGroq:
+        from nodetool.chat.providers.huggingface_provider import HuggingFaceProvider
         provider = HuggingFaceProvider("groq", **kwargs)
     elif provider_type == ProviderEnum.HuggingFaceCerebras:
+        from nodetool.chat.providers.huggingface_provider import HuggingFaceProvider
         provider = HuggingFaceProvider("cerebras", **kwargs)
     else:
         raise ValueError(f"Provider {provider_type} not supported")
@@ -61,15 +62,8 @@ def get_provider(provider_type: ProviderEnum, **kwargs) -> ChatProvider:
     return provider
 
 
-# Export all providers
 __all__ = [
-    # Base class
     "ChatProvider",
     "Chunk",
-    # Provider implementations
-    "OpenAIProvider",
-    "AnthropicProvider",
-    "OllamaProvider",
-    # Factory function
     "get_provider",
 ]

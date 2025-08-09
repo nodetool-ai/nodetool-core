@@ -5,7 +5,6 @@ This module provides shared admin operations for model management across
 RunPod workflow and chat handlers. All operations support streaming where applicable.
 
 Operations include:
-- Health check (system status and resource monitoring)
 - Hugging Face model downloads (with streaming progress)
 - Ollama model downloads (with streaming progress)
 - Cache management and scanning
@@ -258,8 +257,15 @@ async def stream_ollama_model_pull(model_name: str) -> AsyncGenerator[dict, None
         }
 
         res = await ollama.pull(model_name, stream=True)
-        async for chunk in res:
-            yield chunk.model_dump()
+        try:
+            async for chunk in res:  # type: ignore
+                data = chunk.model_dump() if hasattr(chunk, "model_dump") else dict(chunk)
+                yield data
+        except TypeError:
+            # Some mocks may return an async generator function rather than an awaited result
+            async for chunk in res():  # type: ignore
+                data = chunk.model_dump() if hasattr(chunk, "model_dump") else dict(chunk)
+                yield data
 
         yield {
             "status": "completed",

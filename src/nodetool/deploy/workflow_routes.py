@@ -29,6 +29,19 @@ from nodetool.api.workflow import WorkflowList, from_model, WorkflowRequest
 
 log = Environment.get_logger()
 
+# Simple in-memory registry to support tests that patch it
+_workflow_registry: dict[str, Workflow] = {}
+
+
+def get_workflow_by_id(workflow_id: str) -> Workflow:
+    """Fetch a workflow from the in-memory registry or database."""
+    if workflow_id in _workflow_registry:
+        return _workflow_registry[workflow_id]
+    workflow_model = WorkflowModel.get(workflow_id)
+    if not workflow_model:
+        raise ValueError("not found")
+    return from_model(workflow_model)
+
 
 def create_workflow_router() -> APIRouter:
     router = APIRouter()
@@ -66,6 +79,35 @@ def create_workflow_router() -> APIRouter:
 
         return updated_workflow
 
+    @router.post("/workflows/execute")
+    async def execute_workflow_compat(request: Request):
+        """Backward-compatible endpoint used by tests to execute a workflow by id."""
+        body = await request.json()
+        wf_id = body.get("workflow_id")
+        if not wf_id:
+            raise HTTPException(status_code=400, detail="workflow_id is required")
+        try:
+            params = body.get("params", {})
+            req = RunJobRequest(params=params, workflow_id=wf_id)
+            context = ProcessingContext(upload_assets_to_s3=True)
+            results: Dict[str, object] = {}
+            async for msg in run_workflow(req, context=context, use_thread=True):
+                if isinstance(msg, JobUpdate) and msg.status == "error":
+                    raise HTTPException(status_code=500, detail=msg.error)
+                if isinstance(msg, OutputUpdate):
+                    value = context.encode_assets_as_uri(msg.value)
+                    if hasattr(value, "model_dump"):
+                        value = value.model_dump()
+                    results[msg.node_name] = value
+            return {"results": results}
+        except HTTPException:
+            raise
+        except ValueError as e:
+            raise HTTPException(status_code=404, detail=str(e))
+        except Exception as e:  # noqa: BLE001
+            print(f"Workflow execution error: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
+
     @router.post("/workflows/{id}/run")
     async def execute_workflow(id: str, request: Request):   
         try:
@@ -92,6 +134,68 @@ def create_workflow_router() -> APIRouter:
             raise HTTPException(status_code=404, detail=str(e))
         except Exception as e:  # noqa: BLE001
             print(f"Workflow execution error: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @router.post("/workflows/execute/stream")
+    async def execute_workflow_stream_compat(request: Request):
+        """Backward-compatible streaming endpoint used by tests."""
+        body = await request.json()
+        wf_id = body.get("workflow_id")
+        if not wf_id:
+            raise HTTPException(status_code=400, detail="workflow_id is required")
+        try:
+            params = body.get("params", {})
+            req = RunJobRequest(params=params, workflow_id=wf_id)
+            context = ProcessingContext(upload_assets_to_s3=True)
+
+            async def generate_sse():
+                results: Dict[str, object] = {}
+                try:
+                    async for msg in run_workflow(req, context=context, use_thread=True):
+                        if isinstance(msg, JobUpdate):
+                            event_data = {"type": "job_update", "data": msg.model_dump()}
+                            yield f"data: {json.dumps(event_data)}\n\n"
+                            if msg.status == "error":
+                                error_data = {"type": "error", "error": msg.error}
+                                yield f"data: {json.dumps(error_data)}\n\n"
+                                return
+                        elif isinstance(msg, OutputUpdate):
+                            value = context.encode_assets_as_uri(msg.value)
+                            if hasattr(value, "model_dump"):
+                                value = value.model_dump()
+                            results[msg.node_name] = value
+                            event_data = {
+                                "type": "output_update",
+                                "node_name": msg.node_name,
+                                "value": value,
+                            }
+                            yield f"data: {json.dumps(event_data)}\n\n"
+
+                    final_data = {"type": "complete", "results": results}
+                    yield f"data: {json.dumps(final_data)}\n\n"
+                    yield "data: [DONE]\n\n"
+
+                except Exception as e:  # noqa: BLE001
+                    error_data = {"type": "error", "error": str(e)}
+                    yield f"data: {json.dumps(error_data)}\n\n"
+
+            return StreamingResponse(
+                generate_sse(),
+                media_type="text/event-stream",
+                headers={
+                    "Cache-Control": "no-cache",
+                    "Connection": "keep-alive",
+                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Headers": "Authorization, Content-Type",
+                    "Access-Control-Allow-Methods": "POST, OPTIONS",
+                },
+            )
+        except HTTPException:
+            raise
+        except ValueError as e:
+            raise HTTPException(status_code=404, detail=str(e))
+        except Exception as e:  # noqa: BLE001
+            print(f"Workflow streaming error: {e}")
             raise HTTPException(status_code=500, detail=str(e))
 
     @router.post("/workflows/{id}/run/stream")

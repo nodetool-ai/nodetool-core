@@ -7,7 +7,7 @@ from unittest.mock import Mock, AsyncMock, patch, MagicMock
 from nodetool.chat.base_chat_runner import BaseChatRunner
 from nodetool.common.environment import Environment
 from nodetool.models.message import Message as DBMessage
-from nodetool.metadata.types import Message as ApiMessage
+from nodetool.metadata.types import Message as ApiMessage, Provider
 from nodetool.models.thread import Thread
 from nodetool.types.graph import Graph
 
@@ -118,7 +118,7 @@ class TestBaseChatRunner:
             tools=["tool1", "tool2"],
             role="assistant",
             content="Test response",
-            provider="anthropic",
+            provider=Provider.Anthropic,
             model="claude-3",
             agent_mode=False
         )
@@ -262,27 +262,6 @@ class TestBaseChatRunner:
         # Verify validation
         assert is_valid is True
         assert self.runner.user_id == "user_123"
-
-    async def test_initialize_tools(self):
-        """Test tool initialization"""
-        self.runner.user_id = "user_123"
-        
-        # Mock workflow tools creation
-        with patch('nodetool.chat.base_chat_runner.create_workflow_tools', return_value=[]):
-            # Mock package loading
-            with patch('nodetool.packages.registry.Registry') as mock_registry:
-                mock_registry_instance = Mock()
-                mock_registry_instance.list_installed_packages.return_value = []
-                mock_registry.return_value = mock_registry_instance
-                
-                # Mock NODE_BY_TYPE
-                with patch('nodetool.workflows.base_node.NODE_BY_TYPE', {}):
-                    # Initialize tools
-                    self.runner._initialize_tools()
-                    
-                    # Verify tools were initialized
-                    assert isinstance(self.runner.all_tools, list)
-                    assert len(self.runner.all_tools) > 0  # Standard tools should be present
 
     async def test_handle_message_regular_chat(self):
         """Test handling a regular chat message"""

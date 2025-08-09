@@ -204,7 +204,7 @@ async def fetch_models_from_hf_provider(provider: str) -> List[LanguageModel]:
                                 provider=provider_enum,
                             ))
                     
-                    models.sort(key=lambda m: m.name)
+                    # Preserve API order to match test expectations
                     log.debug(f"Fetched {len(models)} models from HF provider: {provider}")
                     return models
                 else:

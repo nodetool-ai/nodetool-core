@@ -39,9 +39,6 @@ class TestChatWebSocketRunner:
             websocket = Mock()
             websocket.accept = AsyncMock()
             
-            # Mock _initialize_tools
-            runner._initialize_tools = Mock()
-
             await runner.connect(websocket)
 
             # Verify connection was accepted
@@ -98,8 +95,6 @@ class TestChatWebSocketRunner:
                 return True
 
             with patch.object(runner, "validate_token", side_effect=mock_validate):
-                # Mock _initialize_tools
-                runner._initialize_tools = Mock()
                 await runner.connect(websocket)
 
             # Verify connection was accepted
@@ -377,10 +372,9 @@ class TestChatWebSocketRunner:
 
     async def test_in_memory_storage_mode(self):
         """Test WebSocket runner with in-memory storage (use_database=False)"""
-        runner = ChatWebSocketRunner(use_database=False)
+        runner = ChatWebSocketRunner()
         
         # Verify in-memory mode is enabled
-        assert runner.use_database is False
         assert runner.in_memory_history == {}
         
         # Test saving and retrieving messages from memory
@@ -408,7 +402,7 @@ class TestChatWebSocketRunner:
 
     async def test_multiple_threads_in_memory(self):
         """Test handling multiple threads in memory mode"""
-        runner = ChatWebSocketRunner(use_database=False)
+        runner = ChatWebSocketRunner()
         
         # Add messages to different threads
         message1 = {"thread_id": "thread1", "role": "user", "content": "Message 1", "model": "gpt-4", "provider": "openai"}

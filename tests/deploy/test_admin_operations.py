@@ -13,7 +13,6 @@ from nodetool.deploy.admin_operations import (
     scan_hf_cache,
     calculate_cache_size,
     delete_hf_model,
-    health_check,
     stream_ollama_model_pull,
     stream_hf_model_download,
     convert_file_info,
@@ -501,41 +500,6 @@ class TestIndividualAdminOperations:
             assert results[0]["success"] is True
             assert results[0]["total_size_bytes"] == 3072
             assert results[0]["size_gb"] == round(3072 / (1024**3), 2)
-    
-    @pytest.mark.asyncio
-    async def test_health_check_success(self):
-        """Test successful health check."""
-        with patch("platform.platform") as mock_platform, \
-             patch("platform.python_version") as mock_python_version, \
-             patch("platform.node") as mock_node:
-            
-            mock_platform.return_value = "Linux-5.4.0"
-            mock_python_version.return_value = "3.9.0"
-            mock_node.return_value = "test-host"
-            
-            results = []
-            async for chunk in health_check():
-                results.append(chunk)
-            
-            assert len(results) == 1
-            assert results[0]["status"] == "healthy"
-            assert results[0]["platform"] == "Linux-5.4.0"
-            assert results[0]["python_version"] == "3.9.0"
-            assert results[0]["hostname"] == "test-host"
-    
-    @pytest.mark.asyncio
-    async def test_health_check_error(self):
-        """Test health check with error."""
-        with patch("platform.platform") as mock_platform:
-            mock_platform.side_effect = Exception("Platform error")
-            
-            results = []
-            async for chunk in health_check():
-                results.append(chunk)
-            
-            assert len(results) == 1
-            assert results[0]["status"] == "error"
-            assert "Platform error" in results[0]["error"]
 
 
 if __name__ == "__main__":

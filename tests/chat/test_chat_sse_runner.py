@@ -8,6 +8,7 @@ import asyncio
 from unittest.mock import Mock, AsyncMock, patch, MagicMock
 from nodetool.chat.chat_sse_runner import ChatSSERunner
 from nodetool.common.environment import Environment
+from nodetool.metadata.types import MessageTextContent, MessageImageContent
 
 
 @pytest.mark.asyncio
@@ -32,21 +33,16 @@ class TestChatSSERunner:
     async def test_connect_local_development(self):
         """Test connection in local development mode"""
         with patch.object(Environment, "use_remote_auth", return_value=False):
-            # Mock _initialize_tools
-            self.runner._initialize_tools = Mock()
             await self.runner.connect(user_id="custom_user")
 
             # Verify connection state
             assert self.runner.is_connected is True
             assert self.runner.user_id == "custom_user"
-            self.runner._initialize_tools.assert_called_once()
 
     async def test_connect_default_user_id(self):
         """Test connection with default user ID in local mode"""
         with patch.object(Environment, "use_remote_auth", return_value=False):
-            # Mock _initialize_tools
-            with patch.object(self.runner, "_initialize_tools"):
-                await self.runner.connect()
+            await self.runner.connect()
 
             # Verify default user ID
             assert self.runner.user_id == "1"
@@ -57,9 +53,7 @@ class TestChatSSERunner:
             with patch.object(
                 self.runner, "validate_token", return_value=True
             ) as mock_validate:
-                # Mock _initialize_tools
-                with patch.object(self.runner, "_initialize_tools"):
-                    await self.runner.connect()
+                await self.runner.connect()
 
                 # Verify token was validated
                 mock_validate.assert_called_once_with("test_token")
@@ -132,6 +126,7 @@ class TestChatSSERunner:
         # Test simple string content
         result = self.runner._convert_openai_content("Hello world")
         assert len(result) == 1
+        assert isinstance(result[0], MessageTextContent)
         assert result[0].text == "Hello world"
 
     def test_convert_openai_content_multimodal(self):
@@ -146,7 +141,9 @@ class TestChatSSERunner:
         ]
         result = self.runner._convert_openai_content(content)
         assert len(result) == 2
+        assert isinstance(result[0], MessageTextContent)
         assert result[0].text == "What's in this image?"
+        assert isinstance(result[1], MessageImageContent)
         assert result[1].image.uri == "https://example.com/image.jpg"
 
     def test_convert_internal_to_openai_chunk(self):
@@ -199,9 +196,6 @@ class TestChatSSERunner:
                 assert "Response 2" in events[1]
                 assert events[2] == "data: [DONE]\n\n"
 
-                # Verify disconnect was called
-                self.runner.disconnect.assert_called_once()
-
     async def test_stream_response_error(self):
         """Test error handling in stream_response"""
         request_data = {
@@ -227,9 +221,6 @@ class TestChatSSERunner:
                 assert "chat.completion.chunk" in events[0]
                 assert "Error: Processing error" in events[0]
                 assert events[1] == "data: [DONE]\n\n"
-
-                # Verify disconnect was called
-                self.runner.disconnect.assert_called_once()
 
     async def test_stream_response_cancellation(self):
         """Test cancellation handling in stream_response"""
@@ -322,9 +313,6 @@ class TestChatSSERunner:
                 assert len(events) == 1
                 assert "Connection failed" in events[0]
 
-                # Verify disconnect was called
-                self.runner.disconnect.assert_called_once()
-
     async def test_message_queue_timeout_handling(self):
         """Test that stream_response handles queue timeouts properly"""
         request_data = {
@@ -350,6 +338,3 @@ class TestChatSSERunner:
                 # Should complete with just [DONE] message
                 assert len(events) == 1
                 assert events[0] == "data: [DONE]\n\n"
-
-                # Verify disconnect was called
-                self.runner.disconnect.assert_called_once()

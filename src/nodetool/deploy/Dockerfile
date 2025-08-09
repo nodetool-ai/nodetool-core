@@ -70,11 +70,6 @@ RUN uv venv $VIRTUAL_ENV
 # Set up the working directory
 WORKDIR /app
 
-
-RUN echo "Installing nodetool packages..." && \
-    uv pip install --no-cache-dir git+https://github.com/nodetool-ai/nodetool-core@f25a9ccfa0792d24c019d49152a9f33b7c3ee508 && \
-    uv pip install --no-cache-dir git+https://github.com/nodetool-ai/nodetool-base
-
 # Install Ollama
 RUN curl --fail --show-error --location --progress-bar \
         "https://github.com/ollama/ollama/releases/download/v0.11.3/ollama-linux-amd64.tgz" \

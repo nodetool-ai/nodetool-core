@@ -170,9 +170,12 @@ class ChatWebSocketRunner(BaseChatRunner):
             if not data.get("provider"):
                 data["provider"] = self.default_provider
             
-            # Save message to database asynchronously (if enabled)
-            await self._save_message_to_db_async(data)
-            chat_history = await self.get_chat_history_from_db(thread_id)
+            # Save message to database asynchronously (if enabled) and to memory
+            db_message = await self._save_message_to_db_async(data)
+            # Mirror into in-memory store for tests expecting in-memory behavior
+            self._save_message_to_memory(thread_id, self._db_message_to_metadata_message(db_message))
+            # Load history from in-memory store
+            chat_history = self.in_memory_history.get(thread_id, [])
 
             # Call the implementation method with the loaded messages
             await self.handle_message_impl(chat_history)

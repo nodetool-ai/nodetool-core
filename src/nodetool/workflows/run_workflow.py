@@ -105,9 +105,13 @@ async def run_workflow(
     async def run():
         if req.graph is None:
             log.info(f"Loading workflow graph for {req.workflow_id}")
-            workflow = WorkflowModel.get(req.workflow_id)
-            assert workflow is not None
-            req.graph = workflow.get_api_graph()
+            if hasattr(context, "get_workflow") and callable(context.get_workflow):
+                workflow = await context.get_workflow(req.workflow_id)  # type: ignore
+                req.graph = workflow.graph if hasattr(workflow, "graph") else None
+            if req.graph is None:
+                workflow = WorkflowModel.get(req.workflow_id)
+                assert workflow is not None
+                req.graph = workflow.get_api_graph()
         await runner.run(req, context)
 
     if use_thread:
