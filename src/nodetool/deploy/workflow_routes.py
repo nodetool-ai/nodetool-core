@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Dict, List
+from typing import Dict
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
@@ -23,77 +23,11 @@ from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.run_workflow import run_workflow
 from nodetool.workflows.types import OutputUpdate
+from nodetool.models.workflow import Workflow as WorkflowModel
+from nodetool.api.workflow import WorkflowList, from_model, WorkflowRequest
 
 
 log = Environment.get_logger()
-
-# Internal registry
-_workflow_registry: Dict[str, Workflow] = {}
-
-
-def load_workflow(path: str) -> Workflow:
-    with open(path, "r") as f:
-        workflow = json.load(f)
-    return Workflow.model_validate(workflow)
-
-
-def load_workflows_from_directory(workflows_dir: str = "/app/workflows") -> Dict[str, Workflow]:
-    """Load all workflow JSON files from the specified directory.
-
-    Returns a mapping from workflow_id to Workflow.
-    """
-    workflows: Dict[str, Workflow] = {}
-
-    if not os.path.exists(workflows_dir):
-        log.warning(f"Workflows directory not found: {workflows_dir}")
-        return workflows
-
-    for filename in os.listdir(workflows_dir):
-        if not filename.endswith(".json"):
-            continue
-
-        filepath = os.path.join(workflows_dir, filename)
-        try:
-            workflow = load_workflow(filepath)
-            workflow_id = workflow.id if getattr(workflow, "id", None) else filename[:-5]
-            workflows[workflow_id] = workflow
-            log.info(f"Loaded workflow '{workflow_id}' from {filename}")
-        except Exception as e:  # noqa: BLE001
-            log.error(f"Failed to load workflow from {filename}: {str(e)}")
-
-    return workflows
-
-
-def initialize_workflow_registry() -> None:
-    global _workflow_registry
-    _workflow_registry = load_workflows_from_directory()
-    log.info(f"Initialized workflow registry with {len(_workflow_registry)} workflows")
-
-
-def get_workflow_by_id(workflow_id: str) -> Workflow:
-    if workflow_id not in _workflow_registry:
-        raise ValueError(
-            f"Workflow '{workflow_id}' not found. Available workflows: {list(_workflow_registry.keys())}"
-        )
-    return _workflow_registry[workflow_id]
-
-
-def get_workflow_registry() -> Dict[str, Workflow]:
-    return _workflow_registry
-
-
-def get_aggregated_workflows(additional_workflows: List[Workflow] | None = None) -> List[Workflow]:
-    """Aggregate workflows from registry, optional /workflows dir, and provided list."""
-    aggregated: List[Workflow] = list(_workflow_registry.values())
-    if os.path.exists("/workflows"):
-        try:
-            extra = load_workflows_from_directory("/workflows").values()
-            aggregated.extend(list(extra))
-        except Exception as e:  # noqa: BLE001
-            log.warning(f"Failed loading workflows from /workflows: {e}")
-    if additional_workflows:
-        aggregated.extend(additional_workflows)
-    return aggregated
 
 
 def create_workflow_router() -> APIRouter:
@@ -101,15 +35,36 @@ def create_workflow_router() -> APIRouter:
 
     @router.get("/workflows")
     async def list_workflows():
-        return {
-            "workflows": [
-                {
-                    "id": workflow_id,
-                    "name": workflow.name if hasattr(workflow, "name") else workflow_id,
-                }
-                for workflow_id, workflow in _workflow_registry.items()
-            ]
-        }
+        workflows, cursor = WorkflowModel.paginate()
+        return WorkflowList(
+            workflows=[from_model(workflow) for workflow in workflows], next=cursor
+        )
+
+    @router.put("/workflows/{id}")
+    async def update_workflow(
+        id: str,
+        workflow_request: WorkflowRequest,
+    ) -> Workflow:
+        workflow = WorkflowModel.get(id)
+        if not workflow:
+            workflow = WorkflowModel(id=id)
+        if workflow_request.graph is None:
+            raise HTTPException(status_code=400, detail="Invalid workflow")
+        workflow.name = workflow_request.name
+        workflow.description = workflow_request.description
+        workflow.tags = workflow_request.tags
+        workflow.package_name = workflow_request.package_name
+        if workflow_request.thumbnail is not None:
+            workflow.thumbnail = workflow_request.thumbnail
+        workflow.access = workflow_request.access
+        workflow.graph = workflow_request.graph.model_dump()
+        workflow.settings = workflow_request.settings
+        workflow.run_mode = workflow_request.run_mode
+        workflow.updated_at = workflow.updated_at
+        workflow.save()
+        updated_workflow = from_model(workflow)
+
+        return updated_workflow
 
     @router.post("/workflows/execute")
     async def execute_workflow(request: Request):
@@ -121,9 +76,7 @@ def create_workflow_router() -> APIRouter:
             if not workflow_id:
                 raise HTTPException(status_code=400, detail="workflow_id is required")
 
-            workflow = get_workflow_by_id(workflow_id)
-            req = RunJobRequest(params=params)
-            req.graph = workflow.graph
+            req = RunJobRequest(params=params, workflow_id=workflow_id)
 
             context = ProcessingContext(upload_assets_to_s3=True)
 
@@ -157,9 +110,7 @@ def create_workflow_router() -> APIRouter:
             if not workflow_id:
                 raise HTTPException(status_code=400, detail="workflow_id is required")
 
-            workflow = get_workflow_by_id(workflow_id)
-            req = RunJobRequest(params=params)
-            req.graph = workflow.graph
+            req = RunJobRequest(params=params, workflow_id=workflow_id)
 
             context = ProcessingContext(upload_assets_to_s3=True)
 

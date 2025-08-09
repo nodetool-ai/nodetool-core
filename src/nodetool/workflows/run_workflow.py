@@ -9,6 +9,7 @@ from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.types import Error, ProcessingMessage
 from nodetool.workflows.workflow_runner import WorkflowRunner
 from nodetool.workflows.threaded_event_loop import ThreadedEventLoop
+from nodetool.models.workflow import Workflow as WorkflowModel
 
 log = Environment.get_logger()
 
@@ -104,8 +105,9 @@ async def run_workflow(
     async def run():
         if req.graph is None:
             log.info(f"Loading workflow graph for {req.workflow_id}")
-            workflow = await context.get_workflow(req.workflow_id)
-            req.graph = workflow.graph
+            workflow = WorkflowModel.get(req.workflow_id)
+            assert workflow is not None
+            req.graph = workflow.get_api_graph()
         await runner.run(req, context)
 
     if use_thread:

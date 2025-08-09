@@ -23,8 +23,6 @@ from nodetool.api.openai import create_openai_compatible_router
 from nodetool.types.workflow import Workflow
 from nodetool.deploy.workflow_routes import (
     create_workflow_router,
-    get_aggregated_workflows,
-    initialize_workflow_registry,
 )
 from nodetool.deploy.admin_routes import create_admin_router
 from nodetool.deploy.collection_routes import create_collection_router
@@ -67,19 +65,14 @@ def create_nodetool_server(
     @app.on_event("startup")
     async def startup_event():
         """Initialize workflow registry on startup."""
-        initialize_workflow_registry()
         console.print("NodeTool server started successfully")
         # Include OpenAI-compatible router after workflows are initialized
         try:
-            # Aggregate workflows from registry, optional /workflows dir, and provided list
-            aggregated_workflows: List[Workflow] = get_aggregated_workflows(workflows)
-
             app.include_router(
                 create_openai_compatible_router(
                     provider=provider,
                     default_model=default_model,
                     tools=tools,
-                    workflows=aggregated_workflows,
                 )
             )
             # Include lightweight workflow, admin, and collection routers

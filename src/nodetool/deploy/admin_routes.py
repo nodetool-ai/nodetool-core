@@ -22,7 +22,6 @@ from nodetool.deploy.admin_operations import (
     calculate_cache_size,
     delete_hf_model,
 )
-from nodetool.deploy.workflow_routes import get_workflow_registry
 from nodetool.common.environment import Environment
 from typing import Any, Dict
 
@@ -160,16 +159,6 @@ def create_admin_router() -> APIRouter:
             print(f"HuggingFace model deletion error: {e}")
             raise HTTPException(status_code=500, detail=str(e))
 
-    @router.get("/admin/workflows/status")
-    async def admin_workflows_status():
-        """Admin workflow status with registry info."""
-        registry = get_workflow_registry()
-        return {
-            "status": "healthy",
-            "workflow_count": len(registry),
-            "available_workflows": list(registry.keys()),
-            "timestamp": __import__("datetime").datetime.now().isoformat(),
-        }
 
     # Database adapter operations
     @router.post("/admin/db/{table}/save")

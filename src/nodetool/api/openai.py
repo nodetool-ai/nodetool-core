@@ -6,9 +6,10 @@ from fastapi.responses import StreamingResponse
 from rich.console import Console
 
 from nodetool.api.model import get_language_models
+from nodetool.api.workflow import from_model
 from nodetool.chat.chat_sse_runner import ChatSSERunner
 from nodetool.types.workflow import Workflow
-
+from nodetool.models.workflow import Workflow as WorkflowModel
 
 console = Console()
 
@@ -17,7 +18,6 @@ def create_openai_compatible_router(
     provider: str,
     default_model: str = "gemma3n:latest",
     tools: List[str] | None = None,
-    workflows: List[Workflow] | None = None,
 ) -> APIRouter:
     """Create an APIRouter exposing OpenAI-compatible endpoints.
 
@@ -29,7 +29,6 @@ def create_openai_compatible_router(
     router = APIRouter(prefix="/v1")
 
     tools = tools or []
-    workflows = workflows or []
 
     @router.post("/chat/completions")
     async def openai_chat_completions(request: Request):
@@ -44,13 +43,15 @@ def create_openai_compatible_router(
             )
             if auth_token:
                 data["auth_token"] = auth_token
+            
+            workflows, _ = WorkflowModel.paginate(limit=1000)
 
             runner = ChatSSERunner(
                 auth_token,
                 default_model=default_model,
                 default_provider=provider,
                 tools=tools,
-                workflows=workflows,
+                workflows=[from_model(workflow) for workflow in workflows],
             )
 
             # Determine if the client requested streaming (default true)

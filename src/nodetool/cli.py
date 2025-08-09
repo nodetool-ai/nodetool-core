@@ -1891,14 +1891,10 @@ def sync_workflow(workflow_id: str, server_url: str):
             if workflow is None:
                 console.print(f"[red]❌ Workflow not found: {workflow_id}[/]")
                 raise SystemExit(1)
-
-            # Convert to Workflow model and dump as JSON-serializable dict
-            payload = workflow.model_dump(mode="json")
-
             # Use optional API key for auth if present
             api_key = os.getenv("RUNPOD_API_KEY")
             client = AdminHTTPClient(server_url, auth_token=api_key)
-            res = await client.db_save("workflows", payload)
+            res = await client.update_workflow(workflow_id, workflow)
 
             status = res.get("status", "ok")
             if status == "ok":

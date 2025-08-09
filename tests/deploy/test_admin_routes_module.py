@@ -76,11 +76,5 @@ class TestAdminRoutes:
             assert resp.status_code == 200
             assert resp.json()["repo_id"] == "r"
 
-    def test_admin_workflows_status(self, client):
-        with patch("nodetool.deploy.admin_routes.get_workflow_registry") as mock_reg:
-            mock_reg.return_value = {"a": object(), "b": object()}
-            resp = client.get("/admin/workflows/status")
-            assert resp.status_code == 200
-            data = resp.json()
-            assert data["workflow_count"] == 2
+
 
