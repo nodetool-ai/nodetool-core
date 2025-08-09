@@ -49,13 +49,13 @@ class OpenAIChatClient:
         Args:
             server_url: Base URL of the chat server (e.g., 'http://localhost:8080')
             auth_token: Optional authentication token
-            model: Optional initial model to use (e.g., 'gemma3n:latest')
+            model: Optional initial model to use (e.g., 'gpt-oss:20b')
             provider: Optional provider to use (e.g., 'openai', 'anthropic', 'ollama')
         """
         self.server_url = server_url.rstrip("/")
         self.auth_token = auth_token
         self.history: List[ChatCompletionMessageParam] = []
-        self.current_model = model or "gemma3n:latest"  # Default model
+        self.current_model = model or "gpt-oss:20b"  # Default model
 
         # Determine provider based on server URL if not specified
         if provider:
@@ -326,7 +326,7 @@ class OpenAIChatClient:
         Change the current AI model and provider.
 
         Args:
-            command: The model command (e.g., '/model gemma3n:latest ollama')
+            command: The model command (e.g., '/model gpt-oss:20b ollama')
         """
         parts = command.split()
 

@@ -37,7 +37,7 @@ log = Environment.get_logger()
 def create_nodetool_server(
     remote_auth: bool = False,
     provider: str = "ollama", 
-    default_model: str = "gemma3n:latest",
+    default_model: str = "gpt-oss:20b",
     tools: List[str] = [],
     workflows: List[Workflow] = [],
 ) -> FastAPI:
@@ -115,7 +115,7 @@ def run_nodetool_server(
     port: int = 8000,
     remote_auth: bool = False,
     provider: str = "ollama", 
-    default_model: str = "gemma3n:latest",
+    default_model: str = "gpt-oss:20b",
     tools: List[str] = [],
     workflows: List[Workflow] = [],
 ):
@@ -170,7 +170,7 @@ def run_nodetool_server(
 if __name__ == "__main__":
     # Get configuration from environment
     provider = os.getenv("CHAT_PROVIDER", "ollama")
-    default_model = os.getenv("DEFAULT_MODEL", "gemma3n:latest")
+    default_model = os.getenv("DEFAULT_MODEL", "gpt-oss:20b")
     remote_auth = os.getenv("REMOTE_AUTH", "false").lower() == "true"
     tools_str = os.getenv("NODETOOL_TOOLS", "")
     tools = (

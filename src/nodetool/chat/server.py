@@ -317,7 +317,7 @@ console = Console()
 def create_chat_server(
     remote_auth: bool,
     provider: str,
-    default_model: str = "gemma3n:latest",
+    default_model: str = "gpt-oss:20b",
     tools: list[str] = [],
     workflows: list[Workflow] = [],
 ) -> FastAPI:
@@ -370,7 +370,7 @@ def run_chat_server(
     port: int,
     remote_auth: bool,
     provider: str,
-    default_model: str = "gemma3n:latest",
+    default_model: str = "gpt-oss:20b",
     tools: list[str] = [],
     workflows: list[Workflow] = [],
 ):

@@ -136,7 +136,7 @@ def test_run_nodetool_server_invokes_uvicorn_run(monkeypatch):
             port=8123,
             remote_auth=False,
             provider="ollama",
-            default_model="gemma3n:latest",
+            default_model="gpt-oss:20b",
             tools=["t1"],
             workflows=[],
         )

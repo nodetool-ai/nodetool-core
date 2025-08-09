@@ -69,7 +69,7 @@ class BaseChatRunner(ABC):
     tool management. Subclasses need to implement transport-specific methods.
     """
 
-    def __init__(self, auth_token: str | None = None, default_model: str = "gemma3n:latest", default_provider: str = "ollama"):
+    def __init__(self, auth_token: str | None = None, default_model: str = "gpt-oss:20b", default_provider: str = "ollama"):
         self.auth_token = auth_token
         self.user_id: str | None = None
         self.supabase: AsyncClient | None = None

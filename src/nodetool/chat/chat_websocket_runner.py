@@ -49,7 +49,7 @@ class ChatWebSocketRunner(BaseChatRunner):
     WebSocket-specific transport methods for real-time bidirectional communication.
     """
 
-    def __init__(self, auth_token: str | None = None, default_model: str = "gemma3n:latest", default_provider: str = "ollama"):
+    def __init__(self, auth_token: str | None = None, default_model: str = "gpt-oss:20b", default_provider: str = "ollama"):
         super().__init__(auth_token, default_model, default_provider)
         self.websocket: WebSocket | None = None
         self.mode: WebSocketMode = WebSocketMode.BINARY

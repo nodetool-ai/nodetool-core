@@ -16,7 +16,7 @@ console = Console()
 
 def create_openai_compatible_router(
     provider: str,
-    default_model: str = "gemma3n:latest",
+    default_model: str = "gpt-oss:20b",
     tools: List[str] | None = None,
 ) -> APIRouter:
     """Create an APIRouter exposing OpenAI-compatible endpoints.

@@ -76,7 +76,7 @@ class ChatSSERunner(BaseChatRunner):
     def __init__(
         self,
         auth_token: str | None = None,
-        default_model: str = "gemma3n:latest",
+        default_model: str = "gpt-oss:20b",
         default_provider: str = "ollama",
         workflows: list[Workflow] = [],
     ):

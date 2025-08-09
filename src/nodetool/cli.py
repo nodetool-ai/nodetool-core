@@ -249,7 +249,7 @@ def chat():
 )
 @click.option(
     "--default-model",
-    default="gemma3n:latest",
+    default="gpt-oss:20b",
     help="Default AI model to use when not specified by client.",
 )
 @click.option(
@@ -325,7 +325,7 @@ def chat_server(
 @click.option(
     "--model",
     default="gpt-4o-mini",
-    help="AI model to use (default: gpt-4o-mini for OpenAI, gemma3n:latest for local server).",
+    help="AI model to use (default: gpt-4o-mini for OpenAI, gpt-oss:20b for local server).",
 )
 @click.option(
     "--provider",
@@ -384,9 +384,9 @@ def chat_client(
             if not model:
                 model = "gpt-5-mini"
     else:
-        # For local server, use provided model or default to gemma3n:latest
+        # For local server, use provided model or default to gpt-oss:20b
         if not model:
-            model = "gemma3n:latest"
+            model = "gpt-oss:20b"
 
     asyncio.run(run_chat_client(server_url, auth_token, message, model, provider))
 
@@ -1334,8 +1334,8 @@ def env_for_deploy(
 )
 @click.option(
     "--default-model",
-    default="gemma3n:latest",
-    help="Default model to use (default: gemma3n:latest).",
+    default="gpt-oss:20b",
+    help="Default model to use (default: gpt-oss:20b).",
 )
 @click.option("--tag", help="Optional tag for the Docker image (default: auto-generated)")
 @click.option(
@@ -1409,8 +1409,8 @@ def deploy_local(
 )
 @click.option(
     "--default-model",
-    default="gemma3n:latest",
-    help="Default model to use (default: gemma3n:latest).",
+    default="gpt-oss:20b",
+    help="Default model to use (default: gpt-oss:20b).",
 )
 @click.option(
     "--docker-username",
@@ -1630,8 +1630,8 @@ def deploy_runpod(
 )
 @click.option(
     "--default-model",
-    default="gemma3n:latest",
-    help="Default model to use (default: gemma3n:latest).",
+    default="gpt-oss:20b",
+    help="Default model to use (default: gpt-oss:20b).",
 )
 @click.option(
     "--service-name",
