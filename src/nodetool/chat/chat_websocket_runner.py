@@ -20,6 +20,7 @@ import logging
 import json
 import msgpack
 import asyncio
+import time
 from typing import Optional, Dict, List
 from enum import Enum
 
@@ -52,6 +53,8 @@ class ChatWebSocketRunner(BaseChatRunner):
         self.mode: WebSocketMode = WebSocketMode.BINARY
         # In-memory storage for chat history when database is disabled
         self.in_memory_history: Dict[str, List[ApiMessage]] = {}
+        # Background heartbeat task to keep the connection alive through proxies
+        self.heartbeat_task: asyncio.Task | None = None
 
     def _initialize_standard_tools(self):
         from nodetool.agents.tools import (
@@ -145,6 +148,10 @@ class ChatWebSocketRunner(BaseChatRunner):
         if self.user_id:
             self.all_tools += create_workflow_tools(self.user_id, limit=200)
 
+        # Start heartbeat to keep idle connections alive
+        if not self.heartbeat_task or self.heartbeat_task.done():
+            self.heartbeat_task = asyncio.create_task(self._heartbeat())
+
     def _save_message_to_memory(self, thread_id: str, message: ApiMessage) -> None:
         """Save a message to in-memory storage for the thread."""
         if thread_id not in self.in_memory_history:
@@ -205,6 +212,15 @@ class ChatWebSocketRunner(BaseChatRunner):
             log.debug("Stopping threaded event loop during disconnect")
             self.current_task.cancel()
         
+        # Stop heartbeat task
+        if self.heartbeat_task and not self.heartbeat_task.done():
+            self.heartbeat_task.cancel()
+            try:
+                await self.heartbeat_task
+            except asyncio.CancelledError:
+                pass
+        self.heartbeat_task = None
+
         if self.websocket:
             await self.websocket.close()
         self.websocket = None
@@ -328,6 +344,11 @@ class ChatWebSocketRunner(BaseChatRunner):
                         log.info("Generation stopped by user command")
                     continue
 
+                # Respond to ping without invoking processors
+                if isinstance(data, dict) and data.get("type") == "ping":
+                    await self.send_message({"type": "pong", "ts": time.time()})
+                    continue
+
                 # If there's already a task running, reject the new message
                 if self.current_task and not self.current_task.done():
                     log.debug("Stopping current processor")
@@ -346,4 +367,20 @@ class ChatWebSocketRunner(BaseChatRunner):
                     await self.send_message(error_message)
                 except:
                     pass  # Ignore errors when sending error message
+                continue
+
+    async def _heartbeat(self):
+        """Periodically send a lightweight heartbeat message to keep the WebSocket alive."""
+        while True:
+            try:
+                # Sleep first to avoid sending immediately upon connect
+                await asyncio.sleep(25)
+                if not self.websocket:
+                    break
+                await self.send_message({"type": "ping", "ts": time.time()})
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                # Log and continue; transient failures shouldn't kill the heartbeat loop
+                log.debug(f"Heartbeat send failed: {e}")
                 continue
