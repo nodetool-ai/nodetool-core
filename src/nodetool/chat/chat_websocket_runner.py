@@ -21,6 +21,8 @@ import json
 import msgpack
 import asyncio
 import time
+import uuid
+from datetime import datetime
 from typing import Optional, Dict, List
 from enum import Enum
 
@@ -158,6 +160,48 @@ class ChatWebSocketRunner(BaseChatRunner):
             self.in_memory_history[thread_id] = []
         self.in_memory_history[thread_id].append(message)
         log.debug(f"Saved message to in-memory storage for thread {thread_id}")
+
+    async def _save_message_to_db_async(self, message_data: dict) -> ApiMessage:  # type: ignore[override]
+        """
+        Override to save messages in-memory and return ApiMessage for tests that
+        run without a database.
+        """
+        # Normalize basic fields
+        thread_id = message_data.get("thread_id") or ""
+
+        # Build ApiMessage directly (Pydantic will coerce enums if needed)
+        api_message = ApiMessage(
+            id=message_data.get("id") or uuid.uuid4().hex,
+            workflow_id=message_data.get("workflow_id"),
+            graph=message_data.get("graph"),
+            thread_id=thread_id,
+            tools=message_data.get("tools"),
+            tool_call_id=message_data.get("tool_call_id"),
+            role=message_data.get("role") or "",
+            name=message_data.get("name"),
+            content=message_data.get("content"),
+            tool_calls=message_data.get("tool_calls"),
+            collections=message_data.get("collections"),
+            input_files=message_data.get("input_files"),
+            output_files=message_data.get("output_files"),
+            created_at=message_data.get("created_at") or datetime.utcnow().isoformat(),
+            provider=message_data.get("provider"),
+            model=message_data.get("model"),
+            agent_mode=message_data.get("agent_mode"),
+            workflow_assistant=message_data.get("workflow_assistant"),
+            help_mode=message_data.get("help_mode"),
+        )
+
+        # Save into in-memory history for this runner
+        self._save_message_to_memory(thread_id, api_message)
+
+        return api_message
+
+    async def get_chat_history_from_db(self, thread_id: str) -> List[ApiMessage]:  # type: ignore[override]
+        """
+        Override to fetch chat history from in-memory storage when running without DB.
+        """
+        return list(self.in_memory_history.get(thread_id, []))
 
     async def handle_message(self, data: dict):
         """

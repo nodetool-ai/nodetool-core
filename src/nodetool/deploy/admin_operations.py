@@ -20,6 +20,7 @@ Usage:
 """
 
 import os
+import asyncio
 from typing import Dict, Any, AsyncGenerator
 from huggingface_hub import (
     hf_hub_download,
@@ -256,16 +257,19 @@ async def stream_ollama_model_pull(model_name: str) -> AsyncGenerator[dict, None
             "message": f"Starting download of {model_name}",
         }
 
-        res = await ollama.pull(model_name, stream=True)
-        try:
-            async for chunk in res:  # type: ignore
-                data = chunk.model_dump() if hasattr(chunk, "model_dump") else dict(chunk)
-                yield data
-        except TypeError:
-            # Some mocks may return an async generator function rather than an awaited result
-            async for chunk in res():  # type: ignore
-                data = chunk.model_dump() if hasattr(chunk, "model_dump") else dict(chunk)
-                yield data
+        # Some clients return an async generator directly; others return a coroutine
+        res = ollama.pull(model_name, stream=True)
+        # If coroutine, await to get the async iterator
+        if asyncio.iscoroutine(res):  # type: ignore
+            res = await res  # type: ignore
+
+        # If callable (async generator factory), call it
+        if callable(res):  # type: ignore
+            res = res()  # type: ignore
+
+        async for chunk in res:  # type: ignore
+            data = chunk.model_dump() if hasattr(chunk, "model_dump") else dict(chunk)
+            yield data
 
         yield {
             "status": "completed",
