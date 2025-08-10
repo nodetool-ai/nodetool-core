@@ -104,8 +104,8 @@ class GraphPlannerDemo:
             "nodetool.constant.float.Float", "nodetool.constant.integer.Integer",
             "nodetool.constant.string.String", "nodetool.image.enhance.Enhance",
             "nodetool.image.generate.CreateImage", "nodetool.input.image.ImageInput",
-            "nodetool.input.text.TextInput", "nodetool.llms.anthropic.text.AnthropicText",
-            "nodetool.llms.openai.text.OpenAIText", "nodetool.math.binary_ops.Add",
+            "nodetool.input.text.TextInput", "nodetool.agents.anthropic.text.AnthropicText",
+            "nodetool.agents.openai.text.OpenAIText", "nodetool.math.binary_ops.Add",
             "nodetool.math.binary_ops.Subtract", "nodetool.math.binary_ops.Multiply",
             "nodetool.output.image.ImageOutput", "nodetool.output.text.TextOutput",
             "nodetool.text.combine.CombineText", "nodetool.text.split.SplitText"

@@ -549,7 +549,7 @@ class BaseNode(BaseModel):
         elif self._is_dynamic and name in self._dynamic_properties:
             return self._dynamic_properties[name]
         else:
-            raise ValueError(f"Property {name} does not exist")
+            raise ValueError(f"Property {name} does not exist in {self.__class__.__name__}: {self.node_properties()}")
 
     def set_node_properties(
         self, properties: dict[str, Any], skip_errors: bool = False
@@ -1053,15 +1053,15 @@ class InputNode(BaseNode):
         name (str): The parameter name for this input in the workflow.
     """
 
-    value: Any = Field(None, description="The value of the input.")
     name: str = Field("", description="The parameter name for the workflow.")
+    value: Any = Field(None, description="The value of the input.")
     description: str = Field(
         "", description="The description of the input for the workflow."
     )
 
     @classmethod
     def get_basic_fields(cls):
-        return ["value"]
+        return ["name", "value"]
 
     @classmethod
     def is_visible(cls):
@@ -1082,8 +1082,8 @@ class OutputNode(BaseNode):
         value (Any): The value of the output.
     """
 
-    value: Any = Field(None, description="The value of the output.")
     name: str = Field("", description="The parameter name for the workflow.")
+    value: Any = Field(None, description="The value of the output.")
     description: str = Field(
         "", description="The description of the output for the workflow."
     )
@@ -1094,7 +1094,7 @@ class OutputNode(BaseNode):
 
     @classmethod
     def get_basic_fields(cls):
-        return ["value"]
+        return ["name", "value"]
 
     def result_for_client(self, result: dict[str, Any]) -> dict[str, Any]:
         return self.result_for_all_outputs({"name": self.name, **result})

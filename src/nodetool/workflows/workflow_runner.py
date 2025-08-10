@@ -1646,7 +1646,7 @@ class WorkflowRunner:
                 raise RuntimeError(error_msg)
 
             node.send_update(
-                context, "running", result=None, properties=list(inputs.keys())
+                context, "running", result=None, 
             )
 
             if requires_gpu and self.device != "cpu":
