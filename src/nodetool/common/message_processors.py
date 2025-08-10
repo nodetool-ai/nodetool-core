@@ -112,10 +112,9 @@ class RegularChatProcessor(MessageProcessor):
     - Collection context queries
     """
 
-    def __init__(self, provider: ChatProvider, all_tools: List[Tool]):
+    def __init__(self, provider: ChatProvider):
         super().__init__()
         self.provider = provider
-        self.all_tools = all_tools
 
     async def process(
         self,
@@ -168,7 +167,7 @@ class RegularChatProcessor(MessageProcessor):
                 async for chunk in self.provider.generate_messages(
                     messages=messages_to_send,
                     model=last_message.model,
-                    tools=tools,
+                    tools=list(tools),
                 ):  # type: ignore
                     log.debug(
                         f"Received chunk from provider: type={type(chunk).__name__}"
@@ -402,10 +401,9 @@ class HelpMessageProcessor(MessageProcessor):
     with access to help-specific tools and documentation.
     """
 
-    def __init__(self, provider: ChatProvider, all_tools: List[Tool]):
+    def __init__(self, provider: ChatProvider):
         super().__init__()
         self.provider = provider
-        self.all_tools = all_tools
 
     async def process(
         self,
@@ -439,7 +437,7 @@ class HelpMessageProcessor(MessageProcessor):
             ]
 
             # Combine help tools with all other available tools
-            all_available_tools = help_tools + self.all_tools
+            all_available_tools = help_tools + list(tools)
 
             # Create effective messages with help system prompt
             effective_messages = [
@@ -624,10 +622,9 @@ class AgentMessageProcessor(MessageProcessor):
     them down into subtasks and executing them step by step.
     """
 
-    def __init__(self, provider: ChatProvider, all_tools: List[Tool]):
+    def __init__(self, provider: ChatProvider):
         super().__init__()
         self.provider = provider
-        self.all_tools = all_tools
 
     async def process(
         self,
@@ -648,7 +645,7 @@ class AgentMessageProcessor(MessageProcessor):
         if last_message.tools:
             tool_names = set(last_message.tools)
             selected_tools = [
-                tool for tool in self.all_tools if tool.name in tool_names
+                tool for tool in list(tools) if tool.name in tool_names
             ]
             log.debug(
                 f"Selected tools for agent: {[tool.name for tool in selected_tools]}"

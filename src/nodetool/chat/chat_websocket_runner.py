@@ -27,6 +27,7 @@ from typing import Optional, Dict, List
 from enum import Enum
 
 from fastapi import WebSocket
+from fastapi.websockets import WebSocketState
 from nodetool.agents.tools.workflow_tool import create_workflow_tools
 from nodetool.chat.base_chat_runner import BaseChatRunner
 from nodetool.common.environment import Environment
@@ -222,9 +223,7 @@ class ChatWebSocketRunner(BaseChatRunner):
                 data["provider"] = self.default_provider
             
             # Save message to database asynchronously (if enabled) and to memory
-            db_message = await self._save_message_to_db_async(data)
-            # Mirror into in-memory store for tests expecting in-memory behavior
-            self._save_message_to_memory(thread_id, self._db_message_to_metadata_message(db_message))
+            await self._save_message_to_db_async(data)
             # Load history from in-memory store
             chat_history = self.in_memory_history.get(thread_id, [])
 
@@ -265,8 +264,11 @@ class ChatWebSocketRunner(BaseChatRunner):
                 pass
         self.heartbeat_task = None
 
-        if self.websocket:
-            await self.websocket.close()
+        if self.websocket and self.websocket.client_state != WebSocketState.DISCONNECTED:
+            try:
+                await self.websocket.close()
+            except Exception as e:
+                log.debug(f"WebSocket close ignored: {e}")
         self.websocket = None
         self.current_task = None
         log.info("WebSocket disconnected for chat")
@@ -285,7 +287,16 @@ class ChatWebSocketRunner(BaseChatRunner):
             AssertionError: If the WebSocket is not connected.
             Exception: If an error occurs during message sending.
         """
-        assert self.websocket, "WebSocket is not connected"
+        if not self.websocket:
+            log.debug("Skipping send: WebSocket is not connected")
+            return
+        # Guard against sending after close
+        if (
+            getattr(self.websocket, "client_state", None) == WebSocketState.DISCONNECTED
+            or getattr(self.websocket, "application_state", None) == WebSocketState.DISCONNECTED
+        ):
+            log.debug("Skipping send: WebSocket is disconnected")
+            return
         try:
             if self.mode == WebSocketMode.BINARY:
                 packed_message = msgpack.packb(message, use_bin_type=True)
@@ -363,6 +374,11 @@ class ChatWebSocketRunner(BaseChatRunner):
                     await self.current_task
                 except asyncio.CancelledError:
                     pass
+            # Ensure we fully disconnect and stop heartbeat
+            try:
+                await self.disconnect()
+            except Exception:
+                pass
 
     async def _receive_messages(self):
         """
@@ -427,4 +443,5 @@ class ChatWebSocketRunner(BaseChatRunner):
             except Exception as e:
                 # Log and continue; transient failures shouldn't kill the heartbeat loop
                 log.debug(f"Heartbeat send failed: {e}")
-                continue
+                # On consistent failures, break to avoid spamming after disconnect
+                break
