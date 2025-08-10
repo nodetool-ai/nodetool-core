@@ -343,13 +343,9 @@ class RegularChatProcessor(MessageProcessor):
         graph: Optional[Graph] = None,
     ) -> ToolCall:
         """Execute a tool call and return the result."""
-        tool = None
-        for t in tools:
-            if t.name == tool_call.name:
-                tool = t
-                break
+        from nodetool.agents.tools.base import resolve_tool_by_name
 
-        assert tool is not None, f"Tool {tool_call.name} not found"
+        tool = resolve_tool_by_name(tool_call.name, available_tools=tools)
         log.debug(
             f"Executing tool {tool_call.name} (id={tool_call.id}) with args: {tool_call.args}"
         )
@@ -564,13 +560,9 @@ class HelpMessageProcessor(MessageProcessor):
         tools: Sequence[Tool],
     ) -> ToolCall:
         """Execute a tool call and return the result."""
-        tool = None
-        for t in tools:
-            if t.name == tool_call.name:
-                tool = t
-                break
+        from nodetool.agents.tools.base import resolve_tool_by_name
 
-        assert tool is not None, f"Tool {tool_call.name} not found"
+        tool = resolve_tool_by_name(tool_call.name, available_tools=tools)
         log.debug(
             f"Executing tool {tool_call.name} (id={tool_call.id}) with args: {tool_call.args}"
         )

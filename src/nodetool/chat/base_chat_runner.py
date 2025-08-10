@@ -27,7 +27,7 @@ from nodetool.agents.tools import (
 )
 from nodetool.chat.ollama_service import get_ollama_models
 from nodetool.chat.providers import get_provider
-from nodetool.agents.tools.base import Tool, get_tool_by_name
+from nodetool.agents.tools.base import Tool, resolve_tool_by_name
 from nodetool.common.environment import Environment
 from nodetool.models.message import Message as DBMessage
 from nodetool.models.thread import Thread
@@ -433,6 +433,26 @@ class BaseChatRunner(ABC):
         
         last_message = chat_history[-1]
         processing_context = ProcessingContext(user_id=self.user_id)
+        if last_message.tools:
+            selected_tools = [
+                resolve_tool_by_name(name, available_tools=self.all_tools)
+                for name in last_message.tools
+            ]
+            log.debug(
+                f"Initialized tools: {[tool.name for tool in selected_tools]}"
+            )
+        else:
+            selected_tools = []
+
+        assert last_message.model, "Model is required"
+
+        if not last_message.provider:
+            raise ValueError("No provider specified in the current conversation")
+
+        provider = get_provider(last_message.provider)
+        log.debug(
+            f"Using provider {provider.__class__.__name__} for model {last_message.model}"
+        )
         
         # Check for help request
         if last_message.help_mode:
@@ -447,54 +467,11 @@ class BaseChatRunner(ABC):
                 processor=processor,
                 chat_history=chat_history,
                 processing_context=processing_context,
-                tools=self.all_tools,
+                tools=selected_tools,
             )
         
         # Regular chat processing
         else:
-            def init_tool(name: str) -> Tool:
-                # First check if it's a workflow tool (exact match)
-                for tool in self.all_tools:
-                    if tool.name == name:
-                        return tool
-
-                # If not found, try sanitizing the name and check again (for node tools)
-                from nodetool.agents.tools.base import sanitize_node_name
-
-                sanitized_name = sanitize_node_name(name)
-                for tool in self.all_tools:
-                    if tool.name == sanitized_name:
-                        return tool
-
-                # If still not found in all_tools, try to get by name from registry
-                tool_class = get_tool_by_name(name)
-                if tool_class:
-                    return tool_class()
-
-                # Try sanitized name in registry too
-                tool_class = get_tool_by_name(sanitized_name)
-                if tool_class:
-                    return tool_class()
-
-                raise ValueError(f"Tool {name} not found")
-
-            if last_message.tools:
-                selected_tools = [init_tool(name) for name in last_message.tools]
-                log.debug(
-                    f"Initialized tools: {[tool.name for tool in selected_tools]}"
-                )
-            else:
-                selected_tools = self.all_tools
-
-            assert last_message.model, "Model is required"
-
-            if not last_message.provider:
-                raise ValueError("No provider specified in the current conversation")
-
-            provider = get_provider(last_message.provider)
-            log.debug(
-                f"Using provider {provider.__class__.__name__} for model {last_message.model}"
-            )
             log.debug(f"Chat history length: {len(chat_history)} messages")
             
             # Create the regular chat processor
@@ -528,9 +505,9 @@ class BaseChatRunner(ABC):
         # Get selected tools based on message.tools
         selected_tools = []
         if last_message.tools:
-            tool_names = set(last_message.tools)
             selected_tools = [
-                tool for tool in self.all_tools if tool.name in tool_names
+                resolve_tool_by_name(name, available_tools=self.all_tools)
+                for name in last_message.tools
             ]
             log.debug(
                 f"Selected tools for agent: {[tool.name for tool in selected_tools]}"
@@ -553,8 +530,10 @@ class BaseChatRunner(ABC):
         last_message = chat_history[-1]
         tools = []
         if last_message.tools:
+            from nodetool.agents.tools.base import resolve_tool_by_name
             tools = [
-                tool for tool in self.all_tools if tool.name in list(last_message.tools)
+                resolve_tool_by_name(name, available_tools=self.all_tools)
+                for name in list(last_message.tools)
             ]
         
         await self._run_processor(

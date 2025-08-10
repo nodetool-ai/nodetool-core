@@ -330,30 +330,28 @@ class OpenAIProvider(ChatProvider):
     ) -> AsyncGenerator[Chunk | ToolCall, Any]:
         """Generate streaming completions from OpenAI."""
 
-        modalities = ["text"]
-        if kwargs.get("audio", None) or "audio" in model:
-            modalities.append("audio")
+        # Convert system messages to user messages for O1/O3 models
+        _kwargs = {
+            "model": model,
+            "max_completion_tokens": max_tokens,
+            "response_format": response_format,
+            "stream": True,
+            "stream_options": {"include_usage": True},
+        }
+        if kwargs.get("audio", None):
+            _kwargs["audio"] = kwargs.get("audio", None)
+            _kwargs["modalities"] = ["text", "audio"]
             if not kwargs.get("audio", None):
-                kwargs["audio"] = {
+                _kwargs["audio"] = {
                     "voice": "alloy",
                     "format": "pcm16",
                 }
 
-        # Convert system messages to user messages for O1/O3 models
-        kwargs = {
-            "model": model,
-            "max_completion_tokens": max_tokens,
-            "response_format": response_format,
-            "audio": kwargs.get("audio", None),
-            "stream": True,
-            "modalities": modalities,
-            "stream_options": {"include_usage": True},
-        }
         if len(tools) > 0:
-            kwargs["tools"] = self.format_tools(tools)
+            _kwargs["tools"] = self.format_tools(tools)
 
         if model.startswith("o"):
-            kwargs.pop("temperature", None)
+            _kwargs.pop("temperature", None)
             converted_messages = []
             for msg in messages:
                 if msg.role == "system":
@@ -371,13 +369,7 @@ class OpenAIProvider(ChatProvider):
         self._log_api_request(
             "chat_stream",
             messages,
-            model,
-            tools,
-            stream=True,
-            modalities=modalities,
-            max_completion_tokens=max_tokens,
-            response_format=response_format,
-            stream_options={"include_usage": True},
+            **_kwargs,
         )
 
         openai_messages = [self.convert_message(m) for m in messages]
@@ -389,7 +381,7 @@ class OpenAIProvider(ChatProvider):
 
         completion = await self.get_client().chat.completions.create(
             messages=openai_messages,
-            **kwargs,
+            **_kwargs,
         )
         delta_tool_calls = {}
         current_chunk = ""

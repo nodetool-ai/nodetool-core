@@ -5,7 +5,7 @@ This module includes the fundamental Tool class that all tools inherit from,
 and utility functions used by multiple tools.
 """
 
-from typing import Any, Optional, Type, Dict
+from typing import Any, Optional, Type, Dict, Sequence
 import logging
 from nodetool.workflows.processing_context import ProcessingContext
 
@@ -79,6 +79,50 @@ def get_tool_by_name(name: str) -> Optional[Type["Tool"]]:
         The tool class if found, None otherwise.
     """
     return _tool_registry.get(name)
+
+
+def resolve_tool_by_name(name: str, available_tools: Optional[Sequence["Tool"]] = None) -> "Tool":
+    """
+    Resolve a tool instance by name using the following precedence:
+    1) Exact match from provided available_tools instances
+    2) Match using sanitized node/tool name from available_tools
+    3) Instantiate from registry by exact name
+    4) Instantiate from registry by sanitized name
+
+    Args:
+        name: The requested tool name (from model/tool call or message)
+        available_tools: Optional sequence of already-instantiated tools to search first
+
+    Returns:
+        Tool: An instantiated tool ready for use
+
+    Raises:
+        ValueError: If the tool cannot be resolved
+    """
+    # Try exact instance match in available tools
+    if available_tools:
+        for tool in available_tools:
+            if tool.name == name:
+                return tool
+
+    # Try sanitized name instance match in available tools
+    sanitized_name = sanitize_node_name(name)
+    if available_tools:
+        for tool in available_tools:
+            if tool.name == sanitized_name:
+                return tool
+
+    # Try registry by exact name
+    tool_class = get_tool_by_name(name)
+    if tool_class:
+        return tool_class()
+
+    # Try registry by sanitized name
+    tool_class = get_tool_by_name(sanitized_name)
+    if tool_class:
+        return tool_class()
+
+    raise ValueError(f"Tool {name} not found")
 
 
 class Tool:
