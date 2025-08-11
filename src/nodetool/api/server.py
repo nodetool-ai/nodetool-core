@@ -23,6 +23,7 @@ import mimetypes
 
 from nodetool.common.websocket_updates import websocket_updates
 from multiprocessing import Process
+from nodetool.api.openai import create_openai_compatible_router
 
 # FIX: Windows: mimetypes.guess_type() returns None for some files
 # See:
@@ -122,6 +123,13 @@ def create_app(
         allow_headers=["*"],
         expose_headers=["*"],
         max_age=3600,
+    )
+
+    # Mount OpenAI-compatible endpoints with default provider set to "ollama"
+    app.include_router(
+        create_openai_compatible_router(
+            provider="ollama",
+        )
     )
 
     for router in routers:
