@@ -59,53 +59,6 @@ class ChatWebSocketRunner(BaseChatRunner):
         # Background heartbeat task to keep the connection alive through proxies
         self.heartbeat_task: asyncio.Task | None = None
 
-    def _initialize_standard_tools(self):
-        from nodetool.agents.tools import (
-            AddLabelToEmailTool,
-            ArchiveEmailTool,
-            BrowserTool,
-            ConvertPDFToMarkdownTool,
-            CreateWorkflowTool,
-            DownloadFileTool,
-            EditWorkflowTool,
-            ExtractPDFTablesTool,
-            ExtractPDFTextTool,
-            GoogleGroundedSearchTool,
-            GoogleImageGenerationTool,
-            GoogleImagesTool,
-            GoogleNewsTool,
-            GoogleSearchTool,
-            ListAssetsDirectoryTool,
-            OpenAIImageGenerationTool,
-            OpenAITextToSpeechTool,
-            OpenAIWebSearchTool,
-            ScreenshotTool,
-            SearchEmailTool,
-        )
-        # Initialize tools after user_id is set
-        self.all_tools += [
-            AddLabelToEmailTool(),
-            ArchiveEmailTool(),
-            BrowserTool(),
-            ConvertPDFToMarkdownTool(),
-            CreateWorkflowTool(),
-            DownloadFileTool(),
-            EditWorkflowTool(),
-            ExtractPDFTablesTool(),
-            ExtractPDFTextTool(),
-            GoogleGroundedSearchTool(),
-            GoogleImageGenerationTool(),
-            GoogleImagesTool(),
-            GoogleNewsTool(),
-            GoogleSearchTool(),
-            ListAssetsDirectoryTool(),
-            OpenAIImageGenerationTool(),
-            OpenAITextToSpeechTool(),
-            OpenAIWebSearchTool(),
-            ScreenshotTool(),
-            SearchEmailTool(),
-        ]   
-
     async def connect(self, websocket: WebSocket):
         """
         Accepts and establishes a new WebSocket connection.
@@ -144,10 +97,7 @@ class ChatWebSocketRunner(BaseChatRunner):
         log.info("WebSocket connection established for chat")
         log.debug("WebSocket connection ready")
 
-        self.all_tools = []
-        self._initialize_standard_tools()
-        self._initialize_node_tools()
-
+        self._initialize_tools()
         if self.user_id:
             self.all_tools += create_workflow_tools(self.user_id, limit=200)
 

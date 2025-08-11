@@ -41,7 +41,7 @@ from openai.types.chat.chat_completion_chunk import (
 )
 from openai.types.chat.chat_completion_assistant_message_param import ContentArrayOfContentPart
 
-from nodetool.agents.tools.workflow_tool import WorkflowTool
+from nodetool.agents.tools.workflow_tool import WorkflowTool, create_workflow_tools
 from nodetool.chat.base_chat_runner import BaseChatRunner
 from nodetool.metadata.types import (
     Message as ApiMessage,
@@ -85,63 +85,6 @@ class ChatSSERunner(BaseChatRunner):
         self.is_connected: bool = False
         # Store the provided chat history for this request (used when database is disabled)
         self.provided_history: List[ApiMessage] = []
-        # Initialize tools lazily; do not populate by default for tests
-        self.all_tools = []
-
-    def _initialize_tools(self, workflows: list[Workflow] | None = None) -> None:
-        """Initialize standard and workflow tools lazily."""
-        try:
-            from nodetool.agents.tools import (
-                AddLabelToEmailTool,
-                ArchiveEmailTool,
-                BrowserTool,
-                ConvertPDFToMarkdownTool,
-                CreateWorkflowTool,
-                DownloadFileTool,
-                EditWorkflowTool,
-                ExtractPDFTablesTool,
-                ExtractPDFTextTool,
-                GoogleGroundedSearchTool,
-                GoogleImageGenerationTool,
-                GoogleImagesTool,
-                GoogleNewsTool,
-                GoogleSearchTool,
-                ListAssetsDirectoryTool,
-                OpenAIImageGenerationTool,
-                OpenAITextToSpeechTool,
-                OpenAIWebSearchTool,
-                ScreenshotTool,
-                SearchEmailTool,
-            )
-            # If tools already initialized, skip
-            if not self.all_tools:
-                self.all_tools += [
-                    AddLabelToEmailTool(),
-                    ArchiveEmailTool(),
-                    BrowserTool(),
-                    ConvertPDFToMarkdownTool(),
-                    CreateWorkflowTool(),
-                    DownloadFileTool(),
-                    EditWorkflowTool(),
-                    ExtractPDFTablesTool(),
-                    ExtractPDFTextTool(),
-                    GoogleGroundedSearchTool(),
-                    GoogleImageGenerationTool(),
-                    GoogleImagesTool(),
-                    GoogleNewsTool(),
-                    GoogleSearchTool(),
-                    ListAssetsDirectoryTool(),
-                    OpenAIImageGenerationTool(),
-                    OpenAITextToSpeechTool(),
-                    OpenAIWebSearchTool(),
-                    ScreenshotTool(),
-                    SearchEmailTool(),
-                ]
-            for workflow in workflows or []:
-                self.all_tools.append(WorkflowTool(workflow))
-        except Exception:
-            # Tools are optional for some tests; ignore initialization errors
-            pass
 
     async def connect(self, user_id: str | None = None, **kwargs) -> None:
         """
@@ -174,6 +117,9 @@ class ChatSSERunner(BaseChatRunner):
 
         self.is_connected = True
         log.info("SSE connection established for chat")
+        self._initialize_tools()
+        if self.user_id:
+            self.all_tools += create_workflow_tools(self.user_id, limit=200)
 
     async def disconnect(self) -> None:
         """

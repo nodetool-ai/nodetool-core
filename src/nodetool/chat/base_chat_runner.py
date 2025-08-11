@@ -73,10 +73,58 @@ class BaseChatRunner(ABC):
         self.auth_token = auth_token
         self.user_id: str | None = None
         self.supabase: AsyncClient | None = None
-        self.all_tools: List[Tool] = []
         self.current_task: asyncio.Task | None = None
         self.default_model = default_model
         self.default_provider = default_provider
+        self.all_tools: List[Tool] = []
+
+    def _initialize_tools(self):
+        from nodetool.agents.tools import (
+            AddLabelToEmailTool,
+            ArchiveEmailTool,
+            BrowserTool,
+            ConvertPDFToMarkdownTool,
+            CreateWorkflowTool,
+            DownloadFileTool,
+            EditWorkflowTool,
+            ExtractPDFTablesTool,
+            ExtractPDFTextTool,
+            GoogleGroundedSearchTool,
+            GoogleImageGenerationTool,
+            GoogleImagesTool,
+            GoogleNewsTool,
+            GoogleSearchTool,
+            ListAssetsDirectoryTool,
+            OpenAIImageGenerationTool,
+            OpenAITextToSpeechTool,
+            OpenAIWebSearchTool,
+            ScreenshotTool,
+            SearchEmailTool,
+        )
+        # If tools already initialized, skip
+        self.all_tools = [
+            AddLabelToEmailTool(),
+            ArchiveEmailTool(),
+            BrowserTool(),
+            ConvertPDFToMarkdownTool(),
+            CreateWorkflowTool(),
+            DownloadFileTool(),
+            EditWorkflowTool(),
+            ExtractPDFTablesTool(),
+            ExtractPDFTextTool(),
+            GoogleGroundedSearchTool(),
+            GoogleImageGenerationTool(),
+            GoogleImagesTool(),
+            GoogleNewsTool(),
+            GoogleSearchTool(),
+            ListAssetsDirectoryTool(),
+            OpenAIImageGenerationTool(),
+            OpenAITextToSpeechTool(),
+            OpenAIWebSearchTool(),
+            ScreenshotTool(),
+            SearchEmailTool(),
+        ]
+        self._initialize_node_tools()
 
     @abstractmethod
     async def connect(self, **kwargs) -> None:
