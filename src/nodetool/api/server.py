@@ -102,7 +102,7 @@ if not Environment.is_production():
 
 
 def create_app(
-    origins: list[str] = ["*","http://localhost:3000"],
+    origins: list[str] = ["*"],
     routers: list[APIRouter] = DEFAULT_ROUTERS,
     static_folder: str | None = None,
     apps_folder: str | None = None,

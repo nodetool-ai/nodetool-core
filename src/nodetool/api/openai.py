@@ -74,9 +74,6 @@ def create_openai_compatible_router(
                     headers={
                         "Cache-Control": "no-cache",
                         "Connection": "keep-alive",
-                        "Access-Control-Allow-Origin": "*",
-                        "Access-Control-Allow-Headers": "Authorization, Content-Type",
-                        "Access-Control-Allow-Methods": "POST, OPTIONS",
                     },
                 )
         except Exception as e:  # noqa: BLE001
