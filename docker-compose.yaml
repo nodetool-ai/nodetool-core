@@ -9,6 +9,7 @@ services:
       - "./cert.pem:/app/cert.pem"
       - ${HF_HOME}:/app/huggingface
       - /var/run/docker.sock:/var/run/docker.sock
+      - ${CHROMA_PATH}:/chroma-data
     command:
       [
         "uvicorn",
@@ -45,8 +46,7 @@ services:
       MEMCACHE_HOST: ${MEMCACHE_HOST}
       MEMCACHE_PORT: ${MEMCACHE_PORT}
       NODETOOL_API_URL: ${NODETOOL_API_URL}
-      CHROMA_URL: ${CHROMA_URL}
-      CHROMA_TOKEN: ${CHROMA_TOKEN}
+      CHROMA_PATH: /chroma-data
     deploy:
       resources:
         reservations:
@@ -57,31 +57,6 @@ services:
   memcached:
     image: memcached:bookworm
     restart: unless-stopped
-  chroma:
-    restart: unless-stopped
-    build:
-      context: .
-      dockerfile: Dockerfile
-    volumes:
-      - ${CHROMA_PATH}:/chroma-data
-    command:
-      [
-        "chroma",
-        "run",
-        "--host",
-        "0.0.0.0",
-        "--port",
-        "9000",
-        "--path",
-        "/chroma-data",
-      ]
-    environment:
-      CHROMA_SERVER_AUTHN_CREDENTIALS: ${CHROMA_TOKEN}
-      CHROMA_SERVER_AUTHN_PROVIDER: chromadb.auth.token_authn.TokenAuthenticationServerProvider
-    expose:
-      - "9000"
-    ports:
-      - "9000:9000"
   ollama:
     image: ollama/ollama:latest
     restart: unless-stopped
