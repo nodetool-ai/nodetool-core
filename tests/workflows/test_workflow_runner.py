@@ -268,6 +268,91 @@ class CacheableNode(BaseNode):
         return self.value
 
 
+# ============= REGRESSION TESTS FOR INPUT BLEED AND STREAMING PROPERTIES =============
+
+class ProducerText(BaseNode):
+    """Produces a 'text' output handle."""
+
+    @classmethod
+    def get_node_type(cls):
+        return "test.regression.ProducerText"
+
+    @classmethod
+    def return_type(cls):
+        return {"text": str}
+
+    async def process(self, context: ProcessingContext) -> dict[str, Any]:
+        return {"text": "strategy text"}
+
+
+class ProducerPrompt(BaseNode):
+    """Produces a 'prompt' output handle."""
+
+    @classmethod
+    def get_node_type(cls):
+        return "test.regression.ProducerPrompt"
+
+    @classmethod
+    def return_type(cls):
+        return {"prompt": str}
+
+    async def process(self, context: ProcessingContext) -> dict[str, Any]:
+        return {"prompt": "designer prompt"}
+
+
+class PreviewNode(BaseNode):
+    """Accepts 'value' and echoes it to 'output'."""
+    value: str = ""
+
+    @classmethod
+    def get_node_type(cls):
+        return "test.regression.PreviewNode"
+
+    @classmethod
+    def return_type(cls):
+        return {"output": str}
+
+    async def process(self, context: ProcessingContext) -> dict[str, Any]:
+        return {"output": self.value}
+
+
+class ListGenSim(BaseNode):
+    """Simulates a ListGenerator-like node with 'prompt' and 'input_text' only."""
+    prompt: str = ""
+    input_text: str = ""
+
+    @classmethod
+    def get_node_type(cls):
+        return "test.regression.ListGenSim"
+
+    @classmethod
+    def return_type(cls):
+        return {"output": str}
+
+    async def process(self, context: ProcessingContext) -> dict[str, Any]:
+        # Combine to validate both properties were set and no stray 'value' was assigned
+        return {"output": f"{self.prompt}|{self.input_text}"}
+
+
+class SimpleStreaming(BaseNode):
+    """Streaming node that yields from property 'a'; has no 'value' property."""
+    a: str = ""
+
+    def is_streaming_output(self) -> bool:
+        return True
+
+    @classmethod
+    def return_type(cls):
+        return {"output": str}
+
+    @classmethod
+    def get_node_type(cls):
+        return "test.regression.SimpleStreaming"
+
+    async def gen_process(self, context: ProcessingContext):  # type: ignore[override]
+        yield ("output", f"stream:{self.a}")
+
+
 @pytest.mark.asyncio
 async def test_process_node_error(workflow_runner: WorkflowRunner):
     error_node = {"id": "1", "type": ErrorNode.get_node_type()}
@@ -971,6 +1056,159 @@ async def test_caching_functionality(workflow_runner: WorkflowRunner):
     
     # Process count should still be 1 (not incremented)
     assert cacheable_node.process_count == 1
+
+
+@pytest.mark.asyncio
+async def test_no_input_bleed_across_batched_nodes():
+    """Ensure per-node inputs are isolated when multiple nodes are scheduled in the same batch.
+
+    Regresses prior behavior where a shared inputs dict caused 'value' to bleed into a node
+    that did not declare it (e.g., ListGenerator), triggering property errors.
+    """
+
+    p_text = {"id": "p_text", "type": ProducerText.get_node_type()}
+    p_prompt = {"id": "p_prompt", "type": ProducerPrompt.get_node_type()}
+
+    preview = {"id": "preview", "type": PreviewNode.get_node_type()}
+    listgen = {"id": "listgen", "type": ListGenSim.get_node_type()}
+
+    out_preview = {
+        "id": "out_preview",
+        "type": StringOutput.get_node_type(),
+        "data": {"name": "preview_out"},
+    }
+    out_listgen = {
+        "id": "out_listgen",
+        "type": StringOutput.get_node_type(),
+        "data": {"name": "listgen_out"},
+    }
+
+    nodes = [p_text, p_prompt, preview, listgen, out_preview, out_listgen]
+    edges = [
+        # Feed PreviewNode.value from ProducerText.text
+        {
+            "id": "e1",
+            "source": "p_text",
+            "target": "preview",
+            "sourceHandle": "text",
+            "targetHandle": "value",
+            "ui_properties": {},
+        },
+        # Feed ListGenSim.input_text from ProducerText.text
+        {
+            "id": "e2",
+            "source": "p_text",
+            "target": "listgen",
+            "sourceHandle": "text",
+            "targetHandle": "input_text",
+            "ui_properties": {},
+        },
+        # Feed ListGenSim.prompt from ProducerPrompt.prompt
+        {
+            "id": "e3",
+            "source": "p_prompt",
+            "target": "listgen",
+            "sourceHandle": "prompt",
+            "targetHandle": "prompt",
+            "ui_properties": {},
+        },
+        # Collect outputs
+        {
+            "id": "e4",
+            "source": "preview",
+            "target": "out_preview",
+            "sourceHandle": "output",
+            "targetHandle": "value",
+            "ui_properties": {},
+        },
+        {
+            "id": "e5",
+            "source": "listgen",
+            "target": "out_listgen",
+            "sourceHandle": "output",
+            "targetHandle": "value",
+            "ui_properties": {},
+        },
+    ]
+
+    graph = APIGraph(nodes=[Node(**n) for n in nodes], edges=[Edge(**e) for e in edges])
+    req = RunJobRequest(user_id="u", workflow_id="wf", job_type="t", params={}, graph=graph)
+    context = ProcessingContext(user_id="u", auth_token="token")
+
+    runner = WorkflowRunner(job_id="job_bleed")
+    await runner.run(req, context)
+
+    # Both outputs should be present with expected values and no errors thrown
+    assert runner.outputs["preview_out"] == ["strategy text"]
+    assert runner.outputs["listgen_out"] == ["designer prompt|strategy text"]
+
+
+@pytest.mark.asyncio
+async def test_streaming_running_update_has_only_valid_properties():
+    """Ensure streaming init 'running' update lists only existing properties (filters extras)."""
+
+    class PropProducer(BaseNode):
+        @classmethod
+        def get_node_type(cls):
+            return "test.regression.PropProducer"
+
+        async def process(self, context: ProcessingContext) -> dict[str, Any]:
+            # Produce both an 'a' for the streaming node and a 'value' for the preview node
+            return {"a": "alpha", "value": "v"}
+
+        @classmethod
+        def return_type(cls):
+            return {"a": str, "value": str}
+
+    prop_producer = {"id": "pp", "type": PropProducer.get_node_type()}
+    streaming = {"id": "s", "type": SimpleStreaming.get_node_type()}
+    preview = {"id": "pv", "type": PreviewNode.get_node_type()}
+    out_stream = {"id": "os", "type": StringOutput.get_node_type(), "data": {"name": "stream"}}
+    out_prev = {"id": "op", "type": StringOutput.get_node_type(), "data": {"name": "prev"}}
+
+    nodes = [prop_producer, streaming, preview, out_stream, out_prev]
+    edges = [
+        {"id": "e1", "source": "pp", "target": "s", "sourceHandle": "a", "targetHandle": "a", "ui_properties": {}},
+        {"id": "e2", "source": "pp", "target": "pv", "sourceHandle": "value", "targetHandle": "value", "ui_properties": {}},
+        {"id": "e3", "source": "s", "target": "os", "sourceHandle": "output", "targetHandle": "value", "ui_properties": {}},
+        {"id": "e4", "source": "pv", "target": "op", "sourceHandle": "output", "targetHandle": "value", "ui_properties": {}},
+    ]
+
+    graph = APIGraph(nodes=[Node(**n) for n in nodes], edges=[Edge(**e) for e in edges])
+    req = RunJobRequest(user_id="u", workflow_id="wf", job_type="t", params={}, graph=graph)
+    messages: list[Any] = []
+    context = ProcessingContext(user_id="u", auth_token="token")
+    # Capture all messages to inspect NodeUpdates
+    original_post = context.post_message
+
+    def capture_post(msg):
+        messages.append(msg)
+        return original_post(msg)
+
+    context.post_message = capture_post  # type: ignore[assignment]
+
+    runner = WorkflowRunner(job_id="job_stream_props")
+    await runner.run(req, context)
+
+    # Find the first 'running' NodeUpdate for the streaming node and assert properties only contains 'a'
+    from nodetool.workflows.types import NodeUpdate as NodeUpdateType
+    running_updates = [
+        m
+        for m in messages
+        if isinstance(m, NodeUpdateType) and m.node_name == WorkflowRunner.__name__  # placeholder to keep mypy happy
+    ]
+    # The above filter doesn't match node_name; instead, filter by node_id "s"
+    running_updates = [
+        m for m in messages if hasattr(m, "node_id") and getattr(m, "node_id") == "s" and getattr(m, "status", "") == "running"
+    ]
+    assert running_updates, "Expected a running update for streaming node"
+    props = getattr(running_updates[0], "properties", [])
+    # properties may be a list or dict depending on serialization; normalize
+    if isinstance(props, dict):
+        props_list = list(props.keys())
+    else:
+        props_list = list(props)
+    assert props_list == ["a"], f"Unexpected properties in running update: {props}"
 
 
 # ============= EDGE QUEUE TESTS =============

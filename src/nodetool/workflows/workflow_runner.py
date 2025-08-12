@@ -357,6 +357,10 @@ class WorkflowRunner:
         # Create the internal Graph object with these loaded instances
         graph = Graph.from_dict(req.graph.model_dump())
 
+        # Filter invalid/miswired edges before initializing queues to avoid passing
+        # messages into non-existent properties/outputs.
+        self._filter_invalid_edges(graph)
+
         log.info(
             "Graph prepared: %d nodes, %d valid edges after filtering",
             len(graph.nodes),
@@ -737,7 +741,6 @@ class WorkflowRunner:
         tasks_to_run_this_iteration = []
         ready_node_task_details_list: list[tuple[BaseNode, dict[str, Any]]] = []
         any_progress_potential = False
-        inputs_for_this_run: dict[str, Any] = {}
 
         for node in graph.nodes:
             if node._id in self.active_processing_node_ids:
@@ -751,11 +754,11 @@ class WorkflowRunner:
                 log.debug(
                     f"Active streaming node {node.get_title()} ({node._id}) is ready to pull next item."
                 )
-                inputs_for_this_run = {}  # Inputs are internal to generator
+                active_stream_inputs: dict[str, Any] = {}  # Inputs are internal to generator
                 tasks_to_run_this_iteration.append(
-                    self.process_node(context, node, inputs_for_this_run)
+                    self.process_node(context, node, active_stream_inputs)
                 )
-                ready_node_task_details_list.append((node, inputs_for_this_run))
+                ready_node_task_details_list.append((node, active_stream_inputs))
                 self.active_processing_node_ids.add(node._id)
                 any_progress_potential = True
                 continue
@@ -861,6 +864,7 @@ class WorkflowRunner:
 
             # --- Consume Phase: If all inputs can be satisfied, now consume them ---
             messages_consumed_for_this_node = False
+            node_inputs_for_this_run: dict[str, Any] = {}
 
             if required_input_slots:  # Only try to consume if there are slots to fill
                 # First check if we can satisfy all required input slots in this run
@@ -906,7 +910,7 @@ class WorkflowRunner:
                                 and self.edge_queues[edge_key]
                             ):
                                 item = self.edge_queues[edge_key].popleft()
-                                inputs_for_this_run[slot_name] = item
+                                node_inputs_for_this_run[slot_name] = item
                                 messages_consumed_for_this_node = True
                                 log.debug(
                                     f"Consumed message for {node.get_title()} slot '{slot_name}' from edge {edge_key}. "
@@ -928,12 +932,14 @@ class WorkflowRunner:
             # - Non-streaming nodes with satisfied inputs.
             # - Streaming nodes for their *initialization run* if their inputs (if any) are satisfied.
             log.debug(
-                f"Node {node.get_title()} ({node._id}) is ready for processing. Inputs provided: {list(inputs_for_this_run.keys())}"
+                f"Node {node.get_title()} ({node._id}) is ready for processing. Inputs provided: {list(node_inputs_for_this_run.keys())}"
             )
+            # Pass a snapshot so later mutations cannot affect already-scheduled tasks
+            node_inputs_snapshot = dict(node_inputs_for_this_run)
             tasks_to_run_this_iteration.append(
-                self.process_node(context, node, inputs_for_this_run)
+                self.process_node(context, node, node_inputs_snapshot)
             )
-            ready_node_task_details_list.append((node, inputs_for_this_run))
+            ready_node_task_details_list.append((node, node_inputs_snapshot))
             self.active_processing_node_ids.add(node._id)
             any_progress_potential = True
 
@@ -1199,7 +1205,7 @@ class WorkflowRunner:
         """
         log.info(f"Initializing streaming node: {node.get_title()} ({node._id})")
         log.debug(
-            f"_init_streaming_node called for node: {node.get_title()} ({node._id}), initial_config: {initial_config_properties}"
+            f" initial_config: {initial_config_properties}"
         )
         self.current_node = node._id  # Ensure current_node is set for ComfyUI hooks
 
@@ -1218,9 +1224,13 @@ class WorkflowRunner:
         await node.pre_process(context)
 
         # Send "running" update. Properties reflect the initial configuration.
-        node.send_update(
-            context, "running", properties=list(initial_config_properties.keys())
-        )
+        # Only include properties that exist on the node to avoid read_property errors
+        safe_properties = [
+            name
+            for name in initial_config_properties.keys()
+            if node.find_property(name) is not None
+        ]
+        node.send_update(context, "running", properties=safe_properties)
 
         try:
             generator = node.gen_process(context)
