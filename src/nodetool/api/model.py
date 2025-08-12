@@ -188,8 +188,6 @@ async def get_language_models() -> list[LanguageModel]:
     models = await get_all_language_models()
 
     ollama_models = await get_ollama_models()
-    print("ollama_models")
-    print(ollama_models)
     models.extend(
         [
             LanguageModel(id=model.name, name=model.name, provider=Provider.Ollama)
