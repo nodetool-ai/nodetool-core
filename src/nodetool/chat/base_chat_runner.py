@@ -414,8 +414,9 @@ class BaseChatRunner(ABC):
         node_tools = []
         for node_type, node_class in NODE_BY_TYPE.items():
             try:
-                node_tool = NodeTool(node_class)
-                node_tools.append(node_tool)
+                if node_class.expose_as_tool():
+                    node_tool = NodeTool(node_class)
+                    node_tools.append(node_tool)
             except Exception as e:
                 log.warning(f"Failed to create node tool for {node_type}: {e}")
 

@@ -241,8 +241,10 @@ class BaseNode(BaseModel):
         _id (str): Unique identifier for the node.
         _parent_id (str | None): Identifier of the parent node, if any.
         _ui_properties (dict[str, Any]): UI-specific properties for the node.
-        _visible (bool): Whether the node is visible in the UI.
+        _dynamic_properties (dict[str, Any]): Dynamic runtime properties for the node.
         _layout (str): The layout style for the node in the UI.
+        _requires_grad (bool): Whether the node requires torch backward pass.
+        _expose_as_tool (bool): Whether the node should be exposed as a tool for agents.
 
     Methods:
         Includes methods for initialization, property management, metadata generation,
@@ -256,6 +258,7 @@ class BaseNode(BaseModel):
     _dynamic_properties: dict[str, Any] = {}
     _is_dynamic: bool = False
     _requires_grad: bool = False
+    _expose_as_tool: bool = False
 
     def __init__(
         self,
@@ -273,6 +276,14 @@ class BaseNode(BaseModel):
 
     def required_inputs(self):
         return []
+
+    @classmethod
+    def expose_as_tool(cls):
+        attr = getattr(cls, "_expose_as_tool", False)
+        if isinstance(attr, bool):
+            return attr
+        # If it's a Pydantic Field / FieldInfo return its default, else direct.
+        return bool(getattr(attr, "default", False))
 
     @classmethod
     def is_visible(cls):
@@ -448,6 +459,7 @@ class BaseNode(BaseModel):
             basic_fields=cls.get_basic_fields(),
             is_dynamic=cls.is_dynamic(),
             is_streaming=cls.is_streaming(),
+            expose_as_tool=cls.expose_as_tool(),
         )
 
     @classmethod

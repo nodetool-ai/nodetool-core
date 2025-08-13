@@ -27,9 +27,20 @@ class NodeMetadata(BaseModel):
     """
     Metadata for a node.
     """
+
     model_config = ConfigDict(
         json_schema_extra={
-            "required": ["title", "description", "namespace", "node_type", "outputs", "properties", "the_model_info", "recommended_models", "basic_fields"]
+            "required": [
+                "title",
+                "description",
+                "namespace",
+                "node_type",
+                "outputs",
+                "properties",
+                "the_model_info",
+                "recommended_models",
+                "basic_fields",
+            ]
         }
     )
 
@@ -56,6 +67,9 @@ class NodeMetadata(BaseModel):
     is_dynamic: bool = Field(default=False, description="Whether the node is dynamic")
     is_streaming: bool = Field(
         default=False, description="Whether the node is streaming"
+    )
+    expose_as_tool: bool = Field(
+        default=False, description="Whether the node is exposed as a tool"
     )
 
 
