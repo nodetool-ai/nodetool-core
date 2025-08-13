@@ -44,7 +44,7 @@ class AgentConsole:
         self.subtask_nodes: Dict[str, Any] = {}
         self.current_subtask: Optional["SubTask"] = None
         self.task: Optional["Task"] = None
-        
+
         # Phase-specific logging storage
         self.phase_logs: Dict[str, List[Dict[str, Any]]] = {}
         self.current_phase: Optional[str] = None
@@ -264,7 +264,7 @@ class AgentConsole:
     def set_current_phase(self, phase_name: str) -> None:
         """
         Set the current phase for logging purposes.
-        
+
         Args:
             phase_name (str): The name of the current phase.
         """
@@ -272,10 +272,12 @@ class AgentConsole:
         if phase_name not in self.phase_logs:
             self.phase_logs[phase_name] = []
 
-    def log_to_phase(self, level: str, message: str, phase_name: Optional[str] = None) -> None:
+    def log_to_phase(
+        self, level: str, message: str, phase_name: Optional[str] = None
+    ) -> None:
         """
         Add a log entry to a specific phase.
-        
+
         Args:
             level (str): The log level (debug, info, warning, error).
             message (str): The log message.
@@ -285,24 +287,20 @@ class AgentConsole:
         if target_phase is None:
             # Fall back to a default phase if no current phase is set
             target_phase = "General"
-            
+
         if target_phase not in self.phase_logs:
             self.phase_logs[target_phase] = []
-            
-        log_entry = {
-            "level": level,
-            "message": message,
-            "timestamp": int(time.time())
-        }
+
+        log_entry = {"level": level, "message": message, "timestamp": int(time.time())}
         self.phase_logs[target_phase].append(log_entry)
 
     def get_phase_logs(self, phase_name: str) -> List[Dict[str, Any]]:
         """
         Get all log entries for a specific phase.
-        
+
         Args:
             phase_name (str): The name of the phase.
-            
+
         Returns:
             List[Dict[str, Any]]: List of log entries for the phase.
         """
@@ -311,7 +309,7 @@ class AgentConsole:
     def get_all_phase_logs(self) -> Dict[str, List[Dict[str, Any]]]:
         """
         Get all log entries organized by phase.
-        
+
         Returns:
             Dict[str, List[Dict[str, Any]]]: Dictionary mapping phase names to log entries.
         """
@@ -320,7 +318,7 @@ class AgentConsole:
     def clear_phase_logs(self, phase_name: Optional[str] = None) -> None:
         """
         Clear log entries for a specific phase or all phases.
-        
+
         Args:
             phase_name (Optional[str]): The phase to clear. If None, clears all phases.
         """
@@ -357,41 +355,41 @@ class AgentConsole:
             )
             self.current_subtask.logs.append(log_entry)
             self.update_execution_display()
-    
+
     def debug_subtask_only(self, message: object) -> None:
         """
         Add a debug log entry ONLY to the current subtask (not phase).
-        
+
         Args:
             message (object): The debug message.
         """
         msg_str = str(message)
         self.log_to_subtask("debug", msg_str)
-    
+
     def info_subtask_only(self, message: object) -> None:
         """
         Add an info log entry ONLY to the current subtask (not phase).
-        
+
         Args:
             message (object): The info message.
         """
         msg_str = str(message)
         self.log_to_subtask("info", msg_str)
-    
+
     def warning_subtask_only(self, message: object) -> None:
         """
         Add a warning log entry ONLY to the current subtask (not phase).
-        
+
         Args:
             message (object): The warning message.
         """
         msg_str = str(message)
         self.log_to_subtask("warning", msg_str)
-    
+
     def error_subtask_only(self, message: object) -> None:
         """
         Add an error log entry ONLY to the current subtask (not phase).
-        
+
         Args:
             message (object): The error message.
         """

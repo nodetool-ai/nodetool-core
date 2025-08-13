@@ -15,6 +15,7 @@ The implementation provides:
 """
 
 import datetime
+import logging
 import json
 import os
 import asyncio
@@ -40,6 +41,9 @@ from nodetool.metadata.types import (
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.ui.console import AgentConsole
 from nodetool.agents.base_agent import BaseAgent
+
+
+log = logging.getLogger(__name__)
 
 
 def sanitize_file_path(file_path: str) -> str:
@@ -103,6 +107,7 @@ class Agent(BaseAgent):
         task: Task | None = None,  # Add optional task parameter
         verbose: bool = True,  # Add verbose flag
         docker_image: str | None = None,
+        display_manager: AgentConsole | None = None,
     ):
         """
         Initialize the base agent.
@@ -153,7 +158,7 @@ class Agent(BaseAgent):
             self.task = self.initial_task
         self.verbose = verbose
         self.docker_image = docker_image
-        self.display_manager = AgentConsole(verbose=self.verbose)
+        self.display_manager = display_manager
 
     async def execute(
         self,
@@ -186,9 +191,12 @@ class Agent(BaseAgent):
             # We need to ensure it passes the None check for subsequent operations.
             pass
         else:
-            self.display_manager.print(
-                f"Agent '{self.name}' planning task for objective: {self.objective}"
-            )
+            if self.display_manager:
+                log.debug(
+                    "Agent '%s' planning task for objective: %s",
+                    self.name,
+                    self.objective,
+                )
             self.provider.log_file = str(
                 get_log_path(
                     sanitize_file_path(
@@ -209,6 +217,7 @@ class Agent(BaseAgent):
                 enable_analysis_phase=self.enable_analysis_phase,
                 enable_data_contracts_phase=self.enable_data_contracts_phase,
                 verbose=self.verbose,
+                display_manager=self.display_manager,
             )
 
             async for chunk in task_planner_instance.create_task(
@@ -237,11 +246,12 @@ class Agent(BaseAgent):
         tool_calls: List[ToolCall] = []
 
         # Start live display managed by AgentConsole
-        self.display_manager.start_live(
-            self.display_manager.create_execution_tree(
-                title=self.name, task=self.task, tool_calls=tool_calls
+        if self.display_manager:
+            self.display_manager.start_live(
+                self.display_manager.create_execution_tree(
+                    title=self.name, task=self.task, tool_calls=tool_calls
+                )
             )
-        )
 
         try:
             executor = TaskExecutor(
@@ -264,12 +274,13 @@ class Agent(BaseAgent):
                     tool_calls.append(item)
 
                 # Create the updated table and update the live display
-                new_table = self.display_manager.create_execution_tree(
-                    title=f"Task:\\n{self.objective}",
-                    task=self.task,
-                    tool_calls=tool_calls,
-                )
-                self.display_manager.update_live(new_table)
+                if self.display_manager:
+                    new_table = self.display_manager.create_execution_tree(
+                        title=f"Task:\\n{self.objective}",
+                        task=self.task,
+                        tool_calls=tool_calls,
+                    )
+                    self.display_manager.update_live(new_table)
 
                 # Yield the item
                 if isinstance(item, ToolCall):
@@ -281,10 +292,7 @@ class Agent(BaseAgent):
                         )
                     if item.name == "finish_subtask" or item.name == "finish_task":
                         for subtask in self.task.subtasks:
-                            if (
-                                subtask.id == item.subtask_id
-                                and "result" in item.args
-                            ):
+                            if subtask.id == item.subtask_id and "result" in item.args:
                                 yield SubTaskResult(
                                     subtask=subtask,
                                     result=item.args["result"],
@@ -315,9 +323,11 @@ class Agent(BaseAgent):
 
         finally:
             # Ensure live display is stopped
-            self.display_manager.stop_live()
+            if self.display_manager:
+                self.display_manager.stop_live()
 
-        self.display_manager.print(self.provider.usage)
+        if self.display_manager:
+            log.debug("Provider usage: %s", self.provider.usage)
 
     def get_results(self) -> Any:
         """

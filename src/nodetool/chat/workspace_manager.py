@@ -72,7 +72,6 @@ class WorkspaceManager:
 
         os.makedirs(workspace_path, exist_ok=True)
         self.current_workspace = workspace_path
-        print(f"Created new workspace at: {self.current_workspace}")
 
     def get_current_directory(self) -> str:
         """

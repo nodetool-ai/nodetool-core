@@ -6,6 +6,7 @@ Inference Providers API with the AsyncInferenceClient from huggingface_hub.
 """
 
 import json
+import asyncio
 import traceback
 from typing import Any, AsyncGenerator, Literal, Sequence
 
@@ -222,7 +223,7 @@ class HuggingFaceProvider(ChatProvider):
         messages: Sequence[Message],
         model: str,
         tools: Sequence[Any] = [],
-        max_tokens: int = 8192,
+        max_tokens: int = 16384,
         context_window: int = 4096,
         response_format: dict | None = None,
         **kwargs,
@@ -265,15 +266,26 @@ class HuggingFaceProvider(ChatProvider):
         if response_format:
             request_params["response_format"] = response_format
 
-        # Make the request using AsyncInferenceClient.chat_completion (as per HF docs)
-        try:
-            completion = await self.client.chat_completion(
-                model=model, **request_params
-            )
-        except Exception as e:
-            print(request_params)
-            traceback.print_exc()
-            raise Exception(f"HuggingFace Inference API request failed: {str(e)}")
+        max_retries = 3
+        base_delay = 1.0
+
+        for attempt in range(max_retries + 1):
+            try:
+                completion = await self.client.chat_completion(
+                    model=model, **request_params
+                )
+                break
+            except Exception as e:
+                error_str = str(e).lower()
+                if attempt < max_retries:
+                    delay = base_delay * (2**attempt)  # Exponential backoff
+                    await asyncio.sleep(delay)
+                    continue
+                else:
+                    traceback.print_exc()
+                    raise Exception(
+                        f"HuggingFace Inference API request failed: {str(e)}"
+                    )
 
         # Update usage statistics if available
         if hasattr(completion, "usage") and completion.usage:

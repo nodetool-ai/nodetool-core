@@ -1,5 +1,3 @@
-import json
-import traceback
 import mimetypes
 import aiohttp
 from typing import Any, AsyncGenerator, List, Sequence
@@ -8,10 +6,8 @@ from google.genai.client import AsyncClient
 from google.genai.types import (
     Tool,
     Blob,
-    Type,
     FunctionDeclaration,
     GenerateContentConfig,
-    Schema,
     Part,
     FunctionCall,
     Content,
@@ -36,109 +32,6 @@ from nodetool.metadata.types import (
     MessageFile,
 )
 from nodetool.workflows.types import Chunk
-
-
-def map_type_to_genai_type(type: str) -> Type:
-    if type == "string":
-        return Type.STRING
-    elif type == "number":
-        return Type.NUMBER
-    elif type == "integer":
-        return Type.INTEGER
-    elif type == "boolean":
-        return Type.BOOLEAN
-    elif type == "array":
-        return Type.ARRAY
-    elif type == "object":
-        return Type.OBJECT
-    else:
-        raise ValueError(f"Unsupported type: {type}")
-
-
-def convert_json_schema_to_genai_schema(schema: dict, path: str = "") -> Schema:
-    """Convert a JSON schema to a Gemini schema.
-
-    Args:
-        schema: A dictionary containing the JSON schema
-        path: Current path in the schema (for debugging)
-
-    Returns:
-        Schema: A Gemini Schema object with all relevant fields populated
-    """
-    try:
-        schema_args = {}
-
-        # Map all possible fields from the JSON schema to Schema fields
-        field_mappings = [
-            "example",
-            "pattern",
-            "max_length",
-            "min_length",
-            "min_properties",
-            "max_properties",
-            "description",
-            "enum",
-            "format",
-            "max_items",
-            "maximum",
-            "min_items",
-            "minimum",
-            "nullable",
-            "required",
-            "title",
-        ]
-
-        if "type" in schema:
-            schema_args["type"] = map_type_to_genai_type(schema["type"])
-
-        for field in field_mappings:
-            if field in schema:
-                schema_args[field] = schema[field]
-
-        # Handle nested properties
-        if "properties" in schema:
-            schema_args["properties"] = {
-                key: convert_json_schema_to_genai_schema(value, f"{path}.{key}")
-                for key, value in schema["properties"].items()
-            }
-
-        # Handle items for array types
-        if "items" in schema:
-            schema_args["items"] = convert_json_schema_to_genai_schema(
-                schema["items"], f"{path}.items"
-            )
-
-        # Handle anyOf
-        if "anyOf" in schema:
-            schema_args["any_of"] = [
-                convert_json_schema_to_genai_schema(s, f"{path}.anyOf[{i}]")
-                for i, s in enumerate(schema["anyOf"])
-            ]
-
-        # Handle oneOf
-        if "oneOf" in schema:
-            schema_args["any_of"] = [
-                convert_json_schema_to_genai_schema(s, f"{path}.oneOf[{i}]")
-                for i, s in enumerate(schema["oneOf"])
-            ]
-
-        # Handle allOf if needed
-        if "allOf" in schema:
-            raise ValueError("allOf is not supported")
-
-        # Handle property ordering if present
-        if "propertyOrdering" in schema:
-            schema_args["property_ordering"] = schema["propertyOrdering"]
-
-        result = Schema(**schema_args)
-        return result
-    except Exception as e:
-        traceback.print_exc()
-        print(f"ERROR converting schema at path '{path}': {str(e)}")
-        print(f"Problematic schema: {json.dumps(schema, indent=2)}")
-        raise ValueError(
-            f"Error converting schema at path '{path}': {str(e)}\nSchema: {json.dumps(schema, indent=2)[:200]}..."
-        )
 
 
 def get_genai_client() -> AsyncClient:
@@ -284,14 +177,13 @@ class GeminiProvider(ChatProvider):
 
     def _format_tools(self, tools: Sequence[NodeTool]) -> ToolListUnion:
         """Convert NodeTool objects to Gemini Tool format."""
-        # function_declarations = []
         result = []
 
         for tool in tools:
             function_declaration = FunctionDeclaration(
                 name=tool.name,
                 description=tool.description,
-                parameters=convert_json_schema_to_genai_schema(tool.input_schema),
+                parameters_json_schema=tool.input_schema,
             )
             result.append(Tool(function_declarations=[function_declaration]))
         return result
@@ -384,13 +276,7 @@ class GeminiProvider(ChatProvider):
             system_instruction=system_instruction,
             max_output_tokens=max_tokens,
             response_mime_type="application/json" if response_format else None,
-            response_schema=(
-                convert_json_schema_to_genai_schema(
-                    response_format["json_schema"]["schema"]
-                )
-                if response_format and "json_schema" in response_format
-                else None
-            ),
+            response_json_schema=response_format,
         )
         contents = await self._prepare_messages(messages)
 

@@ -105,12 +105,12 @@ async def create_embedding(prediction: Prediction, client: openai.AsyncClient):
             input_tokens = res.usage.prompt_tokens if res.usage.prompt_tokens else 0
             cost_per_1k_tokens = tier_pricing["per_1k_tokens"]
             prediction.cost = (input_tokens / 1000) * cost_per_1k_tokens
-        else:
-            print(
-                f"Warning: Pricing rule 'per_1k_tokens' or usage data missing for tier {tier_name} (model {model_id})."
-            )
-    else:
-        print(f"Warning: Tier or pricing not found for embedding model {model_id}.")
+    #     else:
+    #         print(
+    #             f"Warning: Pricing rule 'per_1k_tokens' or usage data missing for tier {tier_name} (model {model_id})."
+    #         )
+    # else:
+    #     print(f"Warning: Tier or pricing not found for embedding model {model_id}.")
 
     return PredictionResult(
         prediction=prediction,
@@ -139,12 +139,12 @@ async def create_speech(prediction: Prediction, client: openai.AsyncClient):
             input_length = len(params.get("input", ""))
             cost_per_1k_chars = tier_pricing["per_1k_chars"]
             prediction.cost = (input_length / 1000) * cost_per_1k_chars
-        else:
-            print(
-                f"Warning: Pricing rule 'per_1k_chars' missing for tier {tier_name} (model {model_id})."
-            )
-    else:
-        print(f"Warning: Tier or pricing not found for TTS model {model_id}.")
+        # else:
+        #     print(
+        #         f"Warning: Pricing rule 'per_1k_chars' missing for tier {tier_name} (model {model_id})."
+        #     )
+    # else:
+    #     print(f"Warning: Tier or pricing not found for TTS model {model_id}.")
 
     return PredictionResult(
         prediction=prediction,
@@ -188,8 +188,8 @@ async def create_chat_completion(
             print(
                 f"Warning: Pricing rules ('input_1k_tokens'/'output_1k_tokens') or usage data missing for tier {tier_name} (model {model_id})."
             )
-    else:
-        print(f"Warning: Tier or pricing not found for chat model {model_id}.")
+    # else:
+    #     print(f"Warning: Tier or pricing not found for chat model {model_id}.")
 
     if not res.usage:  # Should be caught by assert above, but as a fallback
         print(f"Warning: Usage data not returned by API for model {model_id}.")
@@ -370,14 +370,14 @@ async def calculate_chat_cost(
             cost_input = (input_tokens / 1000) * tier_pricing["input_1k_tokens"]
             cost_output = (output_tokens / 1000) * tier_pricing["output_1k_tokens"]
             cost = cost_input + cost_output
-        else:
-            print(
-                f"Warning (test helper): Pricing rules missing for chat tier {tier_name} (model {model_id})."
-            )
-    else:
-        print(
-            f"Warning (test helper): Tier or pricing not found for chat model {model_id}."
-        )
+        # else:
+        #     print(
+        #         f"Warning (test helper): Pricing rules missing for chat tier {tier_name} (model {model_id})."
+        #     )
+    # else:
+    #     print(
+    #         f"Warning (test helper): Tier or pricing not found for chat model {model_id}."
+    #     )
     return cost
 
 

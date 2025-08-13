@@ -132,6 +132,8 @@ class OpenAIProvider(ChatProvider):
             return 128000
         elif model.startswith("gpt-4.1"):
             return 1000000
+        elif model.startswith("gpt-5"):
+            return 400000
         elif model.startswith("o4-mini"):
             return 200000
         else:

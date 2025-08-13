@@ -28,9 +28,7 @@ class ThreadSummarizeRequest(BaseModel):
 
 
 @router.post("/")
-async def create(
-    req: ThreadCreateRequest, user: str = Depends(current_user)
-) -> Thread:
+async def create(req: ThreadCreateRequest, user: str = Depends(current_user)) -> Thread:
     """Create a new thread for the current user."""
     thread = ThreadModel.create(
         user_id=user,
@@ -80,11 +78,11 @@ async def update(
     thread = ThreadModel.find(user_id=user, id=thread_id)
     if thread is None:
         raise HTTPException(status_code=404, detail="Thread not found")
-    
+
     thread.title = req.title
     thread.updated_at = datetime.now()
     thread.save()
-    
+
     return Thread.from_model(thread)
 
 
@@ -94,93 +92,73 @@ async def delete(thread_id: str, user: str = Depends(current_user)) -> None:
     thread = ThreadModel.find(user_id=user, id=thread_id)
     if thread is None:
         raise HTTPException(status_code=404, detail="Thread not found")
-    
+
     # Delete all messages in the thread using cursor-based pagination
     from nodetool.models.message import Message as MessageModel
-    
+
     # Keep deleting messages until none are left
     while True:
         messages, _ = MessageModel.paginate(thread_id=thread_id, limit=100)
         if not messages:
             break
-        
+
         for message in messages:
             if message.user_id == user:
                 message.delete()
-        
+
         # If we deleted fewer messages than the limit, we're done
         if len(messages) < 100:
             break
-    
+
     # Delete the thread
     thread.delete()
-    
+
     log.info(f"Deleted thread {thread_id} and its messages for user {user}")
 
 
 @router.post("/{thread_id}/summarize")
 async def summarize_thread(
-    thread_id: str,
-    req: ThreadSummarizeRequest,
-    user: str = Depends(current_user)
+    thread_id: str, req: ThreadSummarizeRequest, user: str = Depends(current_user)
 ) -> Thread:
     """Summarize thread content and update the thread title."""
     thread = ThreadModel.find(user_id=user, id=thread_id)
+    print("*********")
+    print(thread)
+    print("*********")
     if thread is None:
         raise HTTPException(status_code=404, detail="Thread not found")
-    
-    # Skip if thread already has a meaningful title
-    if thread.title and thread.title not in ["New Thread", "New Conversation"]:
-        return Thread.from_model(thread)
-    
-    # Get messages from the thread
+
     messages, _ = MessageModel.paginate(thread_id=thread_id, limit=10)
-    
+
     if not messages:
         return Thread.from_model(thread)
-    
-    # Find the first user message to use as basis for title
-    user_message = None
-    for msg in messages:
-        if msg.role == "user" and msg.content:
-            user_message = msg
-            break
-    
-    if not user_message:
-        return Thread.from_model(thread)
-    
+
     # Use the provided provider and model for LLM call
     provider = get_provider(Provider(req.provider))
-    
-    # Create a simple prompt to generate a title
-    title_prompt = [
-        Message(
-            role="system",
-            content="Generate a concise, descriptive title (maximum 60 characters) for this conversation based on the user's first message. Return only the title, nothing else."
-        ),
-        Message(
-            role="user",
-            content=str(user_message.content)[:100] 
-        )
-    ]
-    
+
     # Make the LLM call
     response = await provider.generate_message(
         model=req.model,
-        messages=title_prompt,
+        messages=[
+            Message(
+                role="system",
+                content="Generate a concise, descriptive title (maximum 60 characters) for this conversation. Return only the title, nothing else.",
+            ),
+            *messages,
+        ],
         max_tokens=20,
     )
-    
+
     if response.content:
         new_title = str(response.content)
         # Clean up the title (remove quotes if present)
-        new_title = new_title.strip('"\'')
-        
+        new_title = new_title.strip("\"'")
+
         # Update the thread title
         thread.title = new_title[:60]  # Ensure max 60 characters
         thread.updated_at = datetime.now()
         thread.save()
-        
+
         log.info(f"Updated thread {thread_id} title to: {new_title}")
 
     return Thread.from_model(thread)

@@ -19,11 +19,12 @@ from nodetool.workflows.processing_context import ProcessingContext
 from jinja2 import Environment as JinjaEnvironment, BaseLoader
 from nodetool.agents.base_agent import BaseAgent
 
+
 class SimpleAgent(BaseAgent):
     """
     🎯 Plans and executes a single task based on an objective.
 
-    This agent takes a high-level objective and an output filename. It performs
+    This agent takes a high-level objective and an output schema. It performs
     a lightweight planning step to define the necessary instructions, output type,
     and schema for a *single* subtask required to meet the objective. It then
     executes this subtask using a SubTaskContext.
@@ -73,6 +74,7 @@ class SimpleAgent(BaseAgent):
 
         self.subtask: SubTask | None = None
         self.jinja_env = JinjaEnvironment(loader=BaseLoader())  # For prompt rendering
+        self.subtask_context: SubTaskContext | None = None
 
     def _get_execution_tools_info(self) -> str:
         """Helper to format execution tool info for prompts."""
@@ -83,7 +85,6 @@ class SimpleAgent(BaseAgent):
             # Basic info, could be expanded like in TaskPlanner
             info.append(f"- {tool.name}: {tool.description}")
         return "\n".join(info)
-
 
     async def execute(
         self,
@@ -101,11 +102,7 @@ class SimpleAgent(BaseAgent):
         )
         self.task = Task(title=self.objective, subtasks=[self.subtask])
 
-        # --- Execution Phase ---
-        print(
-            f"Single Task Agent: Executing planned subtask for objective: '{self.objective}'"
-        )
-        subtask_context = SubTaskContext(
+        self.subtask_context = SubTaskContext(
             task=self.task,
             subtask=self.subtask,
             processing_context=context,
@@ -118,17 +115,12 @@ class SimpleAgent(BaseAgent):
         )
 
         # Execute the subtask and yield all its updates
-        async for item in subtask_context.execute():
+        async for item in self.subtask_context.execute():
             if isinstance(item, ToolCall) and item.name in [
                 "finish_subtask",
             ]:
                 self.results = item.args.get("result")
             yield item
-
-        # Execution finished (successfully or not, handled by SubTaskContext)
-        print(
-            f"Single Task Agent: Finished execution for objective: '{self.objective}'"
-        )
 
     def get_results(self) -> Any:
         """

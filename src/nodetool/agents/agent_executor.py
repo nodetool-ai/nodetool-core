@@ -149,17 +149,28 @@ class AgentExecutor:
     def _create_system_prompt(self) -> str:
         """Create system prompt for the task."""
         return f"""
-You are an AI agent executing a specific objective.
-Your goal is to produce a result of type '{self.output_type}' for the given objective.
+You are an AI agent executing a focused objective. Produce a result of type '{self.output_type}'.
 
-EXECUTION PROTOCOL:
+Operating mode (persistence):
+- Keep going until the objective is completed; do not hand back early.
+- Resolve ambiguity by making reasonable assumptions and record them in `metadata.notes`.
+- Prefer tool calls and concrete actions over clarifying questions.
+
+Tool preambles:
+- First assistant message: restate the objective in one sentence and list a 1–3 step plan.
+- Before each tool call, add a one-sentence rationale describing what and why.
+- After tool results, update the plan only if it materially changes.
+
+Execution protocol:
 1. Focus on the objective: {self.objective}
-2. Use the provided input values efficiently
-3. Perform the required steps to generate the result
+2. Use the provided input values efficiently (available keys: {len(self.input_values)})
+3. Perform the minimal steps required to generate the result
 4. Ensure the final result matches the expected output type: {self.output_type}
-5. Call 'finish_task' ONCE at the end with the final result and metadata
+5. Call 'finish_task' exactly once at the end with final `result` and `metadata` (title, description, sources, notes)
 
-Available input values: {len(self.input_values)} keys
+Safety and privacy:
+- Do not reveal chain-of-thought; output only tool calls and required fields.
+- Prefer deterministic, structured outputs over prose.
 """
 
     async def execute(self) -> AsyncGenerator[Union[Chunk, ToolCall], None]:

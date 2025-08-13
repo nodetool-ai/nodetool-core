@@ -276,11 +276,12 @@ class BaseChatRunner(ABC):
                 thread_id=message_thread_id, user_id=self.user_id or "", **data_copy
             )
 
-        # Execute in thread pool to make it non-blocking
-        loop = asyncio.get_event_loop()
-        db_message = await loop.run_in_executor(None, _create_db_message)
+        # # Execute in thread pool to make it non-blocking
+        # loop = asyncio.get_event_loop()
+        # db_message = await loop.run_in_executor(None, _create_db_message)
+        db_message = _create_db_message()
 
-        log.debug(f"Saved message {db_message.id} to database asynchronously")
+        log.info(f"Saved message {db_message.id} to database asynchronously")
         return db_message
 
     async def get_chat_history_from_db(self, thread_id: str) -> List[ApiMessage]:

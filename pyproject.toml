@@ -107,6 +107,7 @@ playwright = ">1.40.0"
 browser-use = "*"
 readability-lxml = "0.8.1"
 lxml_html_clean = "0.4.1"
+trafilatura = "2.0.0"
 
 # Authentication and security
 annotated-types = "0.7.0"

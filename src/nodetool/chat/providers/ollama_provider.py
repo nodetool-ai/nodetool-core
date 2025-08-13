@@ -16,6 +16,7 @@ from pydantic import BaseModel
 import tiktoken
 
 from nodetool.chat.providers.base import ChatProvider
+from nodetool.chat.token_counter import count_messages_tokens
 from nodetool.agents.tools.base import Tool
 from nodetool.common.environment import Environment
 from nodetool.metadata.types import (
@@ -145,44 +146,8 @@ class OllamaProvider(ChatProvider):
             return 4096
 
     def _count_tokens(self, messages: Sequence[Message]) -> int:
-        """
-        Count the number of tokens in the message history.
-
-        Args:
-            messages: The messages to count tokens for
-
-        Returns:
-            int: The approximate token count
-        """
-        token_count = 0
-
-        for msg in messages:
-            # Count tokens in the message content
-            if hasattr(msg, "content") and msg.content:
-                if isinstance(msg.content, str):
-                    token_count += len(self.encoding.encode(msg.content))
-                elif isinstance(msg.content, list):
-                    # For multi-modal content, just count the text parts
-                    for part in msg.content:
-                        if isinstance(part, dict) and part.get("type") == "text":
-                            token_count += len(
-                                self.encoding.encode(part.get("text", ""))
-                            )
-
-            # Count tokens in tool calls if present
-            if hasattr(msg, "tool_calls") and msg.tool_calls:
-                for tool_call in msg.tool_calls:
-                    # Count function name
-                    token_count += len(self.encoding.encode(tool_call.name))
-                    # Count arguments
-                    if isinstance(tool_call.args, dict):
-                        token_count += len(
-                            self.encoding.encode(json.dumps(tool_call.args))
-                        )
-                    else:
-                        token_count += len(self.encoding.encode(str(tool_call.args)))
-
-        return token_count
+        """Estimate token count for a sequence of messages."""
+        return count_messages_tokens(messages, encoding=self.encoding)
 
     def convert_message(self, message: Message) -> Dict[str, Any]:
         """

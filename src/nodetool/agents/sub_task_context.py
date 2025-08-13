@@ -188,6 +188,11 @@ from nodetool.ui.console import AgentConsole
 import tiktoken
 import yaml
 
+from nodetool.chat.token_counter import (
+    count_message_tokens,
+    count_messages_tokens,
+)
+
 
 import json
 import os
@@ -204,8 +209,12 @@ from typing import (
     Optional,
     cast,
 )
+import logging
 
 from jinja2 import Environment, BaseLoader
+
+log = logging.getLogger(__name__)
+# log.setLevel(logging.DEBUG)
 
 
 DEFAULT_MAX_TOKEN_LIMIT: int = 4096
@@ -213,40 +222,62 @@ DEFAULT_MAX_ITERATIONS: int = 10
 MESSAGE_COMPRESSION_THRESHOLD: int = 4096
 
 DEFAULT_EXECUTION_SYSTEM_PROMPT: str = """
-You are executing a single subtask from a larger task plan.
-YOUR GOAL IS TO PRODUCE THE INTENDED RESULT FOR THIS SUBTASK.
+You are executing a single subtask within a larger plan. Your job is to complete this subtask end-to-end.
 
-EXECUTION PROTOCOL:
-1. Focus exclusively on the current subtask objective: {{ subtask_content }}.
-2. Use the provided input data from upstream tasks efficiently:
-    - The results from upstream tasks are already provided in your context.
-    - Process the provided data directly rather than requesting additional information.
-    - Use tools that can work with the data structure directly.
-3. Perform the required steps to generate the result.
-4. Ensure the final result matches the expected structure defined in the subtask schema.
-5. **Tool Call Limit**: You have a maximum of {{ max_tool_calls }} tool calls for this subtask. Use them wisely and efficiently.
-6. **Crucially**: Call `finish_subtask` ONCE at the end with the final result.
-    - Provide the result directly as an object in the `result` parameter.
-    - The result will be stored as an object and made available to downstream tasks.
-    - Always include relevant `metadata` (title, description, sources). Sources should cite original inputs and any external sources used.
-7. Do NOT call `finish_subtask` multiple times. Structure your work to produce the final output, then call `finish_subtask`.
-8. Reasoning privacy: Do not reveal chain-of-thought. Only output tool calls and required fields.
-9. Efficiency: Keep text minimal; prefer structured outputs and tool calls.
+Operating mode (persistence):
+- Keep going until the subtask is completed; do not hand back early.
+- If something is ambiguous, choose the most reasonable assumption, proceed, and record the assumption in `metadata.notes`.
+- Prefer tool calls and concrete actions over clarifying questions.
+
+Control of eagerness:
+- Keep scope tightly focused on this subtask: {{ subtask_content }}
+- Avoid unnecessary exploration; stay within a maximum of {{ max_tool_calls }} non-finish tool calls.
+- Be concise and minimize tokens.
+
+Tool preambles:
+- First assistant message: restate the subtask in one sentence and list a short numbered plan (1–3 steps).
+- Before each tool call, emit a one-sentence assistant message describing what you’re doing and why.
+- After tool results, emit a brief update only if it changes the plan.
+
+Execution protocol:
+1. Use upstream results already present in context; do not ask for them again.
+2. Perform the required steps to produce the result that conforms to this subtask’s schema.
+3. When ready, call `finish_subtask` exactly once with:
+   - `result`: the final structured object
+   - `metadata`: include `title`, `description`, `sources`, and `notes` (assumptions/decisions)
+
+Stop conditions:
+- Stop immediately after calling `finish_subtask` successfully.
+- If you reach tool-call limits or conclusion stage, prioritize synthesizing and finishing.
+
+Safety and privacy:
+- Do not reveal chain-of-thought. Output only tool calls and required fields.
+- Prefer deterministic, structured outputs over prose.
 """
 
 DEFAULT_FINISH_TASK_SYSTEM_PROMPT: str = """
-You are completing the final task and aggregating results from previous subtasks.
-The goal is to combine the information from upstream task results into a single, final result according to the overall task objective.
+You are completing the final task by aggregating results from prior subtasks into a single deliverable.
 
-FINISH_TASK PROTOCOL:
-1. Use the provided results from previous subtasks that are already included in your context.
-2. Analyze the provided results efficiently - extract only the key information needed for aggregation.
-3. Synthesize and aggregate the information to create the final task result.
-4. Ensure the final result conforms to the required structure defined in the task schema.
-5. **Tool Call Limit**: You have a maximum of {{ max_tool_calls }} tool calls for this task. Use them wisely and efficiently.
-6. Call `finish_task` ONCE with the complete, aggregated `result` and relevant `metadata` (title, description, sources - citing original sources where possible).
-7. Reasoning privacy: Do not reveal chain-of-thought. Only output tool calls and required fields.
-8. Efficiency: Keep text minimal; prefer structured outputs and tool calls.
+Operating mode (persistence):
+- Keep going until the final result is produced; do not hand back early.
+- Resolve ambiguity by making reasonable assumptions and record them in `metadata.notes`.
+
+Tool preambles:
+- First assistant message: restate the overall objective in one sentence and outline a short plan for aggregation (1–3 steps).
+- Before any tool call, add a one-sentence rationale of what you’re doing and why.
+
+Aggregation protocol:
+1. Use only the provided upstream results already in context; do not re-request them.
+2. Extract key information, synthesize it, and produce the final output matching the task schema.
+3. Respect the tool budget (max {{ max_tool_calls }} non-finish tool calls). Be selective and efficient.
+4. Call `finish_task` exactly once with the complete final `result` and `metadata` including `title`, `description`, `sources`, and `notes` (assumptions/decisions).
+
+Stop conditions:
+- Stop immediately after calling `finish_task` successfully.
+
+Safety and privacy:
+- Do not reveal chain-of-thought. Output only tool calls and required fields.
+- Prefer deterministic, structured outputs over prose.
 """
 
 
@@ -446,6 +477,8 @@ class SubTaskContext:
     _output_result: Any
     tool_calls_made: int
     max_tool_calls: int
+    input_tokens_total: int
+    output_tokens_total: int
 
     def __init__(
         self,
@@ -489,11 +522,15 @@ class SubTaskContext:
             MESSAGE_COMPRESSION_THRESHOLD,
         )
         self._output_result = None  # Added
-        self.display_manager = display_manager or AgentConsole(verbose=True)
+        self.display_manager = display_manager
 
         # Initialize tool call tracking
         self.tool_calls_made = 0
         self.max_tool_calls = subtask.max_tool_calls
+
+        # Initialize token usage tracking
+        self.input_tokens_total = 0
+        self.output_tokens_total = 0
 
         # Note: Initialization debug messages will be logged after setting current subtask in execute()
         self._init_debug_messages = [
@@ -528,7 +565,7 @@ class SubTaskContext:
 
         self.system_prompt = self._render_prompt(base_system_prompt, prompt_context)
 
-        self.tools: Sequence[Tool] = list(tools) + [
+        self.tools = list(tools) + [
             self.finish_tool,
         ]
         self.system_prompt = (
@@ -576,15 +613,7 @@ class SubTaskContext:
         Returns:
             int: The approximate token count
         """
-        token_count = 0
-        for msg in messages:
-            token_count += self._count_single_message_tokens(msg)
-
-        self.display_manager.debug(
-            f"Token count for {len(messages)} messages: {token_count}"
-        )
-
-        return token_count
+        return count_messages_tokens(messages, encoding=self.encoding)
 
     def _count_single_message_tokens(self, msg: Message) -> int:
         """
@@ -596,34 +625,7 @@ class SubTaskContext:
         Returns:
             int: The approximate token count for the single message.
         """
-        token_count = 0
-        # Count tokens in the message content
-        if hasattr(msg, "content") and msg.content:
-            if isinstance(msg.content, str):
-                token_count += len(self.encoding.encode(msg.content))
-            elif isinstance(msg.content, list):
-                # For multimodal content, just count the text parts
-                for part in msg.content:
-                    if isinstance(part, dict) and part.get("type") == "text":
-                        token_count += len(self.encoding.encode(part.get("text", "")))
-
-        # Count tokens in tool calls if present
-        if msg.tool_calls:
-            for tool_call in msg.tool_calls:
-                # Count function name
-                token_count += len(self.encoding.encode(tool_call.name))
-                # Count arguments
-                if isinstance(tool_call.args, dict):
-                    token_count += len(self.encoding.encode(json.dumps(tool_call.args)))
-                else:
-                    token_count += len(self.encoding.encode(str(tool_call.args)))
-
-        # Count tokens in tool results if present (role="tool")
-        # Note: Tool results content is often JSON string, handled by the content check above.
-        # If tool results were stored differently, add logic here.
-        # Example: if msg.role == "tool" and msg.result: token_count += ...
-
-        return token_count
+        return count_message_tokens(msg, encoding=self.encoding)
 
     def get_result(self) -> Any | None:
         """
@@ -649,14 +651,16 @@ class SubTaskContext:
             self.subtask.logs = []
 
         # Set the current subtask for the display manager
-        self.display_manager.set_current_subtask(self.subtask)
+        if self.display_manager:
+            self.display_manager.set_current_subtask(self.subtask)
 
         # Log initialization messages now that current subtask is set
         for msg in self._init_debug_messages:
-            self.display_manager.debug(msg)
+            log.debug(msg)
 
         # Display beautiful subtask start panel
-        self.display_manager.display_subtask_start(self.subtask)
+        if self.display_manager:
+            self.display_manager.display_subtask_start(self.subtask)
 
         # --- LLM-based Execution Logic ---
         prompt_parts = [
@@ -684,9 +688,10 @@ class SubTaskContext:
                             f"**Result from Task {input_task_id}:** No result available\n"
                         )
                 except Exception as e:
-                    self.display_manager.warning(
-                        f"Failed to fetch result for task {input_task_id}: {e}"
-                    )
+                    if self.display_manager:
+                        self.display_manager.warning(
+                            f"Failed to fetch result for task {input_task_id}: {e}"
+                        )
                     input_results.append(
                         f"**Result from Task {input_task_id}:** Error fetching result: {e}\n"
                     )
@@ -704,9 +709,7 @@ class SubTaskContext:
         # Add the task prompt to this subtask's history
         self.history.append(Message(role="user", content=task_prompt))
 
-        self.display_manager.debug(
-            f"Task prompt added to history: {task_prompt[:200]}..."
-        )
+        log.debug(f"Task prompt added to history: {task_prompt[:200]}...")
 
         # Yield task update for subtask start
         yield TaskUpdate(
@@ -716,16 +719,15 @@ class SubTaskContext:
         )
 
         # Display task update event
-        self.display_manager.display_task_update(
-            "SUBTASK_STARTED", self.subtask.content
-        )
+        if self.display_manager:
+            self.display_manager.display_task_update(
+                "SUBTASK_STARTED", self.subtask.content
+            )
 
         # Continue executing until the task is completed or max iterations reached
         while not self.subtask.completed and self.iterations < self.max_iterations:
             self.iterations += 1
-            self.display_manager.debug(
-                f"Starting iteration {self.iterations}/{self.max_iterations}"
-            )
+            log.debug(f"Starting iteration {self.iterations}/{self.max_iterations}")
 
             # Calculate total token count AFTER potential compression
             token_count = self._count_tokens(self.history)
@@ -738,12 +740,7 @@ class SubTaskContext:
             # Check if we need to transition to conclusion stage
             if (token_count > self.max_token_limit) and not self.in_conclusion_stage:
                 # Log and display token warning
-                self.display_manager.warning(
-                    f"Token usage: {token_count}/{self.max_token_limit}"
-                )
-                self.display_manager.display_token_warning(
-                    token_count, self.max_token_limit
-                )
+                log.warning(f"Token usage: {token_count}/{self.max_token_limit}")
                 await self._transition_to_conclusion_stage()
                 # Yield the event after transitioning
                 yield TaskUpdate(
@@ -751,14 +748,16 @@ class SubTaskContext:
                     subtask=self.subtask,
                     event=TaskUpdateEvent.ENTERED_CONCLUSION_STAGE,
                 )
-                self.display_manager.display_task_update("ENTERED_CONCLUSION_STAGE")
+                if self.display_manager:
+                    self.display_manager.display_task_update("ENTERED_CONCLUSION_STAGE")
 
             # Process current iteration
             message = await self._process_iteration()
             if message.tool_calls:
-                self.display_manager.debug_subtask_only(
-                    f"LLM returned {len(message.tool_calls)} tool calls"
-                )
+                if self.display_manager:
+                    self.display_manager.debug_subtask_only(
+                        f"LLM returned {len(message.tool_calls)} tool calls"
+                    )
 
                 # Separate finish tools from other tools - finish tools are always allowed
                 finish_tools = [
@@ -780,12 +779,12 @@ class SubTaskContext:
                         if finish_tools:
                             # Allow only finish tools
                             message.tool_calls = finish_tools
-                            self.display_manager.warning(
+                            log.warning(
                                 f"Tool call limit ({self.max_tool_calls}) reached. Only allowing finish tools."
                             )
                         else:
                             # Force completion if no finish tools available
-                            self.display_manager.warning(
+                            log.warning(
                                 f"Tool call limit ({self.max_tool_calls}) reached. Forcing completion."
                             )
                             tool_call = await self._handle_max_tool_calls_reached()
@@ -795,16 +794,15 @@ class SubTaskContext:
                                 subtask=self.subtask,
                                 event=TaskUpdateEvent.MAX_TOOL_CALLS_REACHED,
                             )
-                            self.display_manager.display_task_update(
-                                "MAX_TOOL_CALLS_REACHED",
-                                f"Tool calls: {self.tool_calls_made}/{self.max_tool_calls}",
+                            log.warning(
+                                f"Tool calls: {self.tool_calls_made}/{self.max_tool_calls}"
                             )
                             break
                     else:
                         # Allow remaining non-finish calls plus all finish calls
                         allowed_other_tools = other_tools[:remaining_calls]
                         message.tool_calls = finish_tools + allowed_other_tools
-                        self.display_manager.warning(
+                        log.warning(
                             f"Tool call limit approaching. Processing {len(finish_tools)} finish tools and {len(allowed_other_tools)} of {len(other_tools)} other tool calls."
                         )
 
@@ -813,9 +811,7 @@ class SubTaskContext:
                 for tool_call in message.tool_calls:
                     # Log tool execution only to subtask (not phase)
                     if tool_call.name not in ("finish_subtask", "finish_task"):
-                        self.display_manager.info_subtask_only(
-                            f"Executing tool: {tool_call.name}"
-                        )
+                        log.debug(f"Executing tool: {tool_call.name}")
                         self.tool_calls_made += 1
                     message = self._generate_tool_call_message(tool_call)
                     yield ToolCall(
@@ -829,17 +825,13 @@ class SubTaskContext:
                         tool_call.name == "finish_subtask"
                         or tool_call.name == "finish_task"
                     ):
-                        self.display_manager.debug(
-                            f"Subtask completed via {tool_call.name}"
-                        )
+                        log.debug(f"Subtask completed via {tool_call.name}")
                         yield TaskUpdate(
                             task=self.task,
                             subtask=self.subtask,
                             event=TaskUpdateEvent.SUBTASK_COMPLETED,
                         )
-                        self.display_manager.display_task_update(
-                            "SUBTASK_COMPLETED", self.subtask.content
-                        )
+                        log.debug(f"Subtask completed: {self.subtask.content}")
             # Handle potential text chunk yields if provider supports streaming text
             elif message.content:
                 yield Chunk(content=str(message.content))
@@ -853,18 +845,20 @@ class SubTaskContext:
                 subtask=self.subtask,
                 event=TaskUpdateEvent.MAX_ITERATIONS_REACHED,
             )
-            self.display_manager.display_task_update(
-                "MAX_ITERATIONS_REACHED",
-                f"Iterations: {self.iterations}/{self.max_iterations}",
-            )
+            if self.display_manager:
+                self.display_manager.display_task_update(
+                    "MAX_ITERATIONS_REACHED",
+                    f"Iterations: {self.iterations}/{self.max_iterations}",
+                )
             yield tool_call
 
         # Display completion event
-        self.display_manager.display_completion_event(
-            self.subtask, self.subtask.completed, self._output_result
-        )
-        self.display_manager.debug(f"Total iterations: {self.iterations}")
-        self.display_manager.debug(f"Total messages in history: {len(self.history)}")
+        if self.display_manager:
+            self.display_manager.display_completion_event(
+                self.subtask, self.subtask.completed, self._output_result
+            )
+            log.debug(f"Total iterations: {self.iterations}")
+            log.debug(f"Total messages in history: {len(self.history)}")
 
     async def _transition_to_conclusion_stage(self) -> None:
         """
@@ -889,8 +883,8 @@ class SubTaskContext:
             for m in self.history
         ):
             self.history.append(Message(role="system", content=transition_message))
-            # Display beautiful conclusion stage transition
-            self.display_manager.display_conclusion_stage()
+            if self.display_manager:
+                self.display_manager.display_conclusion_stage()
 
     async def _process_iteration(
         self,
@@ -898,17 +892,10 @@ class SubTaskContext:
         """
         Process a single iteration of the task.
         """
-        self.display_manager.debug("Processing iteration")
-
         tools_for_iteration = (
             [self.finish_tool]  # Only allow finish tool in conclusion stage
             if self.in_conclusion_stage
             else self.tools  # Allow all tools otherwise
-        )
-
-        self.display_manager.debug(f"Conclusion stage: {self.in_conclusion_stage}")
-        self.display_manager.debug(
-            f"Tools available: {[t.name for t in tools_for_iteration]}"
         )
 
         # Create a dictionary to track unique tools by name
@@ -916,23 +903,39 @@ class SubTaskContext:
         final_tools = list(unique_tools.values())
 
         try:
-            self.display_manager.debug(
-                f"Calling LLM with {len(self.history)} messages in history"
-            )
+            log.debug(f"Calling LLM with {len(self.history)} messages in history")
+            # Count input tokens from current history prior to generation
+            try:
+                input_tokens_now = self._count_tokens(self.history)
+                self.input_tokens_total += input_tokens_now
+                log.debug(
+                    f"Input tokens this call: {input_tokens_now} (cumulative: {self.input_tokens_total})"
+                )
+            except Exception as e:
+                log.warning(f"Failed to count input tokens: {e}")
             message = await self.provider.generate_message(
                 messages=self.history,
                 model=self.model,
                 tools=final_tools,
             )
-            self.display_manager.debug(
+            log.debug(
                 f"LLM response received - content length: {len(str(message.content)) if message.content else 0}"
             )
+            # Count output tokens from returned assistant message
+            try:
+                output_tokens_now = self._count_single_message_tokens(message)
+                self.output_tokens_total += output_tokens_now
+                log.debug(
+                    f"Output tokens this call: {output_tokens_now} (cumulative: {self.output_tokens_total})"
+                )
+            except Exception as e:
+                log.warning(f"Failed to count output tokens: {e}")
             if message.tool_calls:
-                self.display_manager.debug(
+                log.debug(
                     f"LLM requested tool calls: {[tc.name for tc in message.tool_calls]}"
                 )
         except Exception as e:
-            self.display_manager.error(f"Error generating message: {e}", exc_info=True)
+            log.error(f"Error generating message: {e}", exc_info=True)
             raise e
 
         # Clean assistant message content
@@ -960,7 +963,7 @@ class SubTaskContext:
                     if tc.name == self.finish_tool.name:
                         valid_tool_calls.append(tc)
                     else:
-                        self.display_manager.warning(
+                        log.warning(
                             f"LLM attempted to call disallowed tool '{tc.name}' in conclusion stage. Ignoring."
                         )
             else:
@@ -969,9 +972,7 @@ class SubTaskContext:
                 )  # Allow all tools if not in conclusion stage
 
             if valid_tool_calls:
-                self.display_manager.debug(
-                    f"Processing {len(valid_tool_calls)} valid tool calls"
-                )
+                log.debug(f"Processing {len(valid_tool_calls)} valid tool calls")
 
                 # Standard parallel processing for tool calls
                 tool_results = await asyncio.gather(
@@ -980,17 +981,12 @@ class SubTaskContext:
                         for tool_call in valid_tool_calls
                     ]
                 )
-                print("************************************************")
-                print(tool_results)
-                print("************************************************")
                 self.history.extend(tool_results)
-                self.display_manager.debug(
-                    f"Added {len(tool_results)} tool results to history"
-                )
+                log.debug(f"Added {len(tool_results)} tool results to history")
             elif self.in_conclusion_stage and not valid_tool_calls:
                 # If in conclusion stage and LLM didn't call finish_tool, add a nudge?
                 # Or handle it in the max_iterations logic? For now, let loop continue.
-                self.display_manager.warning(
+                log.warning(
                     "LLM did not call the required finish tool in conclusion stage."
                 )
 
@@ -1017,16 +1013,18 @@ class SubTaskContext:
         Returns:
             Message: A message object with role 'tool' containing the processed and serialized result.
         """
-        self.display_manager.debug_subtask_only(
-            f"Handling tool call: {tool_call.name} (ID: {tool_call.id})"
-        )
+        if self.display_manager:
+            self.display_manager.debug_subtask_only(
+                f"Handling tool call: {tool_call.name} (ID: {tool_call.id})"
+            )
 
         # 1. Execute the tool
         tool_result = await self._process_tool_execution(tool_call)
 
-        self.display_manager.debug_subtask_only(
-            f"Tool {tool_call.name} execution completed"
-        )
+        if self.display_manager:
+            self.display_manager.debug_subtask_only(
+                f"Tool {tool_call.name} execution completed"
+            )
 
         # 3. Handle binary artifacts (images, audio)
         if isinstance(tool_result, dict):
@@ -1044,9 +1042,10 @@ class SubTaskContext:
 
         # Log tool result only to subtask tree (not phase)
         if tool_call.name not in ("finish_subtask", "finish_task"):
-            self.display_manager.info_subtask_only(
-                f"Tool result received from {tool_call.name}"
-            )
+            if self.display_manager:
+                self.display_manager.info_subtask_only(
+                    f"Tool result received from {tool_call.name}"
+                )
 
         # 5. Serialize the final processed result for history
         content_str = self._serialize_tool_result_for_history(
@@ -1076,9 +1075,10 @@ class SubTaskContext:
         base64_data = tool_result.get(artifact_key)
 
         if not isinstance(base64_data, str):
-            self.display_manager.warning(
-                f"No valid base64 data found for artifact type '{artifact_type}' in tool '{tool_call_name}' result."
-            )
+            if self.display_manager:
+                self.display_manager.warning(
+                    f"No valid base64 data found for artifact type '{artifact_type}' in tool '{tool_call_name}' result."
+                )
             return tool_result
 
         # Determine file extension
@@ -1102,9 +1102,10 @@ class SubTaskContext:
             with open(artifact_abs_path, "wb") as artifact_file:
                 artifact_file.write(decoded_data)
 
-            self.display_manager.info_subtask_only(
-                f"Saved base64 {artifact_type} from tool '{tool_call_name}' to {artifact_rel_path}"
-            )
+            if self.display_manager:
+                self.display_manager.info_subtask_only(
+                    f"Saved base64 {artifact_type} from tool '{tool_call_name}' to {artifact_rel_path}"
+                )
 
             # Update result: add path, remove original base64 data
             tool_result[f"{artifact_type}_path"] = artifact_rel_path
@@ -1113,9 +1114,10 @@ class SubTaskContext:
                 del tool_result["format"]  # Clean up format key for audio
 
         except (binascii.Error, ValueError) as e:
-            self.display_manager.error(
-                f"Failed to decode base64 {artifact_type} from tool '{tool_call_name}': {e}"
-            )
+            if self.display_manager:
+                self.display_manager.error(
+                    f"Failed to decode base64 {artifact_type} from tool '{tool_call_name}': {e}"
+                )
             tool_result[f"{artifact_type}_path"] = (
                 f"Error decoding {artifact_type}: {e}"
             )
@@ -1124,9 +1126,10 @@ class SubTaskContext:
             if artifact_type == "audio" and "format" in tool_result:
                 del tool_result["format"]
         except Exception as e:
-            self.display_manager.error(
-                f"Failed to save {artifact_type} artifact from tool '{tool_call_name}': {e}"
-            )
+            if self.display_manager:
+                self.display_manager.error(
+                    f"Failed to save {artifact_type} artifact from tool '{tool_call_name}': {e}"
+                )
             tool_result[f"{artifact_type}_path"] = f"Error saving {artifact_type}: {e}"
             if artifact_key in tool_result:
                 del tool_result[artifact_key]
@@ -1136,9 +1139,7 @@ class SubTaskContext:
 
     def _process_special_tool_side_effects(self, tool_result: Any, tool_call: ToolCall):
         """Handles side effects for specific tools, like 'browser' or 'finish_*'."""
-        self.display_manager.debug(
-            f"Processing special side effects for tool: {tool_call.name}"
-        )
+        log.debug(f"Processing special side effects for tool: {tool_call.name}")
 
         if tool_call.name == "browser" and isinstance(tool_call.args, dict):
             action = tool_call.args.get("action", "")
@@ -1146,14 +1147,10 @@ class SubTaskContext:
             if action == "navigate" and url:
                 if url not in self.sources:  # Avoid duplicates
                     self.sources.append(url)
-                    self.display_manager.debug_subtask_only(
-                        f"Added browser source: {url}"
-                    )
+                    log.debug(f"Added browser source: {url}")
 
         if tool_call.name == "finish_task":
-            self.display_manager.debug(
-                "Processing finish_task - marking subtask as completed"
-            )
+            log.debug("Processing finish_task - marking subtask as completed")
             self.subtask.completed = True
             self.subtask.end_time = int(time.time())
             # Store the result object directly
@@ -1162,17 +1159,13 @@ class SubTaskContext:
             self._output_result = tool_result  # Store for completion display
 
         if tool_call.name == "finish_subtask":
-            self.display_manager.debug(
-                "Processing finish_subtask - marking subtask as completed"
-            )
+            log.debug("Processing finish_subtask - marking subtask as completed")
             self.subtask.completed = True
             self.subtask.end_time = int(time.time())
             # Store the result object directly
             self.processing_context.set(self.subtask.id, tool_result)
             self._output_result = tool_result  # Store for completion display
-            self.display_manager.info_subtask_only(
-                f"Subtask {self.subtask.id} completed with result: {tool_result}"
-            )
+            log.debug(f"Subtask {self.subtask.id} completed with result: {tool_result}")
 
     def _serialize_tool_result_for_history(
         self, tool_result: Any, tool_name: str
@@ -1183,7 +1176,7 @@ class SubTaskContext:
                 return "Tool returned no output."
             return json.dumps(tool_result, ensure_ascii=False)
         except TypeError as e:
-            self.display_manager.error(
+            log.error(
                 f"Failed to serialize tool result for '{tool_name}' to JSON: {e}. Result: {tool_result}"
             )
             return json.dumps(
@@ -1198,14 +1191,12 @@ class SubTaskContext:
         Handle the case where max iterations are reached without completion by prompting
         the LLM to call the finish tool.
         """
-        self.display_manager.warning(
+        log.warning(
             f"Subtask '{self.subtask.content}' reached max iterations ({self.max_iterations}). Forcing completion."
         )
 
-        self.display_manager.debug(
-            f"Max iterations reached for subtask {self.subtask.id}"
-        )
-        self.display_manager.debug("Prompting LLM to call finish tool")
+        log.debug(f"Max iterations reached for subtask {self.subtask.id}")
+        log.debug("Prompting LLM to call finish tool")
 
         # Determine the appropriate finish tool name
         tool_name = "finish_task" if self.use_finish_task else "finish_subtask"
@@ -1221,11 +1212,30 @@ Do not attempt any other tool calls - only call '{tool_name}' with your final re
         self.history.append(Message(role="system", content=force_completion_prompt))
 
         # Get the LLM to generate the finish tool call
+        try:
+            # Count input tokens for finish prompt call
+            input_tokens_now = self._count_tokens(self.history)
+            self.input_tokens_total += input_tokens_now
+            log.debug(
+                f"Input tokens (max iterations finish): {input_tokens_now} (cumulative: {self.input_tokens_total})"
+            )
+        except Exception as e:
+            log.warning(f"Failed to count input tokens (max iterations): {e}")
+
         message = await self.provider.generate_message(
             messages=self.history,
             model=self.model,
             tools=[self.finish_tool],  # Only allow the finish tool
         )
+
+        try:
+            output_tokens_now = self._count_single_message_tokens(message)
+            self.output_tokens_total += output_tokens_now
+            log.debug(
+                f"Output tokens (max iterations finish): {output_tokens_now} (cumulative: {self.output_tokens_total})"
+            )
+        except Exception as e:
+            log.warning(f"Failed to count output tokens (max iterations): {e}")
 
         # Add the assistant message to history
         self.history.append(message)
@@ -1237,7 +1247,7 @@ Do not attempt any other tool calls - only call '{tool_name}' with your final re
             return tool_call
         else:
             # If LLM didn't call the tool, create a fallback
-            self.display_manager.warning(
+            log.warning(
                 "LLM failed to call finish tool at max iterations, creating fallback"
             )
             fallback_result = {
@@ -1262,14 +1272,16 @@ Do not attempt any other tool calls - only call '{tool_name}' with your final re
         Handle the case where max tool calls are reached without completion by prompting
         the LLM to call the finish tool.
         """
-        self.display_manager.warning(
-            f"Subtask '{self.subtask.content}' reached max tool calls ({self.max_tool_calls}). Forcing completion."
-        )
+        if self.display_manager:
+            self.display_manager.warning(
+                f"Subtask '{self.subtask.content}' reached max tool calls ({self.max_tool_calls}). Forcing completion."
+            )
 
-        self.display_manager.debug(
-            f"Max tool calls reached for subtask {self.subtask.id}"
-        )
-        self.display_manager.debug("Prompting LLM to call finish tool")
+        if self.display_manager:
+            self.display_manager.debug(
+                f"Max tool calls reached for subtask {self.subtask.id}"
+            )
+            self.display_manager.debug("Prompting LLM to call finish tool")
 
         # Determine the appropriate finish tool name
         tool_name = "finish_task" if self.use_finish_task else "finish_subtask"
@@ -1285,11 +1297,30 @@ Do not attempt any other tool calls - only call '{tool_name}' with your final re
         self.history.append(Message(role="system", content=force_completion_prompt))
 
         # Get the LLM to generate the finish tool call
+        try:
+            # Count input tokens for finish prompt call
+            input_tokens_now = self._count_tokens(self.history)
+            self.input_tokens_total += input_tokens_now
+            log.debug(
+                f"Input tokens (max tool calls finish): {input_tokens_now} (cumulative: {self.input_tokens_total})"
+            )
+        except Exception as e:
+            log.warning(f"Failed to count input tokens (max tool calls): {e}")
+
         message = await self.provider.generate_message(
             messages=self.history,
             model=self.model,
             tools=[self.finish_tool],  # Only allow the finish tool
         )
+
+        try:
+            output_tokens_now = self._count_single_message_tokens(message)
+            self.output_tokens_total += output_tokens_now
+            log.debug(
+                f"Output tokens (max tool calls finish): {output_tokens_now} (cumulative: {self.output_tokens_total})"
+            )
+        except Exception as e:
+            log.warning(f"Failed to count output tokens (max tool calls): {e}")
 
         # Add the assistant message to history
         self.history.append(message)
@@ -1301,7 +1332,7 @@ Do not attempt any other tool calls - only call '{tool_name}' with your final re
             return tool_call
         else:
             # If LLM didn't call the tool, create a fallback
-            self.display_manager.warning(
+            log.warning(
                 "LLM failed to call finish tool at max tool calls, creating fallback"
             )
             fallback_result = {
@@ -1358,9 +1389,7 @@ Do not attempt any other tool calls - only call '{tool_name}' with your final re
                 result_content, indent=2, ensure_ascii=False
             )
         except Exception as e:
-            self.display_manager.error(
-                f"Failed to serialize result content for compression: {e}"
-            )
+            log.error(f"Failed to serialize result content for compression: {e}")
             return {
                 "error": "Failed to serialize content for compression",
                 "original_content_preview": repr(result_content)[:500],
@@ -1394,6 +1423,21 @@ Do not attempt any other tool calls - only call '{tool_name}' with your final re
         compression_user_prompt = f"TOOL RESULT TO COMPRESS:\n---\n{original_content_str}\n---\nCOMPRESSED SUMMARY:"
 
         try:
+            # Count input tokens for compression call
+            try:
+                input_tokens_now = self._count_tokens(
+                    [
+                        Message(role="system", content=compression_system_prompt),
+                        Message(role="user", content=compression_user_prompt),
+                    ]
+                )
+                self.input_tokens_total += input_tokens_now
+                log.debug(
+                    f"Input tokens (compression): {input_tokens_now} (cumulative: {self.input_tokens_total})"
+                )
+            except Exception as e:
+                log.warning(f"Failed to count input tokens (compression): {e}")
+
             # Use the same provider and model for consistency, but no tools
             compression_response = await self.provider.generate_message(
                 messages=[
@@ -1404,6 +1448,17 @@ Do not attempt any other tool calls - only call '{tool_name}' with your final re
                 tools=[],
                 max_tokens=self.message_compression_threshold,  # Limit the summary size
             )
+
+            try:
+                output_tokens_now = self._count_single_message_tokens(
+                    compression_response
+                )
+                self.output_tokens_total += output_tokens_now
+                log.debug(
+                    f"Output tokens (compression): {output_tokens_now} (cumulative: {self.output_tokens_total})"
+                )
+            except Exception as e:
+                log.warning(f"Failed to count output tokens (compression): {e}")
 
             # Clean compression_response.content before str() and strip()
             if isinstance(compression_response.content, str):
@@ -1434,17 +1489,19 @@ Do not attempt any other tool calls - only call '{tool_name}' with your final re
                     parsed_json = json.loads(compressed_content_str)
                     return parsed_json  # Return parsed JSON if successful
                 except json.JSONDecodeError:
-                    self.display_manager.warning(
-                        f"Compressed content for '{tool_name}' was not valid JSON, returning as string summary."
-                    )
+                    if self.display_manager:
+                        self.display_manager.warning(
+                            f"Compressed content for '{tool_name}' was not valid JSON, returning as string summary."
+                        )
                     # Fall through to return the string if JSON parsing fails
 
             return compressed_content_str  # Return as string summary
 
         except Exception as e:
-            self.display_manager.error(
-                f"Error during LLM call for tool result compression ('{tool_name}'): {e}"
-            )
+            if self.display_manager:
+                self.display_manager.error(
+                    f"Error during LLM call for tool result compression ('{tool_name}'): {e}"
+                )
             # Return a structured error message instead of the original large content
             return {
                 "error": f"Failed to compress tool result via LLM: {e}",

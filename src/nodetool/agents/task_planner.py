@@ -13,6 +13,7 @@ a specified workspace. Validation is a key aspect of the planner's role to
 ensure the generated plan is robust and executable.
 """
 
+import logging
 import traceback
 from nodetool.chat.providers import ChatProvider
 from nodetool.agents.tools.base import Tool
@@ -52,6 +53,8 @@ from rich.text import Text  # Re-add Text import
 from jinja2 import Environment, BaseLoader
 
 from nodetool.workflows.types import Chunk, PlanningUpdate
+
+log = logging.getLogger(__name__)
 
 COMPACT_SUBTASK_NOTATION_DESCRIPTION = """
 --- Data Flow Representation (DOT/Graphviz Syntax) ---
@@ -155,42 +158,31 @@ class CreateTaskTool(Tool):
         pass
 
 
-# Simplified and phase-agnostic system prompt
+# Simplified and phase-agnostic system prompt (GPT-5 aligned)
 DEFAULT_PLANNING_SYSTEM_PROMPT = """
 # TaskArchitect System Core Directives
 
+## Operating Mode (Persistence)
+- Keep going until the task plan is fully generated; do not hand back early.
+- Resolve ambiguity by making reasonable assumptions; record assumptions as short notes.
+- Prefer tool calls over free-form output; stop immediately after emitting the `create_task` tool call.
+
 ## Goal
-As TaskArchitect, your primary goal is to transform complex user objectives 
-into executable, multi-phase task plans. You will guide the LLM through 
-distinct phases (Analysis, Data Flow, Plan Creation) to produce a valid 
-and optimal plan.
+Transform the user's objective into an executable multi-phase plan (Analysis → Data Flow → Plan Creation).
 
-## Return Format
-This system prompt establishes your operational context. For each 
-subsequent phase, you will receive specific instructions detailing the 
-required output format. Your cumulative output across all phases will be 
-a well-structured task plan, ultimately generated via the `create_task` 
-tool.
+## Tool/Message Preambles
+- Begin each phase by restating its goal in one sentence and outlining a 1–3 step plan.
+- Before emitting the final tool call, provide a concise justification section as instructed by the phase.
 
-## Warnings & Core Principles
-Adhere strictly to these overarching principles and warnings throughout 
-all planning activities:
-
-1.  **Multi-Phase Process:** Follow the structured, multi-phase approach 
-    (Analysis -> Data Flow -> Plan Creation). Each phase has specific 
-    objectives.
-2.  **Atomic Subtasks:** Decompose objectives into the smallest logical, 
-    executable units (subtasks).
-3.  **Clear Data Flow:** Define explicit data dependencies between 
-    subtasks using `input_tasks`.
-4.  **Unique Subtask IDs:** ALL subtask IDs MUST be unique and descriptive.
-5.  **Tool Usage:** When a phase requires generating the plan (Phase 2), 
-    use the `create_task` tool as instructed.
-6.  **Reasoning Privacy:** Think step-by-step internally but do not reveal chain-of-thought. Only output the requested fields and required tool calls.
-7.  **Determinism:** Prefer concise, canonical JSON and exact identifiers. Avoid markdown unless explicitly requested by the phase template.
-8.  **Efficiency:** Minimize tokens. Keep prose under ~150 words per phase; favor bullet points.
-9.  **Validation-First:** Before emitting a tool call, re-validate DAG structure, unique IDs, schema conformance, and input availability.
-10. **Function-Calling First:** When a tool is available, prefer a tool call over free-form output. Do not emit extraneous text after tool calls.
+## Core Principles
+1. Multi-Phase Process: Analysis → Data Flow → Plan Creation.
+2. Atomic Subtasks: Use the smallest executable units.
+3. Clear Data Flow: Encode dependencies with `input_tasks`.
+4. Unique IDs: All subtask IDs must be unique and descriptive.
+5. Determinism: Prefer concise JSON and exact identifiers; avoid markdown unless requested.
+6. Efficiency: Keep prose minimal; favor structured outputs.
+7. Privacy: Do not reveal chain-of-thought; output only requested fields and tool calls.
+8. Validation-First: Before the tool call, validate DAG, IDs, schema, and inputs.
 """
 
 # Make sure the phase prompts are concrete and focused
@@ -580,6 +572,7 @@ class TaskPlanner:
         output_schema: dict | None = None,
         enable_analysis_phase: bool = True,
         enable_data_contracts_phase: bool = True,
+        display_manager: AgentConsole | None = None,
         verbose: bool = True,
     ):
         """
@@ -615,14 +608,7 @@ class TaskPlanner:
         self.enable_data_contracts_phase: bool = enable_data_contracts_phase
         self.verbose: bool = verbose
         self.tasks_file_path: Path = Path(workspace_dir) / "tasks.yaml"
-        self.display_manager = AgentConsole(verbose=self.verbose)
-        self.display_manager.debug(
-            f"Initializing TaskPlanner with model={model}, reasoning_model={reasoning_model}, "
-            f"objective='{objective[:100]}...', workspace_dir={workspace_dir}, "
-            f"enable_analysis_phase={enable_analysis_phase}, "
-            f"enable_data_contracts_phase={enable_data_contracts_phase}, "
-            f"verbose={verbose}"
-        )
+        self.display_manager = display_manager
         self.jinja_env: Environment = Environment(loader=BaseLoader())
 
     async def _load_existing_plan(self) -> bool:
@@ -637,16 +623,20 @@ class TaskPlanner:
                 with open(self.tasks_file_path, "r") as f:
                     task_plan_data: dict = yaml.safe_load(f)
                     self.task_plan = TaskPlan(**task_plan_data)
-                    self.display_manager.print(
-                        f"[cyan]Loaded existing task plan from {self.tasks_file_path}[/cyan]"
-                    )
+                    if self.display_manager:
+                        log.debug(
+                            "Loaded existing task plan from %s", self.tasks_file_path
+                        )
                     return True
             except (
                 Exception
             ) as e:  # Keep general exception for file I/O or parsing issues
-                self.display_manager.print(  # Use display manager print
-                    f"[yellow]Could not load or parse existing task plan from {self.tasks_file_path}: {e}[/yellow]"
-                )
+                if self.display_manager:
+                    log.debug(
+                        "Could not load or parse existing task plan from %s: %s",
+                        self.tasks_file_path,
+                        e,
+                    )
                 return False
         return False
 
@@ -805,82 +795,84 @@ class TaskPlanner:
             describing a validation failure. An empty list indicates
             all dependency checks passed.
         """
-        self.display_manager.info(
-            f"Starting dependency validation for {len(subtasks)} subtasks"
-        )
+        log.debug("Starting dependency validation for %d subtasks", len(subtasks))
         validation_errors: List[str] = []
 
         # Log subtask summary for debugging
         subtask_ids = [task.id for task in subtasks]
-        self.display_manager.debug(f"Subtask IDs to validate: {subtask_ids}")
+        log.debug("Subtask IDs to validate: %s", subtask_ids)
 
         for i, task in enumerate(subtasks):
-            self.display_manager.debug(
-                f"Subtask {i}: id='{task.id}', input_tasks={task.input_tasks}"
+            log.debug(
+                "Subtask %d: id='%s', input_tasks=%s", i, task.id, task.input_tasks
             )
 
         # Build dependency graph
-        self.display_manager.debug("Building dependency graph")
+        log.debug("Building dependency graph")
         G = self._build_dependency_graph(subtasks)
-        self.display_manager.info(
-            f"Dependency graph built with {G.number_of_nodes()} nodes and {G.number_of_edges()} edges"
+        log.debug(
+            "Dependency graph built with %d nodes and %d edges",
+            G.number_of_nodes(),
+            G.number_of_edges(),
         )
 
         # Log graph structure for debugging
         if G.number_of_edges() > 0:
             edges = list(G.edges())
-            self.display_manager.debug(f"Graph edges: {edges}")
+            log.debug("Graph edges: %s", edges)
 
         # Check for cycles
-        self.display_manager.debug("Checking for circular dependencies")
+        log.debug("Checking for circular dependencies")
         try:
             cycle = nx.find_cycle(G)
             cycle_error = f"Circular dependency detected: {cycle}"
             validation_errors.append(cycle_error)
-            self.display_manager.error(f"CRITICAL: Circular dependency found: {cycle}")
+            log.error("CRITICAL: Circular dependency found: %s", cycle)
         except nx.NetworkXNoCycle:
-            self.display_manager.debug("✓ No circular dependencies found")
+            log.debug("✓ No circular dependencies found")
             pass  # No cycles found, which is good
 
         # Check that all input task dependencies exist
-        self.display_manager.debug("Checking input task availability")
+        log.debug("Checking input task availability")
         input_errors = self._check_inputs(subtasks)
         validation_errors.extend(input_errors)
         if input_errors:
-            self.display_manager.error(
-                f"Input task dependency check found {len(input_errors)} errors: {input_errors}"
+            log.error(
+                "Input task dependency check found %d errors: %s",
+                len(input_errors),
+                input_errors,
             )
         else:
-            self.display_manager.debug("✓ All input task dependencies are valid")
+            log.debug("✓ All input task dependencies are valid")
 
         # Check if a valid execution order exists (topological sort)
         if not validation_errors:  # Only check if no other critical errors found
-            self.display_manager.debug("Checking topological sort feasibility")
+            log.debug("Checking topological sort feasibility")
             try:
                 topo_order = list(nx.topological_sort(G))
-                self.display_manager.info(
-                    f"✓ Valid execution order found: {topo_order}"
-                )
+                log.debug("✓ Valid execution order found: %s", topo_order)
             except nx.NetworkXUnfeasible:
                 # This might be redundant if cycle check or input availability check failed,
                 # but provides an extra layer of verification.
                 error_msg = "Cannot determine valid execution order due to unresolved dependency issues (potentially complex cycle or missing input)."
                 validation_errors.append(error_msg)
-                self.display_manager.error(
-                    f"CRITICAL: Topological sort failed: {error_msg}"
-                )
+                log.error("CRITICAL: Topological sort failed: %s", error_msg)
         else:
-            self.display_manager.warning(
-                f"Skipping topological sort check due to {len(validation_errors)} existing validation errors"
+            log.warning(
+                "Skipping topological sort check due to %d existing validation errors",
+                len(validation_errors),
             )
 
         if validation_errors:
-            self.display_manager.error(
-                f"❌ Dependency validation FAILED with {len(validation_errors)} total errors: {validation_errors}"
+            log.error(
+                "❌ Dependency validation FAILED with %d total errors: %s",
+                len(validation_errors),
+                validation_errors,
             )
         else:
-            self.display_manager.info(
-                f"✅ Dependency validation PASSED - all {len(subtasks)} subtasks validated successfully"
+            log.debug(
+                "✅ Dependency validation PASSED - all %d subtasks validated successfully",
+                len(subtasks),
             )
         return validation_errors
 
@@ -916,51 +908,54 @@ class TaskPlanner:
                 - The updated history with messages from this phase.
                 - A `PlanningUpdate` object summarizing the outcome, or None if skipped.
         """
-        self.display_manager.set_current_phase(phase_result_name)
-        self.display_manager.debug(f"Starting {phase_name} phase")
+        if self.display_manager:
+            self.display_manager.set_current_phase(phase_result_name)
+        log.debug("Starting %s phase", phase_name)
 
         if not is_enabled:
-            self.display_manager.debug(
-                f"Skipping {phase_name} phase: disabled by global flag"
-            )
-            self.display_manager.update_planning_display(
-                phase_display_name, "Skipped", "Phase disabled by global flag."
-            )
+            log.debug("Skipping %s phase: disabled by global flag", phase_name)
+            if self.display_manager:
+                self.display_manager.update_planning_display(
+                    phase_display_name, "Skipped", "Phase disabled by global flag."
+                )
             return history, None
 
-        self.display_manager.debug(f"Generating {phase_name} prompt")
+        log.debug("Generating %s prompt", phase_name)
         prompt_content: str = self._render_prompt(prompt_template)
-        self.display_manager.debug(
-            f"{phase_name.capitalize()} prompt generated, length: {len(prompt_content)} chars"
+        log.debug(
+            "%s prompt generated, length: %d chars",
+            phase_name.capitalize(),
+            len(prompt_content),
         )
         history.append(Message(role="user", content=prompt_content))
 
         # Update display before LLM call
-        self.display_manager.update_planning_display(
-            phase_display_name, "Running", f"Generating {phase_name}..."
-        )
+        if self.display_manager:
+            self.display_manager.update_planning_display(
+                phase_display_name, "Running", f"Generating {phase_name}..."
+            )
 
-        self.display_manager.debug(
-            f"Calling LLM for {phase_name} using model: {self.model}"
-        )
+        log.debug("Calling LLM for %s using model: %s", phase_name, self.model)
         response_message: Message = await self.provider.generate_message(
             messages=history, model=self.model, tools=[]  # Explicitly empty list
         )
         history.append(response_message)
-        self.display_manager.debug(
-            f"{phase_name.capitalize()} phase LLM response received, content length: "
-            f"{len(str(response_message.content)) if response_message.content else 0} chars"
+        log.debug(
+            "%s phase LLM response received, content length: %d chars",
+            phase_name.capitalize(),
+            (len(str(response_message.content)) if response_message.content else 0),
         )
 
         phase_status: str = "Completed"
         phase_content: str | Text = self._format_message_content(response_message)
-        self.display_manager.debug(
-            f"{phase_name.capitalize()} phase completed with status: {phase_status}"
+        log.debug(
+            "%s phase completed with status: %s", phase_name.capitalize(), phase_status
         )
 
-        self.display_manager.update_planning_display(
-            phase_display_name, phase_status, phase_content
-        )
+        if self.display_manager:
+            self.display_manager.update_planning_display(
+                phase_display_name, phase_status, phase_content
+            )
 
         planning_update = PlanningUpdate(
             phase=phase_result_name,
@@ -1062,9 +1057,10 @@ class TaskPlanner:
                   otherwise None.
                 - A `PlanningUpdate` object summarizing the outcome of this phase.
         """
-        self.display_manager.debug(
-            f"Starting plan creation phase with max_retries={max_retries}"
-        )
+        if self.display_manager:
+            self.display_manager.debug(
+                f"Starting plan creation phase with max_retries={max_retries}"
+            )
 
         task: Optional[Task] = None
         final_message: Optional[Message] = None
@@ -1079,15 +1075,18 @@ class TaskPlanner:
         # The main effect of Tier 1 will be the lack of Analysis and Data Flow history.
 
         # Use tool-based generation
-        self.display_manager.debug("Using tool-based generation for plan creation")
+        if self.display_manager:
+            self.display_manager.debug("Using tool-based generation for plan creation")
         plan_creation_prompt_content = self._render_prompt(PLAN_CREATION_TEMPLATE)
         agent_task_prompt_content = await self._build_agent_task_prompt_content()
-        self.display_manager.debug(
-            f"Plan creation prompt length: {len(plan_creation_prompt_content)} chars"
-        )
-        self.display_manager.debug(
-            f"Agent task prompt length: {len(agent_task_prompt_content)} chars"
-        )
+        if self.display_manager:
+            self.display_manager.debug(
+                f"Plan creation prompt length: {len(plan_creation_prompt_content)} chars"
+            )
+        if self.display_manager:
+            self.display_manager.debug(
+                f"Agent task prompt length: {len(agent_task_prompt_content)} chars"
+            )
 
         history.append(
             Message(
@@ -1095,15 +1094,14 @@ class TaskPlanner:
                 content=f"{plan_creation_prompt_content}\n{agent_task_prompt_content}",
             )
         )
-        self.display_manager.update_planning_display(
-            current_phase_name,
-            "Running",
-            "Attempting plan creation using the 'create_task' tool...",
-        )
-        try:
-            self.display_manager.debug(
-                "Starting tool-based plan generation with retry logic"
+        if self.display_manager:
+            self.display_manager.update_planning_display(
+                current_phase_name,
+                "Running",
+                "Attempting plan creation using the 'create_task' tool...",
             )
+        try:
+            log.debug("Starting tool-based plan generation with retry logic")
             task, final_message = await self._generate_with_retry(
                 history,
                 tools=[CreateTaskTool()],
@@ -1117,8 +1115,9 @@ class TaskPlanner:
                     if final_message
                     else "Plan created using tool calls."
                 )
-                self.display_manager.debug(
-                    f"Tool-based plan creation successful: {len(task.subtasks)} subtasks"
+                log.debug(
+                    "Tool-based plan creation successful: %d subtasks",
+                    len(task.subtasks),
                 )
             else:
                 failure_reason = "Unknown failure after retries."
@@ -1140,35 +1139,30 @@ class TaskPlanner:
                         f"Tool call generation failed internally: {plan_creation_error}"
                     )
 
-                self.display_manager.warning(
-                    f"Tool-based plan creation failed: {failure_reason}"
-                )
+                log.warning("Tool-based plan creation failed: %s", failure_reason)
                 plan_creation_error = ValueError(
                     f"Tool call generation failed: {failure_reason}"
                 )
                 phase_content = f"Tool call generation failed: {failure_reason}"
                 phase_status = "Failed"
         except Exception as e:
-            self.display_manager.error(
-                f"Tool-based plan creation failed: {e}", exc_info=True
-            )
+            log.error("Tool-based plan creation failed: %s", e, exc_info=True)
             plan_creation_error = e
             phase_status = "Failed"
             phase_content = f"Tool call generation failed: {str(e)}\n{traceback.format_exc()}"  # Keep traceback for display
 
         # Update Table for Phase 2
-        self.display_manager.debug(
-            f"Plan creation phase completed with status: {phase_status}"
-        )
-        self.display_manager.update_planning_display(
-            current_phase_name,
-            phase_status,
-            Text(
-                str(phase_content),
-                style=("bold red" if phase_status == "Failed" else "default"),
-            ),  # Use Text with style
-            is_error=(phase_status == "Failed"),
-        )
+        log.debug("Plan creation phase completed with status: %s", phase_status)
+        if self.display_manager:
+            self.display_manager.update_planning_display(
+                current_phase_name,
+                phase_status,
+                Text(
+                    str(phase_content),
+                    style=("bold red" if phase_status == "Failed" else "default"),
+                ),  # Use Text with style
+                is_error=(phase_status == "Failed"),
+            )
 
         planning_update = PlanningUpdate(
             phase="Plan Creation",
@@ -1189,14 +1183,17 @@ class TaskPlanner:
         Yields PlanningUpdate events during the process.
         Displays a live table summarizing the planning process if verbose mode is enabled.
         """
-        self.display_manager.info(
-            f"Starting task creation for objective: '{objective[:100]}...' with max_retries={max_retries}"
+        log.debug(
+            "Starting task creation for objective: '%s...' with max_retries=%d",
+            objective[:100],
+            max_retries,
         )
 
         # Start the live display using the display manager
-        self.display_manager.start_live(
-            self.display_manager.create_planning_tree("Task Planner")
-        )
+        if self.display_manager:
+            self.display_manager.start_live(
+                self.display_manager.create_planning_tree("Task Planner")
+            )
 
         history: List[Message] = [
             Message(role="system", content=self.system_prompt),
@@ -1208,13 +1205,15 @@ class TaskPlanner:
         current_phase = "Initialization"
 
         try:
-            self.display_manager.set_current_phase("Initialization")
-            self.display_manager.debug("Starting planning phases")
+            if self.display_manager:
+                self.display_manager.set_current_phase("Initialization")
+            log.debug("Starting planning phases")
 
             # Phase 0: Analysis
             current_phase = "Analysis"
-            self.display_manager.set_current_phase(current_phase)
-            self.display_manager.debug(f"Entering phase: {current_phase}")
+            if self.display_manager:
+                self.display_manager.set_current_phase(current_phase)
+            log.debug("Entering phase: %s", current_phase)
             yield PlanningUpdate(phase=current_phase, status="Starting", content=None)
             history, planning_update = await self._run_analysis_phase(history)
             if planning_update:
@@ -1222,8 +1221,9 @@ class TaskPlanner:
 
             # Phase 1: Data Flow Analysis
             current_phase = "Data Flow"
-            self.display_manager.set_current_phase(current_phase)
-            self.display_manager.debug(f"Entering phase: {current_phase}")
+            if self.display_manager:
+                self.display_manager.set_current_phase(current_phase)
+            log.debug("Entering phase: %s", current_phase)
             yield PlanningUpdate(phase=current_phase, status="Starting", content=None)
             history, planning_update = await self._run_data_flow_phase(history)
             if planning_update:
@@ -1231,8 +1231,9 @@ class TaskPlanner:
 
             # Phase 2: Plan Creation
             current_phase = "Plan Creation"
-            self.display_manager.set_current_phase(current_phase)
-            self.display_manager.debug(f"Entering phase: {current_phase}")
+            if self.display_manager:
+                self.display_manager.set_current_phase(current_phase)
+            log.debug("Entering phase: %s", current_phase)
             yield PlanningUpdate(phase=current_phase, status="Starting", content=None)
             task, plan_creation_error, planning_update = (
                 await self._run_plan_creation_phase(history, objective, max_retries)
@@ -1242,12 +1243,13 @@ class TaskPlanner:
 
             # --- Final Outcome ---
             if task:
-                self.display_manager.info(
-                    f"Plan created successfully with {len(task.subtasks)} subtasks"
+                log.debug(
+                    "Plan created successfully with %d subtasks", len(task.subtasks)
                 )
-                self.display_manager.print(  # Use display manager print
-                    "[bold green]Plan created successfully.[/bold green]"
-                )
+                if self.display_manager:
+                    log.debug("Plan created successfully.")
+                else:
+                    log.debug("Plan created successfully.")
                 self.task_plan.tasks.append(task)
             else:
                 # Construct error message based on plan_creation_error or last message
@@ -1258,61 +1260,71 @@ class TaskPlanner:
                         if self.verbose
                         else error_message
                     )
-                    self.display_manager.error(f"Task creation failed: {error_message}")
+                    log.error("Task creation failed: %s", error_message)
                     # Yield failure update before raising
                     yield PlanningUpdate(
                         phase=current_phase, status="Failed", content=error_message
                     )
                     # Update display for overall failure
-                    self.display_manager.update_planning_display(
-                        "Overall Status",
-                        "Failed",
-                        Text(full_error_message, style="bold red"),
-                        is_error=True,
-                    )
+                    if self.display_manager:
+                        self.display_manager.update_planning_display(
+                            "Overall Status",
+                            "Failed",
+                            Text(full_error_message, style="bold red"),
+                            is_error=True,
+                        )
                     raise ValueError(full_error_message) from plan_creation_error
                 else:
                     error_message = "Failed to create valid task after maximum retries in Plan Creation phase for an unknown reason."
-                    self.display_manager.error(f"Task creation failed: {error_message}")
+                    log.error("Task creation failed: %s", error_message)
                     # Yield failure update before raising
                     yield PlanningUpdate(
                         phase=current_phase, status="Failed", content=error_message
                     )
                     # Update display for overall failure
-                    self.display_manager.update_planning_display(
-                        "Overall Status",
-                        "Failed",
-                        Text(error_message, style="bold red"),
-                        is_error=True,
-                    )
+                    if self.display_manager:
+                        self.display_manager.update_planning_display(
+                            "Overall Status",
+                            "Failed",
+                            Text(error_message, style="bold red"),
+                            is_error=True,
+                        )
                     raise ValueError(error_message)
 
         except Exception as e:
             # Capture the original exception type and message
             error_message = f"Planning failed during phase '{current_phase}': {type(e).__name__}: {str(e)}"
-            self.display_manager.error(
-                f"Task creation failed during {current_phase}: {e}", exc_info=True
+            log.error(
+                "Task creation failed during %s: %s",
+                current_phase,
+                e,
+                exc_info=True,
             )
 
             # Log traceback if verbose
             if self.verbose:
-                self.display_manager.print_exception(show_locals=False)
+                if self.display_manager:
+                    self.display_manager.print_exception(show_locals=False)
+                else:
+                    log.exception("Planning exception (show_locals=False)")
 
             # Add error row to table via display manager
             if error_message:
-                self.display_manager.update_planning_display(
-                    "Overall Status",
-                    "Failed",
-                    Text(
-                        f"{error_message}\n{traceback.format_exc() if self.verbose else ''}",
-                        style="bold red",
-                    ),
-                    is_error=True,
-                )
+                if self.display_manager:
+                    self.display_manager.update_planning_display(
+                        "Overall Status",
+                        "Failed",
+                        Text(
+                            f"{error_message}\n{traceback.format_exc() if self.verbose else ''}",
+                            style="bold red",
+                        ),
+                        is_error=True,
+                    )
             # Print error to console otherwise (handled by display_manager if verbose is off)
-            self.display_manager.print(  # Use display manager print
-                f"[bold red]Planning Error:[/bold red] {error_message}"
-            )
+            if self.display_manager:
+                log.debug("Planning Error: %s", error_message)
+            else:
+                log.error("Planning Error: %s", error_message)
 
             # Yield failure update before re-raising
             yield PlanningUpdate(
@@ -1321,11 +1333,10 @@ class TaskPlanner:
             raise  # Re-raise the caught exception
 
         finally:
-            self.display_manager.debug(
-                "Stopping live display and completing task creation"
-            )
+            log.debug("Stopping live display and completing task creation")
             # Stop the live display using the display manager
-            self.display_manager.stop_live()
+            if self.display_manager:
+                self.display_manager.stop_live()
 
     def _remove_think_tags(self, text_content: Optional[str]) -> Optional[str]:
         """Removes <think>...</think> blocks from a string.
@@ -1470,8 +1481,8 @@ class TaskPlanner:
                   validation is successful, otherwise None.
                 - A list of string error messages encountered during validation.
         """
-        self.display_manager.debug(
-            f"{sub_context}: Starting tool task validation for tool '{tool_name}'"
+        log.debug(
+            "%s: Starting tool task validation for tool '%s'", sub_context, tool_name
         )
         validation_errors: List[str] = []
         parsed_content: Optional[dict] = None
@@ -1479,66 +1490,73 @@ class TaskPlanner:
         # Check if tool exists
         if tool_name not in available_execution_tools:
             error_msg = f"Specified tool_name '{tool_name}' is not in the list of available execution tools: {list(available_execution_tools.keys())}."
-            self.display_manager.error(f"{sub_context}: {error_msg}")
+            log.error("%s: %s", sub_context, error_msg)
             validation_errors.append(f"{sub_context}: {error_msg}")
             return None, validation_errors
 
         tool_to_use = available_execution_tools[tool_name]
-        self.display_manager.debug(
-            f"{sub_context}: Tool '{tool_name}' found, validating content type: {type(content)}"
+        log.debug(
+            "%s: Tool '%s' found, validating content type: %s",
+            sub_context,
+            tool_name,
+            type(content),
         )
 
         # Validate content is JSON and parse it
         if isinstance(content, dict):
             parsed_content = content  # Already a dict
-            self.display_manager.debug(
-                f"{sub_context}: Content is already a dict with {len(content)} keys"
+            log.debug(
+                "%s: Content is already a dict with %d keys", sub_context, len(content)
             )
         elif isinstance(content, str):
-            self.display_manager.debug(
-                f"{sub_context}: Parsing JSON string content of length {len(content)}"
+            log.debug(
+                "%s: Parsing JSON string content of length %d",
+                sub_context,
+                len(content),
             )
             try:
                 parsed_content = json.loads(content) if content.strip() else {}
                 if parsed_content is not None:
-                    self.display_manager.debug(
-                        f"{sub_context}: Successfully parsed JSON with {len(parsed_content)} keys: {list(parsed_content.keys())}"
+                    log.debug(
+                        "%s: Successfully parsed JSON with %d keys: %s",
+                        sub_context,
+                        len(parsed_content),
+                        list(parsed_content.keys()),
                     )
                 else:
-                    self.display_manager.debug(f"{sub_context}: Parsed content is None")
+                    log.debug("%s: Parsed content is None", sub_context)
             except json.JSONDecodeError as e:
                 error_msg = (
                     f"'content' is not valid JSON. Error: {e}. Content: '{content}'"
                 )
-                self.display_manager.error(
-                    f"{sub_context} (tool: {tool_name}): {error_msg}"
-                )
+                log.error("%s (tool: %s): %s", sub_context, tool_name, error_msg)
                 validation_errors.append(
                     f"{sub_context} (tool: {tool_name}): {error_msg}"
                 )
                 return None, validation_errors
         else:
             error_msg = f"Expected JSON string or object for tool arguments, but got {type(content)}. Content: '{content}'"
-            self.display_manager.error(
-                f"{sub_context} (tool: {tool_name}): {error_msg}"
-            )
+            log.error("%s (tool: %s): %s", sub_context, tool_name, error_msg)
             validation_errors.append(f"{sub_context} (tool: {tool_name}): {error_msg}")
             return None, validation_errors
 
         # Validate the parsed content against the tool's input schema
         if tool_to_use.input_schema and parsed_content is not None:
-            self.display_manager.debug(
-                f"{sub_context}: Validating parsed content against tool schema"
-            )
+            log.debug("%s: Validating parsed content against tool schema", sub_context)
             try:
                 validate(instance=parsed_content, schema=tool_to_use.input_schema)
-                self.display_manager.debug(
-                    f"{sub_context}: Tool arguments validation successful for '{tool_name}'"
+                log.debug(
+                    "%s: Tool arguments validation successful for '%s'",
+                    sub_context,
+                    tool_name,
                 )
             except ValidationError as e:
                 error_msg = f"JSON arguments in 'content' do not match the tool's input schema. Error: {e.message}. Path: {'/'.join(map(str, e.path))}. Schema: {e.schema}. Args: {parsed_content}"
-                self.display_manager.error(
-                    f"{sub_context} (tool: {tool_name}): Schema validation failed: {error_msg}"
+                log.error(
+                    "%s (tool: %s): Schema validation failed: %s",
+                    sub_context,
+                    tool_name,
+                    error_msg,
                 )
                 validation_errors.append(
                     f"{sub_context} (tool: {tool_name}): {error_msg}"
@@ -1546,20 +1564,27 @@ class TaskPlanner:
                 return None, validation_errors
             except Exception as e:  # Catch other potential validation errors
                 error_msg = f"Error validating arguments against tool schema. Error: {e}. Args: {parsed_content}"
-                self.display_manager.error(
-                    f"{sub_context} (tool: {tool_name}): Unexpected validation error: {error_msg}"
+                log.error(
+                    "%s (tool: %s): Unexpected validation error: %s",
+                    sub_context,
+                    tool_name,
+                    error_msg,
                 )
                 validation_errors.append(
                     f"{sub_context} (tool: {tool_name}): {error_msg}"
                 )
                 return None, validation_errors
         else:
-            self.display_manager.debug(
-                f"{sub_context}: No input schema defined for tool '{tool_name}', skipping schema validation"
+            log.debug(
+                "%s: No input schema defined for tool '%s', skipping schema validation",
+                sub_context,
+                tool_name,
             )
 
-        self.display_manager.debug(
-            f"{sub_context}: Tool task validation completed successfully for '{tool_name}'"
+        log.debug(
+            "%s: Tool task validation completed successfully for '%s'",
+            sub_context,
+            tool_name,
         )
         return parsed_content, validation_errors
 
@@ -1576,22 +1601,25 @@ class TaskPlanner:
         Returns:
             A list of string error messages. An empty list means validation passed.
         """
-        self.display_manager.debug(f"{sub_context}: Starting agent task validation")
+        log.debug("%s: Starting agent task validation", sub_context)
         validation_errors: List[str] = []
 
-        self.display_manager.debug(
-            f"{sub_context}: Validating content type: {type(content)}, length: {len(str(content)) if content else 0}"
+        log.debug(
+            "%s: Validating content type: %s, length: %d",
+            sub_context,
+            type(content),
+            (len(str(content)) if content else 0),
         )
 
         if not isinstance(content, str) or not content.strip():
             error_msg = f"'content' must be a non-empty string containing instructions when 'tool_name' is not provided, but got: '{content}' (type: {type(content)})."
-            self.display_manager.error(
-                f"{sub_context}: Agent task validation failed: {error_msg}"
-            )
+            log.error("%s: Agent task validation failed: %s", sub_context, error_msg)
             validation_errors.append(f"{sub_context}: {error_msg}")
         else:
-            self.display_manager.debug(
-                f"{sub_context}: Agent task validation successful - content is valid string with {len(content)} characters"
+            log.debug(
+                "%s: Agent task validation successful - content is valid string with %d characters",
+                sub_context,
+                len(content),
             )
 
         return validation_errors
@@ -1611,57 +1639,73 @@ class TaskPlanner:
                   or None if a fatal error occurred.
                 - A list of string error messages encountered.
         """
-        self.display_manager.debug(f"{sub_context}: Starting schema processing")
+        log.debug("%s: Starting schema processing", sub_context)
         validation_errors: List[str] = []
         current_schema_str: Any = subtask_data.get("output_schema")
         final_schema_str: Optional[str] = None
         schema_dict: Optional[dict] = None
 
         # Add logging for the input schema string
-        self.display_manager.debug(
-            f"{sub_context}: schema_input='{current_schema_str}' (type: {type(current_schema_str)})"
+        log.debug(
+            "%s: schema_input='%s' (type: %s)",
+            sub_context,
+            current_schema_str,
+            type(current_schema_str),
         )
-        self.display_manager.print(
-            f"{sub_context}: Attempting to process output_schema: '{current_schema_str}' of type {type(current_schema_str)}"
+        log.debug(
+            "%s: Attempting to process output_schema: '%s' of type %s",
+            sub_context,
+            current_schema_str,
+            type(current_schema_str),
         )
 
         try:
             if isinstance(current_schema_str, str) and current_schema_str.strip():
-                self.display_manager.debug(f"{sub_context}: Parsing string schema")
-                self.display_manager.print(
-                    f"{sub_context}: Parsing string schema: '{current_schema_str}'"
-                )  # Log before loads
+                log.debug("%s: Parsing string schema", sub_context)
+                log.debug(
+                    "%s: Parsing string schema: '%s'", sub_context, current_schema_str
+                )
                 schema_dict = json.loads(current_schema_str)
-                self.display_manager.debug(
-                    f"{sub_context}: Successfully parsed schema dict: {schema_dict}"
+                log.debug(
+                    "%s: Successfully parsed schema dict: %s", sub_context, schema_dict
                 )
             else:  # Invalid type for schema string
                 error_msg = f"Output schema must be a JSON string or None, got {type(current_schema_str)}"
-                self.display_manager.error(f"{sub_context}: {error_msg}")
+                log.error("%s: %s", sub_context, error_msg)
                 raise ValueError(error_msg)
 
             # Apply defaults if schema_dict was successfully loaded or generated
             if schema_dict is not None:
-                self.display_manager.debug(
-                    f"{sub_context}: Applying additionalProperties constraints to schema"
+                log.debug(
+                    "%s: Applying additionalProperties constraints to schema",
+                    sub_context,
                 )
                 schema_dict = self._ensure_additional_properties_false(schema_dict)
                 final_schema_str = json.dumps(schema_dict)
-                self.display_manager.debug(
-                    f"{sub_context}: Final schema prepared, length={len(final_schema_str)}: {final_schema_str}"
+                log.debug(
+                    "%s: Final schema prepared, length=%d: %s",
+                    sub_context,
+                    len(final_schema_str),
+                    final_schema_str,
                 )
 
         except (ValueError, json.JSONDecodeError) as e:
             error_msg = f"Invalid output_schema provided: '{current_schema_str}'. Error: {e}. Using default string schema."
             validation_errors.append(f"{sub_context}: {error_msg}")
-            self.display_manager.warning(f"{sub_context}: Schema parsing failed: {e}")
+            log.warning("%s: Schema parsing failed: %s", sub_context, e)
             # Log the specific error
-            self.display_manager.print(
-                f"{sub_context}: JSONDecodeError or ValueError for schema '{current_schema_str}': {e}"
+            log.debug(
+                "%s: JSONDecodeError or ValueError for schema '%s': %s",
+                sub_context,
+                current_schema_str,
+                e,
             )
 
-        self.display_manager.debug(
-            f"{sub_context}: Schema processing completed, errors={len(validation_errors)}, final_schema_str={final_schema_str is not None}"
+        log.debug(
+            "%s: Schema processing completed, errors=%d, final_schema_str=%s",
+            sub_context,
+            len(validation_errors),
+            final_schema_str is not None,
         )
         return final_schema_str, validation_errors
 
@@ -1774,7 +1818,7 @@ class TaskPlanner:
         Processes and validates data for a single subtask by delegating steps.
         """
         sub_context = f"{context_prefix} subtask {index}"
-        self.display_manager.debug(f"Processing {sub_context}")
+        log.debug("Processing %s", sub_context)
         all_validation_errors: List[str] = []
         parsed_tool_content: Optional[dict] = (
             None  # To store parsed JSON for tool tasks
@@ -1784,13 +1828,16 @@ class TaskPlanner:
             # --- Validate Tool Call vs Agent Instruction ---
             tool_name = subtask_data.get("tool_name")
             content = subtask_data.get("content")
-            self.display_manager.debug(
-                f"{sub_context}: tool_name='{tool_name}', content_length={len(str(content)) if content else 0}"
+            log.debug(
+                "%s: tool_name='%s', content_length=%d",
+                sub_context,
+                tool_name,
+                (len(str(content)) if content else 0),
             )
 
             if tool_name:
                 # --- Deterministic Tool Task Validation ---
-                self.display_manager.debug(f"{sub_context}: Validating as tool task")
+                log.debug("%s: Validating as tool task", sub_context)
                 parsed_tool_content, tool_errors = self._validate_tool_task(
                     subtask_data,
                     tool_name,
@@ -1802,31 +1849,31 @@ class TaskPlanner:
                 if (
                     parsed_tool_content is None and tool_errors
                 ):  # Fatal error during tool validation
-                    self.display_manager.error(
-                        f"{sub_context}: Tool validation failed with {len(tool_errors)} errors"
+                    log.error(
+                        "%s: Tool validation failed with %d errors",
+                        sub_context,
+                        len(tool_errors),
                     )
                     return None, all_validation_errors
                 else:
-                    self.display_manager.debug(
-                        f"{sub_context}: Tool validation successful"
-                    )
+                    log.debug("%s: Tool validation successful", sub_context)
             else:
                 # --- Probabilistic Agent Task Validation ---
-                self.display_manager.debug(f"{sub_context}: Validating as agent task")
+                log.debug("%s: Validating as agent task", sub_context)
                 agent_errors = self._validate_agent_task(content, sub_context)
                 all_validation_errors.extend(agent_errors)
                 if agent_errors:  # Fatal error during agent validation
-                    self.display_manager.error(
-                        f"{sub_context}: Agent validation failed with {len(agent_errors)} errors"
+                    log.error(
+                        "%s: Agent validation failed with %d errors",
+                        sub_context,
+                        len(agent_errors),
                     )
                     return None, all_validation_errors
                 else:
-                    self.display_manager.debug(
-                        f"{sub_context}: Agent validation successful"
-                    )
+                    log.debug("%s: Agent validation successful", sub_context)
 
             # --- Process schema ---
-            self.display_manager.debug(f"{sub_context}: Processing output schema")
+            log.debug("%s: Processing output schema", sub_context)
             final_schema_str, schema_errors = self._process_subtask_schema(
                 subtask_data, sub_context
             )
@@ -1834,42 +1881,36 @@ class TaskPlanner:
             # Continue even if there were schema errors, as a default might be used.
             # Need final_schema_str for data preparation. If None, indicates a fatal schema issue.
             if final_schema_str is None:
-                self.display_manager.error(
-                    f"{sub_context}: Fatal schema processing error"
-                )
+                log.error("%s: Fatal schema processing error", sub_context)
                 all_validation_errors.append(
                     f"{sub_context}: Fatal error processing output schema."
                 )
                 return None, all_validation_errors
             else:
-                self.display_manager.debug(
-                    f"{sub_context}: Schema processing successful"
-                )
+                log.debug("%s: Schema processing successful", sub_context)
 
             # --- Prepare data for SubTask creation (Paths, Filtering, Stringify Tool Args) ---
-            self.display_manager.debug(
-                f"{sub_context}: Preparing data for SubTask creation"
-            )
+            log.debug("%s: Preparing data for SubTask creation", sub_context)
             filtered_data, preparation_errors = self._prepare_subtask_data(
                 subtask_data, final_schema_str, parsed_tool_content, sub_context
             )
             all_validation_errors.extend(preparation_errors)
             if filtered_data is None:  # Fatal error during data preparation
-                self.display_manager.error(
-                    f"{sub_context}: Data preparation failed with {len(preparation_errors)} errors"
+                log.error(
+                    "%s: Data preparation failed with %d errors",
+                    sub_context,
+                    len(preparation_errors),
                 )
                 return None, all_validation_errors
             else:
-                self.display_manager.debug(
-                    f"{sub_context}: Data preparation successful"
-                )
+                log.debug("%s: Data preparation successful", sub_context)
 
             # --- Create SubTask object ---
             # Pydantic validation happens here
-            self.display_manager.debug(f"{sub_context}: Creating SubTask object")
+            log.debug("%s: Creating SubTask object", sub_context)
             subtask = SubTask(**filtered_data)
-            self.display_manager.debug(
-                f"{sub_context}: SubTask created successfully with id='{subtask.id}'"
+            log.debug(
+                "%s: SubTask created successfully with id='%s'", sub_context, subtask.id
             )
             # Return successful subtask and any *non-fatal* validation errors collected
             return subtask, all_validation_errors
@@ -1878,13 +1919,13 @@ class TaskPlanner:
             ValidationError
         ) as e:  # Catch Pydantic validation errors during SubTask(**filtered_data)
             error_msg = f"{sub_context}: Invalid data for SubTask model: {e}"
-            self.display_manager.error(f"{sub_context}: Pydantic validation error: {e}")
+            log.error("%s: Pydantic validation error: %s", sub_context, e)
             all_validation_errors.append(error_msg)
             return None, all_validation_errors
         except Exception as e:  # Catch any other unexpected errors
             error_msg = f"{sub_context}: Unexpected error processing subtask: {e}\n{traceback.format_exc()}"
-            self.display_manager.error(
-                f"{sub_context}: Unexpected processing error: {e}", exc_info=True
+            log.error(
+                "%s: Unexpected processing error: %s", sub_context, e, exc_info=True
             )
             all_validation_errors.append(error_msg)
             return None, all_validation_errors
@@ -1955,10 +1996,8 @@ class TaskPlanner:
         )
         all_validation_errors.extend(subtask_validation_errors)
 
-        self.display_manager.debug(f"Subtasks processed: {subtasks}")
-        self.display_manager.debug(
-            f"Subtask validation errors: {subtask_validation_errors}"
-        )
+        log.debug("Subtasks processed: %s", subtasks)
+        log.debug("Subtask validation errors: %s", subtask_validation_errors)
 
         # If subtask processing had fatal errors, don't proceed to dependency check
         if not subtasks and task_data.get(
@@ -2151,20 +2190,20 @@ class TaskPlanner:
         """
         Generates response, processes tool calls with validation and retry logic.
         """
-        self.display_manager.debug(
-            f"Starting generation with retry, max_retries={max_retries}, tools={[t.name for t in tools]}"
+        log.debug(
+            "Starting generation with retry, max_retries=%d, tools=%s",
+            max_retries,
+            [t.name for t in tools],
         )
         current_retry: int = 0
         last_message: Optional[Message] = None
 
         while current_retry < max_retries:
             attempt = current_retry + 1
-            self.display_manager.debug(f"Generation attempt {attempt}/{max_retries}")
+            log.debug("Generation attempt %d/%d", attempt, max_retries)
 
             # Generate response using current history
-            self.display_manager.debug(
-                f"Calling LLM with {len(history)} messages in history"
-            )
+            log.debug("Calling LLM with %d messages in history", len(history))
             message = await self.provider.generate_message(
                 messages=history,
                 model=self.model,
@@ -2174,93 +2213,138 @@ class TaskPlanner:
                 message
             )  # Add assistant's response to history *before* processing
             last_message = message
-            self.display_manager.debug(
-                f"LLM response received, has_tool_calls={bool(message.tool_calls)}"
+            log.debug(
+                "LLM response received, has_tool_calls=%s", bool(message.tool_calls)
             )
 
             if not message.tool_calls:
                 # LLM didn't use the expected tool
-                self.display_manager.warning(
-                    f"LLM did not use required tools on attempt {attempt}"
-                )
+                log.warning("LLM did not use required tools on attempt %d", attempt)
                 if tools and current_retry < max_retries - 1:
                     current_retry += 1
                     tool_names = ", ".join([t.name for t in tools])
                     retry_prompt = f"Please use one of the available tools ({tool_names}) to define the task based on the previous analysis and requirements."
                     history.append(Message(role="user", content=retry_prompt))
-                    self.display_manager.debug(
-                        f"Added retry prompt for tool usage, attempt {current_retry + 1}"
+                    log.debug(
+                        "Added retry prompt for tool usage, attempt %d",
+                        current_retry + 1,
                     )
-                    self.display_manager.print(  # Use display manager print
-                        f"[yellow]Retry {attempt}/{max_retries}: Asking LLM to use required tool(s).[/yellow]"
-                    )
+                    if self.display_manager:
+                        log.debug(
+                            "Retry %d/%d: Asking LLM to use required tool(s).",
+                            attempt,
+                            max_retries,
+                        )
+                    else:
+                        log.warning(
+                            "Retry %d/%d: Asking LLM to use required tool(s).",
+                            attempt,
+                            max_retries,
+                        )
                     continue  # Go to next iteration
                 else:
                     # Max retries reached without tool use
-                    self.display_manager.error(
-                        f"Max retries reached without tool usage after {max_retries} attempts"
+                    log.error(
+                        "Max retries reached without tool usage after %d attempts",
+                        max_retries,
                     )
-                    self.display_manager.print(  # Use display manager print
-                        f"[red]Failed after {max_retries} retries: LLM did not use the required tool(s). Last message: {self._format_message_content(message)}[/red]"
-                    )
+                    if self.display_manager:
+                        log.debug(
+                            "Failed after %d retries: LLM did not use the required tool(s). Last message: %s",
+                            max_retries,
+                            self._format_message_content(message),
+                        )
+                    else:
+                        log.error(
+                            "Failed after %d retries: LLM did not use the required tool(s). Last message: %s",
+                            max_retries,
+                            self._format_message_content(message),
+                        )
                     return None, last_message
 
             # Tool call exists, try to process it
             try:
-                self.display_manager.debug(
-                    f"Processing {len(message.tool_calls)} tool call(s)"
-                )
+                log.debug("Processing %d tool call(s)", len(message.tool_calls))
                 # Process the tool call(s). This adds 'tool' role messages to history
                 # and raises ValueError on validation failure.
                 task = await self._process_tool_calls(message, history)
                 # If _process_tool_calls returns without error, success!
-                self.display_manager.info(
-                    f"Tool calls processed successfully, created task with {len(task.subtasks)} subtasks"
+                log.debug(
+                    "Tool calls processed successfully, created task with %d subtasks",
+                    len(task.subtasks),
                 )
-                self.display_manager.print(  # Use display manager print
-                    "[green]Tool call processed successfully.[/green]"
-                )
+                if self.display_manager:
+                    log.debug("Tool call processed successfully.")
+                else:
+                    log.debug("Tool call processed successfully.")
                 return (
                     task,
                     last_message,
                 )  # Return created task and the assistant message
             except ValueError as e:  # Catch validation errors from _process_tool_calls
-                self.display_manager.warning(
-                    f"Tool call validation failed on attempt {attempt}: {e}"
-                )
-                self.display_manager.print(  # Use display manager print
-                    f"[yellow]Validation Error (Retry {attempt}/{max_retries}):[/yellow]\n{str(e)}"
-                )
+                log.warning("Tool call validation failed on attempt %d: %s", attempt, e)
+                if self.display_manager:
+                    log.debug(
+                        "Validation Error (Retry %d/%d): %s",
+                        attempt,
+                        max_retries,
+                        str(e),
+                    )
+                else:
+                    log.warning(
+                        "Validation Error (Retry %d/%d): %s",
+                        attempt,
+                        max_retries,
+                        str(e),
+                    )
                 if current_retry < max_retries - 1:
                     current_retry += 1
                     # Add a user message asking LLM to fix errors. The 'tool' message with error details
                     # should already be in history from _process_tool_calls failing.
                     retry_prompt = f"The previous attempt failed validation. Please review the errors detailed in the tool response and call the tool again correctly:\n{str(e)}"
                     history.append(Message(role="user", content=retry_prompt))
-                    self.display_manager.debug(
-                        f"Added validation error retry prompt, attempt {current_retry + 1}"
+                    log.debug(
+                        "Added validation error retry prompt, attempt %d",
+                        current_retry + 1,
                     )
-                    self.display_manager.print(  # Use display manager print
-                        f"[yellow]Retry {attempt + 1}/{max_retries}: Asking LLM to fix validation errors.[/yellow]"
-                    )
+                    if self.display_manager:
+                        log.debug(
+                            "Retry %d/%d: Asking LLM to fix validation errors.",
+                            attempt + 1,
+                            max_retries,
+                        )
+                    else:
+                        log.warning(
+                            "Retry %d/%d: Asking LLM to fix validation errors.",
+                            attempt + 1,
+                            max_retries,
+                        )
                     # Optional: Add a small delay before retrying
                     # await asyncio.sleep(1)
                     continue  # Go to next iteration
                 else:
                     # Max retries reached after validation errors
-                    self.display_manager.error(
-                        f"Max retries reached due to persistent validation errors after {max_retries} attempts"
+                    log.error(
+                        "Max retries reached due to persistent validation errors after %d attempts",
+                        max_retries,
                     )
-                    self.display_manager.print(  # Use display manager print
-                        f"[red]Failed after {max_retries} retries due to persistent validation errors.[/red]"
-                    )
+                    if self.display_manager:
+                        log.debug(
+                            "Failed after %d retries due to persistent validation errors.",
+                            max_retries,
+                        )
+                    else:
+                        log.error(
+                            "Failed after %d retries due to persistent validation errors.",
+                            max_retries,
+                        )
                     return (
                         None,
                         last_message,
                     )  # Return no task and the last assistant message
 
         # Should only be reached if max_retries is 0 or loop finishes unexpectedly
-        self.display_manager.error("Generation with retry exited unexpectedly")
+        log.error("Generation with retry exited unexpectedly")
         return None, last_message
 
     def _get_execution_tools_info(self) -> str:
