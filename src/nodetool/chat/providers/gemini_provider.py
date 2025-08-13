@@ -19,6 +19,7 @@ from google.genai.types import (
     ContentListUnion,
     FunctionResponse,
 )
+from nodetool.workflows.base_node import ApiKeyMissingError
 from pydantic import BaseModel
 
 from nodetool.chat.providers.base import ChatProvider
@@ -143,7 +144,10 @@ def convert_json_schema_to_genai_schema(schema: dict, path: str = "") -> Schema:
 def get_genai_client() -> AsyncClient:
     env = Environment.get_environment()
     api_key = env.get("GEMINI_API_KEY")
-    assert api_key, "GEMINI_API_KEY is not set"
+    if not api_key:
+        raise ApiKeyMissingError(
+            "GEMINI_API_KEY is not configured in the nodetool settings"
+        )
     return Client(api_key=api_key).aio
 
 

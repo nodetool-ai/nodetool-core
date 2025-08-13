@@ -24,6 +24,7 @@ from nodetool.metadata.types import (
     MessageTextContent,
 )
 from nodetool.common.environment import Environment
+from nodetool.workflows.base_node import ApiKeyMissingError
 from nodetool.workflows.types import Chunk
 from nodetool.agents.tools.base import Tool
 from nodetool.workflows.processing_context import ProcessingContext
@@ -104,7 +105,10 @@ class AnthropicProvider(ChatProvider):
         super().__init__()
         env = Environment.get_environment()
         self.api_key = env.get("ANTHROPIC_API_KEY")
-        assert self.api_key, "ANTHROPIC_API_KEY is not set"
+        if not self.api_key:
+            raise ApiKeyMissingError(
+                "ANTHROPIC_API_KEY is not configured in the nodetool settings"
+            )
         self.client = anthropic.AsyncAnthropic(
             api_key=self.api_key,
         )
@@ -169,7 +173,7 @@ class AnthropicProvider(ChatProvider):
                             media_type = "image/png"  # Default assumption
                             image_source = Base64ImageSourceParam(
                                 type="base64",
-                                media_type=media_type, # type: ignore
+                                media_type=media_type,  # type: ignore
                                 data=data,
                             )
                         else:

@@ -295,7 +295,9 @@ class OpenAIProvider(ChatProvider):
             return obj.model_dump()
         raise TypeError("Type not serializable")
 
-    def format_tools(self, tools: Sequence[Tool]) -> list[ChatCompletionMessageFunctionToolCallParam]:
+    def format_tools(
+        self, tools: Sequence[Tool]
+    ) -> list[ChatCompletionMessageFunctionToolCallParam]:
         """Convert tools to OpenAI's format."""
         formatted_tools = []
 
@@ -366,10 +368,16 @@ class OpenAIProvider(ChatProvider):
                     converted_messages.append(msg)
             messages = converted_messages
 
+        kwargs_for_log = _kwargs.copy()
+        kwargs_for_log.pop("tools", None)
+        kwargs_for_log.pop("model", None)
+
         self._log_api_request(
             "chat_stream",
             messages,
-            **_kwargs,
+            model,
+            tools,
+            **kwargs_for_log,
         )
 
         openai_messages = [self.convert_message(m) for m in messages]
@@ -557,8 +565,8 @@ class OpenAIProvider(ChatProvider):
             tool_calls = [
                 ToolCall(
                     id=tool_call.id,
-                    name=tool_call.function.name, # type: ignore
-                    args=try_parse_args(tool_call.function.arguments), # type: ignore
+                    name=tool_call.function.name,  # type: ignore
+                    args=try_parse_args(tool_call.function.arguments),  # type: ignore
                 )
                 for tool_call in response_message.tool_calls
             ]

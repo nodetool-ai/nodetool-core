@@ -102,10 +102,8 @@ def resolve_tool_by_name(
 
     # Try sanitized name instance match in available tools
     sanitized_name = sanitize_node_name(name)
-    print(f"Sanitized name: {sanitized_name}")
     if available_tools:
         for tool in available_tools:
-            print(f"Tool name: {tool.name}")
             if tool.name == sanitized_name:
                 return tool
 

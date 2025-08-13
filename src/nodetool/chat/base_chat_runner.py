@@ -17,14 +17,11 @@ Subclasses should implement transport-specific methods for:
 
 import logging
 from abc import ABC, abstractmethod
-from typing import List, Optional, Any, Dict
+from typing import List, Optional
 import asyncio
 
 from supabase import create_async_client, AsyncClient
 
-from nodetool.agents.tools import (
-    create_workflow_tools,
-)
 from nodetool.chat.ollama_service import get_ollama_models
 from nodetool.chat.providers import get_provider
 from nodetool.agents.tools.base import Tool, resolve_tool_by_name
@@ -63,13 +60,18 @@ async def cached_ollama_models() -> list[str]:
 class BaseChatRunner(ABC):
     """
     Abstract base class for chat runners providing common functionality.
-    
+
     This class contains all the shared logic for handling chat interactions,
     including authentication, database operations, message processing, and
     tool management. Subclasses need to implement transport-specific methods.
     """
 
-    def __init__(self, auth_token: str | None = None, default_model: str = "gpt-oss:20b", default_provider: str = "ollama"):
+    def __init__(
+        self,
+        auth_token: str | None = None,
+        default_model: str = "gpt-oss:20b",
+        default_provider: str = "ollama",
+    ):
         self.auth_token = auth_token
         self.user_id: str | None = None
         self.supabase: AsyncClient | None = None
@@ -101,6 +103,7 @@ class BaseChatRunner(ABC):
             ScreenshotTool,
             SearchEmailTool,
         )
+
         # If tools already initialized, skip
         self.all_tools = [
             AddLabelToEmailTool(),
@@ -145,7 +148,7 @@ class BaseChatRunner(ABC):
     async def send_message(self, message: dict) -> None:
         """
         Send a message using the specific transport protocol.
-        
+
         Args:
             message: The message payload to send
         """
@@ -155,7 +158,7 @@ class BaseChatRunner(ABC):
     async def receive_message(self) -> Optional[dict]:
         """
         Receive a message from the client.
-        
+
         Returns:
             The received message data or None if connection is closed
         """
@@ -164,10 +167,10 @@ class BaseChatRunner(ABC):
     def _db_message_to_metadata_message(self, db_message: DBMessage) -> ApiMessage:
         """
         Convert a database Message to a metadata Message.
-        
+
         Args:
             db_message: The database Message to convert
-            
+
         Returns:
             The converted metadata Message
         """
@@ -182,7 +185,7 @@ class BaseChatRunner(ABC):
             except Exception as e:
                 log.warning(f"Failed to convert graph to Graph object: {e}")
                 graph_obj = None
-        
+
         return ApiMessage(
             id=db_message.id,
             workflow_id=db_message.workflow_id,
@@ -190,14 +193,16 @@ class BaseChatRunner(ABC):
             thread_id=db_message.thread_id,
             tools=db_message.tools,
             tool_call_id=db_message.tool_call_id,
-            role=db_message.role or "", 
+            role=db_message.role or "",
             name=db_message.name,
             content=db_message.content,
             tool_calls=db_message.tool_calls,
             collections=db_message.collections,
             input_files=db_message.input_files,
             output_files=db_message.output_files,
-            created_at=db_message.created_at.isoformat() if db_message.created_at else None,
+            created_at=(
+                db_message.created_at.isoformat() if db_message.created_at else None
+            ),
             provider=db_message.provider,
             model=db_message.model,
             agent_mode=db_message.agent_mode,
@@ -205,24 +210,26 @@ class BaseChatRunner(ABC):
             help_mode=db_message.help_mode,
         )
 
-    def _metadata_message_to_db_message(self, metadata_message: ApiMessage) -> DBMessage:
+    def _metadata_message_to_db_message(
+        self, metadata_message: ApiMessage
+    ) -> DBMessage:
         """
         Convert a metadata Message to a database Message.
-        
+
         Args:
             metadata_message: The metadata Message to convert
-            
+
         Returns:
             The converted database Message
         """
         # Extract graph as dict if it's a Graph object
         graph_dict = None
         if metadata_message.graph:
-            if hasattr(metadata_message.graph, 'model_dump'):
+            if hasattr(metadata_message.graph, "model_dump"):
                 graph_dict = metadata_message.graph.model_dump()
             elif isinstance(metadata_message.graph, dict):
                 graph_dict = metadata_message.graph
-        
+
         return DBMessage.create(
             thread_id=metadata_message.thread_id or "",
             user_id=self.user_id or "",
@@ -247,10 +254,10 @@ class BaseChatRunner(ABC):
     async def _save_message_to_db_async(self, message_data: dict) -> DBMessage:
         """
         Asynchronously create and save a message to the database.
-        
+
         Args:
             message_data: The message data to save
-            
+
         Returns:
             The created database message
         """
@@ -259,22 +266,20 @@ class BaseChatRunner(ABC):
         data_copy.pop("id", None)
         data_copy.pop("type", None)
         data_copy.pop("user_id", None)
-        
+
         # Use thread_id from message data if available
         message_thread_id = data_copy.pop("thread_id", None) or ""
-        
+
         # Run the database operation in a thread pool to avoid blocking
         def _create_db_message():
             return DBMessage.create(
-                thread_id=message_thread_id,
-                user_id=self.user_id or "",
-                **data_copy
+                thread_id=message_thread_id, user_id=self.user_id or "", **data_copy
             )
-        
+
         # Execute in thread pool to make it non-blocking
         loop = asyncio.get_event_loop()
         db_message = await loop.run_in_executor(None, _create_db_message)
-        
+
         log.debug(f"Saved message {db_message.id} to database asynchronously")
         return db_message
 
@@ -282,30 +287,30 @@ class BaseChatRunner(ABC):
         """
         Fetch chat history from the database using thread_id.
         When database is disabled, returns empty list (subclasses should override).
-        
+
         Args:
             thread_id: The thread ID to fetch messages for
-        
+
         Returns:
             List[ApiMessage]: The chat history as a list of API messages
         """
         if not thread_id or not self.user_id:
             log.debug("No thread_id or user_id available, returning empty chat history")
             return []
-        
+
         try:
             # Load messages from database using the paginate method
             db_messages, _ = DBMessage.paginate(
-                thread_id=thread_id,
-                limit=1000,
-                reverse=False
+                thread_id=thread_id, limit=1000, reverse=False
             )
-            
+
             # Convert database messages to metadata messages
             chat_history = [
                 self._db_message_to_metadata_message(db_msg) for db_msg in db_messages
             ]
-            log.debug(f"Fetched {len(db_messages)} messages from database for thread {thread_id}")
+            log.debug(
+                f"Fetched {len(db_messages)} messages from database for thread {thread_id}"
+            )
             return chat_history
         except Exception as e:
             log.error(f"Error fetching chat history from database: {e}", exc_info=True)
@@ -315,17 +320,17 @@ class BaseChatRunner(ABC):
         """
         Ensure that a thread exists for this conversation.
         Creates a new thread if thread_id is None.
-        
+
         Args:
             thread_id: The thread ID to verify, or None to create a new one
-            
+
         Returns:
             str: The thread ID (existing or newly created)
         """
         if not self.user_id:
             log.warning("Cannot ensure thread: user_id not set")
             raise ValueError("User ID not set")
-        
+
         if not thread_id:
             # Create a new thread
             try:
@@ -398,7 +403,6 @@ class BaseChatRunner(ABC):
             log.error(f"Error during Supabase token validation: {e}")
             return False
 
-
     def _initialize_node_tools(self):
         # Load all node packages to populate NODE_BY_TYPE registry
         load_node_packages()
@@ -430,21 +434,21 @@ class BaseChatRunner(ABC):
         chat_history: list[ApiMessage],
         processing_context: ProcessingContext,
         tools: list[Tool],
-        **kwargs
+        **kwargs,
     ):
         """Run a processor and stream its messages."""
         log.debug(f"Running processor {processor.__class__.__name__}")
-        
+
         # Create the processor task
         processor_task = asyncio.create_task(
             processor.process(
                 chat_history=chat_history,
                 processing_context=processing_context,
                 tools=tools,
-                **kwargs
+                **kwargs,
             )
         )
-        
+
         try:
             # Process messages while the processor is running
             while processor.has_messages() or processor.is_processing:
@@ -458,10 +462,10 @@ class BaseChatRunner(ABC):
                 else:
                     # Small delay to avoid busy waiting
                     await asyncio.sleep(0.01)
-            
+
             # Wait for the processor task to complete
             await processor_task
-            
+
         except asyncio.CancelledError:
             # If cancelled, make sure the processor task is also cancelled
             processor_task.cancel()
@@ -478,7 +482,7 @@ class BaseChatRunner(ABC):
         chat_history = messages
         if not chat_history:
             raise ValueError("No chat history available")
-        
+
         last_message = chat_history[-1]
         processing_context = ProcessingContext(user_id=self.user_id)
         if last_message.tools:
@@ -486,9 +490,7 @@ class BaseChatRunner(ABC):
                 resolve_tool_by_name(name, available_tools=self.all_tools)
                 for name in last_message.tools
             ]
-            log.debug(
-                f"Initialized tools: {[tool.name for tool in selected_tools]}"
-            )
+            log.debug(f"Initialized tools: {[tool.name for tool in selected_tools]}")
         else:
             selected_tools = []
 
@@ -501,30 +503,30 @@ class BaseChatRunner(ABC):
         log.debug(
             f"Using provider {provider.__class__.__name__} for model {last_message.model}"
         )
-        
+
         # Check for help request
         if last_message.help_mode:
             log.debug(f"Processing help request with model: {last_message.model}")
             assert last_message.model, "Model is required"
             assert last_message.provider, "Provider is required"
-            
+
             provider = get_provider(last_message.provider)
             processor = HelpMessageProcessor(provider)
-            
+
             await self._run_processor(
                 processor=processor,
                 chat_history=chat_history,
                 processing_context=processing_context,
                 tools=selected_tools,
             )
-        
+
         # Regular chat processing
         else:
             log.debug(f"Chat history length: {len(chat_history)} messages")
-            
+
             # Create the regular chat processor
             processor = RegularChatProcessor(provider)
-            
+
             await self._run_processor(
                 processor=processor,
                 chat_history=chat_history,
@@ -541,15 +543,15 @@ class BaseChatRunner(ABC):
         chat_history = messages
         if not chat_history:
             raise ValueError("No chat history available")
-        
+
         last_message = chat_history[-1]
         assert last_message.model, "Model is required for agent mode"
         assert last_message.provider, "Provider is required for agent mode"
-        
+
         provider = get_provider(last_message.provider)
         processor = AgentMessageProcessor(provider)
         processing_context = ProcessingContext(user_id=self.user_id)
-        
+
         # Get selected tools based on message.tools
         selected_tools = []
         if last_message.tools:
@@ -579,11 +581,12 @@ class BaseChatRunner(ABC):
         tools = []
         if last_message.tools:
             from nodetool.agents.tools.base import resolve_tool_by_name
+
             tools = [
                 resolve_tool_by_name(name, available_tools=self.all_tools)
                 for name in list(last_message.tools)
             ]
-        
+
         await self._run_processor(
             processor=processor,
             chat_history=chat_history,
@@ -604,11 +607,11 @@ class BaseChatRunner(ABC):
             last_message = chat_history[-1]
             if not last_message.provider:
                 raise ValueError("No provider specified in the current conversation")
-            
+
             provider = get_provider(last_message.provider)
             processor = WorkflowCreationProcessor(provider, self.user_id)
             processing_context = ProcessingContext(user_id=self.user_id)
-            
+
             await self._run_processor(
                 processor=processor,
                 chat_history=chat_history,
@@ -616,14 +619,18 @@ class BaseChatRunner(ABC):
                 tools=self.all_tools,
                 objective=objective,
             )
-                        
+
         except Exception as e:
             error_msg = f"Error creating workflow: {str(e)}"
             log.error(f"Error in _trigger_workflow_creation: {e}", exc_info=True)
             return {"success": False, "error": error_msg}
 
     async def _trigger_workflow_editing(
-        self, objective: str, thread_id: str, workflow_id: str | None = None, graph: Graph | None = None
+        self,
+        objective: str,
+        thread_id: str,
+        workflow_id: str | None = None,
+        graph: Graph | None = None,
     ):
         """
         Triggers workflow editing using the GraphPlanner for tool-initiated requests.
@@ -637,11 +644,11 @@ class BaseChatRunner(ABC):
             last_message = chat_history[-1]
             if not last_message.provider:
                 raise ValueError("No provider specified in the current conversation")
-            
+
             provider = get_provider(last_message.provider)
             processor = WorkflowEditingProcessor(provider, self.user_id)
             processing_context = ProcessingContext(user_id=self.user_id)
-            
+
             await self._run_processor(
                 processor=processor,
                 chat_history=chat_history,
@@ -651,7 +658,7 @@ class BaseChatRunner(ABC):
                 workflow_id=workflow_id,
                 graph=graph,
             )
-                        
+
         except Exception as e:
             error_msg = f"Error editing workflow: {str(e)}"
             log.error(f"Error in _trigger_workflow_editing: {e}", exc_info=True)
@@ -664,7 +671,7 @@ class BaseChatRunner(ABC):
         """
         if not messages:
             raise ValueError("No messages provided")
-        
+
         last_message = messages[-1]
         try:
             # Process the message through the appropriate processor
@@ -680,7 +687,12 @@ class BaseChatRunner(ABC):
             log.info("Message processing cancelled by user")
             # Send cancellation message
             try:
-                await self.send_message({"type": "generation_stopped", "message": "Generation stopped by user"})
+                await self.send_message(
+                    {
+                        "type": "generation_stopped",
+                        "message": "Generation stopped by user",
+                    }
+                )
             except:
                 pass
         except Exception as e:

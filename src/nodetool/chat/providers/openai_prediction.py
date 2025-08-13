@@ -5,6 +5,7 @@ import traceback
 from dotenv import load_dotenv
 from io import BytesIO
 from typing import Any, AsyncGenerator, Dict
+from nodetool.workflows.base_node import ApiKeyMissingError
 import openai
 import pydub
 import pydub.silence
@@ -224,9 +225,11 @@ async def create_whisper(prediction: Prediction, client: openai.AsyncClient) -> 
             file=("file.mp3", file_content, "audio/mp3"),  # Use file_content
             temperature=params.get("temperature", 0.0),
             response_format=params.get("response_format", "text"),
-            language=params.get("language", None),
-            prompt=params.get("prompt", None),
-            timestamp_granularities=params.get("timestamp_granularities", None),
+            language=params.get("language", openai.NotGiven),
+            prompt=params.get("prompt", openai.NotGiven),
+            timestamp_granularities=params.get(
+                "timestamp_granularities", openai.NotGiven
+            ),
         )
 
     prediction.cost = 0.0  # Default cost in credits
@@ -328,7 +331,10 @@ async def run_openai(
     assert model_id is not None, "Model is not set"
 
     api_key = env.get("OPENAI_API_KEY")
-    assert api_key, "OPENAI_API_KEY is not set"
+    if not api_key:
+        raise ApiKeyMissingError(
+            "OPENAI_API_KEY is not configured in the nodetool settings"
+        )
 
     client = openai.AsyncClient(api_key=api_key)
 

@@ -305,7 +305,6 @@ class ProcessingContext:
         """
         return Environment.get_asset_storage().get_url(key)
 
-
     def generate_node_cache_key(
         self,
         node: BaseNode,
@@ -1092,19 +1091,6 @@ class ProcessingContext:
         io = await self.asset_to_io(asset_ref)
         return io.read()
 
-    async def upload_tmp_asset(self, asset: AssetRef):
-        if asset.uri:
-            return asset.uri
-
-        assert asset.data
-        assert isinstance(asset.data, bytes)
-
-        tmp_id = uuid.uuid4()
-
-        return await Environment.get_asset_storage().upload(
-            f"tmp/{tmp_id}", BytesIO(asset.data)
-        )
-
     async def image_to_pil(self, image_ref: ImageRef) -> PIL.Image.Image:
         """
         Converts an ImageRef to a PIL Image object.
@@ -1117,7 +1103,7 @@ class ProcessingContext:
         """
         buffer = await self.asset_to_io(image_ref)
         image = PIL.Image.open(buffer)
-        
+
         # Apply EXIF orientation if present
         try:
             # Use PIL's built-in method to handle EXIF orientation
@@ -1127,7 +1113,7 @@ class ProcessingContext:
         except (AttributeError, KeyError, TypeError):
             # If EXIF data is not available or malformed, continue without rotation
             pass
-        
+
         return image.convert("RGB")
 
     async def image_to_numpy(self, image_ref: ImageRef) -> np.ndarray:
@@ -1190,7 +1176,7 @@ class ProcessingContext:
         """
         buffer = await self.asset_to_io(image_ref)
         image = PIL.Image.open(buffer)
-        
+
         # Apply EXIF orientation if present
         try:
             # Use PIL's built-in method to handle EXIF orientation
@@ -1200,7 +1186,7 @@ class ProcessingContext:
         except (AttributeError, KeyError, TypeError):
             # If EXIF data is not available or malformed, continue without rotation
             pass
-        
+
         image = image.convert("RGB")
         buffer = BytesIO()
         image.save(buffer, format="PNG")
@@ -1407,7 +1393,7 @@ class ProcessingContext:
         """
         if df.columns:
             column_names = [col.name for col in df.columns]
-            return pd.DataFrame(df.data, columns=column_names) # type: ignore
+            return pd.DataFrame(df.data, columns=column_names)  # type: ignore
         else:
             io = await self.asset_to_io(df)
             df = loads(io.read())
@@ -1921,6 +1907,7 @@ class ProcessingContext:
         Returns:
             Any: The value with all AssetRef objects uploaded to S3 and replaced with their URLs
         """
+
         def get_ext(value: Any) -> str:
             if isinstance(value, ImageRef):
                 return "png"
@@ -2224,7 +2211,7 @@ class ProcessingContext:
         """
         if getattr(self, "_browser_pages", None) and url in self._browser_pages:
             return self._browser_pages[url]  # type: ignore
-        
+
         if not getattr(self, "_browser_pages", None):
             self._browser_pages = {}
 
@@ -2234,11 +2221,10 @@ class ProcessingContext:
         self._browser_pages[url] = page
         return page
 
-
     async def cleanup(self):
         """
         Cleanup the browser context and pages.
         """
         if getattr(self, "_browser", None):
-            await self._browser.close() # type: ignore
+            await self._browser.close()  # type: ignore
             self._browser = None

@@ -21,9 +21,7 @@ import json
 import msgpack
 import asyncio
 import time
-import uuid
-from datetime import datetime
-from typing import Optional, Dict, List
+from typing import Optional
 from enum import Enum
 
 from fastapi import WebSocket
@@ -31,10 +29,10 @@ from fastapi.websockets import WebSocketState
 from nodetool.agents.tools.workflow_tool import create_workflow_tools
 from nodetool.chat.base_chat_runner import BaseChatRunner
 from nodetool.common.environment import Environment
-from nodetool.metadata.types import Message as ApiMessage
-from nodetool.models.message import Message as DBMessage
+
 
 log = logging.getLogger(__name__)
+log.setLevel(logging.DEBUG)
 
 
 class WebSocketMode(str, Enum):
@@ -50,12 +48,15 @@ class ChatWebSocketRunner(BaseChatRunner):
     WebSocket-specific transport methods for real-time bidirectional communication.
     """
 
-    def __init__(self, auth_token: str | None = None, default_model: str = "gpt-oss:20b", default_provider: str = "ollama"):
+    def __init__(
+        self,
+        auth_token: str | None = None,
+        default_model: str = "gpt-oss:20b",
+        default_provider: str = "ollama",
+    ):
         super().__init__(auth_token, default_model, default_provider)
         self.websocket: WebSocket | None = None
         self.mode: WebSocketMode = WebSocketMode.BINARY
-        # In-memory storage for chat history when database is disabled
-        self.in_memory_history: Dict[str, List[ApiMessage]] = {}
         # Background heartbeat task to keep the connection alive through proxies
         self.heartbeat_task: asyncio.Task | None = None
 
@@ -105,77 +106,29 @@ class ChatWebSocketRunner(BaseChatRunner):
         if not self.heartbeat_task or self.heartbeat_task.done():
             self.heartbeat_task = asyncio.create_task(self._heartbeat())
 
-    def _save_message_to_memory(self, thread_id: str, message: ApiMessage) -> None:
-        """Save a message to in-memory storage for the thread."""
-        if thread_id not in self.in_memory_history:
-            self.in_memory_history[thread_id] = []
-        self.in_memory_history[thread_id].append(message)
-        log.debug(f"Saved message to in-memory storage for thread {thread_id}")
-
-    async def _save_message_to_db_async(self, message_data: dict) -> ApiMessage:  # type: ignore[override]
-        """
-        Override to save messages in-memory and return ApiMessage for tests that
-        run without a database.
-        """
-        # Normalize basic fields
-        thread_id = message_data.get("thread_id") or ""
-
-        # Build ApiMessage directly (Pydantic will coerce enums if needed)
-        api_message = ApiMessage(
-            id=message_data.get("id") or uuid.uuid4().hex,
-            workflow_id=message_data.get("workflow_id"),
-            graph=message_data.get("graph"),
-            thread_id=thread_id,
-            tools=message_data.get("tools"),
-            tool_call_id=message_data.get("tool_call_id"),
-            role=message_data.get("role") or "",
-            name=message_data.get("name"),
-            content=message_data.get("content"),
-            tool_calls=message_data.get("tool_calls"),
-            collections=message_data.get("collections"),
-            input_files=message_data.get("input_files"),
-            output_files=message_data.get("output_files"),
-            created_at=message_data.get("created_at") or datetime.utcnow().isoformat(),
-            provider=message_data.get("provider"),
-            model=message_data.get("model"),
-            agent_mode=message_data.get("agent_mode"),
-            workflow_assistant=message_data.get("workflow_assistant"),
-            help_mode=message_data.get("help_mode"),
-        )
-
-        # Save into in-memory history for this runner
-        self._save_message_to_memory(thread_id, api_message)
-
-        return api_message
-
-    async def get_chat_history_from_db(self, thread_id: str) -> List[ApiMessage]:  # type: ignore[override]
-        """
-        Override to fetch chat history from in-memory storage when running without DB.
-        """
-        return list(self.in_memory_history.get(thread_id, []))
-
     async def handle_message(self, data: dict):
         """
-        Override to save messages to in-memory storage when database is disabled and load messages before calling handle_message_impl.
+        Handle an incoming WebSocket message by saving to DB and processing using chat history from DB.
         """
         try:
             # Extract thread_id from message data and ensure thread exists
             thread_id = data.get("thread_id")
             thread_id = await self.ensure_thread_exists(thread_id)
-            
+
             # Update message data with the thread_id (in case it was created)
             data["thread_id"] = thread_id
-            
+
             # Apply defaults if not specified
             if not data.get("model"):
                 data["model"] = self.default_model
             if not data.get("provider"):
                 data["provider"] = self.default_provider
-            
-            # Save message to database asynchronously (if enabled) and to memory
+
+            # Save message to database asynchronously
             await self._save_message_to_db_async(data)
-            # Load history from in-memory store
-            chat_history = self.in_memory_history.get(thread_id, [])
+
+            # Load history from database
+            chat_history = await self.get_chat_history_from_db(thread_id)
 
             # Call the implementation method with the loaded messages
             await self.handle_message_impl(chat_history)
@@ -184,7 +137,12 @@ class ChatWebSocketRunner(BaseChatRunner):
             log.info("Message processing cancelled by user")
             # Send cancellation message
             try:
-                await self.send_message({"type": "generation_stopped", "message": "Generation stopped by user"})
+                await self.send_message(
+                    {
+                        "type": "generation_stopped",
+                        "message": "Generation stopped by user",
+                    }
+                )
             except:
                 pass
         except Exception as e:
@@ -195,7 +153,6 @@ class ChatWebSocketRunner(BaseChatRunner):
             except:
                 pass
 
-
     async def disconnect(self):
         """
         Closes the WebSocket connection if it is active.
@@ -204,7 +161,7 @@ class ChatWebSocketRunner(BaseChatRunner):
         if self.current_task and not self.current_task.done():
             log.debug("Stopping threaded event loop during disconnect")
             self.current_task.cancel()
-        
+
         # Stop heartbeat task
         if self.heartbeat_task and not self.heartbeat_task.done():
             self.heartbeat_task.cancel()
@@ -214,7 +171,10 @@ class ChatWebSocketRunner(BaseChatRunner):
                 pass
         self.heartbeat_task = None
 
-        if self.websocket and self.websocket.client_state != WebSocketState.DISCONNECTED:
+        if (
+            self.websocket
+            and self.websocket.client_state != WebSocketState.DISCONNECTED
+        ):
             try:
                 await self.websocket.close()
             except Exception as e:
@@ -243,7 +203,8 @@ class ChatWebSocketRunner(BaseChatRunner):
         # Guard against sending after close
         if (
             getattr(self.websocket, "client_state", None) == WebSocketState.DISCONNECTED
-            or getattr(self.websocket, "application_state", None) == WebSocketState.DISCONNECTED
+            or getattr(self.websocket, "application_state", None)
+            == WebSocketState.DISCONNECTED
         ):
             log.debug("Skipping send: WebSocket is disconnected")
             return
@@ -261,12 +222,12 @@ class ChatWebSocketRunner(BaseChatRunner):
     async def receive_message(self) -> Optional[dict]:
         """
         Receive a message from the WebSocket client.
-        
+
         Returns:
             The received message data or None if connection is closed
         """
         assert self.websocket is not None, "WebSocket is not connected"
-        
+
         try:
             message = await self.websocket.receive()
             log.debug(f"Received WebSocket message: {message}")
@@ -290,7 +251,7 @@ class ChatWebSocketRunner(BaseChatRunner):
             else:
                 log.warning(f"Received message with unknown format: {message}")
                 return None
-                
+
         except Exception as e:
             log.error(f"Error receiving message: {str(e)}", exc_info=True)
             raise
@@ -312,7 +273,7 @@ class ChatWebSocketRunner(BaseChatRunner):
 
         # Create tasks for concurrent message receiving and processing
         receive_task = asyncio.create_task(self._receive_messages())
-        
+
         try:
             # Wait for the receive task to complete (when connection closes)
             await receive_task
@@ -339,7 +300,7 @@ class ChatWebSocketRunner(BaseChatRunner):
         while True:
             try:
                 data = await self.receive_message()
-                
+
                 if data is None:
                     # Connection closed
                     break
@@ -350,7 +311,12 @@ class ChatWebSocketRunner(BaseChatRunner):
                     if self.current_task and not self.current_task.done():
                         log.debug("Stopping current processor")
                         self.current_task.cancel()
-                        await self.send_message({"type": "generation_stopped", "message": "Generation stopped by user"})
+                        await self.send_message(
+                            {
+                                "type": "generation_stopped",
+                                "message": "Generation stopped by user",
+                            }
+                        )
                         log.info("Generation stopped by user command")
                     continue
 

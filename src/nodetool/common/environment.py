@@ -14,6 +14,7 @@ from nodetool.common.settings import (
     SETTINGS_FILE,
     SECRETS_FILE,
 )
+from nodetool.storage.file_storage import FileStorage
 
 DEFAULT_ENV = {
     "ASSET_BUCKET": "images",
@@ -677,8 +678,10 @@ class Environment(object):
                 # cls.temp_storage = MemoryStorage(
                 #     base_url=cls.get_temp_storage_api_url()
                 # )
+                tmp_folder = str(get_system_file_path("tmp"))
+                os.makedirs(tmp_folder, exist_ok=True)
                 cls.temp_storage = FileStorage(
-                    base_path="/tmp",
+                    base_path=tmp_folder,
                     base_url=cls.get_temp_storage_api_url(),
                 )
             else:

@@ -40,6 +40,15 @@ from nodetool.types.graph import Graph
 from nodetool.chat.providers.base import ChatProvider
 
 log = logging.getLogger(__name__)
+log.setLevel(logging.DEBUG)
+
+REGULAR_SYSTEM_PROMPT = """
+You are a helpful assistant.
+
+# IMAGE TOOLS
+When using image tools, you will get an image url as result.
+ALWAYS EMBED THE IMAGE AS MARKDOWN IMAGE TAG.
+"""
 
 
 class MessageProcessor(ABC):
@@ -133,6 +142,11 @@ class RegularChatProcessor(MessageProcessor):
         # Extract query text for collection search
         query_text = self._extract_query_text(last_message)
 
+        if chat_history[0].role != "system":
+            chat_history = [
+                Message(role="system", content=REGULAR_SYSTEM_PROMPT)
+            ] + chat_history
+
         # Query collections if specified
         collection_context = ""
         if collections:
@@ -169,9 +183,6 @@ class RegularChatProcessor(MessageProcessor):
                     model=last_message.model,
                     tools=list(tools),
                 ):  # type: ignore
-                    log.debug(
-                        f"Received chunk from provider: type={type(chunk).__name__}"
-                    )
                     if isinstance(chunk, Chunk):
                         content += chunk.content
                         await self.send_message(chunk.model_dump())
@@ -636,9 +647,7 @@ class AgentMessageProcessor(MessageProcessor):
         selected_tools = []
         if last_message.tools:
             tool_names = set(last_message.tools)
-            selected_tools = [
-                tool for tool in list(tools) if tool.name in tool_names
-            ]
+            selected_tools = [tool for tool in list(tools) if tool.name in tool_names]
             log.debug(
                 f"Selected tools for agent: {[tool.name for tool in selected_tools]}"
             )

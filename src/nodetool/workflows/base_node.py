@@ -227,6 +227,12 @@ def memoized_class_method(func: Callable[..., T]):
     return classmethod(wrapper)
 
 
+class ApiKeyMissingError(Exception):
+    """Exception raised when API keys are not set in the configuration"""
+
+    pass
+
+
 class BaseNode(BaseModel):
     """
     The foundational class for all nodes in the workflow graph.

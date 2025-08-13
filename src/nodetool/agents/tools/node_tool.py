@@ -9,7 +9,8 @@ independently within agent workflows.
 
 from typing import Any, Dict, Type
 from nodetool.agents.tools.base import Tool, sanitize_node_name
-from nodetool.workflows.base_node import BaseNode, get_node_class
+from nodetool.metadata.types import AssetRef
+from nodetool.workflows.base_node import ApiKeyMissingError, BaseNode, get_node_class
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.metadata.node_metadata import NodeMetadata
 import json
@@ -114,10 +115,20 @@ class NodeTool(Tool):
             # Convert output according to node's output format
             converted_result = await node.convert_output(context, result)
 
+            for key, value in converted_result.items():
+                if isinstance(value, AssetRef):
+                    converted_result[key] = context.upload_assets_to_temp(value)
+
             return {
                 "node_type": self.node_type,
                 "result": converted_result,
                 "status": "completed",
+            }
+        except ApiKeyMissingError as e:
+            return {
+                "node_type": self.node_type,
+                "error": "API key missing. ASK THE USER TO SET THE API KEY IN THE NODETOOL SETTINGS.",
+                "status": "failed",
             }
 
         except Exception as e:
