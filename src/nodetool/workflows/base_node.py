@@ -290,7 +290,7 @@ class BaseNode(BaseModel):
     @property
     def id(self):
         return self._id
-    
+
     @property
     def parent_id(self):
         return self._parent_id
@@ -317,7 +317,9 @@ class BaseNode(BaseModel):
                 NameToType[name] = field_type
 
     @staticmethod
-    def from_dict(node: dict[str, Any], skip_errors: bool = False) -> tuple[Optional["BaseNode"], list[str]]:
+    def from_dict(
+        node: dict[str, Any], skip_errors: bool = False
+    ) -> tuple[Optional["BaseNode"], list[str]]:
         """
         Create a Node object from a dictionary representation.
 
@@ -342,7 +344,7 @@ class BaseNode(BaseModel):
                 return None, [f"Invalid node type: {node_type_str}"]
             else:
                 raise ValueError(f"Invalid node type: {node_type_str}")
-        
+
         node_id = node.get("id")
         if not node_id:
             # Node ID is critical for instantiation, raise if missing.
@@ -486,9 +488,7 @@ class BaseNode(BaseModel):
         type_args = prop.type.type_args
 
         if not is_assignable(prop.type, value):
-            return (
-                f"[{self.__class__.__name__}] Invalid value for property `{name}`: {type(value)} (expected {prop.type})"
-            )
+            return f"[{self.__class__.__name__}] Invalid value for property `{name}`: {type(value)} (expected {prop.type})"
 
         try:
             if prop.type.is_enum_type():
@@ -528,7 +528,7 @@ class BaseNode(BaseModel):
         else:
             # This case should ideally not be reached if find_property works correctly
             return f"[{self.__class__.__name__}] Property {name} does not exist and node is not dynamic"
-        return None # Indicates success
+        return None  # Indicates success
 
     def read_property(self, name: str) -> Any:
         """
@@ -549,7 +549,9 @@ class BaseNode(BaseModel):
         elif self._is_dynamic and name in self._dynamic_properties:
             return self._dynamic_properties[name]
         else:
-            raise ValueError(f"Property {name} does not exist in {self.__class__.__name__}: {self.node_properties()}")
+            raise ValueError(
+                f"Property {name} does not exist in {self.__class__.__name__}: {self.node_properties()}"
+            )
 
     def set_node_properties(
         self, properties: dict[str, Any], skip_errors: bool = False
@@ -574,9 +576,11 @@ class BaseNode(BaseModel):
             error_msg = self.assign_property(name, value)
             if error_msg:
                 if not skip_errors:
-                    raise ValueError(f"Error setting property '{name}' on node '{self.id}': {error_msg}")
+                    raise ValueError(
+                        f"Error setting property '{name}' on node '{self.id}': {error_msg}"
+                    )
                 error_messages.append(error_msg)
-        
+
         # Removed logging from here; caller will decide what to do with errors.
         return error_messages
 
@@ -1257,8 +1261,7 @@ def get_node_class(node_type: str) -> type[BaseNode] | None:
             if node_type in NODE_BY_TYPE:
                 return NODE_BY_TYPE[node_type]
     except Exception as e:
-        log.error(f"Could not import module {module_path}: {e}")
-        traceback.print_exc()
+        log.debug(f"Could not import module {module_path}: {e}")
 
     return find_node_class_by_name(node_type.split(".")[-1])
 
@@ -1312,7 +1315,9 @@ def get_recommended_models() -> dict[str, list[HuggingFaceModel]]:
             if model is None:
                 continue
             model_id = (
-                f"{model.repo_id}/{model.path}" if model.path is not None else model.repo_id
+                f"{model.repo_id}/{model.path}"
+                if model.path is not None
+                else model.repo_id
             )
             if model_id in model_ids:
                 continue
