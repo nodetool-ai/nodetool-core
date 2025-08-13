@@ -210,7 +210,7 @@ Available input values: {len(self.input_values)} keys
             assistant_message = Message(
                 role="assistant",
                 content=response.content,
-                tool_calls=response.tool_calls if response.tool_calls else None
+                tool_calls=response.tool_calls if response.tool_calls else None,
             )
             self.history.append(assistant_message)
 
@@ -229,11 +229,28 @@ Available input values: {len(self.input_values)} keys
                     # Process tool call
                     result = await self._handle_tool_call(tool_call)
 
-                    # Add tool result to history
+                    # Add tool result to history (safe serialization)
+                    try:
+                        serialized = (
+                            "Tool returned no output."
+                            if result is None
+                            else json.dumps(result)
+                        )
+                    except TypeError as e:
+                        logger.error(
+                            f"Failed to serialize tool result for history: {e}. Result: {result}"
+                        )
+                        serialized = json.dumps(
+                            {
+                                "error": f"Failed to serialize tool result: {e}",
+                                "result_repr": repr(result),
+                            }
+                        )
+
                     self.history.append(
                         Message(
                             role="tool",
-                            content=json.dumps(result),
+                            content=serialized,
                             tool_call_id=tool_call.id,
                         )
                     )
@@ -328,7 +345,7 @@ async def main():
 
     # Import math tools for testing
     from nodetool.agents.tools.math_tools import CalculatorTool, StatisticsTool
-    
+
     # Create executor with math tools
     executor = AgentExecutor(
         objective="Analyze the provided sales data and calculate total revenue, average order value, and identify top products using mathematical calculations",

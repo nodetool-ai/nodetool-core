@@ -230,6 +230,8 @@ EXECUTION PROTOCOL:
     - The result will be stored as an object and made available to downstream tasks.
     - Always include relevant `metadata` (title, description, sources). Sources should cite original inputs and any external sources used.
 7. Do NOT call `finish_subtask` multiple times. Structure your work to produce the final output, then call `finish_subtask`.
+8. Reasoning privacy: Do not reveal chain-of-thought. Only output tool calls and required fields.
+9. Efficiency: Keep text minimal; prefer structured outputs and tool calls.
 """
 
 DEFAULT_FINISH_TASK_SYSTEM_PROMPT: str = """
@@ -243,6 +245,8 @@ FINISH_TASK PROTOCOL:
 4. Ensure the final result conforms to the required structure defined in the task schema.
 5. **Tool Call Limit**: You have a maximum of {{ max_tool_calls }} tool calls for this task. Use them wisely and efficiently.
 6. Call `finish_task` ONCE with the complete, aggregated `result` and relevant `metadata` (title, description, sources - citing original sources where possible).
+7. Reasoning privacy: Do not reveal chain-of-thought. Only output tool calls and required fields.
+8. Efficiency: Keep text minimal; prefer structured outputs and tool calls.
 """
 
 
@@ -809,7 +813,9 @@ class SubTaskContext:
                 for tool_call in message.tool_calls:
                     # Log tool execution only to subtask (not phase)
                     if tool_call.name not in ("finish_subtask", "finish_task"):
-                        self.display_manager.info_subtask_only(f"Executing tool: {tool_call.name}")
+                        self.display_manager.info_subtask_only(
+                            f"Executing tool: {tool_call.name}"
+                        )
                         self.tool_calls_made += 1
                     message = self._generate_tool_call_message(tool_call)
                     yield ToolCall(
@@ -1018,7 +1024,9 @@ class SubTaskContext:
         # 1. Execute the tool
         tool_result = await self._process_tool_execution(tool_call)
 
-        self.display_manager.debug_subtask_only(f"Tool {tool_call.name} execution completed")
+        self.display_manager.debug_subtask_only(
+            f"Tool {tool_call.name} execution completed"
+        )
 
         # 3. Handle binary artifacts (images, audio)
         if isinstance(tool_result, dict):
@@ -1036,7 +1044,9 @@ class SubTaskContext:
 
         # Log tool result only to subtask tree (not phase)
         if tool_call.name not in ("finish_subtask", "finish_task"):
-            self.display_manager.info_subtask_only(f"Tool result received from {tool_call.name}")
+            self.display_manager.info_subtask_only(
+                f"Tool result received from {tool_call.name}"
+            )
 
         # 5. Serialize the final processed result for history
         content_str = self._serialize_tool_result_for_history(
@@ -1057,7 +1067,6 @@ class SubTaskContext:
             if tool.name == tool_call.name:
                 return await tool.process(self.processing_context, tool_call.args)
         raise ValueError(f"Tool '{tool_call.name}' not found in available tools.")
-
 
     def _handle_binary_artifact(
         self, tool_result: Dict[str, Any], tool_call_name: str, artifact_type: str
@@ -1137,7 +1146,9 @@ class SubTaskContext:
             if action == "navigate" and url:
                 if url not in self.sources:  # Avoid duplicates
                     self.sources.append(url)
-                    self.display_manager.debug_subtask_only(f"Added browser source: {url}")
+                    self.display_manager.debug_subtask_only(
+                        f"Added browser source: {url}"
+                    )
 
         if tool_call.name == "finish_task":
             self.display_manager.debug(
@@ -1168,6 +1179,8 @@ class SubTaskContext:
     ) -> str:
         """Serializes the tool result to a JSON string for message history."""
         try:
+            if tool_result is None:
+                return "Tool returned no output."
             return json.dumps(tool_result, ensure_ascii=False)
         except TypeError as e:
             self.display_manager.error(

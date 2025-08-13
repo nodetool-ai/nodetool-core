@@ -186,6 +186,11 @@ all planning activities:
 4.  **Unique Subtask IDs:** ALL subtask IDs MUST be unique and descriptive.
 5.  **Tool Usage:** When a phase requires generating the plan (Phase 2), 
     use the `create_task` tool as instructed.
+6.  **Reasoning Privacy:** Think step-by-step internally but do not reveal chain-of-thought. Only output the requested fields and required tool calls.
+7.  **Determinism:** Prefer concise, canonical JSON and exact identifiers. Avoid markdown unless explicitly requested by the phase template.
+8.  **Efficiency:** Minimize tokens. Keep prose under ~150 words per phase; favor bullet points.
+9.  **Validation-First:** Before emitting a tool call, re-validate DAG structure, unique IDs, schema conformance, and input availability.
+10. **Function-Calling First:** When a tool is available, prefer a tool call over free-form output. Do not emit extraneous text after tool calls.
 """
 
 # Make sure the phase prompts are concrete and focused
@@ -247,6 +252,8 @@ Provide your output in the following structure:
 - Ensure your reasoning clearly justifies the proposed subtask breakdown based
   on your understanding of the objective.
 - The '$short_name' for each task should be unique and descriptive.
+ - Keep the narrative concise (<120 tokens). Do not reveal chain-of-thought; provide only the requested sections.
+ - Output only the sections defined above; avoid additional commentary.
 
 ## Context Dump
 **User's Objective:**
@@ -315,6 +322,7 @@ Provide your output in the following structure:
 - **Input Keys:** Input keys can be referenced in input_tasks using their key names from the inputs dictionary.
 - **Clarity:** Your reasoning should clearly link the conceptual tasks from 
   Phase 0 to the concrete data flow defined here.
+ - Be concise (<150 tokens for the reasoning section). Do not reveal chain-of-thought.
 
 ## Context Dump
 **User's Objective:**
@@ -352,7 +360,7 @@ plan *before* making the tool call.
 ## Return Format
 Your response MUST be structured as follows:
 
-1.  **Detailed Reasoning and Final Plan Construction:**
+1.  **Brief Justification and Final Plan Construction (concise):**
     *   Provide your comprehensive reasoning for constructing the final 
         executable task plan.
     *   Explain how you translated the refined conceptual subtasks and data 
@@ -367,12 +375,14 @@ Your response MUST be structured as follows:
         defining for the `create_task` call.
     *   Refer to conceptual tasks using the '$name' convention where 
         appropriate in your reasoning.
+    *   Keep this justification concise (<200 tokens). Do not reveal chain-of-thought.
 
 2.  **`create_task` Tool Call:**
     *   Immediately following your reasoning, make exactly one call to the 
         `create_task` tool to generate the entire plan.
     *   Populate the tool call arguments meticulously based on your reasoning 
         and the guidelines below.
+    *   Do not include any additional free-form text after the tool call.
 
 ## Warnings: `create_task` Tool Call Guidelines
 Adhere strictly to the following when constructing the arguments for the 
@@ -428,6 +438,7 @@ Adhere strictly to the following when constructing the arguments for the
     as objects between subtasks automatically.
 *   **Final Output Conformance:** The plan's final output (from the terminal 
     subtask(s)) MUST conform to the output schema.
+*   **Determinism:** Prefer concise, canonical JSON strings for schemas. Avoid markdown.
 
 **Agent Execution Notes (for your planning awareness):**
 *   Agents executing these subtasks will call `finish_subtask` with result objects.
@@ -471,9 +482,17 @@ aspects for *each* subtask:
     upstream task dependencies that this subtask needs?
 3.  **Output Precision:** Does `output_schema` accurately describe the 
     structure of the result object that will be produced?
+4.  **Model Assignment:** Use `{{ model }}` for standard tasks and `{{ reasoning_model }}` for complex reasoning/code.
+5.  **Iteration Budget:** Set `max_iterations` proportionally to complexity; prefer the minimum needed.
+6.  **Intermediate Flag:** Mark `is_intermediate_result=true` when output is only for downstream consumption.
+7.  **DAG Integrity:** All dependencies must exist and form an acyclic graph. No orphan subtasks.
+8.  **Naming:** Subtask `id`s are unique, descriptive, and consistent with references in `input_tasks`.
+9.  **Output Fit:** Terminal subtask output matches the overall task `output_schema`.
 
 Ensure your overall plan effectively addresses the original `{{ objective }}` 
 using the available resources and adheres to the final output requirements.
+
+Discipline: keep justification concise and do not reveal chain-of-thought. After this checklist, immediately emit the single `create_task` tool call with no extra commentary.
 """
 
 
@@ -702,17 +721,17 @@ class TaskPlanner:
 
     def _build_dependency_graph(self, subtasks: List[SubTask]) -> nx.DiGraph:
         """
-        Build a directed graph of dependencies between subtasks.
+            Build a directed graph of dependencies between subtasks.
 
-    The graph nodes represent subtasks (identified by their `id`) and input keys.
-        An edge from node A to subtask B means B depends on the output of A
-        (i.e., one of B's `input_tasks` is A's `id` or an input key).
+        The graph nodes represent subtasks (identified by their `id`) and input keys.
+            An edge from node A to subtask B means B depends on the output of A
+            (i.e., one of B's `input_tasks` is A's `id` or an input key).
 
-        Args:
-            subtasks: A list of `SubTask` objects.
+            Args:
+                subtasks: A list of `SubTask` objects.
 
-        Returns:
-            A `networkx.DiGraph` representing the dependencies.
+            Returns:
+                A `networkx.DiGraph` representing the dependencies.
         """
         G = nx.DiGraph()
 
@@ -1111,15 +1130,15 @@ class TaskPlanner:
                         "error" in str(formatted_content).lower()
                         or "fail" in str(formatted_content).lower()
                     ):
-                        failure_reason = (
-                            f"LLM indicated failure: {formatted_content}"
-                        )
+                        failure_reason = f"LLM indicated failure: {formatted_content}"
                     else:
                         failure_reason = f"LLM did not produce a valid 'create_task' tool call. Last message: {formatted_content}"
                 elif (
                     plan_creation_error
                 ):  # Check if _generate_with_retry raised an error internally
-                    failure_reason = f"Tool call generation failed internally: {plan_creation_error}"
+                    failure_reason = (
+                        f"Tool call generation failed internally: {plan_creation_error}"
+                    )
 
                 self.display_manager.warning(
                     f"Tool-based plan creation failed: {failure_reason}"
@@ -1973,7 +1992,6 @@ class TaskPlanner:
             ),
             all_validation_errors,
         )  # Return task and any non-fatal errors
-
 
     async def _validate_and_build_task_from_tool_calls(
         self, tool_calls: List[ToolCall], history: List[Message]
