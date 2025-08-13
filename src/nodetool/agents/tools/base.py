@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 def sanitize_node_name(node_name: str) -> str:
     """
     Convert node type to tool name format.
-    
+
     Converts from node type format (e.g., "namespace.TestNode") to tool name format
     (e.g., "node_test"). Handles CamelCase to snake_case conversion and adds "node_" prefix.
 
@@ -25,30 +25,23 @@ def sanitize_node_name(node_name: str) -> str:
     Returns:
         The sanitized tool name.
     """
-    if not isinstance(node_name, str):
-        logger.warning(
-            f"Invalid node_name type: {type(node_name)}. Returning empty string."
-        )
-        return ""
+    node_name = node_name.replace(".", "_")
 
-    # Extract the class name from the full node type (e.g., "test.TestNode" -> "TestNode")
-    class_name = node_name.split(".")[-1]
-    
     # Remove "Node" suffix if present
-    if class_name.endswith("Node"):
-        class_name = class_name[:-4]
-    
+    if node_name.endswith("Node"):
+        node_name = node_name[:-4]
+
     # Convert CamelCase to snake_case
     import re
-    snake_case = re.sub('([a-z0-9])([A-Z])', r'\1_\2', class_name).lower()
-    
+
+    snake_case = re.sub("([a-z0-9])([A-Z])", r"\1_\2", node_name).lower()
+
     # Add "node_" prefix
     result = f"node_{snake_case}"
-    
+
     # Truncate if necessary (adjust max length as needed)
     max_length = 64  # Example max length
     if len(result) > max_length:
-        # Simple truncation, could be smarter (e.g., keep start/end)
         return result[:max_length]
     else:
         return result
@@ -81,7 +74,9 @@ def get_tool_by_name(name: str) -> Optional[Type["Tool"]]:
     return _tool_registry.get(name)
 
 
-def resolve_tool_by_name(name: str, available_tools: Optional[Sequence["Tool"]] = None) -> "Tool":
+def resolve_tool_by_name(
+    name: str, available_tools: Optional[Sequence["Tool"]] = None
+) -> "Tool":
     """
     Resolve a tool instance by name using the following precedence:
     1) Exact match from provided available_tools instances
@@ -107,8 +102,10 @@ def resolve_tool_by_name(name: str, available_tools: Optional[Sequence["Tool"]] 
 
     # Try sanitized name instance match in available tools
     sanitized_name = sanitize_node_name(name)
+    print(f"Sanitized name: {sanitized_name}")
     if available_tools:
         for tool in available_tools:
+            print(f"Tool name: {tool.name}")
             if tool.name == sanitized_name:
                 return tool
 
