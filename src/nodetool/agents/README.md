@@ -1,9 +1,5 @@
 # NodeTool Agent System
 
-## What is NodeTool?
-
-NodeTool is a powerful framework designed to help Large Language Models (LLMs) accomplish complex tasks by breaking them down into smaller, manageable steps. It integrates seamlessly with external tools, allowing structured planning and execution of tasks.
-
 ## Key Features
 
 - **Smart Task Planning**: Automatically breaks down complex goals into clear, executable subtasks.

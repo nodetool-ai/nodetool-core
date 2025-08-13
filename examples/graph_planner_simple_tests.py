@@ -4,9 +4,11 @@ import asyncio
 import tempfile
 from typing import Any
 
-from nodetool.agents.graph_planner import GraphPlanner, print_visual_graph
-from nodetool.chat.providers.anthropic_provider import AnthropicProvider
-from nodetool.chat.providers.openai_provider import OpenAIProvider
+from nodetool.agents.graph_planner import (
+    GraphPlanner,
+    print_visual_graph,
+)
+from nodetool.chat.providers.ollama_provider import OllamaProvider
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.run_workflow import run_workflow
@@ -18,8 +20,8 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-provider = AnthropicProvider()
-model = "claude-sonnet-4-20250514"
+provider = OllamaProvider()
+model = "gpt-oss:20b"
 
 
 async def create_and_execute_workflow(
@@ -34,7 +36,6 @@ async def create_and_execute_workflow(
         model=model,
         objective=objective,
         verbose=True,
-        inputs=inputs,
     )
 
     # Plan the graph
@@ -148,14 +149,14 @@ async def run_all_simple_tests():
     print("\n=== Running Simple Arithmetic Workflow ===")
     await simple_arithmetic_workflow()
 
-    print("\n=== Running Text Concatenation Workflow ===")
-    await text_concatenation_workflow()
+    # print("\n=== Running Text Concatenation Workflow ===")
+    # await text_concatenation_workflow()
 
-    print("\n=== Running Calculation Pipeline Workflow ===")
-    await calculation_pipeline_workflow()
+    # print("\n=== Running Calculation Pipeline Workflow ===")
+    # await calculation_pipeline_workflow()
 
-    print("\n=== Running Text Formatting Workflow ===")
-    await text_formatting_workflow()
+    # print("\n=== Running Text Formatting Workflow ===")
+    # await text_formatting_workflow()
 
 
 if __name__ == "__main__":
