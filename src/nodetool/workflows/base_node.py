@@ -1281,7 +1281,7 @@ def get_node_class(node_type: str) -> type[BaseNode] | None:
     except Exception as e:
         log.debug(f"Could not import module {module_path}: {e}")
 
-    return find_node_class_by_name(node_type.split(".")[-1])
+    return None
 
 
 class GroupNode(BaseNode):
