@@ -9,13 +9,15 @@ from google.genai.types import (
 )
 from nodetool.agents.tools.base import Tool
 from nodetool.common.environment import Environment
+from nodetool.workflows.base_node import ApiKeyMissingError
 from nodetool.workflows.processing_context import ProcessingContext
 
 
 def get_genai_client() -> AsyncClient:
     env = Environment.get_environment()
     api_key = env.get("GEMINI_API_KEY")
-    assert api_key, "GEMINI_API_KEY is not set"
+    if not api_key:
+        raise ApiKeyMissingError("GEMINI_API_KEY is not set")
     return Client(api_key=api_key).aio
 
 
