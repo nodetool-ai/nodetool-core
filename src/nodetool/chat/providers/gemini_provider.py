@@ -343,26 +343,29 @@ class GeminiProvider(ChatProvider):
             if chunk.candidates:
                 candidate = chunk.candidates[0]
                 if candidate.content:
-                    for part in candidate.content.parts:
-                        part: Part = part
-                        if part.text:
-                            yield Chunk(content=part.text, done=False)
-                        elif part.function_call:
-                            yield ToolCall(
-                                name=part.function_call.name or "",
-                                args=part.function_call.args or {},
-                            )
-                        elif part.executable_code:
-                            code_text = f"```python\n{part.executable_code.code}\n```"
-                            yield Chunk(content=code_text, done=False)
-                        elif part.code_execution_result:
-                            result_text = f"Execution result:\n```\n{part.code_execution_result.output}\n```"
-                            yield Chunk(content=result_text, done=False)
-                        elif part.inline_data:
-                            yield MessageFile(
-                                content=part.inline_data.data or b"",
-                                mime_type=part.inline_data.mime_type or "",
-                            )
+                    if candidate.content.parts:
+                        for part in candidate.content.parts:
+                            part: Part = part
+                            if part.text:
+                                yield Chunk(content=part.text, done=False)
+                            elif part.function_call:
+                                yield ToolCall(
+                                    name=part.function_call.name or "",
+                                    args=part.function_call.args or {},
+                                )
+                            elif part.executable_code:
+                                code_text = (
+                                    f"```python\n{part.executable_code.code}\n```"
+                                )
+                                yield Chunk(content=code_text, done=False)
+                            elif part.code_execution_result:
+                                result_text = f"Execution result:\n```\n{part.code_execution_result.output}\n```"
+                                yield Chunk(content=result_text, done=False)
+                            elif part.inline_data:
+                                yield MessageFile(
+                                    content=part.inline_data.data or b"",
+                                    mime_type=part.inline_data.mime_type or "",
+                                )
 
     def get_usage(self) -> dict:
         """Return the current accumulated token usage statistics."""
