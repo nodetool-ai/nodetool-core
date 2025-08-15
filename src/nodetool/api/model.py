@@ -378,6 +378,10 @@ if not Environment.is_production():
             expanded = os.path.expandvars(path)
             expanded = os.path.expanduser(expanded)
             requested_path = Path(expanded).resolve()
+
+            # If a file is passed, open the parent directory for better UX
+            if requested_path.is_file():
+                requested_path = requested_path.parent
             is_safe_path = False
             for root_dir in safe_roots:
                 if requested_path.is_relative_to(root_dir):

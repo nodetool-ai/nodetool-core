@@ -61,16 +61,33 @@ class HealthResponse(BaseModel):
     summary: HealthSummary
 
 
+_CACHE: dict[str, tuple[float, dict]] = {}
+_TTL_SECONDS = 3.0
+
+
 @router.get("/")
 async def get_system_info() -> SystemInfoResponse:
-    os_info = get_os_info()
-    versions = get_versions_info()
-    paths = get_paths_info()
+    import time
+
+    now = time.time()
+    cached = _CACHE.get("system_info")
+    if cached and (now - cached[0]) < _TTL_SECONDS:
+        payload = cached[1]
+    else:
+        os_info = get_os_info()
+        versions = get_versions_info()
+        paths = get_paths_info()
+        payload = {
+            "os": os_info,
+            "versions": versions,
+            "paths": paths,
+        }
+        _CACHE["system_info"] = (now, payload)
 
     return SystemInfoResponse(
-        os=OSInfo(**os_info),
-        versions=VersionsInfo(**versions),
-        paths=PathsInfo(**paths),
+        os=OSInfo(**payload["os"]),
+        versions=VersionsInfo(**payload["versions"]),
+        paths=PathsInfo(**payload["paths"]),
     )
 
 

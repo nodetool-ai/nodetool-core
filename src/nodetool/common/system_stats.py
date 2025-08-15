@@ -63,6 +63,3 @@ def get_system_stats() -> SystemStats:
         vram_used_gb=round(vram_used, 2) if vram_used is not None else None,
         vram_percent=round(vram_percent, 2) if vram_percent is not None else None,
     )
-
-
-print(get_system_stats())

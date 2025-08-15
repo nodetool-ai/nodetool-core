@@ -91,7 +91,6 @@ DEFAULT_ROUTERS = [
     storage.router,
     storage.temp_router,
     font.router,
-    system.router,
 ]
 
 
@@ -99,6 +98,8 @@ if not Environment.is_production():
     DEFAULT_ROUTERS.append(file.router)
     DEFAULT_ROUTERS.append(settings.router)
     DEFAULT_ROUTERS.append(collection.router)
+    # System endpoints are only available in non-production
+    DEFAULT_ROUTERS.append(system.router)
     DEFAULT_ROUTERS.append(package.router)
 
 
