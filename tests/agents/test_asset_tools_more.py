@@ -48,7 +48,7 @@ async def test_list_assets_directory_tool_success():
     asset = SimpleNamespace(id="1", file_name="foo.txt", content_type="text/plain")
 
     async def list_assets(parent_id=None, recursive=False, mime_type=None):
-        return SimpleNamespace(assets=[asset])
+        return [asset], 1
 
     context = SimpleNamespace(list_assets=list_assets)
     tool = ListAssetsDirectoryTool()

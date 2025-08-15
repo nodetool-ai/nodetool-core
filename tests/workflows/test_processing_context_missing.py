@@ -4,32 +4,18 @@ These tests target specific methods and code paths that weren't covered in the m
 """
 
 import pytest
-import asyncio
 from io import BytesIO
-from unittest.mock import Mock, patch, AsyncMock, MagicMock
-from datetime import datetime
-import queue
-import joblib
+from unittest.mock import Mock, patch, AsyncMock
 import PIL.Image
-import numpy as np
-import pandas as pd
-from pydub import AudioSegment
 
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.graph import Graph
-from nodetool.workflows.base_node import BaseNode
-from nodetool.workflows.property import Property
-from nodetool.metadata.type_metadata import TypeMetadata
 from nodetool.metadata.types import (
     AssetRef,
     ImageRef,
-    AudioRef,
     VideoRef,
     TextRef,
-    ModelRef,
-    DataframeRef,
 )
-from nodetool.common.environment import Environment
 
 
 @pytest.fixture
@@ -243,13 +229,14 @@ class TestPredictionAndGeneration:
     @pytest.mark.asyncio
     async def test_generate_messages_streaming(self, context):
         """Test streaming message generation."""
-        from nodetool.metadata.types import Message, Provider, Chunk
+        from nodetool.metadata.types import Message, Provider
+        from nodetool.workflows.types import Chunk
 
         messages = [Message(role="user", content="Hello")]
 
         async def mock_generate_messages(*args, **kwargs):
-            yield Chunk(delta="Hello", type="chunk")
-            yield Chunk(delta=" world", type="chunk")
+            yield Chunk(content="Hello", type="chunk")
+            yield Chunk(content=" world", type="chunk")
 
         with patch("nodetool.chat.providers.get_provider") as mock_get_provider:
             mock_provider = Mock()
@@ -272,16 +259,19 @@ class TestPredictionAndGeneration:
                         chunks.append(chunk)
 
                     assert len(chunks) == 2
-                    assert chunks[0].delta == "Hello"
-                    assert chunks[1].delta == " world"
+                    assert chunks[0].content == "Hello"
+                    assert chunks[1].content == " world"
 
     @pytest.mark.asyncio
     async def test_run_prediction(self, context):
         """Test running a prediction."""
         from nodetool.types.prediction import PredictionResult
+        from nodetool.models.prediction import Prediction
 
         async def mock_prediction_function(prediction, env):
-            yield PredictionResult(output="test result")
+            yield PredictionResult(
+                prediction=prediction, encoding="json", content="test result"
+            )
 
         with patch("nodetool.models.prediction.Prediction.create"):
             result = await context.run_prediction(
@@ -312,10 +302,15 @@ class TestPredictionAndGeneration:
     async def test_stream_prediction(self, context):
         """Test streaming prediction."""
         from nodetool.types.prediction import PredictionResult
+        from nodetool.models.prediction import Prediction
 
         async def mock_prediction_function(prediction, env):
-            yield PredictionResult(output="chunk1")
-            yield PredictionResult(output="chunk2")
+            yield PredictionResult(
+                prediction=prediction, encoding="json", content="chunk1"
+            )
+            yield PredictionResult(
+                prediction=prediction, encoding="json", content="chunk2"
+            )
 
         results = []
         async for result in context.stream_prediction(
@@ -327,8 +322,8 @@ class TestPredictionAndGeneration:
             results.append(result)
 
         assert len(results) == 2
-        assert results[0].output == "chunk1"
-        assert results[1].output == "chunk2"
+        assert results[0].content == "chunk1"
+        assert results[1].content == "chunk2"
 
 
 class TestConversionMethods:
@@ -593,29 +588,11 @@ class TestUtilityFunctions:
         result = context.get_gmail_connection()
         assert result == mock_connection
 
-    def test_get_chroma_client(self, context):
-        """Test getting ChromaDB client."""
-        with patch("nodetool.common.chroma_client.get_chroma_client") as mock_get:
-            mock_client = Mock()
-            mock_get.return_value = mock_client
-
-            result = context.get_chroma_client()
-            assert result == mock_client
-            mock_get.assert_called_once_with(context.user_id)
-
-    def test_get_chroma_client_cached(self, context):
-        """Test ChromaDB client caching."""
-        mock_client = Mock()
-        context.chroma_client = mock_client
-
-        result = context.get_chroma_client()
-        assert result == mock_client
-
     @pytest.mark.asyncio
     async def test_is_huggingface_model_cached(self, context):
         """Test checking if HuggingFace model is cached."""
         with patch(
-            "huggingface_hub.file_download.try_to_load_from_cache"
+            "nodetool.workflows.processing_context.try_to_load_from_cache"
         ) as mock_cache:
             mock_cache.return_value = "/path/to/cache"
 

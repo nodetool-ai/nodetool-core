@@ -252,9 +252,7 @@ class WorkflowRunner:
         1. Source node cannot be found.
         2. Target node cannot be found.
         3. Source handle is not a declared output of the source node.
-        4. Target handle matches a declared output of the *target* node (i.e. the
-           edge is wired into the target's output socket).
-        5. Target handle is not a declared property of the target node *and* the
+        4. Target handle is not a declared property of the target node *and* the
            target node is *not* dynamic.
 
         The method mutates ``graph.edges`` in-place.
@@ -278,12 +276,7 @@ class WorkflowRunner:
                 removed.append(edge.id or "<unknown>")
                 continue
 
-            # 4 – edge wired into the *output* socket of the target
-            if target_cls.find_output(edge.targetHandle) is not None:
-                removed.append(edge.id or "<unknown>")
-                continue
-
-            # 5 – target property must exist unless node is dynamic
+            # 4 – target property must exist unless node is dynamic
             if (
                 not target_cls.is_dynamic()
                 and target_node.find_property(edge.targetHandle) is None
@@ -594,9 +587,6 @@ class WorkflowRunner:
                                      to find target nodes and edges.
         """
         log.debug(f"Sending messages from {node.get_title()} ({node.id})")
-        log.debug(
-            f"send_messages called for node: {node.get_title()} ({node.id}), result: {result}"
-        )
         for key, value_to_send in result.items():
             # find edges from node.id and this specific output slot (key)
             outgoing_edges = context.graph.find_edges(node.id, key)
@@ -631,7 +621,6 @@ class WorkflowRunner:
                     f"Sent message from {node.get_title()} ({node.id}) output '{key}' "
                     f"to {edge.target} input '{edge.targetHandle}' via edge_queue. Value: {str(value_to_send)[:50]}"
                 )
-        log.debug("Edge queue state after sending messages: %s", self.edge_queues)
         log.debug(f"send_messages finished for node: {node.get_title()} ({node.id})")
 
     async def _process_trigger_nodes(
@@ -765,7 +754,6 @@ class WorkflowRunner:
                 any_progress_potential = True
                 continue
 
-            # --- NEW: Event Check and Processing ---
             # Check if any input slot has an Event. If so, process immediately with available inputs.
             node_input_handles = {
                 edge.targetHandle for edge in graph.edges if edge.target == node._id
@@ -1391,9 +1379,6 @@ class WorkflowRunner:
         log.debug(
             f"Processing node: {node.get_title()} ({node._id}) with inputs: {list(inputs_from_edges.keys())}"
         )
-        log.debug(
-            f"process_node called for node: {node.get_title()} ({node._id}), inputs: {inputs_from_edges}"
-        )
         self.current_node = node._id
 
         try:
@@ -1532,15 +1517,12 @@ class WorkflowRunner:
         log.info(
             f"Processing EVENT {event.name} for node {node.get_title()} ({node._id}) on slot '{event_slot}'"
         )
-        log.debug(
-            f"process_event_node called for node: {node.get_title()} ({node._id}), event: {event.name}, slot: {event_slot}"
-        )
 
         # Assign event to the appropriate slot
         node.assign_property(event_slot, event)
 
         # Send running update
-        node.send_update(context, "running", properties=[event_slot])
+        await node.send_update(context, "running", properties=[event_slot])
 
         try:
             # Call handle_event which returns an async generator
@@ -1615,9 +1597,8 @@ class WorkflowRunner:
             Exception: Any other exception from the node's processing methods, which is
                        logged and re-raised after posting a `NodeUpdate` with error status.
         """
-        log.debug(f"{node.get_title()} ({node._id}) inputs: {inputs}")
         log.debug(
-            f"process_node_with_inputs called for node: {node.get_title()} ({node._id}), inputs: {inputs}"
+            f"process_node_with_inputs called for node: {node.get_title()} ({node._id}), inputs: {list(inputs.keys())}"
         )
 
         # Assign input values to node properties

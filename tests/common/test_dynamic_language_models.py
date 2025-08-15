@@ -139,19 +139,16 @@ class TestDynamicLanguageModels:
             "HF_TOKEN": "test-token"
         }
 
+        # Create mock models for each provider
+        mock_anthropic_models = [LanguageModel(id="claude-3", name="Claude 3", provider=Provider.Anthropic)]
+        mock_gemini_models = [LanguageModel(id="gemini-pro", name="Gemini Pro", provider=Provider.Gemini)]
+        mock_openai_models = [LanguageModel(id="gpt-4", name="GPT-4", provider=Provider.OpenAI)]
+
         with patch('nodetool.common.environment.Environment.get_environment', return_value=mock_env), \
-             aioresponses() as m:
-            
-            # Mock empty HF response to focus on static models
-            providers = [
-                "black-forest-labs", "cerebras", "cohere", "fal-ai", "featherless-ai",
-                "fireworks-ai", "groq", "hf-inference", "hyperbolic", "nebius",
-                "novita", "nscale", "replicate", "sambanova", "together"
-            ]
-            
-            for provider in providers:
-                url = f"https://huggingface.co/api/models?inference_provider={provider}&pipeline_tag=text-generation&limit=1000"
-                m.get(url, payload=[])  # Empty response
+             patch('nodetool.common.language_models.get_cached_anthropic_models', return_value=mock_anthropic_models), \
+             patch('nodetool.common.language_models.get_cached_gemini_models', return_value=mock_gemini_models), \
+             patch('nodetool.common.language_models.get_cached_openai_models', return_value=mock_openai_models), \
+             patch('nodetool.common.language_models.get_cached_hf_models', return_value=[]):
             
             models = await get_all_language_models()
             

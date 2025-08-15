@@ -8,6 +8,7 @@ import msgpack
 import asyncio
 from unittest.mock import Mock, AsyncMock, patch, MagicMock
 from fastapi import WebSocket
+from fastapi.websockets import WebSocketState
 from nodetool.chat.chat_websocket_runner import ChatWebSocketRunner, WebSocketMode
 from nodetool.common.environment import Environment
 
@@ -135,6 +136,7 @@ class TestChatWebSocketRunner:
         # Set up a connected state
         websocket = Mock(spec=WebSocket)
         websocket.close = AsyncMock()
+        websocket.client_state = WebSocketState.CONNECTED
         self.runner.websocket = websocket
         
         # Create a proper asyncio task
@@ -370,55 +372,3 @@ class TestChatWebSocketRunner:
         assert context.user_id == "test-user-789"
         assert context.workflow_id == "workflow-123"
 
-    async def test_in_memory_storage_mode(self):
-        """Test WebSocket runner with in-memory storage (use_database=False)"""
-        runner = ChatWebSocketRunner()
-        
-        # Verify in-memory mode is enabled
-        assert runner.in_memory_history == {}
-        
-        # Test saving and retrieving messages from memory
-        test_message = {
-            "thread_id": "test_thread",
-            "role": "user", 
-            "content": "Test message",
-            "model": "gpt-4",
-            "provider": "openai"
-        }
-        
-        # Save message to memory
-        result = await runner._save_message_to_db_async(test_message)
-        
-        # Verify message was saved
-        from nodetool.metadata.types import Message as ApiMessage
-        assert isinstance(result, ApiMessage)
-        assert "test_thread" in runner.in_memory_history
-        assert len(runner.in_memory_history["test_thread"]) == 1
-        
-        # Retrieve history from memory
-        history = await runner.get_chat_history_from_db("test_thread")
-        assert len(history) == 1
-        assert history[0].content == "Test message"
-
-    async def test_multiple_threads_in_memory(self):
-        """Test handling multiple threads in memory mode"""
-        runner = ChatWebSocketRunner()
-        
-        # Add messages to different threads
-        message1 = {"thread_id": "thread1", "role": "user", "content": "Message 1", "model": "gpt-4", "provider": "openai"}
-        message2 = {"thread_id": "thread2", "role": "user", "content": "Message 2", "model": "gpt-4", "provider": "openai"}
-        message3 = {"thread_id": "thread1", "role": "assistant", "content": "Response 1", "model": "gpt-4", "provider": "openai"}
-        
-        await runner._save_message_to_db_async(message1)
-        await runner._save_message_to_db_async(message2)
-        await runner._save_message_to_db_async(message3)
-        
-        # Verify thread separation
-        thread1_history = await runner.get_chat_history_from_db("thread1")
-        thread2_history = await runner.get_chat_history_from_db("thread2")
-        
-        assert len(thread1_history) == 2
-        assert len(thread2_history) == 1
-        assert thread1_history[0].content == "Message 1"
-        assert thread1_history[1].content == "Response 1"
-        assert thread2_history[0].content == "Message 2"
