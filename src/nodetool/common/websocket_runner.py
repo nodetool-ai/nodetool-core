@@ -142,7 +142,9 @@ async def execute_workflow(
         if req.graph is None:
             log.info(f"Loading workflow graph for {req.workflow_id}")
             workflow = await context.get_workflow(req.workflow_id)
-            req.graph = workflow.graph
+            if workflow is None:
+                raise ValueError(f"Workflow {req.workflow_id} not found")
+            req.graph = workflow.get_api_graph()
         assert runner, "Runner is not set"
         await runner.run(req, context)
     except Exception as e:

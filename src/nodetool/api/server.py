@@ -114,7 +114,7 @@ def create_app(
         dotenv.load_dotenv(env_file)
 
     app = FastAPI()
-    
+
     app.add_middleware(
         CORSMiddleware,
         allow_origins=origins,
@@ -159,54 +159,30 @@ def create_app(
     async def editor_redirect(workflow_id: str):
         return RedirectResponse(url="/")
 
-    worker_url = Environment.get_worker_url()
-
     if not Environment.is_production():
         app.add_websocket_route("/hf/download", huggingface_download_endpoint)
 
-    if worker_url:
-        predict_proxy = WebSocketProxy(worker_url=worker_url + "/predict")
-        chat_proxy = WebSocketProxy(worker_url=worker_url + "/chat")
+    @app.websocket("/predict")
+    async def websocket_endpoint(websocket: WebSocket):
+        await WebSocketRunner().run(websocket)
 
-        @app.websocket("/predict")
-        async def websocket_endpoint(websocket: WebSocket):
-            await predict_proxy(websocket)
+    @app.websocket("/chat")
+    async def chat_websocket_endpoint(websocket: WebSocket):
+        # Extract authentication information
+        auth_header = websocket.headers.get("authorization")
+        auth_token = None
 
-        @app.websocket("/chat")
-        async def chat_websocket_endpoint(websocket: WebSocket):
+        # Extract bearer token if present
+        if auth_header and auth_header.startswith("Bearer "):
+            auth_token = auth_header.replace("Bearer ", "")
+
+        # Check for API key in query params as fallback
+        if not auth_token:
             auth_token = websocket.query_params.get("api_key")
 
-            # In proxy mode, we still need to validate authentication
-            # but the actual WebSocket is handled by the proxy
-            if Environment.is_production() and not auth_token:
-                await websocket.close(code=1008, reason="Missing authentication")
-                return
-
-            await chat_proxy(websocket)
-
-    else:
-
-        @app.websocket("/predict")
-        async def websocket_endpoint(websocket: WebSocket):
-            await WebSocketRunner().run(websocket)
-
-        @app.websocket("/chat")
-        async def chat_websocket_endpoint(websocket: WebSocket):
-            # Extract authentication information
-            auth_header = websocket.headers.get("authorization")
-            auth_token = None
-
-            # Extract bearer token if present
-            if auth_header and auth_header.startswith("Bearer "):
-                auth_token = auth_header.replace("Bearer ", "")
-
-            # Check for API key in query params as fallback
-            if not auth_token:
-                auth_token = websocket.query_params.get("api_key")
-
-            # Create runner with authentication token
-            chat_runner = ChatWebSocketRunner(auth_token=auth_token)
-            await chat_runner.run(websocket)
+        # Create runner with authentication token
+        chat_runner = ChatWebSocketRunner(auth_token=auth_token)
+        await chat_runner.run(websocket)
 
         @app.websocket("/updates")
         async def updates_websocket_endpoint(websocket: WebSocket):

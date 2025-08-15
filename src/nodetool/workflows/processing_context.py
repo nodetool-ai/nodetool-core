@@ -115,10 +115,6 @@ class ProcessingContext:
     - Retrieves and manages asset storage and temporary storage instances.
     - Handles file uploads and downloads to/from storage services.
 
-    Workflow Execution:
-    - Runs the workflow by sending a RunJobRequest to a remote worker.
-    - Processes and handles various types of messages received from the worker (node progress, updates, errors).
-
     Utility Methods:
     - Provides helper methods for converting values for prediction, handling enums, and parsing S3 URLs.
     - Supports data conversion between different formats (e.g., TextRef to string, DataFrame to pandas DataFrame).

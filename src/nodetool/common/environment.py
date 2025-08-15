@@ -189,20 +189,6 @@ class Environment(object):
         os.environ["REMOTE_AUTH"] = "1" if remote_auth else "0"
 
     @classmethod
-    def set_worker_url(cls, worker_url: str):
-        """
-        Set the worker url.
-        """
-        os.environ["WORKER_URL"] = worker_url
-
-    @classmethod
-    def set_nodetool_api_url(cls, nodetool_api_url: str):
-        """
-        Set the nodetool api url.
-        """
-        os.environ["NODETOOL_API_URL"] = nodetool_api_url
-
-    @classmethod
     def use_remote_auth(cls):
         """
         A single local user with id 1 is used for authentication when this evaluates to False.
@@ -392,13 +378,6 @@ class Environment(object):
         return cls.get("ASSET_DOMAIN")
 
     @classmethod
-    def get_worker_url(cls):
-        """
-        The worker url is the url of the worker server.
-        """
-        return os.environ.get("WORKER_URL")
-
-    @classmethod
     def get_nodetool_api_url(cls):
         """
         The nodetool api url is the url of the nodetool api server.
@@ -418,47 +397,6 @@ class Environment(object):
         The temp storage API endpoint.
         """
         return f"{cls.get_nodetool_api_url()}/api/storage/temp"
-
-    @classmethod
-    def get_worker_api_client(cls):
-        from nodetool.common.worker_api_client import WorkerAPIClient
-
-        worker_url = cls.get_worker_url()
-        if worker_url:
-            return WorkerAPIClient(base_url=worker_url)
-        else:
-            return None
-
-    @classmethod
-    def get_nodetool_api_client(
-        cls, user_id: str, auth_token: str, api_url: str | None = None
-    ) -> NodetoolAPIClient:
-        """
-        The nodetool api client is a wrapper around the nodetool api.
-        """
-        from httpx import AsyncClient, ASGITransport
-
-        if api_url is None:
-            api_url = cls.get_nodetool_api_url()
-
-        if api_url is None or Environment.is_test():
-            from nodetool.api.server import create_app  # type: ignore
-
-            app = create_app()
-            transport = ASGITransport(app=app)  # type: ignore
-            return NodetoolAPIClient(
-                user_id=user_id,
-                auth_token=auth_token,
-                base_url=NODETOOL_INTERNAL_API,
-                client=AsyncClient(transport=transport),
-            )
-        else:
-            return NodetoolAPIClient(
-                user_id=user_id,
-                auth_token=auth_token,
-                base_url=api_url,
-                client=AsyncClient(timeout=30, verify=False),
-            )
 
     @classmethod
     def get_chroma_token(cls):
@@ -567,7 +505,7 @@ class Environment(object):
                 from nodetool.storage.file_storage import FileStorage
 
                 cls.get_logger().info(
-                    f"Using folder {cls.get_asset_folder()} for asset storage"
+                    f"Using folder {cls.get_asset_folder()} for asset storage with base url {cls.get_storage_api_url()}"
                 )
                 cls.asset_storage = FileStorage(
                     base_path=cls.get_asset_folder(),

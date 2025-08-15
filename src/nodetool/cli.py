@@ -32,12 +32,15 @@ console = Console()
 # Global progress manager instance
 progress_manager = ProgressManager(console=console)
 
+
 def cleanup_progress():
     """Cleanup function to ensure progress bars are stopped on exit."""
     progress_manager.stop()
 
+
 # Register cleanup function
 import atexit
+
 atexit.register(cleanup_progress)
 
 warnings.filterwarnings("ignore")
@@ -79,7 +82,6 @@ def cli():
 @cli.command("serve")
 @click.option("--host", default="127.0.0.1", help="Host address to serve on.")
 @click.option("--port", default=8000, help="Port to serve on.", type=int)
-@click.option("--worker-url", default=None, help="URL of the worker to connect to.")
 @click.option(
     "--static-folder",
     default=None,
@@ -102,7 +104,6 @@ def serve(
     reload: bool = False,
     force_fp16: bool = False,
     remote_auth: bool = False,
-    worker_url: str | None = None,
     apps_folder: str | None = None,
     production: bool = False,
 ):
@@ -118,14 +119,6 @@ def serve(
 
     Environment.set_remote_auth(remote_auth)
 
-    if worker_url:
-        Environment.set_worker_url(worker_url)
-
-    if Environment.is_production():
-        Environment.set_nodetool_api_url("https://api.nodetool.ai")
-    else:
-        Environment.set_nodetool_api_url(f"http://127.0.0.1:{port}")
-
     if not reload:
         app = create_app(static_folder=static_folder, apps_folder=apps_folder)
     else:
@@ -135,35 +128,6 @@ def serve(
             raise Exception("apps folder and reload are exclusive options")
         app = "nodetool.api.app:app"
 
-    run_uvicorn_server(app=app, host=host, port=port, reload=reload)
-
-
-@cli.command("worker")
-@click.option("--host", default="127.0.0.1", help="Host address to serve on.")
-@click.option("--port", default=8001, help="Port to serve on.", type=int)
-@click.option("--force-fp16", is_flag=True, help="Force FP16.")
-@click.option("--reload", is_flag=True, help="Reload the server on changes.")
-def worker(
-    host: str,
-    port: int,
-    reload: bool = False,
-    force_fp16: bool = False,
-):
-    """Start a Nodetool worker instance."""
-    from nodetool.api.server import run_uvicorn_server
-
-    try:
-        import comfy.cli_args  # type: ignore
-        import comfy.model_management  # type: ignore
-        import comfy.utils  # type: ignore
-        from nodes import init_extra_nodes  # type: ignore
-
-        comfy.cli_args.args.force_fp16 = force_fp16
-    except ImportError:
-        pass
-
-    app = "nodetool.api.worker:app"
-    init_extra_nodes()
     run_uvicorn_server(app=app, host=host, port=port, reload=reload)
 
 
@@ -319,7 +283,10 @@ def chat_server(
     "--server-url",
     help="URL of the chat server to connect to. If not provided, uses OpenAI API directly.",
 )
-@click.option("--runpod-endpoint", help="RunPod endpoint to use. Convenience option to not specify --server-url.")
+@click.option(
+    "--runpod-endpoint",
+    help="RunPod endpoint to use. Convenience option to not specify --server-url.",
+)
 @click.option("--auth-token", help="Authentication token")
 @click.option("--message", help="Send a single message (non-interactive mode).")
 @click.option(
@@ -366,6 +333,7 @@ def chat_client(
     import asyncio
     import dotenv
     from nodetool.chat.chat_client import run_chat_client
+
     dotenv.load_dotenv()
 
     if not auth_token:
@@ -810,6 +778,7 @@ def admin():
     """Commands for admin operations (model downloads, cache management, health checks)."""
     pass
 
+
 @admin.command("download-hf")
 @click.option("--repo-id", required=True, help="HuggingFace repository ID to download")
 @click.option(
@@ -842,7 +811,7 @@ def download_hf(
         nodetool admin download-hf --repo-id microsoft/DialoGPT-small
 
         # Download with streaming progress locally
-        nodetool admin download-hf --repo-id microsoft/DialoGPT-small 
+        nodetool admin download-hf --repo-id microsoft/DialoGPT-small
 
         # Download via HTTP API server
         nodetool admin download-hf --repo-id microsoft/DialoGPT-small --server-url http://localhost:8000
@@ -856,8 +825,8 @@ def download_hf(
     import asyncio
 
     import dotenv
-    dotenv.load_dotenv()
 
+    dotenv.load_dotenv()
 
     async def run_download():
         console.print("[bold cyan]📥 Starting HuggingFace download...[/]")
@@ -875,15 +844,16 @@ def download_hf(
         try:
             # Execute via HTTP API
             from nodetool.deploy.admin_client import AdminHTTPClient
+
             api_key = os.getenv("RUNPOD_API_KEY")
-            
+
             client = AdminHTTPClient(server_url, auth_token=api_key)
             async for progress_update in client.download_huggingface_model(
                 repo_id=repo_id,
                 cache_dir=cache_dir,
                 file_path=file_path,
                 ignore_patterns=list(ignore_patterns) if ignore_patterns else None,
-                allow_patterns=list(allow_patterns) if allow_patterns else None
+                allow_patterns=list(allow_patterns) if allow_patterns else None,
             ):
                 progress_manager._display_progress_update(progress_update)
 
@@ -895,7 +865,6 @@ def download_hf(
             sys.exit(1)
 
     asyncio.run(run_download())
-
 
 
 @admin.command("download-ollama")
@@ -916,7 +885,7 @@ def download_ollama(
         nodetool admin download-ollama --model-name llama3.2:latest
 
         # Download with streaming progress locally
-        nodetool admin download-ollama --model-name llama3.2:latest 
+        nodetool admin download-ollama --model-name llama3.2:latest
 
         # Download via HTTP API server
         nodetool admin download-ollama --model-name llama3.2:latest --server-url http://localhost:8000
@@ -932,8 +901,9 @@ def download_ollama(
         try:
             # Execute via HTTP API
             from nodetool.deploy.admin_client import AdminHTTPClient
+
             api_key = os.getenv("RUNPOD_API_KEY")
-            
+
             client = AdminHTTPClient(server_url, auth_token=api_key)
             async for progress_update in client.download_ollama_model(
                 model_name=model_name
@@ -968,6 +938,7 @@ def scan_cache(server_url: str):
     """
     import asyncio
     import dotenv
+
     dotenv.load_dotenv()
 
     async def run_scan():
@@ -978,8 +949,9 @@ def scan_cache(server_url: str):
         try:
             # Execute via HTTP API
             from nodetool.deploy.admin_client import AdminHTTPClient
+
             api_key = os.getenv("RUNPOD_API_KEY")
-            
+
             client = AdminHTTPClient(server_url, auth_token=api_key)
             result = await client.scan_cache()
             _handle_scan_cache_output(result)
@@ -1055,6 +1027,7 @@ def delete_hf(repo_id: str, server_url: str):
     """
     import asyncio
     import dotenv
+
     dotenv.load_dotenv()
 
     async def run_delete():
@@ -1072,8 +1045,9 @@ def delete_hf(repo_id: str, server_url: str):
         try:
             # Execute via HTTP API
             from nodetool.deploy.admin_client import AdminHTTPClient
+
             api_key = os.getenv("RUNPOD_API_KEY")
-            
+
             client = AdminHTTPClient(server_url, auth_token=api_key)
             result = await client.delete_huggingface_model(repo_id=repo_id)
             progress_manager._display_progress_update(result)
@@ -1096,9 +1070,7 @@ def delete_hf(repo_id: str, server_url: str):
     required=True,
     help="HTTP API server URL to execute on (e.g., http://localhost:8000)",
 )
-def cache_size(
-    cache_dir: str, server_url: str, api_key: str | None
-):
+def cache_size(cache_dir: str, server_url: str, api_key: str | None):
     """Calculate total cache size.
 
     Examples:
@@ -1113,6 +1085,7 @@ def cache_size(
     """
     import asyncio
     import dotenv
+
     dotenv.load_dotenv()
 
     async def run_calculate():
@@ -1124,8 +1097,9 @@ def cache_size(
         try:
             # Execute via HTTP API
             from nodetool.deploy.admin_client import AdminHTTPClient
+
             api_key = os.getenv("RUNPOD_API_KEY")
-            
+
             client = AdminHTTPClient(server_url, auth_token=api_key)
             result = await client.get_cache_size(cache_dir=cache_dir)
             _handle_cache_size_output(result)
@@ -1221,23 +1195,23 @@ def list_gcp_options():
     )
 
     console.print("[bold cyan]Google Cloud Run Options:[/]")
-    
+
     console.print("\n[bold]Regions:[/]")
     for region in CloudRunRegion:
         console.print(f"  {region.value}")
-    
+
     console.print("\n[bold]CPU Options:[/]")
     for cpu in CloudRunCPU:
         console.print(f"  {cpu.value}")
-    
+
     console.print("\n[bold]Memory Options:[/]")
     for memory in CloudRunMemory:
         console.print(f"  {memory.value}")
-    
+
     console.print("\n[bold]Registry Options:[/]")
     console.print("  gcr.io")
     console.print("  us-docker.pkg.dev")
-    console.print("  europe-docker.pkg.dev") 
+    console.print("  europe-docker.pkg.dev")
     console.print("  asia-docker.pkg.dev")
 
 
@@ -1326,7 +1300,9 @@ def env_for_deploy(
 
 
 @cli.command("deploy-local")
-@click.option("--port", default=8000, type=int, help="Host port to expose (default: 8000)")
+@click.option(
+    "--port", default=8000, type=int, help="Host port to expose (default: 8000)"
+)
 @click.option(
     "--chat-provider",
     default="ollama",
@@ -1337,7 +1313,9 @@ def env_for_deploy(
     default="gpt-oss:20b",
     help="Default model to use (default: gpt-oss:20b).",
 )
-@click.option("--tag", help="Optional tag for the Docker image (default: auto-generated)")
+@click.option(
+    "--tag", help="Optional tag for the Docker image (default: auto-generated)"
+)
 @click.option(
     "--name",
     help="Optional container name (default: auto-generated)",
@@ -1400,6 +1378,7 @@ def deploy_local(
     console.print(
         f"[green]🚀 Container '{container_name}' is running at http://localhost:{port}[/]"
     )
+
 
 @cli.command("deploy-runpod")
 @click.option(
@@ -1644,19 +1623,42 @@ def deploy_runpod(
 )
 @click.option(
     "--region",
-    type=click.Choice([
-        "us-central1", "us-east1", "us-east4", "us-west1", "us-west2", "us-west3", "us-west4",
-        "europe-west1", "europe-west2", "europe-west3", "europe-west4", "europe-west6",
-        "europe-north1", "asia-east1", "asia-east2", "asia-northeast1", "asia-northeast2",
-        "asia-northeast3", "asia-south1", "asia-southeast1", "asia-southeast2",
-        "australia-southeast1", "northamerica-northeast1", "southamerica-east1"
-    ]),
+    type=click.Choice(
+        [
+            "us-central1",
+            "us-east1",
+            "us-east4",
+            "us-west1",
+            "us-west2",
+            "us-west3",
+            "us-west4",
+            "europe-west1",
+            "europe-west2",
+            "europe-west3",
+            "europe-west4",
+            "europe-west6",
+            "europe-north1",
+            "asia-east1",
+            "asia-east2",
+            "asia-northeast1",
+            "asia-northeast2",
+            "asia-northeast3",
+            "asia-south1",
+            "asia-southeast1",
+            "asia-southeast2",
+            "australia-southeast1",
+            "northamerica-northeast1",
+            "southamerica-east1",
+        ]
+    ),
     default="us-central1",
     help="Google Cloud region (default: us-central1)",
 )
 @click.option(
     "--registry",
-    type=click.Choice(["gcr.io", "us-docker.pkg.dev", "europe-docker.pkg.dev", "asia-docker.pkg.dev"]),
+    type=click.Choice(
+        ["gcr.io", "us-docker.pkg.dev", "europe-docker.pkg.dev", "asia-docker.pkg.dev"]
+    ),
     help="Container registry to use (default: auto-infer from region)",
 )
 @click.option(
@@ -1668,7 +1670,7 @@ def deploy_runpod(
 @click.option(
     "--memory",
     type=click.Choice(["512Mi", "1Gi", "2Gi", "4Gi", "8Gi", "16Gi", "32Gi"]),
-    default="16Gi", 
+    default="16Gi",
     help="Memory allocation for Cloud Run service (default: 16Gi)",
 )
 @click.option(
@@ -1678,7 +1680,7 @@ def deploy_runpod(
     help="Minimum number of instances (default: 0)",
 )
 @click.option(
-    "--max-instances", 
+    "--max-instances",
     type=int,
     default=3,
     help="Maximum number of instances (default: 3)",
@@ -1718,7 +1720,7 @@ def deploy_runpod(
 )
 # Skip options
 @click.option("--skip-build", is_flag=True, help="Skip Docker build")
-@click.option("--skip-push", is_flag=True, help="Skip pushing to registry") 
+@click.option("--skip-push", is_flag=True, help="Skip pushing to registry")
 @click.option("--skip-deploy", is_flag=True, help="Skip deploying to Cloud Run")
 # Cache options
 @click.option("--no-cache", is_flag=True, help="Disable Docker cache optimization")
@@ -1863,6 +1865,7 @@ def sync_workflow(workflow_id: str, server_url: str):
     from nodetool.deploy.admin_client import AdminHTTPClient
     from nodetool.models.workflow import Workflow
     import dotenv
+
     dotenv.load_dotenv()
 
     async def run_sync():
@@ -1876,7 +1879,9 @@ def sync_workflow(workflow_id: str, server_url: str):
             # Use optional API key for auth if present
             api_key = os.getenv("RUNPOD_API_KEY")
             client = AdminHTTPClient(server_url, auth_token=api_key)
-            res = await client.update_workflow(workflow_id, from_model(workflow).model_dump())
+            res = await client.update_workflow(
+                workflow_id, from_model(workflow).model_dump()
+            )
 
             status = res.get("status", "ok")
             if status == "ok":
