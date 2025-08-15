@@ -253,12 +253,9 @@ class Asset(DBModel):
         Example:
             assets, cursor, paths = Asset.search_assets_global("user123", "photo", limit=50)
         """
-        # Sanitize query to prevent SQL injection by escaping special characters
-        import re
+        # Use the raw trimmed query to preserve literal characters like '_' across backends.
+        # Parameters are bound safely by the adapters, so no manual wildcard escaping is required here.
         sanitized_query = query.strip()
-        sanitized_query = sanitized_query.replace('\\', '\\\\')  # Escape backslashes first
-        sanitized_query = sanitized_query.replace('%', '\\%')    # Escape SQL wildcards
-        sanitized_query = sanitized_query.replace('_', '\\_')    # Escape SQL wildcards
         
         # Build base condition for user and name search (consistent contains search for better UX)
         condition = Field("user_id").equals(user_id).and_(

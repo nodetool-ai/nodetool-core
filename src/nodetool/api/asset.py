@@ -84,7 +84,6 @@ DEFAULT_SEARCH_PAGE_SIZE = 200
 log = Environment.get_logger()
 router = APIRouter(prefix="/api/assets", tags=["assets"])
 
-
 @router.get("/")
 async def index(
     parent_id: Optional[str] = None,
@@ -162,6 +161,14 @@ async def search_assets_global(
         )
     
     try:
+        log.info(
+            "[assets.search] start user=%s query='%s' content_type=%s page_size=%s cursor=%s",
+            user,
+            query,
+            content_type,
+            page_size,
+            cursor,
+        )
         # Search assets globally using the model's search method
         assets, next_cursor, folder_paths = AssetModel.search_assets_global(
             user_id=user,
@@ -169,6 +176,13 @@ async def search_assets_global(
             content_type=content_type,
             limit=page_size or DEFAULT_SEARCH_PAGE_SIZE,
             start_key=cursor,
+        )
+        log.info(
+            "[assets.search] done user=%s query='%s' matched=%d next_cursor=%s",
+            user,
+            query,
+            len(assets),
+            next_cursor,
         )
         
         # Convert to AssetWithPath objects
