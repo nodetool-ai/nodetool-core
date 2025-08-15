@@ -61,38 +61,42 @@ def run_health_checks() -> Dict[str, object]:
     data_dir = get_system_data_path("")
 
     # Existence
+    settings_ok = _exists(settings_path)
     checks.append(
         _check(
             "settings_file_exists",
-            _exists(settings_path),
+            settings_ok,
             str(settings_path),
-            "Create settings via UI or place file at this path.",
+            "" if settings_ok else "Create settings.yaml here to configure NodeTool.",
         )
     )
+    secrets_ok = _exists(secrets_path)
     checks.append(
         _check(
             "secrets_file_exists",
-            _exists(secrets_path),
+            secrets_ok,
             str(secrets_path),
-            "Add API keys as needed; this file is optional.",
+            "" if secrets_ok else "Optional: create secrets.yaml here to add API keys (e.g. OPENAI_API_KEY).",
         )
     )
 
     # Writability
+    cfg_write_ok = _is_writable(settings_path.parent) and _is_writable(secrets_path.parent)
     checks.append(
         _check(
             "config_dir_writable",
-            _is_writable(settings_path.parent) and _is_writable(secrets_path.parent),
+            cfg_write_ok,
             f"settings_dir={settings_path.parent}; secrets_dir={secrets_path.parent}",
-            "Fix directory permissions.",
+            "" if cfg_write_ok else "Make these folders writable so files can be saved.",
         )
     )
+    logs_write_ok = _is_writable(Path(logs_dir))
     checks.append(
         _check(
             "logs_dir_writable",
-            _is_writable(Path(logs_dir)),
+            logs_write_ok,
             str(logs_dir),
-            "Fix directory permissions.",
+            "" if logs_write_ok else "Make this folder writable so logs can be saved.",
         )
     )
 
@@ -100,12 +104,13 @@ def run_health_checks() -> Dict[str, object]:
     db_path = Environment.get_db_path()
     if db_path and db_path != ":memory:":
         db_parent = Path(db_path).parent
+        db_ok = _is_writable(db_parent)
         checks.append(
             _check(
                 "db_ready",
-                _is_writable(db_parent),
+                db_ok,
                 f"db_parent={db_parent}",
-                "Ensure DB directory exists and is writable.",
+                "" if db_ok else "Create the folder and make it writable to create the database file.",
             )
         )
     else:
@@ -120,23 +125,25 @@ def run_health_checks() -> Dict[str, object]:
 
     # Temp storage
     tmp_dir = get_system_file_path("tmp").parent
+    tmp_ok = _is_writable(tmp_dir)
     checks.append(
         _check(
             "temp_storage_writable",
-            _is_writable(tmp_dir),
+            tmp_ok,
             str(tmp_dir),
-            "Ensure temp directory is writable.",
+            "" if tmp_ok else "Make this temp folder writable.",
         )
     )
 
     # Assets folder
     asset_folder = Path(Environment.get_asset_folder())
+    assets_ok = _is_writable(asset_folder)
     checks.append(
         _check(
             "asset_folder_writable",
-            _is_writable(asset_folder),
+            assets_ok,
             str(asset_folder),
-            "Ensure asset folder exists and is writable.",
+            "" if assets_ok else "Create the folder and make it writable so assets can be saved.",
         )
     )
 
@@ -150,16 +157,17 @@ def run_health_checks() -> Dict[str, object]:
                 "id": "chroma_configured",
                 "status": "warn",
                 "details": f"CHROMA_URL set: {chroma_url}",
-                "fix_hint": "Optionally add a connectivity check later.",
+                "fix_hint": "If you plan to use Chroma, ensure the server is reachable.",
             }
         )
     elif chroma_path:
+        chroma_path_ok = _is_writable(Path(str(chroma_path)))
         checks.append(
             _check(
                 "chroma_path_writable",
-                _is_writable(Path(str(chroma_path))),
+                chroma_path_ok,
                 str(chroma_path),
-                "Ensure Chroma path exists and is writable.",
+                "" if chroma_path_ok else "Create the folder and make it writable; Chroma stores data here.",
             )
         )
 
@@ -183,8 +191,8 @@ def run_health_checks() -> Dict[str, object]:
         {
             "id": "gpu_available",
             "status": device_status,
-            "details": str(device) if device else "No GPU detected (cpu)",
-            "fix_hint": None,
+            "details": str(device) if device else "CPU only",
+            "fix_hint": "" if device else "Install compatible GPU drivers/CUDA (or continue on CPU).",
         }
     )
 
@@ -202,7 +210,7 @@ def run_health_checks() -> Dict[str, object]:
             "id": "providers_configured",
             "status": "ok" if present else "warn",
             "details": f"Present: {', '.join(present) if present else 'none'}",
-            "fix_hint": "Add provider API keys in settings if needed.",
+            "fix_hint": "" if present else "Add provider API keys in Settings if you plan to use them.",
         }
     )
 

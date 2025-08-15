@@ -19,6 +19,12 @@ from nodetool.metadata.types import (
 )
 from huggingface_hub import try_to_load_from_cache
 from huggingface_hub.constants import HF_HUB_CACHE
+from nodetool.common.settings import (
+    get_system_file_path,
+    get_system_data_path,
+    SETTINGS_FILE,
+    SECRETS_FILE,
+)
 from nodetool.api.utils import current_user, flatten_models
 from fastapi import APIRouter, Depends, Query
 from nodetool.common.huggingface_models import (
@@ -127,6 +133,43 @@ def _get_valid_explorable_roots() -> list[Path]:
             log.warning(f"Hugging Face cache directory {hf_cache_path} does not exist or is not a directory.")
     except Exception as e:
         log.error(f"Error determining Hugging Face cache directory: {e}")
+
+    # Add Nodetool config and data directories
+    try:
+        settings_dir = get_system_file_path(SETTINGS_FILE).parent.resolve()
+        secrets_dir = get_system_file_path(SECRETS_FILE).parent.resolve()
+        data_dir = get_system_data_path("").resolve()
+        logs_dir = get_system_data_path("logs").resolve()
+        for p in [settings_dir, secrets_dir, data_dir, logs_dir]:
+            if p.exists() and p.is_dir():
+                safe_roots.append(p)
+    except Exception as e:
+        log.error(f"Error determining Nodetool config/data directories: {e}")
+
+    # Add Electron userData and logs directories (best-effort)
+    try:
+        if sys.platform == "win32":
+            appdata = os.getenv("APPDATA")
+            if appdata:
+                electron_user = Path(appdata) / "nodetool-electron"
+                electron_logs = electron_user / "logs"
+                for p in [electron_user.resolve(), electron_logs.resolve()]:
+                    if p.exists() and p.is_dir():
+                        safe_roots.append(p)
+        elif sys.platform == "darwin":
+            electron_user = Path.home() / "Library" / "Application Support" / "nodetool-electron"
+            electron_logs = Path.home() / "Library" / "Logs" / "nodetool-electron"
+            for p in [electron_user.resolve(), electron_logs.resolve()]:
+                if p.exists() and p.is_dir():
+                    safe_roots.append(p)
+        else:
+            electron_user = Path.home() / ".config" / "nodetool-electron"
+            electron_logs = electron_user / "logs"
+            for p in [electron_user.resolve(), electron_logs.resolve()]:
+                if p.exists() and p.is_dir():
+                    safe_roots.append(p)
+    except Exception as e:
+        log.error(f"Error determining Electron directories: {e}")
         
     return safe_roots
 
@@ -331,7 +374,10 @@ if not Environment.is_production():
 
         path_to_open: str | None = None
         try:
-            requested_path = Path(path).resolve()
+            # Expand env vars (%APPDATA%, $HOME) and ~
+            expanded = os.path.expandvars(path)
+            expanded = os.path.expanduser(expanded)
+            requested_path = Path(expanded).resolve()
             is_safe_path = False
             for root_dir in safe_roots:
                 if requested_path.is_relative_to(root_dir):
