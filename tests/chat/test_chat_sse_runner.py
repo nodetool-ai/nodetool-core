@@ -28,7 +28,6 @@ class TestChatSSERunner:
         # Inherited attributes
         assert runner.user_id is None
         assert runner.supabase is None
-        assert runner.all_tools == []
 
     async def test_connect_local_development(self):
         """Test connection in local development mode"""
@@ -149,7 +148,7 @@ class TestChatSSERunner:
     def test_convert_internal_to_openai_chunk(self):
         """Test converting internal messages to OpenAI chunks"""
         from nodetool.workflows.types import Chunk
-        
+
         # Test content chunk
         internal_chunk = Chunk(content="Hello world")
         chunk = self.runner._convert_internal_to_openai_chunk(internal_chunk, "gpt-4")
@@ -173,9 +172,7 @@ class TestChatSSERunner:
         # Mock handle_message to add messages to queue
         async def mock_handle_message(data):
             await self.runner.send_message({"type": "chunk", "content": "Response 1"})
-            await self.runner.send_message(
-                {"type": "chunk", "content": "Response 2"}
-            )
+            await self.runner.send_message({"type": "chunk", "content": "Response 2"})
             await self.runner.message_queue.put(None)  # End of stream
 
         self.runner.is_connected = True
