@@ -18,7 +18,7 @@ from uvicorn import run as uvicorn
 
 from nodetool.packages.registry import get_nodetool_package_source_folders
 
-from . import asset, job, message, node, storage, workflow, model, settings, thread
+from . import asset, job, message, node, storage, workflow, model, settings, thread, system
 import mimetypes
 
 from nodetool.common.websocket_updates import websocket_updates
@@ -91,6 +91,7 @@ DEFAULT_ROUTERS = [
     storage.router,
     storage.temp_router,
     font.router,
+    system.router,
 ]
 
 
