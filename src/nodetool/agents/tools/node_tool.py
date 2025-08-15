@@ -8,9 +8,14 @@ independently within agent workflows.
 """
 
 from typing import Any, Dict, Type
-from nodetool.agents.tools.base import Tool, sanitize_node_name
+from nodetool.agents.tools.base import Tool
 from nodetool.metadata.types import AssetRef
-from nodetool.workflows.base_node import ApiKeyMissingError, BaseNode, get_node_class
+from nodetool.workflows.base_node import (
+    ApiKeyMissingError,
+    BaseNode,
+    get_node_class,
+    sanitize_node_name,
+)
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.metadata.node_metadata import NodeMetadata
 import json
@@ -36,6 +41,7 @@ class NodeTool(Tool):
             node_class: Either a BaseNode class or a string node type identifier
             name: Optional custom name for the tool (defaults to node class name)
         """
+
         # Handle string node type
         if isinstance(node_class, str):
             resolved_class = get_node_class(node_class)

@@ -7,6 +7,7 @@ and uses its input schema for tool parameters.
 """
 
 import json
+import re
 from typing import Any, Dict
 from uuid import uuid4
 
@@ -20,6 +21,7 @@ from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.run_workflow import run_workflow
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.types import NodeUpdate, OutputUpdate
+
 
 def from_model(workflow: WorkflowModel):
     api_graph = workflow.get_api_graph()
@@ -41,35 +43,55 @@ def from_model(workflow: WorkflowModel):
         run_mode=workflow.run_mode,
     )
 
+
+def sanitize_workflow_name(name: str) -> str:
+    """
+    Convert workflow name to tool name format.
+
+    Args:
+        node_name: The workflow name string.
+
+    Returns:
+        The sanitized tool name.
+    """
+    # replace non alphanumeric characters
+    node_name = re.sub(r"[^a-zA-Z0-9]", "", name)
+    max_length = 64
+    if len(node_name) > max_length:
+        return node_name[:max_length]
+    else:
+        return node_name
+
+
 class WorkflowTool(Tool):
     """Tool that executes a specific workflow using its input schema."""
 
     def __init__(self, workflow: Workflow):
         """
         Initialize the WorkflowTool with a specific workflow.
-        
+
         Args:
             workflow: The Workflow model instance to use for this tool
         """
         self.workflow = workflow
-        
+
         # Set tool metadata from workflow
-        self.name = f"workflow_{workflow.name.lower().replace(' ', '_').replace('-', '_')}"
+        self.name = f"workflow_{workflow.id}"
         self.description = f"Execute workflow: {workflow.name}"
         if workflow.description:
             self.description += f" - {workflow.description}"
-        
+
         assert workflow.input_schema is not None, "Workflow input schema is required"
         self.input_schema = workflow.input_schema
 
     async def process(self, context: ProcessingContext, params: Dict[str, Any]) -> Any:
         """
         Execute the workflow with the provided parameters.
-        
+
         Args:
             context: The processing context
             params: Input parameters matching the workflow's input schema
-            
+
         Returns:
             The workflow execution results
         """
@@ -79,9 +101,9 @@ class WorkflowTool(Tool):
                 auth_token=context.auth_token,
                 workflow_id=self.workflow.id,
                 graph=self.workflow.graph,
-                params=params
+                params=params,
             )
-            
+
             # Collect all messages from workflow execution
             results = {}
             async for msg in run_workflow(req, context=context, use_thread=True):
@@ -90,19 +112,19 @@ class WorkflowTool(Tool):
                     if hasattr(value, "model_dump"):
                         value = value.model_dump()
                     results[msg.node_name] = value
-            
+
             # Return the collected results
             return {
                 "workflow_name": self.workflow.name,
                 "results": results,
-                "status": "completed"
+                "status": "completed",
             }
-            
+
         except Exception as e:
             return {
                 "workflow_name": self.workflow.name,
                 "error": str(e),
-                "status": "failed"
+                "status": "failed",
             }
 
     def user_message(self, params: Dict[str, Any]) -> str:
@@ -115,11 +137,11 @@ class WorkflowTool(Tool):
 def create_workflow_tools(user_id: str, limit: int = 1000) -> list[WorkflowTool]:
     """
     Create WorkflowTool instances for all workflows accessible to a user.
-    
+
     Args:
         user_id: The user ID to get workflows for
         limit: Maximum number of workflows to load
-        
+
     Returns:
         List of WorkflowTool instances
     """
@@ -129,25 +151,29 @@ def create_workflow_tools(user_id: str, limit: int = 1000) -> list[WorkflowTool]
     return [WorkflowTool(from_model(workflow)) for workflow in workflows]
 
 
-def create_workflow_tool_by_name(user_id: str, workflow_name: str) -> WorkflowTool | None:
+def create_workflow_tool_by_name(
+    user_id: str, workflow_name: str
+) -> WorkflowTool | None:
     """
     Create a WorkflowTool instance for a specific workflow by name.
-    
+
     Args:
         user_id: The user ID to get workflows for
         workflow_name: Name of the workflow to find
-        
+
     Returns:
         WorkflowTool instance if found, None otherwise
     """
     try:
         workflows, _ = WorkflowModel.paginate(user_id=user_id, limit=1000)
-        
+
         for workflow in workflows:
             if workflow.name == workflow_name:
                 return WorkflowTool(from_model(workflow))
-        
+
         return None
     except Exception as e:
-        print(f"Warning: Could not load workflow '{workflow_name}' for user {user_id}: {e}")
+        print(
+            f"Warning: Could not load workflow '{workflow_name}' for user {user_id}: {e}"
+        )
         return None

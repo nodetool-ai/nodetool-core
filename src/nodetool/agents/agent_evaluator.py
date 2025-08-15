@@ -88,7 +88,6 @@ class AgentEvaluator:
       a tuple/list (problem_payload, expected_value)
     - build_agent_fn: flexible callback to build the agent. Kept for API compatibility, not used directly by the evaluator
     - result_checker: callback that returns True/False for (result, expected)
-    - tools: optional sequence passed to the agent factory
     - concurrency: max concurrent subprocesses
     """
 
@@ -108,7 +107,6 @@ class AgentEvaluator:
         self.models = list(models)
         self.problems = list(problems)
         self.result_checker = result_checker
-        self.tools = list(tools or [])
         self.concurrency = int(concurrency)
         self.on_update = on_update
         self.subprocess_runner_path = subprocess_runner_path

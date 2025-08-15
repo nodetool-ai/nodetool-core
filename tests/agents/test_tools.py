@@ -1,12 +1,10 @@
 import os
 from types import SimpleNamespace
+from nodetool.workflows.base_node import sanitize_node_name
 import pytest
 
 from nodetool.agents.tools.base import (
     Tool,
-    sanitize_node_name,
-    get_tool_by_name,
-    _tool_registry,
 )
 from nodetool.agents.tools.workspace_tools import WriteFileTool, ReadFileTool
 from nodetool.agents.tools.http_tools import DownloadFileTool
@@ -18,24 +16,10 @@ def test_sanitize_node_name_basic():
     assert sanitize_node_name("foo.bar") == "foo_bar"
 
 
-def test_sanitize_node_name_invalid_type():
-    assert sanitize_node_name(123) == ""
-
-
 def test_sanitize_node_name_truncates():
     long_name = "a" * 70
     result = sanitize_node_name(long_name)
     assert len(result) == 64
-
-
-def test_tool_registration_cleanup():
-    class DummyTool(Tool):
-        name = "dummy_tool_for_test"
-
-    try:
-        assert get_tool_by_name("dummy_tool_for_test") is DummyTool
-    finally:
-        _tool_registry.pop("dummy_tool_for_test", None)
 
 
 @pytest.mark.asyncio

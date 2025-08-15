@@ -13,6 +13,7 @@ from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Optional, Sequence
 from asyncio import Queue
 import httpx
+from nodetool.agents.tools.tool_registry import resolve_tool_by_name
 from pydantic import BaseModel
 
 from nodetool.metadata.types import (
@@ -35,7 +36,6 @@ from nodetool.workflows.types import (
     OutputUpdate,
 )
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.agents.tools.base import Tool
 from nodetool.types.graph import Graph
 from nodetool.chat.providers.base import ChatProvider
 
@@ -45,9 +45,36 @@ log.setLevel(logging.DEBUG)
 REGULAR_SYSTEM_PROMPT = """
 You are a helpful assistant.
 
+Operating mode:
+- If something is ambiguous, choose the most reasonable assumption, proceed.
+- Prefer tool calls and concrete actions over clarifying questions.
+
+Control of eagerness:
+- Keep scope tightly focused.
+- Avoid unnecessary exploration.
+- Be concise and minimize tokens.
+
+Tool preambles:
+- Before each tool call, emit a one-sentence assistant message describing what you’re doing and why.
+
 # IMAGE TOOLS
 When using image tools, you will get an image url as result.
 ALWAYS EMBED THE IMAGE AS MARKDOWN IMAGE TAG.
+
+# File types
+References to documents, images, videos or audio files are objects with following structure:
+- type: either document, image, video, audio
+- uri: either local "file:///path/to/file" or "http://"
+
+# Date and time
+Date and time are objects with following structure:
+- type: either date, datetime
+- year: int
+- month: int
+- day: int
+- hour: int (optional)
+- minute: int (optional)
+- second: int (optional)
 """
 
 
@@ -68,7 +95,6 @@ class MessageProcessor(ABC):
         self,
         chat_history: List[Message],
         processing_context: ProcessingContext,
-        tools: Sequence[Tool],
         **kwargs,
     ) -> Message:
         """
@@ -129,7 +155,6 @@ class RegularChatProcessor(MessageProcessor):
         self,
         chat_history: List[Message],
         processing_context: ProcessingContext,
-        tools: Sequence[Tool],
         collections: Optional[List[str]] = None,
         graph: Optional[Graph] = None,
         **kwargs,
@@ -138,6 +163,11 @@ class RegularChatProcessor(MessageProcessor):
         last_message = chat_history[-1]
         content = ""
         unprocessed_messages = []
+
+        if last_message.tools:
+            tools = [resolve_tool_by_name(name) for name in last_message.tools]
+        else:
+            tools = []
 
         # Extract query text for collection search
         query_text = self._extract_query_text(last_message)
@@ -181,7 +211,8 @@ class RegularChatProcessor(MessageProcessor):
                 async for chunk in self.provider.generate_messages(
                     messages=messages_to_send,
                     model=last_message.model,
-                    tools=list(tools),
+                    tools=tools,
+                    context_window=32000,
                 ):  # type: ignore
                     if isinstance(chunk, Chunk):
                         content += chunk.content
@@ -191,7 +222,7 @@ class RegularChatProcessor(MessageProcessor):
 
                         # Process the tool call
                         tool_result = await self._run_tool(
-                            processing_context, chunk, tools, graph
+                            processing_context, chunk, graph
                         )
                         log.debug(
                             f"Tool {chunk.name} execution complete, id={tool_result.id}"
@@ -350,13 +381,10 @@ class RegularChatProcessor(MessageProcessor):
         self,
         context: ProcessingContext,
         tool_call: ToolCall,
-        tools: Sequence[Tool],
         graph: Optional[Graph] = None,
     ) -> ToolCall:
         """Execute a tool call and return the result."""
-        from nodetool.agents.tools.base import resolve_tool_by_name
-
-        tool = resolve_tool_by_name(tool_call.name, available_tools=tools)
+        tool = resolve_tool_by_name(tool_call.name)
         log.debug(
             f"Executing tool {tool_call.name} (id={tool_call.id}) with args: {tool_call.args}"
         )
@@ -416,7 +444,6 @@ class HelpMessageProcessor(MessageProcessor):
         self,
         chat_history: List[Message],
         processing_context: ProcessingContext,
-        tools: Sequence[Tool],
         **kwargs,
     ):
         """Process help messages with integrated help system."""
@@ -433,18 +460,16 @@ class HelpMessageProcessor(MessageProcessor):
                 SearchNodesTool,
                 SearchExamplesTool,
             )
-            from nodetool.agents.tools import CreateWorkflowTool, EditWorkflowTool
 
             # Create help tools combined with all available tools
             help_tools = [
                 SearchNodesTool(),
                 SearchExamplesTool(),
-                CreateWorkflowTool(),
-                EditWorkflowTool(),
             ]
-
-            # Combine help tools with all other available tools
-            all_available_tools = help_tools + list(tools)
+            if last_message.tools:
+                tools = [resolve_tool_by_name(name) for name in last_message.tools]
+            else:
+                tools = []
 
             # Create effective messages with help system prompt
             effective_messages = [
@@ -463,7 +488,7 @@ class HelpMessageProcessor(MessageProcessor):
                 async for chunk in self.provider.generate_messages(
                     messages=messages_to_send,
                     model=last_message.model,
-                    tools=help_tools,
+                    tools=help_tools + tools,
                 ):  # type: ignore
                     if isinstance(chunk, Chunk):
                         accumulated_content += chunk.content
@@ -474,9 +499,7 @@ class HelpMessageProcessor(MessageProcessor):
                         log.debug(f"Processing help tool call: {chunk.name}")
 
                         # Process the tool call
-                        tool_result = await self._run_tool(
-                            processing_context, chunk, all_available_tools
-                        )
+                        tool_result = await self._run_tool(processing_context, chunk)
                         log.debug(
                             f"Help tool {chunk.name} execution complete, id={tool_result.id}"
                         )
@@ -568,12 +591,11 @@ class HelpMessageProcessor(MessageProcessor):
         self,
         context: ProcessingContext,
         tool_call: ToolCall,
-        tools: Sequence[Tool],
     ) -> ToolCall:
         """Execute a tool call and return the result."""
-        from nodetool.agents.tools.base import resolve_tool_by_name
+        from nodetool.agents.tools.tool_registry import resolve_tool_by_name
 
-        tool = resolve_tool_by_name(tool_call.name, available_tools=tools)
+        tool = resolve_tool_by_name(tool_call.name)
         log.debug(
             f"Executing tool {tool_call.name} (id={tool_call.id}) with args: {tool_call.args}"
         )
@@ -633,7 +655,6 @@ class AgentMessageProcessor(MessageProcessor):
         self,
         chat_history: List[Message],
         processing_context: ProcessingContext,
-        tools: Sequence[Tool],
         **kwargs,
     ):
         """Process messages using the Agent system."""
@@ -647,7 +668,7 @@ class AgentMessageProcessor(MessageProcessor):
         selected_tools = []
         if last_message.tools:
             tool_names = set(last_message.tools)
-            selected_tools = [tool for tool in list(tools) if tool.name in tool_names]
+            selected_tools = [resolve_tool_by_name(name) for name in tool_names]
             log.debug(
                 f"Selected tools for agent: {[tool.name for tool in selected_tools]}"
             )
@@ -794,7 +815,6 @@ class WorkflowMessageProcessor(MessageProcessor):
         self,
         chat_history: List[Message],
         processing_context: ProcessingContext,
-        tools: Sequence[Tool],
         **kwargs,
     ):
         """Process messages for workflow execution."""
@@ -873,243 +893,3 @@ class WorkflowMessageProcessor(MessageProcessor):
             agent_mode=last_message.agent_mode or False,
             workflow_assistant=True,
         )
-
-
-class WorkflowCreationProcessor(MessageProcessor):
-    """
-    Processor for workflow creation triggered by tools.
-
-    This processor uses the GraphPlanner to create new workflows based
-    on objectives provided through tool execution.
-    """
-
-    def __init__(self, provider: ChatProvider, user_id: Optional[str]):
-        super().__init__()
-        self.provider = provider
-        self.user_id = user_id
-
-    async def process(
-        self,
-        chat_history: List[Message],
-        processing_context: ProcessingContext,
-        tools: Sequence[Tool],
-        objective: str,
-        **kwargs,
-    ):
-        """Create a workflow using GraphPlanner."""
-        try:
-            from nodetool.agents.graph_planner import GraphPlanner
-
-            # Get the current model from the last message
-            if not chat_history:
-                raise ValueError("No chat history available to determine model")
-
-            last_message = chat_history[-1]
-            if not last_message.model:
-                raise ValueError("No model specified in the current conversation")
-
-            log.debug(f"Triggering workflow creation with model: {last_message.model}")
-
-            planner = GraphPlanner(
-                provider=self.provider,
-                model=last_message.model,
-                objective=objective,
-                verbose=True,
-            )
-
-            # Send initial status
-            await self.send_message(
-                {
-                    "type": "planning_update",
-                    "phase": "Tool-Initiated Creation",
-                    "status": "Starting",
-                    "content": f"Creating workflow from tool request: {objective}",
-                }
-            )
-
-            accumulated_content = ""
-            workflow_graph = None
-
-            # Execute graph planning and stream updates
-            async for update in planner.create_graph(processing_context):
-                if isinstance(update, PlanningUpdate):
-                    await self.send_message(update.model_dump())
-
-                    # Accumulate content for the final result
-                    if update.content:
-                        accumulated_content += (
-                            f"[{update.phase}] {update.status}: {update.content}\n"
-                        )
-
-                elif isinstance(update, Chunk):
-                    # If any chunks are emitted, send them too
-                    await self.send_message(
-                        {"type": "chunk", "content": update.content, "done": False}
-                    )
-                    accumulated_content += update.content
-
-            # Get the generated graph
-            if planner.graph:
-                workflow_graph = planner.graph.model_dump()
-
-                await self.send_message(
-                    {
-                        "type": "workflow_created",
-                        "graph": workflow_graph,
-                    }
-                )
-            else:
-                raise ValueError("No graph was generated")
-            await self.send_message(
-                Message(
-                    role="assistant",
-                    content=accumulated_content,
-                    thread_id=last_message.thread_id,
-                    workflow_id=last_message.workflow_id,
-                    provider=last_message.provider,
-                    model=last_message.model,
-                    workflow_assistant=True,
-                ).model_dump()
-            )
-        except Exception as e:
-            error_msg = f"Error creating workflow: {str(e)}"
-            log.error(f"Error in workflow creation: {e}", exc_info=True)
-
-            # Send error message to client
-            await self.send_message(
-                {
-                    "type": "error",
-                    "message": error_msg,
-                    "error_type": "workflow_creation_error",
-                }
-            )
-
-            return {"success": False, "error": error_msg}
-
-        finally:
-            # Always mark processing as complete
-            self.is_processing = False
-
-
-class WorkflowEditingProcessor(MessageProcessor):
-    """
-    Processor for workflow editing triggered by tools.
-
-    This processor uses the GraphPlanner to modify existing workflows based
-    on objectives provided through tool execution.
-    """
-
-    def __init__(self, provider: ChatProvider, user_id: Optional[str]):
-        super().__init__()
-        self.provider = provider
-        self.user_id = user_id
-
-    async def process(
-        self,
-        chat_history: List[Message],
-        processing_context: ProcessingContext,
-        tools: Sequence[Tool],
-        objective: str,
-        workflow_id: Optional[str] = None,
-        graph: Optional[Graph] = None,
-        **kwargs,
-    ):
-        """Edit a workflow using GraphPlanner."""
-        try:
-            from nodetool.agents.graph_planner import GraphPlanner
-
-            # Get the current model from the last message
-            if not chat_history:
-                raise ValueError("No chat history available to determine model")
-
-            last_message = chat_history[-1]
-            if not last_message.model:
-                raise ValueError("No model specified in the current conversation")
-
-            log.debug(f"Triggering workflow editing with model: {last_message.model}")
-
-            planner = GraphPlanner(
-                provider=self.provider,
-                model=last_message.model,
-                objective=objective,
-                existing_graph=graph,
-                verbose=True,
-            )
-
-            # Send initial status
-            await self.send_message(
-                {
-                    "type": "planning_update",
-                    "phase": "Tool-Initiated Editing",
-                    "status": "Starting",
-                    "content": f"Editing workflow from tool request: {objective}",
-                }
-            )
-
-            accumulated_content = ""
-            workflow_graph = None
-
-            # Execute graph planning and stream updates
-            async for update in planner.create_graph(processing_context):
-                if isinstance(update, PlanningUpdate):
-                    # Stream planning updates to client
-                    await self.send_message(update.model_dump())
-
-                    # Accumulate content for the final result
-                    if update.content:
-                        accumulated_content += (
-                            f"[{update.phase}] {update.status}: {update.content}\n"
-                        )
-
-                elif isinstance(update, Chunk):
-                    # If any chunks are emitted, send them too
-                    await self.send_message(
-                        {"type": "chunk", "content": update.content, "done": False}
-                    )
-                    accumulated_content += update.content
-
-            # Get the generated graph
-            if planner.graph:
-                workflow_graph = planner.graph.model_dump()
-
-                # Send the complete workflow graph
-                await self.send_message(
-                    {
-                        "type": "workflow_updated",
-                        "workflow_id": workflow_id,
-                        "graph": workflow_graph,
-                    }
-                )
-            else:
-                raise ValueError("No graph was generated")
-
-            await self.send_message(
-                Message(
-                    role="assistant",
-                    content=accumulated_content,
-                    thread_id=last_message.thread_id,
-                    workflow_id=workflow_id,
-                    provider=last_message.provider,
-                    model=last_message.model,
-                    workflow_assistant=True,
-                ).model_dump()
-            )
-
-        except Exception as e:
-            error_msg = f"Error editing workflow: {str(e)}"
-            log.error(f"Error in workflow editing: {e}", exc_info=True)
-
-            # Send error message to client
-            await self.send_message(
-                {
-                    "type": "error",
-                    "message": error_msg,
-                    "error_type": "workflow_editing_error",
-                }
-            )
-
-            return {"success": False, "error": error_msg}
-
-        finally:
-            # Always mark processing as complete
-            self.is_processing = False

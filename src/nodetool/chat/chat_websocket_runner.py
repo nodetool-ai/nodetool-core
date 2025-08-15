@@ -26,7 +26,6 @@ from enum import Enum
 
 from fastapi import WebSocket
 from fastapi.websockets import WebSocketState
-from nodetool.agents.tools.workflow_tool import create_workflow_tools
 from nodetool.chat.base_chat_runner import BaseChatRunner
 from nodetool.common.environment import Environment
 
@@ -97,10 +96,6 @@ class ChatWebSocketRunner(BaseChatRunner):
         self.websocket = websocket
         log.info("WebSocket connection established for chat")
         log.debug("WebSocket connection ready")
-
-        self._initialize_tools()
-        if self.user_id:
-            self.all_tools += create_workflow_tools(self.user_id, limit=200)
 
         # Start heartbeat to keep idle connections alive
         if not self.heartbeat_task or self.heartbeat_task.done():

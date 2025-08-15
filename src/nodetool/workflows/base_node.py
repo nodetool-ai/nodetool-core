@@ -82,6 +82,38 @@ COMFY_NODE_CLASSES: dict[str, type["BaseNode"]] = {}
 log = Environment.get_logger()
 
 
+def sanitize_node_name(node_name: str) -> str:
+    """
+    Convert node type to tool name format.
+
+    Converts from node type format (e.g., "namespace.TestNode") to tool name format
+    (e.g., "namespace_Test"). Uses full qualified name and removes Node suffix.
+
+    Args:
+        node_name: The node type string.
+
+    Returns:
+        The sanitized tool name.
+    """
+    # Handle invalid types
+    if not isinstance(node_name, str):
+        return ""
+
+    # Replace dots with underscores to keep the full qualified name
+    node_name = node_name.replace(".", "_")
+
+    # Remove "Node" suffix if present
+    if node_name.endswith("Node"):
+        node_name = node_name[:-4]
+
+    # Truncate if necessary (adjust max length as needed)
+    max_length = 64  # Example max length
+    if len(node_name) > max_length:
+        return node_name[:max_length]
+    else:
+        return node_name
+
+
 def split_camel_case(text: str) -> str:
     """Splits a camelCase or PascalCase string into space-separated words.
 
