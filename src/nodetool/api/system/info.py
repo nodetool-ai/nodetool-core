@@ -37,6 +37,11 @@ def get_versions_info() -> Dict[str, str | None]:
         import torch  # type: ignore
 
         cuda_version = getattr(getattr(torch, "version", None), "cuda", None)
+        if not cuda_version and hasattr(torch, "version"):
+            # Try nvcc version via torch if available
+            nv: Optional[str] = getattr(torch.version, "nvcc", None)  # type: ignore
+            if nv:
+                cuda_version = nv
     except Exception:
         cuda_version = None
 
