@@ -2019,6 +2019,28 @@ class ProcessingContext:
         Raises:
             FileNotFoundError: If the font file cannot be found in system locations
         """
+        # Determine allowed font extensions per OS (aligned with api/font.py)
+        current_os = platform.system()
+        if current_os == "Darwin":
+            allowed_exts = [".ttf", ".otf", ".ttc", ".dfont"]
+        elif current_os == "Windows":
+            allowed_exts = [".ttf", ".otf", ".ttc"]
+        else:  # Linux and others default to Linux set used in api/font.py
+            allowed_exts = [".ttf", ".otf"]
+
+        input_name_lower = font_name.lower()
+        base_name, input_ext = os.path.splitext(input_name_lower)
+        has_extension = input_ext != ""
+
+        def file_matches(target_file: str) -> bool:
+            file_lower = target_file.lower()
+            name_no_ext, file_ext = os.path.splitext(file_lower)
+            if has_extension:
+                # If user specified an extension, match exact filename (case-insensitive)
+                return file_lower == input_name_lower
+            # No extension provided: match base name with any allowed extension
+            return name_no_ext == base_name and file_ext in allowed_exts
+
         # First check FONT_PATH environment variable if it exists
         if "FONT_PATH" in self.environment:
             font_path = self.environment["FONT_PATH"]
@@ -2028,8 +2050,9 @@ class ProcessingContext:
                     return font_path
                 # If FONT_PATH is a directory, search for the font file
                 for root, _, files in os.walk(font_path):
-                    if font_name.lower() in [f.lower() for f in files]:
-                        return os.path.join(root, font_name)
+                    for f in files:
+                        if file_matches(f):
+                            return os.path.join(root, f)
 
         home_dir = os.path.expanduser("~")
 
@@ -2052,18 +2075,20 @@ class ProcessingContext:
         }
 
         # Get paths for current OS
-        current_os = platform.system()
         search_paths = font_locations.get(current_os, [])
 
-        log.info(f"Searching for font {font_name} in {search_paths}")
+        log.info(
+            f"Searching for font '{font_name}' in {search_paths} with extensions {allowed_exts}"
+        )
 
         # Search for the font file
         for base_path in search_paths:
             if os.path.exists(base_path):
                 # Walk through all subdirectories
                 for root, _, files in os.walk(base_path):
-                    if font_name.lower() in [f.lower() for f in files]:
-                        return os.path.join(root, font_name)
+                    for f in files:
+                        if file_matches(f):
+                            return os.path.join(root, f)
 
         raise FileNotFoundError(
             f"Could not find font '{font_name}' in system locations"
@@ -2298,7 +2323,7 @@ class ProcessingContext:
             for key in keys_to_remove:
                 del self.memory[key]
 
-    def get_memory_stats(self) -> dict[str, int]:
+    def get_memory_stats(self) -> dict[str, int | dict[str, int]]:
         """
         Get statistics about memory usage.
 
