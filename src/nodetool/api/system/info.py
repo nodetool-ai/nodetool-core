@@ -3,7 +3,8 @@ from __future__ import annotations
 import platform
 import sys
 from importlib import metadata
-from typing import Dict
+from typing import Dict, Optional
+from pathlib import Path
 
 from nodetool.common.settings import (
     get_log_path,
@@ -30,10 +31,20 @@ def _safe_version(pkg: str) -> str | None:
 
 
 def get_versions_info() -> Dict[str, str | None]:
+    # CUDA version (best-effort via PyTorch)
+    cuda_version: Optional[str] = None
+    try:
+        import torch  # type: ignore
+
+        cuda_version = getattr(getattr(torch, "version", None), "cuda", None)
+    except Exception:
+        cuda_version = None
+
     return {
         "python": platform.python_version(),
         "nodetool_core": _safe_version("nodetool-core"),
         "nodetool_base": _safe_version("nodetool-base"),
+        "cuda": cuda_version,
     }
 
 
@@ -43,6 +54,25 @@ def get_paths_info() -> Dict[str, str]:
     data_dir = str(get_system_data_path(""))
     core_logs_dir = str(get_system_data_path("logs"))
     core_log_file = str(get_log_path("nodetool.log"))
+
+    # Additional caches/paths
+    # Hugging Face cache (root "hub" path)
+    try:
+        from huggingface_hub.constants import HF_HUB_CACHE  # type: ignore
+
+        huggingface_cache_dir = str(Path(HF_HUB_CACHE).resolve())
+    except Exception:
+        huggingface_cache_dir = ""
+
+    # Ollama models directory
+    try:
+        # Internal helper determines OS-specific location
+        from nodetool.api.model import _get_ollama_models_dir  # type: ignore
+
+        ollama_path = _get_ollama_models_dir()
+        ollama_models_dir = str(ollama_path) if ollama_path else ""
+    except Exception:
+        ollama_models_dir = ""
 
     # Electron paths (best-effort strings)
     if sys.platform == "win32":
@@ -67,6 +97,8 @@ def get_paths_info() -> Dict[str, str]:
         "data_dir": data_dir,
         "core_logs_dir": core_logs_dir,
         "core_log_file": core_log_file,
+        "ollama_models_dir": ollama_models_dir,
+        "huggingface_cache_dir": huggingface_cache_dir,
         "electron_user_data": electron_user_data,
         "electron_log_file": electron_log_file,
         "electron_logs_dir": electron_logs_dir,

@@ -1,4 +1,4 @@
-from typing import List, Literal, Optional
+from typing import List, Literal, Optional, Any, Dict
 from fastapi import APIRouter
 from pydantic import BaseModel
 
@@ -21,6 +21,7 @@ class VersionsInfo(BaseModel):
     python: Optional[str] = None
     nodetool_core: Optional[str] = None
     nodetool_base: Optional[str] = None
+    cuda: Optional[str] = None
 
 
 class PathsInfo(BaseModel):
@@ -29,6 +30,8 @@ class PathsInfo(BaseModel):
     data_dir: str
     core_logs_dir: str
     core_log_file: str
+    ollama_models_dir: str
+    huggingface_cache_dir: str
     electron_user_data: str
     electron_log_file: str
     electron_logs_dir: str
@@ -73,9 +76,10 @@ async def get_system_info() -> SystemInfoResponse:
 
 @router.get("/health")
 async def get_system_health() -> HealthResponse:
-    result = run_health_checks()
-    checks_models = [HealthCheck(**c) for c in result["checks"]]
-    summary = HealthSummary(**result["summary"])
+    result: Dict[str, Any] = run_health_checks()
+    checks_list: List[Dict[str, Any]] = result.get("checks", []) or []
+    checks_models = [HealthCheck(**c) for c in checks_list]
+    summary = HealthSummary(**(result.get("summary", {}) or {"ok": 0, "warn": 0, "error": 0}))
     return HealthResponse(checks=checks_models, summary=summary)
 
 
