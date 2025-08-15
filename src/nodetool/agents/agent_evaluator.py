@@ -1,46 +1,31 @@
-"""Generic agent evaluation framework.
+"""Generic agent evaluation framework (subprocess-only).
 
-This module provides a reusable, provider-agnostic evaluator that can execute an
-arbitrary agent implementation across a set of models and problems, measure
-token usage and runtime, and compute correctness via a pluggable result checker.
+This module provides a reusable, provider-agnostic evaluator that invokes
+agents via a standardized CLI runner in isolated subprocesses. It measures
+token usage and runtime, and computes correctness via a pluggable result
+checker.
 
 Key components:
-- AgentEvaluator: Orchestrates parallel, process-isolated evaluations.
-- BuildAgentFn: Flexible factory callback to construct the agent. Can accept any signature but typically receives (provider, model, tools, problem).
-- ResultCheckerFn: Callback to determine correctness of a result relative to an expected value.
+- AgentEvaluator: Orchestrates parallel, subprocess-based evaluations.
+- BuildAgentFn: Kept for API compatibility with existing call sites; not used
+  by the evaluator directly when running in subprocess mode.
+- ResultCheckerFn: Callback to determine correctness of a result relative to an
+  expected value.
 
-The evaluator is intentionally minimal and opinionated about isolation: each
-(model, problem) pair is executed inside a separate process using a
-ProcessPoolExecutor to prevent stdout/stderr bleed and ensure provider state is
-not shared across runs.
+All (model, problem) pairs are executed in separate subprocesses with stdout
+and stderr redirected to per-run log files under /tmp and results passed back
+through a JSON file written by the CLI runner.
 """
 
 import asyncio
-import contextlib
-import logging
-import io
+import asyncio.subprocess as asp
 import math
 import os
 import time
-from concurrent.futures import ProcessPoolExecutor
+import json
+import sys
 from dataclasses import dataclass
-from typing import (
-    Any,
-    AsyncGenerator,
-    Callable,
-    Iterable,
-    List,
-    Optional,
-    Sequence,
-    Tuple,
-)
-
-from nodetool.chat.providers.base import ChatProvider
-from nodetool.chat.providers.openai_provider import OpenAIProvider
-from nodetool.chat.providers.gemini_provider import GeminiProvider
-from nodetool.chat.providers.anthropic_provider import AnthropicProvider
-from nodetool.chat.providers.huggingface_provider import HuggingFaceProvider
-from nodetool.workflows.processing_context import ProcessingContext
+from typing import Any, Callable, Iterable, List, Optional, Sequence, Tuple
 
 
 ProviderKey = str
@@ -88,121 +73,46 @@ class EvaluationResult:
 
 BuildAgentFn = Callable[..., Any]
 ResultCheckerFn = Callable[[Any, Any], bool]
-ProviderFactoryFn = Callable[[ProviderKey], ChatProvider]
 
 
-def default_provider_factory(provider_key: ProviderKey) -> ChatProvider:
-    """Create a provider instance from a short provider key.
-
-    Supported keys:
-    - "openai"
-    - "gemini"
-    - "anthropic"
-    - "huggingface:<inference_provider>"
-    """
-    if provider_key == "openai":
-        return OpenAIProvider()
-    if provider_key == "gemini":
-        return GeminiProvider()
-    if provider_key == "anthropic":
-        return AnthropicProvider()
-    if provider_key.startswith("huggingface:"):
-        _, inference_provider = provider_key.split(":", 1)
-        return HuggingFaceProvider(inference_provider=inference_provider)  # type: ignore[arg-type]
-    raise ValueError(f"Unknown provider key: {provider_key}")
-
-
-async def _run_agent_and_collect(
-    agent: Any,
-    processing_context: ProcessingContext,
-) -> Tuple[Any, Usage]:
-    """Execute the agent and collect results and token usage."""
-    usage: Usage = Usage()
-    try:
-        async for _ in agent.execute(processing_context):
-            pass
-        usage = Usage(
-            input_tokens=int(getattr(agent.subtask_context, "input_tokens_total", 0)),
-            output_tokens=int(getattr(agent.subtask_context, "output_tokens_total", 0)),
-        )
-        return agent.get_results(), usage
-    except Exception:
-        try:
-            if getattr(agent, "subtask_context", None) is not None:
-                usage = Usage(
-                    input_tokens=int(
-                        getattr(agent.subtask_context, "input_tokens_total", 0)
-                    ),
-                    output_tokens=int(
-                        getattr(agent.subtask_context, "output_tokens_total", 0)
-                    ),
-                )
-        except Exception:
-            pass
-        return None, usage
-
-
-def _execute_single_problem(
-    provider_key: ProviderKey,
-    model: str,
-    problem: Any,
-    tools: Sequence[Any],
-    build_agent_fn: BuildAgentFn,
-    provider_factory: ProviderFactoryFn,
-) -> Tuple[Any | None, int, int, float]:
-    """Run one (model, problem) evaluation in an isolated process.
-
-    Returns tuple of (result, input_tokens, output_tokens, elapsed_seconds).
-    """
-    with open(os.devnull, "w") as devnull:
-        with contextlib.redirect_stdout(devnull), contextlib.redirect_stderr(devnull):
-            start_time = time.perf_counter()
-            provider = provider_factory(provider_key)
-            context = ProcessingContext()
-            agent = build_agent_fn(provider, model, tools, problem)
-            result, usage = asyncio.run(_run_agent_and_collect(agent, context))
-            elapsed_seconds = time.perf_counter() - start_time
-    safe_result = None if result is None else result
-    input_tokens = int(getattr(usage, "input_tokens", 0))
-    output_tokens = int(getattr(usage, "output_tokens", 0))
-    return safe_result, input_tokens, output_tokens, float(elapsed_seconds)
+# Note: The in-process execution helpers have been removed. All execution goes
+# through the standardized CLI runner invoked as a subprocess.
 
 
 class AgentEvaluator:
-    """Parallel, process-isolated evaluator for arbitrary agents.
+    """Parallel, subprocess-based evaluator for arbitrary agents.
 
     Parameters
     - models: sequence of (provider_key, model_name) pairs
     - problems: iterable of problems. Each item can be either a problem payload or
       a tuple/list (problem_payload, expected_value)
-    - build_agent_fn: flexible callback to build the agent. Typically called with (provider, model, tools, problem) but can accept any signature
+    - build_agent_fn: flexible callback to build the agent. Kept for API compatibility, not used directly by the evaluator
     - result_checker: callback that returns True/False for (result, expected)
     - tools: optional sequence passed to the agent factory
-    - concurrency: max worker processes
-    - provider_factory: maps provider_key to provider instance
+    - concurrency: max concurrent subprocesses
     """
 
     def __init__(
         self,
         models: Sequence[Tuple[ProviderKey, ModelName]],
         problems: Iterable[Any],
-        build_agent_fn: BuildAgentFn,
         result_checker: ResultCheckerFn,
         tools: Optional[Sequence[Any]] = None,
         concurrency: int = 8,
-        provider_factory: ProviderFactoryFn = default_provider_factory,
         on_update: Optional[
             Callable[[dict[str, ModelStats], List[LogEntry]], None]
         ] = None,
+        subprocess_runner_path: Optional[str] = None,
+        subprocess_agent: Optional[str] = None,
     ) -> None:
         self.models = list(models)
         self.problems = list(problems)
-        self.build_agent_fn = build_agent_fn
         self.result_checker = result_checker
         self.tools = list(tools or [])
         self.concurrency = int(concurrency)
-        self.provider_factory = provider_factory
         self.on_update = on_update
+        self.subprocess_runner_path = subprocess_runner_path
+        self.subprocess_agent = subprocess_agent
 
     async def evaluate(self) -> EvaluationResult:
         """Run the evaluation across all (model, problem) pairs.
@@ -212,7 +122,11 @@ class AgentEvaluator:
         stats: dict[str, ModelStats] = {model: ModelStats() for _, model in self.models}
         logs: List[LogEntry] = []
         lock = asyncio.Lock()
-        executor = ProcessPoolExecutor(max_workers=self.concurrency)
+        if not (self.subprocess_runner_path and self.subprocess_agent):
+            raise RuntimeError(
+                "AgentEvaluator is subprocess-only. Provide subprocess_runner_path and subprocess_agent."
+            )
+        sem = asyncio.Semaphore(self.concurrency)
 
         async def worker(
             provider_key: str,
@@ -220,19 +134,62 @@ class AgentEvaluator:
             problem: Any,
             expected: Any,
         ) -> None:
-            loop = asyncio.get_running_loop()
-            result, input_toks, output_toks, elapsed_seconds = (
-                await loop.run_in_executor(
-                    executor,
-                    _execute_single_problem,
-                    provider_key,
-                    model,
-                    problem,
-                    self.tools,
-                    self.build_agent_fn,
-                    self.provider_factory,
-                )
-            )
+            async with sem:
+
+                def _sanitize_for_filename(value: str) -> str:
+                    return "".join(
+                        ch if (ch.isalnum() or ch in ("-", "_", ".")) else "_"
+                        for ch in value
+                    )[:64]
+
+                timestamp_ms = int(time.time() * 1000)
+                pid = os.getpid()
+                safe_provider = _sanitize_for_filename(str(provider_key))
+                safe_model = _sanitize_for_filename(str(model))
+                stdout_path = f"/tmp/agent_eval_{timestamp_ms}_{pid}_{safe_provider}_{safe_model}.stdout.log"
+                stderr_path = f"/tmp/agent_eval_{timestamp_ms}_{pid}_{safe_provider}_{safe_model}.stderr.log"
+                output_json_path = f"/tmp/agent_eval_{timestamp_ms}_{pid}_{safe_provider}_{safe_model}.result.json"
+                cmd = [
+                    sys.executable,
+                    self.subprocess_runner_path,  # type: ignore[arg-type]
+                    "--agent",
+                    str(self.subprocess_agent),  # type: ignore[arg-type]
+                    "--provider",
+                    str(provider_key),
+                    "--model",
+                    str(model),
+                    "--problem-json",
+                    json.dumps(problem),
+                    "--output-json",
+                    output_json_path,
+                ]
+                start_time = time.perf_counter()
+                os.makedirs(os.path.dirname(stdout_path), exist_ok=True)
+                with open(stdout_path, "a", encoding="utf-8") as stdout_file, open(
+                    stderr_path, "a", encoding="utf-8"
+                ) as stderr_file:
+                    proc = await asp.create_subprocess_exec(
+                        *cmd,
+                        stdout=stdout_file,
+                        stderr=stderr_file,
+                    )
+                    await proc.wait()
+                elapsed_seconds = time.perf_counter() - start_time
+                # Read JSON output
+                result = None
+                input_toks = 0
+                output_toks = 0
+                try:
+                    if os.path.exists(output_json_path):
+                        with open(output_json_path, "r", encoding="utf-8") as f:
+                            payload = json.load(f)
+                        result = payload.get("result")
+                        input_toks = int(payload.get("input_tokens", 0))
+                        output_toks = int(payload.get("output_tokens", 0))
+                except Exception:
+                    result = None
+                    input_toks = 0
+                    output_toks = 0
             is_correct: Optional[bool] = None
             if result is not None:
                 try:
@@ -290,6 +247,6 @@ class AgentEvaluator:
             if tasks:
                 await asyncio.gather(*tasks)
         finally:
-            executor.shutdown(wait=True)
+            pass
 
         return EvaluationResult(stats=stats, logs=logs)
