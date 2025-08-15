@@ -860,6 +860,12 @@ class SubTaskContext:
             log.debug(f"Total iterations: {self.iterations}")
             log.debug(f"Total messages in history: {len(self.history)}")
 
+        # Useful debug printing
+        # for m in self.history:
+        #     print("-" * 100)
+        #     print(m.role, m.content)
+        #     print("-" * 100)
+
     async def _transition_to_conclusion_stage(self) -> None:
         """
         Transition from tool calling stage to conclusion stage.
@@ -1171,10 +1177,19 @@ class SubTaskContext:
         self, tool_result: Any, tool_name: str
     ) -> str:
         """Serializes the tool result to a JSON string for message history."""
+
+        def model_dump(obj: Any) -> Any:
+            if getattr(obj, "model_dump", None) is not None:
+                return obj.model_dump()
+            elif isinstance(obj, list):
+                return [model_dump(item) for item in obj]
+            else:
+                return str(obj)
+
         try:
             if tool_result is None:
                 return "Tool returned no output."
-            return json.dumps(tool_result, ensure_ascii=False)
+            return json.dumps(model_dump(tool_result), ensure_ascii=False)
         except TypeError as e:
             log.error(
                 f"Failed to serialize tool result for '{tool_name}' to JSON: {e}. Result: {tool_result}"

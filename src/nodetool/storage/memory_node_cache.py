@@ -22,7 +22,11 @@ class MemoryNodeCache(AbstractNodeCache):
         return None
 
     def set(self, key: str, value: Any, ttl: int = 3600):
-        expiry_time = time.time() + ttl
+        # Align semantics with memcached where ttl=0 means no expiration
+        if ttl in (None, 0):
+            expiry_time = None
+        else:
+            expiry_time = time.time() + ttl
         self.cache[key] = (value, expiry_time)
 
     def clear(self):

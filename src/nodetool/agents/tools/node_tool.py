@@ -98,7 +98,7 @@ class NodeTool(Tool):
             # Create node instance with a unique ID and properties
             import uuid
 
-            node_id = f"node_tool_{uuid.uuid4().hex[:8]}"
+            node_id = uuid.uuid4().hex[:8]
 
             # Create node with properties
             node = self.node_class(id=node_id, **params)

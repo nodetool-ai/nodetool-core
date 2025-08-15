@@ -15,7 +15,7 @@ from nodetool.workflows.processing_context import ProcessingContext
 
 
 def test_sanitize_node_name_basic():
-    assert sanitize_node_name("foo.bar") == "node_bar"
+    assert sanitize_node_name("foo.bar") == "foo_bar"
 
 
 def test_sanitize_node_name_invalid_type():
@@ -26,7 +26,6 @@ def test_sanitize_node_name_truncates():
     long_name = "a" * 70
     result = sanitize_node_name(long_name)
     assert len(result) == 64
-    assert result.startswith("node_")
 
 
 def test_tool_registration_cleanup():

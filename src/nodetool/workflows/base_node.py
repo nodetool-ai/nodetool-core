@@ -648,7 +648,7 @@ class BaseNode(BaseModel):
 
         return res_for_update
 
-    def send_update(
+    async def send_update(
         self,
         context: Any,
         status: str,
@@ -664,6 +664,20 @@ class BaseNode(BaseModel):
             result (dict[str, Any], optional): The result of the node's processing. Defaults to {}.
             properties (list[str], optional): The properties to send to the client. Defaults to None.
         """
+
+        async def encode_asset_to_data(value: Any) -> Any:
+            if isinstance(value, dict):
+                if "uri" in value and value["uri"].startswith("memory://"):
+                    return await context.asset_to_data(AssetRef(uri=value["uri"]))
+                else:
+                    return {k: await encode_asset_to_data(v) for k, v in value.items()}
+            elif isinstance(value, list):
+                return [await encode_asset_to_data(v) for v in value]
+            if isinstance(value, AssetRef):
+                if value.uri.startswith("memory://"):  # type: ignore
+                    return await context.asset_to_data(AssetRef(uri=value.uri))
+            return value
+
         props = self.properties_for_client()
         if properties is not None:
             for p in properties:
@@ -678,9 +692,7 @@ class BaseNode(BaseModel):
                     props[p] = value_without_model
                 elif isinstance(value, AssetRef):
                     # we only send assets with data in results
-                    value_without_data = value.model_dump()
-                    del value_without_data["data"]
-                    props[p] = value_without_data
+                    props[p] = await encode_asset_to_data(value)
                 else:
                     props[p] = value
 
@@ -688,10 +700,13 @@ class BaseNode(BaseModel):
             self.result_for_client(result) if result is not None else None
         )
 
-        if result_for_client and context.encode_assets_as_base64:
-            for key, value in result_for_client.items():
-                if isinstance(value, AssetRef):
-                    result_for_client[key] = value.encode_data_to_uri()
+        if result_for_client:
+            if context.encode_assets_as_base64:
+                for key, value in result_for_client.items():
+                    if isinstance(value, AssetRef):
+                        result_for_client[key] = value.encode_data_to_uri()
+            else:
+                result_for_client = await encode_asset_to_data(result_for_client)
 
         update = NodeUpdate(
             node_id=self.id,

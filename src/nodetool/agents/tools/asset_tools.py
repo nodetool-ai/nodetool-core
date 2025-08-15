@@ -132,10 +132,6 @@ class ListAssetsDirectoryTool(Tool):
                 "description": "Whether to list assets recursively",
                 "default": False,
             },
-            "filter_mime_type": {
-                "type": "string",
-                "description": "Filter assets by MIME type (e.g., 'text/plain')",
-            },
         },
         "required": [],
     }
@@ -144,16 +140,16 @@ class ListAssetsDirectoryTool(Tool):
         try:
             parent_id = params.get("parent_id")
             recursive = params.get("recursive", False)
-            filter_mime_type = params.get("filter_mime_type")
 
             # Attempt to list assets using context's methods
-            assets = await context.list_assets(
-                parent_id=parent_id, recursive=recursive, mime_type=filter_mime_type
+            assets, _ = await context.list_assets(
+                parent_id=parent_id,
+                recursive=recursive,
             )
 
             # Format the asset information
             asset_list = []
-            for asset in assets.assets:
+            for asset in assets:
                 asset_info = {
                     "id": asset.id,
                     "filename": asset.file_name,

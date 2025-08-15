@@ -26,20 +26,21 @@ if TYPE_CHECKING:
 
 from huggingface_hub.file_download import try_to_load_from_cache
 from nodetool.metadata.type_metadata import TypeMetadata
-from nodetool.types.asset import Asset, AssetCreateRequest, AssetList
+from nodetool.models.asset import Asset
+from nodetool.models.job import Job
+from nodetool.models.workflow import Workflow
+from nodetool.models.message import Message as DBMessage
 from nodetool.types.chat import (
     MessageList,
     MessageCreateRequest,
 )
 from nodetool.types.graph import Node
-from nodetool.types.job import Job, JobUpdate
+from nodetool.types.job import JobUpdate
 from nodetool.types.prediction import (
     Prediction,
     PredictionResult,
 )
-from nodetool.types.workflow import Workflow
 from nodetool.chat.workspace_manager import WorkspaceManager
-from nodetool.common.nodetool_api_client import NodetoolAPIClient
 from nodetool.metadata.types import (
     Message,
     Provider,
@@ -158,6 +159,30 @@ class ProcessingContext:
         if http_client is not None:
             self._http_client = http_client
         self.workspace_dir = workspace_dir or WorkspaceManager().get_current_directory()
+        self.memory: dict[str, Any] = {}
+
+    def _memory_get(self, key: str) -> Any | None:
+        """
+        Retrieve an object stored under a memory:// key from local memory first,
+        then fall back to the global node cache.
+        """
+        if key in self.memory:
+            return self.memory[key]
+        try:
+            return Environment.get_node_cache().get(key)
+        except Exception:
+            return None
+
+    def _memory_set(self, key: str, value: Any) -> None:
+        """
+        Store an object under a memory:// key in both local memory and the global node cache.
+        Use ttl=0 (no expiration) to persist for the life of the process (or backend policy).
+        """
+        self.memory[key] = value
+        try:
+            Environment.get_node_cache().set(key, value, ttl=0)
+        except Exception:
+            pass
 
     def get_http_client(self):
         if not hasattr(self, "_http_client"):
@@ -217,21 +242,6 @@ class ProcessingContext:
             variables=self.variables,
             environment=self.environment,
         )
-
-    @property
-    def api_client(self) -> NodetoolAPIClient:
-        """
-        Lazily initializes and returns the Nodetool API client.
-
-        Returns:
-            NodetoolAPIClient: The API client for interacting with the Nodetool API.
-        """
-        if not hasattr(self, "_api_client"):
-            self._api_client = Environment.get_nodetool_api_client(
-                self.user_id,
-                self.auth_token,
-            )
-        return self._api_client
 
     def get(self, key: str, default: Any = None) -> Any:
         """
@@ -361,34 +371,40 @@ class ProcessingContext:
         Returns:
             Asset: The asset with the given ID.
         """
-        res = await self.api_client.get(f"api/assets/{asset_id}")
-        return Asset(**res.json())
+        return Asset.find(self.user_id, asset_id)
 
     async def find_asset_by_filename(self, filename: str):
         """
         Finds an asset by filename.
         """
-        res = await self.api_client.get(f"api/assets/by-filename/{filename}")
-        return Asset(**res.json())
+        from nodetool.models.condition_builder import Field
+
+        assets, _ = Asset.query(
+            Field("user_id").equals(self.user_id).and_(Field("name").equals(filename)),
+            limit=1,
+        )
+        return assets[0] if assets else None
 
     async def list_assets(
         self,
         parent_id: str | None = None,
         recursive: bool = False,
         content_type: str | None = None,
-    ):
+    ) -> tuple[list[Asset], str | None]:
         """
         Lists assets.
         """
-        res = await self.api_client.get(
-            "api/assets/",
-            params={
-                "parent_id": parent_id,
-                "recursive": recursive,
-                "content_type": content_type,
-            },
-        )
-        return AssetList(**res.json())
+        if recursive:
+            result = Asset.get_assets_recursive(self.user_id, parent_id or self.user_id)
+            return result["assets"], None
+        else:
+            assets, next_cursor = Asset.paginate(
+                user_id=self.user_id,
+                parent_id=parent_id,
+                content_type=content_type,
+                limit=1000,
+            )
+            return assets, next_cursor
 
     async def get_asset_url(self, asset_id: str):
         """
@@ -401,6 +417,8 @@ class ProcessingContext:
             str: The URL of the asset.
         """
         asset = await self.find_asset(asset_id)  # type: ignore
+        if asset is None:
+            raise ValueError(f"Asset with ID {asset_id} not found")
 
         return self.asset_storage_url(asset.file_name)
 
@@ -459,8 +477,7 @@ class ProcessingContext:
         Returns:
             Workflow: The retrieved workflow.
         """
-        res = await self.api_client.get(f"api/workflows/{workflow_id}")
-        return Workflow(**res.json())
+        return Workflow.find(self.user_id, workflow_id)
 
     async def _prepare_prediction(
         self,
@@ -690,30 +707,6 @@ class ProcessingContext:
         async for msg in run_prediction_function(prediction, self.environment):
             yield msg
 
-    async def paginate_assets(
-        self,
-        parent_id: str | None = None,
-        page_size: int = 100,
-        cursor: str | None = None,
-    ) -> AssetList:
-        """
-        Lists children assets for a given parent asset.
-        Lists top level assets if parent_id is None.
-
-        Args:
-            parent_id (str | None, optional): The ID of the parent asset. Defaults to None.
-            page_size (int, optional): The number of assets to return. Defaults to 100.
-            cursor (str | None, optional): The cursor for pagination. Defaults to None.
-
-        Returns:
-            AssetList: The list of assets.
-        """
-        res = await self.api_client.get(
-            "api/assets/",
-            params={"parent_id": parent_id, page_size: page_size, "cursor": cursor},
-        )
-        return AssetList(**res.json())
-
     async def refresh_uri(self, asset: AssetRef):
         """
         Refreshes the URI of the asset.
@@ -724,25 +717,7 @@ class ProcessingContext:
         if asset.asset_id:
             asset.uri = await self.get_asset_url(asset.asset_id)
 
-    async def create_job(
-        self,
-        req: RunJobRequest,
-    ) -> Job:
-        """
-        Creates a job to run a workflow but does not execute it.
-
-        Args:
-            req (RunJobRequest): The job request.
-
-        Returns:
-            Job: The created job.
-        """
-        res = await self.api_client.post(
-            "api/jobs/", json=req.model_dump(), params={"execute": "false"}
-        )
-        return Job(**res.json())
-
-    async def get_job(self, job_id: str) -> Job:
+    async def get_job(self, job_id: str) -> Job | None:
         """
         Gets the status of a job.
 
@@ -752,22 +727,7 @@ class ProcessingContext:
         Returns:
             Job: The job status.
         """
-        res = await self.api_client.get(f"api/jobs/{job_id}")
-        return Job(**res.json())
-
-    async def update_job(self, job_id: str, req: JobUpdate) -> Job:
-        """
-        Updates the status of a job.
-
-        Args:
-            job_id (str): The ID of the job.
-            req (JobUpdate): The job update request.
-
-        Returns:
-            Job: The updated job.
-        """
-        res = await self.api_client.put(f"api/jobs/{job_id}", json=req.model_dump())
-        return Job(**res.json())
+        return Job.find(self.user_id, job_id)
 
     async def create_asset(
         self,
@@ -790,20 +750,26 @@ class ProcessingContext:
 
         """
         content.seek(0)
+        content_bytes = content.read()
+        content.seek(0)
 
-        req = AssetCreateRequest(
-            workflow_id=self.workflow_id,
+        # Create the asset record in the database
+        asset = Asset.create(
+            user_id=self.user_id,
             name=name,
             content_type=content_type,
             parent_id=parent_id,
-        )
-        res = await self.api_client.post(
-            "api/assets/",
-            data={"json": req.model_dump_json()},
-            files={"file": (name, content, content_type)},
+            workflow_id=self.workflow_id,
+            size=len(content_bytes),
         )
 
-        return Asset(**res.json())
+        # Upload the content to storage
+        from nodetool.common.environment import Environment
+
+        storage = Environment.get_asset_storage()
+        await storage.upload(asset.file_name, BytesIO(content_bytes))
+
+        return asset
 
     async def create_message(self, req: MessageCreateRequest):
         """
@@ -815,8 +781,19 @@ class ProcessingContext:
         Returns:
             Message: The created message.
         """
-        res = await self.api_client.post("api/messages/", json=req.model_dump())
-        return Message(**res.json())
+        if not req.thread_id:
+            raise ValueError("Thread ID is required")
+
+        return DBMessage.create(
+            thread_id=req.thread_id,
+            user_id=self.user_id,
+            role=req.role,
+            content=req.content,
+            tool_calls=req.tool_calls,
+            workflow_id=getattr(req, "workflow_id", None),
+            name=getattr(req, "name", None),
+            tool_call_id=getattr(req, "tool_call_id", None),
+        )
 
     async def get_messages(
         self,
@@ -835,13 +812,15 @@ class ProcessingContext:
             reverse (bool, optional): Whether to reverse the order of messages. Defaults to False.
 
         Returns:
-            MessageList: The list of messages.
+            dict: Dictionary with messages list and next cursor.
         """
-        res = await self.api_client.get(
-            "api/messages/",
-            params={"thread_id": thread_id, "limit": limit, "cursor": start_key},
+        messages, next_cursor = DBMessage.paginate(
+            thread_id=thread_id, limit=limit, start_key=start_key, reverse=reverse
         )
-        return MessageList(**res.json())
+        return {
+            "messages": [message.model_dump() for message in messages],
+            "next": next_cursor,
+        }
 
     async def download_asset(self, asset_id: str) -> IO:
         """
@@ -854,6 +833,8 @@ class ProcessingContext:
             IO: The downloaded asset.
         """
         asset = await self.find_asset(asset_id)
+        if not asset:
+            raise ValueError(f"Asset {asset_id} not found")
         io = BytesIO()
         await Environment.get_asset_storage().download(asset.file_name, io)
         io.seek(0)
@@ -1060,9 +1041,38 @@ class ProcessingContext:
         Raises:
             ValueError: If the AssetRef is empty or contains unsupported data.
         """
+        # Check for memory:// protocol URI first (preferred for performance)
+        if hasattr(asset_ref, "uri") and asset_ref.uri.startswith("memory://"):
+            key = asset_ref.uri
+            obj = self._memory_get(key)
+            if obj is not None:
+                # Convert memory object to IO based on asset type and stored format
+                if isinstance(obj, bytes):
+                    return BytesIO(obj)
+                elif isinstance(obj, PIL.Image.Image):
+                    # Convert PIL Image to PNG bytes
+                    buffer = BytesIO()
+                    obj.save(buffer, format="PNG")
+                    buffer.seek(0)
+                    return buffer
+                elif isinstance(obj, AudioSegment):
+                    # Convert AudioSegment to MP3 bytes
+                    buffer = BytesIO()
+                    obj.export(buffer, format="mp3")
+                    buffer.seek(0)
+                    return buffer
+                elif isinstance(obj, str):
+                    # Convert string to UTF-8 bytes
+                    return BytesIO(obj.encode("utf-8"))
+                elif hasattr(obj, "read"):  # Already an IO object
+                    return obj
+                else:
+                    raise ValueError(f"Unsupported memory object type {type(obj)}")
+            else:
+                raise ValueError(f"Memory object not found for key {key}")
         # Date takes precedence over anything else as it is the most up-to-date
         # and already in memory
-        if asset_ref.data:
+        elif asset_ref.data:
             if isinstance(asset_ref.data, bytes):
                 return BytesIO(asset_ref.data)
             elif isinstance(asset_ref.data, list):
@@ -1091,6 +1101,47 @@ class ProcessingContext:
         io = await self.asset_to_io(asset_ref)
         return io.read()
 
+    async def asset_to_base64(self, asset_ref: AssetRef) -> str:
+        """
+        Converts an AssetRef to a base64-encoded string.
+        """
+        io = await self.asset_to_io(asset_ref)
+        return base64.b64encode(io.read()).decode("utf-8")
+
+    async def asset_to_data_uri(self, asset_ref: AssetRef) -> str:
+        """
+        Converts an AssetRef to a URI.
+        """
+        return f"data:image/png;base64,{await self.asset_to_base64(asset_ref)}"
+
+    async def asset_to_data(self, asset_ref: AssetRef) -> AssetRef:
+        """
+        Converts an AssetRef to a URI with a specific MIME type.
+        """
+        if asset_ref.data is None and asset_ref.uri.startswith("memory://"):
+            key = asset_ref.uri
+            obj = self._memory_get(key)
+            if obj is not None:
+                if isinstance(obj, PIL.Image.Image):
+                    mime_type = "image/png"
+                    buffer = BytesIO()
+                    obj.save(buffer, format="PNG")
+                    buffer.seek(0)
+                    return ImageRef(asset_id=asset_ref.asset_id, data=buffer.getvalue())
+                elif isinstance(obj, AudioSegment):
+                    mime_type = "audio/mp3"
+                    buffer = BytesIO()
+                    obj.export(buffer, format="mp3")
+                    buffer.seek(0)
+                    return AudioRef(asset_id=asset_ref.asset_id, data=buffer.getvalue())
+                elif isinstance(obj, pd.DataFrame):
+                    return await self.dataframe_from_pandas(obj)
+                else:
+                    raise ValueError(f"Unsupported memory object type {type(obj)}")
+            else:
+                raise ValueError(f"Memory object not found for key {key}")
+        return asset_ref
+
     async def image_to_pil(self, image_ref: ImageRef) -> PIL.Image.Image:
         """
         Converts an ImageRef to a PIL Image object.
@@ -1101,6 +1152,15 @@ class ProcessingContext:
         Returns:
             PIL.Image.Image: The converted PIL Image object.
         """
+        # Check for memory:// protocol URI first (preferred for performance)
+        if hasattr(image_ref, "uri") and image_ref.uri.startswith("memory://"):
+            key = image_ref.uri
+            obj = self._memory_get(key)
+            if obj is not None:
+                if isinstance(obj, PIL.Image.Image):
+                    return obj.convert("RGB")
+                # Fall through to regular conversion if not a PIL Image
+
         buffer = await self.asset_to_io(image_ref)
         image = PIL.Image.open(buffer)
 
@@ -1202,6 +1262,15 @@ class ProcessingContext:
         Returns:
             AudioSegment: The converted audio segment.
         """
+        # Check for memory:// protocol URI first (preferred for performance)
+        if hasattr(audio_ref, "uri") and audio_ref.uri.startswith("memory://"):
+            key = audio_ref.uri
+            obj = self._memory_get(key)
+            if obj is not None:
+                if isinstance(obj, AudioSegment):
+                    return obj
+                # Fall through to regular conversion if not an AudioSegment
+
         import pydub
 
         audio_bytes = await self.asset_to_io(audio_ref)
@@ -1272,7 +1341,9 @@ class ProcessingContext:
                 content=buffer,
                 parent_id=parent_id,
             )
-            return AudioRef(asset_id=asset.id, uri=asset.get_url or "")
+            storage = Environment.get_asset_storage()
+            url = storage.get_url(asset.file_name)
+            return AudioRef(asset_id=asset.id, uri=url)
         else:
             return AudioRef(data=buffer.read())
 
@@ -1373,10 +1444,18 @@ class ProcessingContext:
             AudioRef: The converted AudioRef object.
 
         """
-        buffer = BytesIO()
-        audio_segment.export(buffer, format="mp3")
-        buffer.seek(0)
-        return await self.audio_from_io(buffer, name=name, parent_id=parent_id)
+        # Prefer memory representation when no name is provided (no persistence needed)
+        if name is None:
+            memory_uri = f"memory://{uuid.uuid4()}"
+            # Store the AudioSegment directly for fast retrieval
+            self._memory_set(memory_uri, audio_segment)
+            return AudioRef(uri=memory_uri)
+        else:
+            # Create asset when name is provided (persistence needed)
+            buffer = BytesIO()
+            audio_segment.export(buffer, format="mp3")
+            buffer.seek(0)
+            return await self.audio_from_io(buffer, name=name, parent_id=parent_id)
 
     async def dataframe_to_pandas(self, df: DataframeRef) -> pd.DataFrame:
         """
@@ -1391,6 +1470,15 @@ class ProcessingContext:
         Raises:
             AssertionError: If the deserialized object is not a pandas DataFrame.
         """
+        # Prefer retrieving from in-memory storage if the DataframeRef uses a memory URI
+        if getattr(df, "uri", "").startswith("memory://"):
+            key = df.uri
+            if key in self.memory:
+                obj = self.memory[key]
+                if isinstance(obj, pd.DataFrame):
+                    return obj
+            # If not found in memory, fall back to other representations
+
         if df.columns:
             column_names = [col.name for col in df.columns]
             return pd.DataFrame(df.data, columns=column_names)  # type: ignore
@@ -1414,20 +1502,11 @@ class ProcessingContext:
         Returns:
             DataframeRef: The converted DataframeRef object.
         """
-        buffer = BytesIO(dumps(data))
-        if name:
-            asset = await self.create_asset(
-                name, "application/octet-stream", buffer, parent_id=parent_id
-            )
-            return DataframeRef(asset_id=asset.id, uri=asset.get_url or "")
-        else:
-            # TODO: avoid for large tables
-            rows = data.values.tolist()
-            column_defs = [
-                ColumnDef(name=name, data_type=dtype_name(dtype.name))
-                for name, dtype in zip(data.columns, data.dtypes)
-            ]
-            return DataframeRef(columns=column_defs, data=rows)
+        # Always prefer passing DataframeRef as a pure reference via in-memory URI
+        memory_uri = f"memory://{uuid.uuid4()}"
+        # Store the dataframe directly for fast retrieval
+        self._memory_set(memory_uri, data)
+        return DataframeRef(uri=memory_uri)
 
     async def image_from_io(
         self,
@@ -1450,7 +1529,9 @@ class ProcessingContext:
             asset = await self.create_asset(
                 name=name, content_type="image/png", content=buffer, parent_id=parent_id
             )
-            return ImageRef(asset_id=asset.id, uri=asset.get_url or "")
+            storage = Environment.get_asset_storage()
+            url = storage.get_url(asset.file_name)
+            return ImageRef(asset_id=asset.id, uri=url)
         else:
             buffer.seek(0)
             return ImageRef(data=buffer.read())
@@ -1533,10 +1614,18 @@ class ProcessingContext:
         Returns:
             ImageRef: The ImageRef object.
         """
-        buffer = BytesIO()
-        image.save(buffer, format="png")
-        buffer.seek(0)
-        return await self.image_from_io(buffer, name=name, parent_id=parent_id)
+        # Prefer memory representation when no name is provided (no persistence needed)
+        if name is None:
+            memory_uri = f"memory://{uuid.uuid4()}"
+            # Store the PIL Image directly for fast retrieval
+            self._memory_set(memory_uri, image)
+            return ImageRef(uri=memory_uri)
+        else:
+            # Create asset when name is provided (persistence needed)
+            buffer = BytesIO()
+            image.save(buffer, format="png")
+            buffer.seek(0)
+            return await self.image_from_io(buffer, name=name, parent_id=parent_id)
 
     async def image_from_numpy(
         self, image: np.ndarray, name: str | None = None, parent_id: str | None = None
@@ -1600,6 +1689,15 @@ class ProcessingContext:
             str: The string.
         """
         if isinstance(text_ref, TextRef):
+            # Check for memory:// protocol URI first (preferred for performance)
+            if hasattr(text_ref, "uri") and text_ref.uri.startswith("memory://"):
+                key = text_ref.uri
+                obj = self._memory_get(key)
+                if obj is not None:
+                    if isinstance(obj, str):
+                        return obj
+                    # Fall through to regular conversion if not a string
+
             stream = await self.asset_to_io(text_ref)
             return stream.read().decode("utf-8")
         else:
@@ -1612,14 +1710,21 @@ class ProcessingContext:
         content_type: str = "text/plain",
         parent_id: str | None = None,
     ) -> "TextRef":
-        buffer = BytesIO(s.encode("utf-8"))
-        if name:
+        # Prefer memory representation when no name is provided (no persistence needed)
+        if name is None:
+            memory_uri = f"memory://{uuid.uuid4()}"
+            # Store the string directly for fast retrieval
+            self._memory_set(memory_uri, s)
+            return TextRef(uri=memory_uri)
+        else:
+            # Create asset when name is provided (persistence needed)
+            buffer = BytesIO(s.encode("utf-8"))
             asset = await self.create_asset(
                 name, content_type, buffer, parent_id=parent_id
             )
-            return TextRef(asset_id=asset.id, uri=asset.get_url or "")
-        else:
-            return TextRef(data=s.encode("utf-8"))
+            storage = Environment.get_asset_storage()
+            url = storage.get_url(asset.file_name)
+            return TextRef(asset_id=asset.id, uri=url)
 
     async def video_from_frames(
         self,
@@ -1681,7 +1786,9 @@ class ProcessingContext:
             asset = await self.create_asset(
                 name, "video/mpeg", buffer, parent_id=parent_id
             )
-            return VideoRef(asset_id=asset.id, uri=asset.get_url or "")
+            storage = Environment.get_asset_storage()
+            url = storage.get_url(asset.file_name)
+            return VideoRef(asset_id=asset.id, uri=url)
         else:
             return VideoRef(data=buffer.read())
 
@@ -1714,29 +1821,52 @@ class ProcessingContext:
         Raises:
             ValueError: If the model reference is empty.
         """
+        # Check for memory:// protocol URI first (preferred for performance)
+        if hasattr(model_ref, "uri") and model_ref.uri.startswith("memory://"):
+            key = model_ref.uri
+            if key in self.memory:
+                obj = self.memory[key]
+                # Return the model object directly if it's already a model
+                if hasattr(obj, "fit") or hasattr(
+                    obj, "predict"
+                ):  # Duck typing for models
+                    return obj
+                # Fall through to regular conversion if not a model object
+
         if model_ref.asset_id is None:
             raise ValueError("ModelRef is empty")
         file = await self.asset_to_io(model_ref)
         return joblib.load(file)
 
-    async def from_estimator(self, est: "BaseEstimator", **kwargs):  # type: ignore
+    async def from_estimator(self, est: "BaseEstimator", name: str | None = None, **kwargs):  # type: ignore
         """
         Create a model asset from an estimator.
 
         Args:
             est (BaseEstimator): The estimator object to be serialized.
+            name (str | None): The name for the model asset. If None, stores in memory.
             **kwargs: Additional keyword arguments.
 
         Returns:
             ModelRef: A reference to the created model asset.
 
         """
-        stream = BytesIO()
-        joblib.dump(est, stream)
-        stream.seek(0)
-        asset = await self.create_asset("model", "application/model", stream)
+        # Prefer memory representation when no name is provided (no persistence needed)
+        if name is None:
+            memory_uri = f"memory://{uuid.uuid4()}"
+            # Store the model object directly for fast retrieval
+            self._memory_set(memory_uri, est)
+            return ModelRef(uri=memory_uri, **kwargs)
+        else:
+            # Create asset when name is provided (persistence needed)
+            stream = BytesIO()
+            joblib.dump(est, stream)
+            stream.seek(0)
+            asset = await self.create_asset(name, "application/model", stream)
 
-        return ModelRef(uri=asset.get_url or "", asset_id=asset.id, **kwargs)
+            storage = Environment.get_asset_storage()
+            url = storage.get_url(asset.file_name)
+            return ModelRef(uri=url, asset_id=asset.id, **kwargs)
 
     async def convert_value_for_prediction(
         self,
@@ -1785,71 +1915,6 @@ class ProcessingContext:
                 raise ValueError(f"Invalid enum value {value} : {type(value)}")
         else:
             return value
-
-    async def run_worker(self, req: RunJobRequest) -> dict[str, Any]:
-        """
-        Runs the workflow using a remote worker.
-
-        Args:
-            req (RunJobRequest): The job request containing workflow details.
-
-        Returns:
-            dict[str, Any]: The result of running the workflow.
-
-        Raises:
-            Exception: If an error occurs during workflow execution.
-        """
-
-        # TODO: logic to determine which worker to use for given workflow
-
-        url = Environment.get_worker_url()
-        assert url is not None, "Worker URL is required"
-        assert self.auth_token is not None, "Auth token is required"
-
-        req.auth_token = self.auth_token
-        req.user_id = self.user_id
-
-        headers = {
-            "Content-Type": "application/json",
-        }
-
-        if req.env is None:
-            req.env = {}
-
-        log.info("===== Run remote worker ====")
-        log.info(url)
-        # log.info(json.dumps(req.model_dump(), indent=2))
-        result = {}
-
-        async with self.get_http_client().stream(
-            "POST",
-            url,
-            headers=headers,
-            json=req.model_dump(),
-        ) as response:
-            response.raise_for_status()
-            async for line in response.aiter_lines():
-                try:
-                    message = json.loads(line)
-                    print(message)
-
-                    if isinstance(message, dict) and "type" in message:
-                        if message["type"] == "node_progress":
-                            self.post_message(NodeProgress(**message))
-
-                        elif message["type"] == "node_update":
-                            self.post_message(NodeUpdate(**message))
-
-                        elif message["type"] == "job_update":
-                            self.post_message(JobUpdate(**message))
-
-                        elif message["type"] == "error":
-                            raise Exception(message["error"])
-
-                except json.JSONDecodeError as e:
-                    log.error("Error decoding message: " + str(e))
-
-        return result
 
     def get_chroma_client(self):
         """
@@ -1919,7 +1984,7 @@ class ProcessingContext:
                 return "bin"
 
         if isinstance(value, AssetRef):
-            log.info(f"Uploading asset {value.uri} to S3")
+            log.info(f"Uploading asset {value.uri} to temp storage")
             # Upload the asset data to S3 and return the URL
             if value.data is not None:
                 storage = Environment.get_temp_storage()
@@ -2221,6 +2286,36 @@ class ProcessingContext:
         self._browser_pages[url] = page
         return page
 
+    def clear_memory(self, pattern: str | None = None):
+        """
+        Clear memory objects, optionally matching a pattern.
+
+        Args:
+            pattern (str | None): Optional pattern to match memory keys.
+                                If None, clears all memory.
+        """
+        if pattern is None:
+            # Clear local memory and best-effort clear of global cache entries with memory:// prefix
+            self.memory.clear()
+        else:
+            keys_to_remove = [key for key in list(self.memory.keys()) if pattern in key]
+            for key in keys_to_remove:
+                del self.memory[key]
+
+    def get_memory_stats(self) -> dict[str, int]:
+        """
+        Get statistics about memory usage.
+
+        Returns:
+            dict: Statistics including total objects and breakdown by type.
+        """
+        type_counts: dict[str, int] = {}
+        for obj in self.memory.values():
+            obj_type = type(obj).__name__
+            type_counts[obj_type] = type_counts.get(obj_type, 0) + 1
+
+        return {"total_objects": len(self.memory), "types": type_counts}
+
     async def cleanup(self):
         """
         Cleanup the browser context and pages.
@@ -2228,3 +2323,6 @@ class ProcessingContext:
         if getattr(self, "_browser", None):
             await self._browser.close()  # type: ignore
             self._browser = None
+
+        # Clear memory to prevent leaks
+        self.clear_memory()

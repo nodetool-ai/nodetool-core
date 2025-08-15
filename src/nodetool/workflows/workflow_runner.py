@@ -120,7 +120,7 @@ async def acquire_gpu_lock(node: BaseNode, context: ProcessingContext):
         log.debug(
             f"Node {node.get_title()} is waiting for GPU lock as it is currently held."
         )
-        node.send_update(context, status="waiting")
+        await node.send_update(context, status="waiting")
     # The acquire call itself will ensure FIFO waiting if the lock is contended.
     await gpu_lock.acquire()
     log.debug(f"Node {node.get_title()} acquired GPU lock")
@@ -754,7 +754,9 @@ class WorkflowRunner:
                 log.debug(
                     f"Active streaming node {node.get_title()} ({node._id}) is ready to pull next item."
                 )
-                active_stream_inputs: dict[str, Any] = {}  # Inputs are internal to generator
+                active_stream_inputs: dict[str, Any] = (
+                    {}
+                )  # Inputs are internal to generator
                 tasks_to_run_this_iteration.append(
                     self.process_node(context, node, active_stream_inputs)
                 )
@@ -1204,9 +1206,7 @@ class WorkflowRunner:
         Sets up the generator, assigns initial properties, and sends a "running" update.
         """
         log.info(f"Initializing streaming node: {node.get_title()} ({node._id})")
-        log.debug(
-            f" initial_config: {initial_config_properties}"
-        )
+        log.debug(f" initial_config: {initial_config_properties}")
         self.current_node = node._id  # Ensure current_node is set for ComfyUI hooks
 
         # Assign initial configuration properties to the node instance.
@@ -1230,7 +1230,7 @@ class WorkflowRunner:
             for name in initial_config_properties.keys()
             if node.find_property(name) is not None
         ]
-        node.send_update(context, "running", properties=safe_properties)
+        await node.send_update(context, "running", properties=safe_properties)
 
         try:
             generator = node.gen_process(context)
@@ -1242,7 +1242,7 @@ class WorkflowRunner:
             log.error(
                 f"Error creating generator for streaming node {node.get_title()} ({node._id}): {str(e)}"
             )
-            node.send_update(
+            await node.send_update(
                 context,
                 "error",
                 result={"error": str(e)[:1000]},
@@ -1278,7 +1278,7 @@ class WorkflowRunner:
                 f"Attempted to pull from streaming node {node.get_title()} ({node._id}) not in active_generators."
             )
             # This indicates a logic error. The node should have been removed if completed/errored.
-            node.send_update(
+            await node.send_update(
                 context,
                 "error",
                 result={
@@ -1349,7 +1349,7 @@ class WorkflowRunner:
             log.info(
                 f"Streaming node {node.get_title()} ({node._id}) completed generation."
             )
-            node.send_update(
+            await node.send_update(
                 context,
                 "completed",
                 result={"status": "completed"},
@@ -1365,7 +1365,7 @@ class WorkflowRunner:
                 f"Exception in _pull_from_streaming_node for node {node.get_title()}: {e}",
                 exc_info=True,
             )
-            node.send_update(
+            await node.send_update(
                 context,
                 "error",
                 result={"error": str(e)[:1000]},
@@ -1552,7 +1552,7 @@ class WorkflowRunner:
                 )
 
             # Send completed update
-            node.send_update(
+            await node.send_update(
                 context,
                 "completed",
                 result={},
@@ -1566,7 +1566,7 @@ class WorkflowRunner:
                 f"Error in process_event_node for node {node.get_title()}: {e}",
                 exc_info=True,
             )
-            node.send_update(
+            await node.send_update(
                 context,
                 "error",
                 result={"error": str(e)[:1000]},
@@ -1655,8 +1655,10 @@ class WorkflowRunner:
                 log.error(error_msg)
                 raise RuntimeError(error_msg)
 
-            node.send_update(
-                context, "running", result=None, 
+            await node.send_update(
+                context,
+                "running",
+                result=None,
             )
 
             if requires_gpu and self.device != "cpu":
@@ -1688,7 +1690,7 @@ class WorkflowRunner:
                 context.cache_result(node, result)
 
         # Send completion update
-        node.send_update(context, "completed", result=result)
+        await node.send_update(context, "completed", result=result)
         self.send_messages(node, result, context)
         # log.info(
         #     f"{node.get_title()} ({node._id}) processing time: {datetime.now() - started_at}"
@@ -1801,7 +1803,7 @@ class WorkflowRunner:
                 f"OutputNode {node.name} ({node._id}) received no 'value' in inputs."
             )
             # Still send a completed update, but with no result value for this path.
-            node.send_update(context, "completed", result={}, properties=["name"])
+            await node.send_update(context, "completed", result={}, properties=["name"])
 
     async def process_with_gpu(
         self, context: ProcessingContext, node: BaseNode, retries: int = 0
@@ -1884,17 +1886,17 @@ class WorkflowRunner:
     def _handle_messages(self, req: RunJobRequest, context: ProcessingContext):
         """
         Handles message assignment to appropriate input nodes.
-        
+
         Args:
             req (RunJobRequest): The request containing messages to be processed.
             context (ProcessingContext): The processing context containing the graph.
-            
+
         Raises:
             ValueError: If no suitable input node is found or message content is invalid.
         """
         if not req.messages:
             return
-            
+
         chat_input_node = next(
             (
                 node

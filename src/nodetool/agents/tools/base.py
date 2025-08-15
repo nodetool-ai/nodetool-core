@@ -17,7 +17,7 @@ def sanitize_node_name(node_name: str) -> str:
     Convert node type to tool name format.
 
     Converts from node type format (e.g., "namespace.TestNode") to tool name format
-    (e.g., "node_test"). Handles CamelCase to snake_case conversion and adds "node_" prefix.
+    (e.g., "namespace_Test"). Uses full qualified name and removes Node suffix.
 
     Args:
         node_name: The node type string.
@@ -25,26 +25,23 @@ def sanitize_node_name(node_name: str) -> str:
     Returns:
         The sanitized tool name.
     """
+    # Handle invalid types
+    if not isinstance(node_name, str):
+        return ""
+    
+    # Replace dots with underscores to keep the full qualified name
     node_name = node_name.replace(".", "_")
 
     # Remove "Node" suffix if present
     if node_name.endswith("Node"):
         node_name = node_name[:-4]
 
-    # Convert CamelCase to snake_case
-    import re
-
-    snake_case = re.sub("([a-z0-9])([A-Z])", r"\1_\2", node_name).lower()
-
-    # Add "node_" prefix
-    result = f"node_{snake_case}"
-
     # Truncate if necessary (adjust max length as needed)
     max_length = 64  # Example max length
-    if len(result) > max_length:
-        return result[:max_length]
+    if len(node_name) > max_length:
+        return node_name[:max_length]
     else:
-        return result
+        return node_name
 
 
 # Tool registry to keep track of all tool subclasses
