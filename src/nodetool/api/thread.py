@@ -25,6 +25,7 @@ router = APIRouter(prefix="/api/threads", tags=["threads"])
 class ThreadSummarizeRequest(BaseModel):
     provider: str
     model: str
+    content: str
 
 
 @router.post("/")
@@ -122,19 +123,12 @@ async def summarize_thread(
 ) -> Thread:
     """Summarize thread content and update the thread title."""
     thread = ThreadModel.find(user_id=user, id=thread_id)
-    print("*********")
-    print(thread)
-    print("*********")
     if thread is None:
         raise HTTPException(status_code=404, detail="Thread not found")
 
-    messages, _ = MessageModel.paginate(thread_id=thread_id, limit=10)
-
-    if not messages:
-        return Thread.from_model(thread)
-
     # Use the provided provider and model for LLM call
     provider = get_provider(Provider(req.provider))
+    print(provider)
 
     # Make the LLM call
     response = await provider.generate_message(
@@ -142,12 +136,15 @@ async def summarize_thread(
         messages=[
             Message(
                 role="system",
-                content="Generate a concise, descriptive title (maximum 60 characters) for this conversation. Return only the title, nothing else.",
+                content="You are a helpful assistant that summarizes conversations into concise, descriptive titles (maximum 60 characters). Return only the title, nothing else.",
             ),
-            *messages,
+            Message(
+                role="user",
+                content="Find a conversation title for: " + req.content,
+            ),
         ],
-        max_tokens=20,
     )
+    print(response)
 
     if response.content:
         new_title = str(response.content)
