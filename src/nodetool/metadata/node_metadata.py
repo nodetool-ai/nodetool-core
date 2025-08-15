@@ -1,3 +1,4 @@
+import traceback
 from typing import Any, List, Annotated
 import json
 import importlib
@@ -192,6 +193,7 @@ def get_node_classes_from_module(
 
         return node_classes
     except ImportError as e:
+        traceback.print_exc()
         logger.error(f"Error importing module {module_name}: {e}")
         return []
     except Exception as e:
