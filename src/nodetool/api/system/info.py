@@ -84,17 +84,20 @@ def get_paths_info() -> Dict[str, str]:
         electron_user_data = "%APPDATA%/nodetool-electron"
         electron_log_file = "%APPDATA%/nodetool-electron/nodetool.log"
         electron_logs_dir = "%APPDATA%/nodetool-electron/logs"
+        electron_main_log_file = "%APPDATA%/nodetool-electron/logs/main.log"
     elif sys.platform == "darwin":
         electron_user_data = "~/Library/Application Support/nodetool-electron"
         electron_log_file = (
             "~/Library/Application Support/nodetool-electron/nodetool.log"
         )
         electron_logs_dir = "~/Library/Logs/nodetool-electron"
+        electron_main_log_file = "~/Library/Logs/nodetool-electron/main.log"
     else:
         # Linux and others
         electron_user_data = "~/.config/nodetool-electron"
         electron_log_file = "~/.config/nodetool-electron/nodetool.log"
         electron_logs_dir = "~/.config/nodetool-electron/logs"
+        electron_main_log_file = "~/.config/nodetool-electron/logs/main.log"
 
     return {
         "settings_path": settings_path,
@@ -107,6 +110,7 @@ def get_paths_info() -> Dict[str, str]:
         "electron_user_data": electron_user_data,
         "electron_log_file": electron_log_file,
         "electron_logs_dir": electron_logs_dir,
+        "electron_main_log_file": electron_main_log_file,
     }
 
 
