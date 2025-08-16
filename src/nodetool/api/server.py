@@ -1,4 +1,6 @@
 import os
+import asyncio
+import platform
 from typing import Any, List
 import dotenv
 from fastapi.exceptions import RequestValidationError
@@ -24,6 +26,9 @@ import mimetypes
 from nodetool.common.websocket_updates import websocket_updates
 from multiprocessing import Process
 from nodetool.api.openai import create_openai_compatible_router
+
+if platform.system() == "Windows":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 # FIX: Windows: mimetypes.guess_type() returns None for some files
 # See:
