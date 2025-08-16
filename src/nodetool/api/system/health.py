@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 from typing import Dict, List, Tuple
 
@@ -12,6 +13,47 @@ from nodetool.common.settings import (
     SETTINGS_FILE,
     SECRETS_FILE,
 )
+
+
+def _path_to_template(path: Path) -> str:
+    """Convert a real path to a template path to avoid exposing usernames."""
+    path_str = str(path.resolve())
+    original_path = path_str
+    
+    if sys.platform == "win32":
+        # Replace Windows user paths with template variables
+        import os
+        username = os.environ.get("USERNAME", "")
+        if username and username in path_str:
+            # Replace AppData paths
+            appdata = os.environ.get("APPDATA", "")
+            localappdata = os.environ.get("LOCALAPPDATA", "")
+            
+            if appdata and path_str.startswith(appdata):
+                path_str = path_str.replace(appdata, "%APPDATA%")
+            elif localappdata and path_str.startswith(localappdata):
+                path_str = path_str.replace(localappdata, "%LOCALAPPDATA%")
+            else:
+                # Fallback: replace username in path
+                path_str = path_str.replace(f"Users\\{username}", "Users\\%USERNAME%")
+    elif sys.platform == "darwin":
+        # Replace macOS user paths
+        import os
+        home = os.path.expanduser("~")
+        if path_str.startswith(home):
+            path_str = path_str.replace(home, "~")
+    else:
+        # Linux and others
+        import os
+        home = os.path.expanduser("~")
+        if path_str.startswith(home):
+            path_str = path_str.replace(home, "~")
+    
+    # Debug logging to help troubleshoot path template conversion
+    if path_str != original_path:
+        print(f"[DEBUG] Path template conversion: {original_path} -> {path_str}")
+    
+    return path_str
 
 
 def _exists(path: Path) -> bool:
@@ -66,7 +108,7 @@ def run_health_checks() -> Dict[str, object]:
         _check(
             "settings_file_exists",
             settings_ok,
-            str(settings_path),
+            _path_to_template(settings_path),
             "" if settings_ok else "Create settings.yaml here to configure NodeTool.",
         )
     )
@@ -75,7 +117,7 @@ def run_health_checks() -> Dict[str, object]:
         _check(
             "secrets_file_exists",
             secrets_ok,
-            str(secrets_path),
+            _path_to_template(secrets_path),
             "" if secrets_ok else "Optional: create secrets.yaml here to add API keys (e.g. OPENAI_API_KEY).",
         )
     )
@@ -86,7 +128,7 @@ def run_health_checks() -> Dict[str, object]:
         _check(
             "config_dir_writable",
             cfg_write_ok,
-            f"settings_dir={settings_path.parent}; secrets_dir={secrets_path.parent}",
+            f"settings_dir={_path_to_template(settings_path.parent)}; secrets_dir={_path_to_template(secrets_path.parent)}",
             "" if cfg_write_ok else "Make these folders writable so files can be saved.",
         )
     )
@@ -95,7 +137,7 @@ def run_health_checks() -> Dict[str, object]:
         _check(
             "logs_dir_writable",
             logs_write_ok,
-            str(logs_dir),
+            _path_to_template(Path(logs_dir)),
             "" if logs_write_ok else "Make this folder writable so logs can be saved.",
         )
     )
@@ -109,7 +151,7 @@ def run_health_checks() -> Dict[str, object]:
             _check(
                 "db_ready",
                 db_ok,
-                f"db_parent={db_parent}",
+                f"db_parent={_path_to_template(db_parent)}",
                 "" if db_ok else "Create the folder and make it writable to create the database file.",
             )
         )
@@ -130,7 +172,7 @@ def run_health_checks() -> Dict[str, object]:
         _check(
             "temp_storage_writable",
             tmp_ok,
-            str(tmp_dir),
+            _path_to_template(tmp_dir),
             "" if tmp_ok else "Make this temp folder writable.",
         )
     )
@@ -142,7 +184,7 @@ def run_health_checks() -> Dict[str, object]:
         _check(
             "asset_folder_writable",
             assets_ok,
-            str(asset_folder),
+            _path_to_template(asset_folder),
             "" if assets_ok else "Create the folder and make it writable so assets can be saved.",
         )
     )
@@ -166,7 +208,7 @@ def run_health_checks() -> Dict[str, object]:
             _check(
                 "chroma_path_writable",
                 chroma_path_ok,
-                str(chroma_path),
+                _path_to_template(Path(str(chroma_path))),
                 "" if chroma_path_ok else "Create the folder and make it writable; Chroma stores data here.",
             )
         )
@@ -179,7 +221,7 @@ def run_health_checks() -> Dict[str, object]:
             _check(
                 "comfy_folder_present",
                 _exists(p),
-                str(p),
+                _path_to_template(p),
                 "Update COMFY_FOLDER to a valid path.",
             )
         )

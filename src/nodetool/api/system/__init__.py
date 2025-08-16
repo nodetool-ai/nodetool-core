@@ -22,6 +22,9 @@ class VersionsInfo(BaseModel):
     nodetool_core: Optional[str] = None
     nodetool_base: Optional[str] = None
     cuda: Optional[str] = None
+    gpu_name: Optional[str] = None
+    vram_total_gb: Optional[str] = None
+    driver_version: Optional[str] = None
 
 
 class PathsInfo(BaseModel):

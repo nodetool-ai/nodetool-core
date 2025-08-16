@@ -30,6 +30,49 @@ def _safe_version(pkg: str) -> str | None:
         return None
 
 
+def get_gpu_info() -> Dict[str, str | None]:
+    """Get GPU and VRAM information."""
+    gpu_info: Dict[str, str | None] = {
+        "gpu_name": None,
+        "vram_total_gb": None,
+        "driver_version": None,
+    }
+    
+    try:
+        import pynvml  # type: ignore
+        
+        pynvml.nvmlInit()
+        handle = pynvml.nvmlDeviceGetHandleByIndex(0)  # First GPU
+        
+        # Get GPU name
+        gpu_name = pynvml.nvmlDeviceGetName(handle)
+        if isinstance(gpu_name, bytes):
+            gpu_name = gpu_name.decode('utf-8')
+        gpu_info["gpu_name"] = gpu_name
+        
+        # Get VRAM total
+        memory_info = pynvml.nvmlDeviceGetMemoryInfo(handle)
+        vram_total_gb = round(float(memory_info.total) / (1024**3), 2)
+        gpu_info["vram_total_gb"] = str(vram_total_gb)
+        
+        # Get driver version
+        try:
+            driver_version = pynvml.nvmlSystemGetDriverVersion()
+            if isinstance(driver_version, bytes):
+                driver_version = driver_version.decode('utf-8')
+            gpu_info["driver_version"] = driver_version
+        except Exception:
+            pass  # Driver version not critical
+            
+        pynvml.nvmlShutdown()
+        
+    except Exception:
+        # No NVIDIA GPU available, driver issues, or pynvml not installed
+        pass
+    
+    return gpu_info
+
+
 def get_versions_info() -> Dict[str, str | None]:
     # CUDA version (best-effort via PyTorch)
     cuda_version: Optional[str] = None
@@ -45,11 +88,17 @@ def get_versions_info() -> Dict[str, str | None]:
     except Exception:
         cuda_version = None
 
+    # Get GPU information
+    gpu_info = get_gpu_info()
+
     return {
         "python": platform.python_version(),
         "nodetool_core": _safe_version("nodetool-core"),
         "nodetool_base": _safe_version("nodetool-base"),
         "cuda": cuda_version,
+        "gpu_name": gpu_info["gpu_name"],
+        "vram_total_gb": gpu_info["vram_total_gb"],
+        "driver_version": gpu_info["driver_version"],
     }
 
 
