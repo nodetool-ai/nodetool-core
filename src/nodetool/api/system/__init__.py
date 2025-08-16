@@ -63,7 +63,7 @@ class HealthResponse(BaseModel):
 
 
 _CACHE: dict[str, tuple[float, dict]] = {}
-_TTL_SECONDS = 3.0
+_TTL_SECONDS = 30.0
 
 
 @router.get("/")
@@ -143,7 +143,17 @@ async def get_system_health() -> HealthResponse:
 
 @router.get("/stats")
 async def get_stats() -> SystemStats:
-    return get_system_stats()
+    import time
+    
+    now = time.time()
+    cached = _CACHE.get("system_stats")
+    if cached and (now - cached[0]) < _TTL_SECONDS:
+        return SystemStats(**cached[1])
+    else:
+        stats = get_system_stats()
+        stats_dict = stats.model_dump()
+        _CACHE["system_stats"] = (now, stats_dict)
+        return stats
 
 
 
