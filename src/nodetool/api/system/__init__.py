@@ -35,6 +35,7 @@ class PathsInfo(BaseModel):
     electron_user_data: str
     electron_log_file: str
     electron_logs_dir: str
+    electron_main_log_file: str
 
 
 class SystemInfoResponse(BaseModel):
@@ -93,11 +94,51 @@ async def get_system_info() -> SystemInfoResponse:
 
 @router.get("/health")
 async def get_system_health() -> HealthResponse:
-    result: Dict[str, Any] = run_health_checks()
-    checks_list: List[Dict[str, Any]] = result.get("checks", []) or []
-    checks_models = [HealthCheck(**c) for c in checks_list]
-    summary = HealthSummary(**(result.get("summary", {}) or {"ok": 0, "warn": 0, "error": 0}))
-    return HealthResponse(checks=checks_models, summary=summary)
+    try:
+        result: Dict[str, Any] = run_health_checks()
+        
+        # Validate the structure of the result
+        if not isinstance(result, dict):
+            raise ValueError("Health check result must be a dictionary")
+        
+        checks_list: List[Dict[str, Any]] = result.get("checks", []) or []
+        if not isinstance(checks_list, list):
+            raise ValueError("Health check 'checks' must be a list")
+        
+        # Validate each check has required fields
+        validated_checks = []
+        for check in checks_list:
+            if not isinstance(check, dict):
+                continue  # Skip invalid checks
+            if "id" not in check or "status" not in check:
+                continue  # Skip checks missing required fields
+            validated_checks.append(check)
+        
+        checks_models = [HealthCheck(**c) for c in validated_checks]
+        
+        summary_data = result.get("summary", {}) or {}
+        if not isinstance(summary_data, dict):
+            summary_data = {"ok": 0, "warn": 0, "error": 0}
+        
+        # Ensure summary has required fields with defaults
+        summary_data.setdefault("ok", 0)
+        summary_data.setdefault("warn", 0) 
+        summary_data.setdefault("error", 0)
+        
+        summary = HealthSummary(**summary_data)
+        return HealthResponse(checks=checks_models, summary=summary)
+        
+    except Exception as e:
+        # Return a safe fallback response if health checks fail
+        return HealthResponse(
+            checks=[HealthCheck(
+                id="health_check_error",
+                status="error",
+                details=f"Health check system error: {str(e)}",
+                fix_hint="Check system logs for more details"
+            )],
+            summary=HealthSummary(ok=0, warn=0, error=1)
+        )
 
 
 @router.get("/stats")
