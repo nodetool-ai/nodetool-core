@@ -54,14 +54,29 @@ def get_versions_info() -> Dict[str, str | None]:
 
 
 def get_paths_info() -> Dict[str, str]:
-    settings_path = str(get_system_file_path(SETTINGS_FILE))
-    secrets_path = str(get_system_file_path(SECRETS_FILE))
-    data_dir = str(get_system_data_path(""))
-    core_logs_dir = str(get_system_data_path("logs"))
-    core_log_file = str(get_log_path("nodetool.log"))
+    # Use template paths to avoid exposing usernames while still being helpful
+    if sys.platform == "win32":
+        settings_path = "%APPDATA%/nodetool/settings.yaml"
+        secrets_path = "%APPDATA%/nodetool/secrets.yaml"
+        data_dir = "%LOCALAPPDATA%/nodetool"
+        core_logs_dir = "%LOCALAPPDATA%/nodetool/logs"
+        core_log_file = "%LOCALAPPDATA%/nodetool/logs/nodetool.log"
+    elif sys.platform == "darwin":
+        settings_path = "~/.config/nodetool/settings.yaml"
+        secrets_path = "~/.config/nodetool/secrets.yaml"
+        data_dir = "~/.local/share/nodetool"
+        core_logs_dir = "~/.local/share/nodetool/logs"
+        core_log_file = "~/.local/share/nodetool/logs/nodetool.log"
+    else:
+        # Linux and others
+        settings_path = "~/.config/nodetool/settings.yaml"
+        secrets_path = "~/.config/nodetool/secrets.yaml"
+        data_dir = "~/.local/share/nodetool"
+        core_logs_dir = "~/.local/share/nodetool/logs"
+        core_log_file = "~/.local/share/nodetool/logs/nodetool.log"
 
     # Additional caches/paths
-    # Hugging Face cache (root "hub" path)
+    # Hugging Face cache (actual path since it can be configured arbitrarily)
     try:
         from huggingface_hub.constants import HF_HUB_CACHE  # type: ignore
 
