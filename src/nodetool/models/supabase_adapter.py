@@ -10,8 +10,8 @@ from pydantic.fields import FieldInfo
 from datetime import datetime
 from enum import EnumMeta as EnumType
 
-# Assume supabase-py is installed
-from supabase import create_client, Client
+# Assume supabase-py is installed (use async client)
+from supabase import AsyncClient as SupabaseAsyncClient
 from postgrest.base_request_builder import APIResponse
 
 from nodetool.models.database_adapter import DatabaseAdapter
@@ -95,7 +95,6 @@ def convert_from_supabase_attributes(
 class SupabaseAdapter(DatabaseAdapter):
     """Adapts DBModel operations to a Supabase backend."""
 
-    client: Client
     table_name: str
     table_schema: Dict[str, Any]
     fields: Dict[str, FieldInfo]
@@ -111,7 +110,10 @@ class SupabaseAdapter(DatabaseAdapter):
         # indexes: List[Dict[str, Any]], # Index management might differ
     ):
         """Initializes the Supabase adapter."""
-        self.client: Client = create_client(supabase_url, supabase_key)
+        # Instantiate async client; direct constructor avoids needing to await factory
+        self.supabase_client: SupabaseAsyncClient = SupabaseAsyncClient(
+            supabase_url, supabase_key
+        )
         self.table_name = table_schema["table_name"]
         self.table_schema = table_schema
         self.fields = fields
@@ -164,8 +166,8 @@ class SupabaseAdapter(DatabaseAdapter):
         }
 
         try:
-            response: APIResponse = (
-                self.client.table(self.table_name)
+            response: APIResponse = await (
+                self.supabase_client.table(self.table_name)
                 .upsert(
                     supabase_item  # , on_conflict=pk # 'on_conflict' is often implicit based on PK
                 )
@@ -191,8 +193,8 @@ class SupabaseAdapter(DatabaseAdapter):
         select_columns = ", ".join(self.fields.keys())
 
         try:
-            response: APIResponse = (
-                self.client.table(self.table_name)
+            response: APIResponse = await (
+                self.supabase_client.table(self.table_name)
                 .select(select_columns)
                 .eq(pk, key)
                 .limit(1)
@@ -214,8 +216,8 @@ class SupabaseAdapter(DatabaseAdapter):
         """Deletes an item from Supabase by its primary key."""
         pk = self._get_primary_key()
         try:
-            response: APIResponse = (
-                self.client.table(self.table_name)
+            response: APIResponse = await (
+                self.supabase_client.table(self.table_name)
                 .delete()
                 .eq(pk, primary_key)
                 .execute()
@@ -296,7 +298,7 @@ class SupabaseAdapter(DatabaseAdapter):
 
     async def query(
         self,
-        condition: ConditionBuilder,
+        condition: ConditionBuilder | None = None,
         order_by: str | None = None,
         limit: int = 100,
         reverse: bool = False,
@@ -311,15 +313,16 @@ class SupabaseAdapter(DatabaseAdapter):
             select_columns = ", ".join(self.fields.keys())
 
         # Base query
-        query = self.client.table(self.table_name).select(select_columns)
+        query = self.supabase_client.table(self.table_name).select(select_columns)
 
         # Apply conditions (potentially complex with AND/OR groups)
-        built_condition = condition.build()
-        try:
-            query = self._apply_conditions(query, built_condition)
-        except NotImplementedError as e:
-            log.error(f"Query failed due to unsupported operator/condition: {e}")
-            raise  # Or return empty result?
+        if condition is not None:
+            built_condition = condition.build()
+            try:
+                query = self._apply_conditions(query, built_condition)
+            except NotImplementedError as e:
+                log.error(f"Query failed due to unsupported operator/condition: {e}")
+                raise  # Or return empty result?
 
         if order_by:
             query = query.order(order_by, desc=reverse)
@@ -330,7 +333,7 @@ class SupabaseAdapter(DatabaseAdapter):
 
         # Execute
         try:
-            response: APIResponse = query.execute()
+            response: APIResponse = await query.execute()
             if response.data:
                 results = [
                     convert_from_supabase_attributes(dict(row), self.fields)

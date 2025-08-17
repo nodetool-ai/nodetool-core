@@ -463,7 +463,7 @@ class TestConversionMethods:
 class TestUtilityFunctions:
     """Test utility functions and edge cases."""
 
-    def test_get_output_connected_nodes(self, context):
+    def test_get_output_connected_nodes(self, context: ProcessingContext):
         """Test getting output connected nodes."""
         from nodetool.workflows.base_node import BaseNode
         from nodetool.types.graph import Edge
@@ -471,9 +471,9 @@ class TestUtilityFunctions:
         class TestNode(BaseNode):
             pass
 
-        node1 = TestNode(id="node1")
-        node2 = TestNode(id="node2")
-        node3 = TestNode(id="node3")
+        node1 = TestNode(id="node1")  # type: ignore
+        node2 = TestNode(id="node2")  # type: ignore
+        node3 = TestNode(id="node3")  # type: ignore
 
         edges = [
             Edge(
@@ -492,7 +492,7 @@ class TestUtilityFunctions:
 
         context.graph = Graph(nodes=[node1, node2, node3], edges=edges)
 
-        connected = context.get_output_connected_nodes(node1)
+        connected = context.get_nodes_connected_to_output(node1.id, "output")
         assert len(connected) == 2
         assert node2 in connected
         assert node3 in connected
@@ -505,8 +505,8 @@ class TestUtilityFunctions:
         class TestNode(BaseNode):
             pass
 
-        node1 = TestNode(id="node1")
-        node2 = TestNode(id="node2")
+        node1 = TestNode(id="node1")  # type: ignore
+        node2 = TestNode(id="node2")  # type: ignore
 
         edges = [
             Edge(
@@ -518,7 +518,7 @@ class TestUtilityFunctions:
         ]
         context.graph = Graph(nodes=[node1, node2], edges=edges)
 
-        connected = context.get_output_connected_nodes("node1")
+        connected = context.get_nodes_connected_to_output("node1", "output")
         assert len(connected) == 1
         assert node2 in connected
 
@@ -530,7 +530,7 @@ class TestUtilityFunctions:
         class TestNode(BaseNode):
             pass
 
-        node1 = TestNode(id="node1")
+        node1 = TestNode(id="node1")  # type: ignore
         edges = [
             Edge(
                 source="node1",
@@ -541,7 +541,7 @@ class TestUtilityFunctions:
         ]
         context.graph = Graph(nodes=[node1], edges=edges)
 
-        connected = context.get_output_connected_nodes(node1)
+        connected = context.get_nodes_connected_to_output(node1.id, "output")
         assert len(connected) == 0  # Should skip non-existent nodes
 
     def test_get_gmail_connection_missing_env(self, context):
