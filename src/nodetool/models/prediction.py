@@ -43,7 +43,7 @@ class Prediction(DBModel):
     output_tokens: int | None = DBField(default=None)
 
     @classmethod
-    def create(
+    async def create(
         cls,
         user_id: str,
         node_id: str,
@@ -98,11 +98,11 @@ class Prediction(DBModel):
             input_tokens=input_tokens,
             output_tokens=output_tokens,
         )
-        prediction.save()
+        await prediction.save()
         return prediction
 
     @classmethod
-    def find(cls, user_id: str, id: str):
+    async def find(cls, user_id: str, id: str):
         """Finds a prediction by its ID, ensuring it belongs to the specified user.
 
         Args:
@@ -112,13 +112,13 @@ class Prediction(DBModel):
         Returns:
             The Prediction object if found and owned by the user, otherwise None.
         """
-        prediction = cls.get(id)
+        prediction = await cls.get(id)
         if prediction is None or prediction.user_id != user_id:
             return None
         return prediction
 
     @classmethod
-    def paginate(
+    async def paginate(
         cls,
         user_id: str,
         workflow_id: str | None = None,
@@ -138,14 +138,14 @@ class Prediction(DBModel):
             last evaluated prediction (or an empty string if it's the last page).
         """
         if workflow_id is None:
-            return cls.query(
+            return await cls.query(
                 condition=Field("user_id")
                 .equals(user_id)
                 .and_(Field("id").greater_than(start_key or "")),
                 limit=limit,
             )
         else:
-            return cls.query(
+            return await cls.query(
                 condition=Field("user_id")
                 .equals(user_id)
                 .and_(Field("workflow_id").equals(workflow_id))

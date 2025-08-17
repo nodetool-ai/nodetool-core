@@ -3,6 +3,8 @@ Adapter for interacting with a Supabase backend (PostgreSQL with PostgREST).
 """
 
 import logging
+
+# mypy: ignore-errors
 from typing import Any, Dict, List, Type, Union, get_origin, get_args
 from pydantic.fields import FieldInfo
 from datetime import datetime
@@ -124,7 +126,7 @@ class SupabaseAdapter(DatabaseAdapter):
         # Assuming 'id' or defined in table_schema, like PostgresAdapter
         return self.table_schema.get("primary_key", "id")
 
-    def create_table(self) -> None:
+    async def create_table(self) -> None:
         """Creates the database table.
         NOTE: Table creation in Supabase is typically handled via migrations (UI or CLI).
         Implementing this via the client is less common and might require executing raw SQL.
@@ -139,7 +141,7 @@ class SupabaseAdapter(DatabaseAdapter):
             "Table creation via adapter is not standard practice for Supabase."
         )
 
-    def drop_table(self) -> None:
+    async def drop_table(self) -> None:
         """Drops the database table.
         NOTE: Like creation, dropping tables is usually done via Supabase UI/CLI or migrations.
         """
@@ -151,7 +153,7 @@ class SupabaseAdapter(DatabaseAdapter):
             "Table dropping via adapter is not standard practice for Supabase."
         )
 
-    def save(self, item: Dict[str, Any]) -> None:
+    async def save(self, item: Dict[str, Any]) -> None:
         """Saves (inserts or updates) an item in the Supabase table using upsert."""
         self._get_primary_key()
         # Prepare item data, converting types if necessary
@@ -183,7 +185,7 @@ class SupabaseAdapter(DatabaseAdapter):
             log.exception(f"Error saving item to Supabase table {self.table_name}: {e}")
             raise
 
-    def get(self, key: Any) -> Dict[str, Any] | None:
+    async def get(self, key: Any) -> Dict[str, Any] | None:
         """Retrieves an item from Supabase by its primary key."""
         pk = self._get_primary_key()
         select_columns = ", ".join(self.fields.keys())
@@ -208,7 +210,7 @@ class SupabaseAdapter(DatabaseAdapter):
             )
             raise
 
-    def delete(self, primary_key: Any) -> None:
+    async def delete(self, primary_key: Any) -> None:
         """Deletes an item from Supabase by its primary key."""
         pk = self._get_primary_key()
         try:
@@ -292,7 +294,7 @@ class SupabaseAdapter(DatabaseAdapter):
 
         return query_builder
 
-    def query(
+    async def query(
         self,
         condition: ConditionBuilder,
         order_by: str | None = None,
@@ -343,17 +345,17 @@ class SupabaseAdapter(DatabaseAdapter):
 
     # --- Index Management (Likely requires raw SQL via execute_sql) ---
 
-    def create_index(
+    async def create_index(
         self, index_name: str, columns: List[str], unique: bool = False
     ) -> None:
         """Creates an index using raw SQL."""
         raise NotImplementedError("Index creation is not supported for Supabase.")
 
-    def drop_index(self, index_name: str) -> None:
+    async def drop_index(self, index_name: str) -> None:
         """Drops an index using raw SQL."""
         raise NotImplementedError("Index creation is not supported for Supabase.")
 
-    def list_indexes(self) -> List[Dict[str, Any]]:
+    async def list_indexes(self) -> List[Dict[str, Any]]:
         """Lists indexes using raw SQL querying pg_catalog."""
         raise NotImplementedError("Index listing is not supported for Supabase.")
 

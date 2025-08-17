@@ -1,4 +1,5 @@
 import pytest
+import pytest_asyncio
 from datetime import datetime
 from enum import Enum
 from typing import Dict, List, Optional
@@ -11,6 +12,9 @@ from nodetool.models.sqlite_adapter import (
 )
 from nodetool.models.base_model import DBModel, DBField
 
+
+# Skip global setup/teardown for these tests
+pytestmark = pytest.mark.no_setup
 
 # Mock Pydantic model for testing
 class TestEnum(Enum):
@@ -36,9 +40,9 @@ class TestModel(DBModel):
 
 
 # Fixture for in-memory SQLite database
-@pytest.fixture
-def db_adapter():
-    adapter = SQLiteAdapter(
+@pytest_asyncio.fixture
+async def db_adapter():
+    adapter = await SQLiteAdapter.create(
         ":memory:",
         TestModel.db_fields(),
         TestModel.get_table_schema(),
@@ -51,14 +55,16 @@ def db_adapter():
         ],
     )
     yield adapter
-    adapter.connection.close()
+    await adapter.close()
 
 
-def test_table_creation(db_adapter):
-    assert db_adapter.table_exists()
+@pytest.mark.asyncio
+async def test_table_creation(db_adapter):
+    assert await db_adapter.table_exists()
 
 
-def test_save_and_get(db_adapter):
+@pytest.mark.asyncio
+async def test_save_and_get(db_adapter):
     item = TestModel(
         id="1",
         name="John Doe",
@@ -71,12 +77,13 @@ def test_save_and_get(db_adapter):
         enum_field=TestEnum.VALUE1,
         optional_field="test",
     )
-    db_adapter.save(item.model_dump())
-    retrieved_item = TestModel(**db_adapter.get("1"))
+    await db_adapter.save(item.model_dump())
+    retrieved_item = TestModel(**(await db_adapter.get("1")))
     assert retrieved_item == item
 
 
-def test_update(db_adapter):
+@pytest.mark.asyncio
+async def test_update(db_adapter):
     item = TestModel(
         id="1",
         name="John Doe",
@@ -89,18 +96,19 @@ def test_update(db_adapter):
         enum_field=TestEnum.VALUE1,
         optional_field="test",
     )
-    db_adapter.save(item.model_dump())
+    await db_adapter.save(item.model_dump())
 
     updated_item = item.copy()
     updated_item.name = "Jane Doe"
     updated_item.age = 31
-    db_adapter.save(updated_item.model_dump())
+    await db_adapter.save(updated_item.model_dump())
 
-    retrieved_item = TestModel(**db_adapter.get("1"))
+    retrieved_item = TestModel(**(await db_adapter.get("1")))
     assert retrieved_item == updated_item
 
 
-def test_delete(db_adapter):
+@pytest.mark.asyncio
+async def test_delete(db_adapter):
     item = TestModel(
         id="1",
         name="John Doe",
@@ -113,12 +121,13 @@ def test_delete(db_adapter):
         enum_field=TestEnum.VALUE1,
         optional_field="test",
     )
-    db_adapter.save(item.model_dump())
-    db_adapter.delete("1")
-    assert db_adapter.get("1") is None
+    await db_adapter.save(item.model_dump())
+    await db_adapter.delete("1")
+    assert await db_adapter.get("1") is None
 
 
-def test_query(db_adapter):
+@pytest.mark.asyncio
+async def test_query(db_adapter):
     items = [
         TestModel(
             id=str(i),
@@ -135,9 +144,9 @@ def test_query(db_adapter):
         for i in range(10)
     ]
     for item in items:
-        db_adapter.save(item.model_dump())
+        await db_adapter.save(item.model_dump())
 
-    results, last_key = db_adapter.query(Field("age").greater_than(25), limit=5)
+    results, last_key = await db_adapter.query(Field("age").greater_than(25), limit=5)
 
     assert len(results) == 4
     assert all(result["age"] > 25 for result in results)
@@ -177,19 +186,20 @@ def test_translate_condition_to_sql():
     assert translate_condition_to_sql(condition) == expected
 
 
-def test_table_migration(db_adapter):
+@pytest.mark.asyncio
+async def test_table_migration(db_adapter):
     # Add a new field
     db_adapter.fields["new_field"] = DBField()
-    db_adapter.migrate_table()
+    await db_adapter.migrate_table()
 
     # Check if the new field was added
-    current_schema = db_adapter.get_current_schema()
+    current_schema = await db_adapter.get_current_schema()
     assert "new_field" in current_schema
 
     # Remove a field
     del db_adapter.fields["optional_field"]
-    db_adapter.migrate_table()
+    await db_adapter.migrate_table()
 
     # Check if the field was removed
-    current_schema = db_adapter.get_current_schema()
+    current_schema = await db_adapter.get_current_schema()
     assert "optional_field" not in current_schema

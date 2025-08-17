@@ -21,13 +21,13 @@ class Job(DBModel):
     cost: float | None = DBField(default=None)
 
     @classmethod
-    def find(cls, user_id: str, job_id: str):
-        job = cls.get(job_id)
+    async def find(cls, user_id: str, job_id: str):
+        job = await cls.get(job_id)
         return job if job and job.user_id == user_id else None
 
     @classmethod
-    def create(cls, workflow_id: str, user_id: str, **kwargs):
-        return super().create(
+    async def create(cls, workflow_id: str, user_id: str, **kwargs):
+        return await super().create(
             id=create_time_ordered_uuid(),
             workflow_id=workflow_id,
             user_id=user_id,
@@ -35,7 +35,7 @@ class Job(DBModel):
         )
 
     @classmethod
-    def paginate(
+    async def paginate(
         cls,
         user_id: str,
         workflow_id: Optional[str] = None,
@@ -43,14 +43,14 @@ class Job(DBModel):
         start_key: Optional[str] = None,
     ):
         if workflow_id:
-            return cls.query(
+            return await cls.query(
                 Field("workflow_id")
                 .equals(workflow_id)
                 .and_(Field("id").greater_than(start_key or "")),
                 limit=limit,
             )
         elif user_id:
-            return cls.query(
+            return await cls.query(
                 Field("user_id")
                 .equals(user_id)
                 .and_(Field("id").greater_than(start_key or "")),

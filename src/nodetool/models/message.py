@@ -29,14 +29,13 @@ class Message(DBModel):
     created_at: datetime | None = DBField(default=None)
     provider: Provider | None = DBField(default=None)
     model: str | None = DBField(default=None)
-    agent_mode: bool | None  = DBField(default=None)
+    agent_mode: bool | None = DBField(default=None)
     workflow_assistant: bool | None = DBField(default=None)
     help_mode: bool | None = DBField(default=None)
 
-
     @classmethod
-    def create(cls, thread_id: str, user_id: str, **kwargs) -> "Message":
-        return super().create(
+    async def create(cls, thread_id: str, user_id: str, **kwargs) -> "Message":
+        return await super().create(
             id=kwargs.get("id", None) is None and create_time_ordered_uuid(),
             thread_id=thread_id,
             user_id=user_id,
@@ -44,14 +43,14 @@ class Message(DBModel):
         )
 
     @classmethod
-    def paginate(
+    async def paginate(
         cls,
         thread_id: str | None = None,
         limit: int = 100,
         start_key: str | None = None,
         reverse: bool = False,
     ):
-        return cls.query(
+        return await cls.query(
             condition=Field("thread_id")
             .equals(thread_id)
             .and_(Field("id").greater_than(start_key or "")),

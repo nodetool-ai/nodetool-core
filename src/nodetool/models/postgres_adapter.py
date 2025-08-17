@@ -1,5 +1,7 @@
 from datetime import datetime
 import re
+
+# mypy: ignore-errors
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from types import UnionType
@@ -285,7 +287,7 @@ class PostgresAdapter(DatabaseAdapter):
         desired_schema = set(self.fields.keys())
         return desired_schema
 
-    def create_table(self, suffix: str = "") -> None:
+    async def create_table(self, suffix: str = "") -> None:
         """Creates the database table based on the model's schema.
 
         Constructs and executes a CREATE TABLE SQL statement using the defined fields
@@ -311,14 +313,14 @@ class PostgresAdapter(DatabaseAdapter):
             print(f"PostgreSQL error during table creation: {e}")
             raise e
 
-    def drop_table(self) -> None:
+    async def drop_table(self) -> None:
         """Drops the database table associated with this adapter."""
         sql = f"DROP TABLE IF EXISTS {self.table_name}"
         with self.connection.cursor() as cursor:
             cursor.execute(sql)
         self.connection.commit()
 
-    def migrate_table(self) -> None:
+    async def migrate_table(self) -> None:
         """Performs schema migration for the table.
 
         Compares the current schema in the database with the model's defined schema.
@@ -358,7 +360,7 @@ class PostgresAdapter(DatabaseAdapter):
                 if field_name in index["columns"]:
                     self.create_index(index["name"], index["columns"], index["unique"])
 
-    def save(self, item: Dict[str, Any]) -> None:
+    async def save(self, item: Dict[str, Any]) -> None:
         """Saves (inserts or updates) an item into the database table.
 
         Uses an INSERT ... ON CONFLICT (primary_key) DO UPDATE statement.
@@ -382,7 +384,7 @@ class PostgresAdapter(DatabaseAdapter):
             cursor.execute(query, values)
         self.connection.commit()
 
-    def get(self, key: Any) -> Dict[str, Any] | None:
+    async def get(self, key: Any) -> Dict[str, Any] | None:
         """Retrieves an item from the database table by its primary key.
 
         Args:
@@ -402,7 +404,7 @@ class PostgresAdapter(DatabaseAdapter):
             return None
         return convert_from_postgres_attributes(dict(item), self.fields)
 
-    def delete(self, primary_key: Any) -> None:
+    async def delete(self, primary_key: Any) -> None:
         """Deletes an item from the database table by its primary key.
 
         Args:
@@ -457,7 +459,7 @@ class PostgresAdapter(DatabaseAdapter):
                     params,
                 )
 
-    def query(
+    async def query(
         self,
         condition: ConditionBuilder,
         limit: int = 100,
@@ -513,7 +515,7 @@ class PostgresAdapter(DatabaseAdapter):
         with self.connection.cursor(cursor_factory=RealDictCursor) as cursor:
             yield cursor
 
-    def execute_sql(
+    async def execute_sql(
         self, sql: str, params: Optional[Dict[str, Any]] = None
     ) -> List[Dict[str, Any]]:
         """Executes a given SQL query with parameters and returns the results.
@@ -538,7 +540,7 @@ class PostgresAdapter(DatabaseAdapter):
                 ]
             return []
 
-    def create_index(
+    async def create_index(
         self, index_name: str, columns: List[str], unique: bool = False
     ) -> None:
         unique_str = "UNIQUE" if unique else ""
@@ -553,7 +555,7 @@ class PostgresAdapter(DatabaseAdapter):
             print(f"PostgreSQL error during index creation: {e}")
             raise e
 
-    def drop_index(self, index_name: str) -> None:
+    async def drop_index(self, index_name: str) -> None:
         sql = f"DROP INDEX IF EXISTS {index_name}"
 
         try:
@@ -564,28 +566,28 @@ class PostgresAdapter(DatabaseAdapter):
             print(f"PostgreSQL error during index deletion: {e}")
             raise e
 
-    def list_indexes(self) -> List[Dict[str, Any]]:
+    async def list_indexes(self) -> List[Dict[str, Any]]:
         sql = """
-            SELECT 
+            SELECT
                 i.relname as index_name,
                 array_agg(a.attname) as column_names,
                 ix.indisunique as is_unique
-            FROM 
+            FROM
                 pg_class t,
                 pg_class i,
                 pg_index ix,
                 pg_attribute a
-            WHERE 
+            WHERE
                 t.oid = ix.indrelid
                 AND i.oid = ix.indexrelid
                 AND a.attrelid = t.oid
                 AND a.attnum = ANY(ix.indkey)
                 AND t.relkind = 'r'
                 AND t.relname = %s
-            GROUP BY 
+            GROUP BY
                 i.relname,
                 ix.indisunique
-            ORDER BY 
+            ORDER BY
                 i.relname;
         """
 

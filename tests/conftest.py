@@ -1,10 +1,10 @@
-import asyncio
 from typing import Any
 from unittest.mock import Mock
 from pydantic import Field
 from fastapi.testclient import TestClient
 import httpx
 import pytest
+import pytest_asyncio
 from nodetool.api.server import create_app
 from nodetool.storage.memory_storage import MemoryStorage
 from nodetool.types.graph import Node, Edge
@@ -23,15 +23,19 @@ import uuid
 import PIL.Image
 
 
-@pytest.fixture(autouse=True, scope="function")
-def setup_and_teardown():
+@pytest_asyncio.fixture(autouse=True, scope="function")
+async def setup_and_teardown(request):
+    if request.node.get_closest_marker("no_setup"):
+        yield
+        return
+
     Environment.set_remote_auth(False)
 
-    create_all_tables()
+    await create_all_tables()
 
     yield
 
-    drop_all_tables()
+    await drop_all_tables()
     Environment.set_remote_auth(True)
 
 
@@ -66,7 +70,7 @@ def upload_test_image(image: Asset, width: int = 512, height: int = 512):
     storage.storage[image.file_name] = pil_to_bytes(img)
 
 
-def make_image(
+async def make_image(
     user_id: str,
     workflow_id: str | None = None,
     parent_id: str | None = None,
@@ -86,7 +90,7 @@ def make_image(
     Returns:
         Asset: The created image asset.
     """
-    image = Asset.create(
+    image = await Asset.create(
         user_id=user_id,
         name="test_image",
         parent_id=parent_id,
@@ -97,7 +101,7 @@ def make_image(
     return image
 
 
-def make_text(
+async def make_text(
     user_id: str,
     content: str,
     workflow_id: str | None = None,
@@ -115,7 +119,7 @@ def make_text(
     Returns:
         Asset: The created text asset.
     """
-    asset = Asset.create(
+    asset = await Asset.create(
         user_id=user_id,
         name="test_text",
         parent_id=parent_id,
@@ -123,11 +127,11 @@ def make_text(
         workflow_id=workflow_id,
     )
     storage = Environment.get_asset_storage()
-    asyncio.run(storage.upload(asset.file_name, io.BytesIO(content.encode())))
+    await storage.upload(asset.file_name, io.BytesIO(content.encode()))
     return asset
 
 
-def make_job(user_id: str, **kwargs):
+async def make_job(user_id: str, **kwargs):
     """
     Create a test job.
 
@@ -138,21 +142,21 @@ def make_job(user_id: str, **kwargs):
     Returns:
         Job: The created job instance.
     """
-    return Job.create(
+    return await Job.create(
         workflow_id=str(uuid.uuid4()),
         user_id=user_id,
         **kwargs,
     )
 
 
-@pytest.fixture()
-def image(user_id: str):
-    return make_image(user_id)
+@pytest_asyncio.fixture()
+async def image(user_id: str):
+    return await make_image(user_id)
 
 
-@pytest.fixture()
-def text_asset(user_id: str):
-    return make_text(user_id, "test content")
+@pytest_asyncio.fixture()
+async def text_asset(user_id: str):
+    return await make_text(user_id, "test content")
 
 
 @pytest.fixture()

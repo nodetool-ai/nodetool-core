@@ -85,7 +85,7 @@ class Workflow(DBModel):
         )
 
     @classmethod
-    def find(cls, user_id: str, workflow_id: str):
+    async def find(cls, user_id: str, workflow_id: str):
         """Find a workflow by ID, respecting user ownership and access level.
 
         Args:
@@ -95,7 +95,7 @@ class Workflow(DBModel):
         Returns:
             The Workflow object if found and accessible, otherwise None.
         """
-        workflow = cls.get(workflow_id)
+        workflow = await cls.get(workflow_id)
         return (
             workflow
             if workflow and (workflow.user_id == user_id or workflow.access == "public")
@@ -103,12 +103,12 @@ class Workflow(DBModel):
         )
 
     @classmethod
-    def create(cls, user_id: str, name: str, graph: dict[str, Any], **kwargs):
+    async def create(cls, user_id: str, name: str, graph: dict[str, Any], **kwargs):
         """
         Create a new image in the database.
         """
 
-        return super().create(
+        return await super().create(
             id=create_time_ordered_uuid(),
             user_id=user_id,
             name=name,
@@ -117,7 +117,7 @@ class Workflow(DBModel):
         )
 
     @classmethod
-    def paginate(
+    async def paginate(
         cls,
         user_id: str | None = None,
         limit: int = 100,
@@ -175,7 +175,8 @@ class Workflow(DBModel):
         if start_key:
             conditions.append(Field("id").greater_than(start_key))
 
-        results, last_evaluated_key = cls.adapter().query(
+        adapter = await cls.adapter()
+        results, last_evaluated_key = await adapter.query(
             columns=sanitized_columns,
             condition=ConditionBuilder(ConditionGroup(conditions, LogicalOperator.AND)),
             order_by="updated_at",
@@ -202,10 +203,12 @@ class Workflow(DBModel):
         """
         return Graph(
             nodes=[
-                node for node in [
+                node
+                for node in [
                     BaseNode.from_dict(node, skip_errors=True)[0]
                     for node in self.graph["nodes"]
-                ] if node is not None
+                ]
+                if node is not None
             ],
             edges=self.graph["edges"],
         )

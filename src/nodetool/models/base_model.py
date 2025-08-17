@@ -77,9 +77,9 @@ class DBModel(BaseModel):
         return cls.get_table_schema()["table_name"]
 
     @classmethod
-    def adapter(cls) -> DatabaseAdapter:
+    async def adapter(cls) -> DatabaseAdapter:
         if not hasattr(cls, "__adapter"):
-            cls.__adapter = Environment.get_database_adapter(
+            cls.__adapter = await Environment.get_database_adapter(
                 fields=cls.db_fields(),
                 table_schema=cls.get_table_schema(),
                 indexes=cls.get_indexes(),
@@ -102,53 +102,57 @@ class DBModel(BaseModel):
         return cls._indexes if cls.has_indexes() else []  # type: ignore
 
     @classmethod
-    def create_table(cls):
+    async def create_table(cls):
         """
         Create the DB table for the model and its indexes.
         """
-        cls.adapter().create_table()
+        adapter = await cls.adapter()
+        await adapter.create_table()
 
         # Create any defined indexes
         for index in cls.get_indexes():
-            cls.adapter().create_index(
+            await adapter.create_index(
                 index_name=index["name"],
                 columns=index["columns"],
                 unique=index["unique"],
             )
 
     @classmethod
-    def create_indexes(cls):
+    async def create_indexes(cls):
         """
         Create all defined indexes for the model.
         """
+        adapter = await cls.adapter()
         for index in cls.get_indexes():
-            cls.adapter().create_index(
+            await adapter.create_index(
                 index_name=index["name"],
                 columns=index["columns"],
                 unique=index["unique"],
             )
 
     @classmethod
-    def drop_indexes(cls):
+    async def drop_indexes(cls):
         """
         Drop all defined indexes for the model.
         """
+        adapter = await cls.adapter()
         for index in cls.get_indexes():
-            cls.adapter().drop_index(index["name"])
+            await adapter.drop_index(index["name"])
 
     @classmethod
-    def drop_table(cls):
+    async def drop_table(cls):
         """
         Drop the DB table for the model and its indexes.
         """
+        adapter = await cls.adapter()
         # Drop any defined indexes first
         for index in cls.get_indexes():
-            cls.adapter().drop_index(index["name"])
+            await adapter.drop_index(index["name"])
 
-        cls.adapter().drop_table()
+        await adapter.drop_table()
 
     @classmethod
-    def query(
+    async def query(
         cls,
         condition: ConditionBuilder | None = None,
         limit: int = 100,
@@ -167,27 +171,33 @@ class DBModel(BaseModel):
         Returns:
             A tuple containing a list of items that match the query conditions and the last evaluated key.
         """
-        items, key = cls.adapter().query(
+        adapter = await cls.adapter()
+        items, key = await adapter.query(
             condition=condition,
             limit=limit,
             reverse=reverse,
         )
-        def try_load_model(item: dict[str, Any]) -> Any:    
+
+        def try_load_model(item: dict[str, Any]) -> Any:
             try:
                 return cls(**item)
             except Exception as e:
                 log.error(f"Error loading model: {e}")
                 return None
-        def filter_none(items: list[Any]) -> list[Any]: 
+
+        def filter_none(items: list[Any]) -> list[Any]:
             return [item for item in items if item is not None]
+
         return filter_none([try_load_model(item) for item in items]), key
 
     @classmethod
-    def create(cls, **kwargs):
+    async def create(cls, **kwargs):
         """
         Create a model instance from keyword arguments and save it.
         """
-        return cls(**kwargs).save()
+        instance = cls(**kwargs)
+        await instance.save()
+        return instance
 
     def before_save(self):
         """
@@ -196,12 +206,13 @@ class DBModel(BaseModel):
         """
         pass
 
-    def save(self):
+    async def save(self):
         """
         Save a model instance and return the instance.
         """
         self.before_save()
-        self.adapter().save(self.model_dump())
+        adapter = await self.__class__.adapter()
+        await adapter.save(self.model_dump())
         return self
 
     @classmethod
@@ -216,20 +227,22 @@ class DBModel(BaseModel):
         }
 
     @classmethod
-    def get(cls, key: str | int):
+    async def get(cls, key: str | int):
         """
         Retrieve a model instance from the DB using a key.
         """
-        item = cls.adapter().get(key)
+        adapter = await cls.adapter()
+        item = await adapter.get(key)
         if item is None:
             return None
         return cls(**item)
 
-    def reload(self):
+    async def reload(self):
         """
         Reload the model instance from the DB.
         """
-        item = self.adapter().get(self.partition_value())
+        adapter = await self.__class__.adapter()
+        item = await adapter.get(self.partition_value())
         if item is None:
             raise ValueError(f"Item not found: {self.partition_value()}")
         for key, value in item.items():
@@ -237,28 +250,30 @@ class DBModel(BaseModel):
         return self
 
     def partition_value(self) -> str:
-        """
-        Get the value of the hash key.
-        """
-        return getattr(self, self.adapter().get_primary_key())
+        """Get the value of the hash key from the table schema."""
+        pk = self.__class__.get_table_schema().get("primary_key", "id")
+        return getattr(self, pk)
 
-    def delete(self):
+    async def delete(self):
         """
         Delete the model instance from the database.
         """
-        self.adapter().delete(self.partition_value())
+        adapter = await self.__class__.adapter()
+        await adapter.delete(self.partition_value())
 
-    def update(self, **kwargs):
+    async def update(self, **kwargs):
         """
         Update the model instance and save it.
         """
         for key, value in kwargs.items():
             setattr(self, key, value)
-        return self.save()
+        await self.save()
+        return self
 
     @classmethod
-    def list_indexes(cls) -> list[dict[str, Any]]:
+    async def list_indexes(cls) -> list[dict[str, Any]]:
         """
         List all indexes defined on the model's table.
         """
-        return cls.adapter().list_indexes()
+        adapter = await cls.adapter()
+        return await adapter.list_indexes()
