@@ -12,6 +12,7 @@ from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.common.environment import Environment
 
 from nodetool.models.job import Job as JobModel
+import asyncio
 
 
 log = Environment.get_logger()
@@ -36,7 +37,7 @@ async def get(id: str, user: str = Depends(current_user)) -> Job:
     """
     Returns the status of a job.
     """
-    job = JobModel.find(user, id)
+    job = await asyncio.to_thread(JobModel.find, user, id)
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
     else:
@@ -59,8 +60,8 @@ async def index(
     if page_size is None:
         page_size = 10
 
-    jobs, next_cursor = JobModel.paginate(
-        user_id=user, workflow_id=workflow_id, limit=page_size, start_key=cursor
+    jobs, next_cursor = await asyncio.to_thread(
+        JobModel.paginate, user_id=user, workflow_id=workflow_id, limit=page_size, start_key=cursor
     )
 
     return JobList(next=next_cursor, jobs=[from_model(job) for job in jobs])
@@ -71,7 +72,7 @@ async def update(id: str, req: JobUpdate, user: str = Depends(current_user)) -> 
     """
     Update a job.
     """
-    job = JobModel.find(user, id)
+    job = await asyncio.to_thread(JobModel.find, user, id)
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
     else:
@@ -80,7 +81,7 @@ async def update(id: str, req: JobUpdate, user: str = Depends(current_user)) -> 
         else:
             job.status = req.status
             job.error = req.error
-            job.save()
+            await asyncio.to_thread(job.save)
             return from_model(job)
 
 
@@ -90,7 +91,8 @@ async def create(
     user: str = Depends(current_user),
 ):
 
-    job = JobModel.create(
+    job = await asyncio.to_thread(
+        JobModel.create,
         job_type=job_request.job_type,
         workflow_id=job_request.workflow_id,
         user_id=user,

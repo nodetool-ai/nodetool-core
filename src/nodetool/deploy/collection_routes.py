@@ -13,6 +13,7 @@ from fastapi import APIRouter, File, HTTPException, Header, UploadFile
 
 from nodetool.common.environment import Environment
 from nodetool.indexing.service import index_file_to_collection
+import aiofiles
 
 
 def create_collection_router() -> APIRouter:
@@ -29,8 +30,12 @@ def create_collection_router() -> APIRouter:
         tmp_dir = tempfile.mkdtemp()
         tmp_path = os.path.join(tmp_dir, file.filename or "uploaded_file")
         try:
-            with open(tmp_path, "wb") as buffer:
-                shutil.copyfileobj(file.file, buffer)
+            async with aiofiles.open(tmp_path, "wb") as buffer:
+                while True:
+                    chunk = await file.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    await buffer.write(chunk)
 
             file_path = tmp_path
             mime_type = file.content_type or "application/octet-stream"

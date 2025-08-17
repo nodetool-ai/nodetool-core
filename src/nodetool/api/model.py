@@ -39,6 +39,7 @@ import sys
 import os
 from pathlib import Path
 import shlex
+import asyncio
 
 log = Environment.get_logger()
 router = APIRouter(prefix="/api/models", tags=["models"])
@@ -302,24 +303,9 @@ if not Environment.is_production():
         )
 
     @router.post("/open_in_explorer")
-    async def open_in_explorer(
-        path: str = Query(...), user: str = Depends(current_user)
-    ):
-        """Opens the specified path in the system's default file explorer.
-
-        Security measures:
-        - The requested path must be within a pre-configured list of safe root directories
-          (e.g., Ollama models directory, Hugging Face cache).
-        - The input path is sanitized using `shlex.quote` for non-Windows platforms before
-          being passed to subprocess commands to prevent command injection.
-
-        Args:
-            path (str): The path to open in the file explorer.
-            user (str): The current user, injected by FastAPI dependency.
-
-        Returns:
-            dict: A dictionary indicating success (e.g., {"status": "success", "path": "/validated/path"})
-                  or an error (e.g., {"status": "error", "message": "..."}).
+    async def open_in_explorer(path: str = Query(...), user: str = Depends(current_user)):
+        """
+        Securely open a path in the system file browser using non-blocking subprocess.
         """
         safe_roots = _get_valid_explorable_roots()
 
@@ -351,13 +337,15 @@ if not Environment.is_production():
             sane_path_to_open = shlex.quote(path_to_open)
 
             if sys.platform == "win32":
-                # Using a list argument with subprocess.run ensures the path is passed as a single
-                # argument to Explorer, mitigating command-injection risks even without quoting.
-                subprocess.run(["explorer", path_to_open], check=True)
+                # explorer expects raw path; create_subprocess_exec avoids shell
+                proc = await asyncio.create_subprocess_exec("explorer", path_to_open)
+                await proc.wait()
             elif sys.platform == "darwin":
-                subprocess.run(["open", sane_path_to_open], check=True)
+                proc = await asyncio.create_subprocess_exec("open", sane_path_to_open)
+                await proc.wait()
             else:
-                subprocess.run(["xdg-open", sane_path_to_open], check=True)
+                proc = await asyncio.create_subprocess_exec("xdg-open", sane_path_to_open)
+                await proc.wait()
             return {"status": "success", "path": path_to_open}
         except Exception as e:
             log.error(

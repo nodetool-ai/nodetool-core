@@ -22,6 +22,8 @@ from nodetool.indexing.ingestion import (
     default_ingestion_workflow,
     find_input_nodes,
 )
+import aiofiles
+import asyncio
 
 router = APIRouter(prefix="/api/collections", tags=["collections"])
 
@@ -186,8 +188,13 @@ async def index(
     tmp_dir = tempfile.mkdtemp()
     tmp_path = os.path.join(tmp_dir, file.filename or "uploaded_file")
     try:
-        with open(tmp_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+        # Async copy of uploaded file to disk
+        async with aiofiles.open(tmp_path, "wb") as buffer:
+            while True:
+                chunk = await file.read(1024 * 1024)
+                if not chunk:
+                    break
+                await buffer.write(chunk)
 
         file_path = tmp_path
         mime_type = file.content_type or "application/octet-stream"

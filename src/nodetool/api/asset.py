@@ -103,7 +103,8 @@ async def index(
     if content_type is None and parent_id is None:
         parent_id = user
 
-    assets, next_cursor = AssetModel.paginate(
+    assets, next_cursor = await asyncio.to_thread(
+        AssetModel.paginate,
         user_id=user,
         parent_id=parent_id,
         content_type=content_type,
@@ -163,7 +164,8 @@ async def search_assets_global(
     
     try:
         # Search assets globally using the model's search method
-        assets, next_cursor, folder_paths = AssetModel.search_assets_global(
+        assets, next_cursor, folder_paths = await asyncio.to_thread(
+            AssetModel.search_assets_global,
             user_id=user,
             query=query.strip(),
             content_type=content_type,
@@ -218,22 +220,20 @@ async def list_package_assets():
         assets = registry.list_assets()
 
         # Convert to Pydantic models
-        formatted_assets = [
-            PackageAsset(
-                id=f"pkg:{asset.package_name}/{asset.name}",
-                name=asset.name,
-                package_name=asset.package_name,
-                virtual_path=f"/api/assets/packages/{asset.package_name}/{asset.name}",
-            )
-            for asset in assets
-        ]
-
-        return PackageAssetList(assets=formatted_assets)
-    except Exception as e:
-        log.exception(f"Error listing package assets: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail=f"Error listing package assets: {str(e)}"
+        return PackageAssetList(
+            assets=[
+                PackageAsset(
+                    id=asset.id,
+                    name=asset.name,
+                    package_name=asset.package_name,
+                    virtual_path=asset.virtual_path,
+                )
+                for asset in assets
+            ]
         )
+    except Exception as e:
+        log.error(f"Error listing package assets: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to list package assets")
 
 
 @router.get("/packages/{package_name}", response_model=PackageAssetList)
@@ -304,7 +304,7 @@ async def get_package_asset(package_name: str, asset_name: str):
         )
 
         # Get the physical path to the asset file
-        if not os.path.exists(asset_path):
+        if not await asyncio.to_thread(os.path.exists, asset_path):
             raise HTTPException(
                 status_code=404, detail=f"Asset file not found at path: {asset_path}"
             )
@@ -353,7 +353,7 @@ async def get(id: str, user: str = Depends(current_user)) -> Asset:
             thumb_url=None,
             created_at="",
         )
-    asset = AssetModel.find(user, id)
+    asset = await asyncio.to_thread(AssetModel.find, user, id)
     if asset is None:
         log.info("Asset not found: %s", id)
         raise HTTPException(status_code=404, detail="Asset not found")
@@ -369,7 +369,7 @@ async def update(
     """
     Updates the asset for the given id.
     """
-    asset = AssetModel.find(user, id)
+    asset = await asyncio.to_thread(AssetModel.find, user, id)
 
     if asset is None:
         raise HTTPException(status_code=404, detail="Asset not found")
@@ -389,7 +389,7 @@ async def update(
         asset.size = len(data_bytes)  # Update size when data is updated
         await storage.upload(asset.file_name, BytesIO(data_bytes))
 
-    asset.save()
+    await asyncio.to_thread(asset.save)
     return from_model(asset)
 
 
@@ -399,7 +399,7 @@ async def delete(id: str, user: str = Depends(current_user)):
     Deletes the asset for the given id. If the asset is a folder, it deletes all contents recursively.
     """
     try:
-        asset = AssetModel.find(user, id)
+        asset = await asyncio.to_thread(AssetModel.find, user, id)
         if asset is None:
             log.info(f"Asset not found: {id}")
             raise HTTPException(status_code=404, detail="Asset not found")
@@ -418,9 +418,7 @@ async def delete(id: str, user: str = Depends(current_user)):
 async def delete_folder(user_id: str, folder_id: str) -> List[str]:
     deleted_asset_ids = []
     try:
-        assets, next_cursor = AssetModel.paginate(
-            user_id=user_id, parent_id=folder_id, limit=10000
-        )
+        assets, next_cursor = await asyncio.to_thread(AssetModel.paginate, user_id=user_id, parent_id=folder_id, limit=10000)
         # Delete children first
         for index, asset in enumerate(assets, 1):
             if asset.content_type == "folder":
@@ -431,7 +429,7 @@ async def delete_folder(user_id: str, folder_id: str) -> List[str]:
                 deleted_asset_ids.append(asset.id)
 
         # Delete folder
-        folder = AssetModel.find(user_id, folder_id)
+        folder = await asyncio.to_thread(AssetModel.find, user_id, folder_id)
         if folder:
             await delete_single_asset(folder)
             deleted_asset_ids.append(folder_id)
@@ -448,7 +446,7 @@ async def delete_folder(user_id: str, folder_id: str) -> List[str]:
 
 async def delete_single_asset(asset: AssetModel):
     try:
-        asset.delete()
+        await asyncio.to_thread(asset.delete)
         storage = Environment.get_asset_storage()
         try:
             await storage.delete(asset.thumb_file_name)
@@ -485,7 +483,7 @@ async def create(
     file_size = req.size  # Default size from request
 
     if req.workflow_id:
-        workflow = Workflow.get(req.workflow_id)
+        workflow = await asyncio.to_thread(Workflow.get, req.workflow_id)
         if workflow and workflow.user_id != user:
             raise HTTPException(status_code=404, detail="Workflow not found")
 
@@ -503,15 +501,15 @@ async def create(
             elif "image" in req.content_type:
                 thumbnail = await create_image_thumbnail(file_io, 512, 512)
 
-        asset = AssetModel.create(
+        asset = await asyncio.to_thread(
+            AssetModel.create,
             workflow_id=req.workflow_id,
             user_id=user,
             parent_id=req.parent_id,
             name=req.name,
             content_type=req.content_type,
+            size=req.size or 0,
             metadata=req.metadata,
-            duration=duration,
-            size=file_size,
         )
         if file_io:
             file_io.seek(0)
@@ -523,7 +521,7 @@ async def create(
     except Exception as e:
         log.exception(e, stack_info=True)
         if asset:
-            asset.delete()
+            await asyncio.to_thread(asset.delete)
         raise HTTPException(status_code=500, detail="Error uploading asset")
 
     return from_model(asset)
@@ -559,12 +557,12 @@ async def download_assets(
             continue
         processed_ids.add(asset_id)
 
-        asset = AssetModel.get(asset_id)
+        asset = await asyncio.to_thread(AssetModel.get, asset_id)
         if asset:
             assets_to_zip[asset.id] = asset
             all_assets_with_parents[asset.id] = asset
             if asset.content_type == "folder":
-                child_assets = AssetModel.get_children(asset.id)
+                child_assets = await asyncio.to_thread(AssetModel.get_children, asset.id)
                 queue.extend([child.id for child in child_assets])
     log.info(f"Found {len(assets_to_zip)} assets/folders to include in the zip.")
 
@@ -579,7 +577,7 @@ async def download_assets(
         if parent_id in all_assets_with_parents:
             continue
 
-        parent_asset = AssetModel.get(parent_id)
+        parent_asset = await asyncio.to_thread(AssetModel.get, parent_id)
         if parent_asset:
             all_assets_with_parents[parent_id] = parent_asset
             if (
@@ -681,7 +679,7 @@ async def get_assets_recursive(folder_id: str, user: str = Depends(current_user)
     """
     Get all assets in a folder recursively, including the folder structure.
     """
-    assets = AssetModel.get_assets_recursive(user, folder_id)
+    assets = await asyncio.to_thread(AssetModel.get_assets_recursive, user, folder_id)
     return assets
 
 
@@ -691,7 +689,7 @@ async def get_by_filename(filename: str, user: str = Depends(current_user)) -> A
     Returns the asset for the given filename.
     """
     # Query for assets by the filename
-    assets, _ = AssetModel.query(condition=Field("file_name").equals(filename))
+    assets, _ = await asyncio.to_thread(AssetModel.query, condition=Field("file_name").equals(filename))
     # Get the first matching asset if any exist
     asset = next(iter(assets), None)
 

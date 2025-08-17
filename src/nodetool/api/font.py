@@ -4,6 +4,7 @@ import platform
 import subprocess
 import os
 from pydantic import BaseModel
+import asyncio
 
 
 class FontResponse(BaseModel):
@@ -32,8 +33,9 @@ async def get_system_fonts() -> FontResponse:
             ]
 
             for font_dir in font_dirs:
-                if os.path.exists(font_dir):
-                    for font_file in os.listdir(font_dir):
+                if await asyncio.to_thread(os.path.exists, font_dir):
+                    entries = await asyncio.to_thread(os.listdir, font_dir)
+                    for font_file in entries:
                         if font_file.endswith((".ttf", ".otf", ".ttc", ".dfont")):
                             # Strip extension to get the font name
                             font_name = os.path.splitext(font_file)[0]
@@ -45,8 +47,9 @@ async def get_system_fonts() -> FontResponse:
         try:
             # Windows font directory
             font_dir = os.path.join(os.environ["WINDIR"], "Fonts")
-            if os.path.exists(font_dir):
-                for font_file in os.listdir(font_dir):
+            if await asyncio.to_thread(os.path.exists, font_dir):
+                entries = await asyncio.to_thread(os.listdir, font_dir)
+                for font_file in entries:
                     if font_file.endswith((".ttf", ".otf", ".ttc")):
                         # Strip extension to get the font name
                         font_name = os.path.splitext(font_file)[0]
@@ -64,7 +67,7 @@ async def get_system_fonts() -> FontResponse:
             ]
 
             for font_dir in font_dirs:
-                if os.path.exists(font_dir):
+                if await asyncio.to_thread(os.path.exists, font_dir):
                     # Use find to recursively list font files
                     cmd = [
                         "find",
@@ -77,10 +80,15 @@ async def get_system_fonts() -> FontResponse:
                         "-name",
                         "*.otf",
                     ]
-                    result = subprocess.run(cmd, capture_output=True, text=True)
+                    proc = await asyncio.create_subprocess_exec(
+                        *cmd,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE,
+                    )
+                    stdout, _ = await proc.communicate()
 
-                    if result.returncode == 0:
-                        for line in result.stdout.splitlines():
+                    if proc.returncode == 0 and stdout:
+                        for line in stdout.decode().splitlines():
                             if line.strip():
                                 font_file = os.path.basename(line)
                                 font_name = os.path.splitext(font_file)[0]
