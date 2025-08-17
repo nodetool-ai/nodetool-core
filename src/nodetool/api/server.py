@@ -161,10 +161,4 @@ def run_uvicorn_server(app: Any, host: str, port: int, reload: bool) -> None:
     uvicorn(app=app, host=host, port=port, reload=reload, reload_dirs=reload_dirs)
 
 
-# Legacy exports expected by other modules
-def mount_static_folder(app: FastAPI, static_folder: str | None):
-    if static_folder and os.path.exists(static_folder):
-        print(f"Mounting static folder: {static_folder}")
-        app.mount("/", StaticFiles(directory=static_folder, html=True), name="static")
-
-__all__ = ["create_app", "run_uvicorn_server", "ExtensionRouterRegistry", "mount_static_folder"]
+__all__ = ["create_app", "run_uvicorn_server", "ExtensionRouterRegistry"]
