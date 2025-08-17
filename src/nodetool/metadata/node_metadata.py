@@ -72,6 +72,10 @@ class NodeMetadata(BaseModel):
     expose_as_tool: bool = Field(
         default=False, description="Whether the node is exposed as a tool"
     )
+    supports_dynamic_outputs: bool = Field(
+        default=False,
+        description="Whether the node can declare outputs dynamically at runtime (only for dynamic nodes)",
+    )
 
 
 class ExampleMetadata(BaseModel):

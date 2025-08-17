@@ -288,9 +288,11 @@ class BaseNode(BaseModel):
     _ui_properties: dict[str, Any] = {}
     _layout: str = "default"
     _dynamic_properties: dict[str, Any] = {}
+    _dynamic_outputs: dict[str, TypeMetadata] = {}
     _is_dynamic: bool = False
     _requires_grad: bool = False
     _expose_as_tool: bool = False
+    _supports_dynamic_outputs: bool = False
 
     def __init__(
         self,
@@ -298,6 +300,7 @@ class BaseNode(BaseModel):
         parent_id: str | None = None,
         ui_properties: dict[str, Any] = {},
         dynamic_properties: dict[str, Any] = {},
+        dynamic_outputs: dict[str, TypeMetadata] = {},
         **data: Any,
     ):
         super().__init__(**data)
@@ -305,6 +308,7 @@ class BaseNode(BaseModel):
         self._parent_id = parent_id
         self._ui_properties = ui_properties
         self._dynamic_properties = dynamic_properties
+        self._dynamic_outputs = dynamic_outputs
 
     def required_inputs(self):
         return []
@@ -312,6 +316,14 @@ class BaseNode(BaseModel):
     @classmethod
     def expose_as_tool(cls):
         attr = getattr(cls, "_expose_as_tool", False)
+        if isinstance(attr, bool):
+            return attr
+        # If it's a Pydantic Field / FieldInfo return its default, else direct.
+        return bool(getattr(attr, "default", False))
+
+    @classmethod
+    def supports_dynamic_outputs(cls):
+        attr = getattr(cls, "_supports_dynamic_outputs", False)
         if isinstance(attr, bool):
             return attr
         # If it's a Pydantic Field / FieldInfo return its default, else direct.
@@ -404,6 +416,7 @@ class BaseNode(BaseModel):
             parent_id=node.get("parent_id"),
             ui_properties=node.get("ui_properties", {}),
             dynamic_properties=node.get("dynamic_properties", {}),
+            dynamic_outputs=node.get("dynamic_outputs", {}),
         )
         data = node.get("data", {})
         # `set_node_properties` will raise ValueError if skip_errors is False and an error occurs.
@@ -492,6 +505,7 @@ class BaseNode(BaseModel):
             is_dynamic=cls.is_dynamic(),
             is_streaming=cls.is_streaming(),
             expose_as_tool=cls.expose_as_tool(),
+            supports_dynamic_outputs=cls.supports_dynamic_outputs(),
         )
 
     @classmethod
@@ -665,7 +679,8 @@ class BaseNode(BaseModel):
         """
         res_for_update = {}
 
-        for o in self.outputs():
+        # Include both class-declared and instance-declared dynamic outputs
+        for o in self.outputs_for_instance():
             value = result.get(o.name)
             if TORCH_AVAILABLE and isinstance(value, torch.Tensor):
                 continue
@@ -836,6 +851,15 @@ class BaseNode(BaseModel):
 
         return None
 
+    def find_output_instance(self, name: str) -> OutputSlot | None:
+        """
+        Instance-aware lookup for an output slot. Checks dynamic outputs first,
+        then falls back to class-declared outputs.
+        """
+        if name in self._dynamic_outputs:
+            return OutputSlot(type=self._dynamic_outputs[name], name=name)
+        return self.__class__.find_output(name)
+
     @classmethod
     def find_output_by_index(cls, index: int) -> OutputSlot:
         """
@@ -923,6 +947,46 @@ class BaseNode(BaseModel):
                 f"Invalid return type for node {cls.__name__}: {return_type} ({e})"
             )
 
+    def get_dynamic_output_slots(self) -> list[OutputSlot]:
+        """
+        Returns OutputSlot objects for instance dynamic outputs.
+        """
+        return [
+            OutputSlot(type=tm, name=name) for name, tm in self._dynamic_outputs.items()
+        ]
+
+    def outputs_for_instance(self) -> list[OutputSlot]:
+        """
+        Combine class-declared outputs with instance-declared dynamic outputs.
+        """
+        class_outputs = self.__class__.outputs()
+        dynamic_outputs = self.get_dynamic_output_slots() if self._is_dynamic else []
+        existing = {o.name for o in class_outputs}
+        dynamic_unique = [o for o in dynamic_outputs if o.name not in existing]
+        return [*class_outputs, *dynamic_unique]
+
+    def add_output(
+        self, name: str, python_type: Type | UnionType | None = None
+    ) -> None:
+        """
+        Add a dynamic output to this instance (only effective if node is dynamic).
+        """
+        if not self._is_dynamic:
+            return
+        try:
+            tm = (
+                type_metadata(python_type)
+                if python_type is not None
+                else TypeMetadata(type="any")
+            )
+        except Exception:
+            tm = TypeMetadata(type="any")
+        self._dynamic_outputs[name] = tm
+
+    def remove_output(self, name: str) -> None:
+        if name in self._dynamic_outputs:
+            del self._dynamic_outputs[name]
+
     @classmethod
     def get_model_info(cls):
         """
@@ -989,6 +1053,9 @@ class BaseNode(BaseModel):
         }
 
     async def convert_output(self, context: Any, output: Any) -> Any:
+        # If node is dynamic and returns a dict, treat keys as output handles
+        if self.is_dynamic() and isinstance(output, dict):
+            return output
         if type(self.return_type()) is dict:
             return output
         elif is_output_type(self.return_type()):

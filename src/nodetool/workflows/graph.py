@@ -85,7 +85,7 @@ class Graph(BaseModel):
 
         Args:
             graph (dict[str, Any]): The dictionary representing the Graph.
-        
+
         Returns:
             Graph: An instance of the Graph, potentially with fewer nodes/edges than specified
                    in the input if errors were encountered.
@@ -102,7 +102,7 @@ class Graph(BaseModel):
 
         valid_nodes = []
         valid_node_ids = set()
-        
+
         # Process nodes, collecting valid ones
         for node_data in graph["nodes"]:
             try:
@@ -112,9 +112,11 @@ class Graph(BaseModel):
                 if node_id in properties_with_edges:
                     data = filtered_node_data.get("data", {})
                     connected_properties = properties_with_edges[node_id]
-                    filtered_data = {k: v for k, v in data.items() if k not in connected_properties}
+                    filtered_data = {
+                        k: v for k, v in data.items() if k not in connected_properties
+                    }
                     filtered_node_data["data"] = filtered_data
-                
+
                 result = BaseNode.from_dict(filtered_node_data, skip_errors=skip_errors)
                 if result is not None and result[0] is not None:
                     valid_nodes.append(result[0])
@@ -123,40 +125,42 @@ class Graph(BaseModel):
                 if not skip_errors:
                     raise
                 # If skip_errors is True, skip this node
-        
+
         # Process edges, filtering out invalid ones
         valid_edges = []
         for edge_data in graph["edges"]:
             try:
                 # Check if edge has required fields
-                if ("sourceHandle" not in edge_data or 
-                    "targetHandle" not in edge_data or
-                    "source" not in edge_data or 
-                    "target" not in edge_data):
+                if (
+                    "sourceHandle" not in edge_data
+                    or "targetHandle" not in edge_data
+                    or "source" not in edge_data
+                    or "target" not in edge_data
+                ):
                     if skip_errors:
                         continue  # Skip malformed edges
                     else:
                         # Let Pydantic handle the validation error
                         pass
-                
+
                 # Check if both source and target nodes exist in valid nodes
                 source_id = edge_data.get("source")
                 target_id = edge_data.get("target")
-                
-                if (source_id in valid_node_ids and target_id in valid_node_ids):
+
+                if source_id in valid_node_ids and target_id in valid_node_ids:
                     valid_edges.append(edge_data)
                 elif skip_errors:
                     continue  # Skip edges connected to non-existent nodes
                 else:
                     # Keep the edge and let downstream validation handle it
                     valid_edges.append(edge_data)
-                    
+
             except Exception:
                 if skip_errors:
                     continue
                 else:
                     raise
-        
+
         return cls(
             nodes=valid_nodes,
             edges=valid_edges,
@@ -295,8 +299,8 @@ class Graph(BaseModel):
                 source_node_class = source_node.__class__
                 target_node_class = target_node.__class__
 
-                # Get source output type (find_output is a class method)
-                source_output = source_node_class.find_output(edge.sourceHandle)
+                # Get source output type (use instance method to support dynamic outputs)
+                source_output = source_node.find_output_instance(edge.sourceHandle)
                 if not source_output:
                     validation_errors.append(
                         f"{edge.target}: Output '{edge.sourceHandle}' not found on source node {source_node_class.__name__}"

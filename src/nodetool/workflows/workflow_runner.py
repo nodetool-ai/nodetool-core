@@ -271,8 +271,8 @@ class WorkflowRunner:
             source_cls = source_node.__class__
             target_cls = target_node.__class__
 
-            # 3 – source handle must be an output on the *source* node
-            if source_cls.find_output(edge.sourceHandle) is None:
+            # 3 – source handle must be an output on the *source* node (instance-aware)
+            if source_node.find_output_instance(edge.sourceHandle) is None:  # type: ignore
                 removed.append(edge.id or "<unknown>")
                 continue
 

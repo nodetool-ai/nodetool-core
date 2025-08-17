@@ -1,3 +1,4 @@
+from nodetool.metadata.type_metadata import TypeMetadata
 from pydantic import BaseModel, Field
 
 
@@ -11,6 +12,7 @@ class Node(BaseModel):
     data: Any = Field(default_factory=dict)
     ui_properties: Any = Field(default_factory=dict)
     dynamic_properties: dict[str, Any] = Field(default_factory=dict)
+    dynamic_outputs: dict[str, TypeMetadata] = Field(default_factory=dict)
 
 
 class Edge(BaseModel):

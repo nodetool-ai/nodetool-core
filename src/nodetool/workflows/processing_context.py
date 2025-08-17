@@ -2094,21 +2094,24 @@ class ProcessingContext:
             f"Could not find font '{font_name}' in system locations"
         )
 
-    def get_output_connected_nodes(self, node: Union[str, BaseNode]) -> list[BaseNode]:
+    def get_nodes_connected_to_output(
+        self, node_id: str, source_handle: str
+    ) -> list[BaseNode]:
         """
-        Returns all nodes connected to the outputs of the given node.
+        Returns all nodes connected to the output of the given node.
 
         Args:
-            node (Union[str, BaseNode]): The node or node ID to find connections for.
+            node_id (str): The ID of the node to find connections for.
+            source_handle (str): The handle of the output to find connections for.
 
         Returns:
             list[BaseNode]: List of nodes connected to the outputs of the given node.
         """
-        node_id = node if isinstance(node, str) else node.id
-
         # Get unique target node IDs to avoid duplicates
         connected_node_ids = set(
-            edge.target for edge in self.graph.edges if edge.source == node_id
+            edge.target
+            for edge in self.graph.edges
+            if edge.source == node_id and edge.sourceHandle == source_handle
         )
 
         # Find each node, skipping any that don't exist

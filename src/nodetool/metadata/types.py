@@ -1418,6 +1418,20 @@ class OutputSlot(BaseModel):
     stream: bool = False
 
 
+class ToolCallEvent(BaseType):
+    type: Literal["tool_call"] = "tool_call"
+    id: str
+    name: str
+    args: dict[str, Any]
+
+
+class ToolResultEvent(BaseType):
+    type: Literal["tool_result"] = "tool_result"
+    id: str
+    result: Any
+    error: str | None = None
+
+
 #######################
 # Chat Types
 #######################
