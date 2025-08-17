@@ -1,13 +1,13 @@
 import os
 import asyncio
 import platform
+import multiprocessing
 from typing import Any, List
 import dotenv
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from nodetool.api import collection, file, package, prediction, font
-from nodetool.common.websocket_proxy import WebSocketProxy
 from nodetool.common.environment import Environment
 
 from nodetool.common.huggingface_cache import huggingface_download_endpoint
@@ -24,7 +24,6 @@ from . import asset, job, message, node, storage, workflow, model, settings, thr
 import mimetypes
 
 from nodetool.common.websocket_updates import websocket_updates
-from multiprocessing import Process
 from nodetool.api.openai import create_openai_compatible_router
 
 if platform.system() == "Windows":
@@ -217,7 +216,28 @@ def run_uvicorn_server(app: Any, host: str, port: int, reload: bool) -> None:
         reload_dirs = [parent_dir] + [str(dir) for dir in editable_dirs]
     else:
         reload_dirs = []
-    uvicorn(app=app, host=host, port=port, reload=reload, reload_dirs=reload_dirs)
+
+    if platform.system() == "Windows":
+        loop = "asyncio"
+    else:
+        try:
+            import uvloop  # type: ignore  # noqa: F401
+
+            loop = "uvloop"
+        except Exception:
+            loop = "asyncio"
+
+    workers = 1 if reload else max(1, multiprocessing.cpu_count())
+
+    uvicorn(
+        app=app,
+        host=host,
+        port=port,
+        reload=reload,
+        reload_dirs=reload_dirs,
+        loop=loop,
+        workers=workers,
+    )
 
 
 if __name__ == "__main__":

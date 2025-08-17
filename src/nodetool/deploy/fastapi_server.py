@@ -12,6 +12,8 @@ Migrated from runpod_handler.py to provide a standard HTTP API interface.
 
 import os
 import datetime
+import multiprocessing
+import platform
 from typing import List
 
 import uvicorn
@@ -36,30 +38,30 @@ log = Environment.get_logger()
 
 def create_nodetool_server(
     remote_auth: bool = False,
-    provider: str = "ollama", 
+    provider: str = "ollama",
     default_model: str = "gpt-oss:20b",
     tools: List[str] = [],
     workflows: List[Workflow] = [],
 ) -> FastAPI:
     """Create a FastAPI server instance for NodeTool operations.
-    
+
     Args:
         remote_auth: Whether to use remote authentication
         provider: Default provider to use
         default_model: Default model to use when not specified by client
         tools: List of tool names to enable
         workflows: List of workflows to make available
-        
+
     Returns:
         FastAPI application instance
     """
     # Set authentication mode
     Environment.set_remote_auth(remote_auth)
-    
+
     app = FastAPI(
-        title="NodeTool API Server", 
+        title="NodeTool API Server",
         version="1.0.0",
-        description="FastAPI server for NodeTool operations including chat completions, workflows, and admin tasks"
+        description="FastAPI server for NodeTool operations including chat completions, workflows, and admin tasks",
     )
 
     @app.on_event("startup")
@@ -82,7 +84,7 @@ def create_nodetool_server(
         except Exception as e:  # noqa: BLE001
             log.error(f"Failed to include OpenAI router: {e}")
 
-    @app.on_event("shutdown") 
+    @app.on_event("shutdown")
     async def shutdown_event():
         console.print("NodeTool server shutting down...")
 
@@ -100,7 +102,10 @@ def create_nodetool_server(
     async def ping():
         """Health check with system information."""
         try:
-            return {"status": "healthy", "timestamp": datetime.datetime.now().isoformat()}
+            return {
+                "status": "healthy",
+                "timestamp": datetime.datetime.now().isoformat(),
+            }
         except Exception as e:
             console.print(f"Health check error: {e}")
             raise HTTPException(status_code=500, detail=str(e))
@@ -114,16 +119,16 @@ def run_nodetool_server(
     host: str = "0.0.0.0",
     port: int = 8000,
     remote_auth: bool = False,
-    provider: str = "ollama", 
+    provider: str = "ollama",
     default_model: str = "gpt-oss:20b",
     tools: List[str] = [],
     workflows: List[Workflow] = [],
 ):
     """Run the NodeTool server.
-    
+
     Args:
         host: Host address to serve on
-        port: Port to serve on  
+        port: Port to serve on
         remote_auth: Whether to use remote authentication
         provider: Default provider to use
         default_model: Default model to use when not specified by client
@@ -131,21 +136,30 @@ def run_nodetool_server(
         workflows: List of workflows to make available
     """
     import dotenv
+
     dotenv.load_dotenv()
-    
+
     app = create_nodetool_server(remote_auth, provider, default_model, tools, workflows)
-    
+
     console.print(f"🚀 Starting NodeTool server on {host}:{port}")
-    console.print(f"Chat completions endpoint: http://{host}:{port}/v1/chat/completions")
+    console.print(
+        f"Chat completions endpoint: http://{host}:{port}/v1/chat/completions"
+    )
     console.print(f"Models endpoint: http://{host}:{port}/v1/models")
     console.print(f"Workflows endpoint: http://{host}:{port}/workflows")
     console.print("Admin endpoints:")
     console.print(f"  - Health check: http://{host}:{port}/admin/health")
-    console.print(f"  - HuggingFace download: http://{host}:{port}/admin/models/huggingface/download")
-    console.print(f"  - Ollama download: http://{host}:{port}/admin/models/ollama/download")
+    console.print(
+        f"  - HuggingFace download: http://{host}:{port}/admin/models/huggingface/download"
+    )
+    console.print(
+        f"  - Ollama download: http://{host}:{port}/admin/models/ollama/download"
+    )
     console.print(f"  - Cache scan: http://{host}:{port}/admin/cache/scan")
     console.print(f"  - Cache size: http://{host}:{port}/admin/cache/size")
-    console.print(f"  - Delete HF model: http://{host}:{port}/admin/models/huggingface/{{repo_id}}")
+    console.print(
+        f"  - Delete HF model: http://{host}:{port}/admin/models/huggingface/{{repo_id}}"
+    )
     console.print(f"  - Workflow status: http://{host}:{port}/admin/workflows/status")
     console.print(
         "Authentication mode:",
@@ -155,15 +169,20 @@ def run_nodetool_server(
     console.print("Tools:", tools)
     console.print("Workflows:", [w.name for w in workflows])
     console.print("\\nSend requests with Authorization: Bearer YOUR_TOKEN header")
-    
+
     # Run the server
     try:
-        uvicorn.run(app, host=host, port=port, log_level="info")
+        loop = "asyncio" if platform.system() == "Windows" else "uvloop"
+        workers = max(1, multiprocessing.cpu_count())
+        uvicorn.run(
+            app, host=host, port=port, log_level="info", loop=loop, workers=workers
+        )
     except KeyboardInterrupt:
-        console.print("\\n👋 NodeTool server stopped by user")  
+        console.print("\\n👋 NodeTool server stopped by user")
     except Exception as e:
         console.print(f"❌ Server error: {e}")
         import sys
+
         sys.exit(1)
 
 
@@ -179,11 +198,11 @@ if __name__ == "__main__":
         else []
     )
     port = int(os.getenv("PORT", 8000))
-    
+
     run_nodetool_server(
         remote_auth=remote_auth,
         provider=provider,
         default_model=default_model,
         tools=tools,
-        port=port
+        port=port,
     )
