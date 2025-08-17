@@ -1,4 +1,5 @@
 from typing import List, Optional
+import asyncio
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
@@ -44,7 +45,7 @@ async def list_available_packages(
     user: str = Depends(current_user),
 ) -> PackageListResponse:
     """List all available packages from the registry."""
-    packages = registry.list_available_packages()
+    packages = await asyncio.to_thread(registry.list_available_packages)
     return PackageListResponse(packages=packages, count=len(packages))
 
 
@@ -89,7 +90,7 @@ async def list_installed_packages(
     user: str = Depends(current_user),
 ) -> InstalledPackageListResponse:
     """List all installed packages."""
-    packages = registry.list_installed_packages()
+    packages = await asyncio.to_thread(registry.list_installed_packages)
     return InstalledPackageListResponse(packages=packages, count=len(packages))
 
 
