@@ -50,44 +50,51 @@ def test_get_ollama_base_path_not_found(mock_get_ollama_dir):
 # --- Tests for open_in_explorer ---
 
 @patch("nodetool.api.model._get_valid_explorable_roots")
-@patch("nodetool.api.model.subprocess.run")
-def test_open_in_explorer_success_ollama_path(mock_subprocess_run, mock_get_roots):
+@patch("nodetool.api.model.asyncio.create_subprocess_exec")
+def test_open_in_explorer_success_ollama_path(mock_create_subprocess, mock_get_roots):
     """Test opening a valid path within the Ollama models directory."""
     mock_get_roots.return_value = [MOCK_OLLAMA_ROOT, MOCK_HF_CACHE_ROOT]
     valid_path_to_open = MOCK_OLLAMA_ROOT / "some_model"
     
+    # Mock process object with wait coroutine
+    class DummyProc:
+        async def wait(self):
+            return 0
+    mock_create_subprocess.return_value = DummyProc()
+
     response = client.post(f"/api/models/open_in_explorer?path={str(valid_path_to_open)}")
     
     assert response.status_code == 200
     assert response.json() == {"status": "success", "path": str(valid_path_to_open)}
-    mock_subprocess_run.assert_called_once()
+    mock_create_subprocess.assert_called_once()
 
 @patch("nodetool.api.model._get_valid_explorable_roots")
-@patch("nodetool.api.model.subprocess.run")
-def test_open_in_explorer_success_hf_cache_path(mock_subprocess_run, mock_get_roots):
+@patch("nodetool.api.model.asyncio.create_subprocess_exec")
+def test_open_in_explorer_success_hf_cache_path(mock_create_subprocess, mock_get_roots):
     """Test opening a valid path within the Hugging Face cache directory."""
     mock_get_roots.return_value = [MOCK_OLLAMA_ROOT, MOCK_HF_CACHE_ROOT]
     valid_path_to_open = MOCK_HF_CACHE_ROOT / "models--some-model"
     
+    class DummyProc:
+        async def wait(self):
+            return 0
+    mock_create_subprocess.return_value = DummyProc()
+
     response = client.post(f"/api/models/open_in_explorer?path={str(valid_path_to_open)}")
     
     assert response.status_code == 200
     assert response.json() == {"status": "success", "path": str(valid_path_to_open)}
-    mock_subprocess_run.assert_called_once()
+    mock_create_subprocess.assert_called_once()
 
 @patch("nodetool.api.model._get_valid_explorable_roots")
-@patch("nodetool.api.model.subprocess.run")
-def test_open_in_explorer_path_traversal_attempt(mock_subprocess_run, mock_get_roots):
+@patch("nodetool.api.model.asyncio.create_subprocess_exec")
+def test_open_in_explorer_path_traversal_attempt(mock_create_subprocess, mock_get_roots):
     """Test path traversal attempt is blocked when path is outside all safe roots."""
     mock_get_roots.return_value = [MOCK_OLLAMA_ROOT, MOCK_HF_CACHE_ROOT]
     
     malicious_path_str = "/etc/passwd" # A common example for *nix
-    # For Windows, an equivalent might be C:\\Windows\\System32\\config\\SAM
-    # However, Path.resolve() behavior for ".." can be tricky across OS for pure string paths.
-    # Using an absolute path known to be outside the mocked safe roots is more robust.
-    if MOCK_OLLAMA_ROOT.drive: # Assuming windows if drive is present
+    if MOCK_OLLAMA_ROOT.drive: # Windows path case
         malicious_path_str = f"{MOCK_OLLAMA_ROOT.drive}\\Windows\\System32\\drivers\\etc\\hosts"
-
 
     response = client.post(f"/api/models/open_in_explorer?path={malicious_path_str}")
     
@@ -96,7 +103,7 @@ def test_open_in_explorer_path_traversal_attempt(mock_subprocess_run, mock_get_r
         "status": "error",
         "message": "Access denied: Path is outside the allowed directories.",
     }
-    mock_subprocess_run.assert_not_called()
+    mock_create_subprocess.assert_not_called()
 
 @patch("nodetool.api.model._get_valid_explorable_roots")
 def test_open_in_explorer_no_safe_roots_found(mock_get_roots):
@@ -112,13 +119,15 @@ def test_open_in_explorer_no_safe_roots_found(mock_get_roots):
     }
 
 @patch("nodetool.api.model._get_valid_explorable_roots")
-@patch("nodetool.api.model.subprocess.run")
-def test_open_in_explorer_subprocess_error(mock_subprocess_run, mock_get_roots):
-    """Test error handling when subprocess.run fails."""
+@patch("nodetool.api.model.asyncio.create_subprocess_exec")
+def test_open_in_explorer_subprocess_error(mock_create_subprocess, mock_get_roots):
+    """Test error handling when subprocess fails."""
     mock_get_roots.return_value = [MOCK_OLLAMA_ROOT]
     valid_path_to_open = MOCK_OLLAMA_ROOT / "some_model"
     
-    mock_subprocess_run.side_effect = Exception("Process failed") # Simulate subprocess failure
+    async def raise_exc(*args, **kwargs):
+        raise Exception("Process failed")
+    mock_create_subprocess.side_effect = raise_exc
     
     response = client.post(f"/api/models/open_in_explorer?path={str(valid_path_to_open)}")
     
@@ -127,4 +136,4 @@ def test_open_in_explorer_subprocess_error(mock_subprocess_run, mock_get_roots):
         "status": "error",
         "message": "An internal error occurred while attempting to open the path. Please check server logs for details.",
     }
-    mock_subprocess_run.assert_called_once() 
+    mock_create_subprocess.assert_called_once() 
