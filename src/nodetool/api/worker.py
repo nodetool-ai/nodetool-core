@@ -1,3 +1,5 @@
+import asyncio
+import platform
 import dotenv
 from fastapi import FastAPI, WebSocket, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -23,6 +25,9 @@ from nodetool.common.huggingface_models import (
 )
 from nodetool.metadata.types import HuggingFaceModel
 from typing import List
+
+if platform.system() == "Windows":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 try:
     from nodes import init_extra_nodes  # type: ignore
