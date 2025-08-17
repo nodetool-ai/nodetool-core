@@ -375,7 +375,7 @@ class Registry:
             List[Dict[str, Any]]: A list of node metadata dictionaries
         """
         all_nodes = []
-        available_packages = self.list_available_packages()
+        available_packages = await asyncio.to_thread(self.list_available_packages)
 
         async with httpx.AsyncClient(timeout=30.0) as client:
             # Create tasks for all package metadata fetches
