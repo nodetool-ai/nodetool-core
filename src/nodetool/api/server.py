@@ -155,6 +155,16 @@ def create_app(
         print(f"Mounting apps folder: {apps_folder}")
         app.mount("/apps", StaticFiles(directory=apps_folder, html=True), name="apps")
 
+    # Pre-initialize storages to avoid first-request blocking due to lazy init
+    @app.on_event("startup")
+    async def _initialize_storages() -> None:
+        try:
+            # Offload potential filesystem setup to threads
+            await asyncio.to_thread(Environment.get_asset_storage)
+            await asyncio.to_thread(Environment.get_temp_storage)
+        except Exception as e:
+            Environment.get_logger().warning(f"Storage pre-initialization failed: {e}")
+
     @app.get("/health")
     async def health_check() -> str:
         return "OK"

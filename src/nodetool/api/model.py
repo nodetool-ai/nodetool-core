@@ -5,7 +5,7 @@ from nodetool.common.huggingface_cache import has_cached_files
 from nodetool.common.huggingface_file import (
     HFFileInfo,
     HFFileRequest,
-    get_huggingface_file_infos,
+    get_huggingface_file_infos_async,
 )
 from nodetool.common.environment import Environment
 from nodetool.common.language_models import get_all_language_models
@@ -386,8 +386,8 @@ if not Environment.is_production():
         requests: list[HFFileRequest],
         user: str = Depends(current_user),
     ) -> list[HFFileInfo]:
-        # Offload potentially blocking Hugging Face calls
-        return await asyncio.to_thread(get_huggingface_file_infos, requests)
+        # Use async wrapper to avoid blocking the loop
+        return await get_huggingface_file_infos_async(requests)
 
     @router.get("/{model_type}")
     async def index(

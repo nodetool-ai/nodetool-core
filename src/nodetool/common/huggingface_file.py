@@ -1,6 +1,7 @@
 """Helpers for retrieving information about individual Hugging Face files."""
 
 from pydantic import BaseModel
+import asyncio
 from huggingface_hub import HfFileSystem
 
 
@@ -43,3 +44,32 @@ def get_huggingface_file_infos(requests: list[HFFileRequest]) -> list[HFFileInfo
         )
 
     return file_infos
+
+
+async def get_huggingface_file_infos_async(
+    requests: list[HFFileRequest],
+) -> list[HFFileInfo]:
+    """Async wrapper that retrieves file infos without blocking the event loop.
+
+    Uses ``asyncio.to_thread`` to call the synchronous HfFileSystem.info for each
+    request, running them concurrently.
+
+    Parameters
+    ----------
+    requests:
+        A list of :class:`HFFileRequest` describing the files to query.
+
+    Returns
+    -------
+    list[HFFileInfo]
+        Metadata for each requested file, including its size in bytes.
+    """
+
+    fs = HfFileSystem()
+
+    async def fetch(req: HFFileRequest) -> HFFileInfo:
+        info = await asyncio.to_thread(fs.info, f"{req.repo_id}/{req.path}")
+        return HFFileInfo(size=info["size"], repo_id=req.repo_id, path=req.path)
+
+    results = await asyncio.gather(*(fetch(r) for r in requests))
+    return list(results)
