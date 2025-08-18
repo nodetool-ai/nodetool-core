@@ -123,6 +123,9 @@ langchain-openai = "*"
 langchain-ollama = "*"
 langchain-anthropic = "*"
 
+[tool.poetry.group.dev.dependencies]
+aioresponses = ">=0.7.8"
+
 [tool.poetry.scripts]
 nodetool = "nodetool.cli:cli"
 
