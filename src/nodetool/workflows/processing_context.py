@@ -1732,7 +1732,7 @@ class ProcessingContext:
         parent_id: str | None = None,
     ) -> VideoRef:
         import tempfile
-        from diffusers.utils.export_utils import export_to_video
+        from nodetool.common.video_utils import export_to_video
 
         with tempfile.NamedTemporaryFile(suffix=".mp4", delete=True) as temp:
             export_to_video(frames, temp.name, fps=fps)

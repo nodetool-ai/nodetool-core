@@ -362,9 +362,13 @@ class SupabaseAdapter(DatabaseAdapter):
         """Lists indexes using raw SQL querying pg_catalog."""
         raise NotImplementedError("Index listing is not supported for Supabase.")
 
-    # Note: __del__ is generally discouraged. Connection cleanup might be handled differently
-    # depending on how the Supabase client manages connections. If using a context manager
-    # or explicit close method is available on the client, prefer that.
-    # def __del__(self):
-    #     # Supabase client might not need explicit closing, check its documentation.
-    #     pass
+    async def close(self) -> None:
+        """
+        Close the database connection and clean up resources.
+        """
+        # Supabase client typically manages its own connection lifecycle
+        # Check if the client has a close method or similar cleanup
+        if hasattr(self.supabase_client, 'close'):
+            await self.supabase_client.close()
+        # For most Supabase client implementations, explicit cleanup isn't required
+        # as connections are managed automatically

@@ -617,7 +617,7 @@ class TestVideoMethods:
             mock_file.name = "/tmp/test_video.mp4"
             mock_temp.return_value.__enter__.return_value = mock_file
 
-            with patch("diffusers.utils.export_utils.export_to_video") as mock_export:
+            with patch("nodetool.common.video_utils.export_to_video") as mock_export:
                 with patch("builtins.open", create=True) as mock_open:
                     mock_open.return_value = BytesIO(b"fake video data")
 
