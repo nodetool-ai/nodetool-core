@@ -125,6 +125,7 @@ langchain-anthropic = "*"
 
 [tool.poetry.group.dev.dependencies]
 aioresponses = ">=0.7.8"
+pytest-timeout = ">=2.3.1"
 
 [tool.poetry.scripts]
 nodetool = "nodetool.cli:cli"

@@ -15,6 +15,7 @@ from nodetool.models.workflow import Workflow
 from nodetool.models.job import Job
 from nodetool.models.asset import Asset
 from nodetool.models.schema import create_all_tables, drop_all_tables
+from nodetool.models.base_model import close_all_database_adapters
 import PIL.ImageChops
 from nodetool.workflows.base_node import BaseNode, InputNode
 from nodetool.workflows.processing_context import ProcessingContext
@@ -35,8 +36,44 @@ async def setup_and_teardown(request):
 
     yield
 
+    # Clean up database tables
     await drop_all_tables()
+    
+    # Close all database connections
+    await close_all_database_adapters()
+    
     Environment.set_remote_auth(True)
+    
+    # Clean up any remaining asyncio tasks
+    import asyncio
+    import warnings
+    
+    # Get current loop and cancel tasks more carefully
+    try:
+        loop = asyncio.get_running_loop()
+        # Get all tasks except the current one
+        current_task = asyncio.current_task()
+        tasks = [task for task in asyncio.all_tasks(loop) if task != current_task and not task.done()]
+        
+        if tasks:
+            # Cancel tasks one by one with error handling
+            for task in tasks:
+                try:
+                    if not task.cancelled() and not task.done():
+                        task.cancel()
+                except Exception:
+                    pass  # Ignore errors during cancellation
+            
+            # Give a short time for tasks to cancel
+            try:
+                await asyncio.wait_for(
+                    asyncio.gather(*tasks, return_exceptions=True),
+                    timeout=0.1
+                )
+            except (asyncio.TimeoutError, Exception):
+                pass  # Ignore timeout or other errors
+    except Exception:
+        pass  # Ignore any errors in cleanup
 
 
 def pil_to_bytes(image: PIL.Image.Image, format="PNG") -> bytes:

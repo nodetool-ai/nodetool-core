@@ -26,6 +26,20 @@ Key Components:
 
 log = Environment.get_logger()
 
+# Global registry to track all database adapters for cleanup
+_global_adapters: list[DatabaseAdapter] = []
+
+
+async def close_all_database_adapters():
+    """Close all registered database adapters and clear the registry."""
+    global _global_adapters
+    for adapter in _global_adapters:
+        try:
+            await adapter.close()
+        except Exception as e:
+            log.warning(f"Error closing database adapter: {e}")
+    _global_adapters.clear()
+
 
 def create_time_ordered_uuid() -> str:
     """
@@ -84,6 +98,8 @@ class DBModel(BaseModel):
                 table_schema=cls.get_table_schema(),
                 indexes=cls.get_indexes(),
             )
+            # Register adapter globally for cleanup
+            _global_adapters.append(cls.__adapter)
         return cls.__adapter
 
     @classmethod

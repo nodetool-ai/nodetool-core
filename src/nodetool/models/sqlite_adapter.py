@@ -609,3 +609,8 @@ class SQLiteAdapter(DatabaseAdapter):
         except aiosqlite.Error as e:
             print(f"SQLite error during index listing: {e}")
             raise e
+
+    async def close(self):
+        """Close the database connection."""
+        if self._connection:
+            await self._connection.close()

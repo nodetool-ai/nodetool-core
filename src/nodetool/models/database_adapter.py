@@ -123,3 +123,10 @@ class DatabaseAdapter(ABC):
         :return: A list of dictionaries representing index metadata.
         """
         pass
+
+    @abstractmethod
+    async def close(self) -> None:
+        """
+        Close the database connection and clean up resources.
+        """
+        pass
