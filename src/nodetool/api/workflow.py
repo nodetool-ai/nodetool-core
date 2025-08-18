@@ -23,6 +23,7 @@ from nodetool.packages.registry import Registry
 from nodetool.chat.providers import get_provider
 from nodetool.metadata.types import Provider
 from nodetool.chat.workspace_manager import WorkspaceManager
+import asyncio
 
 log = Environment.get_logger()
 router = APIRouter(prefix="/api/workflows", tags=["workflows"])
@@ -221,7 +222,8 @@ async def get_workflow_tools(
 @router.get("/examples")
 async def examples() -> WorkflowList:
     example_registry = Registry()
-    return WorkflowList(workflows=example_registry.list_examples(), next=None)
+    examples = await asyncio.to_thread(example_registry.list_examples)
+    return WorkflowList(workflows=examples, next=None)
 
 
 @router.get("/examples/search")
@@ -236,7 +238,9 @@ async def search_examples(query: str) -> WorkflowList:
         WorkflowList: A list of workflows that contain nodes matching the query
     """
     example_registry = Registry()
-    matching_workflows = example_registry.search_example_workflows(query)
+    matching_workflows = await asyncio.to_thread(
+        example_registry.search_example_workflows, query
+    )
     return WorkflowList(workflows=matching_workflows, next=None)
 
 
@@ -358,7 +362,7 @@ async def save_example_workflow(
         workflow.tags = [tag for tag in workflow.tags if tag != "example"]
 
     try:
-        saved_workflow = example_registry.save_example(workflow)
+        saved_workflow = await asyncio.to_thread(example_registry.save_example, workflow)
         return saved_workflow
     except ValueError as e:
         log.error(f"Error saving example workflow: {str(e)}")

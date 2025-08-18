@@ -1,8 +1,7 @@
 # Tests for the model API endpoints
 
-import pytest
 from fastapi.testclient import TestClient
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, AsyncMock
 from pathlib import Path
 
 # Assuming your FastAPI app instance is accessible for testing
@@ -50,34 +49,44 @@ def test_get_ollama_base_path_not_found(mock_get_ollama_dir):
 # --- Tests for open_in_explorer ---
 
 @patch("nodetool.api.model._get_valid_explorable_roots")
-@patch("nodetool.api.model.subprocess.run")
-def test_open_in_explorer_success_ollama_path(mock_subprocess_run, mock_get_roots):
+@patch("nodetool.api.model.asyncio.create_subprocess_exec")
+def test_open_in_explorer_success_ollama_path(mock_create_proc, mock_get_roots):
     """Test opening a valid path within the Ollama models directory."""
     mock_get_roots.return_value = [MOCK_OLLAMA_ROOT, MOCK_HF_CACHE_ROOT]
     valid_path_to_open = MOCK_OLLAMA_ROOT / "some_model"
     
+    # Mock async subprocess returning success
+    proc = MagicMock()
+    proc.wait = AsyncMock(return_value=0)
+    mock_create_proc.return_value = proc
+
     response = client.post(f"/api/models/open_in_explorer?path={str(valid_path_to_open)}")
     
     assert response.status_code == 200
     assert response.json() == {"status": "success", "path": str(valid_path_to_open)}
-    mock_subprocess_run.assert_called_once()
+    mock_create_proc.assert_called_once()
 
 @patch("nodetool.api.model._get_valid_explorable_roots")
-@patch("nodetool.api.model.subprocess.run")
-def test_open_in_explorer_success_hf_cache_path(mock_subprocess_run, mock_get_roots):
+@patch("nodetool.api.model.asyncio.create_subprocess_exec")
+def test_open_in_explorer_success_hf_cache_path(mock_create_proc, mock_get_roots):
     """Test opening a valid path within the Hugging Face cache directory."""
     mock_get_roots.return_value = [MOCK_OLLAMA_ROOT, MOCK_HF_CACHE_ROOT]
     valid_path_to_open = MOCK_HF_CACHE_ROOT / "models--some-model"
     
+    # Mock async subprocess returning success
+    proc = MagicMock()
+    proc.wait = AsyncMock(return_value=0)
+    mock_create_proc.return_value = proc
+
     response = client.post(f"/api/models/open_in_explorer?path={str(valid_path_to_open)}")
     
     assert response.status_code == 200
     assert response.json() == {"status": "success", "path": str(valid_path_to_open)}
-    mock_subprocess_run.assert_called_once()
+    mock_create_proc.assert_called_once()
 
 @patch("nodetool.api.model._get_valid_explorable_roots")
-@patch("nodetool.api.model.subprocess.run")
-def test_open_in_explorer_path_traversal_attempt(mock_subprocess_run, mock_get_roots):
+@patch("nodetool.api.model.asyncio.create_subprocess_exec")
+def test_open_in_explorer_path_traversal_attempt(mock_create_proc, mock_get_roots):
     """Test path traversal attempt is blocked when path is outside all safe roots."""
     mock_get_roots.return_value = [MOCK_OLLAMA_ROOT, MOCK_HF_CACHE_ROOT]
     
@@ -96,7 +105,7 @@ def test_open_in_explorer_path_traversal_attempt(mock_subprocess_run, mock_get_r
         "status": "error",
         "message": "Access denied: Path is outside the allowed directories.",
     }
-    mock_subprocess_run.assert_not_called()
+    mock_create_proc.assert_not_called()
 
 @patch("nodetool.api.model._get_valid_explorable_roots")
 def test_open_in_explorer_no_safe_roots_found(mock_get_roots):
@@ -112,13 +121,16 @@ def test_open_in_explorer_no_safe_roots_found(mock_get_roots):
     }
 
 @patch("nodetool.api.model._get_valid_explorable_roots")
-@patch("nodetool.api.model.subprocess.run")
-def test_open_in_explorer_subprocess_error(mock_subprocess_run, mock_get_roots):
+@patch("nodetool.api.model.asyncio.create_subprocess_exec")
+def test_open_in_explorer_subprocess_error(mock_create_proc, mock_get_roots):
     """Test error handling when subprocess.run fails."""
     mock_get_roots.return_value = [MOCK_OLLAMA_ROOT]
     valid_path_to_open = MOCK_OLLAMA_ROOT / "some_model"
     
-    mock_subprocess_run.side_effect = Exception("Process failed") # Simulate subprocess failure
+    # Simulate non-zero exit code from async subprocess
+    proc = MagicMock()
+    proc.wait = AsyncMock(return_value=1)
+    mock_create_proc.return_value = proc
     
     response = client.post(f"/api/models/open_in_explorer?path={str(valid_path_to_open)}")
     
@@ -127,4 +139,4 @@ def test_open_in_explorer_subprocess_error(mock_subprocess_run, mock_get_roots):
         "status": "error",
         "message": "An internal error occurred while attempting to open the path. Please check server logs for details.",
     }
-    mock_subprocess_run.assert_called_once() 
+    mock_create_proc.assert_called_once()

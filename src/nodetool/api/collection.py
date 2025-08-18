@@ -14,6 +14,8 @@ import os
 import shutil
 import tempfile
 import traceback
+import asyncio
+import aiofiles
 
 from nodetool.metadata.types import Collection, FilePath
 from nodetool.models.workflow import Workflow
@@ -186,8 +188,13 @@ async def index(
     tmp_dir = tempfile.mkdtemp()
     tmp_path = os.path.join(tmp_dir, file.filename or "uploaded_file")
     try:
-        with open(tmp_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+        # Write uploaded file to disk asynchronously in chunks
+        async with aiofiles.open(tmp_path, "wb") as buffer:
+            while True:
+                chunk = await file.read(1024 * 1024)
+                if not chunk:
+                    break
+                await buffer.write(chunk)
 
         file_path = tmp_path
         mime_type = file.content_type or "application/octet-stream"
@@ -202,6 +209,6 @@ async def index(
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        # Ensure temporary directory is cleaned up
-        shutil.rmtree(tmp_dir)
+        # Ensure temporary directory is cleaned up without blocking
+        await asyncio.to_thread(shutil.rmtree, tmp_dir)
         await file.close()  # Close the uploaded file handle
