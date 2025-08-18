@@ -12,12 +12,13 @@ from conftest import make_image, make_text
 test_jpg = os.path.join(os.path.dirname(os.path.dirname(__file__)), "test.jpg")
 
 
-def test_index(client: TestClient, headers: dict[str, str], user_id: str):
+@pytest.mark.asyncio
+async def test_index(client: TestClient, headers: dict[str, str], user_id: str):
     """
     Test the GET /api/assets endpoint.
     Verifies that the endpoint returns a list of assets for the authenticated user.
     """
-    image = make_image(user_id)
+    image = await make_image(user_id)
     response = client.get("/api/assets", headers=headers)
     json_response = response.json()
     assert response.status_code == 200
@@ -31,20 +32,21 @@ async def test_delete(client: TestClient, headers: dict[str, str], user_id: str)
     Test the DELETE /api/assets/{id} endpoint.
     Verifies that the asset is deleted from both the database and storage.
     """
-    image = make_image(user_id)
+    image = await make_image(user_id)
     response = client.delete(f"/api/assets/{image.id}", headers=headers)
     assert response.status_code == 200
-    assert Asset.find(user_id, image.id) is None
+    assert await Asset.find(user_id, image.id) is None
     assert not await Environment.get_asset_storage().file_exists(image.file_name)
 
 
-def test_pagination(client: TestClient, headers: dict[str, str], user_id: str):
+@pytest.mark.asyncio
+async def test_pagination(client: TestClient, headers: dict[str, str], user_id: str):
     """
     Test pagination functionality of the GET /api/assets endpoint.
     Verifies that assets are properly paginated with correct page sizes and cursor behavior.
     """
     for _ in range(5):
-        make_image(user_id)
+        await make_image(user_id)
     response = client.get("/api/assets", headers=headers, params={"page_size": 3})
     assert response.status_code == 200
     assert len(response.json()["assets"]) == 3
@@ -57,23 +59,25 @@ def test_pagination(client: TestClient, headers: dict[str, str], user_id: str):
     assert response.json()["next"] == ""
 
 
-def test_get(client: TestClient, headers: dict[str, str], user_id: str):
+@pytest.mark.asyncio
+async def test_get(client: TestClient, headers: dict[str, str], user_id: str):
     """
     Test the GET /api/assets/{id} endpoint.
     Verifies that a single asset can be retrieved by its ID.
     """
-    image = make_image(user_id)
+    image = await make_image(user_id)
     response = client.get(f"/api/assets/{image.id}", headers=headers)
     assert response.status_code == 200
     assert response.json()["id"] == image.id
 
 
-def test_put(client: TestClient, headers: dict[str, str], user_id: str):
+@pytest.mark.asyncio
+async def test_put(client: TestClient, headers: dict[str, str], user_id: str):
     """
     Test the PUT /api/assets/{id} endpoint.
     Verifies that an asset's metadata can be updated successfully.
     """
-    image = make_image(user_id)
+    image = await make_image(user_id)
     response = client.put(
         f"/api/assets/{image.id}",
         json=AssetUpdateRequest(
@@ -82,11 +86,12 @@ def test_put(client: TestClient, headers: dict[str, str], user_id: str):
         headers=headers,
     )
     assert response.status_code == 200
-    image_reloaded = Asset.find(user_id, image.id)
+    image_reloaded = await Asset.find(user_id, image.id)
     assert image_reloaded is not None
 
 
-def test_create(client: TestClient, headers: dict[str, str], user_id: str):
+@pytest.mark.asyncio
+async def test_create(client: TestClient, headers: dict[str, str], user_id: str):
     """
     Test the POST /api/assets endpoint.
     Verifies that a new asset can be created with file upload and metadata.
@@ -102,13 +107,14 @@ def test_create(client: TestClient, headers: dict[str, str], user_id: str):
         headers=headers,
     )
     assert response.status_code == 200
-    image_reloaded = Asset.find(user_id, response.json()["id"])
+    image_reloaded = await Asset.find(user_id, response.json()["id"])
     assert image_reloaded is not None
     assert image_reloaded.name == "bild.jpeg"
 
 
-def test_storage_stream_content_length(client: TestClient, user_id: str):
-    image = make_image(user_id)
+@pytest.mark.asyncio
+async def test_storage_stream_content_length(client: TestClient, user_id: str):
+    image = await make_image(user_id)
     storage = Environment.get_asset_storage()
     expected_size = len(storage.storage[image.file_name])
 
@@ -117,12 +123,13 @@ def test_storage_stream_content_length(client: TestClient, user_id: str):
     assert response.headers.get("Content-Length") == str(expected_size)
 
 
-def test_download_deduplicated_names(
+@pytest.mark.asyncio
+async def test_download_deduplicated_names(
     client: TestClient, headers: dict[str, str], user_id: str
 ):
     """Ensure duplicate asset names are uniquified in zip downloads."""
-    img1 = make_image(user_id)
-    img2 = make_image(user_id)
+    img1 = await make_image(user_id)
+    img2 = await make_image(user_id)
 
     response = client.post(
         "/api/assets/download",
@@ -139,12 +146,16 @@ def test_download_deduplicated_names(
 
 
 # Search functionality tests
-def test_search_basic_functionality(client: TestClient, headers: dict[str, str], user_id: str):
+@pytest.mark.asyncio
+async def test_search_basic_functionality(client: TestClient, headers: dict[str, str], user_id: str):
     """Test basic search functionality with valid queries."""
     # Create test assets with different names
-    make_image(user_id).update(name="sunset_photo")
-    make_image(user_id).update(name="beach_vacation")
-    make_text(user_id, "content").update(name="document.txt")
+    img = await make_image(user_id)
+    await img.update(name="sunset_photo")
+    img = await make_image(user_id)
+    await img.update(name="beach_vacation")
+    txt = await make_text(user_id, "content")
+    await txt.update(name="document.txt")
     
     # Test basic search
     response = client.get("/api/assets/search", params={"query": "photo"}, headers=headers)
@@ -155,7 +166,8 @@ def test_search_basic_functionality(client: TestClient, headers: dict[str, str],
     assert data["assets"][0]["name"] == "sunset_photo"
 
 
-def test_search_query_validation(client: TestClient, headers: dict[str, str], user_id: str):
+@pytest.mark.asyncio
+async def test_search_query_validation(client: TestClient, headers: dict[str, str], user_id: str):
     """Test search query length validation."""
     # Test query too short
     response = client.get("/api/assets/search", params={"query": "a"}, headers=headers)
@@ -167,11 +179,14 @@ def test_search_query_validation(client: TestClient, headers: dict[str, str], us
     assert response.status_code == 200
 
 
-def test_search_with_content_type_filter(client: TestClient, headers: dict[str, str], user_id: str):
+@pytest.mark.asyncio
+async def test_search_with_content_type_filter(client: TestClient, headers: dict[str, str], user_id: str):
     """Test search with content type filtering."""
     # Create assets of different types
-    make_image(user_id).update(name="test_image")
-    make_text(user_id, "content").update(name="test_document")
+    img = await make_image(user_id)
+    await img.update(name="test_image")
+    txt = await make_text(user_id, "content")
+    await txt.update(name="test_document")
     
     # Search for images only
     response = client.get(
@@ -185,11 +200,13 @@ def test_search_with_content_type_filter(client: TestClient, headers: dict[str, 
     assert data["assets"][0]["content_type"].startswith("image")
 
 
-def test_search_pagination(client: TestClient, headers: dict[str, str], user_id: str):
+@pytest.mark.asyncio
+async def test_search_pagination(client: TestClient, headers: dict[str, str], user_id: str):
     """Test search pagination functionality."""
     # Create multiple matching assets
     for i in range(5):
-        make_image(user_id).update(name=f"photo_{i}")
+        img = await make_image(user_id)
+        await img.update(name=f"photo_{i}")
     
     # Test first page
     response = client.get(
@@ -212,15 +229,16 @@ def test_search_pagination(client: TestClient, headers: dict[str, str], user_id:
         assert response.status_code == 200
 
 
-def test_search_folder_path_information(client: TestClient, headers: dict[str, str], user_id: str):
+@pytest.mark.asyncio
+async def test_search_folder_path_information(client: TestClient, headers: dict[str, str], user_id: str):
     """Test that search returns folder path information."""
     # Create folder structure
-    folder = Asset.create(user_id=user_id, name="My Folder", content_type="folder")
-    subfolder = Asset.create(user_id=user_id, name="Sub Folder", content_type="folder", parent_id=folder.id)
+    folder = await Asset.create(user_id=user_id, name="My Folder", content_type="folder")
+    subfolder = await Asset.create(user_id=user_id, name="Sub Folder", content_type="folder", parent_id=folder.id)
     
     # Create asset in subfolder
-    image = make_image(user_id, parent_id=subfolder.id)
-    image.update(name="nested_photo")
+    image = await make_image(user_id, parent_id=subfolder.id)
+    await image.update(name="nested_photo")
     
     response = client.get("/api/assets/search", params={"query": "photo"}, headers=headers)
     assert response.status_code == 200
@@ -235,9 +253,11 @@ def test_search_folder_path_information(client: TestClient, headers: dict[str, s
     assert "Sub Folder" in asset["folder_path"]
 
 
-def test_search_empty_results(client: TestClient, headers: dict[str, str], user_id: str):
+@pytest.mark.asyncio
+async def test_search_empty_results(client: TestClient, headers: dict[str, str], user_id: str):
     """Test search with no matching results."""
-    make_image(user_id).update(name="sunset")
+    img = await make_image(user_id)
+    await img.update(name="sunset")
     
     response = client.get("/api/assets/search", params={"query": "nonexistent"}, headers=headers)
     assert response.status_code == 200
@@ -246,9 +266,11 @@ def test_search_empty_results(client: TestClient, headers: dict[str, str], user_
     assert data["total_count"] == 0
 
 
-def test_search_case_insensitive(client: TestClient, headers: dict[str, str], user_id: str):
+@pytest.mark.asyncio
+async def test_search_case_insensitive(client: TestClient, headers: dict[str, str], user_id: str):
     """Test that search is case insensitive."""
-    make_image(user_id).update(name="SUNSET_Photo")
+    img = await make_image(user_id)
+    await img.update(name="SUNSET_Photo")
     
     # Test lowercase search
     response = client.get("/api/assets/search", params={"query": "sunset"}, headers=headers)
@@ -257,9 +279,11 @@ def test_search_case_insensitive(client: TestClient, headers: dict[str, str], us
     assert len(data["assets"]) == 1
 
 
-def test_search_special_characters(client: TestClient, headers: dict[str, str], user_id: str):
+@pytest.mark.asyncio
+async def test_search_special_characters(client: TestClient, headers: dict[str, str], user_id: str):
     """Test search with special characters that could cause SQL injection."""
-    make_image(user_id).update(name="test_file")
+    img = await make_image(user_id)
+    await img.update(name="test_file")
     
     # Test SQL injection attempts
     malicious_queries = ["'; DROP TABLE assets; --", "test%", "test_", "test\\"]
@@ -273,10 +297,12 @@ def test_search_special_characters(client: TestClient, headers: dict[str, str], 
         assert "assets" in data
 
 
-def test_search_user_isolation(client: TestClient, headers: dict[str, str], user_id: str):
+@pytest.mark.asyncio
+async def test_search_user_isolation(client: TestClient, headers: dict[str, str], user_id: str):
     """Test that search only returns current user's assets."""
     # Create asset for current user
-    make_image(user_id).update(name="my_photo")
+    img = await make_image(user_id)
+    await img.update(name="my_photo")
     
     # Create asset for different user
     other_user_id = "other_user"
@@ -295,12 +321,16 @@ def test_search_user_isolation(client: TestClient, headers: dict[str, str], user
     assert data["assets"][0]["user_id"] == user_id
 
 
-def test_search_contains_behavior(client: TestClient, headers: dict[str, str], user_id: str):
+@pytest.mark.asyncio
+async def test_search_contains_behavior(client: TestClient, headers: dict[str, str], user_id: str):
     """Test that search finds matches anywhere in the filename."""
     # Create assets with query in different positions
-    make_image(user_id).update(name="photo_sunset")  # at beginning
-    make_image(user_id).update(name="beautiful_photo_vacation")  # in middle
-    make_image(user_id).update(name="vacation_photo")  # at end
+    img = await make_image(user_id)
+    await img.update(name="photo_sunset")  # at beginning
+    img = await make_image(user_id)
+    await img.update(name="beautiful_photo_vacation")  # in middle
+    img = await make_image(user_id)
+    await img.update(name="vacation_photo")  # at end
     
     response = client.get("/api/assets/search", params={"query": "photo"}, headers=headers)
     assert response.status_code == 200

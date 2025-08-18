@@ -74,7 +74,7 @@ class TestBaseChatRunner:
         db_message.graph = {"nodes": [], "edges": []}
         db_message.thread_id = "thread_123"
         db_message.tools = ["tool1", "tool2"]
-        db_message.tool_ctest_chat_sse_integration.pyid = "tool_call_123"
+        db_message.tool_call_id = "tool_call_123"
         db_message.role = "user"
         db_message.name = "test_user"
         db_message.content = "Test content"

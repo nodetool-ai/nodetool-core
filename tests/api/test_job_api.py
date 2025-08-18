@@ -12,9 +12,10 @@ current_dir = os.path.dirname(os.path.realpath(__file__))
 test_file = os.path.join(current_dir, "test.jpg")
 
 
-def test_get(client: TestClient, headers: dict[str, str], user_id: str):
-    job = make_job(user_id)
-    job.save()
+@pytest.mark.asyncio
+async def test_get(client: TestClient, headers: dict[str, str], user_id: str):
+    job = await make_job(user_id)
+    await job.save()
     response = client.get(f"/api/jobs/{job.id}", headers=headers)
     assert response.status_code == 200
     data = response.json()
@@ -23,9 +24,10 @@ def test_get(client: TestClient, headers: dict[str, str], user_id: str):
     assert data["status"] == job.status
 
 
-def test_put(client: TestClient, headers: dict[str, str], user_id: str):
-    job = make_job(user_id)
-    job.save()
+@pytest.mark.asyncio
+async def test_put(client: TestClient, headers: dict[str, str], user_id: str):
+    job = await make_job(user_id)
+    await job.save()
     response = client.put(
         f"/api/jobs/{job.id}", headers=headers, json={"status": "completed"}
     )
@@ -35,14 +37,15 @@ def test_put(client: TestClient, headers: dict[str, str], user_id: str):
     assert data["id"] == job.id
     assert data["status"] == "completed"
 
-    job_reloaded = Job.get(job.id)
+    job_reloaded = await Job.get(job.id)
     assert job_reloaded is not None
     assert job_reloaded.status == "completed"
 
 
-def test_index(client: TestClient, headers: dict[str, str], user_id: str):
-    make_job(user_id)
-    make_job(user_id)
+@pytest.mark.asyncio
+async def test_index(client: TestClient, headers: dict[str, str], user_id: str):
+    await make_job(user_id)
+    await make_job(user_id)
     response = client.get("/api/jobs", headers=headers)
     assert response.status_code == 200
     data = response.json()
@@ -50,9 +53,10 @@ def test_index(client: TestClient, headers: dict[str, str], user_id: str):
     assert len(data["jobs"]) == 2
 
 
-def test_index_limit(client: TestClient, headers: dict[str, str], user_id: str):
-    make_job(user_id)
-    make_job(user_id)
+@pytest.mark.asyncio
+async def test_index_limit(client: TestClient, headers: dict[str, str], user_id: str):
+    await make_job(user_id)
+    await make_job(user_id)
     response = client.get("/api/jobs", params={"page_size": 1}, headers=headers)
     assert response.status_code == 200
     data = response.json()

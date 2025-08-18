@@ -54,7 +54,7 @@ async def index(
     if page_size is None:
         page_size = 100
 
-    predictions, next_cursor = PredictionModel.paginate(
+    predictions, next_cursor = await PredictionModel.paginate(
         user_id=user,
         limit=page_size,
         start_key=cursor,
@@ -67,7 +67,7 @@ async def index(
 
 @router.get("/{id}")
 async def get(id: str, user: str = Depends(current_user)) -> Prediction:
-    pred = PredictionModel.find(user, id)
+    pred = await PredictionModel.find(user, id)
     if pred is None:
         raise HTTPException(status_code=404, detail="Prediction not found")
     return from_model(pred)
@@ -75,7 +75,7 @@ async def get(id: str, user: str = Depends(current_user)) -> Prediction:
 
 @router.post("/")
 async def create(req: PredictionCreateRequest, user: str = Depends(current_user)):
-    prediction = PredictionModel.create(
+    prediction = await PredictionModel.create(
         model=req.model,
         node_id=req.node_id,
         user_id=user,

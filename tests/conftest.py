@@ -216,15 +216,15 @@ def make_node(id, type: str, data: dict[str, Any]):
     return Node(id=id, type=type, data=data)
 
 
-@pytest.fixture()
-def thread(user_id: str):
-    th = Thread.create(user_id=user_id)
+@pytest_asyncio.fixture()
+async def thread(user_id: str):
+    th = await Thread.create(user_id=user_id)
     return th
 
 
-@pytest.fixture()
-def message(user_id: str, thread: Thread):
-    msg = Message.create(
+@pytest_asyncio.fixture()
+async def message(user_id: str, thread: Thread):
+    msg = await Message.create(
         user_id=user_id, thread_id=thread.id, role="user", content="Hello"
     )
     return msg
@@ -249,8 +249,8 @@ class Add(BaseNode):
         return self.a + self.b
 
 
-@pytest.fixture()
-def workflow(user_id: str):
+@pytest_asyncio.fixture()
+async def workflow(user_id: str):
     # Restore graph definition from previous version
     nodes = [
         make_node("1", FloatInput.get_node_type(), {"name": "in1", "value": 10}),
@@ -264,7 +264,7 @@ def workflow(user_id: str):
             targetHandle="a",
         ),
     ]
-    wf = Workflow.create(
+    wf = await Workflow.create(
         user_id=user_id,  # Use the string user_id
         name="test_workflow",
         graph={

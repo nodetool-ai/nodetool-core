@@ -22,11 +22,11 @@ async def create(
     req: MessageCreateRequest, user: str = Depends(current_user)
 ) -> Message:
     if req.thread_id is None:
-        thread_id = Thread.create(user_id=user).id
+        thread_id = (await Thread.create(user_id=user)).id
     else:
         thread_id = req.thread_id
     return Message.from_model(
-        MessageModel.create(
+        await MessageModel.create(
             user_id=user,
             thread_id=thread_id,
             tool_call_id=req.tool_call_id,
@@ -56,7 +56,7 @@ class HelpRequest(BaseModel):
 
 @router.get("/{message_id}")
 async def get(message_id: str, user: str = Depends(current_user)) -> Message:
-    message = MessageModel.get(message_id)
+    message = await MessageModel.get(message_id)
     if message is None:
         raise HTTPException(status_code=404, detail="Message not found")
     if message.user_id != user:
@@ -72,7 +72,7 @@ async def index(
     cursor: Optional[str] = None,
     limit: int = 100,
 ) -> MessageList:
-    messages, cursor = MessageModel.paginate(
+    messages, cursor = await MessageModel.paginate(
         thread_id=thread_id, reverse=reverse, limit=limit, start_key=cursor
     )
     for message in messages:

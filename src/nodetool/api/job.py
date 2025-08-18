@@ -36,7 +36,7 @@ async def get(id: str, user: str = Depends(current_user)) -> Job:
     """
     Returns the status of a job.
     """
-    job = JobModel.find(user, id)
+    job = await JobModel.find(user, id)
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
     else:
@@ -59,7 +59,7 @@ async def index(
     if page_size is None:
         page_size = 10
 
-    jobs, next_cursor = JobModel.paginate(
+    jobs, next_cursor = await JobModel.paginate(
         user_id=user, workflow_id=workflow_id, limit=page_size, start_key=cursor
     )
 
@@ -71,7 +71,7 @@ async def update(id: str, req: JobUpdate, user: str = Depends(current_user)) -> 
     """
     Update a job.
     """
-    job = JobModel.find(user, id)
+    job = await JobModel.find(user, id)
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
     else:
@@ -80,7 +80,7 @@ async def update(id: str, req: JobUpdate, user: str = Depends(current_user)) -> 
         else:
             job.status = req.status
             job.error = req.error
-            job.save()
+            await job.save()
             return from_model(job)
 
 
@@ -90,7 +90,7 @@ async def create(
     user: str = Depends(current_user),
 ):
 
-    job = JobModel.create(
+    job = await JobModel.create(
         job_type=job_request.job_type,
         workflow_id=job_request.workflow_id,
         user_id=user,

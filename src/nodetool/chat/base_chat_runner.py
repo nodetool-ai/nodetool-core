@@ -27,7 +27,7 @@ from nodetool.chat.providers import get_provider
 from nodetool.common.environment import Environment
 from nodetool.models.message import Message as DBMessage
 from nodetool.models.thread import Thread
-from nodetool.metadata.types import Message as ApiMessage
+from nodetool.metadata.types import Message as ApiMessage, Provider
 from nodetool.types.graph import Graph
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.common.message_processors import (
@@ -217,15 +217,10 @@ class BaseChatRunner(ABC):
         message_thread_id = data_copy.pop("thread_id", None) or ""
 
         # Run the database operation in a thread pool to avoid blocking
-        def _create_db_message():
-            return DBMessage.create(
-                thread_id=message_thread_id, user_id=self.user_id or "", **data_copy
-            )
-
-        # # Execute in thread pool to make it non-blocking
-        # loop = asyncio.get_event_loop()
-        # db_message = await loop.run_in_executor(None, _create_db_message)
-        db_message = _create_db_message()
+        # Create database message directly with async
+        db_message = await DBMessage.create(
+            thread_id=message_thread_id, user_id=self.user_id or "", **data_copy
+        )
 
         log.info(f"Saved message {db_message.id} to database asynchronously")
         return db_message
@@ -247,7 +242,7 @@ class BaseChatRunner(ABC):
 
         try:
             # Load messages from database using the paginate method
-            db_messages, _ = DBMessage.paginate(
+            db_messages, _ = await DBMessage.paginate(
                 thread_id=thread_id, limit=1000, reverse=False
             )
 
@@ -281,7 +276,7 @@ class BaseChatRunner(ABC):
         if not thread_id:
             # Create a new thread
             try:
-                thread = Thread.create(user_id=self.user_id)
+                thread = await Thread.create(user_id=self.user_id)
                 log.debug(f"Created new thread {thread.id}")
                 return thread.id
             except Exception as e:
@@ -290,7 +285,7 @@ class BaseChatRunner(ABC):
         else:
             # Verify the thread exists and belongs to the user
             try:
-                thread = Thread.find(user_id=self.user_id, id=thread_id)
+                thread = await Thread.find(user_id=self.user_id, id=thread_id)
                 if not thread:
                     log.warning(f"Thread {thread_id} not found for user {self.user_id}")
                     # Create a new thread as fallback
@@ -413,7 +408,7 @@ class BaseChatRunner(ABC):
 
         assert last_message.model, "Model is required"
 
-        if not last_message.provider:
+        if not last_message.provider or last_message.provider == Provider.Empty:
             raise ValueError("No provider specified in the current conversation")
 
         provider = get_provider(last_message.provider)

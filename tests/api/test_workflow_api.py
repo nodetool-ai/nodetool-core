@@ -1,10 +1,13 @@
+import pytest
+import pytest_asyncio
 from fastapi.testclient import TestClient
 from nodetool.types.workflow import WorkflowRequest, WorkflowList
 from nodetool.types.graph import Edge, Graph as APIGraph, Node
 from nodetool.models.workflow import Workflow
 
 
-def test_create_workflow(client: TestClient, headers: dict[str, str], user_id: str):
+@pytest.mark.asyncio
+async def test_create_workflow(client: TestClient, headers: dict[str, str], user_id: str):
     params = {
         "name": "Test Workflow",
         "graph": {
@@ -21,7 +24,7 @@ def test_create_workflow(client: TestClient, headers: dict[str, str], user_id: s
     assert response.status_code == 200
     assert response.json()["name"] == "Test Workflow"
 
-    w = Workflow.get(response.json()["id"])
+    w = await Workflow.get(response.json()["id"])
     assert w is not None
     assert w.name == "Test Workflow"
     assert w.user_id == user_id
@@ -31,8 +34,9 @@ def test_create_workflow(client: TestClient, headers: dict[str, str], user_id: s
     }
 
 
-def test_get_workflows(client: TestClient, workflow: Workflow, headers: dict[str, str]):
-    workflow.save()
+@pytest.mark.asyncio
+async def test_get_workflows(client: TestClient, workflow: Workflow, headers: dict[str, str]):
+    await workflow.save()
     response = client.get("/api/workflows/", headers=headers)
     assert response.status_code == 200
     workflow_list = WorkflowList(**response.json())
@@ -40,8 +44,9 @@ def test_get_workflows(client: TestClient, workflow: Workflow, headers: dict[str
     assert workflow_list.workflows[0].id == workflow.id
 
 
-def test_get_workflow(client: TestClient, workflow: Workflow, headers: dict[str, str]):
-    workflow.save()
+@pytest.mark.asyncio
+async def test_get_workflow(client: TestClient, workflow: Workflow, headers: dict[str, str]):
+    await workflow.save()
     response = client.get(f"/api/workflows/{workflow.id}", headers=headers)
     assert response.status_code == 200
     assert response.json()["id"] == workflow.id
@@ -60,14 +65,15 @@ def test_get_workflow(client: TestClient, workflow: Workflow, headers: dict[str,
     }
 
 
-def test_get_public_workflow(
+@pytest.mark.asyncio
+async def test_get_public_workflow(
     client: TestClient, workflow: Workflow, headers: dict[str, str]
 ):
-    workflow.save()
+    await workflow.save()
     response = client.get(f"/api/workflows/public/{workflow.id}", headers=headers)
     assert response.status_code == 404
     workflow.access = "public"
-    workflow.save()
+    await workflow.save()
     response = client.get(f"/api/workflows/public/{workflow.id}", headers=headers)
     assert response.status_code == 200
     assert response.json()["id"] == workflow.id
@@ -86,8 +92,9 @@ def test_get_public_workflow(
     }
 
 
-def test_index(client: TestClient, workflow: Workflow, headers: dict[str, str]):
-    workflow.save()
+@pytest.mark.asyncio
+async def test_index(client: TestClient, workflow: Workflow, headers: dict[str, str]):
+    await workflow.save()
     response = client.get("/api/workflows/", headers=headers)
     assert response.status_code == 200
     workflow_list = WorkflowList(**response.json())
@@ -95,24 +102,26 @@ def test_index(client: TestClient, workflow: Workflow, headers: dict[str, str]):
     assert workflow_list.workflows[0].id == workflow.id
 
 
-def test_get_public_workflows(
+@pytest.mark.asyncio
+async def test_get_public_workflows(
     client: TestClient, workflow: Workflow, headers: dict[str, str]
 ):
-    workflow.save()
+    await workflow.save()
     response = client.get("/api/workflows/public", headers=headers)
     assert response.status_code == 200
     workflow_list = WorkflowList(**response.json())
     assert len(workflow_list.workflows) == 0
 
     workflow.access = "public"
-    workflow.save()
+    await workflow.save()
     response = client.get("/api/workflows/public", headers=headers)
     assert response.status_code == 200
     workflow_list = WorkflowList(**response.json())
     assert len(workflow_list.workflows) == 1
 
 
-def test_update_workflow(
+@pytest.mark.asyncio
+async def test_update_workflow(
     client: TestClient, workflow: Workflow, headers: dict[str, str]
 ):
     request = WorkflowRequest(
@@ -131,22 +140,23 @@ def test_update_workflow(
     assert response.status_code == 200
     assert "id" in response.json()
 
-    saved_workflow = Workflow.get(response.json()["id"])
+    saved_workflow = await Workflow.get(response.json()["id"])
 
     assert saved_workflow is not None
     assert saved_workflow.name == "Updated Workflow"
 
 
-def test_delete_workflow(
+@pytest.mark.asyncio
+async def test_delete_workflow(
     client: TestClient, workflow: Workflow, headers: dict[str, str]
 ):
-    workflow.save()
+    await workflow.save()
     response = client.delete(f"/api/workflows/{workflow.id}", headers=headers)
     assert response.status_code == 200
 
 
 # def test_run_workflow(client: TestClient, workflow: Workflow, headers: dict[str, str]):
-#     workflow.save()
+#     await workflow.save()
 
 #     response = client.post(
 #         f"/api/workflows/{workflow.id}/run", json={}, headers=headers
