@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from nodetool.common.chroma_client import get_collection
+from nodetool.common.async_chroma_client import get_async_collection
 from nodetool.indexing.ingestion import default_ingestion_workflow, find_input_nodes
 from nodetool.metadata.types import Collection, FilePath
 from nodetool.types.job import JobUpdate
@@ -36,7 +36,7 @@ async def index_file_to_collection(
     Returns:
         None on success; an error message string if workflow execution failed.
     """
-    collection = get_collection(name)
+    collection = await get_async_collection(name)
 
     if collection.metadata and (workflow_id := collection.metadata.get("workflow")):
         processing_context = ProcessingContext(
@@ -68,7 +68,8 @@ async def index_file_to_collection(
         return None
 
     # Fallback to default ingestion when no workflow is configured
-    default_ingestion_workflow(collection, file_path, mime_type)
+    # Use async ingestion to ensure Chroma calls are off the event loop
+    from nodetool.indexing.ingestion import default_ingestion_workflow_async
+
+    await default_ingestion_workflow_async(collection, file_path, mime_type)
     return None
-
-

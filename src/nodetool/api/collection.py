@@ -5,9 +5,9 @@ from fastapi import APIRouter, HTTPException, Header, UploadFile, File
 from nodetool.common.environment import Environment
 from nodetool.types.job import JobUpdate
 from pydantic import BaseModel
-from nodetool.common.chroma_client import (
-    get_chroma_client,
-    get_collection,
+from nodetool.common.async_chroma_client import (
+    get_async_chroma_client,
+    get_async_collection,
 )
 import chromadb
 import os
@@ -19,7 +19,6 @@ from nodetool.metadata.types import Collection, FilePath
 from nodetool.models.workflow import Workflow
 from nodetool.indexing.service import index_file_to_collection
 from nodetool.indexing.ingestion import (
-    default_ingestion_workflow,
     find_input_nodes,
 )
 
@@ -61,11 +60,11 @@ async def create_collection(
     req: CollectionCreate,
 ) -> CollectionResponse:
     """Create a new collection"""
-    client = get_chroma_client()
+    client = await get_async_chroma_client()
     metadata = {
         "embedding_model": req.embedding_model,
     }
-    collection = client.create_collection(name=req.name, metadata=metadata)
+    collection = await client.create_collection(name=req.name, metadata=metadata)
     return CollectionResponse(
         name=collection.name,
         metadata=collection.metadata,
@@ -79,14 +78,16 @@ async def list_collections(
     limit: Optional[int] = None,
 ) -> CollectionList:
     """List all collections"""
-    client = get_chroma_client()
-    collection_names = client.list_collections(offset=offset, limit=limit)
+    client = await get_async_chroma_client()
+    collection_names = await client.list_collections(offset=offset, limit=limit)
 
-    collections = [client.get_collection(name) for name in collection_names]
+    # Handle both list[str] and list[objects with .name]
+    names: list[str] = [getattr(c, "name", c) for c in collection_names]
+    collections = [await client.get_collection(name) for name in names]
 
-    def get_workflow_name(metadata: dict[str, str]) -> str | None:
+    async def get_workflow_name(metadata: dict[str, str]) -> str | None:
         if workflow_id := metadata.get("workflow"):
-            workflow = Workflow.get(workflow_id)
+            workflow = await Workflow.get(workflow_id)
             if workflow:
                 return workflow.name
         return None
@@ -96,21 +97,21 @@ async def list_collections(
             CollectionResponse(
                 name=col.name,
                 metadata=col.metadata or {},
-                workflow_name=get_workflow_name(col.metadata or {}),
-                count=col.count(),
+                workflow_name=await get_workflow_name(col.metadata or {}),
+                count=await col.count(),
             )
             for col in collections
         ],
-        count=client.count_collections(),
+        count=await client.count_collections(),
     )
 
 
 @router.get("/{name}", response_model=CollectionResponse)
 async def get(name: str) -> CollectionResponse:
     """Get a specific collection by name"""
-    client = get_chroma_client()
-    collection = client.get_collection(name=name)
-    count = collection.count()
+    client = await get_async_chroma_client()
+    collection = await client.get_collection(name=name)
+    count = await collection.count()
     return CollectionResponse(
         name=collection.name,
         metadata=collection.metadata,
@@ -121,13 +122,13 @@ async def get(name: str) -> CollectionResponse:
 @router.put("/{name}")
 async def update_collection(name: str, req: CollectionModify):
     """Update a collection"""
-    client = get_chroma_client()
-    collection = client.get_collection(name=name)
+    client = await get_async_chroma_client()
+    collection = await client.get_collection(name=name)
     metadata = collection.metadata.copy()
     metadata.update(req.metadata or {})
 
     if workflow_id := metadata.get("workflow"):
-        workflow = Workflow.get(workflow_id)
+        workflow = await Workflow.get(workflow_id)
         if not workflow:
             raise HTTPException(status_code=404, detail="Workflow not found")
 
@@ -144,19 +145,19 @@ async def update_collection(name: str, req: CollectionModify):
                 detail="Workflow must have a FileInput or DocumentFileInput node",
             )
 
-    collection.modify(name=req.name, metadata=metadata)
+    await collection.modify(name=req.name, metadata=metadata)
     return CollectionResponse(
         name=collection.name,
         metadata=collection.metadata,
-        count=collection.count(),
+        count=await collection.count(),
     )
 
 
 @router.delete("/{name}")
 async def delete_collection(name: str):
     """Delete a collection"""
-    client = get_chroma_client()
-    client.delete_collection(name=name)
+    client = await get_async_chroma_client()
+    await client.delete_collection(name=name)
     return {"message": f"Collection {name} deleted successfully"}
 
 
@@ -165,11 +166,10 @@ class IndexResponse(BaseModel):
     error: Optional[str] = None
 
 
-
-
 def find_input_nodes(graph: dict) -> tuple[str | None, str | None]:
     # Re-exported for backward compatibility; actual implementation moved.
     from nodetool.indexing.ingestion import find_input_nodes as _find
+
     return _find(graph)
 
 
@@ -179,7 +179,7 @@ async def index(
     file: UploadFile = File(...),
     authorization: Optional[str] = Header(None),
 ) -> IndexResponse:
-    collection = get_collection(name)
+    collection = await get_async_collection(name)
     token = "local_token"
 
     # Save uploaded file temporarily

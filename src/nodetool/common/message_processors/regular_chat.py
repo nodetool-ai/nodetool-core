@@ -255,13 +255,13 @@ class RegularChatProcessor(MessageProcessor):
         if not collections or not query_text:
             return ""
 
-        from nodetool.common.chroma_client import get_collection
+        from nodetool.common.async_chroma_client import get_async_collection
 
         all_results = []
 
         for collection_name in collections:
-            collection = get_collection(name=collection_name)
-            results = collection.query(
+            collection = await get_async_collection(name=collection_name)
+            results = await collection.query(
                 query_texts=[query_text],
                 n_results=n_results,
             )

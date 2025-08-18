@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import List, Tuple, Dict
 
 import chromadb
+from typing import Any
 from markitdown import MarkItDown
 import pymupdf
 import pymupdf4llm
@@ -105,7 +106,9 @@ def default_ingestion_workflow(
             documents = [Document(text=md_text, doc_id=file_path)]
     else:
         md = MarkItDown()
-        documents = [Document(text=md.convert(file_path).text_content, doc_id=file_path)]
+        documents = [
+            Document(text=md.convert(file_path).text_content, doc_id=file_path)
+        ]
 
     ids_docs, _ = chunk_documents_markdown(
         documents,
@@ -113,6 +116,33 @@ def default_ingestion_workflow(
         chunk_overlap=256,
     )
     collection.upsert(
+        documents=list(ids_docs.values()),
+        ids=list(ids_docs.keys()),
+    )
+
+
+async def default_ingestion_workflow_async(
+    collection: Any, file_path: str, mime_type: str
+) -> None:
+    """Async version of default ingestion that works with AsyncChromaCollection."""
+    if mime_type == "application/pdf":
+        with open(file_path, "rb") as f:
+            pdf_data = f.read()
+            doc = pymupdf.open(stream=pdf_data, filetype="pdf")
+            md_text = pymupdf4llm.to_markdown(doc)
+            documents = [Document(text=md_text, doc_id=file_path)]
+    else:
+        md = MarkItDown()
+        documents = [
+            Document(text=md.convert(file_path).text_content, doc_id=file_path)
+        ]
+
+    ids_docs, _ = chunk_documents_markdown(
+        documents,
+        chunk_size=4096,
+        chunk_overlap=256,
+    )
+    await collection.upsert(
         documents=list(ids_docs.values()),
         ids=list(ids_docs.keys()),
     )
@@ -133,5 +163,3 @@ def find_input_nodes(graph: dict) -> Tuple[str | None, str | None]:
             file_input = node["data"]["name"]
 
     return collection_input, file_input
-
-
