@@ -204,7 +204,7 @@ def run_uvicorn_server(app: Any, host: str, port: int, reload: bool) -> None:
     Starts api using Uvicorn with the specified configuration.
 
     Args:
-        app: The app to run.
+        app: The app to run or import string when reload=True or workers > 1.
         host: The host to run on.
         port: The port to run on.
         reload: Whether to reload the server on changes.
@@ -228,6 +228,10 @@ def run_uvicorn_server(app: Any, host: str, port: int, reload: bool) -> None:
             loop = "asyncio"
 
     workers = 1 if reload else max(1, multiprocessing.cpu_count())
+
+    # Uvicorn requires an import string when using reload=True or workers > 1
+    if (reload or workers > 1) and not isinstance(app, str):
+        app = "nodetool.api.app:app"
 
     uvicorn(
         app=app,
