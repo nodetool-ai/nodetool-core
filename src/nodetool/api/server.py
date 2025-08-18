@@ -198,9 +198,10 @@ def create_app(
         chat_runner = ChatWebSocketRunner(auth_token=auth_token)
         await chat_runner.run(websocket)
 
-        @app.websocket("/updates")
-        async def updates_websocket_endpoint(websocket: WebSocket):
-            await websocket_updates.handle_client(websocket)
+    # WebSocket endpoint for periodic system updates (e.g., system stats)
+    @app.websocket("/updates")
+    async def updates_websocket_endpoint(websocket: WebSocket):
+        await websocket_updates.handle_client(websocket)
 
     if static_folder and os.path.exists(static_folder):
         print(f"Mounting static folder: {static_folder}")
