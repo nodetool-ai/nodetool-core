@@ -89,7 +89,9 @@ class ThreadedEventLoop:
     """
 
     def __init__(self):
-        self._loop: AbstractEventLoop = asyncio.new_event_loop()
+        # Lazily create the loop on start to avoid leaking FDs
+        # when instances are constructed but never started.
+        self._loop: Optional[AbstractEventLoop] = None
         self._thread: Optional[threading.Thread] = None
         self._running: bool = False
         self._stop_initiated: bool = False  # New flag
@@ -100,6 +102,8 @@ class ThreadedEventLoop:
             return
         self._running = True
         self._stop_initiated = False  # Reset flag on start
+        if self._loop is None:
+            self._loop = asyncio.new_event_loop()
         self._thread = threading.Thread(target=self._run_event_loop, daemon=True)
         self._thread.start()
 
@@ -188,7 +192,7 @@ class ThreadedEventLoop:
         )
         self._running = False  # Signal that no new work should be accepted / loop should stop running tasks
 
-        if self._loop.is_running():
+        if self._loop and self._loop.is_running():
             log.debug(
                 "ThreadedEventLoop: Scheduling _shutdown_loop via call_soon_threadsafe."
             )
@@ -219,6 +223,13 @@ class ThreadedEventLoop:
 
         self._thread = None  # Clear thread reference after join attempt or if called from same thread
         self._stop_initiated = True  # Ensure flag is set post-join attempt too
+        # Close the loop if it still exists and isn't closed
+        if self._loop is not None:
+            try:
+                if not self._loop.is_closed():
+                    self._loop.close()
+            finally:
+                self._loop = None
         log.debug("ThreadedEventLoop: Stop method finished.")
 
     def _run_event_loop(self) -> None:
@@ -226,6 +237,9 @@ class ThreadedEventLoop:
         log.debug(
             f"ThreadedEventLoop: Event loop thread {threading.get_ident()} started."
         )
+        if self._loop is None:
+            # Should not happen; guard to avoid AttributeError in rare cases
+            self._loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self._loop)
         try:
             self._loop.run_forever()
@@ -278,7 +292,7 @@ class ThreadedEventLoop:
                     exc_info=True,
                 )
 
-            if not self._loop.is_closed():
+            if self._loop and not self._loop.is_closed():
                 log.debug("ThreadedEventLoop: Closing event loop.")
                 self._loop.close()
                 log.debug("ThreadedEventLoop: Event loop closed.")
@@ -292,10 +306,14 @@ class ThreadedEventLoop:
 
     def run_coroutine(self, coro: Coroutine[Any, Any, T]) -> Future[T]:
         """Schedule a coroutine to run in this event loop."""
+        if self._loop is None:
+            raise RuntimeError("ThreadedEventLoop not started. Use start() or context manager.")
         return asyncio.run_coroutine_threadsafe(coro, self._loop)  # type: ignore
 
     def run_in_executor(self, func: Callable[..., T], *args: Any) -> asyncio.Future[T]:
         """Run a synchronous function in the default executor of this event loop."""
+        if self._loop is None:
+            raise RuntimeError("ThreadedEventLoop not started. Use start() or context manager.")
         return self._loop.run_in_executor(None, func, *args)
 
     @property
@@ -309,3 +327,15 @@ class ThreadedEventLoop:
 
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
         self.stop()
+
+    def __del__(self) -> None:  # best-effort safety net
+        try:
+            if self._loop is not None and not self._loop.is_closed():
+                # If user never started the loop, there is no thread; safe to close.
+                # If it was started but not stopped, closing here is best-effort.
+                self._loop.close()
+        except Exception:
+            # Avoid raising during GC
+            pass
+        finally:
+            self._loop = None
