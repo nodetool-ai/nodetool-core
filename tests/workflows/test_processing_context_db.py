@@ -4,6 +4,7 @@ Tests all the methods that were migrated from API client to direct database oper
 """
 
 import pytest
+import pytest_asyncio
 import asyncio
 from datetime import datetime
 from io import BytesIO
@@ -29,26 +30,26 @@ def context():
     )
 
 
-@pytest.fixture
-def sample_asset():
+@pytest_asyncio.fixture
+async def sample_asset():
     """Create a sample Asset for testing."""
-    return Asset.create(
+    return await Asset.create(
         user_id="test_user", name="test_image.png", content_type="image/png", size=1024
     )
 
 
-@pytest.fixture
-def sample_workflow():
+@pytest_asyncio.fixture
+async def sample_workflow():
     """Create a sample Workflow for testing."""
-    return Workflow.create(
+    return await Workflow.create(
         user_id="test_user", name="Test Workflow", graph={"nodes": [], "edges": []}
     )
 
 
-@pytest.fixture
-def sample_job():
+@pytest_asyncio.fixture
+async def sample_job():
     """Create a sample Job for testing."""
-    return Job.create(
+    return await Job.create(
         workflow_id="test_workflow",
         user_id="test_user",
         job_type="workflow",
@@ -56,10 +57,10 @@ def sample_job():
     )
 
 
-@pytest.fixture
-def sample_message():
+@pytest_asyncio.fixture
+async def sample_message():
     """Create a sample Message for testing."""
-    return Message.create(
+    return await Message.create(
         thread_id="test_thread",
         user_id="test_user",
         role="user",
@@ -374,7 +375,7 @@ class TestNodeCaching:
         class TestNode(BaseNode):
             value: int = 42
 
-        node = TestNode(id="test_node")
+        node = TestNode(id="test_node")  # type: ignore
         key = context.generate_node_cache_key(node)
 
         expected = f"{context.user_id}:{TestNode.get_node_type()}:{hash(repr(node.model_dump()))}"
@@ -393,7 +394,7 @@ class TestNodeCaching:
 
                 return [Property(name="output", type=TypeMetadata(type="int"))]
 
-        node = TestNode(id="test_node")
+        node = TestNode(id="test_node")  # type: ignore
         test_result = {"output": 123}
 
         # Cache should be empty initially

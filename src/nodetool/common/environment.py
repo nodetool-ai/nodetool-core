@@ -1,10 +1,6 @@
 import os
 from typing import Any
 
-from nodetool.common.nodetool_api_client import (
-    NodetoolAPIClient,
-    NODETOOL_INTERNAL_API,
-)
 from nodetool.storage.abstract_node_cache import AbstractNodeCache
 from nodetool.common.settings import (
     get_system_data_path,
@@ -14,7 +10,6 @@ from nodetool.common.settings import (
     SETTINGS_FILE,
     SECRETS_FILE,
 )
-from nodetool.storage.file_storage import FileStorage
 
 DEFAULT_ENV = {
     "ASSET_BUCKET": "images",
@@ -296,7 +291,7 @@ class Environment(object):
         )
 
     @classmethod
-    def get_database_adapter(
+    async def get_database_adapter(
         cls,
         fields: dict[str, Any],
         table_schema: dict[str, Any],
@@ -329,7 +324,7 @@ class Environment(object):
             if cls.get_db_path() != ":memory:":
                 os.makedirs(os.path.dirname(cls.get_db_path()), exist_ok=True)
 
-            return SQLiteAdapter(
+            return await SQLiteAdapter.create(
                 db_path=cls.get_db_path(),
                 fields=fields,
                 table_schema=table_schema,

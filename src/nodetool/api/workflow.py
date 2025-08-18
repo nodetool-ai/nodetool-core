@@ -79,7 +79,7 @@ async def create(
 
             # Create a new workflow based on the example
             workflow = from_model(
-                WorkflowModel.create(
+                await WorkflowModel.create(
                     name=workflow_request.name,
                     package_name=workflow_request.package_name,
                     description=workflow_request.description
@@ -98,7 +98,7 @@ async def create(
             raise HTTPException(status_code=404, detail=str(e))
     elif workflow_request.graph:
         workflow = from_model(
-            WorkflowModel.create(
+            await WorkflowModel.create(
                 name=workflow_request.name,
                 package_name=workflow_request.package_name,
                 description=workflow_request.description,
@@ -117,7 +117,7 @@ async def create(
         except Exception as e:
             raise HTTPException(status_code=400, detail=str(e))
         workflow = from_model(
-            WorkflowModel.create(
+            await WorkflowModel.create(
                 name=workflow_request.name,
                 description=workflow_request.description,
                 thumbnail=workflow_request.thumbnail,
@@ -147,7 +147,7 @@ async def index(
 ) -> WorkflowList:
     column_list = columns.split(",") if columns else None
 
-    workflows, cursor = WorkflowModel.paginate(
+    workflows, cursor = await WorkflowModel.paginate(
         user_id=user, limit=limit, start_key=cursor, columns=column_list
     )
     return WorkflowList(
@@ -163,7 +163,7 @@ async def public(
 ) -> WorkflowList:
     column_list = columns.split(",") if columns else None
 
-    workflows, cursor = WorkflowModel.paginate(
+    workflows, cursor = await WorkflowModel.paginate(
         limit=limit, start_key=cursor, columns=column_list
     )
     return WorkflowList(
@@ -173,7 +173,7 @@ async def public(
 
 @router.get("/public/{id}")
 async def get_public_workflow(id: str) -> Workflow:
-    workflow = WorkflowModel.get(id)
+    workflow = await WorkflowModel.get(id)
     if not workflow:
         raise HTTPException(status_code=404, detail="Workflow not found")
     if workflow.access != "public":
@@ -205,7 +205,7 @@ async def get_workflow_tools(
     column_list = columns.split(",") if columns else None
 
     # Get all user workflows
-    workflows, cursor = WorkflowModel.paginate(
+    workflows, cursor = await WorkflowModel.paginate(
         user_id=user, limit=limit, start_key=cursor, columns=column_list
     )
 
@@ -270,7 +270,7 @@ async def get_example(package_name: str, example_name: str) -> Workflow:
 
 @router.get("/{id}")
 async def get_workflow(id: str, user: str = Depends(current_user)) -> Workflow:
-    workflow = WorkflowModel.get(id)
+    workflow = await WorkflowModel.get(id)
     if not workflow:
         raise HTTPException(status_code=404, detail="Workflow not found")
     if workflow.access != "public" and workflow.user_id != user:
@@ -286,7 +286,7 @@ async def update_workflow(
     user: str = Depends(current_user),
 ) -> Workflow:
     print(workflow_request.settings)
-    workflow = WorkflowModel.get(id)
+    workflow = await WorkflowModel.get(id)
     if not workflow:
         workflow = WorkflowModel(id=id, user_id=user)
     if workflow.user_id != user:
@@ -304,7 +304,7 @@ async def update_workflow(
     workflow.settings = workflow_request.settings
     workflow.run_mode = workflow_request.run_mode
     workflow.updated_at = datetime.now()
-    workflow.save()
+    await workflow.save()
     updated_workflow = from_model(workflow)
 
     return updated_workflow
@@ -316,7 +316,7 @@ async def delete_workflow(
     id: str,
     user: str = Depends(current_user),
 ) -> None:
-    workflow = WorkflowModel.get(id)
+    workflow = await WorkflowModel.get(id)
     if not workflow:
         raise HTTPException(status_code=404, detail="Workflow not found")
     if workflow.user_id != user:

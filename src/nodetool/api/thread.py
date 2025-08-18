@@ -31,7 +31,7 @@ class ThreadSummarizeRequest(BaseModel):
 @router.post("/")
 async def create(req: ThreadCreateRequest, user: str = Depends(current_user)) -> Thread:
     """Create a new thread for the current user."""
-    thread = ThreadModel.create(
+    thread = await ThreadModel.create(
         user_id=user,
         title=req.title or "New Thread",
         created_at=datetime.now(),
@@ -43,7 +43,7 @@ async def create(req: ThreadCreateRequest, user: str = Depends(current_user)) ->
 @router.get("/{thread_id}")
 async def get(thread_id: str, user: str = Depends(current_user)) -> Thread:
     """Get a specific thread by ID."""
-    thread = ThreadModel.find(user_id=user, id=thread_id)
+    thread = await ThreadModel.find(user_id=user, id=thread_id)
     if thread is None:
         raise HTTPException(status_code=404, detail="Thread not found")
     return Thread.from_model(thread)
@@ -57,7 +57,7 @@ async def index(
     user: str = Depends(current_user),
 ) -> ThreadList:
     """List all threads for the current user with pagination."""
-    threads, next_cursor = ThreadModel.paginate(
+    threads, next_cursor = await ThreadModel.paginate(
         user_id=user,
         limit=limit,
         start_key=cursor,
@@ -76,13 +76,13 @@ async def update(
     user: str = Depends(current_user),
 ) -> Thread:
     """Update a thread's title."""
-    thread = ThreadModel.find(user_id=user, id=thread_id)
+    thread = await ThreadModel.find(user_id=user, id=thread_id)
     if thread is None:
         raise HTTPException(status_code=404, detail="Thread not found")
 
     thread.title = req.title
     thread.updated_at = datetime.now()
-    thread.save()
+    await thread.save()
 
     return Thread.from_model(thread)
 
@@ -90,7 +90,7 @@ async def update(
 @router.delete("/{thread_id}")
 async def delete(thread_id: str, user: str = Depends(current_user)) -> None:
     """Delete a thread and all its associated messages."""
-    thread = ThreadModel.find(user_id=user, id=thread_id)
+    thread = await ThreadModel.find(user_id=user, id=thread_id)
     if thread is None:
         raise HTTPException(status_code=404, detail="Thread not found")
 
@@ -99,20 +99,20 @@ async def delete(thread_id: str, user: str = Depends(current_user)) -> None:
 
     # Keep deleting messages until none are left
     while True:
-        messages, _ = MessageModel.paginate(thread_id=thread_id, limit=100)
+        messages, _ = await MessageModel.paginate(thread_id=thread_id, limit=100)
         if not messages:
             break
 
         for message in messages:
             if message.user_id == user:
-                message.delete()
+                await message.delete()
 
         # If we deleted fewer messages than the limit, we're done
         if len(messages) < 100:
             break
 
     # Delete the thread
-    thread.delete()
+    await thread.delete()
 
     log.info(f"Deleted thread {thread_id} and its messages for user {user}")
 
@@ -122,7 +122,7 @@ async def summarize_thread(
     thread_id: str, req: ThreadSummarizeRequest, user: str = Depends(current_user)
 ) -> Thread:
     """Summarize thread content and update the thread title."""
-    thread = ThreadModel.find(user_id=user, id=thread_id)
+    thread = await ThreadModel.find(user_id=user, id=thread_id)
     if thread is None:
         raise HTTPException(status_code=404, detail="Thread not found")
 
@@ -154,7 +154,7 @@ async def summarize_thread(
         # Update the thread title
         thread.title = new_title[:60]  # Ensure max 60 characters
         thread.updated_at = datetime.now()
-        thread.save()
+        await thread.save()
 
         log.info(f"Updated thread {thread_id} title to: {new_title}")
 

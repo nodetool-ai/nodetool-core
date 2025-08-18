@@ -19,21 +19,21 @@ log = Environment.get_logger()
 models = [Asset, Job, Message, Prediction, Thread, Workflow]
 
 
-def create_all_tables():
+async def create_all_tables():
     """Create all database tables for the registered models.
 
     Iterates through the `models` list and calls the `create_table` class method
     on each model. Logs the creation of each table.
     """
     for model in models:
-        model.create_table()
+        await model.create_table()
 
 
-def drop_all_tables():
+async def drop_all_tables():
     """Drop all database tables for the registered models.
 
     Iterates through the `models` list and calls the `drop_table` class method
     on each model. Logs the dropping of each table.
     """
     for model in models:
-        model.drop_table()
+        await model.drop_table()

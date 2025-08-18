@@ -26,7 +26,7 @@ class Thread(DBModel):
     updated_at: datetime = DBField(default_factory=datetime.now)
 
     @classmethod
-    def find(cls, user_id: str, id: str):
+    async def find(cls, user_id: str, id: str):
         """Finds a thread by its ID, ensuring it belongs to the specified user.
 
         Args:
@@ -36,13 +36,13 @@ class Thread(DBModel):
         Returns:
             The Thread object if found and owned by the user, otherwise None.
         """
-        thread = cls.get(id)
+        thread = await cls.get(id)
         if thread and thread.user_id == user_id:
             return thread
         return None
 
     @classmethod
-    def create(cls, user_id: str, **kwargs) -> "Thread":
+    async def create(cls, user_id: str, **kwargs) -> "Thread":
         """Creates a new thread record in the database for a given user.
 
         Args:
@@ -52,14 +52,14 @@ class Thread(DBModel):
         Returns:
             The newly created and saved Thread instance.
         """
-        return super().create(
+        return await super().create(
             id=create_time_ordered_uuid(),
             user_id=user_id,
             **kwargs,
         )
 
     @classmethod
-    def paginate(
+    async def paginate(
         cls,
         user_id: str,
         limit: int = 10,
@@ -78,7 +78,7 @@ class Thread(DBModel):
             A tuple containing a list of Thread objects and the ID of the
             last evaluated thread (or an empty string if it's the last page).
         """
-        return cls.query(
+        return await cls.query(
             condition=Field("user_id")
             .equals(user_id)
             .and_(Field("id").greater_than(start_key or "")),

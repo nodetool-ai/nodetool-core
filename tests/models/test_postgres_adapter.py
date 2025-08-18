@@ -1,9 +1,10 @@
 import pytest
+import pytest_asyncio
 from datetime import datetime
 from enum import Enum
 from typing import Dict, List, Optional
-from unittest.mock import MagicMock, patch
-from psycopg2.extras import Json
+from unittest.mock import MagicMock, patch, AsyncMock
+from psycopg.types.json import Jsonb
 from nodetool.models.condition_builder import Field
 from nodetool.models.postgres_adapter import (
     PostgresAdapter,
@@ -58,21 +59,32 @@ class TestModel(DBModel):
         )
 
 
-@pytest.fixture
-def mock_db_adapter():
-    with patch("nodetool.models.postgres_adapter.psycopg2.connect") as mock_connect:
-        mock_cursor = MagicMock()
-        mock_connect.return_value.cursor.return_value = mock_cursor
+@pytest_asyncio.fixture
+async def mock_db_adapter():
+    with patch(
+        "nodetool.models.postgres_adapter.AsyncConnectionPool"
+    ) as mock_pool_class:
+        mock_pool = AsyncMock()
+        mock_conn = AsyncMock()
+        mock_cursor = AsyncMock()
+
+        mock_pool_class.return_value = mock_pool
+        mock_pool.connection.return_value.__aenter__.return_value = mock_conn
+        mock_conn.cursor.return_value.__aenter__.return_value = mock_cursor
+
         adapter = TestModel.adapter()
+        adapter._pool = mock_pool
         yield adapter
 
 
-def test_table_creation(mock_db_adapter):
-    mock_db_adapter.table_exists = MagicMock(return_value=True)
-    assert mock_db_adapter.table_exists()
+@pytest.mark.asyncio
+async def test_table_creation(mock_db_adapter):
+    mock_db_adapter.table_exists = AsyncMock(return_value=True)
+    assert await mock_db_adapter.table_exists()
 
 
-def test_save_and_get(mock_db_adapter):
+@pytest.mark.asyncio
+async def test_save_and_get(mock_db_adapter):
     item = TestModel(
         id="1",
         name="John Doe",
@@ -85,15 +97,16 @@ def test_save_and_get(mock_db_adapter):
         enum_field=TestEnum.VALUE1,
         optional_field="test",
     )
-    mock_db_adapter.save = MagicMock()
-    mock_db_adapter.get = MagicMock(return_value=item.model_dump())
+    mock_db_adapter.save = AsyncMock()
+    mock_db_adapter.get = AsyncMock(return_value=item.model_dump())
 
-    mock_db_adapter.save(item.model_dump())
-    retrieved_item = TestModel(**mock_db_adapter.get("1"))
+    await mock_db_adapter.save(item.model_dump())
+    retrieved_item = TestModel(**await mock_db_adapter.get("1"))
     assert retrieved_item == item
 
 
-def test_update(mock_db_adapter):
+@pytest.mark.asyncio
+async def test_update(mock_db_adapter):
     item = TestModel(
         id="1",
         name="John Doe",
@@ -106,30 +119,32 @@ def test_update(mock_db_adapter):
         enum_field=TestEnum.VALUE1,
         optional_field="test",
     )
-    mock_db_adapter.save = MagicMock()
-    mock_db_adapter.get = MagicMock()
+    mock_db_adapter.save = AsyncMock()
+    mock_db_adapter.get = AsyncMock()
 
-    mock_db_adapter.save(item.model_dump())
+    await mock_db_adapter.save(item.model_dump())
 
-    updated_item = item.copy()
+    updated_item = item.model_copy()
     updated_item.name = "Jane Doe"
     updated_item.age = 31
-    mock_db_adapter.save(updated_item.model_dump())
+    await mock_db_adapter.save(updated_item.model_dump())
     mock_db_adapter.get.return_value = updated_item.model_dump()
 
-    retrieved_item = TestModel(**mock_db_adapter.get("1"))
+    retrieved_item = TestModel(**await mock_db_adapter.get("1"))
     assert retrieved_item == updated_item
 
 
-def test_delete(mock_db_adapter):
-    mock_db_adapter.delete = MagicMock()
-    mock_db_adapter.get = MagicMock(return_value=None)
+@pytest.mark.asyncio
+async def test_delete(mock_db_adapter):
+    mock_db_adapter.delete = AsyncMock()
+    mock_db_adapter.get = AsyncMock(return_value=None)
 
-    mock_db_adapter.delete("1")
-    assert mock_db_adapter.get("1") is None
+    await mock_db_adapter.delete("1")
+    assert await mock_db_adapter.get("1") is None
 
 
-def test_query(mock_db_adapter):
+@pytest.mark.asyncio
+async def test_query(mock_db_adapter):
     items = [
         TestModel(
             id=str(i),
@@ -146,9 +161,11 @@ def test_query(mock_db_adapter):
         for i in range(10)
     ]
     # Mock the query to return items 5-8 (indices 5, 6, 7, 8)
-    mock_db_adapter.query = MagicMock(return_value=(items[5:9], ""))
+    mock_db_adapter.query = AsyncMock(return_value=(items[5:9], ""))
 
-    results, last_key = mock_db_adapter.query(Field("age").greater_than(25), limit=5)
+    results, last_key = await mock_db_adapter.query(
+        Field("age").greater_than(25), limit=5
+    )
 
     assert len(results) == 4
     assert all(result["age"] > 25 for result in results)
@@ -165,14 +182,14 @@ def test_convert_to_postgres_format():
     assert convert_to_postgres_format(1.23, float) == 1.23
     assert convert_to_postgres_format(True, bool) is True
 
-    # For lists and dicts, check if the result is a Json object and compare its adapted value
+    # For lists and dicts, check if the result is a Jsonb object and compare its value
     list_result = convert_to_postgres_format(["a", "b"], List[str])
-    assert isinstance(list_result, Json)
-    assert list_result.adapted == ["a", "b"]
+    assert isinstance(list_result, Jsonb)
+    assert list_result.obj == ["a", "b"]
 
     dict_result = convert_to_postgres_format({"a": 1}, Dict[str, int])
-    assert isinstance(dict_result, Json)
-    assert dict_result.adapted == {"a": 1}
+    assert isinstance(dict_result, Jsonb)
+    assert dict_result.obj == {"a": 1}
 
     # For datetime, check if it's returned as-is
     test_datetime = datetime(2023, 1, 1)
@@ -203,25 +220,26 @@ def test_translate_condition_to_sql():
     assert translate_condition_to_sql(condition) == expected
 
 
-def test_table_migration(mock_db_adapter):
-    mock_db_adapter.get_current_schema = MagicMock(return_value={})
-    mock_db_adapter.migrate_table = MagicMock()
+@pytest.mark.asyncio
+async def test_table_migration(mock_db_adapter):
+    mock_db_adapter.get_current_schema = AsyncMock(return_value=set())
+    mock_db_adapter.migrate_table = AsyncMock()
 
     # Add a new field
     mock_db_adapter.fields["new_field"] = DBField()
     mock_db_adapter.fields["new_field"].annotation = str
-    mock_db_adapter.migrate_table()
+    await mock_db_adapter.migrate_table()
 
     # Check if the new field was added
-    mock_db_adapter.get_current_schema.return_value = {"new_field": "VARCHAR"}
-    current_schema = mock_db_adapter.get_current_schema()
+    mock_db_adapter.get_current_schema.return_value = {"new_field"}
+    current_schema = await mock_db_adapter.get_current_schema()
     assert "new_field" in current_schema
 
     # Remove a field
     del mock_db_adapter.fields["optional_field"]
-    mock_db_adapter.migrate_table()
+    await mock_db_adapter.migrate_table()
 
     # Check if the field was removed
-    mock_db_adapter.get_current_schema.return_value = {}
-    current_schema = mock_db_adapter.get_current_schema()
+    mock_db_adapter.get_current_schema.return_value = set()
+    current_schema = await mock_db_adapter.get_current_schema()
     assert "optional_field" not in current_schema

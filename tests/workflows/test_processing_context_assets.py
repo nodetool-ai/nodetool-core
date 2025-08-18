@@ -4,7 +4,6 @@ Covers all the asset creation, conversion, and utility methods.
 """
 
 import pytest
-import asyncio
 from io import BytesIO
 from unittest.mock import Mock, patch, AsyncMock
 import base64
@@ -12,6 +11,7 @@ import numpy as np
 import PIL.Image
 import pandas as pd
 from pydub import AudioSegment
+import importlib.util
 
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.metadata.types import (
@@ -19,6 +19,11 @@ from nodetool.metadata.types import (
     DataframeRef, ModelRef
 )
 from nodetool.common.environment import Environment
+
+
+def _sklearn_available() -> bool:
+    """Check if sklearn is available."""
+    return importlib.util.find_spec("sklearn") is not None
 
 
 @pytest.fixture
@@ -488,6 +493,7 @@ class TestModelMethods:
     """Test ML model-related methods."""
     
     @pytest.mark.asyncio
+    @pytest.mark.skipif(not _sklearn_available(), reason="sklearn not installed")
     async def test_to_estimator(self, context):
         """Test converting ModelRef to estimator."""
         # Create fake model data
@@ -515,6 +521,7 @@ class TestModelMethods:
             await context.to_estimator(model_ref)
     
     @pytest.mark.asyncio
+    @pytest.mark.skipif(not _sklearn_available(), reason="sklearn not installed")
     async def test_from_estimator(self, context):
         """Test creating ModelRef from estimator."""
         from sklearn.linear_model import LinearRegression

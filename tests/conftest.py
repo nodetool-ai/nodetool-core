@@ -1,10 +1,10 @@
-import asyncio
 from typing import Any
 from unittest.mock import Mock
 from pydantic import Field
 from fastapi.testclient import TestClient
 import httpx
 import pytest
+import pytest_asyncio
 from nodetool.api.server import create_app
 from nodetool.storage.memory_storage import MemoryStorage
 from nodetool.types.graph import Node, Edge
@@ -15,6 +15,7 @@ from nodetool.models.workflow import Workflow
 from nodetool.models.job import Job
 from nodetool.models.asset import Asset
 from nodetool.models.schema import create_all_tables, drop_all_tables
+from nodetool.models.base_model import close_all_database_adapters
 import PIL.ImageChops
 from nodetool.workflows.base_node import BaseNode, InputNode
 from nodetool.workflows.processing_context import ProcessingContext
@@ -23,16 +24,56 @@ import uuid
 import PIL.Image
 
 
-@pytest.fixture(autouse=True, scope="function")
-def setup_and_teardown():
+@pytest_asyncio.fixture(autouse=True, scope="function")
+async def setup_and_teardown(request):
+    if request.node.get_closest_marker("no_setup"):
+        yield
+        return
+
     Environment.set_remote_auth(False)
 
-    create_all_tables()
+    await create_all_tables()
 
     yield
 
-    drop_all_tables()
+    # Clean up database tables
+    await drop_all_tables()
+    
+    # Close all database connections
+    await close_all_database_adapters()
+    
     Environment.set_remote_auth(True)
+    
+    # Clean up any remaining asyncio tasks
+    import asyncio
+    import warnings
+    
+    # Get current loop and cancel tasks more carefully
+    try:
+        loop = asyncio.get_running_loop()
+        # Get all tasks except the current one
+        current_task = asyncio.current_task()
+        tasks = [task for task in asyncio.all_tasks(loop) if task != current_task and not task.done()]
+        
+        if tasks:
+            # Cancel tasks one by one with error handling
+            for task in tasks:
+                try:
+                    if not task.cancelled() and not task.done():
+                        task.cancel()
+                except Exception:
+                    pass  # Ignore errors during cancellation
+            
+            # Give a short time for tasks to cancel
+            try:
+                await asyncio.wait_for(
+                    asyncio.gather(*tasks, return_exceptions=True),
+                    timeout=0.1
+                )
+            except (asyncio.TimeoutError, Exception):
+                pass  # Ignore timeout or other errors
+    except Exception:
+        pass  # Ignore any errors in cleanup
 
 
 def pil_to_bytes(image: PIL.Image.Image, format="PNG") -> bytes:
@@ -66,7 +107,7 @@ def upload_test_image(image: Asset, width: int = 512, height: int = 512):
     storage.storage[image.file_name] = pil_to_bytes(img)
 
 
-def make_image(
+async def make_image(
     user_id: str,
     workflow_id: str | None = None,
     parent_id: str | None = None,
@@ -86,7 +127,7 @@ def make_image(
     Returns:
         Asset: The created image asset.
     """
-    image = Asset.create(
+    image = await Asset.create(
         user_id=user_id,
         name="test_image",
         parent_id=parent_id,
@@ -97,7 +138,7 @@ def make_image(
     return image
 
 
-def make_text(
+async def make_text(
     user_id: str,
     content: str,
     workflow_id: str | None = None,
@@ -115,7 +156,7 @@ def make_text(
     Returns:
         Asset: The created text asset.
     """
-    asset = Asset.create(
+    asset = await Asset.create(
         user_id=user_id,
         name="test_text",
         parent_id=parent_id,
@@ -123,11 +164,11 @@ def make_text(
         workflow_id=workflow_id,
     )
     storage = Environment.get_asset_storage()
-    asyncio.run(storage.upload(asset.file_name, io.BytesIO(content.encode())))
+    await storage.upload(asset.file_name, io.BytesIO(content.encode()))
     return asset
 
 
-def make_job(user_id: str, **kwargs):
+async def make_job(user_id: str, **kwargs):
     """
     Create a test job.
 
@@ -138,21 +179,21 @@ def make_job(user_id: str, **kwargs):
     Returns:
         Job: The created job instance.
     """
-    return Job.create(
+    return await Job.create(
         workflow_id=str(uuid.uuid4()),
         user_id=user_id,
         **kwargs,
     )
 
 
-@pytest.fixture()
-def image(user_id: str):
-    return make_image(user_id)
+@pytest_asyncio.fixture()
+async def image(user_id: str):
+    return await make_image(user_id)
 
 
-@pytest.fixture()
-def text_asset(user_id: str):
-    return make_text(user_id, "test content")
+@pytest_asyncio.fixture()
+async def text_asset(user_id: str):
+    return await make_text(user_id, "test content")
 
 
 @pytest.fixture()
@@ -212,15 +253,15 @@ def make_node(id, type: str, data: dict[str, Any]):
     return Node(id=id, type=type, data=data)
 
 
-@pytest.fixture()
-def thread(user_id: str):
-    th = Thread.create(user_id=user_id)
+@pytest_asyncio.fixture()
+async def thread(user_id: str):
+    th = await Thread.create(user_id=user_id)
     return th
 
 
-@pytest.fixture()
-def message(user_id: str, thread: Thread):
-    msg = Message.create(
+@pytest_asyncio.fixture()
+async def message(user_id: str, thread: Thread):
+    msg = await Message.create(
         user_id=user_id, thread_id=thread.id, role="user", content="Hello"
     )
     return msg
@@ -245,8 +286,8 @@ class Add(BaseNode):
         return self.a + self.b
 
 
-@pytest.fixture()
-def workflow(user_id: str):
+@pytest_asyncio.fixture()
+async def workflow(user_id: str):
     # Restore graph definition from previous version
     nodes = [
         make_node("1", FloatInput.get_node_type(), {"name": "in1", "value": 10}),
@@ -260,7 +301,7 @@ def workflow(user_id: str):
             targetHandle="a",
         ),
     ]
-    wf = Workflow.create(
+    wf = await Workflow.create(
         user_id=user_id,  # Use the string user_id
         name="test_workflow",
         graph={

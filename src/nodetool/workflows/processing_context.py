@@ -367,7 +367,7 @@ class ProcessingContext:
         Returns:
             Asset: The asset with the given ID.
         """
-        return Asset.find(self.user_id, asset_id)
+        return await Asset.find(self.user_id, asset_id)
 
     async def find_asset_by_filename(self, filename: str):
         """
@@ -375,7 +375,7 @@ class ProcessingContext:
         """
         from nodetool.models.condition_builder import Field
 
-        assets, _ = Asset.query(
+        assets, _ = await Asset.query(
             Field("user_id").equals(self.user_id).and_(Field("name").equals(filename)),
             limit=1,
         )
@@ -391,10 +391,12 @@ class ProcessingContext:
         Lists assets.
         """
         if recursive:
-            result = Asset.get_assets_recursive(self.user_id, parent_id or self.user_id)
+            result = await Asset.get_assets_recursive(
+                self.user_id, parent_id or self.user_id
+            )
             return result["assets"], None
         else:
-            assets, next_cursor = Asset.paginate(
+            assets, next_cursor = await Asset.paginate(
                 user_id=self.user_id,
                 parent_id=parent_id,
                 content_type=content_type,
@@ -473,7 +475,7 @@ class ProcessingContext:
         Returns:
             Workflow: The retrieved workflow.
         """
-        return Workflow.find(self.user_id, workflow_id)
+        return await Workflow.find(self.user_id, workflow_id)
 
     async def _prepare_prediction(
         self,
@@ -536,7 +538,7 @@ class ProcessingContext:
         else:
             cost = 0
 
-        PredictionModel.create(
+        await PredictionModel.create(
             user_id=self.user_id,
             node_id=node_id,
             provider=provider,
@@ -597,7 +599,7 @@ class ProcessingContext:
             _provider.usage.get("prompt_tokens", 0),
             _provider.usage.get("completion_tokens", 0),
         )
-        PredictionModel.create(
+        await PredictionModel.create(
             user_id=self.user_id,
             node_id=node_id,
             provider=provider,
@@ -650,7 +652,7 @@ class ProcessingContext:
         started_at = datetime.now()
         async for msg in run_prediction_function(prediction, self.environment):
             if isinstance(msg, PredictionResult):
-                PredictionModel.create(
+                await PredictionModel.create(
                     user_id=self.user_id,
                     node_id=node_id,
                     provider=provider,
@@ -723,7 +725,7 @@ class ProcessingContext:
         Returns:
             Job: The job status.
         """
-        return Job.find(self.user_id, job_id)
+        return await Job.find(self.user_id, job_id)
 
     async def create_asset(
         self,
@@ -750,7 +752,7 @@ class ProcessingContext:
         content.seek(0)
 
         # Create the asset record in the database
-        asset = Asset.create(
+        asset = await Asset.create(
             user_id=self.user_id,
             name=name,
             content_type=content_type,
@@ -780,7 +782,7 @@ class ProcessingContext:
         if not req.thread_id:
             raise ValueError("Thread ID is required")
 
-        return DBMessage.create(
+        return await DBMessage.create(
             thread_id=req.thread_id,
             user_id=self.user_id,
             role=req.role,
@@ -810,7 +812,7 @@ class ProcessingContext:
         Returns:
             dict: Dictionary with messages list and next cursor.
         """
-        messages, next_cursor = DBMessage.paginate(
+        messages, next_cursor = await DBMessage.paginate(
             thread_id=thread_id, limit=limit, start_key=start_key, reverse=reverse
         )
         return {
@@ -1730,7 +1732,7 @@ class ProcessingContext:
         parent_id: str | None = None,
     ) -> VideoRef:
         import tempfile
-        from diffusers.utils.export_utils import export_to_video
+        from nodetool.common.video_utils import export_to_video
 
         with tempfile.NamedTemporaryFile(suffix=".mp4", delete=True) as temp:
             export_to_video(frames, temp.name, fps=fps)

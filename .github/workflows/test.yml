@@ -2,7 +2,9 @@ name: Tests
 
 on:
   push:
+    branches: [main]
   pull_request:
+    branches: [main]
   workflow_dispatch:
 
 jobs:
@@ -29,7 +31,7 @@ jobs:
       - name: Install dependencies
         run: |
           uv pip install --system .
-          uv pip install --system pytest pytest-asyncio pytest-mock
+          uv pip install --system pytest pytest-asyncio pytest-mock pytest-timeout aioresponses
 
       - name: Run Tests
         run: pytest tests/
