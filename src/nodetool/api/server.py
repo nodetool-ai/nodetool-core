@@ -227,7 +227,7 @@ def run_uvicorn_server(app: Any, host: str, port: int, reload: bool) -> None:
         except Exception:
             loop = "asyncio"
 
-    workers = 1 if reload else max(1, multiprocessing.cpu_count())
+    workers = 1
 
     # Uvicorn requires an import string when using reload=True or workers > 1
     if (reload or workers > 1) and not isinstance(app, str):
