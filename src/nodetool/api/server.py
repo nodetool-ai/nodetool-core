@@ -21,7 +21,7 @@ from uvicorn import run as uvicorn
 from nodetool.metadata.types import Provider
 from nodetool.packages.registry import get_nodetool_package_source_folders
 
-from . import asset, job, message, node, storage, workflow, model, settings, thread
+from . import asset, job, message, node, storage, workflow, model, settings, thread, system
 import mimetypes
 
 from nodetool.common.websocket_updates import websocket_updates
@@ -103,6 +103,8 @@ if not Environment.is_production():
     DEFAULT_ROUTERS.append(file.router)
     DEFAULT_ROUTERS.append(settings.router)
     DEFAULT_ROUTERS.append(collection.router)
+    # System endpoints are only available in non-production
+    DEFAULT_ROUTERS.append(system.router)
     DEFAULT_ROUTERS.append(package.router)
 
 

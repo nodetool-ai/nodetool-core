@@ -43,17 +43,25 @@ def get_system_stats() -> SystemStats:
 
     # VRAM usage (if GPU is available)
     vram_total = vram_used = vram_percent = None
+    nvml_initialized = False
     try:
         pynvml.nvmlInit()
+        nvml_initialized = True
         handle = pynvml.nvmlDeviceGetHandleByIndex(0)  # First GPU
         info = pynvml.nvmlDeviceGetMemoryInfo(handle)
 
         vram_total = float(info.total) / (1024**3)  # Convert to GB
         vram_used = float(info.used) / (1024**3)
         vram_percent = (vram_used / vram_total) * 100
-        pynvml.nvmlShutdown()
     except pynvml.NVMLError:
         pass  # No NVIDIA GPU available or driver issues
+    finally:
+        # Ensure proper cleanup if NVML was initialized
+        if nvml_initialized:
+            try:
+                pynvml.nvmlShutdown()
+            except pynvml.NVMLError:
+                pass  # Ignore shutdown errors
 
     return SystemStats(
         cpu_percent=cpu_percent,

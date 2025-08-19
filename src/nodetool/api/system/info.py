@@ -1,0 +1,180 @@
+from __future__ import annotations
+
+import platform
+import sys
+from importlib import metadata
+from typing import Dict, Optional
+from pathlib import Path
+
+from nodetool.common.settings import (
+    get_log_path,
+    get_system_data_path,
+    get_system_file_path,
+    SETTINGS_FILE,
+    SECRETS_FILE,
+)
+
+
+def get_os_info() -> Dict[str, str]:
+    return {
+        "platform": sys.platform,
+        "release": platform.release(),
+        "arch": platform.machine(),
+    }
+
+
+def _safe_version(pkg: str) -> str | None:
+    try:
+        return metadata.version(pkg)
+    except Exception:
+        return None
+
+
+def get_gpu_info() -> Dict[str, str | None]:
+    """Get GPU and VRAM information."""
+    gpu_info: Dict[str, str | None] = {
+        "gpu_name": None,
+        "vram_total_gb": None,
+        "driver_version": None,
+    }
+    
+    try:
+        import pynvml  # type: ignore
+        
+        pynvml.nvmlInit()
+        handle = pynvml.nvmlDeviceGetHandleByIndex(0)  # First GPU
+        
+        # Get GPU name
+        gpu_name = pynvml.nvmlDeviceGetName(handle)
+        if isinstance(gpu_name, bytes):
+            gpu_name = gpu_name.decode('utf-8')
+        gpu_info["gpu_name"] = gpu_name
+        
+        # Get VRAM total
+        memory_info = pynvml.nvmlDeviceGetMemoryInfo(handle)
+        vram_total_gb = round(float(memory_info.total) / (1024**3), 2)
+        gpu_info["vram_total_gb"] = str(vram_total_gb)
+        
+        # Get driver version
+        try:
+            driver_version = pynvml.nvmlSystemGetDriverVersion()
+            if isinstance(driver_version, bytes):
+                driver_version = driver_version.decode('utf-8')
+            gpu_info["driver_version"] = driver_version
+        except Exception:
+            pass  # Driver version not critical
+            
+        pynvml.nvmlShutdown()
+        
+    except Exception:
+        # No NVIDIA GPU available, driver issues, or pynvml not installed
+        pass
+    
+    return gpu_info
+
+
+def get_versions_info() -> Dict[str, str | None]:
+    # CUDA version (best-effort via PyTorch)
+    cuda_version: Optional[str] = None
+    try:
+        import torch  # type: ignore
+
+        cuda_version = getattr(getattr(torch, "version", None), "cuda", None)
+        if not cuda_version and hasattr(torch, "version"):
+            # Try nvcc version via torch if available
+            nv: Optional[str] = getattr(torch.version, "nvcc", None)  # type: ignore
+            if nv:
+                cuda_version = nv
+    except Exception:
+        cuda_version = None
+
+    # Get GPU information
+    gpu_info = get_gpu_info()
+
+    return {
+        "python": platform.python_version(),
+        "nodetool_core": _safe_version("nodetool-core"),
+        "nodetool_base": _safe_version("nodetool-base"),
+        "cuda": cuda_version,
+        "gpu_name": gpu_info["gpu_name"],
+        "vram_total_gb": gpu_info["vram_total_gb"],
+        "driver_version": gpu_info["driver_version"],
+    }
+
+
+def get_paths_info() -> Dict[str, str]:
+    # Use template paths to avoid exposing usernames while still being helpful
+    if sys.platform == "win32":
+        settings_path = "%APPDATA%/nodetool/settings.yaml"
+        secrets_path = "%APPDATA%/nodetool/secrets.yaml"
+        data_dir = "%LOCALAPPDATA%/nodetool"
+        core_logs_dir = "%LOCALAPPDATA%/nodetool/logs"
+        core_log_file = "%LOCALAPPDATA%/nodetool/logs/nodetool.log"
+    elif sys.platform == "darwin":
+        settings_path = "~/.config/nodetool/settings.yaml"
+        secrets_path = "~/.config/nodetool/secrets.yaml"
+        data_dir = "~/.local/share/nodetool"
+        core_logs_dir = "~/.local/share/nodetool/logs"
+        core_log_file = "~/.local/share/nodetool/logs/nodetool.log"
+    else:
+        # Linux and others
+        settings_path = "~/.config/nodetool/settings.yaml"
+        secrets_path = "~/.config/nodetool/secrets.yaml"
+        data_dir = "~/.local/share/nodetool"
+        core_logs_dir = "~/.local/share/nodetool/logs"
+        core_log_file = "~/.local/share/nodetool/logs/nodetool.log"
+
+    # Additional caches/paths
+    # Hugging Face cache (actual path since it can be configured arbitrarily)
+    try:
+        from huggingface_hub.constants import HF_HUB_CACHE  # type: ignore
+
+        huggingface_cache_dir = str(Path(HF_HUB_CACHE).resolve())
+    except Exception:
+        huggingface_cache_dir = ""
+
+    # Ollama models directory
+    try:
+        # Internal helper determines OS-specific location
+        from nodetool.api.model import _get_ollama_models_dir  # type: ignore
+
+        ollama_path = _get_ollama_models_dir()
+        ollama_models_dir = str(ollama_path) if ollama_path else ""
+    except Exception:
+        ollama_models_dir = ""
+
+    # Electron paths (best-effort strings)
+    if sys.platform == "win32":
+        electron_user_data = "%APPDATA%/nodetool-electron"
+        electron_log_file = "%APPDATA%/nodetool-electron/nodetool.log"
+        electron_logs_dir = "%APPDATA%/nodetool-electron/logs"
+        electron_main_log_file = "%APPDATA%/nodetool-electron/logs/main.log"
+    elif sys.platform == "darwin":
+        electron_user_data = "~/Library/Application Support/nodetool-electron"
+        electron_log_file = (
+            "~/Library/Application Support/nodetool-electron/nodetool.log"
+        )
+        electron_logs_dir = "~/Library/Logs/nodetool-electron"
+        electron_main_log_file = "~/Library/Logs/nodetool-electron/main.log"
+    else:
+        # Linux and others
+        electron_user_data = "~/.config/nodetool-electron"
+        electron_log_file = "~/.config/nodetool-electron/nodetool.log"
+        electron_logs_dir = "~/.config/nodetool-electron/logs"
+        electron_main_log_file = "~/.config/nodetool-electron/logs/main.log"
+
+    return {
+        "settings_path": settings_path,
+        "secrets_path": secrets_path,
+        "data_dir": data_dir,
+        "core_logs_dir": core_logs_dir,
+        "core_log_file": core_log_file,
+        "ollama_models_dir": ollama_models_dir,
+        "huggingface_cache_dir": huggingface_cache_dir,
+        "electron_user_data": electron_user_data,
+        "electron_log_file": electron_log_file,
+        "electron_logs_dir": electron_logs_dir,
+        "electron_main_log_file": electron_main_log_file,
+    }
+
+
