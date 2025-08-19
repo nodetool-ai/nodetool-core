@@ -43,7 +43,6 @@ from openai.types.chat.chat_completion_assistant_message_param import (
     ContentArrayOfContentPart,
 )
 
-from nodetool.agents.tools.workflow_tool import WorkflowTool, create_workflow_tools
 from nodetool.chat.base_chat_runner import BaseChatRunner
 from nodetool.metadata.types import (
     Message as ApiMessage,
