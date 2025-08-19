@@ -128,6 +128,26 @@ class AnthropicProvider(ChatProvider):
         """Get the maximum token limit for a given model."""
         return 200000
 
+    def _detect_image_media_type(self, image_data: bytes) -> str:
+        """Detect the media type of image data from its header bytes."""
+        if not image_data:
+            return "image/png"  # Default fallback
+        
+        # Check image format by magic bytes
+        if image_data.startswith(b'\x89PNG\r\n\x1a\n'):
+            return "image/png"
+        elif image_data.startswith(b'\xff\xd8\xff'):
+            return "image/jpeg"
+        elif image_data.startswith(b'GIF87a') or image_data.startswith(b'GIF89a'):
+            return "image/gif"
+        elif image_data.startswith(b'RIFF') and b'WEBP' in image_data[:12]:
+            return "image/webp"
+        elif image_data.startswith(b'BM'):
+            return "image/bmp"
+        else:
+            print(f"[DEBUG] Unknown image format, using PNG as default. First 16 bytes: {image_data[:16]}")
+            return "image/png"  # Default fallback
+
     def convert_message(self, message: Message) -> MessageParam | None:
         """Convert an internal message to Anthropic's format."""
         if message.role == "tool":
@@ -166,7 +186,9 @@ class AnthropicProvider(ChatProvider):
                             # Handle raw image data
                             print(f"[DEBUG] Using raw image data, size: {len(part.image.data)} bytes")
                             data = base64.b64encode(part.image.data).decode("utf-8")
-                            media_type = "image/png"  # Default assumption
+                            # Detect media type from image data
+                            media_type = self._detect_image_media_type(part.image.data)
+                            print(f"[DEBUG] Detected media type: {media_type}")
                         elif uri.startswith("data:"):
                             # Handle data URI - extract base64 data
                             print(f"[DEBUG] Processing data URI")
