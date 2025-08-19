@@ -68,7 +68,7 @@ from nodetool.metadata.types import (
 from nodetool.common.environment import Environment
 from nodetool.workflows.base_node import BaseNode
 from nodetool.workflows.property import Property
-from nodetool.common.chroma_client import get_chroma_client
+from nodetool.common.async_chroma_client import get_async_chroma_client
 
 
 from io import BytesIO
@@ -1914,7 +1914,7 @@ class ProcessingContext:
         else:
             return value
 
-    def get_chroma_client(self):
+    async def get_chroma_client(self):
         """
         Get a ChromaDB client instance for this context.
 
@@ -1922,7 +1922,7 @@ class ProcessingContext:
             ClientAPI: ChromaDB client instance
         """
         if self.chroma_client is None:
-            self.chroma_client = get_chroma_client(self.user_id)
+            self.chroma_client = await get_async_chroma_client(self.user_id)
         return self.chroma_client
 
     async def is_huggingface_model_cached(self, repo_id: str):

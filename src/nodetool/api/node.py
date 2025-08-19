@@ -92,6 +92,7 @@ from nodetool.workflows.base_node import get_node_class
 from nodetool.common.environment import Environment
 from nodetool.workflows.types import ProcessingMessage
 from nodetool.packages.registry import Registry
+import asyncio
 
 log = Environment.get_logger()
 router = APIRouter(prefix="/api/nodes", tags=["nodes"])
@@ -199,7 +200,7 @@ async def metadata() -> list[NodeMetadata]:
     Returns a list of installed nodes.
     """
     registry = Registry()
-    installed_packages = registry.list_installed_packages()
+    installed_packages = await asyncio.to_thread(registry.list_installed_packages)
     nodes = []
     for package in installed_packages:
         if package.nodes:

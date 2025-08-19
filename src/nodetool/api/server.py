@@ -155,6 +155,16 @@ def create_app(
         print(f"Mounting apps folder: {apps_folder}")
         app.mount("/apps", StaticFiles(directory=apps_folder, html=True), name="apps")
 
+    # Pre-initialize storages to avoid first-request blocking due to lazy init
+    @app.on_event("startup")
+    async def _initialize_storages() -> None:
+        try:
+            # Offload potential filesystem setup to threads
+            await asyncio.to_thread(Environment.get_asset_storage)
+            await asyncio.to_thread(Environment.get_temp_storage)
+        except Exception as e:
+            Environment.get_logger().warning(f"Storage pre-initialization failed: {e}")
+
     @app.get("/health")
     async def health_check() -> str:
         return "OK"
@@ -188,9 +198,10 @@ def create_app(
         chat_runner = ChatWebSocketRunner(auth_token=auth_token)
         await chat_runner.run(websocket)
 
-        @app.websocket("/updates")
-        async def updates_websocket_endpoint(websocket: WebSocket):
-            await websocket_updates.handle_client(websocket)
+    # WebSocket endpoint for periodic system updates (e.g., system stats)
+    @app.websocket("/updates")
+    async def updates_websocket_endpoint(websocket: WebSocket):
+        await websocket_updates.handle_client(websocket)
 
     if static_folder and os.path.exists(static_folder):
         print(f"Mounting static folder: {static_folder}")

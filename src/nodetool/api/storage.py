@@ -33,7 +33,7 @@ async def _head_file(storage, key: str):
     Common logic for returning file metadata.
     """
     validate_key(key)
-    if not storage.file_exists(key):
+    if not await storage.file_exists(key):
         raise HTTPException(status_code=404)
 
     last_modified = await storage.get_mtime(key)
@@ -53,7 +53,7 @@ async def _get_file(storage, key: str, request: Request):
     Common logic for returning file as a stream with range support.
     """
     validate_key(key)
-    if not storage.file_exists(key):
+    if not await storage.file_exists(key):
         raise HTTPException(status_code=404)
 
     last_modified = await storage.get_mtime(key)
@@ -130,7 +130,7 @@ async def _delete_file(storage, key: str):
     Common logic for deleting files.
     """
     validate_key(key)
-    if not storage.file_exists(key):
+    if not await storage.file_exists(key):
         return Response(status_code=404)
     await storage.delete(key)
 

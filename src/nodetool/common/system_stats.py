@@ -31,8 +31,9 @@ class SystemStats(BaseModel):
 
 
 def get_system_stats() -> SystemStats:
-    # CPU usage
-    cpu_percent = psutil.cpu_percent(interval=1)
+    # CPU usage (non-blocking)
+    # Use interval=0.0 to avoid a 1s blocking sample in async loops
+    cpu_percent = psutil.cpu_percent(interval=0.0)
 
     # Memory usage
     memory = psutil.virtual_memory()
@@ -63,6 +64,3 @@ def get_system_stats() -> SystemStats:
         vram_used_gb=round(vram_used, 2) if vram_used is not None else None,
         vram_percent=round(vram_percent, 2) if vram_percent is not None else None,
     )
-
-
-print(get_system_stats())

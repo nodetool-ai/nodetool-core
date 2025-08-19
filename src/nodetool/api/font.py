@@ -4,6 +4,7 @@ import platform
 import subprocess
 import os
 from pydantic import BaseModel
+import asyncio
 
 
 class FontResponse(BaseModel):
@@ -33,9 +34,10 @@ async def get_system_fonts() -> FontResponse:
 
             for font_dir in font_dirs:
                 if os.path.exists(font_dir):
-                    for font_file in os.listdir(font_dir):
+                    # offload blocking os.listdir to a thread
+                    entries = await asyncio.to_thread(os.listdir, font_dir)
+                    for font_file in entries:
                         if font_file.endswith((".ttf", ".otf", ".ttc", ".dfont")):
-                            # Strip extension to get the font name
                             font_name = os.path.splitext(font_file)[0]
                             fonts.append(font_name)
         except Exception as e:
@@ -46,9 +48,9 @@ async def get_system_fonts() -> FontResponse:
             # Windows font directory
             font_dir = os.path.join(os.environ["WINDIR"], "Fonts")
             if os.path.exists(font_dir):
-                for font_file in os.listdir(font_dir):
+                entries = await asyncio.to_thread(os.listdir, font_dir)
+                for font_file in entries:
                     if font_file.endswith((".ttf", ".otf", ".ttc")):
-                        # Strip extension to get the font name
                         font_name = os.path.splitext(font_file)[0]
                         fonts.append(font_name)
         except Exception as e:
@@ -63,28 +65,44 @@ async def get_system_fonts() -> FontResponse:
                 os.path.expanduser("~/.fonts/"),
             ]
 
-            for font_dir in font_dirs:
-                if os.path.exists(font_dir):
-                    # Use find to recursively list font files
-                    cmd = [
-                        "find",
-                        font_dir,
-                        "-type",
-                        "f",
-                        "-name",
-                        "*.ttf",
-                        "-o",
-                        "-name",
-                        "*.otf",
-                    ]
-                    result = subprocess.run(cmd, capture_output=True, text=True)
+            # Run finds concurrently and stream stdout lines
+            async def scan_dir(d: str) -> list[str]:
+                if not os.path.exists(d):
+                    return []
+                cmd = [
+                    "find",
+                    d,
+                    "-type",
+                    "f",
+                    "-name",
+                    "*.ttf",
+                    "-o",
+                    "-name",
+                    "*.otf",
+                ]
+                proc = await asyncio.create_subprocess_exec(
+                    *cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                found: list[str] = []
+                assert proc.stdout is not None
+                # Read lines incrementally to avoid buffering entire output
+                async for line in proc.stdout:
+                    if isinstance(line, bytes):
+                        line = line.decode("utf-8", "ignore")
+                    line = line.strip()
+                    if not line:
+                        continue
+                    font_file = os.path.basename(line)
+                    font_name = os.path.splitext(font_file)[0]
+                    found.append(font_name)
+                await proc.wait()
+                return found
 
-                    if result.returncode == 0:
-                        for line in result.stdout.splitlines():
-                            if line.strip():
-                                font_file = os.path.basename(line)
-                                font_name = os.path.splitext(font_file)[0]
-                                fonts.append(font_name)
+            results = await asyncio.gather(*(scan_dir(fd) for fd in font_dirs))
+            for sub in results:
+                fonts.extend(sub)
         except Exception as e:
             print(f"Error getting Linux fonts: {e}")
 
