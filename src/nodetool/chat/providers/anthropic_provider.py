@@ -157,27 +157,37 @@ class AnthropicProvider(ChatProvider):
                     if isinstance(part, MessageTextContent):
                         content.append({"type": "text", "text": part.text})
                     elif isinstance(part, MessageImageContent):
-                        # Handle image content - either data URI or raw base64
+                        # Handle image content - convert to base64 format
+                        # Claude API only supports base64 images, not HTTP/HTTPS URLs
                         uri = part.image.uri
-                        if uri.startswith("http"):
-                            # Handle image URL
-                            media_type = "image/png"
-                            data = uri
-                            image_source = URLImageSourceParam(
-                                type="url",
-                                url=uri,
-                            )
-                        elif part.image.data:
+                        print(f"[DEBUG] Processing image with URI: {uri[:100]}{'...' if len(uri) > 100 else ''}")
+                        
+                        if part.image.data:
                             # Handle raw image data
+                            print(f"[DEBUG] Using raw image data, size: {len(part.image.data)} bytes")
                             data = base64.b64encode(part.image.data).decode("utf-8")
                             media_type = "image/png"  # Default assumption
-                            image_source = Base64ImageSourceParam(
-                                type="base64",
-                                media_type=media_type,  # type: ignore
-                                data=data,
-                            )
+                        elif uri.startswith("data:"):
+                            # Handle data URI - extract base64 data
+                            print(f"[DEBUG] Processing data URI")
+                            if ";base64," in uri:
+                                data = uri.split(";base64,")[1]
+                                # Extract media type from data URI
+                                media_type = uri.split(":")[1].split(";")[0]
+                                print(f"[DEBUG] Extracted media type: {media_type}")
+                            else:
+                                raise ValueError(f"Unsupported data URI format: {uri}")
                         else:
-                            raise ValueError(f"Invalid image URI: {uri}")
+                            # For HTTP/HTTPS URLs or other URIs, we need the raw data
+                            # This should not happen in normal workflow as images should be converted to data
+                            print(f"[ERROR] Received unsupported URI format: {uri}")
+                            raise ValueError(f"Claude API only supports base64 image data, not URLs. Received URI: {uri}. Please ensure images are converted to base64 format before sending to Claude.")
+
+                        image_source = Base64ImageSourceParam(
+                            type="base64",
+                            media_type=media_type,  # type: ignore
+                            data=data,
+                        )
 
                         content.append(
                             ImageBlockParam(
