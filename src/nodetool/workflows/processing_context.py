@@ -1,6 +1,7 @@
 from collections.abc import Sequence
 from datetime import datetime
 from enum import Enum
+import asyncio
 import imaplib
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
@@ -34,7 +35,7 @@ from nodetool.types.chat import (
     MessageList,
     MessageCreateRequest,
 )
-from nodetool.types.graph import Node
+from nodetool.types.graph import Edge, Node
 from nodetool.types.job import JobUpdate
 from nodetool.types.prediction import (
     Prediction,
@@ -45,19 +46,17 @@ from nodetool.metadata.types import (
     Message,
     Provider,
     ToolCall,
+    asset_types,
 )
 from nodetool.workflows.graph import Graph
 from nodetool.workflows.types import (
     Chunk,
-    NodeProgress,
-    NodeUpdate,
     ProcessingMessage,
 )
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.metadata.types import (
     AssetRef,
     AudioRef,
-    ColumnDef,
     DataframeRef,
     ImageRef,
     ModelRef,
@@ -74,7 +73,7 @@ from nodetool.common.async_chroma_client import get_async_chroma_client
 from io import BytesIO
 from typing import IO, Any, AsyncGenerator, Union, Callable
 from chromadb.api import ClientAPI
-from pickle import dumps, loads
+from pickle import loads
 import platform
 
 
@@ -1960,9 +1959,9 @@ class ProcessingContext:
         else:
             return value
 
-    def upload_assets_to_temp(self, value: Any) -> Any:
+    async def upload_assets_to_temp(self, value: Any) -> Any:
         """
-        Recursively uploads any AssetRef objects found in the given value to S3.
+        Recursively uploads any AssetRef objects found in the given value to temp storage.
 
         Args:
             value: Any Python value that might contain AssetRef objects
@@ -1981,30 +1980,57 @@ class ProcessingContext:
             else:
                 return "bin"
 
-        if isinstance(value, AssetRef):
+        async def upload_asset(value: AssetRef) -> dict[str, Any]:
             log.info(f"Uploading asset {value.uri} to temp storage")
             # Upload the asset data to S3 and return the URL
             if value.data is not None:
                 storage = Environment.get_temp_storage()
                 ext = get_ext(value)
                 key = uuid.uuid4().hex + "." + ext
-                uri = storage.upload_sync(
+                uri = await storage.upload(
                     key,
                     BytesIO(
                         value.data[0] if isinstance(value.data, list) else value.data
                     ),
                 )
                 log.info(f"Uploaded to {uri}")
-                return value.__class__(uri=uri, asset_id=value.asset_id)
+                return {
+                    "type": value.type,
+                    "uri": uri,
+                    "asset_id": value.asset_id,
+                }
             else:
-                return value
+                return {
+                    "type": value.type,
+                    "uri": value.uri,
+                    "asset_id": value.asset_id,
+                }
+
+        if isinstance(value, AssetRef):
+            return await upload_asset(value)
         elif isinstance(value, dict):
-            return {k: self.upload_assets_to_temp(v) for k, v in value.items()}
+            if "type" in value and value["type"] in asset_types:
+                asset_ref = AssetRef(
+                    type=value["type"],
+                    uri=value["uri"],
+                    asset_id=value["asset_id"],
+                    data=value["data"],
+                )
+                return await upload_asset(asset_ref)
+            keys = list(value.keys())
+            tasks = [self.upload_assets_to_temp(value[k]) for k in keys]
+            results = await asyncio.gather(*tasks)
+            return {k: r for k, r in zip(keys, results)}
         elif isinstance(value, list):
-            return [self.upload_assets_to_temp(item) for item in value]
+            results = await asyncio.gather(
+                *[self.upload_assets_to_temp(item) for item in value]
+            )
+            return list(results)
         elif isinstance(value, tuple):
-            items = [self.upload_assets_to_temp(item) for item in value]
-            return tuple(items)
+            results = await asyncio.gather(
+                *[self.upload_assets_to_temp(item) for item in value]
+            )
+            return tuple(results)
         else:
             return value
 
@@ -2096,36 +2122,65 @@ class ProcessingContext:
             f"Could not find font '{font_name}' in system locations"
         )
 
-    def get_nodes_connected_to_output(
-        self, node_id: str, source_handle: str
-    ) -> list[BaseNode]:
+    def get_graph_connected_to_output(
+        self, node_id: str, source_handle: str, as_subgraph: bool = False
+    ) -> tuple[list[Edge], Graph]:
         """
-        Returns all nodes connected to the output of the given node.
+        Return the entire downstream spanning subgraph starting at that output.
 
         Args:
             node_id (str): The ID of the node to find connections for.
             source_handle (str): The handle of the output to find connections for.
 
         Returns:
-            list[BaseNode]: List of nodes connected to the outputs of the given node.
+            list[BaseNode] | Graph: Either a list of directly connected nodes or a full
+                reachable subgraph as a `Graph`.
         """
-        # Get unique target node IDs to avoid duplicates
-        connected_node_ids = set(
-            edge.target
+        from collections import deque
+
+        initial_edges = [
+            edge
             for edge in self.graph.edges
             if edge.source == node_id and edge.sourceHandle == source_handle
-        )
+        ]
 
-        # Find each node, skipping any that don't exist
-        connected_nodes = []
-        for target_id in connected_node_ids:
+        included_node_ids: set[str] = set()
+        included_edges = []
+
+        # Seed the queue with the targets of the initial edges
+        queue = deque()
+        for e in initial_edges:
+            included_edges.append(e)
+            included_node_ids.add(e.target)
+            queue.append(e.target)
+
+        # BFS over outgoing edges to collect downstream nodes and edges
+        while queue:
+            current = queue.popleft()
+            for edge in self.graph.edges:
+                if edge.source == current:
+                    included_edges.append(edge)
+                    if edge.target not in included_node_ids:
+                        included_node_ids.add(edge.target)
+                        queue.append(edge.target)
+
+        # Materialize node instances, skipping any missing nodes gracefully
+        included_nodes: list[BaseNode] = []
+        for nid in included_node_ids:
             try:
-                connected_nodes.append(self.find_node(target_id))
+                included_nodes.append(self.find_node(nid))
             except ValueError:
                 # Skip nodes that don't exist in the graph
                 pass
 
-        return connected_nodes
+        # Filter edges to those whose endpoints are both present in the included set
+        filtered_edges = [
+            e
+            for e in included_edges
+            if e.source in included_node_ids and e.target in included_node_ids
+        ]
+
+        return initial_edges, Graph(nodes=included_nodes, edges=filtered_edges)
 
     def resolve_workspace_path(self, path: str) -> str:
         """

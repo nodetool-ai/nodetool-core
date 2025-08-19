@@ -461,7 +461,7 @@ class WorkflowRunner:
         log.info(
             f"WorkflowRunner.run for job_id: {self.job_id} method ending with status: {self.status}"
         )
-        log.debug("Workflow outputs: %s", self.outputs)
+        log.debug("Workflow outputs: %s", str(self.outputs)[:1000])
         log.debug(
             f"WorkflowRunner.run finished for job_id: {self.job_id}. Final status: {self.status}, Outputs: {self.outputs}"
         )
@@ -496,6 +496,7 @@ class WorkflowRunner:
             if len(errors) > 0:
                 is_valid = False
                 for e in errors:
+                    log.debug(f"Node error: {e}")
                     all_errors.append(e)
                     context.post_message(
                         NodeUpdate(
@@ -511,6 +512,7 @@ class WorkflowRunner:
         if edge_errors:
             is_valid = False
             for error in edge_errors:
+                log.debug(f"Edge error: {error}")
                 all_errors.append(error)
                 # Extract node_id from error message if possible
                 node_id = error.split(":")[0] if ":" in error else None
@@ -566,6 +568,7 @@ class WorkflowRunner:
                     )
                 )
                 raise
+        log.debug(f"Edges: {graph.edges}")
         log.debug("Graph initialization completed")
 
     def send_messages(

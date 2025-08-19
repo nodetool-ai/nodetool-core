@@ -365,6 +365,9 @@ class BaseNode(BaseModel):
             "parent_id": self._parent_id,
             "type": self.get_node_type(),
             "data": self.node_properties(),
+            "ui_properties": self._ui_properties,
+            "dynamic_properties": self._dynamic_properties,
+            "dynamic_outputs": self._dynamic_outputs,
         }
 
     @classmethod
@@ -807,6 +810,18 @@ class BaseNode(BaseModel):
             for name, value in self._dynamic_properties.items()
         }
 
+    @property
+    def ui_properties(self):
+        return self._ui_properties
+
+    @property
+    def dynamic_properties(self):
+        return self._dynamic_properties
+
+    @property
+    def dynamic_outputs(self):
+        return self._dynamic_outputs
+
     def find_property(self, name: str):
         """
         Find a property of the node by its name.
@@ -1034,8 +1049,11 @@ class BaseNode(BaseModel):
         ]
 
     @memoized_class_method
-    def properties_dict(cls) -> dict[str, Any]:
+    def properties_dict(cls):
         """Returns the input slots of the node, memoized for each class."""
+        # avoid circular import
+        from nodetool.workflows.property import Property
+
         # Get properties from parent classes
         parent_properties = {}
         for base in cls.__bases__:
@@ -1045,7 +1063,8 @@ class BaseNode(BaseModel):
         # Add or override with current class properties
         current_properties = {prop.name: prop for prop in cls.properties()}
 
-        return {**parent_properties, **current_properties}
+        result: dict[str, Property] = {**parent_properties, **current_properties}
+        return result
 
     def node_properties(self):
         return {
@@ -1206,6 +1225,17 @@ class InputNode(BaseNode):
     @classmethod
     def is_cacheable(cls):
         return False
+
+
+class ToolResultNode(BaseNode):
+    """
+    A special node type representing a tool result.
+    """
+
+    _is_dynamic = True
+
+    def process(self, context: Any) -> Any:
+        return self._dynamic_properties
 
 
 class OutputNode(BaseNode):

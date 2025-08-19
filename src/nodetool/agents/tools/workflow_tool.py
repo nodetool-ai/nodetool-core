@@ -7,6 +7,7 @@ and uses its input schema for tool parameters.
 """
 
 import json
+import logging
 import re
 from typing import Any, Dict
 from uuid import uuid4
@@ -15,12 +16,17 @@ from nodetool.agents.tools.base import Tool
 from nodetool.common.environment import Environment
 from nodetool.types.workflow import Workflow
 from nodetool.models.workflow import Workflow as WorkflowModel
-from nodetool.types.graph import get_input_schema, get_output_schema
+from nodetool.types.graph import Edge, Node, get_input_schema, get_output_schema
 from nodetool.types.job import JobUpdate
+from nodetool.workflows.base_node import BaseNode
+from nodetool.workflows.graph import Graph
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.run_workflow import run_workflow
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.types import NodeUpdate, OutputUpdate
+
+log = logging.getLogger(__name__)
+log.setLevel(logging.DEBUG)
 
 
 def from_model(workflow: WorkflowModel):
@@ -61,6 +67,115 @@ def sanitize_workflow_name(name: str) -> str:
         return node_name[:max_length]
     else:
         return node_name
+
+
+class GraphTool(Tool):
+    """Tool that executes a specific graph using its input schema."""
+
+    def __init__(
+        self,
+        graph: Graph,
+        name: str,
+        description: str,
+        initial_edges: list[Edge],
+        initial_nodes: list[BaseNode],
+    ):
+        self.graph = graph
+        self.name = name
+        self.description = description
+        self.initial_edges = initial_edges
+        self.initial_nodes = initial_nodes
+
+        def get_property_schema(node: BaseNode, handle: str) -> dict[str, Any]:
+            for prop in node.properties():
+                if prop.name == handle:
+                    schema = prop.type.get_json_schema()
+                    schema["description"] = prop.description or ""
+                    return schema
+            raise ValueError(
+                f"Property {handle} not found on node {node.get_node_type()} {node.id}"
+            )
+
+        self.input_schema = {
+            "type": "object",
+            "properties": {
+                edge.targetHandle: get_property_schema(node, edge.targetHandle)
+                for edge, node in zip(self.initial_edges, self.initial_nodes)
+            },
+        }
+
+        log.debug(f"inital edges: {initial_edges}")
+        log.debug(f"inital nodes: {initial_nodes}")
+        log.debug(f"input schema: {self.input_schema}")
+
+    async def process(self, context: ProcessingContext, params: Dict[str, Any]) -> Any:
+        from nodetool.types.graph import Graph as ApiGraph
+
+        log.debug(f"calling tool {self.name}")
+        log.debug(f"initial edges: {self.initial_edges}")
+        log.debug(f"initial nodes: {self.initial_nodes}")
+
+        initial_edges_by_target = {edge.target: edge for edge in self.initial_edges}
+
+        def properties_for_node(node: BaseNode) -> dict[str, Any]:
+            props = node.node_properties()
+            if node.id in initial_edges_by_target:
+                edge = initial_edges_by_target[node.id]
+                if not edge.targetHandle in params:
+                    raise ValueError(f"Missing required parameter: {edge.targetHandle}")
+                props[edge.targetHandle] = params[edge.targetHandle]
+            return props
+
+        nodes = [
+            Node(
+                id=node.id,
+                type=node.get_node_type(),
+                data=properties_for_node(node),
+                parent_id=node.parent_id,
+                ui_properties=node.ui_properties,
+                dynamic_properties=node.dynamic_properties,
+                dynamic_outputs=node.dynamic_outputs,
+            )
+            for node in self.graph.nodes
+        ]
+
+        try:
+            req = RunJobRequest(
+                user_id=context.user_id,
+                auth_token=context.auth_token,
+                graph=ApiGraph(
+                    nodes=nodes,
+                    edges=[
+                        Edge(
+                            id=edge.id,
+                            source=edge.source,
+                            target=edge.target,
+                            sourceHandle=edge.sourceHandle,
+                            targetHandle=edge.targetHandle,
+                            ui_properties=edge.ui_properties,
+                        )
+                        for edge in self.graph.edges
+                    ],
+                ),
+            )
+
+            # Collect all messages from workflow execution
+            results = {}
+            async for msg in run_workflow(req, context=context, use_thread=True):
+                if isinstance(msg, NodeUpdate):
+                    update: NodeUpdate = msg
+                    if update.node_name == "ToolResultNode":
+                        results = update.result
+
+            log.debug(f"tool results before upload: {results}")
+            results = await context.upload_assets_to_temp(results)
+            log.debug(f"tool results: {results}")
+
+            # Return the collected results
+            return results
+
+        except Exception as e:
+            return str(e)
 
 
 class WorkflowTool(Tool):
@@ -108,10 +223,12 @@ class WorkflowTool(Tool):
             results = {}
             async for msg in run_workflow(req, context=context, use_thread=True):
                 if isinstance(msg, OutputUpdate):
-                    value = context.upload_assets_to_temp(msg.value)
+                    value = msg.value
                     if hasattr(value, "model_dump"):
                         value = value.model_dump()
                     results[msg.node_name] = value
+
+            results = await context.upload_assets_to_temp(results)
 
             # Return the collected results
             return {
@@ -134,7 +251,7 @@ class WorkflowTool(Tool):
         return f"Executing workflow '{self.workflow.name}' with parameters: {params}"
 
 
-def create_workflow_tools(user_id: str, limit: int = 1000) -> list[WorkflowTool]:
+async def create_workflow_tools(user_id: str, limit: int = 1000) -> list[WorkflowTool]:
     """
     Create WorkflowTool instances for all workflows accessible to a user.
 
@@ -147,11 +264,11 @@ def create_workflow_tools(user_id: str, limit: int = 1000) -> list[WorkflowTool]
     """
     if not Environment.has_database():
         return []
-    workflows, _ = WorkflowModel.paginate(user_id=user_id, limit=limit)
+    workflows, _ = await WorkflowModel.paginate(user_id=user_id, limit=limit)
     return [WorkflowTool(from_model(workflow)) for workflow in workflows]
 
 
-def create_workflow_tool_by_name(
+async def create_workflow_tool_by_name(
     user_id: str, workflow_name: str
 ) -> WorkflowTool | None:
     """
@@ -165,13 +282,10 @@ def create_workflow_tool_by_name(
         WorkflowTool instance if found, None otherwise
     """
     try:
-        workflows, _ = WorkflowModel.paginate(user_id=user_id, limit=1000)
-
-        for workflow in workflows:
-            if workflow.name == workflow_name:
-                return WorkflowTool(from_model(workflow))
-
-        return None
+        workflow = await WorkflowModel.find(user_id, workflow_name)
+        if not workflow:
+            return None
+        return WorkflowTool(from_model(workflow))
     except Exception as e:
         print(
             f"Warning: Could not load workflow '{workflow_name}' for user {user_id}: {e}"

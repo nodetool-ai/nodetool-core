@@ -88,7 +88,7 @@ from nodetool.metadata.types import (
     InferenceProviderImageToImageModel,
     InferenceProviderImageSegmentationModel,
 )
-from nodetool.workflows.base_node import get_node_class
+from nodetool.workflows.base_node import ToolResultNode, get_node_class
 from nodetool.common.environment import Environment
 from nodetool.workflows.types import ProcessingMessage
 from nodetool.packages.registry import Registry
@@ -201,7 +201,9 @@ async def metadata() -> list[NodeMetadata]:
     """
     registry = Registry()
     installed_packages = await asyncio.to_thread(registry.list_installed_packages)
-    nodes = []
+    nodes = [
+        ToolResultNode.get_metadata(),
+    ]
     for package in installed_packages:
         if package.nodes:
             nodes.extend(package.nodes)

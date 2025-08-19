@@ -8,6 +8,7 @@ independently within agent workflows.
 """
 
 from typing import Any, Dict, Type
+from llama_index.embeddings.ollama.base import asyncio
 from nodetool.agents.tools.base import Tool
 from nodetool.metadata.types import AssetRef
 from nodetool.workflows.base_node import (
@@ -120,10 +121,7 @@ class NodeTool(Tool):
 
             # Convert output according to node's output format
             converted_result = await node.convert_output(context, result)
-
-            for key, value in converted_result.items():
-                if isinstance(value, AssetRef):
-                    converted_result[key] = context.upload_assets_to_temp(value)
+            converted_result = await context.upload_assets_to_temp(converted_result)
 
             return {
                 "node_type": self.node_type,
@@ -180,123 +178,3 @@ class NodeTool(Tool):
     def __repr__(self) -> str:
         """String representation of the NodeTool."""
         return f"NodeTool(name={self.name}, node_type={self.node_type})"
-
-
-class NodeInstanceTool(Tool):
-    """
-    Tool that wraps a specific BaseNode instance for use by agents.
-
-    Unlike NodeTool which takes a node class or type and constructs a new
-    instance per invocation, this tool accepts a pre-configured node instance.
-    """
-
-    def __init__(self, node_instance: BaseNode):
-        if not isinstance(node_instance, BaseNode):
-            raise TypeError("node_instance must be a BaseNode instance")
-
-        self.node_instance = node_instance
-
-        # Use instance class metadata
-        metadata = self.node_instance.__class__.get_metadata()
-
-        raw_node_type = self.node_instance.__class__.get_node_type()
-        self.name = sanitize_node_name(raw_node_type)
-        self.description = metadata.description or f"Execute {metadata.title} node"
-
-        self._generate_input_schema(metadata)
-        self.node_type = raw_node_type
-
-    def _generate_input_schema(self, metadata: NodeMetadata) -> None:
-        """Generate JSON schema for tool inputs from node properties.
-
-        Combines class-declared properties with instance dynamic properties (if any).
-        """
-        properties: dict[str, Any] = {}
-        required: list[str] = []
-
-        # Class-declared properties
-        for prop in metadata.properties:
-            if prop.name.startswith("_"):
-                continue
-            try:
-                properties[prop.name] = prop.get_json_schema()
-            except Exception:
-                pass
-
-        # Instance dynamic properties (if present)
-        try:
-            dynamic_props = self.node_instance.get_dynamic_properties()
-            for name, prop in dynamic_props.items():
-                if name.startswith("_"):
-                    continue
-                try:
-                    properties[name] = prop.get_json_schema()
-                except Exception:
-                    pass
-        except Exception:
-            # If node does not support dynamic properties, ignore
-            pass
-
-        self.input_schema = {"type": "object", "properties": properties}
-        if required:
-            self.input_schema["required"] = required
-
-    async def process(self, context: ProcessingContext, params: Dict[str, Any]) -> Any:
-        """
-        Execute the provided node instance with given params.
-        Makes a deep copy of the instance to avoid mutating the original.
-        """
-        try:
-            import uuid
-
-            # Work on a fresh copy to avoid side-effects across calls
-            node = self.node_instance.model_copy(deep=True)
-            node._id = uuid.uuid4().hex[:8]
-
-            # Apply/override properties from params
-            if params:
-                node.set_node_properties(params, skip_errors=False)
-
-            # Initialize and run
-            await node.initialize(context)
-            await node.preload_model(context)
-            if context.device:
-                await node.move_to_device(context.device)
-
-            result = await node.process(context)
-            converted_result = await node.convert_output(context, result)
-
-            for key, value in converted_result.items():
-                if isinstance(value, AssetRef):
-                    converted_result[key] = context.upload_assets_to_temp(value)
-
-            return {
-                "node_type": self.node_type,
-                "result": converted_result,
-                "status": "completed",
-            }
-        except ApiKeyMissingError:
-            return {
-                "node_type": self.node_type,
-                "error": "API key missing. ASK THE USER TO SET THE API KEY IN THE NODETOOL SETTINGS.",
-                "status": "failed",
-            }
-        except Exception as e:
-            import traceback
-
-            return {
-                "node_type": self.node_type,
-                "error": str(e),
-                "traceback": traceback.format_exc(),
-                "status": "failed",
-            }
-        finally:
-            if "node" in locals():
-                await node.finalize(context)
-
-    def user_message(self, params: Dict[str, Any]) -> str:
-        param_str = json.dumps(params, indent=2) if params else "no parameters"
-        return f"Executing '{self.node_instance.__class__.get_title()}' node with {param_str}"
-
-    def __repr__(self) -> str:
-        return f"NodeInstanceTool(name={self.name}, node_type={self.node_type})"
