@@ -83,8 +83,8 @@ async def list_collections(
     client = await get_async_chroma_client()
     collection_names = await client.list_collections(offset=offset, limit=limit)
 
-    # Handle both list[str] and list[objects with .name]
-    names: list[str] = [getattr(c, "name", c) for c in collection_names]
+    # In ChromaDB v0.6.0, list_collections only returns collection names (strings)
+    names: list[str] = collection_names
     collections = [await client.get_collection(name) for name in names]
 
     async def get_workflow_name(metadata: dict[str, str]) -> str | None:

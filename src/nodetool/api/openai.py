@@ -43,8 +43,8 @@ def create_openai_compatible_router(
             )
             if auth_token:
                 data["auth_token"] = auth_token
-            
-            workflows, _ = WorkflowModel.paginate(limit=1000)
+
+            workflows, _ = await WorkflowModel.paginate(limit=1000)
 
             runner = ChatSSERunner(
                 auth_token,
@@ -85,14 +85,7 @@ def create_openai_compatible_router(
         """Returns list of models filtered by provider in OpenAI format."""
         try:
             all_models = await get_language_models()
-            filtered = [
-                m
-                for m in all_models
-                if (
-                    (m.provider.value if hasattr(m.provider, "value") else m.provider)
-                    == provider
-                )
-            ]
+            filtered = [m for m in all_models if m.provider.value == provider]
             data = [
                 {
                     "id": m.id or m.name,
@@ -108,5 +101,3 @@ def create_openai_compatible_router(
             raise HTTPException(status_code=500, detail=str(e)) from e
 
     return router
-
-

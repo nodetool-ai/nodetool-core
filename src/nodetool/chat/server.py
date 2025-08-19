@@ -344,7 +344,6 @@ def create_chat_server(
             provider=provider,
             default_model=default_model,
             tools=tools,
-            workflows=workflows,
         )
     )
 
@@ -387,6 +386,7 @@ def run_chat_server(
         workflows: List of workflows to use
     """
     import dotenv
+
     dotenv.load_dotenv()
 
     app = create_chat_server(remote_auth, provider, default_model, tools, workflows)

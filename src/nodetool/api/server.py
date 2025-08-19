@@ -18,6 +18,7 @@ from fastapi import APIRouter, FastAPI, Request, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from uvicorn import run as uvicorn
 
+from nodetool.metadata.types import Provider
 from nodetool.packages.registry import get_nodetool_package_source_folders
 
 from . import asset, job, message, node, storage, workflow, model, settings, thread
@@ -132,7 +133,7 @@ def create_app(
     # Mount OpenAI-compatible endpoints with default provider set to "ollama"
     app.include_router(
         create_openai_compatible_router(
-            provider="ollama",
+            provider=Provider.Ollama.value,
         )
     )
 
