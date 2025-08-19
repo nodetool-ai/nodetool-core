@@ -28,7 +28,6 @@ from openai.types.chat.chat_completion_message_function_tool_call_param import (
     ChatCompletionMessageFunctionToolCallParam,
 )
 from pydantic import BaseModel
-import requests
 from pydub import AudioSegment
 
 from nodetool.chat.providers.base import ChatProvider
@@ -139,12 +138,13 @@ class OpenAIProvider(ChatProvider):
         else:
             raise ValueError(f"Unsupported model: {model}")
 
-    def uri_to_base64(self, uri: str) -> str:
+    async def uri_to_base64(self, uri: str) -> str:
         """Convert a URI to a base64 encoded data: URI string.
         If the URI points to an audio file, it converts it to MP3 first.
         """
-        response = requests.get(uri)
-        response.raise_for_status()  # Raise an exception for bad status codes
+        async with httpx.AsyncClient(follow_redirects=True, timeout=600, verify=False) as client:
+            response = await client.get(uri)
+            response.raise_for_status()  # Raise an exception for bad status codes
         mime_type = response.headers.get("content-type", "application/octet-stream")
 
         if mime_type.startswith("audio/") and mime_type != "audio/mpeg":
@@ -165,7 +165,7 @@ class OpenAIProvider(ChatProvider):
 
         return f"data:{mime_type};base64,{content_b64}"
 
-    def message_content_to_openai_content_part(
+    async def message_content_to_openai_content_part(
         self, content: MessageContent
     ) -> ChatCompletionContentPartParam:
         """Convert a message content to an OpenAI content part."""
@@ -175,7 +175,7 @@ class OpenAIProvider(ChatProvider):
             print(f"Audio content: {content.audio}")
             if content.audio.uri:
                 # uri_to_base64 now handles conversion and returns MP3 data URI
-                data_uri = self.uri_to_base64(content.audio.uri)
+                data_uri = await self.uri_to_base64(content.audio.uri)
                 # Extract base64 data part for OpenAI API
                 base64_data = data_uri.split(",", 1)[1]
                 return {
@@ -212,7 +212,7 @@ class OpenAIProvider(ChatProvider):
                 # For images, use the original uri_to_base64 logic (implicitly called)
                 return {
                     "type": "image_url",
-                    "image_url": {"url": self.uri_to_base64(content.image.uri)},
+                    "image_url": {"url": await self.uri_to_base64(content.image.uri)},
                 }
             else:
                 # Base64 encode raw image data
@@ -225,7 +225,7 @@ class OpenAIProvider(ChatProvider):
         else:
             raise ValueError(f"Unknown content type {content}")
 
-    def convert_message(self, message: Message) -> ChatCompletionMessageParam:
+    async def convert_message(self, message: Message) -> ChatCompletionMessageParam:
         """Convert an internal message to OpenAI's format."""
         if message.role == "tool":
             if isinstance(message.content, BaseModel):
@@ -248,7 +248,7 @@ class OpenAIProvider(ChatProvider):
                 content = message.content
             elif message.content is not None:
                 content = [
-                    self.message_content_to_openai_content_part(c)
+                    await self.message_content_to_openai_content_part(c)
                     for c in message.content
                 ]
             else:
@@ -274,7 +274,7 @@ class OpenAIProvider(ChatProvider):
                 content = message.content
             elif message.content is not None:
                 content = [
-                    self.message_content_to_openai_content_part(c)
+                    await self.message_content_to_openai_content_part(c)
                     for c in message.content
                 ]
             else:
@@ -382,7 +382,7 @@ class OpenAIProvider(ChatProvider):
             **kwargs_for_log,
         )
 
-        openai_messages = [self.convert_message(m) for m in messages]
+        openai_messages = [await self.convert_message(m) for m in messages]
 
         # if "thinking" in kwargs:
         #     kwargs.pop("thinking")
@@ -530,7 +530,7 @@ class OpenAIProvider(ChatProvider):
         if len(tools) > 0:
             kwargs["tools"] = self.format_tools(tools)
 
-        openai_messages = [self.convert_message(m) for m in messages]
+        openai_messages = [await self.convert_message(m) for m in messages]
 
         # Make non-streaming call to OpenAI
         completion = await self.get_client().chat.completions.create(

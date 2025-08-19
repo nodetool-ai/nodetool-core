@@ -1,11 +1,14 @@
 #!/usr/bin/env python
 
 import os
+import asyncio
 from datetime import datetime, timezone
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+import aiofiles
+import aiofiles.os
 from nodetool.api.utils import current_user
 from nodetool.common.environment import Environment
 
@@ -76,12 +79,13 @@ class FileInfo(BaseModel):
 async def get_file_info(path: str) -> FileInfo:
     """Helper function to get file information"""
     try:
-        stat = os.stat(path)
+        stat = await aiofiles.os.stat(path)
+        is_dir = await asyncio.to_thread(os.path.isdir, path)
         return FileInfo(
             name=os.path.basename(path),
             path=path,
             size=stat.st_size,
-            is_dir=os.path.isdir(path),
+            is_dir=is_dir,
             modified_at=datetime.fromtimestamp(
                 stat.st_mtime, tz=timezone.utc
             ).isoformat(),
@@ -101,11 +105,13 @@ async def list_files(
     try:
         # Validate and normalize path
         abs_path = validate_path(path)
-        if not os.path.exists(abs_path):
+        exists = await asyncio.to_thread(os.path.exists, abs_path)
+        if not exists:
             raise HTTPException(status_code=404, detail=f"Path not found: {path}")
 
         files = []
-        for entry in os.listdir(abs_path):
+        entries = await aiofiles.os.listdir(abs_path)
+        for entry in entries:
             # Skip files/directories that start with a dot
             if entry.startswith("."):
                 continue
@@ -134,7 +140,8 @@ async def get_file(path: str, user: str = Depends(current_user)) -> FileInfo:
     """
     try:
         abs_path = validate_path(path)
-        if not os.path.exists(abs_path):
+        exists = await asyncio.to_thread(os.path.exists, abs_path)
+        if not exists:
             raise HTTPException(status_code=404, detail=f"Path not found: {path}")
         return await get_file_info(abs_path)
     except HTTPException:
@@ -152,13 +159,15 @@ async def download_file(path: str, user: str = Depends(current_user)):
     """
     try:
         abs_path = validate_path(path)
-        if not os.path.exists(abs_path) or os.path.isdir(abs_path):
+        exists = await asyncio.to_thread(os.path.exists, abs_path)
+        is_dir = await asyncio.to_thread(os.path.isdir, abs_path)
+        if not exists or is_dir:
             raise HTTPException(status_code=404, detail=f"File not found: {path}")
 
         async def file_iterator():
             chunk_size = 8192  # 8KB chunks
-            with open(abs_path, "rb") as f:
-                while chunk := f.read(chunk_size):
+            async with aiofiles.open(abs_path, "rb") as f:
+                while chunk := await f.read(chunk_size):
                     yield chunk
 
         return StreamingResponse(
@@ -183,12 +192,12 @@ async def upload_file(path: str, file: UploadFile, user: str = Depends(current_u
     """
     try:
         abs_path = validate_path(path)
-        os.makedirs(os.path.dirname(abs_path), exist_ok=True)
+        await asyncio.to_thread(os.makedirs, os.path.dirname(abs_path), exist_ok=True)
 
         # Read and write in chunks to handle large files
-        with open(abs_path, "wb") as f:
+        async with aiofiles.open(abs_path, "wb") as f:
             while chunk := await file.read(8192):
-                f.write(chunk)
+                await f.write(chunk)
 
         return await get_file_info(abs_path)
     except HTTPException:

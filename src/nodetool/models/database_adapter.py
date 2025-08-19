@@ -26,17 +26,17 @@ class DatabaseAdapter(ABC):
     table_schema: Dict[str, Any]
 
     @abstractmethod
-    def create_table(self) -> None:
+    async def create_table(self) -> None:
         """Creates the database table for the associated model."""
         pass
 
     @abstractmethod
-    def drop_table(self) -> None:
+    async def drop_table(self) -> None:
         """Drops the database table for the associated model."""
         pass
 
     @abstractmethod
-    def save(self, item: Dict[str, Any]) -> None:
+    async def save(self, item: Dict[str, Any]) -> None:
         """Saves (inserts or updates) an item in the database.
 
         Args:
@@ -45,7 +45,7 @@ class DatabaseAdapter(ABC):
         pass
 
     @abstractmethod
-    def get(self, key: Any) -> Dict[str, Any] | None:
+    async def get(self, key: Any) -> Dict[str, Any] | None:
         """Retrieves an item from the database by its primary key.
 
         Args:
@@ -57,7 +57,7 @@ class DatabaseAdapter(ABC):
         pass
 
     @abstractmethod
-    def delete(self, primary_key: Any) -> None:
+    async def delete(self, primary_key: Any) -> None:
         """Deletes an item from the database by its primary key.
 
         Args:
@@ -66,7 +66,7 @@ class DatabaseAdapter(ABC):
         pass
 
     @abstractmethod
-    def query(
+    async def query(
         self,
         condition: ConditionBuilder | None = None,
         order_by: str | None = None,
@@ -97,7 +97,7 @@ class DatabaseAdapter(ABC):
         return self.table_schema.get("primary_key", "id")
 
     @abstractmethod
-    def create_index(
+    async def create_index(
         self, index_name: str, columns: List[str], unique: bool = False
     ) -> None:
         """
@@ -109,7 +109,7 @@ class DatabaseAdapter(ABC):
         pass
 
     @abstractmethod
-    def drop_index(self, index_name: str) -> None:
+    async def drop_index(self, index_name: str) -> None:
         """
         Drop the index with the given name from the table.
         :param index_name: The name of the index to drop.
@@ -117,9 +117,16 @@ class DatabaseAdapter(ABC):
         pass
 
     @abstractmethod
-    def list_indexes(self) -> List[Dict[str, Any]]:
+    async def list_indexes(self) -> List[Dict[str, Any]]:
         """
         List all the indexes for the table.
         :return: A list of dictionaries representing index metadata.
+        """
+        pass
+
+    @abstractmethod
+    async def close(self) -> None:
+        """
+        Close the database connection and clean up resources.
         """
         pass

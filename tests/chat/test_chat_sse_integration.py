@@ -75,20 +75,18 @@ class TestOpenAIChatSSEIntegration:
             "nodetool.chat.chat_sse_runner.ChatSSERunner.handle_message",
             side_effect=mock_handle_message,
         ):
-            with patch("nodetool.chat.chat_sse_runner.ChatSSERunner._initialize_tools"):
-                # Make the request
-                response = self.client.post(
-                    "/v1/chat/completions",
-                    json=request_data,
-                    headers={"Authorization": "Bearer test_token"},
-                )
+            # Make the request
+            response = self.client.post(
+                "/v1/chat/completions",
+                json=request_data,
+                headers={"Authorization": "Bearer test_token"},
+            )
 
-                # Verify response
-                assert response.status_code == 200
-                assert (
-                    response.headers["content-type"]
-                    == "text/event-stream; charset=utf-8"
-                )
+            # Verify response
+            assert response.status_code == 200
+            assert (
+                response.headers["content-type"] == "text/event-stream; charset=utf-8"
+            )
 
     def test_openai_sse_event_parsing(self):
         """Test parsing OpenAI-compatible SSE events from response"""
@@ -141,32 +139,29 @@ async def test_direct_openai_sse_usage():
         async def mock_handle(data):
             await runner.send_message({"type": "chunk", "content": "Hello"})
             await asyncio.sleep(0.01)
-            await runner.send_message(
-                {"type": "chunk", "content": " from SSE!"}
-            )
+            await runner.send_message({"type": "chunk", "content": " from SSE!"})
             # Signal completion
             await runner.message_queue.put(None)
 
         with patch.object(runner, "handle_message", side_effect=mock_handle):
-            with patch.object(runner, "_initialize_tools"):
-                # Process OpenAI-compatible request
-                request = {
-                    "messages": [{"role": "user", "content": "Test message"}],
-                    "model": "gpt-4o-mini",
-                    "stream": True,
-                }
+            # Process OpenAI-compatible request
+            request = {
+                "messages": [{"role": "user", "content": "Test message"}],
+                "model": "gpt-4o-mini",
+                "stream": True,
+            }
 
-                # Collect events
-                events = []
-                async for event in runner.process_single_request(request):
-                    events.append(event)
+            # Collect events
+            events = []
+            async for event in runner.process_single_request(request):
+                events.append(event)
 
-                # Verify OpenAI-compatible events
-                assert len(events) == 3  # 2 content chunks + [DONE]
-                assert "chat.completion.chunk" in events[0]
-                assert "Hello" in events[0]
-                assert " from SSE!" in events[1]
-                assert events[2] == "data: [DONE]\n\n"
+            # Verify OpenAI-compatible events
+            assert len(events) == 3  # 2 content chunks + [DONE]
+            assert "chat.completion.chunk" in events[0]
+            assert "Hello" in events[0]
+            assert " from SSE!" in events[1]
+            assert events[2] == "data: [DONE]\n\n"
 
 
 # Example client code for consuming OpenAI-compatible SSE

@@ -1,3 +1,4 @@
+import pytest
 from fastapi.testclient import TestClient
 from nodetool.types.chat import MessageList
 from nodetool.metadata.types import Message as APIMessage
@@ -5,7 +6,8 @@ from nodetool.models.message import Message
 from nodetool.models.thread import Thread
 
 
-def test_create_message(
+@pytest.mark.asyncio
+async def test_create_message(
     client: TestClient, thread: Thread, headers: dict[str, str], user_id: str
 ):
     message = APIMessage(thread_id=thread.id, role="user", content="Hello")
@@ -13,12 +15,13 @@ def test_create_message(
     response = client.post("/api/messages/", json=json, headers=headers)
     assert response.status_code == 200
 
-    m = Message.get(response.json()["id"])
+    m = await Message.get(response.json()["id"])
     assert m is not None
     assert m.content == "Hello"
 
 
-def test_create_message_no_thread(
+@pytest.mark.asyncio
+async def test_create_message_no_thread(
     client: TestClient, headers: dict[str, str], user_id: str
 ):
     message = APIMessage(role="user", content="Hello")
@@ -26,13 +29,14 @@ def test_create_message_no_thread(
     response = client.post("/api/messages/", json=json, headers=headers)
     assert response.status_code == 200
 
-    m = Message.get(response.json()["id"])
+    m = await Message.get(response.json()["id"])
     assert m is not None
     assert m.content == "Hello"
     assert m.thread_id is not None
 
 
-def test_get_messages(
+@pytest.mark.asyncio
+async def test_get_messages(
     client: TestClient, message: Message, thread: Thread, headers: dict[str, str]
 ):
     response = client.get(
@@ -46,11 +50,12 @@ def test_get_messages(
     assert message_list.messages[0].id == message.id
 
 
-def test_get_messages_reverse(
+@pytest.mark.asyncio
+async def test_get_messages_reverse(
     client: TestClient, message: Message, thread: Thread, headers: dict[str, str]
 ):
     # create second message
-    last_message = Message.create(
+    last_message = await Message.create(
         user_id=message.user_id,
         thread_id=message.thread_id,
         role="user",

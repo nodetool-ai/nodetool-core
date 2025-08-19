@@ -5,7 +5,7 @@ from nodetool.common.huggingface_cache import has_cached_files
 from nodetool.common.huggingface_file import (
     HFFileInfo,
     HFFileRequest,
-    get_huggingface_file_infos,
+    get_huggingface_file_infos_async,
 )
 from nodetool.common.environment import Environment
 from nodetool.common.language_models import get_all_language_models
@@ -45,6 +45,7 @@ import sys
 import os
 from pathlib import Path
 import shlex
+import asyncio
 
 log = Environment.get_logger()
 router = APIRouter(prefix="/api/models", tags=["models"])
@@ -262,9 +263,13 @@ async def try_cache_files(
     def check_path(path: RepoPath) -> bool:
         return try_to_load_from_cache(path.repo_id, path.path) is not None
 
+    # Offload blocking cache checks to a thread to avoid blocking the loop
+    results = await asyncio.gather(
+        *(asyncio.to_thread(check_path, p) for p in paths)
+    )
     return [
-        RepoPath(repo_id=path.repo_id, path=path.path, downloaded=check_path(path))
-        for path in paths
+        RepoPath(repo_id=p.repo_id, path=p.path, downloaded=downloaded)
+        for p, downloaded in zip(paths, results)
     ]
 
 
@@ -276,8 +281,13 @@ async def try_cache_repos(
     def check_repo(repo_id: str) -> bool:
         return has_cached_files(repo_id)
 
+    # Offload blocking cache checks to a thread
+    results = await asyncio.gather(
+        *(asyncio.to_thread(check_repo, r) for r in repos)
+    )
     return [
-        CachedRepo(repo_id=repo_id, downloaded=check_repo(repo_id)) for repo_id in repos
+        CachedRepo(repo_id=repo_id, downloaded=downloaded)
+        for repo_id, downloaded in zip(repos, results)
     ]
 
 
@@ -398,16 +408,19 @@ if not Environment.is_production():
                 }
 
             path_to_open = str(requested_path)
-            sane_path_to_open = shlex.quote(path_to_open)
 
+            # Use async subprocess calls to avoid blocking the event loop
             if sys.platform == "win32":
-                # Using a list argument with subprocess.run ensures the path is passed as a single
-                # argument to Explorer, mitigating command-injection risks even without quoting.
-                subprocess.run(["explorer", path_to_open], check=True)
+                proc = await asyncio.create_subprocess_exec("explorer", path_to_open)
             elif sys.platform == "darwin":
-                subprocess.run(["open", sane_path_to_open], check=True)
+                proc = await asyncio.create_subprocess_exec("open", path_to_open)
             else:
-                subprocess.run(["xdg-open", sane_path_to_open], check=True)
+                proc = await asyncio.create_subprocess_exec("xdg-open", path_to_open)
+
+            return_code = await proc.wait()
+            if return_code != 0:
+                raise RuntimeError(f"Explorer command exited with code {return_code}")
+
             return {"status": "success", "path": path_to_open}
         except Exception as e:
             log.error(
@@ -423,7 +436,8 @@ if not Environment.is_production():
         requests: list[HFFileRequest],
         user: str = Depends(current_user),
     ) -> list[HFFileInfo]:
-        return get_huggingface_file_infos(requests)
+        # Use async wrapper to avoid blocking the loop
+        return await get_huggingface_file_infos_async(requests)
 
     @router.get("/{model_type}")
     async def index(

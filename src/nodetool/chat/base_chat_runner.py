@@ -24,12 +24,10 @@ from supabase import create_async_client, AsyncClient
 
 from nodetool.chat.ollama_service import get_ollama_models
 from nodetool.chat.providers import get_provider
-from nodetool.agents.tools.base import Tool, resolve_tool_by_name
 from nodetool.common.environment import Environment
 from nodetool.models.message import Message as DBMessage
 from nodetool.models.thread import Thread
-from nodetool.metadata.types import Message as ApiMessage
-from nodetool.packages.registry import load_node_packages
+from nodetool.metadata.types import Message as ApiMessage, Provider
 from nodetool.types.graph import Graph
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.common.message_processors import (
@@ -38,8 +36,6 @@ from nodetool.common.message_processors import (
     HelpMessageProcessor,
     AgentMessageProcessor,
     WorkflowMessageProcessor,
-    WorkflowCreationProcessor,
-    WorkflowEditingProcessor,
 )
 
 log = logging.getLogger(__name__)
@@ -78,56 +74,6 @@ class BaseChatRunner(ABC):
         self.current_task: asyncio.Task | None = None
         self.default_model = default_model
         self.default_provider = default_provider
-        self.all_tools: List[Tool] = []
-
-    def _initialize_tools(self):
-        from nodetool.agents.tools import (
-            AddLabelToEmailTool,
-            ArchiveEmailTool,
-            BrowserTool,
-            ConvertPDFToMarkdownTool,
-            CreateWorkflowTool,
-            DownloadFileTool,
-            EditWorkflowTool,
-            ExtractPDFTablesTool,
-            ExtractPDFTextTool,
-            GoogleGroundedSearchTool,
-            GoogleImageGenerationTool,
-            GoogleImagesTool,
-            GoogleNewsTool,
-            GoogleSearchTool,
-            ListAssetsDirectoryTool,
-            OpenAIImageGenerationTool,
-            OpenAITextToSpeechTool,
-            OpenAIWebSearchTool,
-            ScreenshotTool,
-            SearchEmailTool,
-        )
-
-        # If tools already initialized, skip
-        self.all_tools = [
-            AddLabelToEmailTool(),
-            ArchiveEmailTool(),
-            BrowserTool(),
-            ConvertPDFToMarkdownTool(),
-            CreateWorkflowTool(),
-            DownloadFileTool(),
-            EditWorkflowTool(),
-            ExtractPDFTablesTool(),
-            ExtractPDFTextTool(),
-            GoogleGroundedSearchTool(),
-            GoogleImageGenerationTool(),
-            GoogleImagesTool(),
-            GoogleNewsTool(),
-            GoogleSearchTool(),
-            ListAssetsDirectoryTool(),
-            OpenAIImageGenerationTool(),
-            OpenAITextToSpeechTool(),
-            OpenAIWebSearchTool(),
-            ScreenshotTool(),
-            SearchEmailTool(),
-        ]
-        self._initialize_node_tools()
 
     @abstractmethod
     async def connect(self, **kwargs) -> None:
@@ -271,15 +217,10 @@ class BaseChatRunner(ABC):
         message_thread_id = data_copy.pop("thread_id", None) or ""
 
         # Run the database operation in a thread pool to avoid blocking
-        def _create_db_message():
-            return DBMessage.create(
-                thread_id=message_thread_id, user_id=self.user_id or "", **data_copy
-            )
-
-        # # Execute in thread pool to make it non-blocking
-        # loop = asyncio.get_event_loop()
-        # db_message = await loop.run_in_executor(None, _create_db_message)
-        db_message = _create_db_message()
+        # Create database message directly with async
+        db_message = await DBMessage.create(
+            thread_id=message_thread_id, user_id=self.user_id or "", **data_copy
+        )
 
         log.info(f"Saved message {db_message.id} to database asynchronously")
         return db_message
@@ -301,7 +242,7 @@ class BaseChatRunner(ABC):
 
         try:
             # Load messages from database using the paginate method
-            db_messages, _ = DBMessage.paginate(
+            db_messages, _ = await DBMessage.paginate(
                 thread_id=thread_id, limit=1000, reverse=False
             )
 
@@ -335,7 +276,7 @@ class BaseChatRunner(ABC):
         if not thread_id:
             # Create a new thread
             try:
-                thread = Thread.create(user_id=self.user_id)
+                thread = await Thread.create(user_id=self.user_id)
                 log.debug(f"Created new thread {thread.id}")
                 return thread.id
             except Exception as e:
@@ -344,7 +285,7 @@ class BaseChatRunner(ABC):
         else:
             # Verify the thread exists and belongs to the user
             try:
-                thread = Thread.find(user_id=self.user_id, id=thread_id)
+                thread = await Thread.find(user_id=self.user_id, id=thread_id)
                 if not thread:
                     log.warning(f"Thread {thread_id} not found for user {self.user_id}")
                     # Create a new thread as fallback
@@ -404,53 +345,30 @@ class BaseChatRunner(ABC):
             log.error(f"Error during Supabase token validation: {e}")
             return False
 
-    def _initialize_node_tools(self):
-        # Load all node packages to populate NODE_BY_TYPE registry
-        load_node_packages()
-
-        # Initialize node tools
-        from nodetool.workflows.base_node import NODE_BY_TYPE
-        from nodetool.agents.tools.node_tool import NodeTool
-
-        node_tools = []
-        for node_type, node_class in NODE_BY_TYPE.items():
-            try:
-                if node_class.expose_as_tool():
-                    node_tool = NodeTool(node_class)
-                    node_tools.append(node_tool)
-            except Exception as e:
-                log.warning(f"Failed to create node tool for {node_type}: {e}")
-
-        if node_tools:
-            log.debug(
-                f"Loaded {len(node_tools)} node tools from {len(NODE_BY_TYPE)} available node types"
-            )
-
-        # Store all available tools
-        self.all_tools += node_tools
-        log.debug(f"Initialized {len(self.all_tools)} total tools")
-
     async def _run_processor(
         self,
         processor: MessageProcessor,
         chat_history: list[ApiMessage],
         processing_context: ProcessingContext,
-        tools: list[Tool],
         **kwargs,
     ):
         """Run a processor and stream its messages."""
         log.debug(f"Running processor {processor.__class__.__name__}")
 
-        # Create the processor task
-        processor_task = asyncio.create_task(
-            processor.process(
-                chat_history=chat_history,
-                processing_context=processing_context,
-                tools=tools,
-                **kwargs,
-            )
-        )
+        async def process():
+            try:
+                await processor.process(
+                    chat_history=chat_history,
+                    processing_context=processing_context,
+                    **kwargs,
+                )
+            except Exception as e:
+                log.error(f"Error during chat processing: {e}")
+                await processor.send_message({"type": "error", "message": str(e)})
+                processor.is_processing = False
 
+        # Create the processor task
+        processor_task = asyncio.create_task(process())
         try:
             # Process messages while the processor is running
             while processor.has_messages() or processor.is_processing:
@@ -487,18 +405,10 @@ class BaseChatRunner(ABC):
 
         last_message = chat_history[-1]
         processing_context = ProcessingContext(user_id=self.user_id)
-        if last_message.tools:
-            selected_tools = [
-                resolve_tool_by_name(name, available_tools=self.all_tools)
-                for name in last_message.tools
-            ]
-            log.debug(f"Initialized tools: {[tool.name for tool in selected_tools]}")
-        else:
-            selected_tools = []
 
         assert last_message.model, "Model is required"
 
-        if not last_message.provider:
+        if not last_message.provider or last_message.provider == Provider.Empty:
             raise ValueError("No provider specified in the current conversation")
 
         provider = get_provider(last_message.provider)
@@ -519,7 +429,6 @@ class BaseChatRunner(ABC):
                 processor=processor,
                 chat_history=chat_history,
                 processing_context=processing_context,
-                tools=selected_tools,
             )
 
         # Regular chat processing
@@ -533,7 +442,6 @@ class BaseChatRunner(ABC):
                 processor=processor,
                 chat_history=chat_history,
                 processing_context=processing_context,
-                tools=selected_tools,
                 collections=last_message.collections,
                 graph=last_message.graph,
             )
@@ -554,22 +462,10 @@ class BaseChatRunner(ABC):
         processor = AgentMessageProcessor(provider)
         processing_context = ProcessingContext(user_id=self.user_id)
 
-        # Get selected tools based on message.tools
-        selected_tools = []
-        if last_message.tools:
-            selected_tools = [
-                resolve_tool_by_name(name, available_tools=self.all_tools)
-                for name in last_message.tools
-            ]
-            log.debug(
-                f"Selected tools for agent: {[tool.name for tool in selected_tools]}"
-            )
-
         await self._run_processor(
             processor=processor,
             chat_history=chat_history,
             processing_context=processing_context,
-            tools=selected_tools,
         )
 
     async def process_messages_for_workflow(self, messages: list[ApiMessage]):
@@ -580,91 +476,12 @@ class BaseChatRunner(ABC):
         processor = WorkflowMessageProcessor(self.user_id)
         processing_context = ProcessingContext(user_id=self.user_id)
         last_message = chat_history[-1]
-        tools = []
-        if last_message.tools:
-            from nodetool.agents.tools.base import resolve_tool_by_name
-
-            tools = [
-                resolve_tool_by_name(name, available_tools=self.all_tools)
-                for name in list(last_message.tools)
-            ]
 
         await self._run_processor(
             processor=processor,
             chat_history=chat_history,
             processing_context=processing_context,
-            tools=tools,
         )
-
-    async def _trigger_workflow_creation(self, objective: str, thread_id: str):
-        """
-        Triggers workflow creation using the GraphPlanner for tool-initiated requests.
-        """
-        try:
-            # Get the current model from the last message in chat history
-            chat_history = await self.get_chat_history_from_db(thread_id)
-            if not chat_history:
-                raise ValueError("No chat history available to determine model")
-
-            last_message = chat_history[-1]
-            if not last_message.provider:
-                raise ValueError("No provider specified in the current conversation")
-
-            provider = get_provider(last_message.provider)
-            processor = WorkflowCreationProcessor(provider, self.user_id)
-            processing_context = ProcessingContext(user_id=self.user_id)
-
-            await self._run_processor(
-                processor=processor,
-                chat_history=chat_history,
-                processing_context=processing_context,
-                tools=self.all_tools,
-                objective=objective,
-            )
-
-        except Exception as e:
-            error_msg = f"Error creating workflow: {str(e)}"
-            log.error(f"Error in _trigger_workflow_creation: {e}", exc_info=True)
-            return {"success": False, "error": error_msg}
-
-    async def _trigger_workflow_editing(
-        self,
-        objective: str,
-        thread_id: str,
-        workflow_id: str | None = None,
-        graph: Graph | None = None,
-    ):
-        """
-        Triggers workflow editing using the GraphPlanner for tool-initiated requests.
-        """
-        try:
-            # Get the current model from the last message in chat history
-            chat_history = await self.get_chat_history_from_db(thread_id)
-            if not chat_history:
-                raise ValueError("No chat history available to determine model")
-
-            last_message = chat_history[-1]
-            if not last_message.provider:
-                raise ValueError("No provider specified in the current conversation")
-
-            provider = get_provider(last_message.provider)
-            processor = WorkflowEditingProcessor(provider, self.user_id)
-            processing_context = ProcessingContext(user_id=self.user_id)
-
-            await self._run_processor(
-                processor=processor,
-                chat_history=chat_history,
-                processing_context=processing_context,
-                tools=self.all_tools,
-                objective=objective,
-                workflow_id=workflow_id,
-                graph=graph,
-            )
-
-        except Exception as e:
-            error_msg = f"Error editing workflow: {str(e)}"
-            log.error(f"Error in _trigger_workflow_editing: {e}", exc_info=True)
-            return {"success": False, "error": error_msg}
 
     async def handle_message_impl(self, messages: list[ApiMessage]):
         """

@@ -31,9 +31,9 @@ class SystemStats(BaseModel):
 
 
 def get_system_stats() -> SystemStats:
-    # CPU usage - use interval=0 for non-blocking call since WebSocket calls this every 1 second
-    # The frequent 1-second calls ensure we always get recent CPU measurements
-    cpu_percent = psutil.cpu_percent(interval=0)
+    # CPU usage (non-blocking)
+    # Use interval=0.0 to avoid a 1s blocking sample in async loops
+    cpu_percent = psutil.cpu_percent(interval=0.0)
 
     # Memory usage
     memory = psutil.virtual_memory()

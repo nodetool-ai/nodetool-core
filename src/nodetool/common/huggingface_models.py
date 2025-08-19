@@ -363,7 +363,8 @@ async def read_cached_hf_models(
     Returns:
         List[CachedModel]: A list of CachedModel objects found in the cache.
     """
-    cache_info = scan_cache_dir()
+    # Offload scanning HF cache to a thread (filesystem heavy)
+    cache_info = await asyncio.to_thread(scan_cache_dir)
     model_repos = [repo for repo in cache_info.repos if repo.repo_type == "model"]
     recommended_models = get_recommended_models()
     if load_model_info:

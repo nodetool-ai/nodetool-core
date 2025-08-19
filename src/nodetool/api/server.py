@@ -1,11 +1,13 @@
 import os
+import asyncio
+import platform
+import multiprocessing
 from typing import Any, List
 import dotenv
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from nodetool.api import collection, file, package, prediction, font
-from nodetool.common.websocket_proxy import WebSocketProxy
 from nodetool.common.environment import Environment
 
 from nodetool.common.huggingface_cache import huggingface_download_endpoint
@@ -16,14 +18,17 @@ from fastapi import APIRouter, FastAPI, Request, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from uvicorn import run as uvicorn
 
+from nodetool.metadata.types import Provider
 from nodetool.packages.registry import get_nodetool_package_source_folders
 
 from . import asset, job, message, node, storage, workflow, model, settings, thread, system
 import mimetypes
 
 from nodetool.common.websocket_updates import websocket_updates
-from multiprocessing import Process
 from nodetool.api.openai import create_openai_compatible_router
+
+if platform.system() == "Windows":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 # FIX: Windows: mimetypes.guess_type() returns None for some files
 # See:
@@ -130,7 +135,7 @@ def create_app(
     # Mount OpenAI-compatible endpoints with default provider set to "ollama"
     app.include_router(
         create_openai_compatible_router(
-            provider="ollama",
+            provider=Provider.Ollama.value,
         )
     )
 
@@ -152,6 +157,16 @@ def create_app(
     if apps_folder:
         print(f"Mounting apps folder: {apps_folder}")
         app.mount("/apps", StaticFiles(directory=apps_folder, html=True), name="apps")
+
+    # Pre-initialize storages to avoid first-request blocking due to lazy init
+    @app.on_event("startup")
+    async def _initialize_storages() -> None:
+        try:
+            # Offload potential filesystem setup to threads
+            await asyncio.to_thread(Environment.get_asset_storage)
+            await asyncio.to_thread(Environment.get_temp_storage)
+        except Exception as e:
+            Environment.get_logger().warning(f"Storage pre-initialization failed: {e}")
 
     @app.get("/health")
     async def health_check() -> str:
@@ -186,9 +201,10 @@ def create_app(
         chat_runner = ChatWebSocketRunner(auth_token=auth_token)
         await chat_runner.run(websocket)
 
-        @app.websocket("/updates")
-        async def updates_websocket_endpoint(websocket: WebSocket):
-            await websocket_updates.handle_client(websocket)
+    # WebSocket endpoint for periodic system updates (e.g., system stats)
+    @app.websocket("/updates")
+    async def updates_websocket_endpoint(websocket: WebSocket):
+        await websocket_updates.handle_client(websocket)
 
     if static_folder and os.path.exists(static_folder):
         print(f"Mounting static folder: {static_folder}")
@@ -202,7 +218,7 @@ def run_uvicorn_server(app: Any, host: str, port: int, reload: bool) -> None:
     Starts api using Uvicorn with the specified configuration.
 
     Args:
-        app: The app to run.
+        app: The app to run or import string when reload=True or workers > 1.
         host: The host to run on.
         port: The port to run on.
         reload: Whether to reload the server on changes.
@@ -214,7 +230,32 @@ def run_uvicorn_server(app: Any, host: str, port: int, reload: bool) -> None:
         reload_dirs = [parent_dir] + [str(dir) for dir in editable_dirs]
     else:
         reload_dirs = []
-    uvicorn(app=app, host=host, port=port, reload=reload, reload_dirs=reload_dirs)
+
+    if platform.system() == "Windows":
+        loop = "asyncio"
+    else:
+        try:
+            import uvloop  # type: ignore  # noqa: F401
+
+            loop = "uvloop"
+        except Exception:
+            loop = "asyncio"
+
+    workers = 1
+
+    # Uvicorn requires an import string when using reload=True or workers > 1
+    if (reload or workers > 1) and not isinstance(app, str):
+        app = "nodetool.api.app:app"
+
+    uvicorn(
+        app=app,
+        host=host,
+        port=port,
+        reload=reload,
+        reload_dirs=reload_dirs,
+        loop=loop,
+        workers=workers,
+    )
 
 
 if __name__ == "__main__":

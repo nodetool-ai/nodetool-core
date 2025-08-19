@@ -1,6 +1,6 @@
 from datetime import datetime
 import re
-import sqlite3
+import aiosqlite
 from types import UnionType
 from typing import Any, Dict, List, Optional, get_args
 from pydantic.fields import FieldInfo
@@ -220,6 +220,7 @@ class SQLiteAdapter(DatabaseAdapter):
     table_name: str
     table_schema: Dict[str, Any]
     indexes: List[Dict[str, Any]]
+    _connection: aiosqlite.Connection
 
     def __init__(
         self,
@@ -227,61 +228,57 @@ class SQLiteAdapter(DatabaseAdapter):
         fields: Dict[str, FieldInfo],
         table_schema: Dict[str, Any],
         indexes: List[Dict[str, Any]],
+        connection: aiosqlite.Connection,
     ):
-        """Initializes the SQLite adapter.
-
-        Establishes connection, checks if the table exists, performs migrations
-        or creates the table and indexes as necessary.
-
-        Args:
-            db_path: Path to the SQLite database file.
-            fields: Dictionary mapping field names to Pydantic FieldInfo objects.
-            table_schema: Schema definition for the table.
-            indexes: List of index definitions for the table.
-        """
+        """Initializes the SQLite adapter with an existing connection."""
         self.db_path = db_path
         self.table_name = table_schema["table_name"]
         self.table_schema = table_schema
         self.fields = fields
         self.indexes = indexes
-        if self.table_exists():
-            self.migrate_table()
+        self._connection = connection
+
+    @classmethod
+    async def create(
+        cls,
+        db_path: str,
+        fields: Dict[str, FieldInfo],
+        table_schema: Dict[str, Any],
+        indexes: List[Dict[str, Any]],
+    ) -> "SQLiteAdapter":
+        connection = await aiosqlite.connect(db_path, timeout=30)
+        connection.row_factory = aiosqlite.Row
+        if Environment.is_debug():
+            connection.set_trace_callback(print)
+        self = cls(db_path, fields, table_schema, indexes, connection)
+        if await self.table_exists():
+            await self.migrate_table()
         else:
-            self.create_table()
+            await self.create_table()
             for index in self.indexes:
-                self.create_index(index["name"], index["columns"], index["unique"])
+                await self.create_index(index["name"], index["columns"], index["unique"])
+        return self
 
     @property
-    def connection(self):
-        """Provides a lazy-loaded SQLite database connection.
-
-        Ensures the connection is established only when first accessed.
-        Configures the connection with a row factory and trace callback (in debug mode).
-        """
-        if not hasattr(self, "_connection"):
-            self._connection = sqlite3.connect(
-                self.db_path, timeout=30, check_same_thread=False
-            )
-            self._connection.row_factory = sqlite3.Row
-            if Environment.is_debug():
-                self._connection.set_trace_callback(print)
-
+    def connection(self) -> aiosqlite.Connection:
         return self._connection
 
-    def table_exists(self) -> bool:
+    async def close(self) -> None:
+        await self.connection.close()
+
+    async def table_exists(self) -> bool:
         """Checks if the table associated with this adapter exists in the database."""
-        cursor = self.connection.execute(
+        cursor = await self.connection.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
             (self.table_name,),
         )
-        return cursor.fetchone() is not None
+        return (await cursor.fetchone()) is not None
 
-    def get_current_schema(self) -> set[str]:
-        """
-        Retrieves the current schema of the table from the database.
-        """
-        cursor = self.connection.execute(f"PRAGMA table_info({self.table_name})")
-        current_schema = {row[1] for row in cursor.fetchall()}
+    async def get_current_schema(self) -> set[str]:
+        """Retrieves the current schema of the table from the database."""
+        cursor = await self.connection.execute(f"PRAGMA table_info({self.table_name})")
+        rows = await cursor.fetchall()
+        current_schema = {row[1] for row in rows}
         return current_schema
 
     def get_desired_schema(self) -> set[str]:
@@ -291,7 +288,7 @@ class SQLiteAdapter(DatabaseAdapter):
         desired_schema = set(self.fields.keys())
         return desired_schema
 
-    def create_table(self, suffix="") -> None:
+    async def create_table(self, suffix="") -> None:
         """Creates the database table based on the model's schema.
 
         Constructs and executes a CREATE TABLE SQL statement using the defined fields
@@ -310,19 +307,19 @@ class SQLiteAdapter(DatabaseAdapter):
         sql += f"PRIMARY KEY ({primary_key}))"
 
         try:
-            self.connection.execute(sql)
-            self.connection.commit()
-        except sqlite3.Error as e:
+            await self.connection.execute(sql)
+            await self.connection.commit()
+        except aiosqlite.Error as e:
             print(f"SQLite error during table creation: {e}")
             raise e
 
-    def drop_table(self) -> None:
+    async def drop_table(self) -> None:
         """Drops the database table associated with this adapter."""
         sql = f"DROP TABLE IF EXISTS {self.table_name}"
-        self.connection.execute(sql)
-        self.connection.commit()
+        await self.connection.execute(sql)
+        await self.connection.commit()
 
-    def migrate_table(self) -> None:
+    async def migrate_table(self) -> None:
         """Performs schema migration for the table.
 
         Compares the current schema in the database with the model's defined schema.
@@ -330,7 +327,7 @@ class SQLiteAdapter(DatabaseAdapter):
         Handles adding columns by creating a new table, copying data, and replacing the old table.
         Drops columns that are no longer in the model schema (potential data loss).
         """
-        current_schema = self.get_current_schema()
+        current_schema = await self.get_current_schema()
         desired_schema = self.get_desired_schema()
 
         # Compare current and desired schemas
@@ -338,7 +335,7 @@ class SQLiteAdapter(DatabaseAdapter):
         fields_to_remove = current_schema - desired_schema
 
         # Get current indexes
-        current_indexes = {index["name"]: index for index in self.list_indexes()}
+        current_indexes = {index["name"]: index for index in await self.list_indexes()}
         desired_indexes = {index["name"]: index for index in self.indexes}
 
         # Compare indexes
@@ -363,47 +360,47 @@ class SQLiteAdapter(DatabaseAdapter):
 
         # Drop affected indexes before table modifications
         if fields_to_remove:
-            for index in self.list_indexes():
-                self.drop_index(index["name"])
+            for index in await self.list_indexes():
+                await self.drop_index(index["name"])
         else:
             for index_name in indexes_to_update:
-                self.drop_index(index_name)
+                await self.drop_index(index_name)
 
         # Handle table schema changes
         if fields_to_add:
             for field_name in fields_to_add:
                 field_type = get_sqlite_type(self.fields[field_name].annotation)
-                self.connection.execute(
+                await self.connection.execute(
                     f"ALTER TABLE {self.table_name} ADD COLUMN {field_name} {field_type}"
                 )
 
         if fields_to_remove:
             # Create new table with desired schema
-            self.create_table(suffix="_new")
+            await self.create_table(suffix="_new")
 
             # Copy data
             columns = ", ".join(desired_schema)
-            self.connection.execute(
+            await self.connection.execute(
                 f"INSERT INTO {self.table_name}_new ({columns}) SELECT {columns} FROM {self.table_name}"
             )
 
-            self.connection.execute(f"DROP TABLE {self.table_name}")
-            self.connection.execute(
+            await self.connection.execute(f"DROP TABLE {self.table_name}")
+            await self.connection.execute(
                 f"ALTER TABLE {self.table_name}_new RENAME TO {self.table_name}"
             )
 
             # Recreate all indexes
             for index in self.indexes:
-                self.create_index(index["name"], index["columns"], index["unique"])
+                await self.create_index(index["name"], index["columns"], index["unique"])
         else:
             # Create new indexes and update modified ones
             for index_name in indexes_to_add | set(indexes_to_update):
                 index = desired_indexes[index_name]
-                self.create_index(index_name, index["columns"], index["unique"])
+                await self.create_index(index_name, index["columns"], index["unique"])
 
-        self.connection.commit()
+        await self.connection.commit()
 
-    def save(self, item: Dict[str, Any]) -> None:
+    async def save(self, item: Dict[str, Any]) -> None:
         """Saves (inserts or replaces) an item into the database table.
 
         Converts the item's attributes to SQLite-compatible formats before saving.
@@ -419,10 +416,10 @@ class SQLiteAdapter(DatabaseAdapter):
             for key in valid_keys
         )
         query = f"INSERT OR REPLACE INTO {self.table_name} ({columns}) VALUES ({placeholders})"
-        self.connection.execute(query, values)
-        self.connection.commit()
+        await self.connection.execute(query, values)
+        await self.connection.commit()
 
-    def get(self, key: Any) -> Dict[str, Any] | None:
+    async def get(self, key: Any) -> Dict[str, Any] | None:
         """Retrieves an item from the database table by its primary key.
 
         Args:
@@ -435,13 +432,13 @@ class SQLiteAdapter(DatabaseAdapter):
         primary_key = self.get_primary_key()
         cols = ", ".join(self.fields.keys())
         query = f"SELECT {cols} FROM {self.table_name} WHERE {primary_key} = ?"
-        cursor = self.connection.execute(query, (key,))
-        item = cursor.fetchone()
+        cursor = await self.connection.execute(query, (key,))
+        item = await cursor.fetchone()
         if item is None:
             return None
         return convert_from_sqlite_attributes(dict(item), self.fields)
 
-    def delete(self, primary_key: Any) -> None:
+    async def delete(self, primary_key: Any) -> None:
         """Deletes an item from the database table by its primary key.
 
         Args:
@@ -449,8 +446,8 @@ class SQLiteAdapter(DatabaseAdapter):
         """
         pk_column = self.get_primary_key()
         query = f"DELETE FROM {self.table_name} WHERE {pk_column} = ?"
-        self.connection.execute(query, (primary_key,))
-        self.connection.commit()
+        await self.connection.execute(query, (primary_key,))
+        await self.connection.commit()
 
     def _build_condition(
         self, condition: Union[Condition, ConditionGroup]
@@ -488,7 +485,7 @@ class SQLiteAdapter(DatabaseAdapter):
                     params,
                 )
 
-    def query(
+    async def query(
         self,
         condition: ConditionBuilder | None = None,
         order_by: str | None = None,
@@ -520,10 +517,11 @@ class SQLiteAdapter(DatabaseAdapter):
 
         query = f"SELECT {cols} FROM {self.table_name} WHERE {where_clause} ORDER BY {order_by} LIMIT {limit}"
 
-        cursor = self.connection.execute(query, params)
+        cursor = await self.connection.execute(query, params)
+        rows = await cursor.fetchall()
         res = [
             convert_from_sqlite_attributes(dict(row), self.fields)
-            for row in cursor.fetchall()
+            for row in rows
         ]
 
         if len(res) == 0 or len(res) < limit:
@@ -532,7 +530,7 @@ class SQLiteAdapter(DatabaseAdapter):
         last_evaluated_key = str(res[-1].get(pk))
         return res, last_evaluated_key
 
-    def execute_sql(
+    async def execute_sql(
         self, sql: str, params: Optional[dict[str, Any]] = None
     ) -> List[Dict[str, Any]]:
         """Executes a given SQL query with parameters and returns the results.
@@ -545,17 +543,17 @@ class SQLiteAdapter(DatabaseAdapter):
             A list of dictionaries, where each dictionary represents a row
             returned by the query.
         """
-        cursor = self.connection.cursor()
-        cursor.execute(sql, params or {})
+        cursor = await self.connection.execute(sql, params or {})
         if cursor.description:
             columns = [col[0] for col in cursor.description]
+            rows = await cursor.fetchall()
             return [
                 convert_from_sqlite_attributes(dict(zip(columns, row)), self.fields)
-                for row in cursor.fetchall()
+                for row in rows
             ]
         return []
 
-    def create_index(
+    async def create_index(
         self, index_name: str, columns: List[str], unique: bool = False
     ) -> None:
         unique_str = "UNIQUE" if unique else ""
@@ -563,29 +561,30 @@ class SQLiteAdapter(DatabaseAdapter):
         sql = f"CREATE {unique_str} INDEX IF NOT EXISTS {index_name} ON {self.table_name} ({columns_str})"
 
         try:
-            self.connection.execute(sql)
-            self.connection.commit()
-        except sqlite3.Error as e:
+            await self.connection.execute(sql)
+            await self.connection.commit()
+        except aiosqlite.Error as e:
             print(f"SQLite error during index creation: {e}")
             raise e
 
-    def drop_index(self, index_name: str) -> None:
+    async def drop_index(self, index_name: str) -> None:
         sql = f"DROP INDEX IF EXISTS {index_name}"
 
         try:
-            self.connection.execute(sql)
-            self.connection.commit()
-        except sqlite3.Error as e:
+            await self.connection.execute(sql)
+            await self.connection.commit()
+        except aiosqlite.Error as e:
             print(f"SQLite error during index deletion: {e}")
             raise e
 
-    def list_indexes(self) -> List[Dict[str, Any]]:
+    async def list_indexes(self) -> List[Dict[str, Any]]:
         sql = "SELECT * FROM sqlite_master WHERE type='index' AND tbl_name=?"
 
         try:
-            cursor = self.connection.execute(sql, (self.table_name,))
+            cursor = await self.connection.execute(sql, (self.table_name,))
+            rows = await cursor.fetchall()
             indexes = []
-            for row in cursor.fetchall():
+            for row in rows:
                 # Skip system indexes (those starting with sqlite_)
                 if row["name"].startswith("sqlite_"):
                     continue
@@ -607,6 +606,11 @@ class SQLiteAdapter(DatabaseAdapter):
                     }
                 )
             return indexes
-        except sqlite3.Error as e:
+        except aiosqlite.Error as e:
             print(f"SQLite error during index listing: {e}")
             raise e
+
+    async def close(self):
+        """Close the database connection."""
+        if self._connection:
+            await self._connection.close()

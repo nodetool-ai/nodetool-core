@@ -39,7 +39,9 @@ from openai.types.chat.chat_completion_chunk import (
     Choice,
     ChoiceDelta,
 )
-from openai.types.chat.chat_completion_assistant_message_param import ContentArrayOfContentPart
+from openai.types.chat.chat_completion_assistant_message_param import (
+    ContentArrayOfContentPart,
+)
 
 from nodetool.agents.tools.workflow_tool import WorkflowTool, create_workflow_tools
 from nodetool.chat.base_chat_runner import BaseChatRunner
@@ -117,9 +119,6 @@ class ChatSSERunner(BaseChatRunner):
 
         self.is_connected = True
         log.info("SSE connection established for chat")
-        self._initialize_tools()
-        if self.user_id:
-            self.all_tools += create_workflow_tools(self.user_id, limit=200)
 
     async def disconnect(self) -> None:
         """
@@ -177,7 +176,12 @@ class ChatSSERunner(BaseChatRunner):
             log.info("Message processing cancelled by user")
             # Send cancellation message
             try:
-                await self.send_message({"type": "generation_stopped", "message": "Generation stopped by user"})
+                await self.send_message(
+                    {
+                        "type": "generation_stopped",
+                        "message": "Generation stopped by user",
+                    }
+                )
             except:
                 pass
         except Exception as e:
@@ -204,9 +208,7 @@ class ChatSSERunner(BaseChatRunner):
         try:
             # Ensure required fields for validation
             if "messages" not in request_data:
-                raise ValueError(
-                    "Chat Completions API requires 'messages' field"
-                )
+                raise ValueError("Chat Completions API requires 'messages' field")
 
             # Create a copy to avoid modifying the original
             validation_data = request_data.copy()
@@ -224,7 +226,13 @@ class ChatSSERunner(BaseChatRunner):
             raise ValueError(f"Request validation failed: {e}")
 
     def _convert_openai_content(
-        self, content: Union[str, Iterable[ChatCompletionContentPartParam], Iterable[ContentArrayOfContentPart], None]
+        self,
+        content: Union[
+            str,
+            Iterable[ChatCompletionContentPartParam],
+            Iterable[ContentArrayOfContentPart],
+            None,
+        ],
     ) -> List[MessageContent]:
         """
         Convert OpenAI message content to internal MessageContent list format.
@@ -375,7 +383,9 @@ class ChatSSERunner(BaseChatRunner):
                     tool_names.append(function.name)
         return tool_names
 
-    def _convert_internal_to_openai_chunk(self, chunk: Chunk, model: str) -> ChatCompletionChunk:
+    def _convert_internal_to_openai_chunk(
+        self, chunk: Chunk, model: str
+    ) -> ChatCompletionChunk:
         """
         Convert internal chunk format to OpenAI streaming chunk format.
 
@@ -389,7 +399,6 @@ class ChatSSERunner(BaseChatRunner):
         # Generate a completion ID and timestamp
         completion_id = f"chatcmpl-{int(time.time())}"
         created = int(time.time())
-
 
         # Return properly typed ChatCompletionChunk
         return ChatCompletionChunk(
@@ -406,7 +415,9 @@ class ChatSSERunner(BaseChatRunner):
             ],
         )
 
-    def _create_openai_error_chunk(self, error_message: str, model: str) -> ChatCompletionChunk:
+    def _create_openai_error_chunk(
+        self, error_message: str, model: str
+    ) -> ChatCompletionChunk:
         """
         Create an OpenAI format error chunk.
 
@@ -453,14 +464,11 @@ class ChatSSERunner(BaseChatRunner):
             # Convert to internal format
             log.debug("Converting validated OpenAI request to internal format")
             messages = self._convert_openai_messages(
-                validated_request["messages"],
-                validated_request["model"]
+                validated_request["messages"], validated_request["model"]
             )
 
             # Process the message in a background task using internal format
-            self.current_task = asyncio.create_task(
-                self.handle_message(messages)
-            )
+            self.current_task = asyncio.create_task(self.handle_message(messages))
 
             # Stream messages from the queue
             while True:
@@ -479,7 +487,9 @@ class ChatSSERunner(BaseChatRunner):
 
                         # Convert internal message to OpenAI chunk format and yield as SSE
                         openai_chunk: ChatCompletionChunk = (
-                            self._convert_internal_to_openai_chunk(chunk, validated_request["model"])
+                            self._convert_internal_to_openai_chunk(
+                                chunk, validated_request["model"]
+                            )
                         )
                         yield f"data: {openai_chunk.model_dump_json()}\n\n"
                     elif message.get("type") == "error":
@@ -498,7 +508,9 @@ class ChatSSERunner(BaseChatRunner):
                             await self.current_task
                         except Exception as e:
                             # Send error and break
-                            error_chunk = self._create_openai_error_chunk(str(e), validated_request["model"])
+                            error_chunk = self._create_openai_error_chunk(
+                                str(e), validated_request["model"]
+                            )
                             yield f"data: {error_chunk.model_dump_json()}\n\n"
                         break
                     continue
@@ -507,13 +519,14 @@ class ChatSSERunner(BaseChatRunner):
             log.info("SSE streaming cancelled")
             # Send cancellation message in OpenAI format
             cancel_chunk = self._create_openai_error_chunk(
-                "Generation stopped",
-                validated_request["model"]
+                "Generation stopped", validated_request["model"]
             )
             yield f"data: {cancel_chunk.model_dump_json()}\n\n"
         except Exception as e:
             log.error(f"Error in SSE streaming: {str(e)}", exc_info=True)
-            error_chunk = self._create_openai_error_chunk(str(e), validated_request["model"])
+            error_chunk = self._create_openai_error_chunk(
+                str(e), validated_request["model"]
+            )
             yield f"data: {error_chunk.model_dump_json()}\n\n"
         finally:
             # Send final [DONE] message for OpenAI format

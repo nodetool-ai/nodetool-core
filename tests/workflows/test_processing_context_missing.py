@@ -7,6 +7,7 @@ import pytest
 from io import BytesIO
 from unittest.mock import Mock, patch, AsyncMock
 import PIL.Image
+import importlib.util
 
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.graph import Graph
@@ -16,6 +17,11 @@ from nodetool.metadata.types import (
     VideoRef,
     TextRef,
 )
+
+
+def _torch_available() -> bool:
+    """Check if torch is available."""
+    return importlib.util.find_spec("torch") is not None
 
 
 @pytest.fixture
@@ -179,10 +185,6 @@ class TestDownloadFile:
             temp_path = temp_file.name
 
         try:
-            # Convert to windows-style path for testing
-            windows_path = temp_path.replace("/", "\\")
-            file_uri = f"file://{windows_path}"
-
             # Test the Windows URI handling without mocking os.name
             # since that would break file system operations on Unix
             result = await context.download_file(temp_path)
@@ -266,7 +268,6 @@ class TestPredictionAndGeneration:
     async def test_run_prediction(self, context):
         """Test running a prediction."""
         from nodetool.types.prediction import PredictionResult
-        from nodetool.models.prediction import Prediction
 
         async def mock_prediction_function(prediction, env):
             yield PredictionResult(
@@ -302,7 +303,6 @@ class TestPredictionAndGeneration:
     async def test_stream_prediction(self, context):
         """Test streaming prediction."""
         from nodetool.types.prediction import PredictionResult
-        from nodetool.models.prediction import Prediction
 
         async def mock_prediction_function(prediction, env):
             yield PredictionResult(
@@ -330,6 +330,7 @@ class TestConversionMethods:
     """Test asset conversion methods not covered elsewhere."""
 
     @pytest.mark.asyncio
+    @pytest.mark.skipif(not _torch_available(), reason="torch not installed")
     async def test_image_to_tensor(self, context):
         """Test converting image to tensor."""
         # Create test image
@@ -358,6 +359,7 @@ class TestConversionMethods:
                 await context.image_to_tensor(image_ref)
 
     @pytest.mark.asyncio
+    @pytest.mark.skipif(not _torch_available(), reason="torch not installed")
     async def test_image_to_torch_tensor(self, context):
         """Test converting image to torch tensor."""
         test_image = PIL.Image.new("RGB", (10, 10), color="blue")
@@ -372,6 +374,7 @@ class TestConversionMethods:
             assert isinstance(result, torch.Tensor)
 
     @pytest.mark.asyncio
+    @pytest.mark.skipif(not _torch_available(), reason="torch not installed")
     async def test_image_from_tensor(self, context):
         """Test creating image from tensor."""
         import torch
@@ -386,6 +389,7 @@ class TestConversionMethods:
             assert len(result.data) == 2
 
     @pytest.mark.asyncio
+    @pytest.mark.skipif(not _torch_available(), reason="torch not installed")
     async def test_image_from_tensor_single(self, context):
         """Test creating single image from tensor."""
         import torch
@@ -463,7 +467,7 @@ class TestConversionMethods:
 class TestUtilityFunctions:
     """Test utility functions and edge cases."""
 
-    def test_get_output_connected_nodes(self, context):
+    def test_get_output_connected_nodes(self, context: ProcessingContext):
         """Test getting output connected nodes."""
         from nodetool.workflows.base_node import BaseNode
         from nodetool.types.graph import Edge
@@ -471,9 +475,9 @@ class TestUtilityFunctions:
         class TestNode(BaseNode):
             pass
 
-        node1 = TestNode(id="node1")
-        node2 = TestNode(id="node2")
-        node3 = TestNode(id="node3")
+        node1 = TestNode(id="node1")  # type: ignore
+        node2 = TestNode(id="node2")  # type: ignore
+        node3 = TestNode(id="node3")  # type: ignore
 
         edges = [
             Edge(
@@ -492,7 +496,7 @@ class TestUtilityFunctions:
 
         context.graph = Graph(nodes=[node1, node2, node3], edges=edges)
 
-        connected = context.get_output_connected_nodes(node1)
+        connected = context.get_nodes_connected_to_output(node1.id, "output")
         assert len(connected) == 2
         assert node2 in connected
         assert node3 in connected
@@ -505,8 +509,8 @@ class TestUtilityFunctions:
         class TestNode(BaseNode):
             pass
 
-        node1 = TestNode(id="node1")
-        node2 = TestNode(id="node2")
+        node1 = TestNode(id="node1")  # type: ignore
+        node2 = TestNode(id="node2")  # type: ignore
 
         edges = [
             Edge(
@@ -518,7 +522,7 @@ class TestUtilityFunctions:
         ]
         context.graph = Graph(nodes=[node1, node2], edges=edges)
 
-        connected = context.get_output_connected_nodes("node1")
+        connected = context.get_nodes_connected_to_output("node1", "output")
         assert len(connected) == 1
         assert node2 in connected
 
@@ -530,7 +534,7 @@ class TestUtilityFunctions:
         class TestNode(BaseNode):
             pass
 
-        node1 = TestNode(id="node1")
+        node1 = TestNode(id="node1")  # type: ignore
         edges = [
             Edge(
                 source="node1",
@@ -541,7 +545,7 @@ class TestUtilityFunctions:
         ]
         context.graph = Graph(nodes=[node1], edges=edges)
 
-        connected = context.get_output_connected_nodes(node1)
+        connected = context.get_nodes_connected_to_output(node1.id, "output")
         assert len(connected) == 0  # Should skip non-existent nodes
 
     def test_get_gmail_connection_missing_env(self, context):
@@ -617,7 +621,7 @@ class TestVideoMethods:
             mock_file.name = "/tmp/test_video.mp4"
             mock_temp.return_value.__enter__.return_value = mock_file
 
-            with patch("diffusers.utils.export_utils.export_to_video") as mock_export:
+            with patch("nodetool.common.video_utils.export_to_video") as mock_export:
                 with patch("builtins.open", create=True) as mock_open:
                     mock_open.return_value = BytesIO(b"fake video data")
 

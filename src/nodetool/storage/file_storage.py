@@ -1,4 +1,5 @@
 from datetime import datetime
+import asyncio
 import os
 import aiofiles
 from typing import IO, AsyncIterator
@@ -24,26 +25,40 @@ class FileStorage(AbstractStorage):
         return f"{self.base_url}/{object_name}"
 
     async def file_exists(self, file_name: str) -> bool:
-        return os.path.isfile(os.path.join(self.base_path, file_name))
+        return await asyncio.to_thread(
+            os.path.isfile, os.path.join(self.base_path, file_name)
+        )
 
     async def get_mtime(self, key: str):
         try:
-            mtime = os.path.getmtime(os.path.join(self.base_path, key))
-            return datetime.fromtimestamp(mtime, tz=datetime.now().astimezone().tzinfo)
+            mtime = await asyncio.to_thread(
+                os.path.getmtime, os.path.join(self.base_path, key)
+            )
+            return datetime.fromtimestamp(
+                mtime, tz=datetime.now().astimezone().tzinfo
+            )
         except FileNotFoundError:
             return None
 
     async def get_size(self, key: str) -> int:
-        return os.path.getsize(os.path.join(self.base_path, key))
+        return await asyncio.to_thread(
+            os.path.getsize, os.path.join(self.base_path, key)
+        )
 
     async def download_stream(self, key: str) -> AsyncIterator[bytes]:
-        with open(os.path.join(self.base_path, key), "rb") as f:
-            while chunk := f.read(8192):
+        async with aiofiles.open(os.path.join(self.base_path, key), "rb") as f:
+            while True:
+                chunk = await f.read(8192)
+                if not chunk:
+                    break
                 yield chunk
 
     async def download(self, key: str, stream: IO):
         async with aiofiles.open(os.path.join(self.base_path, key), "rb") as f:
-            async for chunk in f:
+            while True:
+                chunk = await f.read(8192)
+                if not chunk:
+                    break
                 stream.write(chunk)
 
     async def upload(self, key: str, content: IO) -> str:
@@ -57,9 +72,16 @@ class FileStorage(AbstractStorage):
         return self.generate_presigned_url("get_object", key)
 
     def upload_sync(self, key: str, content: IO) -> str:
-        with open(os.path.join(self.base_path, key), "wb") as f:
-            f.write(content.read())
+        async def _write():
+            async with aiofiles.open(os.path.join(self.base_path, key), "wb") as f:
+                while True:
+                    chunk = content.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    await f.write(chunk)
+
+        asyncio.run(_write())
         return self.generate_presigned_url("get_object", key)
 
     async def delete(self, file_name: str):
-        os.remove(os.path.join(self.base_path, file_name))
+        await asyncio.to_thread(os.remove, os.path.join(self.base_path, file_name))

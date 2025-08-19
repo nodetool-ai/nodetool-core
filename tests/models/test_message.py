@@ -2,13 +2,14 @@ import pytest
 from nodetool.models.message import Message
 
 
-def test_find_message(user_id: str):
-    message = Message.create(
+@pytest.mark.asyncio
+async def test_find_message(user_id: str):
+    message = await Message.create(
         user_id=user_id,
         thread_id="th1",
     )
 
-    found_message = Message.get(message.id)
+    found_message = await Message.get(message.id)
 
     if found_message:
         assert message.id == found_message.id
@@ -16,29 +17,32 @@ def test_find_message(user_id: str):
         pytest.fail("Message not found")
 
     # Test finding a message that does not exist in the database
-    not_found_message = Message.get("invalid_id")
+    not_found_message = await Message.get("invalid_id")
     assert not_found_message is None
 
 
-def test_paginate_messages(user_id: str):
-    Message.create(user_id=user_id, thread_id="th1")
+@pytest.mark.asyncio
+async def test_paginate_messages(user_id: str):
+    await Message.create(user_id=user_id, thread_id="th1")
 
-    messages, last_key = Message.paginate(thread_id="th1", limit=10)
+    messages, last_key = await Message.paginate(thread_id="th1", limit=10)
     assert len(messages) > 0
     assert last_key == ""
 
 
-def test_create_message(user_id: str):
-    message = Message.create(
+@pytest.mark.asyncio
+async def test_create_message(user_id: str):
+    message = await Message.create(
         user_id=user_id,
         thread_id="th1",
     )
 
-    assert Message.get(message.id) is not None
+    assert await Message.get(message.id) is not None
 
 
-def test_create_message_image_content(user_id: str):
-    message = Message.create(
+@pytest.mark.asyncio
+async def test_create_message_image_content(user_id: str):
+    message = await Message.create(
         user_id=user_id,
         thread_id="th1",
         content=[
@@ -49,7 +53,7 @@ def test_create_message_image_content(user_id: str):
         ],
     )
 
-    assert Message.get(message.id) is not None
+    assert await Message.get(message.id) is not None
     assert message.content is not None
     assert isinstance(message.content, list)
     assert len(message.content) == 1
@@ -57,8 +61,9 @@ def test_create_message_image_content(user_id: str):
     assert message.content[0].image.uri == "https://example.com/image.jpg"
 
 
-def test_create_message_mixed_content(user_id: str):
-    message = Message.create(
+@pytest.mark.asyncio
+async def test_create_message_mixed_content(user_id: str):
+    message = await Message.create(
         user_id=user_id,
         thread_id="th1",
         content=[
@@ -70,7 +75,7 @@ def test_create_message_mixed_content(user_id: str):
         ],
     )
 
-    assert Message.get(message.id) is not None
+    assert await Message.get(message.id) is not None
 
     assert message.content is not None
     assert isinstance(message.content, list)

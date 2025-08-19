@@ -7,8 +7,10 @@ Extracted from nodetool.api.collection to allow reuse in the lightweight server.
 from __future__ import annotations
 
 from typing import List, Tuple, Dict
+import asyncio
 
 import chromadb
+from typing import Any
 from markitdown import MarkItDown
 import pymupdf
 import pymupdf4llm
@@ -105,7 +107,9 @@ def default_ingestion_workflow(
             documents = [Document(text=md_text, doc_id=file_path)]
     else:
         md = MarkItDown()
-        documents = [Document(text=md.convert(file_path).text_content, doc_id=file_path)]
+        documents = [
+            Document(text=md.convert(file_path).text_content, doc_id=file_path)
+        ]
 
     ids_docs, _ = chunk_documents_markdown(
         documents,
@@ -113,6 +117,54 @@ def default_ingestion_workflow(
         chunk_overlap=256,
     )
     collection.upsert(
+        documents=list(ids_docs.values()),
+        ids=list(ids_docs.keys()),
+    )
+
+
+async def default_ingestion_workflow_async(
+    collection: Any, file_path: str, mime_type: str
+) -> None:
+    """Async version of default ingestion that works with AsyncChromaCollection.
+
+    Offloads blocking I/O and CPU-bound parsing/chunking to a thread.
+    """
+
+    if mime_type == "application/pdf":
+        # Offload PDF open + markdown conversion
+        def pdf_to_markdown(path: str) -> str:
+            with open(path, "rb") as f:
+                pdf_data = f.read()
+            doc = pymupdf.open(stream=pdf_data, filetype="pdf")
+            try:
+                return pymupdf4llm.to_markdown(doc)
+            finally:
+                try:
+                    doc.close()
+                except Exception:
+                    pass
+
+        md_text = await asyncio.to_thread(pdf_to_markdown, file_path)
+        documents = [Document(text=md_text, doc_id=file_path)]
+    else:
+        # Offload general file-to-markdown conversion
+        def file_to_markdown(path: str) -> str:
+            md = MarkItDown()
+            return md.convert(path).text_content
+
+        md_text = await asyncio.to_thread(file_to_markdown, file_path)
+        documents = [Document(text=md_text, doc_id=file_path)]
+
+    # Offload chunking (LangChain splitters may be CPU-heavy)
+    ids_docs, _ = await asyncio.to_thread(
+        chunk_documents_markdown,
+        documents,
+        4096,
+        256,
+    )
+
+    # Async upsert into collection
+    await collection.upsert(
         documents=list(ids_docs.values()),
         ids=list(ids_docs.keys()),
     )
@@ -133,5 +185,3 @@ def find_input_nodes(graph: dict) -> Tuple[str | None, str | None]:
             file_input = node["data"]["name"]
 
     return collection_input, file_input
-
-

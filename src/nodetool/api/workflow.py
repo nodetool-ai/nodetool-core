@@ -23,6 +23,7 @@ from nodetool.packages.registry import Registry
 from nodetool.chat.providers import get_provider
 from nodetool.metadata.types import Provider
 from nodetool.chat.workspace_manager import WorkspaceManager
+import asyncio
 
 log = Environment.get_logger()
 router = APIRouter(prefix="/api/workflows", tags=["workflows"])
@@ -79,7 +80,7 @@ async def create(
 
             # Create a new workflow based on the example
             workflow = from_model(
-                WorkflowModel.create(
+                await WorkflowModel.create(
                     name=workflow_request.name,
                     package_name=workflow_request.package_name,
                     description=workflow_request.description
@@ -98,7 +99,7 @@ async def create(
             raise HTTPException(status_code=404, detail=str(e))
     elif workflow_request.graph:
         workflow = from_model(
-            WorkflowModel.create(
+            await WorkflowModel.create(
                 name=workflow_request.name,
                 package_name=workflow_request.package_name,
                 description=workflow_request.description,
@@ -117,7 +118,7 @@ async def create(
         except Exception as e:
             raise HTTPException(status_code=400, detail=str(e))
         workflow = from_model(
-            WorkflowModel.create(
+            await WorkflowModel.create(
                 name=workflow_request.name,
                 description=workflow_request.description,
                 thumbnail=workflow_request.thumbnail,
@@ -147,7 +148,7 @@ async def index(
 ) -> WorkflowList:
     column_list = columns.split(",") if columns else None
 
-    workflows, cursor = WorkflowModel.paginate(
+    workflows, cursor = await WorkflowModel.paginate(
         user_id=user, limit=limit, start_key=cursor, columns=column_list
     )
     return WorkflowList(
@@ -163,7 +164,7 @@ async def public(
 ) -> WorkflowList:
     column_list = columns.split(",") if columns else None
 
-    workflows, cursor = WorkflowModel.paginate(
+    workflows, cursor = await WorkflowModel.paginate(
         limit=limit, start_key=cursor, columns=column_list
     )
     return WorkflowList(
@@ -173,7 +174,7 @@ async def public(
 
 @router.get("/public/{id}")
 async def get_public_workflow(id: str) -> Workflow:
-    workflow = WorkflowModel.get(id)
+    workflow = await WorkflowModel.get(id)
     if not workflow:
         raise HTTPException(status_code=404, detail="Workflow not found")
     if workflow.access != "public":
@@ -205,7 +206,7 @@ async def get_workflow_tools(
     column_list = columns.split(",") if columns else None
 
     # Get all user workflows
-    workflows, cursor = WorkflowModel.paginate(
+    workflows, cursor = await WorkflowModel.paginate(
         user_id=user, limit=limit, start_key=cursor, columns=column_list
     )
 
@@ -221,7 +222,8 @@ async def get_workflow_tools(
 @router.get("/examples")
 async def examples() -> WorkflowList:
     example_registry = Registry()
-    return WorkflowList(workflows=example_registry.list_examples(), next=None)
+    examples = await asyncio.to_thread(example_registry.list_examples)
+    return WorkflowList(workflows=examples, next=None)
 
 
 @router.get("/examples/search")
@@ -236,7 +238,9 @@ async def search_examples(query: str) -> WorkflowList:
         WorkflowList: A list of workflows that contain nodes matching the query
     """
     example_registry = Registry()
-    matching_workflows = example_registry.search_example_workflows(query)
+    matching_workflows = await asyncio.to_thread(
+        example_registry.search_example_workflows, query
+    )
     return WorkflowList(workflows=matching_workflows, next=None)
 
 
@@ -270,7 +274,7 @@ async def get_example(package_name: str, example_name: str) -> Workflow:
 
 @router.get("/{id}")
 async def get_workflow(id: str, user: str = Depends(current_user)) -> Workflow:
-    workflow = WorkflowModel.get(id)
+    workflow = await WorkflowModel.get(id)
     if not workflow:
         raise HTTPException(status_code=404, detail="Workflow not found")
     if workflow.access != "public" and workflow.user_id != user:
@@ -286,7 +290,7 @@ async def update_workflow(
     user: str = Depends(current_user),
 ) -> Workflow:
     print(workflow_request.settings)
-    workflow = WorkflowModel.get(id)
+    workflow = await WorkflowModel.get(id)
     if not workflow:
         workflow = WorkflowModel(id=id, user_id=user)
     if workflow.user_id != user:
@@ -304,7 +308,7 @@ async def update_workflow(
     workflow.settings = workflow_request.settings
     workflow.run_mode = workflow_request.run_mode
     workflow.updated_at = datetime.now()
-    workflow.save()
+    await workflow.save()
     updated_workflow = from_model(workflow)
 
     return updated_workflow
@@ -316,7 +320,7 @@ async def delete_workflow(
     id: str,
     user: str = Depends(current_user),
 ) -> None:
-    workflow = WorkflowModel.get(id)
+    workflow = await WorkflowModel.get(id)
     if not workflow:
         raise HTTPException(status_code=404, detail="Workflow not found")
     if workflow.user_id != user:
@@ -358,7 +362,7 @@ async def save_example_workflow(
         workflow.tags = [tag for tag in workflow.tags if tag != "example"]
 
     try:
-        saved_workflow = example_registry.save_example(workflow)
+        saved_workflow = await asyncio.to_thread(example_registry.save_example, workflow)
         return saved_workflow
     except ValueError as e:
         log.error(f"Error saving example workflow: {str(e)}")

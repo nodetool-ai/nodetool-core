@@ -1,3 +1,4 @@
+import traceback
 from typing import Any, List, Annotated
 import json
 import importlib
@@ -70,6 +71,10 @@ class NodeMetadata(BaseModel):
     )
     expose_as_tool: bool = Field(
         default=False, description="Whether the node is exposed as a tool"
+    )
+    supports_dynamic_outputs: bool = Field(
+        default=False,
+        description="Whether the node can declare outputs dynamically at runtime (only for dynamic nodes)",
     )
 
 
@@ -192,6 +197,7 @@ def get_node_classes_from_module(
 
         return node_classes
     except ImportError as e:
+        traceback.print_exc()
         logger.error(f"Error importing module {module_name}: {e}")
         return []
     except Exception as e:
