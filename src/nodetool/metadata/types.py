@@ -797,60 +797,6 @@ CLASSNAME_TO_MODEL_TYPE = {
 }
 
 
-PIPELINE_TAGS = {
-    "hf.audio_classification": ["audio-classification"],
-    "hf.audio_to_audio": ["audio-to-audio"],
-    "hf.automatic_speech_recognition": ["automatic-speech-recognition"],
-    "hf.computer_vision": ["computer-vision"],
-    "hf.depth_estimation": ["depth-estimation"],
-    "hf.document_question_answering": ["document-question-answering"],
-    "hf.feature_extraction": ["feature-extraction"],
-    "hf.fill_mask": ["fill-mask"],
-    "hf.image_classification": ["image-classification"],
-    "hf.image_feature_extraction": ["image-feature-extraction"],
-    "hf.image_segmentation": ["image-segmentation"],
-    "hf.image_text_to_text": ["image-text-to-text"],
-    "hf.image_to_3d": ["image-to-3d"],
-    "hf.image_to_image": ["image-to-image"],
-    "hf.image_to_video": ["image-to-video"],
-    "hf.mask_generation": ["mask-generation"],
-    "hf.natural_language_processing": ["natural-language-processing"],
-    "hf.object_detection": ["object-detection"],
-    "hf.question_answering": ["question-answering"],
-    "hf.sentence_similarity": ["sentence-similarity"],
-    "hf.stable_diffusion_xl": ["stable-diffusion-xl"],
-    "hf.stable_diffusion": ["stable-diffusion"],
-    "hf.summarization": ["summarization"],
-    "hf.table_question_answering": ["table-question-answering"],
-    "hf.text_classification": ["text-classification"],
-    "hf.text_generation": ["text-generation"],
-    "hf.text_to_3d": ["text-to-3d"],
-    "hf.text_to_audio": ["text-to-audio"],
-    "hf.text_to_image": ["text-to-image"],
-    "hf.text_to_speech": ["text-to-speech"],
-    "hf.text_to_video": ["text-to-video"],
-    "hf.text2text_generation": ["text2text-generation"],
-    "hf.token_classification": ["token-classification"],
-    "hf.translation": ["translation"],
-    "hf.unconditional_image_generation": ["unconditional-image-generation"],
-    "hf.video_classification": ["video-classification"],
-    "hf.video_text_to_text": ["video-text-to-text"],
-    "hf.visual_question_answering": ["visual-question-answering"],
-    "hf.voice_activity_detection": ["voice-activity-detection"],
-    "hf.zero_shot_audio_classification": ["zero-shot-audio-classification"],
-    "hf.zero_shot_classification": ["zero-shot-classification"],
-    "hf.zero_shot_image_classification": ["zero-shot-image-classification"],
-    "hf.zero_shot_object_detection": ["zero-shot-object-detection"],
-}
-
-
-def pipeline_tag_to_model_type(tag: str) -> str | None:
-    for model_type, tags in PIPELINE_TAGS.items():
-        if tag in tags:
-            return model_type
-    return None
-
-
 #######################
 # ComfyUI Types
 #######################
@@ -1247,6 +1193,82 @@ class TaskPlan(BaseType):
         for task in self.tasks:
             lines += f"{task.to_markdown()}\n"
         return lines
+
+
+class TorchTensor(BaseType):
+    type: Literal["torch_tensor"] = "torch_tensor"
+    value: Optional[bytes] = None  # raw bytes in row-major order
+    dtype: str = "<i8"  # NumPy dtype string, includes endianness
+    shape: tuple[int, ...] = (1,)  # logical shape (row-major)
+
+    def is_set(self) -> bool:
+        return self.value is not None
+
+    def is_empty(self) -> bool:
+        return self.value is None or len(self.value) == 0
+
+    def _validate_nbytes(self) -> None:
+        assert self.value is not None, "No bytes stored"
+        itemsize = np.dtype(self.dtype).itemsize
+        expected = int(np.prod(self.shape)) * itemsize
+        actual = len(self.value)
+        assert actual == expected, f"Byte length {actual} != expected {expected}"
+
+    def to_tensor(self) -> Any:
+        """
+        Reconstruct as a CPU tensor and then (optionally) move to `self.device`.
+        """
+        import torch
+
+        assert self.value is not None, "No bytes stored"
+        self._validate_nbytes()
+
+        # Interpret bytes with the recorded NumPy dtype (including endianness)
+        arr = np.frombuffer(self.value, dtype=np.dtype(self.dtype))
+
+        # Ensure native byte order for PyTorch memory sharing
+        if arr.dtype.byteorder not in (
+            "=",
+            "|",
+        ):  # not native (and not byte-order-less)
+            arr = arr.newbyteorder("=")
+
+        # Reshape and wrap without extra copy if possible
+        arr = arr.reshape(self.shape)
+        return torch.from_numpy(arr)
+
+    @staticmethod
+    def from_tensor(tensor: Any, **kwargs) -> "TorchTensor":
+        """
+        Stores raw bytes + NumPy dtype string + shape (+ device).
+        """
+        import torch
+
+        if not isinstance(tensor, torch.Tensor):
+            tensor = torch.as_tensor(tensor)
+
+        # Always serialize from CPU to ensure contiguity and stable .numpy()
+        cpu = tensor.detach().contiguous().to("cpu")
+        np_arr = cpu.numpy()
+
+        return TorchTensor(
+            value=np_arr.tobytes(order="C"),
+            dtype=np_arr.dtype.str,  # e.g. '<f4', '<i8'
+            shape=tuple(np_arr.shape),
+            **kwargs,
+        )
+
+    @staticmethod
+    def from_numpy(arr: np.ndarray, **kwargs) -> "TorchTensor":
+        import torch
+
+        t = torch.from_numpy(arr)
+        return TorchTensor.from_tensor(t, **kwargs)
+
+    @staticmethod
+    def from_list(arr: list, **kwargs) -> "TorchTensor":
+        np_arr = np.array(arr)
+        return TorchTensor.from_numpy(np_arr, **kwargs)
 
 
 class NPArray(BaseType):
