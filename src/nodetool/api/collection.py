@@ -81,11 +81,7 @@ async def list_collections(
 ) -> CollectionList:
     """List all collections"""
     client = await get_async_chroma_client()
-    collection_names = await client.list_collections(offset=offset, limit=limit)
-
-    # Handle both list[str] and list[objects with .name]
-    names: list[str] = [getattr(c, "name", c) for c in collection_names]
-    collections = [await client.get_collection(name) for name in names]
+    collections = await client.list_collections()
 
     async def get_workflow_name(metadata: dict[str, str]) -> str | None:
         if workflow_id := metadata.get("workflow"):
@@ -100,11 +96,11 @@ async def list_collections(
                 name=col.name,
                 metadata=col.metadata or {},
                 workflow_name=await get_workflow_name(col.metadata or {}),
-                count=await col.count(),
+                count=col.count(),
             )
             for col in collections
         ],
-        count=await client.count_collections(),
+        count=len(collections),
     )
 
 

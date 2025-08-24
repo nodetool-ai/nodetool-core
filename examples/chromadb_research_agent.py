@@ -20,7 +20,7 @@ from nodetool.agents.tools.chroma_tools import (
     ChromaHybridSearchTool,
     ChromaMarkdownSplitAndIndexTool,
 )
-from nodetool.common.chroma_client import get_chroma_client
+from nodetool.common.async_chroma_client import get_async_chroma_client
 
 
 async def test_chromadb_research_agent(provider: ChatProvider, model: str):
@@ -31,14 +31,14 @@ async def test_chromadb_research_agent(provider: ChatProvider, model: str):
         if paper.endswith(".pdf"):
             input_files.append(os.path.join(os.path.dirname(__file__), "papers", paper))
 
-    chroma_client = get_chroma_client()
+    chroma_client = await get_async_chroma_client()
 
     try:
-        collection = chroma_client.delete_collection("test-papers")
+        await chroma_client.delete_collection("test-papers")
     except Exception:
         pass
 
-    collection = chroma_client.create_collection("test-papers")
+    collection = await chroma_client.create_collection("test-papers")
 
     ingestion_agent = Agent(
         name="Document Ingestion Agent",
@@ -48,14 +48,11 @@ async def test_chromadb_research_agent(provider: ChatProvider, model: str):
         """,
         provider=provider,
         model=model,
-        input_files=input_files,
         enable_analysis_phase=False,
         enable_data_contracts_phase=False,
         tools=[
             ConvertPDFToMarkdownTool(),
-            ChromaMarkdownSplitAndIndexTool(
-                collection=collection,
-            ),
+            ChromaMarkdownSplitAndIndexTool(collection=collection),
         ],
     )
 
@@ -69,11 +66,8 @@ async def test_chromadb_research_agent(provider: ChatProvider, model: str):
         model=model,
         enable_analysis_phase=False,
         enable_data_contracts_phase=False,
-        output_type="markdown",
         tools=[
-            ChromaHybridSearchTool(
-                collection=collection,
-            ),
+            ChromaHybridSearchTool(collection=collection),
         ],
     )
 

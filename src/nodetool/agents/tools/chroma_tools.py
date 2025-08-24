@@ -11,7 +11,7 @@ This module provides tools for semantic and keyword searching:
 from typing import Any
 import chromadb
 import uuid
-from chromadb.api.types import IncludeEnum
+from nodetool.common.async_chroma_client import AsyncChromaCollection
 from nodetool.workflows.processing_context import ProcessingContext
 from .base import Tool
 from nodetool.metadata.types import TextChunk
@@ -165,7 +165,7 @@ class ChromaHybridSearchTool(Tool):
         "required": ["text"],
     }
 
-    def __init__(self, collection: chromadb.Collection):
+    def __init__(self, collection: AsyncChromaCollection):
         self.collection = collection
 
     def _get_keyword_query(self, text: str, min_length: int) -> dict:
@@ -195,20 +195,20 @@ class ChromaHybridSearchTool(Tool):
             min_keyword_length = params.get("min_keyword_length", 3)
 
             # Semantic search
-            semantic_results = self.collection.query(
+            semantic_results = await self.collection.query(
                 query_texts=[params["text"]],
                 n_results=n_results * 2,
-                include=[IncludeEnum.documents],
+                include=["documents"],
             )
 
             # Keyword search
             keyword_query = self._get_keyword_query(params["text"], min_keyword_length)
             if keyword_query:
-                keyword_results = self.collection.query(
+                keyword_results = await self.collection.query(
                     query_texts=[params["text"]],
                     n_results=n_results * 2,
                     where_document=keyword_query,
-                    include=[IncludeEnum.documents],
+                    include=["documents"],
                 )
             else:
                 keyword_results = semantic_results
@@ -260,46 +260,6 @@ class ChromaHybridSearchTool(Tool):
         return msg
 
 
-class SemanticDocSearchTool(Tool):
-    name = "semantic_doc_search"
-    description = "Search documentation using semantic similarity"
-    input_schema = {
-        "type": "object",
-        "properties": {
-            "query": {
-                "type": "string",
-                "description": "The text to search for in the documentation",
-            },
-        },
-        "required": ["query"],
-    }
-
-    async def process(self, context: ProcessingContext, params: dict) -> Any:
-        try:
-            from nodetool.chat.help import semantic_search_documentation
-
-            results = semantic_search_documentation(params["query"])
-            return {
-                "results": [
-                    {
-                        "id": result.id,
-                        "content": result.content,
-                        "metadata": result.metadata,
-                    }
-                    for result in results
-                ]
-            }
-        except Exception as e:
-            return {"error": str(e)}
-
-    def user_message(self, params: dict) -> str:
-        text = params.get("query", "something")
-        msg = f"Searching documentation semantically for '{text}'..."
-        if len(msg) > 80:
-            msg = "Searching documentation semantically..."
-        return msg
-
-
 class ChromaRecursiveSplitAndIndexTool(Tool):
     name = "chroma_recursive_split_and_index"
     description = (
@@ -341,7 +301,7 @@ class ChromaRecursiveSplitAndIndexTool(Tool):
         "required": ["text", "document_id"],
     }
 
-    def __init__(self, collection: chromadb.Collection):
+    def __init__(self, collection: AsyncChromaCollection):
         self.collection = collection
 
     async def _split_text_recursive(
@@ -406,7 +366,7 @@ class ChromaRecursiveSplitAndIndexTool(Tool):
                     metadata["start_index"] = chunk.start_index
 
                 # Index the chunk
-                self.collection.add(
+                await self.collection.add(
                     ids=[unique_id],
                     documents=[chunk.text],
                     metadatas=[metadata],
@@ -447,7 +407,7 @@ class ChromaMarkdownSplitAndIndexTool(Tool):
             },
             "text": {
                 "type": "string",
-                "description": "Raw markdown content if no file_path provided"
+                "description": "Raw markdown content if no file_path provided",
             },
             "chunk_size": {
                 "type": "integer",
@@ -463,7 +423,7 @@ class ChromaMarkdownSplitAndIndexTool(Tool):
         "required": [],
     }
 
-    def __init__(self, collection: chromadb.Collection):
+    def __init__(self, collection: AsyncChromaCollection):
         self.collection = collection
 
     async def _split_text_markdown(
@@ -524,7 +484,7 @@ class ChromaMarkdownSplitAndIndexTool(Tool):
             unique_id = f"{doc_id}:{chunk.start_index}"
 
             # Index the chunk
-            self.collection.add(
+            await self.collection.add(
                 ids=[unique_id],
                 documents=[chunk.text],
             )
@@ -572,7 +532,7 @@ class ChromaBatchIndexTool(Tool):
         "required": ["chunks"],
     }
 
-    def __init__(self, collection: chromadb.Collection):
+    def __init__(self, collection: AsyncChromaCollection):
         self.collection = collection
 
     def _generate_document_id(self, source_id: str) -> str:
@@ -612,7 +572,7 @@ class ChromaBatchIndexTool(Tool):
 
         try:
             # Batch add to collection
-            self.collection.add(
+            await self.collection.add(
                 ids=ids,
                 documents=documents,
                 metadatas=metadatas,
