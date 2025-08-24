@@ -129,7 +129,6 @@ class ProcessingContext:
         environment: dict[str, str] | None = None,
         message_queue: queue.Queue | None = None,
         device: str | None = None,
-        endpoint_url: URL | None = None,
         encode_assets_as_base64: bool = False,
         upload_assets_to_s3: bool = False,
         chroma_client: ClientAPI | None = None,
@@ -146,7 +145,6 @@ class ProcessingContext:
         self.environment: dict[str, str] = Environment.get_environment()
         if environment:
             self.environment.update(environment)
-        self.endpoint_url = endpoint_url
         assert self.auth_token is not None, "Auth token is required"
         self.encode_assets_as_base64 = encode_assets_as_base64
         self.upload_assets_to_s3 = upload_assets_to_s3

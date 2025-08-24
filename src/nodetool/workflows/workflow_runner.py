@@ -181,7 +181,12 @@ class WorkflowRunner:
         active_generators (dict[str, tuple[AsyncGenerator, dict[str, Any]]]): Stores (generator_iterator, initial_config_properties)
     """
 
-    def __init__(self, job_id: str, device: str | None = None):
+    def __init__(
+        self,
+        job_id: str,
+        device: str | None = None,
+        disable_caching: bool = False,
+    ):
         """
         Initializes a new WorkflowRunner instance.
 
@@ -202,6 +207,7 @@ class WorkflowRunner:
         self.active_generators: dict[str, tuple[AsyncGenerator, dict[str, Any]]] = (
             {}
         )  # Stores (generator_iterator, initial_config_properties)
+        self.disable_caching = disable_caching
         if device:
             self.device = device
         else:
@@ -299,8 +305,11 @@ class WorkflowRunner:
 
     async def run(
         self,
-        req: RunJobRequest,
+        request: RunJobRequest,
         context: ProcessingContext,
+        send_job_updates: bool = True,
+        initialize_graph: bool = True,
+        validate_graph: bool = True,
     ):
         """
         Executes the entire workflow based on the provided request and context.
@@ -314,9 +323,12 @@ class WorkflowRunner:
         - Posting job status updates (running, completed, error).
 
         Args:
-            req (RunJobRequest): Contains the workflow graph, input parameters, and initial messages.
+            request (RunJobRequest): Contains the workflow graph, input parameters, and initial messages.
             context (ProcessingContext): Manages the execution state, inter-node communication,
                                      and provides services like caching.
+            send_job_updates (bool): Whether to send job updates to the client.
+            initialize_graph (bool): Whether to initialize the graph.
+            validate_graph (bool): Whether to validate the graph.
 
         Raises:
             ValueError: If the graph is missing from the request or if there's a mismatch
@@ -330,14 +342,16 @@ class WorkflowRunner:
             - Posts a final JobUpdate message with results or error information.
         """
         log.info(f"Starting workflow execution for job_id: {self.job_id}")
-        log.debug("Run parameters: params=%s messages=%s", req.params, req.messages)
         log.debug(
-            f"WorkflowRunner.run called for job_id: {self.job_id} with req: {req}, context: {context}"
+            "Run parameters: params=%s messages=%s", request.params, request.messages
+        )
+        log.debug(
+            f"WorkflowRunner.run called for job_id: {self.job_id} with req: {request}, context: {context}"
         )
 
         Environment.load_settings()
 
-        assert req.graph is not None, "Graph is required"
+        assert request.graph is not None, "Graph is required"
 
         self.edge_queues.clear()
 
@@ -348,7 +362,7 @@ class WorkflowRunner:
         # log.debug("Loaded %d node instances", len(loaded_node_instances))
 
         # Create the internal Graph object with these loaded instances
-        graph = Graph.from_dict(req.graph.model_dump())
+        graph = Graph.from_dict(request.graph.model_dump())
 
         # Filter invalid/miswired edges before initializing queues to avoid passing
         # messages into non-existent properties/outputs.
@@ -370,21 +384,24 @@ class WorkflowRunner:
         input_nodes = {node.name: node for node in graph.inputs()}
 
         start_time = time.time()
-        context.post_message(JobUpdate(job_id=self.job_id, status="running"))
+        if send_job_updates:
+            context.post_message(JobUpdate(job_id=self.job_id, status="running"))
 
         with self.torch_context(context):
             try:
-                if req.params:
-                    for key, value in req.params.items():
+                if request.params:
+                    for key, value in request.params.items():
                         if key not in input_nodes:
                             raise ValueError(f"No input node found for param: {key}")
 
                         node = input_nodes[key]
                         node.assign_property("value", value)
 
-                self._handle_messages(req, context)
-                await self.validate_graph(context, graph)
-                await self.initialize_graph(context, graph)
+                self._handle_messages(request, context)
+                if validate_graph:
+                    await self.validate_graph(context, graph)
+                if initialize_graph:
+                    await self.initialize_graph(context, graph)
                 await self.process_graph(context, graph)
 
                 # If we reach here, no exceptions from the main processing stages
@@ -407,13 +424,14 @@ class WorkflowRunner:
 
                 self.status = "error"
                 # Always post the error JobUpdate
-                context.post_message(
-                    JobUpdate(
-                        job_id=self.job_id,
-                        status="error",
-                        error=error_message_for_job_update[:1000],
+                if send_job_updates:
+                    context.post_message(
+                        JobUpdate(
+                            job_id=self.job_id,
+                            status="error",
+                            error=error_message_for_job_update[:1000],
+                        )
                     )
-                )
                 raise  # Re-raise the exception to be caught by the caller (e.g., pytest.raises)
             finally:
                 # This block executes whether an exception occurred or not.
@@ -445,14 +463,15 @@ class WorkflowRunner:
                 log.info(
                     f"Finished job {self.job_id} - Total time: {total_time:.2f} seconds"
                 )
-                context.post_message(
-                    JobUpdate(
-                        job_id=self.job_id,
-                        status="completed",
-                        result=self.outputs,
-                        message=f"Workflow {self.job_id} completed in {total_time:.2f} seconds",
+                if send_job_updates:
+                    context.post_message(
+                        JobUpdate(
+                            job_id=self.job_id,
+                            status="completed",
+                            result=self.outputs,
+                            message=f"Workflow {self.job_id} completed in {total_time:.2f} seconds",
+                        )
                     )
-                )
             # If self.status became "error" and the exception was re-raised, we don't reach here.
             # If self.status became "error" due to some internal logic but no exception was re-raised (not current design),
             # then we might reach here with status "error", and no "completed" message would be sent.
@@ -502,6 +521,7 @@ class WorkflowRunner:
                         NodeUpdate(
                             node_id=node.id,
                             node_name=node.get_title(),
+                            node_type=node.get_node_type(),
                             status="error",
                             error=str(e),
                         )
@@ -522,6 +542,7 @@ class WorkflowRunner:
                         NodeUpdate(
                             node_id=node_id,
                             node_name=node.get_title() if node else node_id,
+                            node_type=node.get_node_type() if node else node_id,
                             status="error",
                             error=error,
                         )
@@ -550,7 +571,6 @@ class WorkflowRunner:
                        graph processing.
         """
         log.debug("Initializing graph with %d nodes", len(graph.nodes))
-        log.debug(f"initialize_graph called with graph: {graph}")
         for node in graph.nodes:
             try:
                 log.debug(f"Initializing node: {node.get_title()} ({node.id})")
@@ -563,6 +583,7 @@ class WorkflowRunner:
                     NodeUpdate(
                         node_id=node.id,
                         node_name=node.get_title(),
+                        node_type=node.get_node_type(),
                         status="error",
                         error=str(e)[:1000],
                     )
@@ -575,7 +596,7 @@ class WorkflowRunner:
         self, node: BaseNode, result: dict[str, Any], context: ProcessingContext
     ):
         """
-        Sends messages from a completed node's output slots to connected target nodes.
+        Sends messages from a completed node or streaming node to connected target nodes.
 
         For each key-value pair in the `result` dictionary (representing an output slot
         and its value), this method finds all outgoing edges from that slot. If the value
@@ -679,6 +700,7 @@ class WorkflowRunner:
                         NodeUpdate(
                             node_id=node_obj.id,
                             node_name=node_obj.get_title(),
+                            node_type=node_obj.get_node_type(),
                             status="error",
                             error=str(result_or_exc)[:1000],
                         )
@@ -735,204 +757,56 @@ class WorkflowRunner:
         any_progress_potential = False
 
         for node in graph.nodes:
+            # Skip nodes already scheduled or running
             if node._id in self.active_processing_node_ids:
                 log.debug(
                     f"Node {node.get_title()} ({node._id}) is already active. Skipping."
                 )
                 continue
 
-            # Case 1: Node is an active streaming generator, ready to pull next item
-            if node.is_streaming_output() and node._id in self.active_generators:
+            # Case 1: Active streaming node ready to pull next item
+            streaming_task = self._try_prepare_active_streaming_task(context, node)
+            if streaming_task is not None:
+                detail, task = streaming_task
                 log.debug(
                     f"Active streaming node {node.get_title()} ({node._id}) is ready to pull next item."
                 )
-                active_stream_inputs: dict[str, Any] = (
-                    {}
-                )  # Inputs are internal to generator
-                tasks_to_run_this_iteration.append(
-                    self.process_node(context, node, active_stream_inputs)
-                )
-                ready_node_task_details_list.append((node, active_stream_inputs))
+                tasks_to_run_this_iteration.append(task)
+                ready_node_task_details_list.append(detail)
                 self.active_processing_node_ids.add(node._id)
                 any_progress_potential = True
                 continue
 
-            # Check if any input slot has an Event. If so, process immediately with available inputs.
-            node_input_handles = {
-                edge.targetHandle for edge in graph.edges if edge.target == node._id
-            }
-            event_detected_on_handle: Optional[str] = None
-
-            for handle_name in node_input_handles:
-                for (
-                    edge
-                ) in (
-                    graph.edges
-                ):  # Iterate through edges to find the one for current handle_name
-                    if edge.target == node._id and edge.targetHandle == handle_name:
-                        edge_key = (
-                            edge.source,
-                            edge.sourceHandle,
-                            edge.target,
-                            edge.targetHandle,
-                        )
-                        if edge_key in self.edge_queues and self.edge_queues[edge_key]:
-                            # Peek at the first item in the deque for this edge
-                            if isinstance(self.edge_queues[edge_key][0], Event):  # type: ignore
-                                event_detected_on_handle = handle_name
-                                break  # Found an event on this handle for this edge
-                if event_detected_on_handle:
-                    break  # Found an event for the node (across all its handles)
-
-            if event_detected_on_handle:
+            # Case 2: Event-driven processing takes priority when an Event is present on any handle
+            event_inputs = self._detect_event_and_prepare_inputs(graph, node)
+            if event_inputs is not None:
                 log.info(
-                    f"Event detected for node {node.get_title()} on input handle '{event_detected_on_handle}'. Preparing for immediate processing."
+                    f"Event detected for node {node.get_title()} on input handle. Preparing for immediate processing."
                 )
-                inputs_for_event_node_run: dict[str, Any] = {}
-
-                # Consume the event and any other currently available messages for this node's input handles
-                for handle_to_fill in node_input_handles:
-                    for (
-                        edge_iter
-                    ) in (
-                        graph.edges
-                    ):  # Iterate edges to find those matching current handle_to_fill
-                        if (
-                            edge_iter.target == node._id
-                            and edge_iter.targetHandle == handle_to_fill
-                        ):
-                            edge_key_consume = (
-                                edge_iter.source,
-                                edge_iter.sourceHandle,
-                                edge_iter.target,
-                                edge_iter.targetHandle,
-                            )
-                            if (
-                                edge_key_consume in self.edge_queues
-                                and self.edge_queues[edge_key_consume]
-                            ):
-                                # Message available, consume it
-                                item = self.edge_queues[edge_key_consume].popleft()
-                                inputs_for_event_node_run[handle_to_fill] = item
-                                log.debug(
-                                    f"Consumed message for event-triggered node {node.get_title()} input '{handle_to_fill}'. "
-                                    f"Queue for edge {edge_key_consume} now has {len(self.edge_queues[edge_key_consume])} items."
-                                )
-                                break  # Consumed one message for this handle_to_fill, move to next handle_to_fill
-
-                if not inputs_for_event_node_run:
-                    # This case implies an event was peeked but not consumed, which shouldn't happen with this logic.
-                    log.warning(
-                        f"Event was detected for {node.get_title()} on handle '{event_detected_on_handle}', "
-                        "but no inputs were consumed. This might indicate an internal logic issue. Skipping node for this cycle."
-                    )
-                    continue
-
                 tasks_to_run_this_iteration.append(
-                    self.process_node(context, node, inputs_for_event_node_run)
+                    self.process_node(context, node, event_inputs)
                 )
-                ready_node_task_details_list.append((node, inputs_for_event_node_run))
+                ready_node_task_details_list.append((node, event_inputs))
                 self.active_processing_node_ids.add(node._id)
                 any_progress_potential = True
                 log.debug(
                     f"Node {node.get_title()} ({node._id}) scheduled for event-triggered processing. "
-                    f"Inputs provided: {list(inputs_for_event_node_run.keys())}"
+                    f"Inputs provided: {list(event_inputs.keys())}"
                 )
-                continue  # Crucial: Move to the next node, skipping regular input checks for this one
-
-            # Case 3: Check for regular messages (if not an active streamer or event-triggered)
-            required_input_slots = {
-                edge.targetHandle for edge in graph.edges if edge.target == node._id
-            }
-
-            # If a node has no edge-defined input slots AND it's not an active generator,
-            # it's likely a trigger node whose first run is managed by _process_trigger_nodes.
-            # It shouldn't be picked up here unless it becomes an active generator.
-            if not required_input_slots and not (
-                node.is_streaming_output() and node._id in self.active_generators
-            ):
                 continue
 
-            # --- Peek Phase: Check if all inputs are available ---
+            # Case 3: Regular message-driven processing when all required inputs are available
+            regular_inputs = self._prepare_regular_inputs_if_available(graph, node)
+            if regular_inputs is None:
+                continue
 
-            # --- Consume Phase: If all inputs can be satisfied, now consume them ---
-            messages_consumed_for_this_node = False
-            node_inputs_for_this_run: dict[str, Any] = {}
-
-            if required_input_slots:  # Only try to consume if there are slots to fill
-                # First check if we can satisfy all required input slots in this run
-                all_slots_can_be_satisfied = True
-
-                for slot_name in required_input_slots:
-                    slot_has_available_data = False
-                    for edge in graph.edges:
-                        if edge.target == node._id and edge.targetHandle == slot_name:
-                            edge_key = (
-                                edge.source,
-                                edge.sourceHandle,
-                                edge.target,
-                                edge.targetHandle,
-                            )
-                            if (
-                                edge_key in self.edge_queues
-                                and self.edge_queues[edge_key]
-                            ):
-                                slot_has_available_data = True
-                                break
-
-                    if not slot_has_available_data:
-                        all_slots_can_be_satisfied = False
-                        break
-
-                # Only consume if ALL required slots can be satisfied
-                if not all_slots_can_be_satisfied:
-                    continue
-
-                # Now actually consume the inputs
-                for slot_name in required_input_slots:
-                    for edge in graph.edges:
-                        if edge.target == node._id and edge.targetHandle == slot_name:
-                            edge_key = (
-                                edge.source,
-                                edge.sourceHandle,
-                                edge.target,
-                                edge.targetHandle,
-                            )
-                            if (
-                                edge_key in self.edge_queues
-                                and self.edge_queues[edge_key]
-                            ):
-                                item = self.edge_queues[edge_key].popleft()
-                                node_inputs_for_this_run[slot_name] = item
-                                messages_consumed_for_this_node = True
-                                log.debug(
-                                    f"Consumed message for {node.get_title()} slot '{slot_name}' from edge {edge_key}. "
-                                    f"Queue for edge {edge_key} now has {len(self.edge_queues[edge_key])} items."
-                                )
-                                break  # Found an edge and consumed for this slot_name, move to next slot_name
-
-                if (
-                    not messages_consumed_for_this_node and required_input_slots
-                ):  # If consumption failed for a node that needs inputs
-                    continue  # Skip to next node
-
-            # Node is ready if:
-            # 1. It's a non-active streaming node and its initial inputs are now consumed (or it's a trigger with no edge inputs).
-            # 2. It's a non-streaming node and its inputs are consumed.
-            # Active streaming nodes are handled by Case 1 at the start of the loop.
-
-            # This log and task creation applies to:
-            # - Non-streaming nodes with satisfied inputs.
-            # - Streaming nodes for their *initialization run* if their inputs (if any) are satisfied.
             log.debug(
-                f"Node {node.get_title()} ({node._id}) is ready for processing. Inputs provided: {list(node_inputs_for_this_run.keys())}"
+                f"Node {node.get_title()} ({node._id}) is ready for processing. Inputs provided: {list(regular_inputs.keys())}"
             )
-            # Pass a snapshot so later mutations cannot affect already-scheduled tasks
-            node_inputs_snapshot = dict(node_inputs_for_this_run)
             tasks_to_run_this_iteration.append(
-                self.process_node(context, node, node_inputs_snapshot)
+                self.process_node(context, node, dict(regular_inputs))
             )
-            ready_node_task_details_list.append((node, node_inputs_snapshot))
+            ready_node_task_details_list.append((node, dict(regular_inputs)))
             self.active_processing_node_ids.add(node._id)
             any_progress_potential = True
 
@@ -945,6 +819,150 @@ class WorkflowRunner:
             tasks_to_run_this_iteration,
             any_progress_potential,
         )
+
+    def _try_prepare_active_streaming_task(
+        self, context: ProcessingContext, node: BaseNode
+    ) -> Optional[tuple[tuple[BaseNode, dict[str, Any]], Any]]:
+        """
+        Returns a task detail and coroutine for an active streaming node ready to yield the next item.
+        If the node is not an active streaming generator, returns None.
+        """
+        if node.is_streaming_output() and node._id in self.active_generators:
+            active_stream_inputs: dict[str, Any] = {}
+            return (
+                (node, active_stream_inputs),
+                self.process_node(context, node, active_stream_inputs),
+            )
+        return None
+
+    def _detect_event_and_prepare_inputs(
+        self, graph: Graph, node: BaseNode
+    ) -> Optional[dict[str, Any]]:
+        """
+        Detects whether any input handle for the node has an Event at the head of its queue.
+        If so, consumes one message from each available input handle and returns the inputs dict.
+        Returns None if no event is detected or if nothing could be consumed.
+        """
+        node_input_handles = {
+            edge.targetHandle for edge in graph.edges if edge.target == node._id
+        }
+
+        # Peek for an event on any handle
+        event_detected = False
+        for handle_name in node_input_handles:
+            for edge in graph.edges:
+                if edge.target == node._id and edge.targetHandle == handle_name:
+                    edge_key = (
+                        edge.source,
+                        edge.sourceHandle,
+                        edge.target,
+                        edge.targetHandle,
+                    )
+                    if edge_key in self.edge_queues and self.edge_queues[edge_key]:
+                        first_item = self.edge_queues[edge_key][0]
+                        if isinstance(first_item, Event):  # type: ignore
+                            event_detected = True
+                            break
+            if event_detected:
+                break
+
+        if not event_detected:
+            return None
+
+        # Consume one message from each handle that has something, prioritizing immediate processing
+        inputs_for_run: dict[str, Any] = {}
+        for handle_to_fill in node_input_handles:
+            for edge_iter in graph.edges:
+                if (
+                    edge_iter.target == node._id
+                    and edge_iter.targetHandle == handle_to_fill
+                ):
+                    edge_key_consume = (
+                        edge_iter.source,
+                        edge_iter.sourceHandle,
+                        edge_iter.target,
+                        edge_iter.targetHandle,
+                    )
+                    if (
+                        edge_key_consume in self.edge_queues
+                        and self.edge_queues[edge_key_consume]
+                    ):
+                        item = self.edge_queues[edge_key_consume].popleft()
+                        inputs_for_run[handle_to_fill] = item
+                        log.debug(
+                            f"Consumed message for event-triggered node {node.get_title()} input '{handle_to_fill}'. "
+                            f"Queue for edge {edge_key_consume} now has {len(self.edge_queues[edge_key_consume])} items."
+                        )
+                        break
+
+        if not inputs_for_run:
+            log.warning(
+                f"Event was detected for {node.get_title()}, but no inputs were consumed. Skipping node for this cycle."
+            )
+            return None
+
+        return inputs_for_run
+
+    def _prepare_regular_inputs_if_available(
+        self, graph: Graph, node: BaseNode
+    ) -> Optional[dict[str, Any]]:
+        """
+        For non-event, non-active-streaming nodes, determines if all required input slots
+        have messages available. If yes, consumes one message per required slot and returns
+        the inputs dict. Returns None if not all inputs are available or if the node should
+        not be scheduled in this pass (e.g., trigger nodes without edges and not streaming).
+        """
+        required_input_slots = {
+            edge.targetHandle for edge in graph.edges if edge.target == node._id
+        }
+
+        # Trigger nodes with no edge-defined input slots are handled elsewhere unless streaming
+        if not required_input_slots and not (
+            node.is_streaming_output() and node._id in self.active_generators
+        ):
+            return None
+
+        # Ensure all required slots have at least one message available
+        for slot_name in required_input_slots:
+            slot_has_available_data = False
+            for edge in graph.edges:
+                if edge.target == node._id and edge.targetHandle == slot_name:
+                    edge_key = (
+                        edge.source,
+                        edge.sourceHandle,
+                        edge.target,
+                        edge.targetHandle,
+                    )
+                    if edge_key in self.edge_queues and self.edge_queues[edge_key]:
+                        slot_has_available_data = True
+                        break
+            if not slot_has_available_data:
+                return None
+
+        # Consume one message per required slot
+        inputs_for_this_run: dict[str, Any] = {}
+        for slot_name in required_input_slots:
+            for edge in graph.edges:
+                if edge.target == node._id and edge.targetHandle == slot_name:
+                    edge_key = (
+                        edge.source,
+                        edge.sourceHandle,
+                        edge.target,
+                        edge.targetHandle,
+                    )
+                    if edge_key in self.edge_queues and self.edge_queues[edge_key]:
+                        item = self.edge_queues[edge_key].popleft()
+                        inputs_for_this_run[slot_name] = item
+                        log.debug(
+                            f"Consumed message for {node.get_title()} slot '{slot_name}' from edge {edge_key}. "
+                            f"Queue for edge {edge_key} now has {len(self.edge_queues[edge_key])} items."
+                        )
+                        break
+
+        if required_input_slots and not inputs_for_this_run:
+            return None
+
+        return inputs_for_this_run
 
     async def _execute_node_batch(
         self,
@@ -1002,6 +1020,7 @@ class WorkflowRunner:
                     NodeUpdate(
                         node_id=node_processed.id,
                         node_name=node_processed.get_title(),
+                        node_type=node_processed.get_node_type(),
                         status="error",
                         error=str(results[i])[:1000],
                     )
@@ -1621,7 +1640,7 @@ class WorkflowRunner:
         await node.pre_process(context)
 
         # Check if the node is cacheable
-        if node.is_cacheable():
+        if node.is_cacheable() and not self.disable_caching:
             log.debug(f"Checking cache for node: {node.get_title()} ({node._id})")
             cached_result = context.get_cached_result(node)
         else:
@@ -1669,7 +1688,7 @@ class WorkflowRunner:
                 result = await node.convert_output(context, result)
 
             # Cache the result if the node is cacheable
-            if node.is_cacheable():
+            if node.is_cacheable() and not self.disable_caching:
                 log.debug(f"Caching result for node: {node.get_title()} ({node._id})")
                 context.cache_result(node, result)
 

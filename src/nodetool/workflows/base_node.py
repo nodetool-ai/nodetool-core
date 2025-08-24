@@ -761,6 +761,7 @@ class BaseNode(BaseModel):
         update = NodeUpdate(
             node_id=self.id,
             node_name=self.get_title(),
+            node_type=self.get_node_type(),
             status=status,
             result=result_for_client,
             properties=props,
@@ -1234,8 +1235,11 @@ class ToolResultNode(BaseNode):
 
     _is_dynamic = True
 
-    def process(self, context: Any) -> Any:
+    async def process(self, context: Any) -> Any:
         return self._dynamic_properties
+
+    def result_for_client(self, result: dict[str, Any]) -> dict[str, Any]:
+        return result
 
 
 class OutputNode(BaseNode):

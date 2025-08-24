@@ -142,7 +142,9 @@ class OpenAIProvider(ChatProvider):
         """Convert a URI to a base64 encoded data: URI string.
         If the URI points to an audio file, it converts it to MP3 first.
         """
-        async with httpx.AsyncClient(follow_redirects=True, timeout=600, verify=False) as client:
+        async with httpx.AsyncClient(
+            follow_redirects=True, timeout=600, verify=False
+        ) as client:
             response = await client.get(uri)
             response.raise_for_status()  # Raise an exception for bad status codes
         mime_type = response.headers.get("content-type", "application/octet-stream")
