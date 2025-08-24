@@ -245,15 +245,27 @@ def run_uvicorn_server(app: Any, host: str, port: int, reload: bool) -> None:
     if (reload or workers > 1) and not isinstance(app, str):
         app = "nodetool.api.app:app"
 
-    uvicorn(
-        app=app,
-        host=host,
-        port=port,
-        reload=reload,
-        reload_dirs=reload_dirs,
-        loop=loop,
-        workers=workers,
-    )
+    # Workaround: On Windows, uvicorn's reload mode may prevent clean Ctrl-C shutdown.
+    # Disable reload on Windows to avoid reloader child-process hang.
+    if platform.system() == "Windows" and reload:
+        print("Windows detected: disabling uvicorn reload for clean Ctrl-C shutdown.")
+        reload = False
+
+    try:
+        uvicorn(
+            app=app,
+            host=host,
+            port=port,
+            reload=reload,
+            reload_dirs=reload_dirs,
+            loop=loop,
+            workers=workers,
+        )
+    except KeyboardInterrupt:
+        # Ensure immediate termination on Windows where child processes may linger
+        if platform.system() == "Windows":
+            os._exit(0)
+        raise
 
 
 if __name__ == "__main__":
