@@ -1466,18 +1466,7 @@ def get_recommended_models() -> dict[str, list[HuggingFaceModel]]:
     models: dict[str, list[HuggingFaceModel]] = {}
 
     for meta in node_metadata_list:
-        node_class = get_node_class(meta.node_type)
-        if node_class is None:
-            continue
-        try:
-            node_models = node_class.get_recommended_models()
-        except Exception as e:
-            log.error(
-                f"Error getting recommended models from {node_class.__name__}: {e}"
-            )
-            continue
-
-        for model in node_models:
+        for model in meta.recommended_models:
             if model is None:
                 continue
             model_id = (
