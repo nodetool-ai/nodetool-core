@@ -465,43 +465,6 @@ class Registry:
         """
         self._node_cache = None
 
-    async def get_all_available_nodes(self) -> List[Dict[str, Any]]:
-        """
-        Get all available nodes from both installed and available packages.
-
-        This method combines nodes from:
-        1. All installed packages (discovered locally)
-        2. All available packages from the registry
-
-        Returns:
-            List[Dict[str, Any]]: A list of all node metadata dictionaries
-        """
-        all_nodes = []
-
-        # Get nodes from installed packages
-        installed_packages = self.list_installed_packages()
-        for package in installed_packages:
-            if package.nodes:
-                for node in package.nodes:
-                    node_dict = (
-                        node.model_dump() if hasattr(node, "model_dump") else dict(node)
-                    )
-                    node_dict["package"] = package.repo_id
-                    node_dict["installed"] = True
-                    all_nodes.append(node_dict)
-
-        # Get nodes from available packages (this fetches from registry)
-        available_nodes = await self.search_nodes("")  # Empty query returns all
-
-        # Mark available nodes and merge with installed
-        installed_types = {node.get("node_type") for node in all_nodes}
-        for node in available_nodes:
-            if node.get("node_type") not in installed_types:
-                node["installed"] = False
-                all_nodes.append(node)
-
-        return all_nodes
-
     def get_all_installed_nodes(self) -> list[NodeMetadata]:
         """
         Get all nodes from installed packages only.
@@ -604,14 +567,15 @@ class Registry:
                         nodes = graph_data.get("nodes", [])
                         node_types = []
                         node_titles = []
-                        
+
                         for node in nodes:
                             node_type = node.get("type", "")
                             node_types.append(node_type.lower())
-                            
+
                             # Try to get the node class to extract its title
                             try:
                                 from nodetool.workflows.base_node import get_node_class
+
                                 node_class = get_node_class(node_type)
                                 if node_class:
                                     node_titles.append(node_class.get_title().lower())
@@ -622,8 +586,8 @@ class Registry:
                         # Store only essential data for search
                         cached_item = {
                             "id": workflow_data.get("id"),  # For deduplication
-                            "_node_types": node_types,      # For searching
-                            "_node_titles": node_titles,     # For searching by title
+                            "_node_types": node_types,  # For searching
+                            "_node_titles": node_titles,  # For searching by title
                         }
 
                         cache_key = f"{package.name}:{example_meta.name}"
@@ -929,51 +893,51 @@ class Registry:
             )
 
     def load_example(self, package_name: str, example_name: str) -> Optional[Workflow]:
-            """
-            Load a single example workflow from disk given package name and example name.
+        """
+        Load a single example workflow from disk given package name and example name.
 
-            This method uses the package's source folder to construct the path to the example file.
-            Results are cached for performance.
+        This method uses the package's source folder to construct the path to the example file.
+        Results are cached for performance.
 
-            Args:
-                package_name: The name of the package containing the example
-                example_name: The name of the example workflow to load
+        Args:
+            package_name: The name of the package containing the example
+            example_name: The name of the example workflow to load
 
-            Returns:
-                Optional[Workflow]: The loaded workflow with full data, or None if not found
+        Returns:
+            Optional[Workflow]: The loaded workflow with full data, or None if not found
 
-            Raises:
-                ValueError: If the package is not found
-            """
-            # Check cache first
-            cache_key = f"{package_name}:{example_name}"
-            if cache_key in self._examples_cache:
-                return self._examples_cache[cache_key]
+        Raises:
+            ValueError: If the package is not found
+        """
+        # Check cache first
+        cache_key = f"{package_name}:{example_name}"
+        if cache_key in self._examples_cache:
+            return self._examples_cache[cache_key]
 
-            package = self.find_package_by_name(package_name)
-            if not package:
-                raise ValueError(f"Package {package_name} not found")
+        package = self.find_package_by_name(package_name)
+        if not package:
+            raise ValueError(f"Package {package_name} not found")
 
-            if not package.source_folder:
-                raise ValueError(f"Package {package_name} does not have a source folder")
+        if not package.source_folder:
+            raise ValueError(f"Package {package_name} does not have a source folder")
 
-            # Construct the path to the example file
-            # Examples are stored in: source_folder/nodetool/examples/package_name/example_name.json
-            example_path = (
-                Path(package.source_folder)
-                / "nodetool"
-                / "examples"
-                / package_name
-                / f"{example_name}.json"
-            )
+        # Construct the path to the example file
+        # Examples are stored in: source_folder/nodetool/examples/package_name/example_name.json
+        example_path = (
+            Path(package.source_folder)
+            / "nodetool"
+            / "examples"
+            / package_name
+            / f"{example_name}.json"
+        )
 
-            if not example_path.exists():
-                self._examples_cache[cache_key] = None  # Cache the None result too
-                return None
+        if not example_path.exists():
+            self._examples_cache[cache_key] = None  # Cache the None result too
+            return None
 
-            workflow = self._load_example_from_file(str(example_path), package_name)
-            self._examples_cache[cache_key] = workflow
-            return workflow
+        workflow = self._load_example_from_file(str(example_path), package_name)
+        self._examples_cache[cache_key] = workflow
+        return workflow
 
     def search_example_workflows(self, query: str = "") -> List[Workflow]:
         """
@@ -1013,8 +977,9 @@ class Registry:
 
             node_types = workflow_data.get("_node_types", [])
             node_titles = workflow_data.get("_node_titles", [])
-            found_match = any(query in node_type for node_type in node_types) or \
-                          any(query in title for title in node_titles)
+            found_match = any(query in node_type for node_type in node_types) or any(
+                query in title for title in node_titles
+            )
 
             if found_match:
                 self.logger.info(f"Found match in workflow '{cache_key}'")
@@ -1364,6 +1329,7 @@ def load_node_packages():
                             total_loaded += 1
                     except Exception:
                         pass
+
 
 async def main():
     """
