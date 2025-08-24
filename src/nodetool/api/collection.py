@@ -81,15 +81,7 @@ async def list_collections(
 ) -> CollectionList:
     """List all collections"""
     client = await get_async_chroma_client()
-<<<<<<< HEAD
-    collection_names = await client.list_collections(offset=offset, limit=limit)
-
-    # In ChromaDB v0.6.0, list_collections only returns collection names (strings)
-    names: list[str] = collection_names
-    collections = [await client.get_collection(name) for name in names]
-=======
     collections = await client.list_collections()
->>>>>>> e6b085b (chore: update chromadb dependency and refactor async client usage)
 
     async def get_workflow_name(metadata: dict[str, str]) -> str | None:
         if workflow_id := metadata.get("workflow"):
