@@ -153,11 +153,17 @@ class GraphTool(Tool):
                 ),
             )
             assert req.graph is not None
+            # Use an isolated message queue for the subgraph to avoid draining
+            # the parent's queue. We will forward all messages back to the
+            # parent context so external listeners still see NodeUpdate/OutputUpdate.
+            import queue as _queue
+
+            isolated_queue: _queue.Queue = _queue.Queue()
             sub_context = ProcessingContext(
                 user_id=context.user_id,
                 auth_token=context.auth_token,
                 graph=Graph.from_dict(req.graph.model_dump()),
-                message_queue=context.message_queue,
+                message_queue=isolated_queue,
                 device=context.device,
                 workspace_dir=context.workspace_dir,
             )
@@ -174,6 +180,13 @@ class GraphTool(Tool):
                 initialize_graph=False,
                 validate_graph=False,
             ):
+                # Forward all subgraph messages to the parent context so that
+                # NodeUpdate/OutputUpdate events are visible to outer observers.
+                try:
+                    context.post_message(msg)
+                except Exception:
+                    # Forwarding should not break tool execution; ignore failures.
+                    pass
                 if isinstance(msg, NodeUpdate):
                     update: NodeUpdate = msg
                     if (

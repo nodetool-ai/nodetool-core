@@ -82,6 +82,10 @@ class ChatProvider(ABC):
             tools: Optional tools to make available to the model
             **kwargs: Additional parameters to pass to the API
         """
+
+        for msg in messages:
+            print(json.dumps(msg.model_dump(), indent=4))
+
         if not self.log_file:
             return
 

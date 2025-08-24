@@ -981,14 +981,51 @@ class SubTaskContext:
                 log.debug(f"Processing {len(valid_tool_calls)} valid tool calls")
 
                 # Standard parallel processing for tool calls
+                # Use return_exceptions=True to ensure all tool calls are processed
+                # even if some fail, so we can provide responses for all tool_call_ids
                 tool_results = await asyncio.gather(
                     *[
                         self._handle_tool_call(tool_call)
                         for tool_call in valid_tool_calls
-                    ]
+                    ],
+                    return_exceptions=True,
                 )
-                self.history.extend(tool_results)
-                log.debug(f"Added {len(tool_results)} tool results to history")
+
+                # Process results and handle any exceptions
+                valid_tool_results = []
+                for i, (tool_call, result) in enumerate(
+                    zip(valid_tool_calls, tool_results)
+                ):
+                    if isinstance(result, Exception):
+                        log.error(
+                            f"Tool call {tool_call.id} ({tool_call.name}) failed with exception: {result}"
+                        )
+                        # Create an error tool result message to satisfy OpenAI's requirement
+                        # that all tool_call_ids have corresponding tool messages
+                        error_message = Message(
+                            role="tool",
+                            tool_call_id=tool_call.id,
+                            name=tool_call.name,
+                            content=f"Error executing tool: {str(result)}",
+                        )
+                        valid_tool_results.append(error_message)
+                    elif isinstance(result, Message):
+                        valid_tool_results.append(result)
+                    else:
+                        log.error(
+                            f"Tool call {tool_call.id} ({tool_call.name}) returned unexpected type: {type(result)}"
+                        )
+                        # Create a fallback error message
+                        error_message = Message(
+                            role="tool",
+                            tool_call_id=tool_call.id,
+                            name=tool_call.name,
+                            content=f"Unexpected tool result type: {type(result)}",
+                        )
+                        valid_tool_results.append(error_message)
+
+                self.history.extend(valid_tool_results)
+                log.debug(f"Added {len(valid_tool_results)} tool results to history")
             elif self.in_conclusion_stage and not valid_tool_calls:
                 # If in conclusion stage and LLM didn't call finish_tool, add a nudge?
                 # Or handle it in the max_iterations logic? For now, let loop continue.

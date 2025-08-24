@@ -359,10 +359,17 @@ async def create_help_answer(
                         )
 
                     # The process method of BaseHelpTool will handle Pydantic parsing internally
-                    tool_result_data = await found_tool_instance.process(
-                        context=dummy_processing_context,  # Pass dummy context
-                        params=tool_args_dict,  # Pass raw dict as params
-                    )
+                    try:
+                        tool_result_data = await found_tool_instance.process(
+                            context=dummy_processing_context,  # Pass dummy context
+                            params=tool_args_dict,  # Pass raw dict as params
+                        )
+                    except Exception as e:
+                        log.error(
+                            f"Tool call {tool_call_id} ({item.name}) failed with exception: {e}"
+                        )
+                        # Create an error tool result message
+                        tool_result_data = {"error": f"Error executing tool: {str(e)}"}
 
                     assistant_tool_call_msg = Message(
                         role="assistant", tool_calls=[item]
