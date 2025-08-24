@@ -182,14 +182,13 @@ class AsyncChromaClient:
 
     # Client operations
     async def list_collections(
-        self, offset: Optional[int] = None, limit: Optional[int] = None
-    ):
-        return await self._executor.run(
-            self._client.list_collections, offset=offset, limit=limit
-        )
+        self,
+    ) -> list[chromadb.Collection]:
+        return await self._executor.run(self._client.list_collections)
 
     async def count_collections(self) -> int:
-        return await self._executor.run(self._client.count_collections)
+        collections = await self.list_collections()
+        return len(collections)
 
     async def get_collection(
         self, name: str, embedding_function: Any | None = None
@@ -234,13 +233,7 @@ async def get_async_chroma_client(user_id: str | None = None) -> AsyncChromaClie
 
 async def get_async_collection(name: str) -> AsyncChromaCollection:
     """
-    Get a collection configured with the appropriate embedding function using the
-    existing synchronous helper, but return an async wrapper that executes all
-    operations on a dedicated background thread.
+    Get a collection by name.
     """
-    # Resolve the configured collection in a background thread using the existing logic
-    loop = asyncio.get_running_loop()
-    collection: Any = await loop.run_in_executor(None, partial(get_collection, name))
-    # Create a new dedicated executor for this collection
-    executor = _SingleThreadExecutor(thread_name_prefix=f"chroma-col-{name}")
-    return AsyncChromaCollection(collection, executor)
+    client = await get_async_chroma_client()
+    return await client.get_collection(name)

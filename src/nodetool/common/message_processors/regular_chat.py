@@ -264,7 +264,9 @@ class RegularChatProcessor(MessageProcessor):
             results = await collection.query(
                 query_texts=[query_text],
                 n_results=n_results,
+                include=["documents", "metadatas"],
             )
+            print(results)
 
             if results["documents"] and results["documents"][0]:
                 collection_results = f"\n\n### Results from {collection_name}:\n"
