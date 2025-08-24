@@ -2,7 +2,7 @@ from pydantic import BaseModel
 from enum import Enum
 
 from typing import Any, Literal
-from nodetool.metadata.types import Task, SubTask
+from nodetool.metadata.types import BaseType, Task, SubTask
 from nodetool.types.job import JobUpdate
 from nodetool.types.prediction import Prediction
 
@@ -73,6 +73,7 @@ class NodeUpdate(BaseModel):
     type: Literal["node_update"] = "node_update"
     node_id: str
     node_name: str
+    node_type: str
     status: str
     error: str | None = None
     logs: str | None = None
@@ -141,7 +142,7 @@ class NodeProgress(BaseModel):
     chunk: str = ""
 
 
-class Chunk(BaseModel):
+class Chunk(BaseType):
     """
     A message representing a chunk of streamed content from a provider.
 

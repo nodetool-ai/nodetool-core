@@ -69,19 +69,25 @@ async def process_workflow_messages(
 
 
 async def run_workflow(
-    req: RunJobRequest,
+    request: RunJobRequest,
     runner: WorkflowRunner | None = None,
     context: ProcessingContext | None = None,
     use_thread: bool = True,
+    send_job_updates: bool = True,
+    initialize_graph: bool = True,
+    validate_graph: bool = True,
 ) -> AsyncGenerator[ProcessingMessage, None]:
     """
     Runs a workflow asynchronously, with the option to run in a separate thread.
 
     Args:
-        req (RunJobRequest): The request object containing the necessary information for running the workflow.
+        request (RunJobRequest): The request object containing the necessary information for running the workflow.
         runner (WorkflowRunner | None): The workflow runner object. If not provided, a new instance will be created.
         context (ProcessingContext | None): The processing context object. If not provided, a new instance will be created.
         use_thread (bool): Whether to run the workflow in a separate thread. Defaults to False.
+        send_job_updates (bool): Whether to send job updates to the client. Defaults to True.
+        initialize_graph (bool): Whether to initialize the graph. Defaults to True.
+        validate_graph (bool): Whether to validate the graph. Defaults to True.
 
     Yields:
         Any: A generator that yields job updates and messages from the workflow.
@@ -94,25 +100,28 @@ async def run_workflow(
     """
     if context is None:
         context = ProcessingContext(
-            user_id=req.user_id,
-            auth_token=req.auth_token,
-            workflow_id=req.workflow_id,
+            user_id=request.user_id,
+            auth_token=request.auth_token,
+            workflow_id=request.workflow_id,
         )
 
     if runner is None:
         runner = WorkflowRunner(job_id=uuid4().hex)
 
     async def run():
-        if req.graph is None:
-            log.info(f"Loading workflow graph for {req.workflow_id}")
-            if hasattr(context, "get_workflow") and callable(context.get_workflow):
-                workflow = await context.get_workflow(req.workflow_id)  # type: ignore
-                req.graph = workflow.graph if hasattr(workflow, "graph") else None
-            if req.graph is None:
-                workflow = WorkflowModel.get(req.workflow_id)
-                assert workflow is not None
-                req.graph = workflow.get_api_graph()
-        await runner.run(req, context)
+        if request.graph is None:
+            log.info(f"Loading workflow graph for {request.workflow_id}")
+            workflow = await context.get_workflow(request.workflow_id)
+            if workflow is None:
+                raise Exception(f"Workflow {request.workflow_id} not found")
+            request.graph = workflow.get_api_graph()
+        await runner.run(
+            request=request,
+            context=context,
+            send_job_updates=send_job_updates,
+            initialize_graph=initialize_graph,
+            validate_graph=validate_graph,
+        )
 
     if use_thread:
         # Running the workflow in a separate thread (via ThreadedEventLoop) is beneficial
@@ -125,7 +134,7 @@ async def run_workflow(
         # 3. The workflow's operations are potentially long-running or resource-intensive,
         #    and isolating them in a separate thread prevents interference with other
         #    operations in the main application thread or event loop.
-        log.info(f"Running workflow in thread for {req.workflow_id}")
+        log.info(f"Running workflow in thread for {request.workflow_id}")
         with ThreadedEventLoop() as tel:
             run_future = tel.run_coroutine(run())
 

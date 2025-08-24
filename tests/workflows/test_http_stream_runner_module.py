@@ -14,7 +14,7 @@ async def test_run_job(monkeypatch):
     runner = HTTPStreamRunner()
 
     async def fake_run_workflow(req, runner_obj, context_obj):
-        yield NodeUpdate(node_id="1", node_name="n", status="ok")
+        yield NodeUpdate(node_id="1", node_name="n", status="ok", node_type="node_type")
 
     monkeypatch.setattr(
         "nodetool.workflows.http_stream_runner.run_workflow", fake_run_workflow

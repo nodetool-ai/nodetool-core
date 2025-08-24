@@ -18,9 +18,10 @@ from nodetool.types.workflow import Workflow
 from nodetool.models.workflow import Workflow as WorkflowModel
 from nodetool.types.graph import Edge, Node, get_input_schema, get_output_schema
 from nodetool.types.job import JobUpdate
-from nodetool.workflows.base_node import BaseNode
+from nodetool.workflows.base_node import BaseNode, ToolResultNode
 from nodetool.workflows.graph import Graph
 from nodetool.workflows.processing_context import ProcessingContext
+from nodetool.workflows.workflow_runner import WorkflowRunner
 from nodetool.workflows.run_workflow import run_workflow
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.types import NodeUpdate, OutputUpdate
@@ -104,16 +105,8 @@ class GraphTool(Tool):
             },
         }
 
-        log.debug(f"inital edges: {initial_edges}")
-        log.debug(f"inital nodes: {initial_nodes}")
-        log.debug(f"input schema: {self.input_schema}")
-
     async def process(self, context: ProcessingContext, params: Dict[str, Any]) -> Any:
         from nodetool.types.graph import Graph as ApiGraph
-
-        log.debug(f"calling tool {self.name}")
-        log.debug(f"initial edges: {self.initial_edges}")
-        log.debug(f"initial nodes: {self.initial_nodes}")
 
         initial_edges_by_target = {edge.target: edge for edge in self.initial_edges}
 
@@ -138,6 +131,7 @@ class GraphTool(Tool):
             )
             for node in self.graph.nodes
         ]
+        print(f"nodes: {nodes}")
 
         try:
             req = RunJobRequest(
@@ -158,18 +152,37 @@ class GraphTool(Tool):
                     ],
                 ),
             )
+            assert req.graph is not None
+            sub_context = ProcessingContext(
+                user_id=context.user_id,
+                auth_token=context.auth_token,
+                graph=Graph.from_dict(req.graph.model_dump()),
+                message_queue=context.message_queue,
+                device=context.device,
+                workspace_dir=context.workspace_dir,
+            )
 
             # Collect all messages from workflow execution
             results = {}
-            async for msg in run_workflow(req, context=context, use_thread=True):
+            runner = WorkflowRunner(job_id=uuid4().hex, disable_caching=True)
+            async for msg in run_workflow(
+                request=req,
+                runner=runner,
+                context=sub_context,
+                use_thread=True,
+                send_job_updates=False,
+                initialize_graph=False,
+                validate_graph=False,
+            ):
                 if isinstance(msg, NodeUpdate):
                     update: NodeUpdate = msg
-                    if update.node_name == "ToolResultNode":
+                    if (
+                        update.node_type == ToolResultNode.get_node_type()
+                        and update.status == "completed"
+                    ):
                         results = update.result
 
-            log.debug(f"tool results before upload: {results}")
             results = await context.upload_assets_to_temp(results)
-            log.debug(f"tool results: {results}")
 
             # Return the collected results
             return results

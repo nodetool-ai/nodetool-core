@@ -241,7 +241,6 @@ class WebSocketRunner:
                     user_id=req.user_id,
                     auth_token=req.auth_token,
                     workflow_id=req.workflow_id,
-                    endpoint_url=self.websocket.url,
                     encode_assets_as_base64=self.mode == WebSocketMode.TEXT,
                 )
                 log.debug("Processing context created")
