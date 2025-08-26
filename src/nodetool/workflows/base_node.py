@@ -680,6 +680,7 @@ class BaseNode(BaseModel):
 
         This method is used when the node is sending updates for all outputs.
         """
+
         res_for_update = {}
 
         # Include both class-declared and instance-declared dynamic outputs

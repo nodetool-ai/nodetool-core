@@ -44,8 +44,10 @@ from nodetool.types.prediction import (
 from nodetool.chat.workspace_manager import WorkspaceManager
 from nodetool.metadata.types import (
     Message,
+    NPArray,
     Provider,
     ToolCall,
+    TorchTensor,
     asset_types,
 )
 from nodetool.workflows.graph import Graph
@@ -908,6 +910,23 @@ class ProcessingContext:
 
         response = await self.http_get(url)
         return BytesIO(response.content)
+
+    def wrap_object(self, obj: Any) -> Any:
+        if isinstance(obj, pd.DataFrame):
+            return DataframeRef.from_pandas(obj)
+        elif isinstance(obj, PIL.Image.Image):
+            return ImageRef(data=obj.tobytes())
+        elif isinstance(obj, AudioSegment):
+            audio_bytes = BytesIO()
+            obj.export(audio_bytes, format="mp3")
+            audio_bytes.seek(0)
+            return AudioRef(data=audio_bytes.getvalue())
+        elif isinstance(obj, np.ndarray):
+            return NPArray.from_numpy(obj)
+        elif isinstance(obj, torch.Tensor):
+            return TorchTensor.from_tensor(obj)
+        else:
+            return obj
 
     async def asset_to_io(self, asset_ref: AssetRef) -> IO[bytes]:
         """

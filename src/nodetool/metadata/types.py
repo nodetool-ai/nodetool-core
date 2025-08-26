@@ -2,6 +2,7 @@ from datetime import date, datetime, timedelta, timezone
 from enum import Enum
 import enum
 from types import NoneType
+import PIL.Image
 from nodetool.types.workflow import Workflow
 import numpy as np
 import pandas as pd

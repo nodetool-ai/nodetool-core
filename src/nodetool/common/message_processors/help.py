@@ -6,7 +6,7 @@ This module provides the processor for help mode messages.
 
 import logging
 import json
-from typing import List, Dict, Any
+from typing import List
 import httpx
 from nodetool.agents.tools.tool_registry import resolve_tool_by_name
 from pydantic import BaseModel
@@ -19,6 +19,12 @@ from nodetool.workflows.types import (
     Chunk,
     ToolCallUpdate,
 )
+from nodetool.chat.help import SYSTEM_PROMPT
+from nodetool.agents.tools.help_tools import (
+    SearchNodesTool,
+    SearchExamplesTool,
+)
+
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.chat.providers.base import ChatProvider
 from .base import MessageProcessor
@@ -53,12 +59,6 @@ class HelpMessageProcessor(MessageProcessor):
                 raise ValueError("Model provider is not set")
 
             log.debug(f"Processing help messages with model: {last_message.model}")
-
-            from nodetool.chat.help import SYSTEM_PROMPT
-            from nodetool.agents.tools.help_tools import (
-                SearchNodesTool,
-                SearchExamplesTool,
-            )
 
             # Create help tools combined with all available tools
             help_tools = [
