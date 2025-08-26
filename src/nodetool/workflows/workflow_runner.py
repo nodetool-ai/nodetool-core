@@ -1768,6 +1768,8 @@ class WorkflowRunner:
         """
         if "value" in inputs:
             value = inputs["value"]
+            # Emit a running update for OutputNode for consistency with other nodes
+            await node.send_update(context, "running", properties=["name"])
             if node.name in self.outputs:
                 if self.outputs[node.name] and self.outputs[node.name][-1] == value:
                     # Skip duplicate
@@ -1789,6 +1791,13 @@ class WorkflowRunner:
                     value=value,
                     output_type=output_type,
                 )
+            )
+            # Emit a completed NodeUpdate including the value in the result
+            await node.send_update(
+                context,
+                "completed",
+                result={"value": value},
+                properties=["name"],
             )
         else:
             # This case should ideally not happen if graph is validated.

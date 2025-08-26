@@ -498,7 +498,6 @@ class ProcessingContext:
             data=data,
         )
 
-
     async def run_prediction(
         self,
         node_id: str,
@@ -1005,13 +1004,11 @@ class ProcessingContext:
             obj = self._memory_get(key)
             if obj is not None:
                 if isinstance(obj, PIL.Image.Image):
-                    mime_type = "image/png"
                     buffer = BytesIO()
                     obj.save(buffer, format="PNG")
                     buffer.seek(0)
                     return ImageRef(asset_id=asset_ref.asset_id, data=buffer.getvalue())
                 elif isinstance(obj, AudioSegment):
-                    mime_type = "audio/mp3"
                     buffer = BytesIO()
                     obj.export(buffer, format="mp3")
                     buffer.seek(0)
