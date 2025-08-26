@@ -7,7 +7,6 @@ import dotenv
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
-from nodetool.api import collection, file, package, prediction, font
 from nodetool.common.environment import Environment
 
 from nodetool.common.huggingface_cache import huggingface_download_endpoint
@@ -21,7 +20,19 @@ from uvicorn import run as uvicorn
 from nodetool.metadata.types import Provider
 from nodetool.packages.registry import get_nodetool_package_source_folders
 
-from . import asset, job, message, node, storage, workflow, model, settings, thread
+from . import (
+    asset,
+    font,
+    collection,
+    file,
+    message,
+    node,
+    storage,
+    workflow,
+    model,
+    settings,
+    thread,
+)
 import mimetypes
 
 from nodetool.common.websocket_updates import websocket_updates
@@ -86,12 +97,10 @@ class ExtensionRouterRegistry:
 
 DEFAULT_ROUTERS = [
     asset.router,
-    job.router,
     message.router,
     thread.router,
     model.router,
     node.router,
-    prediction.router,
     workflow.router,
     storage.router,
     storage.temp_router,
@@ -103,7 +112,6 @@ if not Environment.is_production():
     DEFAULT_ROUTERS.append(file.router)
     DEFAULT_ROUTERS.append(settings.router)
     DEFAULT_ROUTERS.append(collection.router)
-    DEFAULT_ROUTERS.append(package.router)
 
 
 def create_app(

@@ -325,7 +325,7 @@ async def delete_workflow(
         raise HTTPException(status_code=404, detail="Workflow not found")
     if workflow.user_id != user:
         raise HTTPException(status_code=404, detail="Workflow not found")
-    workflow.delete()
+    await workflow.delete()
 
 
 @router.put("/examples/{id}")
@@ -362,7 +362,9 @@ async def save_example_workflow(
         workflow.tags = [tag for tag in workflow.tags if tag != "example"]
 
     try:
-        saved_workflow = await asyncio.to_thread(example_registry.save_example, workflow)
+        saved_workflow = await asyncio.to_thread(
+            example_registry.save_example, workflow
+        )
         return saved_workflow
     except ValueError as e:
         log.error(f"Error saving example workflow: {str(e)}")
