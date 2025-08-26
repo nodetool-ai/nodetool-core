@@ -5,8 +5,15 @@ This module provides a collection of language model providers that can be used
 to interact with various LLM APIs including OpenAI, Anthropic, and Ollama.
 """
 
-# Base provider class
-from nodetool.chat.providers.base import ChatProvider
+# Base provider class and testing utilities
+from nodetool.chat.providers.base import ChatProvider, MockProvider
+from nodetool.chat.providers.fake_provider import (
+    FakeProvider,
+    create_fake_tool_call,
+    create_simple_fake_provider,
+    create_streaming_fake_provider,
+    create_tool_calling_fake_provider,
+)
 from nodetool.metadata.types import Provider as ProviderEnum
 from nodetool.workflows.types import Chunk
 
@@ -64,6 +71,12 @@ def get_provider(provider_type: ProviderEnum, **kwargs) -> ChatProvider:
 
 __all__ = [
     "ChatProvider",
+    "MockProvider",
+    "FakeProvider",
+    "create_fake_tool_call",
+    "create_simple_fake_provider", 
+    "create_streaming_fake_provider",
+    "create_tool_calling_fake_provider",
     "Chunk",
     "get_provider",
 ]

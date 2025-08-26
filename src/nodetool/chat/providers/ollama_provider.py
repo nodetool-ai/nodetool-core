@@ -8,7 +8,7 @@ handling message conversion, streaming, and tool integration.
 import asyncio
 import json
 import re
-from typing import Any, AsyncGenerator, Sequence, Dict
+from typing import Any, AsyncGenerator, AsyncIterator, Sequence, Dict
 from contextlib import asynccontextmanager
 
 from ollama import AsyncClient, Client
@@ -314,7 +314,7 @@ class OllamaProvider(ChatProvider):
         context_window: int = 4096,
         response_format: dict | None = None,
         **kwargs,
-    ) -> AsyncGenerator[Chunk | ToolCall, Any]:
+    ) -> AsyncIterator[Chunk | ToolCall]:
         """
         Generate streaming completions from Ollama.
 

@@ -28,7 +28,7 @@ from nodetool.chat.providers.base import ChatProvider
 from .base import MessageProcessor
 
 log = logging.getLogger(__name__)
-log.setLevel(logging.DEBUG)
+# log.setLevel(logging.DEBUG)
 
 REGULAR_SYSTEM_PROMPT = """
 You are a helpful assistant.

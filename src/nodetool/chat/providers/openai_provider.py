@@ -9,7 +9,7 @@ handling message conversion, streaming, and tool integration.
 import base64
 import json
 import io
-from typing import Any, AsyncGenerator, Sequence
+from typing import Any, AsyncGenerator, AsyncIterator, Sequence
 
 import httpx
 import openai
@@ -333,7 +333,7 @@ class OpenAIProvider(ChatProvider):
         context_window: int = 128000,
         response_format: dict | None = None,
         **kwargs,
-    ) -> AsyncGenerator[Chunk | ToolCall, Any]:
+    ) -> AsyncIterator[Chunk | ToolCall]:
         """Generate streaming completions from OpenAI."""
 
         # Convert system messages to user messages for O1/O3 models

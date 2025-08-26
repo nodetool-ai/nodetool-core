@@ -1,6 +1,6 @@
 import mimetypes
 import aiohttp
-from typing import Any, AsyncGenerator, List, Sequence
+from typing import Any, AsyncIterator, List, Sequence
 from google.genai import Client
 from google.genai.client import AsyncClient
 from google.genai.types import (
@@ -313,7 +313,7 @@ class GeminiProvider(ChatProvider):
         response_format: dict | None = None,
         audio: dict | None = None,
         **kwargs,
-    ) -> AsyncGenerator[Chunk | ToolCall | MessageFile, Any]:
+    ) -> AsyncIterator[Chunk | ToolCall | MessageFile]:
         """Stream response from Gemini for the given messages with code execution support."""
         if messages[0].role == "system":
             system_instruction = str(messages[0].content)

@@ -7,7 +7,7 @@ handling message conversion, streaming, and tool integration.
 
 import json
 import base64
-from typing import Any, AsyncGenerator, Sequence
+from typing import Any, AsyncGenerator, AsyncIterator, Sequence
 import anthropic
 from anthropic.types.message_param import MessageParam
 from anthropic.types.image_block_param import ImageBlockParam
@@ -242,7 +242,7 @@ class AnthropicProvider(ChatProvider):
         context_window: int = 4096,
         response_format: dict | None = None,
         **kwargs,
-    ) -> AsyncGenerator[Chunk | ToolCall, Any]:
+    ) -> AsyncIterator[Chunk | ToolCall]:
         """Generate streaming completions from Anthropic."""
         # Handle response_format parameter
         local_tools = list(tools)  # Make a mutable copy

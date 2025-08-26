@@ -1327,28 +1327,18 @@ class WorkflowRunner:
                 slot_name: str = item[0]
                 value: Any = item[1]
 
-            # Check if the yielded slot_name is a declared output for the node.
-            # This assumes BaseNode has a method get_output_fields() -> list[str].
-            # If this method doesn't exist or has a different signature on BaseNode,
-            # this part will need adaptation based on how output fields are actually defined/retrieved.
-            return_type = node.return_type()
-            if return_type is None:
-                raise ValueError(
-                    f"Streaming node {node.get_title()} ({node._id}) has no return type."
+            # Validate that the yielded slot exists either as a class-declared output
+            # or as an instance dynamic output.
+            if node.find_output_instance(slot_name) is None:
+                return_type = node.return_type()
+                declared_outputs = (
+                    list(return_type.keys()) if isinstance(return_type, dict) else []
                 )
-            if not isinstance(return_type, dict):
-                raise ValueError(
-                    f"Streaming node {node.get_title()} ({node._id}) has invalid return type: {type(return_type)}"
-                )
-
-            declared_outputs = list(return_type.keys())
-            if slot_name not in declared_outputs:
                 error_message = (
                     f"Streaming node {node.get_title()} ({node._id}) yielded for undeclared output slot: '{slot_name}'. "
                     f"Declared outputs: {declared_outputs}. Input properties during init: {list(initial_config_properties.keys())}."
                 )
-                log.error(error_message)  # Log here for immediate specific context
-                # Let the generic exception handler below handle send_update, cleanup, and re-raise.
+                log.error(error_message)
                 raise ValueError(error_message)
 
             self.send_messages(node, {slot_name: value}, context)
