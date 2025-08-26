@@ -2,6 +2,7 @@ import os
 import asyncio
 import platform
 import multiprocessing
+import signal
 from typing import Any, List
 import dotenv
 from fastapi.exceptions import RequestValidationError
@@ -166,6 +167,24 @@ def create_app(
         except Exception as e:
             Environment.get_logger().warning(f"Storage pre-initialization failed: {e}")
 
+    @app.on_event("shutdown")
+    async def _shutdown_cleanup() -> None:
+        """Cleanup resources on server shutdown."""
+        logger = Environment.get_logger()
+        logger.info("Server shutdown initiated - cleaning up resources")
+        
+        try:
+            # Import here to avoid circular imports
+            from nodetool.common.websocket_updates import websocket_updates
+            await websocket_updates.shutdown()
+            logger.info("WebSocket updates shutdown complete")
+        except Exception as e:
+            logger.error(f"Error during websocket updates shutdown: {e}")
+        
+        # Give a moment for cleanup to complete
+        await asyncio.sleep(0.1)
+        logger.info("Server shutdown cleanup complete")
+
     @app.get("/health")
     async def health_check() -> str:
         return "OK"
@@ -209,6 +228,13 @@ def create_app(
         app.mount("/", StaticFiles(directory=static_folder, html=True), name="static")
 
     return app
+
+
+def setup_signal_handlers() -> None:
+    """Setup signal handlers for graceful shutdown."""
+    # Don't override signal handlers - let uvicorn handle them
+    # Our cleanup will happen via the FastAPI shutdown event
+    pass
 
 
 def run_uvicorn_server(app: Any, host: str, port: int, reload: bool) -> None:
@@ -262,10 +288,29 @@ def run_uvicorn_server(app: Any, host: str, port: int, reload: bool) -> None:
             workers=workers,
         )
     except KeyboardInterrupt:
-        # Ensure immediate termination on Windows where child processes may linger
+        print("\nServer interrupted by user (Ctrl+C)")
+        # On Windows, uvicorn shutdown can hang - force exit immediately after cleanup
+        if platform.system() == "Windows":
+            print("Windows detected: forcing immediate exit to prevent hanging...")
+            # Use a separate thread to force exit after a short delay
+            import threading
+            import time
+            
+            def force_exit():
+                time.sleep(2)  # Give cleanup handlers time to run
+                print("Forcing process termination...")
+                os._exit(0)
+            
+            # Start the force exit timer
+            exit_thread = threading.Thread(target=force_exit, daemon=True)
+            exit_thread.start()
+            
+            # Let the normal shutdown proceed, but it will be terminated by the timer
+        raise
+    finally:
+        # As a last resort on Windows, forcefully exit the process to avoid hangs
         if platform.system() == "Windows":
             os._exit(0)
-        raise
 
 
 if __name__ == "__main__":
