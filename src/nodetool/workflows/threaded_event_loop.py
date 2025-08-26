@@ -161,7 +161,7 @@ class ThreadedEventLoop:
         async def shutdown_sequence_coro():
             await self._cancel_all_tasks_and_wait()
             log.debug("ThreadedEventLoop: Task cancellation complete, stopping loop.")
-            if self._loop.is_running():  # Check again before stopping
+            if self._loop and self._loop.is_running():  # Check again before stopping
                 self._loop.stop()
             else:
                 log.debug(
@@ -211,10 +211,13 @@ class ThreadedEventLoop:
             log.debug(
                 f"ThreadedEventLoop: Waiting for event loop thread {target_thread_id} to join."
             )
-            self._thread.join(timeout=10.0)  # Timeout for join
+            # Use shorter timeout on Windows to prevent hanging
+            import platform
+            timeout = 3.0 if platform.system() == "Windows" else 10.0
+            self._thread.join(timeout=timeout)
             if self._thread.is_alive():
                 log.warning(
-                    "ThreadedEventLoop: Thread did not join in time after stop. Loop might be stuck or tasks are non-cooperative."
+                    f"ThreadedEventLoop: Thread did not join in time ({timeout}s) after stop. Loop might be stuck or tasks are non-cooperative."
                 )
         elif self._thread and current_thread_id == target_thread_id:
             log.warning(

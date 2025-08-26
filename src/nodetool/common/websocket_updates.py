@@ -39,6 +39,7 @@ class WebSocketUpdates:
         self.log = Environment.get_logger()
         self.log.info("WebSocketUpdates: instance initialized")
         self._stats_task = None
+        self._shutdown = False
 
     async def connect(self, websocket: WebSocket):
         """
@@ -94,15 +95,16 @@ class WebSocketUpdates:
         """
         Periodically fetches system stats and broadcasts them to all clients.
 
-        Runs in a loop until cancelled. Handles potential exceptions during
+        Runs in a loop until cancelled or shutdown. Handles potential exceptions during
         stats fetching or broadcasting.
         """
-        while True:
+        while not self._shutdown:
             try:
                 stats = get_system_stats()
                 await self.broadcast_update(SystemStatsUpdate(stats=stats))
                 await asyncio.sleep(1)  # Wait for 1 second
             except asyncio.CancelledError:
+                self.log.info("WebSocketUpdates: Stats broadcast task cancelled")
                 break
             except Exception as e:
                 self.log.error(f"WebSocketUpdates: Error broadcasting stats: {str(e)}")
@@ -150,6 +152,32 @@ class WebSocketUpdates:
                 f"WebSocketUpdates: Client connection error (ID: {client_id}): {str(e)}"
             )
             await self.disconnect(websocket)
+
+    async def shutdown(self):
+        """
+        Gracefully shutdown the WebSocketUpdates manager.
+        
+        Stops all background tasks and closes all active connections.
+        """
+        self.log.info("WebSocketUpdates: Starting graceful shutdown")
+        self._shutdown = True
+        
+        # Stop the stats broadcasting task
+        await self._stop_stats_broadcast()
+        
+        # Close all active connections
+        async with self._lock:
+            connections_to_close = list(self.active_connections)
+            self.active_connections.clear()
+        
+        for websocket in connections_to_close:
+            try:
+                await websocket.close()
+                self.log.debug("WebSocketUpdates: Closed websocket connection")
+            except Exception as e:
+                self.log.error(f"WebSocketUpdates: Error closing websocket: {e}")
+        
+        self.log.info("WebSocketUpdates: Shutdown complete")
 
 
 # Global singleton instance
