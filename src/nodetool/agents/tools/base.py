@@ -25,7 +25,7 @@ class Tool:
         """
         Returns a user message for the tool.
         """
-        return f"Running {self.name} with the following parameters: {params}"
+        return f"Running {self.name}"
 
     def tool_param(self) -> Dict[str, Any]:
         """
