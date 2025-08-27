@@ -119,6 +119,7 @@ class GraphTool(Tool):
                 props[edge.targetHandle] = params[edge.targetHandle]
             return props
 
+        # Build the base node list for the API graph
         nodes = [
             Node(
                 id=node.id,
@@ -131,7 +132,51 @@ class GraphTool(Tool):
             )
             for node in self.graph.nodes
         ]
-        print(f"nodes: {nodes}")
+
+        # Start with existing edges
+        edges = [
+            Edge(
+                id=edge.id,
+                source=edge.source,
+                target=edge.target,
+                sourceHandle=edge.sourceHandle,
+                targetHandle=edge.targetHandle,
+                ui_properties=edge.ui_properties,
+            )
+            for edge in self.graph.edges
+        ]
+
+        # If there is only one node in the graph, automatically add a ToolResult node
+        # and connect all outputs from the single node to the ToolResult node.
+        if len(self.graph.nodes) == 1:
+            single_node = self.graph.nodes[0]
+            result_node_id = uuid4().hex
+
+            # Append ToolResult node to API graph
+            nodes.append(
+                Node(
+                    id=result_node_id,
+                    type=ToolResultNode.get_node_type(),
+                    data={},
+                    parent_id=None,
+                    ui_properties={},
+                    dynamic_properties={},
+                    dynamic_outputs={},
+                )
+            )
+
+            # Create edges from each output of the single node to the ToolResult node
+            for output_slot in single_node.outputs_for_instance():
+                edges.append(
+                    Edge(
+                        id=uuid4().hex,
+                        source=single_node.id,
+                        target=result_node_id,
+                        sourceHandle=output_slot.name,
+                        targetHandle=output_slot.name,
+                        ui_properties={},
+                    )
+                )
 
         try:
             req = RunJobRequest(
@@ -139,17 +184,7 @@ class GraphTool(Tool):
                 auth_token=context.auth_token,
                 graph=ApiGraph(
                     nodes=nodes,
-                    edges=[
-                        Edge(
-                            id=edge.id,
-                            source=edge.source,
-                            target=edge.target,
-                            sourceHandle=edge.sourceHandle,
-                            targetHandle=edge.targetHandle,
-                            ui_properties=edge.ui_properties,
-                        )
-                        for edge in self.graph.edges
-                    ],
+                    edges=edges,
                 ),
             )
             assert req.graph is not None
