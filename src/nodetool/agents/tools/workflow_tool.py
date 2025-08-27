@@ -193,7 +193,11 @@ class GraphTool(Tool):
                         update.node_type == ToolResultNode.get_node_type()
                         and update.status == "completed"
                     ):
-                        results = update.result
+                        if update.result is not None:
+                            if len(update.result) == 1:
+                                results = list(update.result.values())[0]
+                            else:
+                                results = update.result
 
             results = await context.upload_assets_to_temp(results)
 

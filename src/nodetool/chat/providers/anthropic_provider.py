@@ -28,6 +28,7 @@ from nodetool.workflows.base_node import ApiKeyMissingError
 from nodetool.workflows.types import Chunk
 from nodetool.agents.tools.base import Tool
 from nodetool.workflows.processing_context import ProcessingContext
+from pydantic import BaseModel
 
 """Tool definition for forcing JSON output via Anthropic's tool mechanism."""
 
@@ -131,6 +132,16 @@ class AnthropicProvider(ChatProvider):
     def convert_message(self, message: Message) -> MessageParam | None:
         """Convert an internal message to Anthropic's format."""
         if message.role == "tool":
+            if isinstance(message.content, BaseModel):
+                content = message.content.model_dump_json()
+            elif isinstance(message.content, dict):
+                content = json.dumps(message.content)
+            elif isinstance(message.content, list):
+                content = json.dumps([part.model_dump() for part in message.content])
+            elif isinstance(message.content, str):
+                content = message.content
+            else:
+                content = json.dumps(message.content)
             assert message.tool_call_id is not None, "Tool call ID must not be None"
             return {
                 "role": "user",

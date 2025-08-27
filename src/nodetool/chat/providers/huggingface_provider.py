@@ -25,6 +25,7 @@ from nodetool.metadata.types import (
 from nodetool.common.environment import Environment
 from nodetool.workflows.base_node import ApiKeyMissingError
 from nodetool.workflows.types import Chunk
+from pydantic import BaseModel
 
 PROVIDER_T = Literal[
     "black-forest-labs",
@@ -148,9 +149,20 @@ class HuggingFaceProvider(ChatProvider):
     def convert_message(self, message: Message) -> dict:
         """Convert an internal message to HuggingFace's OpenAI-compatible format."""
         if message.role == "tool":
+            if isinstance(message.content, BaseModel):
+                content = message.content.model_dump_json()
+            elif isinstance(message.content, dict):
+                content = json.dumps(message.content)
+            elif isinstance(message.content, list):
+                content = json.dumps([part.model_dump() for part in message.content])
+            elif isinstance(message.content, str):
+                content = message.content
+            else:
+                content = json.dumps(message.content)
+            assert message.tool_call_id is not None, "Tool call ID must not be None"
             return {
                 "role": "tool",
-                "content": str(message.content),
+                "content": content,
                 "tool_call_id": message.tool_call_id,
             }
         elif message.role == "system":

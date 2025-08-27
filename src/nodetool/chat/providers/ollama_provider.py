@@ -157,18 +157,16 @@ class OllamaProvider(ChatProvider):
             message: The message to convert
         """
         if message.role == "tool":
-            # Standard tool message format
             if isinstance(message.content, BaseModel):
                 content = message.content.model_dump_json()
+            elif isinstance(message.content, dict):
+                content = json.dumps(message.content)
+            elif isinstance(message.content, list):
+                content = json.dumps([part.model_dump() for part in message.content])
+            elif isinstance(message.content, str):
+                content = message.content
             else:
-                if isinstance(message.content, dict):
-                    content = json.dumps(message.content)
-                elif isinstance(message.content, list):
-                    content = json.dumps(
-                        [part.model_dump() for part in message.content]
-                    )
-                else:
-                    content = str(message.content)
+                content = json.dumps(message.content)
             return {"role": "tool", "content": content, "name": message.name}
         elif message.role == "system":
             # Handle system message content conversion

@@ -232,6 +232,12 @@ class OpenAIProvider(ChatProvider):
         if message.role == "tool":
             if isinstance(message.content, BaseModel):
                 content = message.content.model_dump_json()
+            elif isinstance(message.content, dict):
+                content = json.dumps(message.content)
+            elif isinstance(message.content, list):
+                content = json.dumps([part.model_dump() for part in message.content])
+            elif isinstance(message.content, str):
+                content = message.content
             else:
                 content = json.dumps(message.content)
             assert message.tool_call_id is not None, "Tool call ID must not be None"
