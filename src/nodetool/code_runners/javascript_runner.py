@@ -8,7 +8,7 @@ lines. No wrapper or serialization.
 
 from __future__ import annotations
 
-from typing import Any, AsyncGenerator
+from typing import Any, AsyncGenerator, AsyncIterator
 
 from nodetool.workflows.base_node import BaseNode
 from nodetool.workflows.processing_context import ProcessingContext
@@ -29,33 +29,6 @@ class JavaScriptDockerRunner(StreamRunnerBase):
         self.image = image
         self.mem_limit = mem_limit
         self.nano_cpus = nano_cpus
-
-    async def stream(
-        self,
-        user_code: str,
-        env_locals: dict[str, Any],
-        context: ProcessingContext,
-        node: BaseNode,
-        allow_dynamic_outputs: bool = True,
-    ) -> AsyncGenerator[tuple[str, Any], None]:
-        async for item in super().stream(
-            user_code=user_code,
-            env_locals=env_locals,
-            context=context,
-            node=node,
-            allow_dynamic_outputs=allow_dynamic_outputs,
-        ):
-            yield item
-
-    # Docker hooks
-    def docker_image(self) -> str:
-        return self.image
-
-    def docker_mem_limit(self) -> str:
-        return self.mem_limit
-
-    def docker_nano_cpus(self) -> int:
-        return self.nano_cpus
 
     def build_container_command(
         self,

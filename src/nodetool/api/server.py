@@ -180,15 +180,16 @@ def create_app(
         """Cleanup resources on server shutdown."""
         logger = Environment.get_logger()
         logger.info("Server shutdown initiated - cleaning up resources")
-        
+
         try:
             # Import here to avoid circular imports
             from nodetool.common.websocket_updates import websocket_updates
+
             await websocket_updates.shutdown()
             logger.info("WebSocket updates shutdown complete")
         except Exception as e:
             logger.error(f"Error during websocket updates shutdown: {e}")
-        
+
         # Give a moment for cleanup to complete
         await asyncio.sleep(0.1)
         logger.info("Server shutdown cleanup complete")
@@ -274,6 +275,12 @@ def run_uvicorn_server(app: Any, host: str, port: int, reload: bool) -> None:
             loop = "asyncio"
 
     workers = 1
+    # Use one worker per CPU on non-Windows when not constrained by platform
+    if platform.system() != "Windows":
+        try:
+            workers = multiprocessing.cpu_count()
+        except Exception:
+            workers = 1
 
     # Uvicorn requires an import string when using reload=True or workers > 1
     if (reload or workers > 1) and not isinstance(app, str):
@@ -303,16 +310,16 @@ def run_uvicorn_server(app: Any, host: str, port: int, reload: bool) -> None:
             # Use a separate thread to force exit after a short delay
             import threading
             import time
-            
+
             def force_exit():
                 time.sleep(2)  # Give cleanup handlers time to run
                 print("Forcing process termination...")
                 os._exit(0)
-            
+
             # Start the force exit timer
             exit_thread = threading.Thread(target=force_exit, daemon=True)
             exit_thread.start()
-            
+
             # Let the normal shutdown proceed, but it will be terminated by the timer
         raise
     finally:

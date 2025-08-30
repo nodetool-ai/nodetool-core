@@ -47,17 +47,25 @@ class WorkflowNode(BaseNode):
         output = {}
         async for msg in run_workflow(req):
             # Convert Pydantic model to dict for uniform access
-            if hasattr(msg, 'model_dump'):
+            if hasattr(msg, "model_dump"):
                 msg_dict = msg.model_dump()
             else:
                 msg_dict = msg
-                
+
             assert "type" in msg_dict
             if msg_dict["type"] == "error":
                 raise Exception(msg_dict["error"])
             if msg_dict["type"] == "job_update":
                 if msg_dict["status"] == "completed":
-                    output = msg_dict["result"] or {}
+                    # Prefer the final value per output; reduce lists to last element
+                    result = msg_dict.get("result") or {}
+                    reduced: dict[str, Any] = {}
+                    for k, v in result.items():
+                        if isinstance(v, list) and len(v) > 0:
+                            reduced[k] = [v[-1]]
+                        else:
+                            reduced[k] = v
+                    output = reduced
             if msg_dict["type"] == "node_progress":
                 context.post_message(
                     NodeProgress(

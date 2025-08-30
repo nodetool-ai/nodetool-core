@@ -83,6 +83,8 @@ log = Environment.get_logger()
 
 
 AUDIO_CODEC = "mp3"
+# Central default sample rate for audio conversions when not explicitly provided
+DEFAULT_AUDIO_SAMPLE_RATE = 32_000
 
 HTTP_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/1"
@@ -154,15 +156,67 @@ class ProcessingContext:
         if http_client is not None:
             self._http_client = http_client
         self.workspace_dir = workspace_dir or WorkspaceManager().get_current_directory()
-        self.memory: dict[str, Any] = {}
+        # Use global node_cache for memory:// storage to enable portability
+
+    def _numpy_to_pil_image(self, arr: np.ndarray) -> PIL.Image.Image:
+        """Convert a numpy array of various common shapes/dtypes into a PIL Image.
+
+        Handles float arrays (0..1 or 0..255), integer types, boolean, and
+        common layout conversions (CHW -> HWC, single-channel squeeze, batch dim).
+        """
+        a = np.asarray(arr)
+
+        # Drop simple batch dimension (1, H, W, C) or (1, C, H, W)
+        if a.ndim == 4 and a.shape[0] == 1:
+            a = a[0]
+
+        # Convert CHW -> HWC if likely channel-first
+        if a.ndim == 3 and a.shape[0] in (1, 3, 4) and a.shape[2] not in (1, 3, 4):
+            a = np.transpose(a, (1, 2, 0))
+
+        # If single-channel in last axis, squeeze to 2D for PIL L mode
+        if a.ndim == 3 and a.shape[2] == 1:
+            a = a[:, :, 0]
+
+        # Normalize dtype to uint8
+        if a.dtype in (np.float32, np.float64, np.float16):
+            # Heuristic scaling: [0,1] -> *255; otherwise assume already in 0..255,
+            # and if outside range, min-max normalize to 0..255.
+            if a.size == 0:
+                a = a.astype(np.uint8)
+            else:
+                amin = float(np.nanmin(a))
+                amax = float(np.nanmax(a))
+                if amin >= 0.0 and amax <= 1.0:
+                    a = a * 255.0
+                elif amax > 255.0 or amin < 0.0:
+                    if amax != amin:
+                        a = (a - amin) * (255.0 / (amax - amin))
+                    else:
+                        a = np.zeros_like(a)
+                a = np.clip(a, 0, 255).astype(np.uint8)
+        elif a.dtype == np.uint16:
+            # Scale 16-bit to 8-bit
+            a = (a / 257.0).astype(np.uint8)
+        elif a.dtype in (np.int16, np.int32, np.int64):
+            a = np.clip(a, 0, 255).astype(np.uint8)
+        elif a.dtype == np.bool_:
+            a = a.astype(np.uint8) * 255
+        elif a.dtype != np.uint8:
+            # Best-effort fallback
+            try:
+                a = np.clip(a, 0, 255).astype(np.uint8)
+            except Exception:
+                a = a.astype(np.uint8)
+
+        a = np.ascontiguousarray(a)
+        return PIL.Image.fromarray(a)
 
     def _memory_get(self, key: str) -> Any | None:
         """
-        Retrieve an object stored under a memory:// key from local memory first,
-        then fall back to the global node cache.
+        Retrieve an object stored under a memory:// key from the global node cache.
+        Local per-instance memory is avoided for portability across processes.
         """
-        if key in self.memory:
-            return self.memory[key]
         try:
             return Environment.get_node_cache().get(key)
         except Exception:
@@ -170,10 +224,9 @@ class ProcessingContext:
 
     def _memory_set(self, key: str, value: Any) -> None:
         """
-        Store an object under a memory:// key in both local memory and the global node cache.
-        Use ttl=0 (no expiration) to persist for the life of the process (or backend policy).
+        Store an object under a memory:// key in the global node cache only.
+        Use ttl=0 (no expiration) for persistence based on backend policy.
         """
-        self.memory[key] = value
         try:
             Environment.get_node_cache().set(key, value, ttl=0)
         except Exception:
@@ -912,18 +965,24 @@ class ProcessingContext:
         return BytesIO(response.content)
 
     def wrap_object(self, obj: Any) -> Any:
+        """Wrap raw Python objects into typed refs, storing large media in-memory.
+
+        - Images/Audio: store via memory:// to defer encoding; use asset_to_io for bytes.
+        - DataFrames/Numpy/Tensors: use existing typed wrappers.
+        """
         if isinstance(obj, pd.DataFrame):
             return DataframeRef.from_pandas(obj)
         elif isinstance(obj, PIL.Image.Image):
-            return ImageRef(data=obj.tobytes())
+            memory_uri = f"memory://{uuid.uuid4()}"
+            self._memory_set(memory_uri, obj)
+            return ImageRef(uri=memory_uri)
         elif isinstance(obj, AudioSegment):
-            audio_bytes = BytesIO()
-            obj.export(audio_bytes, format="mp3")
-            audio_bytes.seek(0)
-            return AudioRef(data=audio_bytes.getvalue())
+            memory_uri = f"memory://{uuid.uuid4()}"
+            self._memory_set(memory_uri, obj)
+            return AudioRef(uri=memory_uri)
         elif isinstance(obj, np.ndarray):
             return NPArray.from_numpy(obj)
-        elif isinstance(obj, torch.Tensor):
+        elif TORCH_AVAILABLE and isinstance(obj, torch.Tensor):
             return TorchTensor.from_tensor(obj)
         else:
             return obj
@@ -961,6 +1020,57 @@ class ProcessingContext:
                     obj.export(buffer, format="mp3")
                     buffer.seek(0)
                     return buffer
+                elif isinstance(obj, np.ndarray):
+                    # Handle numpy arrays stored in memory depending on the asset type
+                    if isinstance(asset_ref, ImageRef):
+                        # Encode numpy image array as PNG
+                        img = self._numpy_to_pil_image(obj)
+                        buf = BytesIO()
+                        img.convert("RGB").save(buf, format="PNG")
+                        buf.seek(0)
+                        return buf
+                    elif isinstance(asset_ref, AudioRef):
+                        # Encode numpy audio array as MP3
+                        # Infer channels: (samples,) -> 1, (samples, channels) -> channels
+                        channels = 1
+                        audio_arr = obj
+                        if audio_arr.ndim == 2:
+                            # pydub expects interleaved samples for multi-channel when building from raw bytes.
+                            # If provided in shape (samples, channels), interleave by reshaping C-order.
+                            channels = audio_arr.shape[1]
+                        # Normalize/convert dtype similarly to audio_from_numpy
+                        if audio_arr.dtype == np.int16:
+                            raw = audio_arr.tobytes()
+                        elif audio_arr.dtype in (np.float32, np.float64, np.float16):
+                            raw = (audio_arr * (2**14)).astype(np.int16).tobytes()
+                        else:
+                            raise ValueError(
+                                f"Unsupported audio ndarray dtype {audio_arr.dtype}"
+                            )
+                        seg = AudioSegment(
+                            data=raw,
+                            frame_rate=DEFAULT_AUDIO_SAMPLE_RATE,  # default sample rate
+                            sample_width=2,  # 16-bit
+                            channels=int(channels),
+                        )
+                        out = BytesIO()
+                        seg.export(out, format="mp3")
+                        out.seek(0)
+                        return out
+                    elif isinstance(asset_ref, VideoRef):
+                        # Encode numpy video array as MP4 using imageio (T,H,W,C)
+                        try:
+                            import imageio  # type: ignore
+
+                            out = BytesIO()
+                            imageio.mimwrite(out, obj, format="mp4", fps=30)  # type: ignore
+                            out.seek(0)
+                            return out
+                        except Exception as e:
+                            raise ValueError(f"Failed to encode numpy video: {e}")
+                    else:
+                        # Generic fallback: return raw bytes
+                        return BytesIO(obj.tobytes())
                 elif isinstance(obj, str):
                     # Convert string to UTF-8 bytes
                     return BytesIO(obj.encode("utf-8"))
@@ -970,17 +1080,81 @@ class ProcessingContext:
                     raise ValueError(f"Unsupported memory object type {type(obj)}")
             else:
                 raise ValueError(f"Memory object not found for key {key}")
-        # Date takes precedence over anything else as it is the most up-to-date
-        # and already in memory
-        elif asset_ref.data:
-            if isinstance(asset_ref.data, bytes):
-                return BytesIO(asset_ref.data)
-            elif isinstance(asset_ref.data, list):
-                raise ValueError(
-                    "Batched data must be converted to list using BatchToList node"
-                )
+        # If explicit data is present, normalize it into a consistent byte stream
+        elif asset_ref.data is not None:
+            data = asset_ref.data
+            # Images: always encode to PNG
+            if isinstance(asset_ref, ImageRef):
+                if isinstance(data, bytes):
+                    return BytesIO(data)
+                elif isinstance(data, PIL.Image.Image):
+                    buf = BytesIO()
+                    PIL.ImageOps.exif_transpose(data).convert("RGB").save(
+                        buf, format="PNG"
+                    )
+                    buf.seek(0)
+                    return buf
+                elif isinstance(data, np.ndarray):
+                    img = self._numpy_to_pil_image(data)
+                    buf = BytesIO()
+                    img.convert("RGB").save(buf, format="PNG")
+                    buf.seek(0)
+                    return buf
+                else:
+                    raise ValueError(f"Unsupported ImageRef data type {type(data)}")
+            # Audio: always encode to MP3
+            elif isinstance(asset_ref, AudioRef):
+                if isinstance(data, bytes):
+                    return BytesIO(data)
+                elif isinstance(data, AudioSegment):
+                    buf = BytesIO()
+                    data.export(buf, format="mp3")
+                    buf.seek(0)
+                    return buf
+                elif isinstance(data, np.ndarray):
+                    # Convert numpy audio to MP3 bytes
+                    channels = 1
+                    audio_arr = data
+                    if audio_arr.ndim == 2:
+                        channels = audio_arr.shape[1]
+                    if audio_arr.dtype == np.int16:
+                        raw = audio_arr.tobytes()
+                    elif audio_arr.dtype in (np.float32, np.float64, np.float16):
+                        raw = (audio_arr * (2**14)).astype(np.int16).tobytes()
+                    else:
+                        raise ValueError(
+                            f"Unsupported AudioRef ndarray dtype {audio_arr.dtype}"
+                        )
+                    seg = AudioSegment(
+                        data=raw,
+                        frame_rate=DEFAULT_AUDIO_SAMPLE_RATE,
+                        sample_width=2,
+                        channels=int(channels),
+                    )
+                    out = BytesIO()
+                    seg.export(out, format="mp3")
+                    out.seek(0)
+                    return out
+                else:
+                    raise ValueError(f"Unsupported AudioRef data type {type(data)}")
+            # Text
+            elif isinstance(asset_ref, TextRef):
+                if isinstance(data, bytes):
+                    return BytesIO(data)
+                elif isinstance(data, str):
+                    return BytesIO(data.encode("utf-8"))
+                else:
+                    raise ValueError(f"Unsupported TextRef data type {type(data)}")
+            # Video and generic assets: assume data is already encoded bytes
             else:
-                raise ValueError(f"Unsupported data type {type(asset_ref.data)}")
+                if isinstance(data, bytes):
+                    return BytesIO(data)
+                elif isinstance(data, list):
+                    raise ValueError(
+                        "Batched data must be converted to list using BatchToList node"
+                    )
+                else:
+                    raise ValueError(f"Unsupported data type {type(data)}")
         # Asset ID takes precedence over URI as the URI could be expired
         elif asset_ref.asset_id is not None:
             return await self.download_asset(asset_ref.asset_id)
@@ -1022,20 +1196,11 @@ class ProcessingContext:
             key = asset_ref.uri
             obj = self._memory_get(key)
             if obj is not None:
-                if isinstance(obj, PIL.Image.Image):
-                    buffer = BytesIO()
-                    obj.save(buffer, format="PNG")
-                    buffer.seek(0)
-                    return ImageRef(asset_id=asset_ref.asset_id, data=buffer.getvalue())
-                elif isinstance(obj, AudioSegment):
-                    buffer = BytesIO()
-                    obj.export(buffer, format="mp3")
-                    buffer.seek(0)
-                    return AudioRef(asset_id=asset_ref.asset_id, data=buffer.getvalue())
-                elif isinstance(obj, pd.DataFrame):
+                if isinstance(obj, pd.DataFrame):
                     return await self.dataframe_from_pandas(obj)
-                else:
-                    raise ValueError(f"Unsupported memory object type {type(obj)}")
+                # For other asset types use the canonical encoding rules above
+                data_bytes = await self.asset_to_bytes(asset_ref)
+                return asset_ref.model_copy(update={"data": data_bytes})
             else:
                 raise ValueError(f"Memory object not found for key {key}")
         return asset_ref
@@ -1133,22 +1298,7 @@ class ProcessingContext:
             str: The base64-encoded string representation of the image.
         """
         buffer = await self.asset_to_io(image_ref)
-        image = PIL.Image.open(buffer)
-
-        # Apply EXIF orientation if present
-        try:
-            # Use PIL's built-in method to handle EXIF orientation
-            rotated_image = PIL.ImageOps.exif_transpose(image)
-            # exif_transpose can return None in some cases, so fallback to original
-            image = rotated_image if rotated_image is not None else image
-        except (AttributeError, KeyError, TypeError):
-            # If EXIF data is not available or malformed, continue without rotation
-            pass
-
-        image = image.convert("RGB")
-        buffer = BytesIO()
-        image.save(buffer, format="PNG")
-        return base64.b64encode(buffer.getvalue()).decode("utf-8")
+        return base64.b64encode(buffer.read()).decode("utf-8")
 
     async def audio_to_audio_segment(self, audio_ref: AudioRef) -> AudioSegment:
         """
@@ -1175,14 +1325,17 @@ class ProcessingContext:
         return pydub.AudioSegment.from_file(audio_bytes)
 
     async def audio_to_numpy(
-        self, audio_ref: AudioRef, sample_rate: int = 32_000, mono: bool = True
+        self,
+        audio_ref: AudioRef,
+        sample_rate: int = DEFAULT_AUDIO_SAMPLE_RATE,
+        mono: bool = True,
     ) -> tuple[np.ndarray, int, int]:
         """
         Converts the audio to a np.float32 array.
 
         Args:
             audio_ref (AudioRef): The audio reference to convert.
-            sample_rate (int, optional): The target sample rate. Defaults to 32_000.
+            sample_rate (int, optional): The target sample rate. Defaults to DEFAULT_AUDIO_SAMPLE_RATE.
             mono (bool, optional): Whether to convert to mono. Defaults to True.
 
         Returns:
@@ -1371,11 +1524,10 @@ class ProcessingContext:
         # Prefer retrieving from in-memory storage if the DataframeRef uses a memory URI
         if getattr(df, "uri", "").startswith("memory://"):
             key = df.uri
-            if key in self.memory:
-                obj = self.memory[key]
-                if isinstance(obj, pd.DataFrame):
-                    return obj
-            # If not found in memory, fall back to other representations
+            obj = self._memory_get(key)
+            if isinstance(obj, pd.DataFrame):
+                return obj
+            # If not found in cache, fall back to other representations
 
         if df.columns:
             column_names = [col.name for col in df.columns]
@@ -1539,7 +1691,8 @@ class ProcessingContext:
         Returns:
             ImageRef: The ImageRef object.
         """
-        return await self.image_from_pil(PIL.Image.fromarray(image), name=name)
+        pil_img = self._numpy_to_pil_image(image)
+        return await self.image_from_pil(pil_img, name=name)
 
     async def image_from_tensor(
         self,
@@ -1722,14 +1875,11 @@ class ProcessingContext:
         # Check for memory:// protocol URI first (preferred for performance)
         if hasattr(model_ref, "uri") and model_ref.uri.startswith("memory://"):
             key = model_ref.uri
-            if key in self.memory:
-                obj = self.memory[key]
-                # Return the model object directly if it's already a model
-                if hasattr(obj, "fit") or hasattr(
-                    obj, "predict"
-                ):  # Duck typing for models
-                    return obj
-                # Fall through to regular conversion if not a model object
+            obj = self._memory_get(key)
+            # Return the model object directly if it's already a model
+            if obj is not None and (hasattr(obj, "fit") or hasattr(obj, "predict")):
+                return obj
+            # Fall through to regular conversion if not a model object
 
         if model_ref.asset_id is None:
             raise ValueError("ModelRef is empty")
@@ -1860,6 +2010,34 @@ class ProcessingContext:
         else:
             return value
 
+    async def embed_assets_in_data(self, value: Any) -> Any:
+        """
+        Recursively embeds any memory:// assets in the given value.
+        """
+        if isinstance(value, AssetRef):
+            if value.uri.startswith("memory://") or value.data is not None:
+                data_bytes = await self.asset_to_bytes(value)
+                return value.model_copy(update={"uri": None, "data": data_bytes})
+            return value
+        elif isinstance(value, dict):
+            keys = list(value.keys())
+            results = await asyncio.gather(
+                *[self.embed_assets_in_data(value[k]) for k in keys]
+            )
+            return {k: r for k, r in zip(keys, results)}
+        elif isinstance(value, list):
+            results = await asyncio.gather(
+                *[self.embed_assets_in_data(item) for item in value]
+            )
+            return list(results)
+        elif isinstance(value, tuple):
+            results = await asyncio.gather(
+                *[self.embed_assets_in_data(item) for item in value]
+            )
+            return tuple(results)
+        else:
+            return value
+
     async def upload_assets_to_temp(self, value: Any) -> Any:
         """
         Recursively uploads any AssetRef objects found in the given value to temp storage.
@@ -1883,18 +2061,18 @@ class ProcessingContext:
 
         async def upload_asset(value: AssetRef) -> dict[str, Any]:
             log.info(f"Uploading asset {value.uri} to temp storage")
-            # Upload the asset data to S3 and return the URL
-            if value.data is not None:
+            # Always normalize to bytes via the canonical encoder
+            data = await self.asset_to_bytes(value)
+
+            if data is not None:
                 storage = Environment.get_temp_storage()
                 ext = get_ext(value)
                 key = uuid.uuid4().hex + "." + ext
                 uri = await storage.upload(
                     key,
-                    BytesIO(
-                        value.data[0] if isinstance(value.data, list) else value.data
-                    ),
+                    BytesIO(data),
                 )
-                log.info(f"Uploaded to {uri}")
+                log.info(f"Uploaded {len(data)} bytes to {uri}")
                 return {
                     "type": value.type,
                     "uri": uri,
@@ -1910,7 +2088,13 @@ class ProcessingContext:
         if isinstance(value, AssetRef):
             return await upload_asset(value)
         elif isinstance(value, dict):
-            if "type" in value and value["type"] in asset_types:
+            if (
+                "type" in value
+                and "uri" in value
+                and "asset_id" in value
+                and "data" in value
+                and value["type"] in asset_types
+            ):
                 asset_ref = AssetRef(
                     type=value["type"],
                     uri=value["uri"],
@@ -2276,13 +2460,12 @@ class ProcessingContext:
             pattern (str | None): Optional pattern to match memory keys.
                                 If None, clears all memory.
         """
-        if pattern is None:
-            # Clear local memory and best-effort clear of global cache entries with memory:// prefix
-            self.memory.clear()
-        else:
-            keys_to_remove = [key for key in list(self.memory.keys()) if pattern in key]
-            for key in keys_to_remove:
-                del self.memory[key]
+        # AbstractNodeCache does not support partial clears by pattern.
+        # For now, perform a full clear when requested.
+        try:
+            Environment.get_node_cache().clear()
+        except Exception:
+            pass
 
     def get_memory_stats(self) -> dict[str, int | dict[str, int]]:
         """
@@ -2291,12 +2474,9 @@ class ProcessingContext:
         Returns:
             dict: Statistics including total objects and breakdown by type.
         """
-        type_counts: dict[str, int] = {}
-        for obj in self.memory.values():
-            obj_type = type(obj).__name__
-            type_counts[obj_type] = type_counts.get(obj_type, 0) + 1
-
-        return {"total_objects": len(self.memory), "types": type_counts}
+        # Node cache interface does not expose iteration over items.
+        # Return an empty summary to avoid leaking implementation details.
+        return {"total_objects": 0, "types": {}}
 
     async def cleanup(self):
         """

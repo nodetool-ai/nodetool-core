@@ -24,7 +24,7 @@ from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.workflow_runner import WorkflowRunner
 from nodetool.workflows.run_workflow import run_workflow
 from nodetool.workflows.run_job_request import RunJobRequest
-from nodetool.workflows.types import NodeUpdate, OutputUpdate
+from nodetool.workflows.types import NodeUpdate, OutputUpdate, ToolResultUpdate
 
 log = logging.getLogger(__name__)
 log.setLevel(logging.DEBUG)
@@ -204,7 +204,7 @@ class GraphTool(Tool):
             )
 
             # Collect all messages from workflow execution
-            results = {}
+            result = {}
             runner = WorkflowRunner(job_id=uuid4().hex, disable_caching=True)
             async for msg in run_workflow(
                 request=req,
@@ -222,22 +222,27 @@ class GraphTool(Tool):
                 except Exception:
                     # Forwarding should not break tool execution; ignore failures.
                     pass
-                if isinstance(msg, NodeUpdate):
-                    update: NodeUpdate = msg
-                    if (
-                        update.node_type == ToolResultNode.get_node_type()
-                        and update.status == "completed"
-                    ):
-                        if update.result is not None:
-                            if len(update.result) == 1:
-                                results = list(update.result.values())[0]
+                if isinstance(msg, ToolResultUpdate):
+                    update: ToolResultUpdate = msg
+                    if update.result is not None:
+                        for key, value in update.result.items():
+                            if hasattr(value, "model_dump"):
+                                value = value.model_dump()
+                            if result.get(key) is None:
+                                result[key] = value
+                            elif isinstance(result[key], list):
+                                result[key].append(value)
+                            elif isinstance(result[key], str):
+                                result[key] += value
                             else:
-                                results = update.result
+                                result[key] = value
 
-            results = await context.upload_assets_to_temp(results)
+            result = await context.upload_assets_to_temp(result)
+
+            print("result", result)
 
             # Return the collected results
-            return results
+            return result
 
         except Exception as e:
             return str(e)
