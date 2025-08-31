@@ -2,9 +2,9 @@
 Base Node Module for Workflow System
 ====================================
 
-This module defines the core components and functionality for nodes in a workflow graph system.
-It provides the foundation for creating, managing, and executing computational nodes within
-a directed graph workflow.
+This module defines the core components and functionality for nodes in a workflow
+graph system. It provides the foundation for creating, managing, and executing
+computational nodes within a directed graph workflow.
 
 Key Components:
 --------------
@@ -22,9 +22,42 @@ Core Functionality:
 - Node serialization and deserialization
 - Workflow execution utilities
 
-This module is essential for constructing and managing complex computational graphs
-in the workflow system. It handles the registration, validation, and execution of
-nodes, as well as providing utilities for type checking and metadata generation.
+Unified Input/Streaming Model
+-----------------------------
+- Everything is a stream; a scalar is a stream of length 1. The engine routes
+  output values downstream as items. Inputs are consumed either once (buffered)
+  or iteratively (streaming) depending on the node style.
+- Two consumption styles per node:
+  1) Single-execute (buffered): implement `process(context)`. The actor gathers
+     at most one item per inbound handle, assigns them as properties, then calls
+     `process()` once. Use this when inputs are configuration-like or naturally
+     batch up-front.
+  2) Streaming-consume/produce: implement `gen_process(context)` and (optionally)
+     override `is_streaming_input()` to `True` if you want to pull inbound items
+     via the inbox. Use `iter_input(handle)` for a dedicated stream or
+     `iter_any_input()` to multiplex across handles in arrival order. Yield
+     `(slot_name, value)` tuples (or just `value` for the default "output") to
+     stream results as they become available.
+- Spanning-graph fanout ("run the subgraph N times"): prefer a graph-level
+  control node such as a ForEach/Map wrapper that feeds a subgraph per item and
+  either streams or collects outputs. Alternatively, a node/actor fanout hint
+  can map one streaming input handle to repeated `process()` calls; this keeps
+  nodes simple but is best for pure map-like behavior. The recommended pattern
+  is the explicit ForEach/Map node for clarity and composition.
+
+Authoring Guidelines
+--------------------
+- Single-run nodes: implement `process(context)` and use standard fields.
+- Streaming producers: implement `gen_process(context)` and `yield` items.
+- Streaming consumers/transforms: set `is_streaming_input() -> True` and
+  implement `gen_process(context)` using `iter_input()` / `iter_any_input()`.
+- Multi-input stream alignment is not implicit; if required, add explicit
+  combinators (e.g., Zip/Join/Merge) in the graph rather than relying on timing.
+
+This module is essential for constructing and managing complex computational
+graphs in the workflow system. It handles the registration, validation, and
+execution of nodes, as well as providing utilities for type checking and
+metadata generation.
 """
 
 import functools
@@ -35,7 +68,16 @@ from weakref import WeakKeyDictionary
 from pydantic import BaseModel, Field
 from pydantic.fields import FieldInfo
 import traceback
-from typing import Any, AsyncGenerator, Callable, Optional, Type, TypeVar
+from typing import (
+    Any,
+    AsyncGenerator,
+    Callable,
+    Optional,
+    Type,
+    TypeVar,
+    AsyncIterator,
+    TYPE_CHECKING,
+)
 
 from nodetool.types.graph import Edge
 from nodetool.common.environment import Environment
@@ -44,7 +86,6 @@ from nodetool.metadata.types import (
     AssetRef,
     ComfyData,
     ComfyModel,
-    Event,
     HuggingFaceModel,
     NPArray,
     NameToType,
@@ -68,6 +109,10 @@ from nodetool.metadata.utils import (
 )
 
 from nodetool.workflows.types import NodeUpdate
+
+if TYPE_CHECKING:  # avoid runtime import cycles
+    from .inbox import NodeInbox
+    from .io import NodeInputs, NodeOutputs
 
 try:
     import torch
@@ -293,6 +338,7 @@ class BaseNode(BaseModel):
     _requires_grad: bool = False
     _expose_as_tool: bool = False
     _supports_dynamic_outputs: bool = False
+    _inbox: "NodeInbox | None" = None
 
     def __init__(
         self,
@@ -312,6 +358,75 @@ class BaseNode(BaseModel):
 
     def required_inputs(self):
         return []
+
+    # Streaming input integration
+    def attach_inbox(self, inbox: "NodeInbox") -> None:
+        """Attach a streaming input inbox to this node (runner-managed)."""
+        self._inbox = inbox
+
+    def should_route_output(self, output_name: str) -> bool:
+        """
+        Hook to control whether a given output should be routed downstream.
+
+        Defaults to True. Nodes can override to suppress routing for special
+        outputs (e.g., dynamic tool entry points) so that values are not
+        delivered to downstream inboxes.
+        """
+        return True
+
+    def has_input(self) -> bool:
+        """Return True if the inbox currently has any buffered input."""
+        return bool(self._inbox and self._inbox.has_any())
+
+    async def recv(self, handle: str) -> Any:
+        """Receive a single item from a specific input handle.
+
+        Raises StopAsyncIteration if the handle reaches EOS without yielding an item.
+        """
+        if not self._inbox:
+            raise RuntimeError("Inbox not attached to node; recv unavailable")
+        async for item in self._inbox.iter_input(handle):
+            return item
+        raise StopAsyncIteration
+
+    async def iter_input(self, handle: str) -> AsyncIterator[Any]:
+        """Iterate items for a specific input handle until EOS.
+
+        Use this when your node consumes a dedicated stream from one handle.
+        The iterator blocks until data arrives or the upstream(s) finish and
+        the handle reaches end-of-stream (EOS). If you need to arbitrate across
+        multiple handles by arrival order, use `iter_any_input()` instead.
+        """
+        if not self._inbox:
+            raise RuntimeError("Inbox not attached to node; iter_input unavailable")
+        async for item in self._inbox.iter_input(handle):
+            yield item
+
+    async def iter_any_input(self) -> AsyncIterator[tuple[str, Any]]:
+        """Iterate (handle, item) across all inputs in arrival order until EOS.
+
+        This multiplexes all inbound handles by arrival order with no implicit
+        alignment between handles. If you need alignment (e.g., zip by index),
+        model it explicitly in the graph with a combinator node.
+        """
+        if not self._inbox:
+            raise RuntimeError("Inbox not attached to node; iter_any_input unavailable")
+        async for handle, item in self._inbox.iter_any():
+            yield handle, item
+
+    @classmethod
+    def is_streaming_input(cls) -> bool:
+        """Nodes can override to opt-in to streaming input via inbox.
+
+        When True, the actor pre-gathers only non-streaming upstream inputs
+        (treating them as configuration) then calls `gen_process`, expecting the
+        node to iterate its inputs via the inbox helpers. When False, the actor
+        gathers at-most-one item per inbound handle and calls `process()` once.
+        """
+        return False
+
+    @classmethod
+    # Removed pre_gather_non_streaming_inputs; actor no longer pre-gathers selectively.
 
     @classmethod
     def expose_as_tool(cls):
@@ -1160,24 +1275,49 @@ class BaseNode(BaseModel):
     async def gen_process(self, context: Any) -> AsyncGenerator[tuple[str, Any], None]:
         """
         Generate output messages for streaming.
-        Node implementers should override this method to provide streaming output.
-        It should yield tuples of (slot_name, value).
-        If this method is implemented, `process` should not be.
+
+        Override to provide streaming output and/or consume streaming inputs.
+        When `is_streaming_input()` returns True, pull inbound items using
+        `iter_input()` or `iter_any_input()`. Yield `(slot_name, value)` to target
+        a specific output slot, or yield `value` to target the default slot
+        named "output". If this method is implemented, `process` should not be.
         """
         # This construct ensures this is a generator function template.
         # It will not yield anything unless overridden by a subclass.
         if False:
             yield "", None  # type: ignore
 
-    async def handle_event(
-        self, context: Any, event: Event
-    ) -> AsyncGenerator[tuple[str, Any], None]:
+    async def run(
+        self, context: Any, inputs: "NodeInputs", outputs: "NodeOutputs"
+    ) -> None:
         """
-        Handle an incoming event async.
-        May dispatch output or events.
+        Unified entry point for node execution.
+
+        Default behavior bridges to existing methods:
+        - If the node implements streaming outputs (overrides `gen_process`), iterate the
+          generator and forward items via `outputs.emit`/`outputs.default`.
+        - Otherwise, call `process(context)`, convert the result using `convert_output`,
+          and emit via `outputs`.
         """
-        if False:
-            yield "", None  # type: ignore
+        if self.__class__.is_streaming_output():
+            agen = self.gen_process(context)
+            # Iterate yielded items and forward to outputs
+            async for item in agen:
+                if isinstance(item, tuple):
+                    if not (len(item) == 2 and isinstance(item[0], str)):
+                        raise ValueError(
+                            f"Streaming node {self.get_title()} ({self._id}) yielded item with invalid format"
+                        )
+                    slot_name, value = item
+                    await outputs.emit(slot_name, value)
+                else:
+                    await outputs.default(item)
+        else:
+            # Buffered path: single call to process() and emit converted outputs
+            result = await self.process(context)
+            converted = await self.convert_output(context, result)
+            for k, v in converted.items():
+                await outputs.emit(k, v)
 
     async def process_with_gpu(self, context: Any, max_retries: int = 3) -> Any:
         """
@@ -1236,11 +1376,26 @@ class ToolResultNode(BaseNode):
 
     _is_dynamic = True
 
-    async def process(self, context: Any) -> Any:
-        return self._dynamic_properties
+    @classmethod
+    def return_type(cls):
+        return {
+            "result": Any,
+        }
 
-    def result_for_client(self, result: dict[str, Any]) -> dict[str, Any]:
-        return result
+    async def gen_process(self, context: Any):
+        from nodetool.workflows.types import ToolResultUpdate
+
+        if self.has_input():
+            async for handle, value in self.iter_any_input():
+                yield "result", {handle: value}
+                context.post_message(
+                    ToolResultUpdate(node_id=self.id, result={handle: value})
+                )
+        else:
+            yield "result", self._dynamic_properties
+            context.post_message(
+                ToolResultUpdate(node_id=self.id, result=self._dynamic_properties)
+            )
 
 
 class OutputNode(BaseNode):
@@ -1267,8 +1422,65 @@ class OutputNode(BaseNode):
     def get_basic_fields(cls):
         return ["name", "value"]
 
-    def result_for_client(self, result: dict[str, Any]) -> dict[str, Any]:
-        return self.result_for_all_outputs({"name": self.name, **result})
+    @classmethod
+    def return_type(cls):
+        return {
+            "output": Any,
+        }
+
+    async def gen_process(self, context: Any):
+        """Stream-first sink semantics with fallback.
+
+        - If there are inbound sources (registered via the inbox), consume the
+          entire stream using `iter_any_input()` and forward each value while
+          posting `OutputUpdate` messages.
+        - If there are no inbound sources (or none produced any values and EOS
+          was reached immediately), fall back to emitting the configured
+          property `value` once.
+
+        This avoids race conditions with the actor's pre-gather stage and ensures
+        we don't miss later arrivals by only checking the immediate buffer.
+        """
+        from nodetool.workflows.types import OutputUpdate
+
+        output_type = self.__class__.__name__.replace("Output", "").lower()
+
+        yielded = False
+        async for handle, value in self.iter_any_input():
+            yielded = True
+            context.post_message(
+                OutputUpdate(
+                    node_id=self.id,
+                    node_name=self.get_title(),
+                    output_name=handle,
+                    output_type=output_type,
+                    value=value,
+                )
+            )
+            yield "output", value
+
+        if not yielded:
+            # No inbound sources or no items arrived before EOS -> fallback to property
+            context.post_message(
+                OutputUpdate(
+                    node_id=self.id,
+                    node_name=self.get_title(),
+                    output_name=self.name,
+                    output_type=output_type,
+                    value=self.value,
+                )
+            )
+            yield "output", self.value
+
+    @classmethod
+    def is_streaming_input(cls) -> bool:  # type: ignore[override]
+        """Treat inbound values as a stream to avoid pre-gather races.
+
+        Declaring streaming input prevents the actor from eagerly consuming one
+        item upfront. The generator above will block on `iter_any_input()` and
+        stream values as they arrive.
+        """
+        return True
 
     @classmethod
     def is_cacheable(cls):
@@ -1312,10 +1524,28 @@ class Preview(BaseNode):
         return False
 
     async def process(self, context: Any) -> Any:
-        return self.value
+        raise NotImplementedError("Preview node does not support process")
 
-    def result_for_client(self, result: dict[str, Any]) -> dict[str, Any]:
-        return self.result_for_all_outputs(result)
+    async def gen_process(self, context: Any):
+        """Stream previews from inbound values with fallback to configured value.
+
+        Mirrors the stream-first pattern used by `OutputNode`. If no inbound
+        sources or no items are available, falls back to previewing `self.value`.
+        """
+        from nodetool.workflows.types import PreviewUpdate
+
+        async for _handle, value in self.iter_any_input():
+            result = await context.embed_assets_in_data(value)
+            context.post_message(PreviewUpdate(node_id=self.id, value=result))
+            yield "output", result
+
+    @classmethod
+    def is_streaming_input(cls) -> bool:  # type: ignore[override]
+        """Consume inbound preview values as a stream to avoid missing items."""
+        return True
+
+    # def result_for_client(self, result: dict[str, Any]) -> dict[str, Any]:
+    #     return self.result_for_all_outputs(result)
 
 
 def find_node_class_by_name(class_name: str) -> type[BaseNode] | None:

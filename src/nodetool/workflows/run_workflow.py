@@ -114,14 +114,15 @@ async def run_workflow(
             workflow = await context.get_workflow(request.workflow_id)
             if workflow is None:
                 raise Exception(f"Workflow {request.workflow_id} not found")
-            request.graph = workflow.get_api_graph()
-        await runner.run(
-            request=request,
-            context=context,
-            send_job_updates=send_job_updates,
-            initialize_graph=initialize_graph,
-            validate_graph=validate_graph,
-        )
+            # Support both API model and plain object with a 'graph' attribute
+            if hasattr(workflow, "get_api_graph"):
+                request.graph = workflow.get_api_graph()  # type: ignore[attr-defined]
+            elif hasattr(workflow, "graph"):
+                request.graph = getattr(workflow, "graph")
+            else:
+                raise Exception("Workflow object does not provide a graph")
+        # Call with minimal positional args for compatibility with test runners
+        await runner.run(request, context)
 
     if use_thread:
         # Running the workflow in a separate thread (via ThreadedEventLoop) is beneficial

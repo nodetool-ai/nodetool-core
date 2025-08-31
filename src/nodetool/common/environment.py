@@ -604,18 +604,11 @@ class Environment(object):
         """
         if not hasattr(cls, "temp_storage"):
             if not cls.is_production():
-                # from nodetool.storage.memory_storage import MemoryStorage
-                from nodetool.storage.file_storage import FileStorage
+                from nodetool.storage.memory_storage import MemoryStorage
 
                 cls.get_logger().info("Using memory storage for temp storage")
-                # cls.temp_storage = MemoryStorage(
-                #     base_url=cls.get_temp_storage_api_url()
-                # )
-                tmp_folder = str(get_system_file_path("tmp"))
-                os.makedirs(tmp_folder, exist_ok=True)
-                cls.temp_storage = FileStorage(
-                    base_path=tmp_folder,
-                    base_url=cls.get_temp_storage_api_url(),
+                cls.temp_storage = MemoryStorage(
+                    base_url=cls.get_temp_storage_api_url()
                 )
             else:
                 assert (

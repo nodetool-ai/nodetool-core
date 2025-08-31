@@ -90,6 +90,7 @@ from nodetool.metadata.types import (
 )
 from nodetool.workflows.base_node import ToolResultNode, get_node_class
 from nodetool.common.environment import Environment
+from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.types import ProcessingMessage
 from nodetool.packages.registry import Registry
 import asyncio
@@ -183,6 +184,7 @@ UnionType = (
     | InferenceProviderImageToImageModel
     | InferenceProviderImageSegmentationModel
     | ProcessingMessage
+    | RunJobRequest
 )
 
 

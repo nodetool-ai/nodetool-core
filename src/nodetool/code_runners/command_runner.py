@@ -1,30 +1,36 @@
 """
-Bash Docker Runner (raw stdout/stderr)
-=====================================
+Generic Command Docker Runner (single command via shell)
+=======================================================
 
-Executes user-supplied Bash script inside Docker and streams raw stdout and
-stderr lines. No wrapper or serialization.
+Runs a single command string inside a Docker container using a shell
+(defaults to bash). Streams raw stdout and stderr lines without any
+serialization or code wrapping.
 """
 
 from __future__ import annotations
 
-from typing import Any
-import logging
+from typing import Any, AsyncGenerator, AsyncIterator
 
 from nodetool.workflows.base_node import BaseNode
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.code_runners.runtime_base import StreamRunnerBase
 
 
-class BashDockerRunner(StreamRunnerBase):
-    """Execute Bash script inside Docker and stream results."""
+class CommandDockerRunner(StreamRunnerBase):
+    """Execute a single shell command inside Docker and stream results.
+
+    By default, uses the `bash:5.2` image and executes with `bash -lc` so
+    that shell features (globbing, pipes, &&, env var expansion) are
+    available. You can switch to a POSIX shell by setting `shell="sh"`
+    and `image="alpine:3"` or similar.
+    """
 
     def __init__(
         self,
         image: str = "bash:5.2",
         *args,
         **kwargs,
-    ):
+    ) -> None:
         super().__init__(
             *args,
             image=image,
@@ -36,31 +42,22 @@ class BashDockerRunner(StreamRunnerBase):
         user_code: str,
         env_locals: dict[str, Any],
     ) -> list[str]:
-        user_code_with_args = f"set -e\n"
-        for key, value in env_locals.items():
-            user_code_with_args += f"{key}={repr(value)}\n"
-        user_code_with_args += user_code
-        return ["bash", "-lc", user_code_with_args]
+        return user_code.split(" ")
 
 
 if __name__ == "__main__":
-    # Lightweight smoke test: raw stdout/stderr with input streaming
+    # Lightweight smoke test: verify stdin piping and stdout demux
     import asyncio
-    import os
 
     class _SmokeNode:
         def __init__(self) -> None:
-            self.id = "smoke-node-bash"
+            self.id = "smoke-node-command"
 
     async def _smoke() -> None:
         ctx = ProcessingContext()
         node = _SmokeNode()
-        # Read lines from stdin and echo to stdout and stderr to validate demux
-        user_code = (
-            "echo START; "
-            'while IFS= read -r line; do echo OUT: "$line"; echo ERR: "$line" 1>&2; done; '
-            "echo DONE"
-        )
+        # Use a simple program that echoes stdin to stdout to validate piping
+        user_code = "cat"
 
         async def stdin_gen():
             # Provide a few lines of input to verify stdin piping
@@ -68,13 +65,13 @@ if __name__ == "__main__":
                 yield line
                 await asyncio.sleep(0.05)
 
-        async for slot, value in BashDockerRunner().stream(
+        async for slot, value in CommandDockerRunner().stream(
             user_code=user_code,
-            env_locals={"FOO": "bar"},
+            env_locals={},
             context=ctx,  # type: ignore[arg-type]
             node=node,  # type: ignore[arg-type]
             stdin_stream=stdin_gen(),
         ):
-            print(f"[stream-bash] {slot}: {value}")
+            print(f"[stream-cmd] {slot}: {value}")
 
     asyncio.run(_smoke())

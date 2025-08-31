@@ -6,7 +6,6 @@ by agents. Each WorkflowTool instance is configured with a specific workflow
 and uses its input schema for tool parameters.
 """
 
-import json
 import logging
 import re
 from typing import Any, Dict
@@ -17,14 +16,19 @@ from nodetool.common.environment import Environment
 from nodetool.types.workflow import Workflow
 from nodetool.models.workflow import Workflow as WorkflowModel
 from nodetool.types.graph import Edge, Node, get_input_schema, get_output_schema
-from nodetool.types.job import JobUpdate
 from nodetool.workflows.base_node import BaseNode, ToolResultNode
 from nodetool.workflows.graph import Graph
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.workflows.workflow_runner import WorkflowRunner
 from nodetool.workflows.run_workflow import run_workflow
 from nodetool.workflows.run_job_request import RunJobRequest
-from nodetool.workflows.types import NodeUpdate, OutputUpdate
+from nodetool.workflows.types import (
+    Error,
+    JobUpdate,
+    NodeProgress,
+    NodeUpdate,
+    OutputUpdate,
+    ToolResultUpdate,
+)
 
 log = logging.getLogger(__name__)
 log.setLevel(logging.DEBUG)
@@ -107,6 +111,7 @@ class GraphTool(Tool):
 
     async def process(self, context: ProcessingContext, params: Dict[str, Any]) -> Any:
         from nodetool.types.graph import Graph as ApiGraph
+        from nodetool.workflows.workflow_runner import WorkflowRunner
 
         initial_edges_by_target = {edge.target: edge for edge in self.initial_edges}
 
@@ -204,7 +209,7 @@ class GraphTool(Tool):
             )
 
             # Collect all messages from workflow execution
-            results = {}
+            result = {}
             runner = WorkflowRunner(job_id=uuid4().hex, disable_caching=True)
             async for msg in run_workflow(
                 request=req,
@@ -215,29 +220,31 @@ class GraphTool(Tool):
                 initialize_graph=False,
                 validate_graph=False,
             ):
-                # Forward all subgraph messages to the parent context so that
-                # NodeUpdate/OutputUpdate events are visible to outer observers.
-                try:
+                # Forward all subgraph messages to the parent context
+                # but not JobUpdate to prevent early termination
+                if not isinstance(msg, JobUpdate):
                     context.post_message(msg)
-                except Exception:
-                    # Forwarding should not break tool execution; ignore failures.
-                    pass
-                if isinstance(msg, NodeUpdate):
-                    update: NodeUpdate = msg
-                    if (
-                        update.node_type == ToolResultNode.get_node_type()
-                        and update.status == "completed"
-                    ):
-                        if update.result is not None:
-                            if len(update.result) == 1:
-                                results = list(update.result.values())[0]
+                if isinstance(msg, ToolResultUpdate):
+                    update: ToolResultUpdate = msg
+                    if update.result is not None:
+                        for key, value in update.result.items():
+                            if hasattr(value, "model_dump"):
+                                value = value.model_dump()
+                            if result.get(key) is None:
+                                result[key] = value
+                            elif isinstance(result[key], list):
+                                result[key].append(value)
+                            elif isinstance(result[key], str):
+                                result[key] += value
                             else:
-                                results = update.result
+                                result[key] = value
 
-            results = await context.upload_assets_to_temp(results)
+            result = await context.upload_assets_to_temp(result)
+
+            print("result", result)
 
             # Return the collected results
-            return results
+            return result
 
         except Exception as e:
             return str(e)

@@ -47,6 +47,26 @@ class PlanningUpdate(BaseModel):
     content: str | None = None
 
 
+class PreviewUpdate(BaseModel):
+    """
+    A message representing a preview update from a node.
+    """
+
+    type: Literal["preview_update"] = "preview_update"
+    node_id: str
+    value: Any
+
+
+class ToolResultUpdate(BaseModel):
+    """
+    A message representing a tool result from a node.
+    """
+
+    type: Literal["tool_result_update"] = "tool_result_update"
+    node_id: str
+    result: dict[str, Any]
+
+
 class TaskUpdate(BaseModel):
     """
     A message representing an update to a task's status.
@@ -79,6 +99,16 @@ class NodeUpdate(BaseModel):
     logs: str | None = None
     result: dict[str, Any] | None = None
     properties: dict[str, Any] | None = None
+
+
+class EdgeUpdate(BaseModel):
+    """
+    A message representing an update to an edge.
+    """
+
+    type: Literal["edge_update"] = "edge_update"
+    edge_id: str
+    status: str
 
 
 class ToolCallUpdate(BaseModel):
@@ -190,12 +220,15 @@ class OutputUpdate(BaseModel):
 ProcessingMessage = (
     NodeUpdate
     | NodeProgress
+    | EdgeUpdate
     | JobUpdate
     | Error
     | Chunk
     | Prediction
+    | PreviewUpdate
     | TaskUpdate
     | ToolCallUpdate
+    | ToolResultUpdate
     | PlanningUpdate
     | OutputUpdate
     | SubTaskResult
