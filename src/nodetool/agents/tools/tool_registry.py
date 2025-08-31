@@ -64,9 +64,16 @@ def resolve_tool_by_name(
             return NodeTool(node_class)
 
     if name.startswith("workflow_"):
+        raise NotImplementedError("Workflow tools are not implemented yet")
         # TODO: check user is owner of workflow
-        workflow = Workflow.get(name.replace("workflow_", ""))
-        if workflow:
-            return WorkflowTool(from_model(workflow))
+        # workflow = await Workflow.get(name.replace("workflow_", ""))
+        # if workflow:
+        #     return WorkflowTool(from_model(workflow))
 
     raise ValueError(f"Tool {name} not found")
+
+
+if __name__ == "__main__":
+    load_all_nodes()
+    for name, tool in _tool_node_registry.items():
+        print(name)
