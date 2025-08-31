@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import Any, AsyncIterator
 
 from .inbox import NodeInbox
+from .types import EdgeUpdate
 
 
 class NodeInputs:
@@ -154,6 +155,14 @@ class NodeOutputs:
                 inbox = self.runner.node_inboxes.get(edge.target)
                 if inbox is not None:
                     inbox.mark_source_done(edge.targetHandle)
+                # Notify that this specific edge has been drained
+                try:
+                    self.context.post_message(
+                        EdgeUpdate(edge_id=edge.id or "", status="drained")
+                    )
+                except Exception:
+                    # Do not fail node execution due to update issues
+                    pass
 
     async def default(self, value: Any) -> None:
         """Convenience for emitting to the default slot.

@@ -46,7 +46,7 @@ from nodetool.workflows.base_node import (
     InputNode,
     OutputNode,
 )
-from nodetool.workflows.types import NodeProgress, NodeUpdate, OutputUpdate
+from nodetool.workflows.types import EdgeUpdate, NodeProgress, NodeUpdate, OutputUpdate
 from nodetool.metadata.types import MessageTextContent
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.processing_context import ProcessingContext
@@ -570,6 +570,12 @@ class WorkflowRunner:
                 inbox = self.node_inboxes.get(edge.target)
                 if inbox is not None:
                     inbox.put(edge.targetHandle, value_to_send)
+                context.post_message(
+                    EdgeUpdate(
+                        edge_id=edge.id or "",
+                        status="message_sent",
+                    )
+                )
         log.debug(f"send_messages finished for node: {node.get_title()} ({node.id})")
 
     def _initialize_inboxes(self, context: ProcessingContext, graph: Graph) -> None:
@@ -619,45 +625,6 @@ class WorkflowRunner:
                 first_error = r
         if first_error is not None:
             raise first_error
-
-    async def process_node(
-        self,
-        context: ProcessingContext,
-        node: BaseNode,
-        inputs_from_edges: dict[str, Any],
-    ):
-        """
-        Processes a single node in the workflow graph.
-        Simplified for actor mode: regular nodes and OutputNodes only.
-        """
-        log.info(
-            f"Processing node: {node.get_title()} ({node._id}) with inputs: {list(inputs_from_edges.keys())}"
-        )
-        self.current_node = node._id
-
-        if isinstance(node, OutputNode):
-            for key, val in inputs_from_edges.items():
-                try:
-                    node.assign_property(key, val)
-                except Exception as e:
-                    raise ValueError(
-                        f"Error assigning property {key} to OutputNode {node.id}: {str(e)}"
-                    ) from e
-            await self.process_output_node(context, node, inputs_from_edges)
-            for edge in context.graph.edges:
-                if edge.source == node._id:
-                    inbox = self.node_inboxes.get(edge.target)
-                    if inbox is not None:
-                        inbox.mark_source_done(edge.targetHandle)
-            return
-
-        # Regular non-streaming node
-        await self.process_node_with_inputs(context, node, inputs_from_edges)
-        for edge in context.graph.edges:
-            if edge.source == node._id:
-                inbox = self.node_inboxes.get(edge.target)
-                if inbox is not None:
-                    inbox.mark_source_done(edge.targetHandle)
 
     async def process_node_with_inputs(
         self, context: ProcessingContext, node: BaseNode, inputs: dict[str, Any]

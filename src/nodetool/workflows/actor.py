@@ -164,6 +164,16 @@ class NodeActor:
             inbox = self.runner.node_inboxes.get(edge.target)
             if inbox is not None:
                 inbox.mark_source_done(edge.targetHandle)
+            # Notify listeners that this edge has been drained (EOS signaled)
+            try:
+                from .types import EdgeUpdate
+
+                self.context.post_message(
+                    EdgeUpdate(edge_id=edge.id or "", status="drained")
+                )
+            except Exception:
+                # Best-effort notification; never block EOS on update errors
+                pass
 
     async def _run_streaming(self) -> None:
         """Run a node that exposes streaming outputs.

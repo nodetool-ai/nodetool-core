@@ -144,12 +144,7 @@ class NodeInbox:
                 handle = self._arrival.popleft()
                 buf = self._buffers.get(handle)
                 if buf:
-                    # It is possible that another consumer popped from the handle-specific
-                    # buffer; guard against empty deque.
-                    if buf:
-                        yield handle, buf.popleft()
-                        continue
-                # If buffer was empty, just continue the loop to recompute state
+                    yield handle, buf.popleft()
                 continue
 
             # Check termination: no arrivals, no buffered items, all sources done

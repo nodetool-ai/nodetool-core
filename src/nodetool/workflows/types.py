@@ -101,6 +101,16 @@ class NodeUpdate(BaseModel):
     properties: dict[str, Any] | None = None
 
 
+class EdgeUpdate(BaseModel):
+    """
+    A message representing an update to an edge.
+    """
+
+    type: Literal["edge_update"] = "edge_update"
+    edge_id: str
+    status: str
+
+
 class ToolCallUpdate(BaseModel):
     """
     A message representing a tool call from a provider.
@@ -210,6 +220,7 @@ class OutputUpdate(BaseModel):
 ProcessingMessage = (
     NodeUpdate
     | NodeProgress
+    | EdgeUpdate
     | JobUpdate
     | Error
     | Chunk
