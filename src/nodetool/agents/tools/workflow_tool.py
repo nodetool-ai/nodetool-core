@@ -6,7 +6,6 @@ by agents. Each WorkflowTool instance is configured with a specific workflow
 and uses its input schema for tool parameters.
 """
 
-import json
 import logging
 import re
 from typing import Any, Dict
@@ -17,14 +16,19 @@ from nodetool.common.environment import Environment
 from nodetool.types.workflow import Workflow
 from nodetool.models.workflow import Workflow as WorkflowModel
 from nodetool.types.graph import Edge, Node, get_input_schema, get_output_schema
-from nodetool.types.job import JobUpdate
 from nodetool.workflows.base_node import BaseNode, ToolResultNode
 from nodetool.workflows.graph import Graph
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.workflows.workflow_runner import WorkflowRunner
 from nodetool.workflows.run_workflow import run_workflow
 from nodetool.workflows.run_job_request import RunJobRequest
-from nodetool.workflows.types import NodeUpdate, OutputUpdate, ToolResultUpdate
+from nodetool.workflows.types import (
+    Error,
+    JobUpdate,
+    NodeProgress,
+    NodeUpdate,
+    OutputUpdate,
+    ToolResultUpdate,
+)
 
 log = logging.getLogger(__name__)
 log.setLevel(logging.DEBUG)
@@ -107,6 +111,7 @@ class GraphTool(Tool):
 
     async def process(self, context: ProcessingContext, params: Dict[str, Any]) -> Any:
         from nodetool.types.graph import Graph as ApiGraph
+        from nodetool.workflows.workflow_runner import WorkflowRunner
 
         initial_edges_by_target = {edge.target: edge for edge in self.initial_edges}
 
@@ -215,13 +220,10 @@ class GraphTool(Tool):
                 initialize_graph=False,
                 validate_graph=False,
             ):
-                # Forward all subgraph messages to the parent context so that
-                # NodeUpdate/OutputUpdate events are visible to outer observers.
-                try:
+                # Forward all subgraph messages to the parent context
+                # but not JobUpdate to prevent early termination
+                if not isinstance(msg, JobUpdate):
                     context.post_message(msg)
-                except Exception:
-                    # Forwarding should not break tool execution; ignore failures.
-                    pass
                 if isinstance(msg, ToolResultUpdate):
                     update: ToolResultUpdate = msg
                     if update.result is not None:
