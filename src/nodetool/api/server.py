@@ -264,34 +264,6 @@ def run_uvicorn_server(app: Any, host: str, port: int, reload: bool) -> None:
     else:
         reload_dirs = []
 
-    if platform.system() == "Windows":
-        loop = "asyncio"
-    else:
-        try:
-            import uvloop  # type: ignore  # noqa: F401
-
-            loop = "uvloop"
-        except Exception:
-            loop = "asyncio"
-
-    workers = 1
-    # Use one worker per CPU on non-Windows when not constrained by platform
-    if platform.system() != "Windows":
-        try:
-            workers = multiprocessing.cpu_count()
-        except Exception:
-            workers = 1
-
-    # Uvicorn requires an import string when using reload=True or workers > 1
-    if (reload or workers > 1) and not isinstance(app, str):
-        app = "nodetool.api.app:app"
-
-    # Workaround: On Windows, uvicorn's reload mode may prevent clean Ctrl-C shutdown.
-    # Disable reload on Windows to avoid reloader child-process hang.
-    if platform.system() == "Windows" and reload:
-        print("Windows detected: disabling uvicorn reload for clean Ctrl-C shutdown.")
-        reload = False
-
     try:
         uvicorn(
             app=app,
@@ -299,8 +271,8 @@ def run_uvicorn_server(app: Any, host: str, port: int, reload: bool) -> None:
             port=port,
             reload=reload,
             reload_dirs=reload_dirs,
-            loop=loop,
-            workers=workers,
+            loop="asyncio",
+            workers=1,
         )
     except KeyboardInterrupt:
         print("\nServer interrupted by user (Ctrl+C)")
