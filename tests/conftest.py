@@ -222,9 +222,12 @@ def client():
     """
     Create a test client for the FastAPI app.
 
-    This fixture is scoped to the module, so it will only be created once for the entire test run.
+    Use a context-managed TestClient to ensure proper startup/shutdown
+    and avoid event loop cleanup issues across tests.
     """
-    return TestClient(create_app())
+    app = create_app()
+    with TestClient(app) as test_client:
+        yield test_client
 
 
 @pytest.fixture()

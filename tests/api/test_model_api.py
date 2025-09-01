@@ -1,5 +1,6 @@
 # Tests for the model API endpoints
 
+import pytest
 from fastapi.testclient import TestClient
 from unittest.mock import patch, MagicMock, AsyncMock
 from pathlib import Path
@@ -19,7 +20,11 @@ from nodetool.api.model import router as model_router
 app = FastAPI()
 app.include_router(model_router)
 
-client = TestClient(app)
+@pytest.fixture()
+def client():
+    # Context-manage TestClient to avoid leaking event loop/resources
+    with TestClient(app) as c:
+        yield c
 
 # Define mock paths for consistent use in tests
 MOCK_OLLAMA_ROOT = Path("/safe/ollama/models").resolve()
@@ -29,7 +34,7 @@ MOCK_HF_CACHE_ROOT = Path("/safe/hf/cache").resolve()
 
 
 @patch("nodetool.api.model.common_get_ollama_models_dir")
-def test_get_ollama_base_path_success(mock_get_ollama_dir):
+def test_get_ollama_base_path_success(mock_get_ollama_dir, client):
     """Test successful retrieval of Ollama base path."""
     mock_get_ollama_dir.return_value = MOCK_OLLAMA_ROOT
     response = client.get("/api/models/ollama_base_path")
@@ -38,7 +43,7 @@ def test_get_ollama_base_path_success(mock_get_ollama_dir):
 
 
 @patch("nodetool.api.model.common_get_ollama_models_dir")
-def test_get_ollama_base_path_not_found(mock_get_ollama_dir):
+def test_get_ollama_base_path_not_found(mock_get_ollama_dir, client):
     """Test Ollama base path not found."""
     mock_get_ollama_dir.return_value = None
     response = client.get("/api/models/ollama_base_path")
@@ -54,7 +59,7 @@ def test_get_ollama_base_path_not_found(mock_get_ollama_dir):
 
 @patch("nodetool.common.file_explorer.get_valid_explorable_roots")
 @patch("nodetool.common.file_explorer.asyncio.create_subprocess_exec")
-def test_open_in_explorer_success_ollama_path(mock_create_proc, mock_get_roots):
+def test_open_in_explorer_success_ollama_path(mock_create_proc, mock_get_roots, client):
     """Test opening a valid path within the Ollama models directory."""
     mock_get_roots.return_value = [MOCK_OLLAMA_ROOT, MOCK_HF_CACHE_ROOT]
     valid_path_to_open = MOCK_OLLAMA_ROOT / "some_model"
@@ -75,7 +80,7 @@ def test_open_in_explorer_success_ollama_path(mock_create_proc, mock_get_roots):
 
 @patch("nodetool.common.file_explorer.get_valid_explorable_roots")
 @patch("nodetool.common.file_explorer.asyncio.create_subprocess_exec")
-def test_open_in_explorer_success_hf_cache_path(mock_create_proc, mock_get_roots):
+def test_open_in_explorer_success_hf_cache_path(mock_create_proc, mock_get_roots, client):
     """Test opening a valid path within the Hugging Face cache directory."""
     mock_get_roots.return_value = [MOCK_OLLAMA_ROOT, MOCK_HF_CACHE_ROOT]
     valid_path_to_open = MOCK_HF_CACHE_ROOT / "models--some-model"
@@ -96,7 +101,7 @@ def test_open_in_explorer_success_hf_cache_path(mock_create_proc, mock_get_roots
 
 @patch("nodetool.common.file_explorer.get_valid_explorable_roots")
 @patch("nodetool.common.file_explorer.asyncio.create_subprocess_exec")
-def test_open_in_explorer_path_traversal_attempt(mock_create_proc, mock_get_roots):
+def test_open_in_explorer_path_traversal_attempt(mock_create_proc, mock_get_roots, client):
     """Test path traversal attempt is blocked when path is outside all safe roots."""
     mock_get_roots.return_value = [MOCK_OLLAMA_ROOT, MOCK_HF_CACHE_ROOT]
 
@@ -120,7 +125,7 @@ def test_open_in_explorer_path_traversal_attempt(mock_create_proc, mock_get_root
 
 
 @patch("nodetool.common.file_explorer.get_valid_explorable_roots")
-def test_open_in_explorer_no_safe_roots_found(mock_get_roots):
+def test_open_in_explorer_no_safe_roots_found(mock_get_roots, client):
     """Test case where no safe explorable roots can be determined."""
     mock_get_roots.return_value = []  # No safe roots configured or found
 
@@ -135,7 +140,7 @@ def test_open_in_explorer_no_safe_roots_found(mock_get_roots):
 
 @patch("nodetool.common.file_explorer.get_valid_explorable_roots")
 @patch("nodetool.common.file_explorer.asyncio.create_subprocess_exec")
-def test_open_in_explorer_subprocess_error(mock_create_proc, mock_get_roots):
+def test_open_in_explorer_subprocess_error(mock_create_proc, mock_get_roots, client):
     """Test error handling when subprocess.run fails."""
     mock_get_roots.return_value = [MOCK_OLLAMA_ROOT]
     valid_path_to_open = MOCK_OLLAMA_ROOT / "some_model"

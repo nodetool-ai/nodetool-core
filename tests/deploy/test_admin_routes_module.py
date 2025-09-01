@@ -14,9 +14,11 @@ def app():
     return app
 
 
-@pytest.fixture
+@pytest.fixture()
 def client(app):
-    return TestClient(app)
+    # Use context-managed TestClient to ensure clean startup/shutdown
+    with TestClient(app) as c:
+        yield c
 
 
 class TestAdminRoutes:
@@ -75,6 +77,5 @@ class TestAdminRoutes:
             resp = client.delete("/admin/models/huggingface/r")
             assert resp.status_code == 200
             assert resp.json()["repo_id"] == "r"
-
 
 
