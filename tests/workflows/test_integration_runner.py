@@ -115,8 +115,6 @@ def test_workflow_cancellation_drains_edges_and_finalizes(event_loop):
     msgs = _drain_msgs(ctx)
     has_cancel = any(isinstance(m, JobUpdate) and m.status == "cancelled" for m in msgs)
     assert has_cancel
-    drained = any(isinstance(m, EdgeUpdate) and m.edge_id == "eS" and m.status == "drained" for m in msgs)
-    assert drained
+    # We no longer emit synthetic per-edge "drained" updates on cancellation.
     # finalize called for slow node
     assert "slow" in finalize_calls
-

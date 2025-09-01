@@ -139,6 +139,10 @@ class ServerDockerRunner(StreamRunnerBase):
                 )
 
                 sock = self._attach_before_start(container, stdin_stream)
+                # Publish active resources for cooperative shutdown
+                with self._lock:
+                    self._active_container_id = getattr(container, "id", None)
+                    self._active_sock = sock
                 self._start_container(container, command_str)
 
                 Thread(
@@ -181,7 +185,13 @@ class ServerDockerRunner(StreamRunnerBase):
                 self._finalize_success(queue, loop)
                 self._logger.debug("server _docker_run() completed successfully")
             finally:
-                self._cleanup_container(container, cancel_timer)
+                try:
+                    self._cleanup_container(container, cancel_timer)
+                finally:
+                    # Clear active references
+                    with self._lock:
+                        self._active_container_id = None
+                        self._active_sock = None
         except Exception as e:
             self._handle_run_exception(e, command_str, queue, loop)
 

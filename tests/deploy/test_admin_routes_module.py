@@ -78,4 +78,3 @@ class TestAdminRoutes:
             assert resp.status_code == 200
             assert resp.json()["repo_id"] == "r"
 
-

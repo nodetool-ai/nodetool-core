@@ -67,12 +67,22 @@ class NodeInbox:
         # Record arrival for multiplexed consumption preserving cross-handle order
         self._arrival.append(handle)
 
-        # Notify waiters in the running loop
+        # Notify waiters if an event loop is running; otherwise skip (no waiters yet)
         async def _notify() -> None:
             async with self._cond:
                 self._cond.notify_all()
 
-        asyncio.create_task(_notify())
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            # No running loop; nothing to wake up right now
+            return
+        else:
+            # Schedule the coroutine on the owning loop thread-safely
+            try:
+                loop.call_soon_threadsafe(lambda: asyncio.create_task(_notify()))
+            except Exception:
+                pass
 
     def mark_source_done(self, handle: str) -> None:
         """Mark one upstream source for a handle as completed and notify waiters.
@@ -90,7 +100,15 @@ class NodeInbox:
             async with self._cond:
                 self._cond.notify_all()
 
-        asyncio.create_task(_notify())
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        else:
+            try:
+                loop.call_soon_threadsafe(lambda: asyncio.create_task(_notify()))
+            except Exception:
+                pass
 
     def has_any(self) -> bool:
         """Return True if any handle currently has buffered items.

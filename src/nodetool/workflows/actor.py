@@ -291,15 +291,40 @@ class NodeActor:
         node = self.node
         ctx = self.context
         try:
-            # Output nodes have a special path to capture values
+            # Select the appropriate runner coroutine for this node
             if isinstance(node, OutputNode):
-                await self._run_output_node()
-            # Treat nodes as streaming if they either implement streaming outputs
-            # or explicitly declare streaming inputs (producers/transformers).
+                run_coro = self._run_output_node()
             elif node.is_streaming_output() or node.__class__.is_streaming_input():
-                await self._run_streaming()
+                run_coro = self._run_streaming()
             else:
-                await self._run_non_streaming()
+                run_coro = self._run_non_streaming()
+
+            timeout = node.get_timeout_seconds() or 0.0
+            if timeout > 0:
+                try:
+                    await asyncio.wait_for(run_coro, timeout=timeout)
+                except asyncio.TimeoutError:
+                    try:
+                        ctx.post_message(
+                            NodeUpdate(
+                                node_id=node.id,
+                                node_name=node.get_title(),
+                                node_type=node.get_node_type(),
+                                status="error",
+                                error=f"Node timed out after {timeout:.2f}s",
+                            )
+                        )
+                    finally:
+                        await self._mark_downstream_eos()
+                    raise
+            else:
+                await run_coro
+        except asyncio.CancelledError:
+            # Ensure downstream EOS is marked on cooperative cancellation
+            try:
+                await self._mark_downstream_eos()
+            finally:
+                raise
         except Exception as e:
             # Post error update and propagate; ensure EOS downstream
             try:

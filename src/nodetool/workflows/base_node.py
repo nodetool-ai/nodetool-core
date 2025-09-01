@@ -1303,6 +1303,19 @@ class BaseNode(BaseModel):
         if False:
             yield "", None  # type: ignore
 
+    def get_timeout_seconds(self) -> float | None:
+        """Return a per-node timeout in seconds, if any.
+
+        Nodes may override this method to enforce a maximum runtime. The
+        ``NodeActor`` will wrap the node execution in ``asyncio.wait_for``
+        when a positive timeout is returned.
+
+        Returns:
+            float | None: Timeout in seconds; ``None`` or a non-positive value
+            disables the timeout.
+        """
+        return None
+
     async def run(
         self, context: Any, inputs: "NodeInputs", outputs: "NodeOutputs"
     ) -> None:

@@ -52,6 +52,11 @@ class StreamRunnerBase:
         self.nano_cpus = nano_cpus
         self.network_disabled = network_disabled
         self.ipc_mode = ipc_mode
+        # Runtime / lifecycle tracking for cooperative shutdown
+        self._active_container_id: str | None = None
+        self._active_sock: Any | None = None
+        self._stopped: bool = False
+        self._lock = _threading.Lock()
 
     # ---- Public API ----
     async def stream(
@@ -131,6 +136,40 @@ class StreamRunnerBase:
                         f"Execution error: {msg.get('error', 'Unknown error')}"
                     )
                 break
+
+    # ---- Public stoppable lifecycle API ----
+    def stop(self) -> None:
+        """Stop any active container and close the hijacked socket.
+
+        Safe to call multiple times.
+
+        Returns:
+            None
+        """
+        with self._lock:
+            self._stopped = True
+            sock = self._active_sock
+            container_id = self._active_container_id
+        # Close socket to unblock demux loop quickly
+        try:
+            if sock is not None and getattr(sock, "_sock", None) is not None:
+                try:
+                    sock._sock.close()
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        # Force remove container
+        if container_id:
+            try:
+                client = self._get_docker_client()
+                try:
+                    c = client.containers.get(container_id)
+                    c.remove(force=True)
+                except Exception:
+                    pass
+            except Exception:
+                pass
 
     def build_container_command(
         self, user_code: str, env_locals: dict[str, Any]
@@ -232,6 +271,10 @@ class StreamRunnerBase:
                     client, image, command, environment, context, stdin_stream
                 )
                 sock = self._attach_before_start(container, stdin_stream)
+                # Publish active resources for cooperative shutdown
+                with self._lock:
+                    self._active_container_id = getattr(container, "id", None)
+                    self._active_sock = sock
                 self._start_container(container, command_str)
 
                 self._start_stdin_feeder(sock, stdin_stream, loop)
@@ -250,6 +293,10 @@ class StreamRunnerBase:
                 self._logger.debug("_docker_run() completed successfully")
             finally:
                 self._cleanup_container(container, cancel_timer)
+                # Clear active references
+                with self._lock:
+                    self._active_container_id = None
+                    self._active_sock = None
         except Exception as e:
             self._handle_run_exception(e, command_str, queue, loop)
 

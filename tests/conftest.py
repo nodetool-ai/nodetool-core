@@ -22,6 +22,8 @@ from nodetool.workflows.processing_context import ProcessingContext
 import io
 import uuid
 import PIL.Image
+import asyncio
+import pytest
 
 
 @pytest_asyncio.fixture(autouse=True, scope="function")
@@ -44,36 +46,31 @@ async def setup_and_teardown(request):
     
     Environment.set_remote_auth(True)
     
-    # Clean up any remaining asyncio tasks
-    import asyncio
-    import warnings
-    
-    # Get current loop and cancel tasks more carefully
+    # Avoid manual cancellation of event‑loop tasks here; pytest-asyncio/anyio
+    # manages loop lifecycle. Force-cancelling unknown tasks can corrupt the
+    # loop state and trigger errors like missing _ssock on loop close.
+
+
+@pytest.fixture(scope="function")
+def event_loop():
+    """Provide a fresh asyncio event loop per test and close it safely.
+
+    Ensures the loop runs at least one cycle before close so the internal
+    self-pipe is initialized, preventing AttributeError on close in CPython 3.11.
+    """
+    loop = asyncio.new_event_loop()
     try:
-        loop = asyncio.get_running_loop()
-        # Get all tasks except the current one
-        current_task = asyncio.current_task()
-        tasks = [task for task in asyncio.all_tasks(loop) if task != current_task and not task.done()]
-        
-        if tasks:
-            # Cancel tasks one by one with error handling
-            for task in tasks:
-                try:
-                    if not task.cancelled() and not task.done():
-                        task.cancel()
-                except Exception:
-                    pass  # Ignore errors during cancellation
-            
-            # Give a short time for tasks to cancel
-            try:
-                await asyncio.wait_for(
-                    asyncio.gather(*tasks, return_exceptions=True),
-                    timeout=0.1
-                )
-            except (asyncio.TimeoutError, Exception):
-                pass  # Ignore timeout or other errors
-    except Exception:
-        pass  # Ignore any errors in cleanup
+        yield loop
+    finally:
+        try:
+            loop.call_soon(lambda: None)
+            loop.run_until_complete(asyncio.sleep(0))
+        except Exception:
+            pass
+        try:
+            loop.close()
+        except Exception:
+            pass
 
 
 def pil_to_bytes(image: PIL.Image.Image, format="PNG") -> bytes:
@@ -220,14 +217,13 @@ def context(user_id: str, http_client):
 @pytest.fixture()
 def client():
     """
-    Create a test client for the FastAPI app.
+    Create a test client for the FastAPI app and ensure it closes.
 
     Use a context-managed TestClient to ensure proper startup/shutdown
     and avoid event loop cleanup issues across tests.
     """
-    app = create_app()
-    with TestClient(app) as test_client:
-        yield test_client
+    with TestClient(create_app()) as c:
+        yield c
 
 
 @pytest.fixture()

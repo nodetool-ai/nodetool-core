@@ -521,7 +521,16 @@ class Environment(object):
             cls.logger = logging.getLogger("nodetool")
             cls.logger.setLevel(cls.get_log_level())
 
-            cls.logger.handlers.clear()
+            # Close and remove any pre-existing handlers to avoid FD leaks
+            for h in list(cls.logger.handlers):
+                try:
+                    h.close()
+                except Exception:
+                    pass
+                try:
+                    cls.logger.removeHandler(h)
+                except Exception:
+                    pass
 
             handler = logging.StreamHandler()
             cls.logger.addHandler(handler)

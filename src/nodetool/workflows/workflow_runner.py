@@ -251,6 +251,12 @@ class WorkflowRunner:
             # Edge passed all checks – keep it
             valid_edges.append(edge)
 
+        # Save removed edge IDs for potential teardown notifications
+        try:
+            self._removed_edge_ids = removed
+        except Exception:
+            pass
+
         if removed:
             log.warning(
                 "Filtering %d invalid edge(s) from workflow: %s",
@@ -356,6 +362,14 @@ class WorkflowRunner:
                 ):  # Check if it wasn't set to error by some internal logic
                     self.status = "completed"
 
+            except asyncio.CancelledError:
+                # Gracefully handle external cancellation.
+                # We do not emit synthetic per-edge "drained" UI messages.
+                self.status = "cancelled"
+                if send_job_updates:
+                    context.post_message(
+                        JobUpdate(job_id=self.job_id, status="cancelled")
+                    )
             except Exception as e:
                 error_message_for_job_update = str(e)
                 log.error(
@@ -386,10 +400,22 @@ class WorkflowRunner:
                     graph and graph.nodes
                 ):  # graph is the internal Graph instance from the start of run
                     for node in graph.nodes:
-                        await node.finalize(context)
+                        try:
+                            await node.finalize(context)
+                        except Exception as e:
+                            log.debug(
+                                "Finalize failed for node %s (%s): %s",
+                                node.get_title(),
+                                node._id,
+                                e,
+                                exc_info=True,
+                            )
                         inbox = self.node_inboxes.get(node._id)
                         if inbox is not None:
-                            await inbox.close_all()
+                            try:
+                                await inbox.close_all()
+                            except Exception:
+                                pass
                 log.debug("Nodes finalized in finally block.")
 
                 if TORCH_AVAILABLE and torch.cuda.is_available():
@@ -418,6 +444,49 @@ class WorkflowRunner:
                         )
                     )
             # If self.status became "error" and the exception was re-raised, we don't reach here.
+
+    def drain_active_edges(self, context: ProcessingContext, graph: Any) -> None:
+        """Post drained updates for all edges and best-effort drain inboxes.
+
+        This is used on cancellation or teardown to ensure clients are informed
+        that all edges have been drained, unblocking any UI waiting on streams.
+
+        Args:
+            context: Processing context used to post messages.
+            graph: A graph-like object with an ``edges`` iterable whose items
+                   have an ``id`` attribute.
+        """
+        try:
+            edges = getattr(graph, "edges", [])
+        except Exception:
+            edges = []
+        for edge in edges:
+            try:
+                edge_id = getattr(edge, "id", None)
+                if edge_id:
+                    context.post_message(EdgeUpdate(edge_id=edge_id, status="drained"))
+            except Exception:
+                continue
+        # Also emit drained updates for edges that were filtered out earlier
+        try:
+            for edge_id in getattr(self, "_removed_edge_ids", []) or []:
+                if edge_id:
+                    try:
+                        context.post_message(EdgeUpdate(edge_id=edge_id, status="drained"))
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+        # Best-effort: close and clear inboxes
+        try:
+            for inbox in self.node_inboxes.values():
+                try:
+                    # Close to wake any waiters; clearing is optional
+                    asyncio.create_task(inbox.close_all())
+                except Exception:
+                    pass
+        except Exception:
+            pass
             # If self.status became "error" due to some internal logic but no exception was re-raised (not current design),
             # then we might reach here with status "error", and no "completed" message would be sent.
 
@@ -596,6 +665,36 @@ class WorkflowRunner:
                     inbox.add_upstream(handle, count)
             self.node_inboxes[node._id] = inbox
             node.attach_inbox(inbox)
+
+    def drain_active_edges(self, context: ProcessingContext, graph: Graph) -> None:
+        """Post a drained update for any edge with pending or open input.
+
+        Inspects each edge's target node inbox and posts an ``EdgeUpdate`` with
+        status ``"drained"`` for edges whose target handle either still has
+        buffered items or open upstream sources. This is intended for workflow
+        teardown (completed, cancelled, or error) to ensure front‑end consumers
+        stop listening to streams and clear any spinners.
+
+        Args:
+            context: The processing context used to post messages.
+            graph: The workflow graph containing edges to inspect.
+
+        Returns:
+            None
+        """
+        if not graph or not graph.edges:
+            return
+        for edge in graph.edges:
+            try:
+                inbox = self.node_inboxes.get(edge.target)
+                if inbox is None:
+                    continue
+                if inbox.has_buffered(edge.targetHandle) or inbox.is_open(edge.targetHandle):
+                    if edge.id:
+                        context.post_message(EdgeUpdate(edge_id=edge.id, status="drained"))
+            except Exception:
+                # Best effort – ignore errors during draining
+                pass
 
     async def process_graph(
         self, context: ProcessingContext, graph: Graph, parent_id: str | None = None
