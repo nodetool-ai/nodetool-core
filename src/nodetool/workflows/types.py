@@ -47,6 +47,29 @@ class PlanningUpdate(BaseModel):
     content: str | None = None
 
 
+class LogUpdate(BaseModel):
+    """
+    A message representing a log update from a node.
+    """
+
+    type: Literal["log_update"] = "log_update"
+    node_id: str
+    node_name: str
+    content: str
+    severity: Literal["info", "warning", "error"]
+
+
+class Notification(BaseModel):
+    """
+    A message representing a notification from a node.
+    """
+
+    type: Literal["notification"] = "notification"
+    node_id: str
+    content: str
+    severity: Literal["info", "warning", "error"]
+
+
 class PreviewUpdate(BaseModel):
     """
     A message representing a preview update from a node.
@@ -96,7 +119,6 @@ class NodeUpdate(BaseModel):
     node_type: str
     status: str
     error: str | None = None
-    logs: str | None = None
     result: dict[str, Any] | None = None
     properties: dict[str, Any] | None = None
 
@@ -224,8 +246,10 @@ ProcessingMessage = (
     | JobUpdate
     | Error
     | Chunk
+    | Notification
     | Prediction
     | PreviewUpdate
+    | LogUpdate
     | TaskUpdate
     | ToolCallUpdate
     | ToolResultUpdate

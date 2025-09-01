@@ -9,7 +9,7 @@ from typing import Any, AsyncGenerator, AsyncIterator
 
 from nodetool.workflows.base_node import BaseNode
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.workflows.types import NodeProgress
+from nodetool.workflows.types import NodeProgress, Notification, LogUpdate
 from nodetool.code_runners.docker_ws import DockerHijackMultiplexDemuxer
 
 
@@ -32,6 +32,8 @@ class StreamRunnerBase:
         image: str = "bash:5.2",
         mem_limit: str = "256m",
         nano_cpus: int = 1_000_000_000,
+        network_disabled: bool = True,
+        ipc_mode: str | None = "host",
     ) -> None:
         """Initialize the stream runner.
 
@@ -48,6 +50,8 @@ class StreamRunnerBase:
         self.image = image
         self.mem_limit = mem_limit
         self.nano_cpus = nano_cpus
+        self.network_disabled = network_disabled
+        self.ipc_mode = ipc_mode
 
     # ---- Public API ----
     async def stream(
@@ -234,7 +238,7 @@ class StreamRunnerBase:
 
                 cancel_timer = self._start_timeout_timer(container)
 
-                self._stream_hijacked_output(sock, queue, loop)
+                self._stream_hijacked_output(sock, queue, loop, context, node)
                 # Ensure the container process has exited before finalizing
                 try:
                     self._wait_for_container_exit(container)
@@ -333,14 +337,36 @@ class StreamRunnerBase:
         except Exception:
             self._logger.debug("pulling image: %s", image)
             context.post_message(
-                NodeProgress(
+                Notification(
                     node_id=node.id,
-                    progress=0,
-                    total=100,
-                    chunk=f"Pulling image: {image}",
+                    severity="info",
+                    content=f"Pulling image: {image}",
+                )
+            )
+            context.post_message(
+                LogUpdate(
+                    node_id=node.id,
+                    node_name=node.get_title(),
+                    content=f"Pulling image: {image}",
+                    severity="info",
                 )
             )
             client.images.pull(image)
+            context.post_message(
+                Notification(
+                    node_id=node.id,
+                    severity="info",
+                    content=f"Downloaded image: {image}",
+                )
+            )
+            context.post_message(
+                LogUpdate(
+                    node_id=node.id,
+                    node_name=node.get_title(),
+                    content=f"Downloaded image: {image}",
+                    severity="info",
+                )
+            )
 
     def _create_container(
         self,
@@ -368,7 +394,7 @@ class StreamRunnerBase:
         container = client.containers.create(
             image=image,
             command=command,
-            network_disabled=True,
+            network_disabled=self.network_disabled,
             mem_limit=self.mem_limit,
             nano_cpus=self.nano_cpus,
             volumes={
@@ -382,6 +408,7 @@ class StreamRunnerBase:
             tty=False,
             detach=True,
             environment=environment,
+            ipc_mode=self.ipc_mode,
         )
         self._logger.debug(
             "container created: id=%s", getattr(container, "id", "<no-id>")
@@ -534,10 +561,12 @@ class StreamRunnerBase:
         self,
         queue: _asyncio.Queue[dict[str, Any]],
         loop: _asyncio.AbstractEventLoop,
+        context: ProcessingContext,
+        node: BaseNode,
         slot: str,
         line: str,
     ) -> None:
-        """Enqueue a single newline-terminated line to the consumer.
+        """Enqueue a single newline-terminated line to the consumer and post a log update.
 
         Args:
             queue: Asyncio queue to push the message into.
@@ -552,12 +581,27 @@ class StreamRunnerBase:
             queue.put({"type": "yield", "slot": slot, "value": line}),
             loop,
         )
+        try:
+            content = line[:-1] if line.endswith("\n") else line
+            sev = "info" if slot == "stdout" else "error"
+            context.post_message(
+                LogUpdate(
+                    node_id=node.id,
+                    node_name=node.get_title(),
+                    content=content,
+                    severity=sev,  # type: ignore[arg-type]
+                )
+            )
+        except Exception:
+            pass
 
     def _stream_hijacked_output(
         self,
         sock: Any,
         queue: _asyncio.Queue[dict[str, Any]],
         loop: _asyncio.AbstractEventLoop,
+        context: ProcessingContext,
+        node: BaseNode,
     ) -> None:
         """Read multiplexed stdout/stderr from the hijacked socket and emit lines.
 
@@ -574,6 +618,7 @@ class StreamRunnerBase:
         try:
             demux_recv = DockerHijackMultiplexDemuxer(sock._sock)
             for slot, chunk in demux_recv.iter_messages():
+                self._logger.debug("docker: %s %s", str(slot), str(chunk))
                 if chunk is None:
                     continue
                 if slot == "stdout":
@@ -582,22 +627,22 @@ class StreamRunnerBase:
                         stdout_buf += text
                         while "\n" in stdout_buf:
                             line, stdout_buf = stdout_buf.split("\n", 1)
-                            self._emit_line(queue, loop, "stdout", line)
+                            self._emit_line(queue, loop, context, node, "stdout", line)
                 elif slot == "stderr":
                     text = chunk.decode("utf-8", errors="ignore")
                     if text:
                         stderr_buf += text
                         while "\n" in stderr_buf:
                             line, stderr_buf = stderr_buf.split("\n", 1)
-                            self._emit_line(queue, loop, "stderr", line)
+                            self._emit_line(queue, loop, context, node, "stderr", line)
         except Exception as e:
             self._logger.debug("hijack demux loop ended: %s", e)
 
         # Flush any remaining buffered text as final lines
         if stdout_buf:
-            self._emit_line(queue, loop, "stdout", stdout_buf)
+            self._emit_line(queue, loop, context, node, "stdout", stdout_buf)
         if stderr_buf:
-            self._emit_line(queue, loop, "stderr", stderr_buf)
+            self._emit_line(queue, loop, context, node, "stderr", stderr_buf)
 
     def _finalize_success(
         self, queue: _asyncio.Queue[dict[str, Any]], loop: _asyncio.AbstractEventLoop

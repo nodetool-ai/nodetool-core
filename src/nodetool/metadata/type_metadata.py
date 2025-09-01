@@ -1,3 +1,4 @@
+import traceback
 from pydantic import BaseModel
 from typing import Any, Optional
 
@@ -169,7 +170,7 @@ class TypeMetadata(BaseModel):
         else:
             if self.type not in NameToType:
                 raise ValueError(
-                    f"Unknown type: {self.type}. Types must derive from BaseType"
+                    f"Unknown type: {self.type}. Types must derive from BaseType. Type metadata: {self}"
                 )
             return NameToType[self.type]
 

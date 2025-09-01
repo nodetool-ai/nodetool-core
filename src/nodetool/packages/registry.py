@@ -1140,19 +1140,15 @@ def scan_for_package_nodes(verbose: bool = False) -> PackageModel:
                     if verbose:
                         click.echo(f"Scanning module: {module_name}")
 
-                    try:
-                        full_module_name = f"nodetool.nodes.{module_name}"
-                        node_classes = get_node_classes_from_module(
-                            full_module_name, verbose
+                    full_module_name = f"nodetool.nodes.{module_name}"
+                    node_classes = get_node_classes_from_module(
+                        full_module_name, verbose
+                    )
+                    if node_classes:
+                        assert package.nodes is not None
+                        package.nodes.extend(
+                            node_class.get_metadata() for node_class in node_classes
                         )
-                        if node_classes:
-                            assert package.nodes is not None
-                            package.nodes.extend(
-                                node_class.get_metadata() for node_class in node_classes
-                            )
-                    except Exception as e:
-                        if verbose:
-                            click.echo(f"Error processing {module_name}: {e}", err=True)
 
         # Write the single nodes.json file in the root directory
         os.makedirs("src/nodetool/package_metadata", exist_ok=True)

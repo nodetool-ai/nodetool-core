@@ -77,6 +77,7 @@ from typing import (
     TypeVar,
     AsyncIterator,
     TYPE_CHECKING,
+    get_type_hints,
 )
 
 from nodetool.types.graph import Edge
@@ -110,9 +111,8 @@ from nodetool.metadata.utils import (
 
 from nodetool.workflows.types import NodeUpdate
 
-if TYPE_CHECKING:  # avoid runtime import cycles
-    from .inbox import NodeInbox
-    from .io import NodeInputs, NodeOutputs
+from .inbox import NodeInbox
+from .io import NodeInputs, NodeOutputs
 
 try:
     import torch
@@ -490,7 +490,12 @@ class BaseNode(BaseModel):
 
         super().__init_subclass__()
         add_node_type(cls)
-        for field_type in cls.__annotations__.values():
+        # Resolve annotations robustly (handles postponed annotations)
+        try:
+            resolved_annotations = get_type_hints(cls)
+        except Exception:
+            resolved_annotations = getattr(cls, "__annotations__", {}) or {}
+        for field_type in resolved_annotations.values():
             if is_enum_type(field_type):
                 name = f"{field_type.__module__}.{field_type.__name__}"
                 NameToType[name] = field_type
@@ -609,22 +614,25 @@ class BaseNode(BaseModel):
         # avoid circular import
         from nodetool.metadata.node_metadata import NodeMetadata
 
-        return NodeMetadata(
-            title=cls.get_title(),
-            description=cls.get_description(),
-            namespace=cls.get_namespace(),
-            node_type=cls.get_node_type(),
-            properties=cls.properties(),  # type: ignore
-            outputs=cls.outputs(),
-            the_model_info=cls.get_model_info(),
-            layout=cls.layout(),
-            recommended_models=cls.get_recommended_models(),
-            basic_fields=cls.get_basic_fields(),
-            is_dynamic=cls.is_dynamic(),
-            is_streaming=cls.is_streaming(),
-            expose_as_tool=cls.expose_as_tool(),
-            supports_dynamic_outputs=cls.supports_dynamic_outputs(),
-        )
+        try:
+            return NodeMetadata(
+                title=cls.get_title(),
+                description=cls.get_description(),
+                namespace=cls.get_namespace(),
+                node_type=cls.get_node_type(),
+                properties=cls.properties(),  # type: ignore
+                outputs=cls.outputs(),
+                the_model_info=cls.get_model_info(),
+                layout=cls.layout(),
+                recommended_models=cls.get_recommended_models(),
+                basic_fields=cls.get_basic_fields(),
+                is_dynamic=cls.is_dynamic(),
+                is_streaming=cls.is_streaming(),
+                expose_as_tool=cls.expose_as_tool(),
+                supports_dynamic_outputs=cls.supports_dynamic_outputs(),
+            )
+        except Exception as e:
+            raise ValueError(f"Error getting metadata for {cls.__name__}: {e}")
 
     @classmethod
     def get_json_schema(cls):
@@ -1027,7 +1035,11 @@ class BaseNode(BaseModel):
             Type | dict[str, Type] | None: The return type annotation of the process function,
             or None if no return type is specified.
         """
-        type_hints = cls.process.__annotations__
+        # Use get_type_hints to normalize annotations across modules
+        try:
+            type_hints = get_type_hints(cls.process)
+        except Exception:
+            type_hints = getattr(cls.process, "__annotations__", {})
 
         if "return" not in type_hints:
             return None
@@ -1064,7 +1076,10 @@ class BaseNode(BaseModel):
                     for field, field_type in return_type.items()
                 ]
             elif is_output_type(return_type):
-                types = return_type.__annotations__
+                try:
+                    types = get_type_hints(return_type)
+                except Exception:
+                    types = getattr(return_type, "__annotations__", {})
                 return [
                     OutputSlot(
                         type=type_metadata(types[field]),
@@ -1131,7 +1146,8 @@ class BaseNode(BaseModel):
         """
         Returns the input slots of the node, including those inherited from all base classes.
         """
-        types = cls.__annotations__
+        # Resolve class annotations robustly (handles postponed annotations)
+        types = get_type_hints(cls)
         super_types = {}
         for base in cls.__bases__:
             if hasattr(base, "field_types"):

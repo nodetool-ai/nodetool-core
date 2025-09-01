@@ -2,8 +2,6 @@ from datetime import date, datetime, timedelta, timezone
 from enum import Enum
 import enum
 from types import NoneType
-import PIL.Image
-from nodetool.types.workflow import Workflow
 import numpy as np
 import pandas as pd
 from pydantic import BaseModel, Field
@@ -101,7 +99,7 @@ class BaseType(BaseModel):
             raise ValueError("Type name is missing. Types must derive from BaseType")
         if type_name not in NameToType:
             raise ValueError(
-                f"Unknown type name: {type_name}. Types must derive from BaseType"
+                f"Unknown type name: {type_name}. Types must derive from BaseType. Data: {data}"
             )
         return NameToType[type_name](**data)
 
