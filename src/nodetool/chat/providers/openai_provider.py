@@ -174,7 +174,6 @@ class OpenAIProvider(ChatProvider):
         if isinstance(content, MessageTextContent):
             return {"type": "text", "text": content.text}
         elif isinstance(content, MessageAudioContent):
-            print(f"Audio content: {content.audio}")
             if content.audio.uri:
                 # uri_to_base64 now handles conversion and returns MP3 data URI
                 data_uri = await self.uri_to_base64(content.audio.uri)
