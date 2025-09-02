@@ -99,15 +99,16 @@ async def run_workflow(
     Returns:
         AsyncGenerator[Any, None]: An asynchronous generator that yields job updates and messages from the workflow.
     """
+    if runner is None:
+        runner = WorkflowRunner(job_id=uuid4().hex)
+
     if context is None:
         context = ProcessingContext(
             user_id=request.user_id,
+            job_id=runner.job_id,
             auth_token=request.auth_token,
             workflow_id=request.workflow_id,
         )
-
-    if runner is None:
-        runner = WorkflowRunner(job_id=uuid4().hex)
 
     async def run():
         if request.graph is None:

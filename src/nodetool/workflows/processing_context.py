@@ -129,6 +129,7 @@ class ProcessingContext:
         user_id: str | None = None,
         auth_token: str | None = None,
         workflow_id: str | None = None,
+        job_id: str | None = None,
         graph: Graph | None = None,
         variables: dict[str, Any] | None = None,
         environment: dict[str, str] | None = None,
@@ -143,6 +144,7 @@ class ProcessingContext:
         self.user_id = user_id or "1"
         self.auth_token = auth_token or "local_token"
         self.workflow_id = workflow_id or ""
+        self.job_id = job_id
         self.graph = graph or Graph()
         self.message_queue = message_queue if message_queue else queue.Queue()
         self.device = device
