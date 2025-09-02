@@ -5,6 +5,7 @@ import importlib
 import pkgutil
 import inspect
 import logging
+from nodetool.common.logging_config import configure_logging, get_logger
 from pydantic import BaseModel, Field, ConfigDict
 from nodetool.packages.types import AssetInfo
 from nodetool.workflows.property import Property
@@ -15,13 +16,8 @@ from nodetool.workflows.base_node import (
 )
 
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
-logger = logging.getLogger(__name__)
+configure_logging()
+logger = get_logger(__name__)
 
 
 class NodeMetadata(BaseModel):

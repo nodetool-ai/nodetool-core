@@ -31,6 +31,7 @@ from pydantic import BaseModel
 from jsonschema import validators
 from nodetool.chat.providers.base import ChatProvider
 from nodetool.common.environment import Environment
+import logging
 from nodetool.metadata.types import (
     Message,
     MessageTextContent,
@@ -47,7 +48,7 @@ doc_folder = os.path.join(os.path.dirname(__file__), "docs")
 examples = None
 documentation = None
 
-log = Environment.get_logger()
+log = logging.getLogger(__name__)
 
 
 def validate_schema(schema):

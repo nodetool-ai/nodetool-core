@@ -90,12 +90,13 @@ from nodetool.metadata.types import (
 )
 from nodetool.workflows.base_node import ToolResultNode, get_node_class
 from nodetool.common.environment import Environment
+import logging
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.types import ProcessingMessage
 from nodetool.packages.registry import Registry
 import asyncio
 
-log = Environment.get_logger()
+log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/nodes", tags=["nodes"])
 
 

@@ -73,7 +73,7 @@ except ImportError:
     pass
 
 log = logging.getLogger(__name__)
-log.setLevel(logging.DEBUG)
+# Log level is controlled by env (DEBUG/NODETOOL_LOG_LEVEL)
 
 MAX_RETRIES = 2
 BASE_DELAY = 1  # seconds

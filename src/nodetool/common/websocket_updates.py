@@ -6,7 +6,7 @@ primarily system statistics, to connected clients.
 from fastapi import WebSocket
 import asyncio
 from typing import Literal, Set
-
+import logging
 from pydantic import BaseModel
 
 from nodetool.common.environment import Environment
@@ -36,7 +36,7 @@ class WebSocketUpdates:
         """Initializes the WebSocketUpdates manager."""
         self.active_connections: Set[WebSocket] = set()
         self._lock = asyncio.Lock()
-        self.log = Environment.get_logger()
+        self.log = logging.getLogger(__name__)
         self.log.info("WebSocketUpdates: instance initialized")
         self._stats_task = None
         self._shutdown = False
@@ -156,27 +156,27 @@ class WebSocketUpdates:
     async def shutdown(self):
         """
         Gracefully shutdown the WebSocketUpdates manager.
-        
+
         Stops all background tasks and closes all active connections.
         """
         self.log.info("WebSocketUpdates: Starting graceful shutdown")
         self._shutdown = True
-        
+
         # Stop the stats broadcasting task
         await self._stop_stats_broadcast()
-        
+
         # Close all active connections
         async with self._lock:
             connections_to_close = list(self.active_connections)
             self.active_connections.clear()
-        
+
         for websocket in connections_to_close:
             try:
                 await websocket.close()
                 self.log.debug("WebSocketUpdates: Closed websocket connection")
             except Exception as e:
                 self.log.error(f"WebSocketUpdates: Error closing websocket: {e}")
-        
+
         self.log.info("WebSocketUpdates: Shutdown complete")
 
 

@@ -20,6 +20,7 @@ from nodetool.types.asset import (
 )
 from nodetool.api.utils import current_user
 from nodetool.common.environment import Environment
+import logging
 from typing import Dict, List, Optional, Tuple, Union
 from nodetool.models.asset import Asset as AssetModel
 from nodetool.models.workflow import Workflow
@@ -81,7 +82,7 @@ class PackageAssetList(BaseModel):
 MIN_SEARCH_QUERY_LENGTH = 2
 DEFAULT_SEARCH_PAGE_SIZE = 200
 
-log = Environment.get_logger()
+log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/assets", tags=["assets"])
 
 

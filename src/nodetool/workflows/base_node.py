@@ -82,6 +82,7 @@ from typing import (
 
 from nodetool.types.graph import Edge
 from nodetool.common.environment import Environment
+import logging
 from nodetool.metadata.type_metadata import TypeMetadata
 from nodetool.metadata.types import (
     AssetRef,
@@ -124,7 +125,7 @@ except ImportError:
 NODE_BY_TYPE: dict[str, type["BaseNode"]] = {}
 COMFY_NODE_CLASSES: dict[str, type["BaseNode"]] = {}
 
-log = Environment.get_logger()
+log = logging.getLogger(__name__)
 
 
 def sanitize_node_name(node_name: str) -> str:

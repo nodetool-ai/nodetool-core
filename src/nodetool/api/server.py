@@ -1,8 +1,7 @@
 import os
 import asyncio
 import platform
-import multiprocessing
-import signal
+import sys
 from typing import Any, List
 import dotenv
 from fastapi.exceptions import RequestValidationError
@@ -17,6 +16,8 @@ from nodetool.chat.chat_websocket_runner import ChatWebSocketRunner
 from fastapi import APIRouter, FastAPI, Request, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from uvicorn import run as uvicorn
+import sys
+from nodetool.common.logging_config import configure_logging
 
 from nodetool.metadata.types import Provider
 from nodetool.packages.registry import get_nodetool_package_source_folders
@@ -173,12 +174,18 @@ def create_app(
             await asyncio.to_thread(Environment.get_asset_storage)
             await asyncio.to_thread(Environment.get_temp_storage)
         except Exception as e:
-            Environment.get_logger().warning(f"Storage pre-initialization failed: {e}")
+            import logging
+
+            logging.getLogger(__name__).warning(
+                f"Storage pre-initialization failed: {e}"
+            )
 
     @app.on_event("shutdown")
     async def _shutdown_cleanup() -> None:
         """Cleanup resources on server shutdown."""
-        logger = Environment.get_logger()
+        import logging
+
+        logger = logging.getLogger(__name__)
         logger.info("Server shutdown initiated - cleaning up resources")
 
         try:
@@ -264,6 +271,59 @@ def run_uvicorn_server(app: Any, host: str, port: int, reload: bool) -> None:
     else:
         reload_dirs = []
 
+    use_color = sys.stdout.isatty() and os.getenv("NO_COLOR") is None
+
+    configure_logging(
+        fmt=(
+            "\x1b[90m%(asctime)s\x1b[0m | %(levelname)s | \x1b[36m%(name)s\x1b[0m | %(message)s"
+            if use_color
+            else None
+        )
+    )
+
+    # Uvicorn uses its own logging; keep level name plain for compatibility
+    formatter = {
+        "format": os.getenv(
+            "NODETOOL_LOG_FORMAT",
+            (
+                ("\x1b[90m%(asctime)s\x1b[0m | %(levelname)s | \x1b[36m%(name)s\x1b[0m | %(message)s"
+                 if use_color else "%(asctime)s | %(levelname)s | %(name)s | %(message)s")
+            ),
+        ),
+        "datefmt": os.getenv("NODETOOL_LOG_DATEFMT", "%Y-%m-%d %H:%M:%S"),
+    }
+
+    uvicorn_log_config = {
+        "version": 1,
+        "disable_existing_loggers": False,
+        "formatters": {"default": formatter},
+        "handlers": {
+            "default": {
+                "class": "logging.StreamHandler",
+                "formatter": "default",
+                "level": os.getenv("NODETOOL_LOG_LEVEL", "INFO").upper(),
+                "stream": "ext://sys.stdout",
+            }
+        },
+        "loggers": {
+            "uvicorn": {
+                "handlers": ["default"],
+                "level": os.getenv("NODETOOL_LOG_LEVEL", "INFO").upper(),
+                "propagate": False,
+            },
+            "uvicorn.error": {
+                "handlers": ["default"],
+                "level": os.getenv("NODETOOL_LOG_LEVEL", "INFO").upper(),
+                "propagate": False,
+            },
+            "uvicorn.access": {
+                "handlers": ["default"],
+                "level": os.getenv("NODETOOL_LOG_LEVEL", "INFO").upper(),
+                "propagate": False,
+            },
+        },
+    }
+
     try:
         uvicorn(
             app=app,
@@ -271,6 +331,7 @@ def run_uvicorn_server(app: Any, host: str, port: int, reload: bool) -> None:
             port=port,
             reload=reload,
             reload_dirs=reload_dirs,
+            log_config=uvicorn_log_config,
             loop="asyncio",
             workers=1,
         )

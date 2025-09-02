@@ -41,12 +41,12 @@ def create_collection_router() -> APIRouter:
 
             return {"path": file.filename or "unknown", "error": None}
         except Exception as e:  # noqa: BLE001
-            Environment.get_logger().error(f"Error indexing file {file.filename}: {e}")
+            import logging
+            logging.getLogger(__name__).error(f"Error indexing file {file.filename}: {e}")
             raise HTTPException(status_code=500, detail=str(e))
         finally:
             shutil.rmtree(tmp_dir)
             await file.close()
 
     return router
-
 

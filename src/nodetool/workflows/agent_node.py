@@ -24,6 +24,7 @@ from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.chat.providers import get_provider
 from nodetool.metadata.types import Provider as ProviderEnum
 from nodetool.common.environment import Environment
+import logging
 
 from nodetool.agents.tools import (
     GoogleImageGenerationTool,
@@ -49,7 +50,7 @@ from nodetool.agents.tools import (
 )
 
 
-log = Environment.get_logger()
+log = logging.getLogger(__name__)
 
 TOOLS = {
     tool.name: tool

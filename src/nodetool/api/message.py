@@ -8,12 +8,13 @@ from nodetool.api.utils import current_user
 from nodetool.metadata.types import Message
 from nodetool.models.message import Message as MessageModel
 from nodetool.common.environment import Environment
+import logging
 
 from nodetool.models.thread import Thread
 from nodetool.types.chat import MessageCreateRequest, MessageList
 
 
-log = Environment.get_logger()
+log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/messages", tags=["messages"])
 
 

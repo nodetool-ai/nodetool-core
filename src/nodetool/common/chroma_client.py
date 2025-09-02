@@ -23,8 +23,9 @@ Key Functions:
 import chromadb
 from chromadb.config import Settings, DEFAULT_DATABASE, DEFAULT_TENANT
 from urllib.parse import urlparse
+import logging
 
-import httpx
+
 from nodetool.common.environment import Environment
 from chromadb.utils.embedding_functions.ollama_embedding_function import (
     OllamaEmbeddingFunction,
@@ -56,7 +57,7 @@ def get_chroma_client(
     """
     url = Environment.get_chroma_url()
     token = Environment.get_chroma_token()
-    log = Environment.get_logger()
+    log = logging.getLogger(__name__)
 
     if url is not None:
         parsed_url = urlparse(url)
@@ -182,7 +183,7 @@ def get_all_collections() -> List[chromadb.Collection]:
     """
     client = get_chroma_client()
     collections = client.list_collections()
-    log = Environment.get_logger()
+    log = logging.getLogger(__name__)
 
     ollama_url = Environment.get("OLLAMA_API_URL")
     result = []

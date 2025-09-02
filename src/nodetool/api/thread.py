@@ -15,10 +15,11 @@ from nodetool.types.thread import (
 )
 from pydantic import BaseModel
 from nodetool.common.environment import Environment
+import logging
 from nodetool.chat.providers import get_provider
 
 
-log = Environment.get_logger()
+log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/threads", tags=["threads"])
 
 

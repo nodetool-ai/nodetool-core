@@ -67,6 +67,7 @@ from nodetool.metadata.types import (
     dtype_name,
 )
 from nodetool.common.environment import Environment
+import logging
 from nodetool.workflows.base_node import BaseNode
 from nodetool.workflows.property import Property
 from nodetool.common.async_chroma_client import get_async_chroma_client
@@ -79,7 +80,7 @@ from pickle import loads
 import platform
 
 
-log = Environment.get_logger()
+log = logging.getLogger(__name__)
 
 
 AUDIO_CODEC = "mp3"

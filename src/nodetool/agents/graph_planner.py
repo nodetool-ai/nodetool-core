@@ -136,7 +136,7 @@ from nodetool.workflows.graph import Graph
 
 # Set up logger for this module
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+# Log level is controlled by env (DEBUG/NODETOOL_LOG_LEVEL)
 
 # Pydantic models for type safety
 

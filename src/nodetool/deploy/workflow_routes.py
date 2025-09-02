@@ -17,6 +17,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
 from nodetool.common.environment import Environment
+import logging
 from nodetool.types.job import JobUpdate
 from nodetool.types.workflow import Workflow
 from nodetool.workflows.processing_context import ProcessingContext
@@ -27,7 +28,7 @@ from nodetool.models.workflow import Workflow as WorkflowModel
 from nodetool.api.workflow import WorkflowList, from_model, WorkflowRequest
 
 
-log = Environment.get_logger()
+log = logging.getLogger(__name__)
 
 # Simple in-memory registry to support tests that patch it
 _workflow_registry: dict[str, Workflow] = {}
@@ -159,5 +160,4 @@ def create_workflow_router() -> APIRouter:
             raise HTTPException(status_code=500, detail=str(e))
 
     return router
-
 

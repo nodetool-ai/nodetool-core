@@ -6,10 +6,11 @@ from fastapi import (
 )
 from typing import Optional, Any, List, Union
 from nodetool.common.environment import Environment
+import logging
 from nodetool.common.huggingface_models import CachedModel
 from nodetool.metadata.types import HuggingFaceModel
 
-log = Environment.get_logger()
+log = logging.getLogger(__name__)
 
 
 async def current_user(

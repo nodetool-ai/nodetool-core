@@ -10,6 +10,7 @@ from typing import Dict, Optional, Literal, Sequence
 from datetime import datetime
 from nodetool.common.content_types import CONTENT_TYPE_TO_EXTENSION
 from nodetool.common.environment import Environment
+import logging
 
 from nodetool.models.base_model import (
     DBModel,
@@ -19,7 +20,7 @@ from nodetool.models.base_model import (
 )
 from nodetool.models.condition_builder import Field
 
-log = Environment.get_logger()
+log = logging.getLogger(__name__)
 
 
 @DBIndex(["user_id", "parent_id"])

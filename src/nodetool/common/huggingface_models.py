@@ -26,10 +26,11 @@ import json
 import hashlib
 from pathlib import Path
 from nodetool.common.environment import Environment
+import logging
 from nodetool.metadata.types import CLASSNAME_TO_MODEL_TYPE, HuggingFaceModel
 from nodetool.workflows.base_node import get_recommended_models
 
-log = Environment.get_logger()
+log = logging.getLogger(__name__)
 
 # Cache configuration
 CACHE_VERSION = "1.0"

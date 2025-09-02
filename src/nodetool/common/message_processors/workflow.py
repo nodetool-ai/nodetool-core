@@ -23,7 +23,7 @@ from nodetool.workflows.processing_context import ProcessingContext
 from .base import MessageProcessor
 
 log = logging.getLogger(__name__)
-log.setLevel(logging.DEBUG)
+# Log level is controlled by env (DEBUG/NODETOOL_LOG_LEVEL)
 
 
 class WorkflowMessageProcessor(MessageProcessor):

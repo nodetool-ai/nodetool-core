@@ -6,6 +6,7 @@ for batch operations.
 """
 
 from nodetool.common.environment import Environment
+import logging
 
 from nodetool.models.asset import Asset
 from nodetool.models.job import Job
@@ -14,7 +15,7 @@ from nodetool.models.prediction import Prediction
 from nodetool.models.thread import Thread
 from nodetool.models.workflow import Workflow
 
-log = Environment.get_logger()
+log = logging.getLogger(__name__)
 
 models = [Asset, Job, Message, Prediction, Thread, Workflow]
 

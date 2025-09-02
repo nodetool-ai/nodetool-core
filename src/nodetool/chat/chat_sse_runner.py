@@ -60,7 +60,7 @@ from nodetool.types.workflow import Workflow
 from nodetool.workflows.types import Chunk
 
 log = logging.getLogger(__name__)
-log.setLevel(logging.DEBUG)
+# Log level is controlled by env (DEBUG/NODETOOL_LOG_LEVEL)
 
 
 class ChatSSERunner(BaseChatRunner):

@@ -16,11 +16,12 @@ from typing import Any
 
 from nodetool.agents.tools.base import Tool
 from nodetool.common.environment import Environment
+import logging
 from nodetool.workflows.base_node import get_node_class
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.metadata.type_metadata import ALL_TYPES
 
-log = Environment.get_logger()
+log = logging.getLogger(__name__)
 
 
 class SearchNodesTool(Tool):

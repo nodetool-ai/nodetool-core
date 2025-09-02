@@ -201,7 +201,8 @@ async def index(
 
         return IndexResponse(path=file.filename or "unknown", error=None)
     except Exception as e:
-        Environment.get_logger().error(f"Error indexing file {file.filename}: {e}")
+        import logging
+        logging.getLogger(__name__).error(f"Error indexing file {file.filename}: {e}")
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
     finally:

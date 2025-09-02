@@ -31,7 +31,7 @@ from nodetool.common.environment import Environment
 
 
 log = logging.getLogger(__name__)
-log.setLevel(logging.DEBUG)
+# Log level is controlled by env (DEBUG/NODETOOL_LOG_LEVEL)
 
 
 class WebSocketMode(str, Enum):

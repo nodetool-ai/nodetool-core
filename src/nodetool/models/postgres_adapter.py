@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional, get_args
 from pydantic.fields import FieldInfo
 
 from nodetool.common.environment import Environment
+import logging
 from nodetool.models.condition_builder import (
     Condition,
     ConditionBuilder,
@@ -24,7 +25,7 @@ from psycopg.sql import SQL, Identifier, Placeholder, Composed
 from enum import EnumMeta as EnumType
 
 
-log = Environment.get_logger()
+log = logging.getLogger(__name__)
 
 
 def convert_to_postgres_format(

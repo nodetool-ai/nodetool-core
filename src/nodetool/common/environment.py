@@ -1,4 +1,7 @@
+import logging
 import os
+import logging
+from nodetool.common.logging_config import configure_logging, get_logger
 from typing import Any
 
 from nodetool.storage.abstract_node_cache import AbstractNodeCache
@@ -512,37 +515,22 @@ class Environment(object):
 
     @classmethod
     def get_logger(cls):
-        """
-        Get a logger.
-        """
-        import logging
+        """Return the shared nodetool logger using centralized config."""
+        # Ensure global logging configured once
+        configure_logging(level=cls.get_log_level())
+        # Reduce noisy third-party libraries
+        logging.getLogger("httpx").setLevel(logging.WARNING)
+        logging.getLogger("httpcore").setLevel(logging.WARNING)
+        return get_logger("nodetool")
 
-        if not hasattr(cls, "logger"):
-            cls.logger = logging.getLogger("nodetool")
-            cls.logger.setLevel(cls.get_log_level())
-
-            # Close and remove any pre-existing handlers to avoid FD leaks
-            for h in list(cls.logger.handlers):
-                try:
-                    h.close()
-                except Exception:
-                    pass
-                try:
-                    cls.logger.removeHandler(h)
-                except Exception:
-                    pass
-
-            handler = logging.StreamHandler()
-            cls.logger.addHandler(handler)
-
-            # Prevent propagation to parent loggers
-            cls.logger.propagate = False
-
-            # Disable httpx and httpcore logging
-            logging.getLogger("httpx").setLevel(logging.WARNING)
-            logging.getLogger("httpcore").setLevel(logging.WARNING)
-
-        return cls.logger
+    @classmethod
+    def get_log_level(cls):
+        """Return desired log level; DEBUG when env `DEBUG` is truthy."""
+        debug_env = os.getenv("DEBUG")
+        if debug_env and debug_env.lower() not in ("0", "false", "no", "off"):
+            return "DEBUG"
+        # Fallback to env-driven default from logging_config
+        return os.getenv("NODETOOL_LOG_LEVEL", "INFO").upper()
 
     @classmethod
     def get_torch_device(cls):

@@ -31,12 +31,13 @@ from huggingface_hub import (
 from huggingface_hub.hf_api import RepoFile
 from nodetool.common.huggingface_models import delete_cached_hf_model
 from nodetool.common.environment import Environment
+import logging
 from nodetool.chat.ollama_service import get_ollama_client
 from nodetool.common.huggingface_cache import filter_repo_paths
 from concurrent.futures import ThreadPoolExecutor
 from multiprocessing import Manager
 
-logger = Environment.get_logger()
+logger = logging.getLogger(__name__)
 
 
 class AdminDownloadManager:
@@ -426,5 +427,4 @@ async def calculate_cache_size(
     except Exception as e:
         logger.error(f"Error calculating cache size: {e}")
         yield {"status": "error", "cache_dir": cache_dir, "error": str(e)}
-
 

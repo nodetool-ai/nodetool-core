@@ -9,9 +9,10 @@ from typing import List, Optional
 from huggingface_hub.constants import HF_HUB_CACHE
 
 from .environment import Environment
+import logging
 
 
-log = Environment.get_logger()
+log = logging.getLogger(__name__)
 
 
 def get_ollama_models_dir() -> Optional[Path]:
@@ -142,4 +143,3 @@ async def open_in_explorer(path: str) -> dict:
             "status": "error",
             "message": "An internal error occurred while attempting to open the path. Please check server logs for details.",
         }
-

@@ -11,8 +11,9 @@ import aiofiles
 import aiofiles.os
 from nodetool.api.utils import current_user
 from nodetool.common.environment import Environment
+import logging
 
-log = Environment.get_logger()
+log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/files", tags=["files"])
 
 # Base directory for file operations - restrict access to user's home directory

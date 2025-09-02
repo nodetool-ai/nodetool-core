@@ -12,9 +12,10 @@ from fastapi.responses import StreamingResponse
 from nodetool.api.utils import current_user
 from nodetool.common.content_types import EXTENSION_TO_CONTENT_TYPE
 from nodetool.common.environment import Environment
+import logging
 
 
-log = Environment.get_logger()
+log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/storage", tags=["storage"])
 temp_router = APIRouter(prefix="/api/storage/temp", tags=["temp"])
 

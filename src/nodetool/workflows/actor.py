@@ -66,7 +66,7 @@ class NodeActor:
         self.inbox = inbox
         self._task: asyncio.Task | None = None
         self.logger = logging.getLogger(__name__)
-        self.logger.setLevel(logging.DEBUG)
+        # Log level is controlled by env (DEBUG/NODETOOL_LOG_LEVEL)
 
     def _inbound_handles(self) -> set[str]:
         """Return the set of inbound input handles for this node."""

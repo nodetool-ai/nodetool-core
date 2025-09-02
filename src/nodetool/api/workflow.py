@@ -11,6 +11,7 @@ from nodetool.types.graph import Edge, Node, remove_connected_slots
 from nodetool.types.workflow import WorkflowList, Workflow, WorkflowRequest
 from nodetool.api.utils import current_user
 from nodetool.common.environment import Environment
+import logging
 from typing import Any, Optional
 from nodetool.workflows.read_graph import read_graph
 from nodetool.models.workflow import Workflow as WorkflowModel
@@ -25,7 +26,7 @@ from nodetool.metadata.types import Provider
 from nodetool.chat.workspace_manager import WorkspaceManager
 import asyncio
 
-log = Environment.get_logger()
+log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/workflows", tags=["workflows"])
 
 

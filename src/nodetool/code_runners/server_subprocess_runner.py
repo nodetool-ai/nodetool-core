@@ -236,7 +236,7 @@ class ServerSubprocessRunner:
         self.archive_executable_path = archive_executable_path
 
         self._logger = logging.getLogger(__name__)
-        self._logger.setLevel(logging.DEBUG)
+        # Log level is controlled by env (DEBUG/NODETOOL_LOG_LEVEL)
 
         # Runtime / lifecycle tracking for cooperative shutdown
         self._lock = threading.Lock()
