@@ -213,6 +213,7 @@ class ThreadedEventLoop:
             )
             # Use shorter timeout on Windows to prevent hanging
             import platform
+
             timeout = 3.0 if platform.system() == "Windows" else 10.0
             self._thread.join(timeout=timeout)
             if self._thread.is_alive():
@@ -224,11 +225,32 @@ class ThreadedEventLoop:
                 "ThreadedEventLoop: Stop called from within the event loop thread. Join will be skipped. Loop should stop via _shutdown_loop."
             )
 
-        self._thread = None  # Clear thread reference after join attempt or if called from same thread
-        self._stop_initiated = True  # Ensure flag is set post-join attempt too
-        # Close the loop if it still exists and isn't closed
+        # After attempting to join, decide whether it's safe to close the loop here.
+        thread_still_alive = bool(self._thread and self._thread.is_alive())
+        self._stop_initiated = True
+
+        if thread_still_alive:
+            # If the loop thread is still alive, do NOT close the loop from this thread.
+            # The loop will stop via _shutdown_loop and will be closed in the loop thread's
+            # own finally block inside _run_event_loop. Closing here would raise
+            # "Cannot close a running event loop".
+            log.warning(
+                "ThreadedEventLoop: Event loop thread still alive after join attempt; skipping loop.close() here."
+            )
+            return
+
+        # If we reach here, the thread has terminated (or never existed). It's safe to clear it.
+        self._thread = None
+
+        # Close the loop only if it exists, is not running, and not already closed.
         if self._loop is not None:
             try:
+                if self._loop.is_running():
+                    # Extra guard; should not happen if thread is dead, but be safe.
+                    log.warning(
+                        "ThreadedEventLoop: Internal loop reports running but thread is not alive; skipping close()."
+                    )
+                    return
                 if not self._loop.is_closed():
                     self._loop.close()
             finally:
@@ -310,13 +332,17 @@ class ThreadedEventLoop:
     def run_coroutine(self, coro: Coroutine[Any, Any, T]) -> Future[T]:
         """Schedule a coroutine to run in this event loop."""
         if self._loop is None:
-            raise RuntimeError("ThreadedEventLoop not started. Use start() or context manager.")
+            raise RuntimeError(
+                "ThreadedEventLoop not started. Use start() or context manager."
+            )
         return asyncio.run_coroutine_threadsafe(coro, self._loop)  # type: ignore
 
     def run_in_executor(self, func: Callable[..., T], *args: Any) -> asyncio.Future[T]:
         """Run a synchronous function in the default executor of this event loop."""
         if self._loop is None:
-            raise RuntimeError("ThreadedEventLoop not started. Use start() or context manager.")
+            raise RuntimeError(
+                "ThreadedEventLoop not started. Use start() or context manager."
+            )
         return self._loop.run_in_executor(None, func, *args)
 
     @property
@@ -333,7 +359,11 @@ class ThreadedEventLoop:
 
     def __del__(self) -> None:  # best-effort safety net
         try:
-            if self._loop is not None and not self._loop.is_closed():
+            if (
+                self._loop is not None
+                and not self._loop.is_closed()
+                and not self._loop.is_running()
+            ):
                 # If user never started the loop, there is no thread; safe to close.
                 # If it was started but not stopped, closing here is best-effort.
                 self._loop.close()
