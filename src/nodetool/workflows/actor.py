@@ -253,15 +253,45 @@ class NodeActor:
                     not src.is_streaming_output()
                 )
 
-            current: dict[str, Any] = {}
-            async for handle, item in self.inbox.iter_any():
-                current[handle] = item
-                await self.runner.process_node_with_inputs(ctx, node, dict(current))
-                # If all upstreams for this handle are non-streaming producers,
-                # they produce at most one item each. Mark one source as done to
-                # prevent indefinite waiting for EOS in isolated actor tests.
-                if upstream_all_non_streaming.get(handle, False):
-                    self.inbox.mark_source_done(handle)
+            sync_mode = getattr(node, "get_sync_mode", None)
+            sync_mode_value = "on_any"
+            if callable(sync_mode):
+                try:
+                    sync_mode_value = sync_mode()
+                except Exception:
+                    sync_mode_value = "on_any"
+
+            if sync_mode_value == "zip_all":
+                # Align across all inbound handles: emit only when we have at least
+                # one value buffered for each handle; consume one from each per call.
+                from collections import deque
+
+                buffers: dict[str, deque[Any]] = {h: deque() for h in handles}
+
+                async for handle, item in self.inbox.iter_any():
+                    if handle not in buffers:
+                        continue
+                    buffers[handle].append(item)
+                    # While a full set is available, pop and run
+                    while all(len(q) > 0 for q in buffers.values()):
+                        batch = {h: buffers[h].popleft() for h in buffers.keys()}
+                        await self.runner.process_node_with_inputs(ctx, node, batch)
+                        # For non-streaming upstreams we still mark one as done to
+                        # keep tests deterministic in absence of EOS senders
+                        for h in list(batch.keys()):
+                            if upstream_all_non_streaming.get(h, False):
+                                self.inbox.mark_source_done(h)
+            else:
+                # Default behavior: fire on any arrival with latest values from others
+                current: dict[str, Any] = {}
+                async for handle, item in self.inbox.iter_any():
+                    current[handle] = item
+                    await self.runner.process_node_with_inputs(ctx, node, dict(current))
+                    # If all upstreams for this handle are non-streaming producers,
+                    # they produce at most one item each. Mark one source as done to
+                    # prevent indefinite waiting for EOS in isolated actor tests.
+                    if upstream_all_non_streaming.get(handle, False):
+                        self.inbox.mark_source_done(handle)
         await self._mark_downstream_eos()
 
     async def _run_output_node(self) -> None:

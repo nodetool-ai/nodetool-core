@@ -323,39 +323,47 @@ class BaseNode(BaseModel):
         _layout (str): The layout style for the node in the UI.
         _requires_grad (bool): Whether the node requires torch backward pass.
         _expose_as_tool (bool): Whether the node should be exposed as a tool for agents.
+        _supports_dynamic_outputs (bool): Whether the node can declare outputs dynamically at runtime (only for dynamic nodes).
+        _sync_mode (str): The input synchronization mode for the node.
 
     Methods:
         Includes methods for initialization, property management, metadata generation,
         type checking, and node processing.
     """
 
-    _id: str = ""
-    _parent_id: str | None = ""
-    _ui_properties: dict[str, Any] = {}
+    _id: str
+    _parent_id: str | None
+    _ui_properties: dict[str, Any]
     _layout: str = "default"
-    _dynamic_properties: dict[str, Any] = {}
-    _dynamic_outputs: dict[str, TypeMetadata] = {}
+    _dynamic_properties: dict[str, Any]
+    _dynamic_outputs: dict[str, TypeMetadata]
     _is_dynamic: bool = False
     _requires_grad: bool = False
     _expose_as_tool: bool = False
     _supports_dynamic_outputs: bool = False
-    _inbox: "NodeInbox | None" = None
+    _inbox: "NodeInbox | None"
+    _sync_mode: str
 
     def __init__(
         self,
         id: str = "",
         parent_id: str | None = None,
-        ui_properties: dict[str, Any] = {},
-        dynamic_properties: dict[str, Any] = {},
-        dynamic_outputs: dict[str, TypeMetadata] = {},
+        ui_properties: dict[str, Any] | None = None,
+        dynamic_properties: dict[str, Any] | None = None,
+        dynamic_outputs: dict[str, TypeMetadata] | None = None,
+        sync_mode: str = "on_any",
         **data: Any,
     ):
         super().__init__(**data)
         self._id = id
         self._parent_id = parent_id
-        self._ui_properties = ui_properties
-        self._dynamic_properties = dynamic_properties
-        self._dynamic_outputs = dynamic_outputs
+        self._ui_properties = {} if ui_properties is None else dict(ui_properties)
+        self._dynamic_properties = (
+            {} if dynamic_properties is None else dict(dynamic_properties)
+        )
+        self._dynamic_outputs = {} if dynamic_outputs is None else dict(dynamic_outputs)
+        self._sync_mode = sync_mode
+        self._inbox = None
 
     def required_inputs(self):
         return []
@@ -364,6 +372,25 @@ class BaseNode(BaseModel):
     def attach_inbox(self, inbox: "NodeInbox") -> None:
         """Attach a streaming input inbox to this node (runner-managed)."""
         self._inbox = inbox
+
+    def get_sync_mode(self) -> str:
+        """Return the input synchronization mode for this node.
+
+        Returns:
+            str: "on_any" or "zip_all". Applies only to non-streaming nodes
+            (i.e., nodes that do not implement streaming outputs and do not
+            opt into streaming input). Streaming-input nodes coordinate their
+            own consumption via the inbox helpers.
+        """
+        mode = getattr(self, "_sync_mode", "on_any")
+        return mode if mode in ("on_any", "zip_all") else "on_any"
+
+    def set_sync_mode(self, mode: str) -> None:
+        """Set the input synchronization mode for this node.
+
+        Accepts "on_any" (default) or "zip_all". Invalid values fall back to "on_any".
+        """
+        self._sync_mode = mode if mode in ("on_any", "zip_all") else "on_any"
 
     def should_route_output(self, output_name: str) -> bool:
         """
@@ -541,6 +568,7 @@ class BaseNode(BaseModel):
             ui_properties=node.get("ui_properties", {}),
             dynamic_properties=node.get("dynamic_properties", {}),
             dynamic_outputs=node.get("dynamic_outputs", {}),
+            sync_mode=node.get("sync_mode", "on_any"),
         )
         data = node.get("data", {})
         # `set_node_properties` will raise ValueError if skip_errors is False and an error occurs.

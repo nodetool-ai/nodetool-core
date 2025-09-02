@@ -78,25 +78,17 @@ Nodetool workflows are represented as **Directed Acyclic Graphs (DAGs)**. These 
   - Streaming-output nodes: assign initial inputs (unless they opt into streaming input), send a “running” update with valid properties, then iterate `gen_process` and send each yield.
   - Pure producers: non-streaming run once; streaming-output run their generator to completion.
 
-Example: a streaming consumer that merges two inputs and emits as data arrives
+### Input Synchronization Modes
 
-```
-class Merge(BaseNode):
-    a: str | None = None
-    b: str | None = None
+Non-streaming consumers can control how multiple inbound input handles are synchronized using the per-node `sync_mode`. Supported modes:
 
-    @classmethod
-    def is_streaming_input(cls) -> bool:
-        return True
+- `on_any` (default): Fire on every arrival with the latest values from other handles. Similar to Rx combineLatest/withLatestFrom and matches previous behavior.
+- `zip_all`: Wait until each inbound handle has at least one queued item, then consume exactly one from each and run once per aligned set. This guarantees pairs/tuples remain matched (e.g., `message_id` with its corresponding `label`).
 
-    @classmethod
-    def return_type(cls):
-        return {"out": str}
+Notes:
 
-    async def gen_process(self, context):
-        async for handle, item in self.iter_any_input():
-            yield "out", f"{handle}:{item}"
-```
+- `sync_mode` only applies to non-streaming nodes. Streaming-input nodes should consume via `iter_input()`/`iter_any_input()` and manage alignment themselves.
+- `zip_all` respects per-handle FIFO order. When EOS is reached and a full set cannot be formed, remaining partials are dropped.
 
 End-of-stream (EOS): The runner tracks the number of upstream producers per input handle and marks EOS when all upstream sources complete. The inbox iterators terminate once buffers are empty and EOS is reached for the given handle(s). Actors mark downstream EOS on completion/error to reliably terminate consumers.
 
@@ -110,24 +102,6 @@ End-of-stream (EOS): The runner tracks the number of upstream producers per inpu
     - Streaming: `await node.pre_process(ctx)` → `await node.send_update(ctx, "running", properties=[...])` → `async for (slot, value) in node.gen_process(ctx)`.
   - Forward outputs using `WorkflowRunner.send_messages`, which both enqueues to edge queues (compatibility) and delivers to downstream inboxes, and posts `OutputUpdate` for `OutputNode` targets.
   - Mark downstream EOS for each outgoing handle on completion or error.
-
-- Pseudocode (simplified):
-
-```
-async def run(self):
-    if node.is_streaming_output():
-        initial = await gather_one_per_inbound() if not node.is_streaming_input() else {}
-        assign_properties(initial)
-        await node.pre_process(ctx)
-        await node.send_update(ctx, "running", properties=[p for p in initial if node.find_property(p)])
-        async for slot, value in node.gen_process(ctx):
-            runner.send_messages(node, {slot: value}, ctx)
-        await mark_downstream_eos()
-    else:
-        inputs = await gather_one_per_inbound()
-        await runner.process_node_with_inputs(ctx, node, inputs)
-        await mark_downstream_eos()
-```
 
 ### Flow Overview
 

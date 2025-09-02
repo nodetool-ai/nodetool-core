@@ -649,3 +649,95 @@ async def test_multiple_messages_single_handle_fanout_for_non_streaming_node():
     await asyncio.wait_for(actor.run(), timeout=2)
 
     assert len(calls) == 2 and [c.get("a") for c in calls] == [101, 202]
+
+
+# --- zip_all synchronization mode tests ---
+
+
+class ZipTargetNode(BaseNode):
+    a: int | None = None
+    b: int | None = None
+
+    async def process(
+        self, context
+    ):  # pragma: no cover - executed via runner monkeypatch
+        return {"pair": (self.a, self.b)}
+
+
+@pytest.mark.asyncio
+async def test_zip_all_pairs_items_across_two_handles_in_order():
+    # Graph: two producers feed a and b of target
+    pa = NonStreamingProducer(id="pa")  # type: ignore
+    pb = NonStreamingProducer(id="pb")  # type: ignore
+    target = ZipTargetNode(id="tz1")  # type: ignore
+    target.set_sync_mode("zip_all")
+
+    edges = [
+        Edge(
+            id="e1", source="pa", target="tz1", sourceHandle="output", targetHandle="a"
+        ),
+        Edge(
+            id="e2", source="pb", target="tz1", sourceHandle="output", targetHandle="b"
+        ),
+    ]
+    graph = Graph(nodes=[pa, pb, target], edges=edges)
+    actor, runner, _ = make_actor_for_target(graph, target)
+
+    # Interleave arrivals: a1, b1, a2, b2
+    actor.inbox.put("a", 1)
+    actor.inbox.put("b", 10)
+    actor.inbox.put("a", 2)
+    actor.inbox.put("b", 20)
+    actor.inbox.mark_source_done("a")
+    actor.inbox.mark_source_done("b")
+
+    calls: list[dict[str, int]] = []
+
+    async def capture(context, node, inputs):
+        calls.append(inputs)
+
+    runner.process_node_with_inputs = capture  # type: ignore
+
+    await asyncio.wait_for(actor.run(), timeout=2)
+
+    assert len(calls) == 2
+    assert calls[0].get("a") == 1 and calls[0].get("b") == 10
+    assert calls[1].get("a") == 2 and calls[1].get("b") == 20
+
+
+@pytest.mark.asyncio
+async def test_zip_all_ignores_incomplete_tail_when_stream_ends():
+    pa = NonStreamingProducer(id="pa2")  # type: ignore
+    pb = NonStreamingProducer(id="pb2")  # type: ignore
+    target = ZipTargetNode(id="tz2")  # type: ignore
+    target.set_sync_mode("zip_all")
+
+    edges = [
+        Edge(
+            id="e1", source="pa2", target="tz2", sourceHandle="output", targetHandle="a"
+        ),
+        Edge(
+            id="e2", source="pb2", target="tz2", sourceHandle="output", targetHandle="b"
+        ),
+    ]
+    graph = Graph(nodes=[pa, pb, target], edges=edges)
+    actor, runner, _ = make_actor_for_target(graph, target)
+
+    # Provide two A values but only one B; ensure only one pair is processed
+    actor.inbox.put("a", 1)
+    actor.inbox.put("a", 2)
+    actor.inbox.put("b", 10)
+    actor.inbox.mark_source_done("a")
+    actor.inbox.mark_source_done("b")
+
+    calls: list[dict[str, int]] = []
+
+    async def capture(context, node, inputs):
+        calls.append(inputs)
+
+    runner.process_node_with_inputs = capture  # type: ignore
+
+    await asyncio.wait_for(actor.run(), timeout=2)
+
+    assert len(calls) == 1
+    assert calls[0].get("a") == 1 and calls[0].get("b") == 10
