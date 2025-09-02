@@ -63,7 +63,7 @@ pymupdf4llm = "0.0.17"
 # AI dependencies
 anthropic = "*"
 huggingface_hub = "*"
-openai = "*"
+openai = ">=1.102.0"
 # fal-client = "0.5.6"
 ollama = "*"
 tiktoken = "*"
