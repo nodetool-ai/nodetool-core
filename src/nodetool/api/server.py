@@ -4,6 +4,7 @@ import platform
 import sys
 from typing import Any, List
 import dotenv
+from contextlib import asynccontextmanager
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -128,7 +129,44 @@ def create_app(
         print(f"Loading environment from {env_file}")
         dotenv.load_dotenv(env_file)
 
-    app = FastAPI()
+    # Use FastAPI lifespan API instead of deprecated on_event hooks
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        # Startup: pre-initialize storages to avoid first-request blocking
+        try:
+            # Offload potential filesystem setup to threads
+            await asyncio.to_thread(Environment.get_asset_storage)
+            await asyncio.to_thread(Environment.get_temp_storage)
+        except Exception as e:
+            import logging
+
+            logging.getLogger(__name__).warning(
+                f"Storage pre-initialization failed: {e}"
+            )
+
+        # Hand control back to the app
+        yield
+
+        # Shutdown: cleanup resources
+        import logging
+
+        logger = logging.getLogger(__name__)
+        logger.info("Server shutdown initiated - cleaning up resources")
+
+        try:
+            # Import here to avoid circular imports
+            from nodetool.common.websocket_updates import websocket_updates
+
+            await websocket_updates.shutdown()
+            logger.info("WebSocket updates shutdown complete")
+        except Exception as e:
+            logger.error(f"Error during websocket updates shutdown: {e}")
+
+        # Give a moment for cleanup to complete
+        await asyncio.sleep(0.1)
+        logger.info("Server shutdown cleanup complete")
+
+    app = FastAPI(lifespan=lifespan)
 
     app.add_middleware(
         CORSMiddleware,
@@ -166,40 +204,7 @@ def create_app(
         print(f"Mounting apps folder: {apps_folder}")
         app.mount("/apps", StaticFiles(directory=apps_folder, html=True), name="apps")
 
-    # Pre-initialize storages to avoid first-request blocking due to lazy init
-    @app.on_event("startup")
-    async def _initialize_storages() -> None:
-        try:
-            # Offload potential filesystem setup to threads
-            await asyncio.to_thread(Environment.get_asset_storage)
-            await asyncio.to_thread(Environment.get_temp_storage)
-        except Exception as e:
-            import logging
-
-            logging.getLogger(__name__).warning(
-                f"Storage pre-initialization failed: {e}"
-            )
-
-    @app.on_event("shutdown")
-    async def _shutdown_cleanup() -> None:
-        """Cleanup resources on server shutdown."""
-        import logging
-
-        logger = logging.getLogger(__name__)
-        logger.info("Server shutdown initiated - cleaning up resources")
-
-        try:
-            # Import here to avoid circular imports
-            from nodetool.common.websocket_updates import websocket_updates
-
-            await websocket_updates.shutdown()
-            logger.info("WebSocket updates shutdown complete")
-        except Exception as e:
-            logger.error(f"Error during websocket updates shutdown: {e}")
-
-        # Give a moment for cleanup to complete
-        await asyncio.sleep(0.1)
-        logger.info("Server shutdown cleanup complete")
+    # Pre-initialization and shutdown cleanup handled via lifespan above
 
     @app.get("/health")
     async def health_check() -> str:
