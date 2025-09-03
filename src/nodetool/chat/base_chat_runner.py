@@ -17,6 +17,7 @@ Subclasses should implement transport-specific methods for:
 
 import logging
 from abc import ABC, abstractmethod
+import traceback
 from typing import List, Optional
 import asyncio
 
@@ -363,6 +364,7 @@ class BaseChatRunner(ABC):
                     **kwargs,
                 )
             except Exception as e:
+                traceback.print_exc()
                 log.error(f"Error during chat processing: {e}")
                 await processor.send_message({"type": "error", "message": str(e)})
                 processor.is_processing = False

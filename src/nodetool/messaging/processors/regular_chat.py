@@ -93,8 +93,15 @@ class RegularChatProcessor(MessageProcessor):
         content = ""
         unprocessed_messages = []
 
+        print("last_message", last_message)
+
         if last_message.tools:
-            tools = [resolve_tool_by_name(name) for name in last_message.tools]
+            tools = await asyncio.gather(
+                *[
+                    resolve_tool_by_name(name, processing_context.user_id)
+                    for name in last_message.tools
+                ]
+            )
         else:
             tools = []
 
@@ -255,7 +262,9 @@ class RegularChatProcessor(MessageProcessor):
         if not collections or not query_text:
             return ""
 
-        from nodetool.integrations.vectorstores.chroma.async_chroma_client import get_async_collection
+        from nodetool.integrations.vectorstores.chroma.async_chroma_client import (
+            get_async_collection,
+        )
 
         all_results = []
 
@@ -315,7 +324,7 @@ class RegularChatProcessor(MessageProcessor):
         graph: Optional[Graph] = None,
     ) -> ToolCall:
         """Execute a tool call and return the result."""
-        tool = resolve_tool_by_name(tool_call.name)
+        tool = await resolve_tool_by_name(tool_call.name, context.user_id)
         log.debug(
             f"Executing tool {tool_call.name} (id={tool_call.id}) with args: {tool_call.args}"
         )

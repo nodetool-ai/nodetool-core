@@ -9,6 +9,7 @@ class Workflow(BaseModel):
     created_at: str
     updated_at: str
     name: str
+    tool_name: str | None = None
     description: str
     tags: list[str] | None = None
     thumbnail: str | None = None
@@ -24,6 +25,7 @@ class Workflow(BaseModel):
 
 class WorkflowRequest(BaseModel):
     name: str
+    tool_name: str | None = None
     package_name: str | None = None
     path: str | None = None
     tags: list[str] | None = None
@@ -40,3 +42,14 @@ class WorkflowRequest(BaseModel):
 class WorkflowList(BaseModel):
     next: str | None
     workflows: List[Workflow]
+
+
+class WorkflowTool(BaseModel):
+    name: str
+    tool_name: str | None = None
+    description: str | None = None
+
+
+class WorkflowToolList(BaseModel):
+    next: str | None
+    workflows: List[WorkflowTool]

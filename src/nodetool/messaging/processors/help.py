@@ -5,6 +5,7 @@ This module provides the processor for help mode messages.
 """
 
 import logging
+import asyncio
 import json
 from typing import List
 import httpx
@@ -66,7 +67,12 @@ class HelpMessageProcessor(MessageProcessor):
                 SearchExamplesTool(),
             ]
             if last_message.tools:
-                tools = [resolve_tool_by_name(name) for name in last_message.tools]
+                tools = await asyncio.gather(
+                    *[
+                        resolve_tool_by_name(name, processing_context.user_id)
+                        for name in last_message.tools
+                    ]
+                )
             else:
                 tools = []
 
@@ -194,7 +200,7 @@ class HelpMessageProcessor(MessageProcessor):
         """Execute a tool call and return the result."""
         from nodetool.agents.tools.tool_registry import resolve_tool_by_name
 
-        tool = resolve_tool_by_name(tool_call.name)
+        tool = await resolve_tool_by_name(tool_call.name, context.user_id)
         log.debug(
             f"Executing tool {tool_call.name} (id={tool_call.id}) with args: {tool_call.args}"
         )

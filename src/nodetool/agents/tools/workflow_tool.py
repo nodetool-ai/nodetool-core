@@ -263,10 +263,8 @@ class WorkflowTool(Tool):
         self.workflow = workflow
 
         # Set tool metadata from workflow
-        self.name = f"workflow_{workflow.id}"
-        self.description = f"Execute workflow: {workflow.name}"
-        if workflow.description:
-            self.description += f" - {workflow.description}"
+        self.name = f"workflow_{workflow.tool_name}"
+        self.description = workflow.description or ""
 
         assert workflow.input_schema is not None, "Workflow input schema is required"
         self.input_schema = workflow.input_schema
@@ -302,18 +300,13 @@ class WorkflowTool(Tool):
 
             results = await context.upload_assets_to_temp(results)
 
-            # Return the collected results
-            return {
-                "workflow_name": self.workflow.name,
-                "results": results,
-                "status": "completed",
-            }
+            log.debug(f"Workflow tool {self.name} returned: {results}")
+
+            return results
 
         except Exception as e:
             return {
-                "workflow_name": self.workflow.name,
                 "error": str(e),
-                "status": "failed",
             }
 
     def user_message(self, params: Dict[str, Any]) -> str:

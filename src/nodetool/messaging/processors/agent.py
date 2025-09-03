@@ -4,6 +4,7 @@ Agent message processor module.
 This module provides the processor for agent mode messages.
 """
 
+import asyncio
 import logging
 from typing import List
 from nodetool.agents.tools.tool_registry import resolve_tool_by_name
@@ -56,7 +57,12 @@ class AgentMessageProcessor(MessageProcessor):
         selected_tools = []
         if last_message.tools:
             tool_names = set(last_message.tools)
-            selected_tools = [resolve_tool_by_name(name) for name in tool_names]
+            selected_tools = await asyncio.gather(
+                *[
+                    resolve_tool_by_name(name, processing_context.user_id)
+                    for name in tool_names
+                ]
+            )
             log.debug(
                 f"Selected tools for agent: {[tool.name for tool in selected_tools]}"
             )

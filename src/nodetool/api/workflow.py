@@ -8,7 +8,13 @@ from nodetool.types.job import JobUpdate
 from nodetool.workflows.types import Error, OutputUpdate
 from pydantic import BaseModel, Field
 from nodetool.types.graph import Edge, Node, remove_connected_slots
-from nodetool.types.workflow import WorkflowList, Workflow, WorkflowRequest
+from nodetool.types.workflow import (
+    WorkflowList,
+    Workflow,
+    WorkflowRequest,
+    WorkflowToolList,
+    WorkflowTool,
+)
 from nodetool.api.utils import current_user
 from nodetool.config.environment import Environment
 import logging
@@ -46,6 +52,7 @@ def from_model(workflow: WorkflowModel):
         created_at=workflow.created_at.isoformat(),
         updated_at=workflow.updated_at.isoformat(),
         name=workflow.name,
+        tool_name=workflow.tool_name,
         package_name=workflow.package_name,
         tags=workflow.tags,
         description=workflow.description or "",
@@ -188,8 +195,7 @@ async def get_workflow_tools(
     user: str = Depends(current_user),
     cursor: Optional[str] = None,
     limit: int = 100,
-    columns: Optional[str] = None,
-) -> WorkflowList:
+) -> WorkflowToolList:
     """
     Get all workflows that have run_mode set to "tool".
 
@@ -204,18 +210,22 @@ async def get_workflow_tools(
     Returns:
         WorkflowList: List of tool workflows with pagination info
     """
-    column_list = columns.split(",") if columns else None
-
     # Get all user workflows
-    workflows, cursor = await WorkflowModel.paginate(
-        user_id=user, limit=limit, start_key=cursor, columns=column_list
+    workflows, cursor = await WorkflowModel.paginate_tools(
+        user_id=user,
+        limit=limit,
+        start_key=cursor,
     )
 
-    # Filter for workflows with run_mode = "tool"
-    tool_workflows = [w for w in workflows if w.run_mode == "tool"]
-
-    return WorkflowList(
-        workflows=[from_model(workflow) for workflow in tool_workflows],
+    return WorkflowToolList(
+        workflows=[
+            WorkflowTool(
+                name=workflow.name,
+                tool_name=workflow.tool_name,
+                description=workflow.description,
+            )
+            for workflow in workflows
+        ],
         next=cursor if len(workflows) == limit else None,
     )
 
@@ -299,6 +309,7 @@ async def update_workflow(
     if workflow_request.graph is None:
         raise HTTPException(status_code=400, detail="Invalid workflow")
     workflow.name = workflow_request.name
+    workflow.tool_name = workflow_request.tool_name
     workflow.description = workflow_request.description
     workflow.tags = workflow_request.tags
     workflow.package_name = workflow_request.package_name

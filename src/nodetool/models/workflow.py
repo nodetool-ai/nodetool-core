@@ -3,6 +3,7 @@ from typing import Any, Optional
 from nodetool.models.condition_builder import (
     ConditionBuilder,
     ConditionGroup,
+    Condition,
     Field,
     LogicalOperator,
 )
@@ -43,6 +44,7 @@ class Workflow(DBModel):
     created_at: datetime = DBField(default_factory=datetime.now)
     updated_at: datetime = DBField(default_factory=datetime.now)
     name: str = DBField(default="")
+    tool_name: str | None = DBField(default=None)
     tags: list[str] | None = DBField(default_factory=list)
     description: str | None = DBField(default="")
     package_name: str | None = DBField(default="")
@@ -69,6 +71,7 @@ class Workflow(DBModel):
             created_at=data.get("created_at", datetime.now()),
             updated_at=data.get("updated_at", datetime.now()),
             name=data.get("name", ""),
+            tool_name=data.get("tool_name", None),
             package_name=data.get("package_name", ""),
             tags=data.get("tags", []),
             description=data.get("description", ""),
@@ -187,6 +190,48 @@ class Workflow(DBModel):
         workflows = [Workflow.from_dict(row) for row in results[:limit]]
 
         return workflows, last_evaluated_key if len(results) > limit else ""
+
+    @classmethod
+    async def paginate_tools(
+        cls, user_id: str, limit: int = 100, start_key: Optional[str] = None
+    ):
+        """Paginate through tools, optionally filtering by user."""
+        conditions = []
+
+        conditions.append(Field("user_id").equals(user_id))
+        conditions.append(Field("run_mode").equals("tool"))
+        if start_key:
+            conditions.append(Field("id").greater_than(start_key))
+
+        adapter = await cls.adapter()
+        results, last_evaluated_key = await adapter.query(
+            columns=["*"],
+            condition=ConditionBuilder(ConditionGroup(conditions, LogicalOperator.AND)),
+            order_by="updated_at",
+            reverse=True,
+            limit=limit + 1,
+        )
+
+        tools = [Workflow.from_dict(row) for row in results[:limit]]
+        tools = [tool for tool in tools if tool.tool_name is not None]
+
+        return tools, last_evaluated_key if len(results) > limit else ""
+
+    @classmethod
+    async def find_by_tool_name(cls, user_id: str, tool_name: str):
+        """Find a workflow by tool name."""
+        conditions = []
+
+        conditions.append(Field("user_id").equals(user_id))
+        conditions.append(Field("tool_name").equals(tool_name))
+        conditions.append(Field("run_mode").equals("tool"))
+
+        adapter = await cls.adapter()
+        results, _ = await adapter.query(
+            columns=["*"],
+            condition=ConditionBuilder(ConditionGroup(conditions, LogicalOperator.AND)),
+        )
+        return Workflow.from_dict(results[0]) if results else None
 
     def get_api_graph(self) -> APIGraph:
         """
