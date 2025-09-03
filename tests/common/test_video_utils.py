@@ -72,3 +72,5 @@ class TestExportToVideoBytes:
         # Verify we got some bytes back
         assert isinstance(video_bytes, bytes)
         assert len(video_bytes) > 0
+
+

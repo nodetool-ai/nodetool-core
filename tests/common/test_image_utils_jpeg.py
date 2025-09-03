@@ -143,3 +143,5 @@ class TestPilImageToBase64Jpeg:
 
         # High quality should produce larger base64 string (generally)
         assert len(result_high) >= len(result_low)
+
+

@@ -1128,15 +1128,16 @@ class ProcessingContext:
                 else:
                     raise ValueError(f"Unsupported TextRef data type {type(data)}")
             # Video and generic assets: assume data is already encoded bytes
+            elif isinstance(data, bytes):
+                return BytesIO(data)
+            elif isinstance(data, str):
+                return BytesIO(data.encode("utf-8"))
+            elif isinstance(data, list):
+                raise ValueError(
+                    "Batched data must be converted to list using BatchToList node"
+                )
             else:
-                if isinstance(data, bytes):
-                    return BytesIO(data)
-                elif isinstance(data, list):
-                    raise ValueError(
-                        "Batched data must be converted to list using BatchToList node"
-                    )
-                else:
-                    raise ValueError(f"Unsupported data type {type(data)}")
+                raise ValueError(f"Unsupported data type {type(data)}")
         # Asset ID takes precedence over URI as the URI could be expired
         elif asset_ref.asset_id is not None:
             return await self.download_asset(asset_ref.asset_id)

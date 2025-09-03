@@ -98,3 +98,5 @@ def get_system_font_path(
                         return os.path.join(root, f)
 
     raise FileNotFoundError(f"Could not find font '{font_name}' in system locations")
+
+

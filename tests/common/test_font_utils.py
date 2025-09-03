@@ -105,3 +105,5 @@ class TestGetSystemFontPath:
             with patch("os.path.exists", return_value=False):
                 with pytest.raises(FileNotFoundError):
                     get_system_font_path("Arial.ttf")
+
+
