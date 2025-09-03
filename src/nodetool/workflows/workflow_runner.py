@@ -445,60 +445,6 @@ class WorkflowRunner:
                     )
             # If self.status became "error" and the exception was re-raised, we don't reach here.
 
-    def drain_active_edges(self, context: ProcessingContext, graph: Any) -> None:
-        """Post drained updates for all edges and best-effort drain inboxes.
-
-        This is used on cancellation or teardown to ensure clients are informed
-        that all edges have been drained, unblocking any UI waiting on streams.
-
-        Args:
-            context: Processing context used to post messages.
-            graph: A graph-like object with an ``edges`` iterable whose items
-                   have an ``id`` attribute.
-        """
-        try:
-            edges = getattr(graph, "edges", [])
-        except Exception:
-            edges = []
-        for edge in edges:
-            try:
-                edge_id = getattr(edge, "id", None)
-                if edge_id:
-                    context.post_message(EdgeUpdate(edge_id=edge_id, status="drained"))
-            except Exception:
-                continue
-        # Also emit drained updates for edges that were filtered out earlier
-        try:
-            for edge_id in getattr(self, "_removed_edge_ids", []) or []:
-                if edge_id:
-                    try:
-                        context.post_message(EdgeUpdate(edge_id=edge_id, status="drained"))
-                    except Exception:
-                        pass
-        except Exception:
-            pass
-        # Best-effort: close and clear inboxes
-        try:
-            for inbox in self.node_inboxes.values():
-                try:
-                    # Close to wake any waiters; clearing is optional
-                    asyncio.create_task(inbox.close_all())
-                except Exception:
-                    pass
-        except Exception:
-            pass
-            # If self.status became "error" due to some internal logic but no exception was re-raised (not current design),
-            # then we might reach here with status "error", and no "completed" message would be sent.
-
-        # This log helps understand the ultimate exit status of the run() method itself.
-        log.info(
-            f"WorkflowRunner.run for job_id: {self.job_id} method ending with status: {self.status}"
-        )
-        log.debug("Workflow outputs: %s", str(self.outputs)[:1000])
-        log.debug(
-            f"WorkflowRunner.run finished for job_id: {self.job_id}. Final status: {self.status}, Outputs: {self.outputs}"
-        )
-
     async def validate_graph(self, context: ProcessingContext, graph: Graph):
         """
         Validates all nodes and their connections within the graph.
@@ -689,9 +635,13 @@ class WorkflowRunner:
                 inbox = self.node_inboxes.get(edge.target)
                 if inbox is None:
                     continue
-                if inbox.has_buffered(edge.targetHandle) or inbox.is_open(edge.targetHandle):
+                if inbox.has_buffered(edge.targetHandle) or inbox.is_open(
+                    edge.targetHandle
+                ):
                     if edge.id:
-                        context.post_message(EdgeUpdate(edge_id=edge.id, status="drained"))
+                        context.post_message(
+                            EdgeUpdate(edge_id=edge.id, status="drained")
+                        )
             except Exception:
                 # Best effort – ignore errors during draining
                 pass
@@ -786,6 +736,10 @@ class WorkflowRunner:
             # Determine if the node requires GPU processing
             requires_gpu = node.requires_gpu()
 
+            # Dynamic streaming: if upstream is streaming, treat this node as stream-driven
+            # and avoid caching side-effects during the run path.
+            driven_by_stream = context.graph.has_streaming_upstream(node._id)
+
             if requires_gpu and self.device == "cpu":
                 error_msg = f"Node {node.get_title()} ({node._id}) requires a GPU, but no GPU is available."
                 log.error(error_msg)
@@ -828,7 +782,11 @@ class WorkflowRunner:
             result = outputs_collector.collected()
 
             # Cache the result if the node is cacheable
-            if node.is_cacheable() and not self.disable_caching:
+            if (
+                node.is_cacheable()
+                and not self.disable_caching
+                and not driven_by_stream
+            ):
                 log.debug(f"Caching result for node: {node.get_title()} ({node._id})")
                 context.cache_result(node, result)
 

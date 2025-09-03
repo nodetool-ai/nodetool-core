@@ -115,6 +115,10 @@ class NodeActor:
                 handles.add(e.targetHandle)
         return handles
 
+    def _has_streaming_upstream(self) -> bool:
+        """Delegates to graph to determine if any upstream produces a stream."""
+        return self.context.graph.has_streaming_upstream(self.node._id)
+
     def _only_nonroutable_upstreams(self) -> bool:
         """Return True if there are inbound edges and none are effectively routable."""
         # If there are no inbound edges, there's nothing to suppress
@@ -327,6 +331,11 @@ class NodeActor:
             elif node.is_streaming_output() or node.__class__.is_streaming_input():
                 run_coro = self._run_streaming()
             else:
+                # Dynamic streaming: if any upstream is streaming, we still use the
+                # non-streaming fan-out path which already processes per arrival and
+                # propagates EOS appropriately. The explicit check is kept for clarity
+                # and future hooks.
+                _ = self._has_streaming_upstream()
                 run_coro = self._run_non_streaming()
 
             timeout = node.get_timeout_seconds() or 0.0
