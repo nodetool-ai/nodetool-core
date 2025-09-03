@@ -7,6 +7,7 @@ import pandas as pd
 from pydantic import BaseModel, Field
 from typing import Any, Literal, Optional, Type, Union
 import base64
+from pathlib import Path
 
 from nodetool.metadata.type_metadata import TypeMetadata
 from nodetool.types.graph import Graph
@@ -202,6 +203,21 @@ class AssetRef(BaseType):
     uri: str = ""
     asset_id: str | None = None
     data: Any = None
+
+    @staticmethod
+    def from_file(path: str):
+        # Accept already-formed file URIs
+        if isinstance(path, str) and path.startswith("file://"):
+            return AssetRef(uri=path)
+
+        try:
+            resolved_path = Path(path).expanduser().resolve(strict=False)
+            return AssetRef(uri=resolved_path.as_uri())
+        except Exception:
+            # Fallback: best-effort POSIX-style URI
+            posix_path = Path(path).as_posix()
+            prefix = "file:///" if not posix_path.startswith("/") else "file://"
+            return AssetRef(uri=f"{prefix}{posix_path}")
 
     def to_dict(self):
         res = {
@@ -2076,3 +2092,11 @@ class Source(BaseType):
     type: Literal["source"] = "source"
     title: str = ""
     url: str = ""
+
+
+class LeannSearchResult(BaseType):
+    type: Literal["leann_search_result"] = "leann_search_result"
+    id: str
+    score: float
+    text: str
+    metadata: dict[str, Any]

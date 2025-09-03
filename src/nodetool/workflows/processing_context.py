@@ -12,6 +12,7 @@ import os
 import queue
 import urllib.parse
 import uuid
+from pathlib import Path
 import httpx
 import joblib
 import base64
@@ -83,9 +84,24 @@ import platform
 log = logging.getLogger(__name__)
 
 
-AUDIO_CODEC = "mp3"
-# Central default sample rate for audio conversions when not explicitly provided
-DEFAULT_AUDIO_SAMPLE_RATE = 32_000
+from nodetool.common.media_constants import (
+    AUDIO_CODEC,
+    DEFAULT_AUDIO_SAMPLE_RATE,
+)
+from nodetool.common.uri_utils import create_file_uri as _create_file_uri
+from nodetool.common.image_utils import (
+    numpy_to_pil_image as _numpy_to_pil_image_util,
+)
+
+
+def create_file_uri(path: str) -> str:
+    """
+    Compatibility wrapper delegating to nodetool.common.uri_utils.create_file_uri.
+    """
+    return _create_file_uri(path)
+
+
+## AUDIO_CODEC and DEFAULT_AUDIO_SAMPLE_RATE imported from media_constants
 
 HTTP_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/1"
@@ -162,58 +178,8 @@ class ProcessingContext:
         # Use global node_cache for memory:// storage to enable portability
 
     def _numpy_to_pil_image(self, arr: np.ndarray) -> PIL.Image.Image:
-        """Convert a numpy array of various common shapes/dtypes into a PIL Image.
-
-        Handles float arrays (0..1 or 0..255), integer types, boolean, and
-        common layout conversions (CHW -> HWC, single-channel squeeze, batch dim).
-        """
-        a = np.asarray(arr)
-
-        # Drop simple batch dimension (1, H, W, C) or (1, C, H, W)
-        if a.ndim == 4 and a.shape[0] == 1:
-            a = a[0]
-
-        # Convert CHW -> HWC if likely channel-first
-        if a.ndim == 3 and a.shape[0] in (1, 3, 4) and a.shape[2] not in (1, 3, 4):
-            a = np.transpose(a, (1, 2, 0))
-
-        # If single-channel in last axis, squeeze to 2D for PIL L mode
-        if a.ndim == 3 and a.shape[2] == 1:
-            a = a[:, :, 0]
-
-        # Normalize dtype to uint8
-        if a.dtype in (np.float32, np.float64, np.float16):
-            # Heuristic scaling: [0,1] -> *255; otherwise assume already in 0..255,
-            # and if outside range, min-max normalize to 0..255.
-            if a.size == 0:
-                a = a.astype(np.uint8)
-            else:
-                amin = float(np.nanmin(a))
-                amax = float(np.nanmax(a))
-                if amin >= 0.0 and amax <= 1.0:
-                    a = a * 255.0
-                elif amax > 255.0 or amin < 0.0:
-                    if amax != amin:
-                        a = (a - amin) * (255.0 / (amax - amin))
-                    else:
-                        a = np.zeros_like(a)
-                a = np.clip(a, 0, 255).astype(np.uint8)
-        elif a.dtype == np.uint16:
-            # Scale 16-bit to 8-bit
-            a = (a / 257.0).astype(np.uint8)
-        elif a.dtype in (np.int16, np.int32, np.int64):
-            a = np.clip(a, 0, 255).astype(np.uint8)
-        elif a.dtype == np.bool_:
-            a = a.astype(np.uint8) * 255
-        elif a.dtype != np.uint8:
-            # Best-effort fallback
-            try:
-                a = np.clip(a, 0, 255).astype(np.uint8)
-            except Exception:
-                a = a.astype(np.uint8)
-
-        a = np.ascontiguousarray(a)
-        return PIL.Image.fromarray(a)
+        """Delegate to shared numpy_to_pil_image utility for consistent behavior."""
+        return _numpy_to_pil_image_util(arr)
 
     def _memory_get(self, key: str) -> Any | None:
         """
@@ -918,13 +884,17 @@ class ProcessingContext:
         Raises:
             FileNotFoundError: If the file does not exist (for local files).
         """
-        if url.startswith("/"):
-            url = f"file://{url}"
-
-        # replace backslashes with forward slashes
-        url = url.replace("\\", "/")
+        # Handle paths that start with "/" by converting to proper file:// URI
+        if url.startswith("/") and not url.startswith("//"):
+            url = create_file_uri(url)
 
         url_parsed = urllib.parse.urlparse(url)
+
+        # Treat empty-scheme inputs as local file paths (supports Windows drive letters)
+        if url_parsed.scheme == "" and not url.startswith("data:"):
+            local_path = Path(url).expanduser()
+            if local_path.exists():
+                return open(local_path, "rb")
 
         if url_parsed.scheme == "data":
             fname, data = url.split(",", 1)
@@ -936,33 +906,49 @@ class ProcessingContext:
             return file
 
         if url_parsed.scheme == "file":
-            # Handle Windows paths
-            if os.name == "nt":  # Windows system
-                if url_parsed.netloc:
-                    # Handle drive letter paths (file://C:/path) and UNC paths (file://server/share)
-                    if ":" in url_parsed.netloc:
-                        # Drive letter path
-                        path = url_parsed.netloc + url_parsed.path
+            # Use pathlib to handle file paths cross-platform
+            try:
+                netloc = url_parsed.netloc
+                path_part = urllib.parse.unquote(url_parsed.path)
+
+                # Normalize localhost netloc to empty
+                if netloc and netloc.lower() == "localhost":
+                    netloc = ""
+
+                if os.name == "nt":
+                    # Windows handling: drive letters and UNC paths
+                    if netloc:
+                        if ":" in netloc:
+                            # Drive letter path: file://C:/path
+                            path = Path(netloc + path_part)
+                        else:
+                            # UNC path: file://server/share
+                            path = Path("//" + netloc + path_part)
                     else:
-                        # UNC path
-                        path = "//" + url_parsed.netloc + url_parsed.path
+                        # file:///C:/path comes through as path_part="/C:/path"; strip leading slash
+                        if (
+                            len(path_part) >= 3
+                            and path_part[0] == "/"
+                            and path_part[2] == ":"
+                        ):
+                            path_part = path_part.lstrip("/")
+                        path = Path(path_part)
                 else:
-                    # Direct path
-                    path = url_parsed.path
-                    if path.startswith("/"):
-                        path = path[1:]  # Remove leading slash for Windows
-            else:
-                # Unix path
-                path = url_parsed.path
+                    # POSIX: netloc is typically empty or localhost; for others, treat as network path
+                    if netloc:
+                        path = Path("//" + netloc + path_part)
+                    else:
+                        path = Path(path_part)
 
-            # Replace URL-encoded characters and normalize slashes
-            path = urllib.parse.unquote(path)
-            path = os.path.normpath(path)
+                resolved_path = path.expanduser()
+                if not resolved_path.exists():
+                    raise FileNotFoundError(
+                        f"No such file or directory: '{resolved_path}'"
+                    )
 
-            if not os.path.exists(path):
-                raise FileNotFoundError(f"No such file or directory: '{path}'")
-
-            return open(path, "rb")
+                return open(resolved_path, "rb")
+            except Exception as e:
+                raise FileNotFoundError(f"Failed to access file: {e}")
 
         response = await self.http_get(url)
         return BytesIO(response.content)
