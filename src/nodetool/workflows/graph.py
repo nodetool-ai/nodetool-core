@@ -337,3 +337,27 @@ class Graph(BaseModel):
                 )
 
         return validation_errors
+
+    def has_streaming_upstream(self, node_id: str) -> bool:
+        """Return True if any upstream (direct or transitive) streams outputs.
+
+        A node is considered driven by a stream if any ancestor node implements
+        streaming outputs (i.e., overrides `gen_process`). This check is used to
+        influence execution/caching behavior of downstream non-streaming nodes.
+        """
+        visited: set[str] = set()
+        queue = deque([node_id])
+        while queue:
+            current = queue.popleft()
+            for e in self.edges:
+                if e.target != current:
+                    continue
+                src = self.find_node(e.source)
+                if src is None:
+                    continue
+                if src.is_streaming_output():
+                    return True
+                if src._id not in visited:
+                    visited.add(src._id)
+                    queue.append(src._id)
+        return False
