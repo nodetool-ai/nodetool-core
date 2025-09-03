@@ -18,7 +18,7 @@ from datetime import datetime
 from unittest.mock import patch, MagicMock, AsyncMock
 import pytest
 
-from nodetool.common.huggingface_models import (
+from nodetool.integrations.huggingface.huggingface_models import (
     get_model_info_cache_directory,
     get_cache_file_path,
     is_cache_valid,
@@ -179,7 +179,7 @@ class TestCacheExpiration:
         """Test that cache expiry is configurable via environment variable."""
         # Need to reload the module to pick up the env var
         import importlib
-        import nodetool.common.huggingface_models
+        import nodetool.integrations.huggingface.huggingface_models
         importlib.reload(nodetool.common.huggingface_models)
         
         cache_file = tmp_path / "test_cache.json"

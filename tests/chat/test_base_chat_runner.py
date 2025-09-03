@@ -5,7 +5,7 @@ Tests for BaseChatRunner functionality
 import pytest
 from unittest.mock import Mock, AsyncMock, patch, MagicMock
 from nodetool.chat.base_chat_runner import BaseChatRunner
-from nodetool.common.environment import Environment
+from nodetool.config.environment import Environment
 from nodetool.models.message import Message as DBMessage
 from nodetool.metadata.types import Message as ApiMessage, Provider
 from nodetool.models.thread import Thread

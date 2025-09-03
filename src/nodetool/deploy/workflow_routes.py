@@ -16,7 +16,7 @@ from typing import Dict
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
-from nodetool.common.environment import Environment
+from nodetool.config.environment import Environment
 import logging
 from nodetool.types.job import JobUpdate
 from nodetool.types.workflow import Workflow

@@ -5,7 +5,7 @@ Tests for graph utilities.
 import unittest
 from unittest.mock import MagicMock, patch
 
-from nodetool.common.graph_utils import (
+from nodetool.datastructures.graph_utils import (
     find_node,
     get_node_input_types,
     get_downstream_subgraph,

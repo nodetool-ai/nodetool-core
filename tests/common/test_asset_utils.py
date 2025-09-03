@@ -5,7 +5,7 @@ Tests for asset utilities.
 import unittest
 from unittest.mock import MagicMock
 
-from nodetool.common.asset_utils import encode_assets_as_uri
+from nodetool.io.asset_utils import encode_assets_as_uri
 from nodetool.metadata.types import AssetRef
 
 

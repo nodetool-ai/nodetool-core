@@ -9,9 +9,9 @@ from typing import Literal, Set
 import logging
 from pydantic import BaseModel
 
-from nodetool.common.environment import Environment
-from nodetool.common.system_stats import SystemStats
-from nodetool.common.system_stats import get_system_stats
+from nodetool.config.environment import Environment
+from nodetool.system.system_stats import SystemStats
+from nodetool.system.system_stats import get_system_stats
 
 
 class SystemStatsUpdate(BaseModel):

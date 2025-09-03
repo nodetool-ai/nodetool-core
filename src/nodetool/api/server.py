@@ -8,17 +8,17 @@ from contextlib import asynccontextmanager
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
-from nodetool.common.environment import Environment
+from nodetool.config.environment import Environment
 
-from nodetool.common.huggingface_cache import huggingface_download_endpoint
-from nodetool.common.websocket_runner import WebSocketRunner
+from nodetool.integrations.huggingface.huggingface_cache import huggingface_download_endpoint
+from nodetool.integrations.websocket.websocket_runner import WebSocketRunner
 from nodetool.chat.chat_websocket_runner import ChatWebSocketRunner
 
 from fastapi import APIRouter, FastAPI, Request, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from uvicorn import run as uvicorn
 import sys
-from nodetool.common.logging_config import configure_logging
+from nodetool.config.logging_config import configure_logging
 
 from nodetool.metadata.types import Provider
 from nodetool.packages.registry import get_nodetool_package_source_folders
@@ -38,7 +38,7 @@ from . import (
 )
 import mimetypes
 
-from nodetool.common.websocket_updates import websocket_updates
+from nodetool.integrations.websocket.websocket_updates import websocket_updates
 from nodetool.api.openai import create_openai_compatible_router
 
 if platform.system() == "Windows":
@@ -155,7 +155,7 @@ def create_app(
 
         try:
             # Import here to avoid circular imports
-            from nodetool.common.websocket_updates import websocket_updates
+            from nodetool.integrations.websocket.websocket_updates import websocket_updates
 
             await websocket_updates.shutdown()
             logger.info("WebSocket updates shutdown complete")

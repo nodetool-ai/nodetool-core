@@ -2,10 +2,10 @@
 
 from typing import List, Optional
 from fastapi import APIRouter, HTTPException, Header, UploadFile, File
-from nodetool.common.environment import Environment
+from nodetool.config.environment import Environment
 from nodetool.types.job import JobUpdate
 from pydantic import BaseModel
-from nodetool.common.async_chroma_client import (
+from nodetool.integrations.vectorstores.chroma.async_chroma_client import (
     get_async_chroma_client,
     get_async_collection,
 )

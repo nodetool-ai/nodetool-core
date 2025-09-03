@@ -8,7 +8,7 @@ from typing import List, Optional
 
 from huggingface_hub.constants import HF_HUB_CACHE
 
-from .environment import Environment
+from nodetool.config.environment import Environment
 import logging
 
 

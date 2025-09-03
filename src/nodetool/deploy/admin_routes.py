@@ -22,7 +22,7 @@ from nodetool.deploy.admin_operations import (
     calculate_cache_size,
     delete_hf_model,
 )
-from nodetool.common.environment import Environment
+from nodetool.config.environment import Environment
 from typing import Any, Dict
 
 from nodetool.models.asset import Asset

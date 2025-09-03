@@ -23,7 +23,7 @@ from nodetool.metadata.types import LanguageModel, ToolName
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.chat.providers import get_provider
 from nodetool.metadata.types import Provider as ProviderEnum
-from nodetool.common.environment import Environment
+from nodetool.config.environment import Environment
 import logging
 
 from nodetool.agents.tools import (

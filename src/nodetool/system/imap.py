@@ -1,5 +1,5 @@
 from typing import List
-from nodetool.common.convert_html import convert_html_to_text
+from nodetool.html.convert_html import convert_html_to_text
 from nodetool.metadata.types import Datetime, Email, IMAPConnection, EmailSearchCriteria
 import imaplib
 import email

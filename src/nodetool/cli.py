@@ -3,10 +3,10 @@ import sys
 import shutil
 import click
 from nodetool.api.workflow import from_model
-from nodetool.common.configuration import get_settings_registry
-from nodetool.common.environment import Environment
+from nodetool.config.configuration import get_settings_registry
+from nodetool.config.environment import Environment
 import logging
-from nodetool.common.settings import load_settings
+from nodetool.config.settings import load_settings
 from nodetool.deploy.docker import (
     generate_image_tag,
     build_docker_image,
@@ -416,7 +416,7 @@ def settings():
 @click.option("--mask", is_flag=True, help="Mask secret values with ****.")
 def show_settings(secrets: bool, mask: bool):
     """Show current settings or secrets."""
-    from nodetool.common.settings import load_settings
+    from nodetool.config.settings import load_settings
 
     # Load settings and secrets
     settings_obj, secrets_obj = load_settings()
@@ -447,7 +447,7 @@ def show_settings(secrets: bool, mask: bool):
 @click.option("--secrets", is_flag=True, help="Edit secrets instead of settings.")
 def edit_settings(secrets: bool = False):
     """Edit settings or secrets."""
-    from nodetool.common.settings import (
+    from nodetool.config.settings import (
         load_settings,
         get_system_file_path,
         SETTINGS_FILE,
@@ -1550,7 +1550,7 @@ def deploy_runpod(
       nodetool deploy --list-gpu-types
       nodetool deploy --list-all-options
     """
-    from nodetool.common.settings import load_settings
+    from nodetool.config.settings import load_settings
     import dotenv
 
     dotenv.load_dotenv()

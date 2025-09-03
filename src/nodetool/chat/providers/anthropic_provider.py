@@ -23,7 +23,7 @@ from nodetool.metadata.types import (
     MessageImageContent,
     MessageTextContent,
 )
-from nodetool.common.environment import Environment
+from nodetool.config.environment import Environment
 from nodetool.workflows.base_node import ApiKeyMissingError
 from nodetool.workflows.types import Chunk
 from nodetool.agents.tools.base import Tool

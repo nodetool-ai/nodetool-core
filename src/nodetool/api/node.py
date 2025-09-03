@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, HTTPException
 import httpx
-from nodetool.common.system_stats import SystemStats
+from nodetool.system.system_stats import SystemStats
 from nodetool.types.job import (
     JobUpdate,
 )
@@ -89,7 +89,7 @@ from nodetool.metadata.types import (
     InferenceProviderImageSegmentationModel,
 )
 from nodetool.workflows.base_node import ToolResultNode, get_node_class
-from nodetool.common.environment import Environment
+from nodetool.config.environment import Environment
 import logging
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.types import ProcessingMessage

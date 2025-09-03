@@ -81,7 +81,7 @@ from typing import (
 )
 
 from nodetool.types.graph import Edge
-from nodetool.common.environment import Environment
+from nodetool.config.environment import Environment
 import logging
 from nodetool.metadata.type_metadata import TypeMetadata
 from nodetool.metadata.types import (

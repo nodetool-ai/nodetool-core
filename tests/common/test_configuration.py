@@ -1,4 +1,4 @@
-from nodetool.common.configuration import register_setting
+from nodetool.config.configuration import register_setting
 
 
 def test_register_setting():

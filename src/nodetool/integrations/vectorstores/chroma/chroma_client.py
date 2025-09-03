@@ -26,7 +26,7 @@ from urllib.parse import urlparse
 import logging
 
 
-from nodetool.common.environment import Environment
+from nodetool.config.environment import Environment
 from chromadb.utils.embedding_functions.ollama_embedding_function import (
     OllamaEmbeddingFunction,
 )

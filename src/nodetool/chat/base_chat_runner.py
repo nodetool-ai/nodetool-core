@@ -24,13 +24,13 @@ from supabase import create_async_client, AsyncClient
 
 from nodetool.chat.ollama_service import get_ollama_models
 from nodetool.chat.providers import get_provider
-from nodetool.common.environment import Environment
+from nodetool.config.environment import Environment
 from nodetool.models.message import Message as DBMessage
 from nodetool.models.thread import Thread
 from nodetool.metadata.types import Message as ApiMessage, Provider
 from nodetool.types.graph import Graph
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.common.message_processors import (
+from nodetool.messaging.message_processors import (
     MessageProcessor,
     RegularChatProcessor,
     HelpMessageProcessor,

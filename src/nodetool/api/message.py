@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from nodetool.api.utils import current_user
 from nodetool.metadata.types import Message
 from nodetool.models.message import Message as MessageModel
-from nodetool.common.environment import Environment
+from nodetool.config.environment import Environment
 import logging
 
 from nodetool.models.thread import Thread

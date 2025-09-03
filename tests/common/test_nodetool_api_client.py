@@ -3,7 +3,7 @@ import pytest
 from httpx import AsyncClient, ASGITransport
 
 from nodetool.api.server import create_app
-from nodetool.common.nodetool_api_client import NodetoolAPIClient
+from nodetool.integrations.apis.nodetool_api_client import NodetoolAPIClient
 from nodetool.models.asset import Asset
 
 

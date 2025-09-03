@@ -67,11 +67,11 @@ from nodetool.metadata.types import (
     VideoRef,
     dtype_name,
 )
-from nodetool.common.environment import Environment
+from nodetool.config.environment import Environment
 import logging
 from nodetool.workflows.base_node import BaseNode
 from nodetool.workflows.property import Property
-from nodetool.common.async_chroma_client import get_async_chroma_client
+from nodetool.integrations.vectorstores.chroma.async_chroma_client import get_async_chroma_client
 
 
 from io import BytesIO
@@ -84,18 +84,18 @@ import platform
 log = logging.getLogger(__name__)
 
 
-from nodetool.common.media_constants import (
+from nodetool.media.common.media_constants import (
     AUDIO_CODEC,
     DEFAULT_AUDIO_SAMPLE_RATE,
 )
-from nodetool.common.uri_utils import create_file_uri as _create_file_uri
-from nodetool.common.image_utils import (
+from nodetool.io.uri_utils import create_file_uri as _create_file_uri
+from nodetool.media.image.image_utils import (
     numpy_to_pil_image as _numpy_to_pil_image_util,
 )
-from nodetool.common.font_utils import (
+from nodetool.media.image.font_utils import (
     get_system_font_path as _get_system_font_path_util,
 )
-from nodetool.common.video_utils import export_to_video_bytes
+from nodetool.media.video.video_utils import export_to_video_bytes
 
 
 def create_file_uri(path: str) -> str:
@@ -456,7 +456,7 @@ class ProcessingContext:
             dict[str, str]: A dictionary containing the input types for the node, where the keys are the input slot names
             and the values are the types of the corresponding source nodes.
         """
-        from nodetool.common.graph_utils import get_node_input_types
+        from nodetool.datastructures.graph_utils import get_node_input_types
 
         return get_node_input_types(self.graph, node_id)
 
@@ -473,7 +473,7 @@ class ProcessingContext:
         Raises:
             ValueError: If the node with the given ID does not exist.
         """
-        from nodetool.common.graph_utils import find_node
+        from nodetool.datastructures.graph_utils import find_node
 
         return find_node(self.graph, node_id)
 
@@ -660,7 +660,7 @@ class ProcessingContext:
         )
 
         # Upload the content to storage
-        from nodetool.common.environment import Environment
+        from nodetool.config.environment import Environment
 
         storage = Environment.get_asset_storage()
         await storage.upload(asset.file_name, BytesIO(content_bytes))
@@ -1772,7 +1772,7 @@ class ProcessingContext:
         parent_id: str | None = None,
     ) -> VideoRef:
         import tempfile
-        from nodetool.common.video_utils import export_to_video
+        from nodetool.media.video.video_utils import export_to_video
 
         with tempfile.NamedTemporaryFile(suffix=".mp4", delete=True) as temp:
             export_to_video(frames, temp.name, fps=fps)
@@ -1976,7 +1976,7 @@ class ProcessingContext:
         Returns:
             bool: True if the model is cached, False otherwise.
         """
-        from nodetool.common.hf_utils import is_model_cached
+        from nodetool.integrations.huggingface.hf_utils import is_model_cached
 
         return is_model_cached(repo_id)
 
@@ -1990,7 +1990,7 @@ class ProcessingContext:
         Returns:
             Any: The value with all AssetRef objects encoded as URIs
         """
-        from nodetool.common.asset_utils import encode_assets_as_uri
+        from nodetool.io.asset_utils import encode_assets_as_uri
 
         return encode_assets_as_uri(value)
 
@@ -2132,7 +2132,7 @@ class ProcessingContext:
             list[BaseNode] | Graph: Either a list of directly connected nodes or a full
                 reachable subgraph as a `Graph`.
         """
-        from nodetool.common.graph_utils import get_downstream_subgraph
+        from nodetool.datastructures.graph_utils import get_downstream_subgraph
 
         return get_downstream_subgraph(self.graph, node_id, source_handle, as_subgraph)
 
@@ -2155,7 +2155,7 @@ class ProcessingContext:
         Raises:
             ValueError: If workspace_dir is not provided or empty.
         """
-        from nodetool.common.path_utils import resolve_workspace_path
+        from nodetool.io.path_utils import resolve_workspace_path
 
         return resolve_workspace_path(self.workspace_dir, path)
 

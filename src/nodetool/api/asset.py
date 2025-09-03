@@ -19,14 +19,14 @@ from nodetool.types.asset import (
     AssetSearchResult,
 )
 from nodetool.api.utils import current_user
-from nodetool.common.environment import Environment
+from nodetool.config.environment import Environment
 import logging
 from typing import Dict, List, Optional, Tuple, Union
 from nodetool.models.asset import Asset as AssetModel
 from nodetool.models.workflow import Workflow
 from nodetool.packages.registry import Registry
 from pydantic import BaseModel, Field as PydanticField
-from nodetool.common.media_utils import (
+from nodetool.media.common.media_utils import (
     create_image_thumbnail,
     create_video_thumbnail,
     get_audio_duration,

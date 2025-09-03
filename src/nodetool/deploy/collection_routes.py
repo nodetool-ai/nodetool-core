@@ -11,7 +11,7 @@ from typing import Optional
 
 from fastapi import APIRouter, File, HTTPException, Header, UploadFile
 
-from nodetool.common.environment import Environment
+from nodetool.config.environment import Environment
 from nodetool.indexing.service import index_file_to_collection
 
 

@@ -1,6 +1,6 @@
 import importlib
 import pytest
-from nodetool.common import system_stats
+from nodetool.system import system_stats
 
 class DummyMem:
     total = 16 * 1024 ** 3

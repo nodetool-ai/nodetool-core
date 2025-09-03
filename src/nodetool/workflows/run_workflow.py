@@ -2,7 +2,7 @@ import asyncio
 from typing import AsyncGenerator, Any
 from uuid import uuid4
 from nodetool.types.graph import Edge, Node, Graph
-from nodetool.common.environment import Environment
+from nodetool.config.environment import Environment
 import logging
 from nodetool.types.job import JobUpdate
 from nodetool.workflows.processing_context import ProcessingContext

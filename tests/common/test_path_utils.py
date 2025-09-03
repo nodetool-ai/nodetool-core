@@ -6,7 +6,7 @@ import os
 import tempfile
 import unittest
 
-from nodetool.common.path_utils import resolve_workspace_path
+from nodetool.io.path_utils import resolve_workspace_path
 
 
 class TestPathUtils(unittest.TestCase):

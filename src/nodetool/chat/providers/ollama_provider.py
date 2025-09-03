@@ -18,8 +18,8 @@ import tiktoken
 from nodetool.chat.providers.base import ChatProvider
 from nodetool.chat.token_counter import count_messages_tokens
 from nodetool.agents.tools.base import Tool
-from nodetool.common.environment import Environment
-from nodetool.common.image_utils import (
+from nodetool.config.environment import Environment
+from nodetool.media.image.image_utils import (
     image_data_to_base64_jpeg,
     image_ref_to_base64_jpeg,
 )

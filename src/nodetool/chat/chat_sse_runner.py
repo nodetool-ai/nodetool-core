@@ -55,7 +55,7 @@ from nodetool.metadata.types import (
     ImageRef,
     AudioRef,
 )
-from nodetool.common.environment import Environment
+from nodetool.config.environment import Environment
 from nodetool.types.workflow import Workflow
 from nodetool.workflows.types import Chunk
 

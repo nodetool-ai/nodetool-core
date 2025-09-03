@@ -66,8 +66,8 @@ import asyncio
 import click
 import tomlkit
 
-from nodetool.common.environment import Environment
-from nodetool.common.settings import get_system_file_path
+from nodetool.config.environment import Environment
+from nodetool.config.settings import get_system_file_path
 from nodetool.metadata.node_metadata import NodeMetadata, PackageModel, ExampleMetadata
 from nodetool.packages.types import AssetInfo, PackageInfo
 from nodetool.types.workflow import Workflow

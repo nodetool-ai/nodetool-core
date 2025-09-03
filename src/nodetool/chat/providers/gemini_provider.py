@@ -20,7 +20,7 @@ from pydantic import BaseModel
 
 from nodetool.chat.providers.base import ChatProvider
 from nodetool.agents.tools.base import Tool as NodeTool
-from nodetool.common.environment import Environment
+from nodetool.config.environment import Environment
 from nodetool.metadata.types import (
     Message,
     MessageAudioContent,

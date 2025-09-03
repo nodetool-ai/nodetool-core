@@ -1,7 +1,7 @@
 from typing import Dict, Any
 import openai
 from nodetool.agents.tools.base import Tool
-from nodetool.common.environment import Environment
+from nodetool.config.environment import Environment
 from nodetool.workflows.processing_context import ProcessingContext
 import base64
 from openai import AsyncClient

@@ -8,7 +8,7 @@ from google.genai.types import (
     GenerateImagesConfig,
 )
 from nodetool.agents.tools.base import Tool
-from nodetool.common.environment import Environment
+from nodetool.config.environment import Environment
 from nodetool.workflows.base_node import ApiKeyMissingError
 from nodetool.workflows.processing_context import ProcessingContext
 

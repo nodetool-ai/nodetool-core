@@ -20,7 +20,7 @@ import uvicorn
 from fastapi import FastAPI, HTTPException
 from rich.console import Console
 
-from nodetool.common.environment import Environment
+from nodetool.config.environment import Environment
 import logging
 from nodetool.api.openai import create_openai_compatible_router
 from nodetool.types.workflow import Workflow

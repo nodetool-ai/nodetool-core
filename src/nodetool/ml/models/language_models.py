@@ -5,7 +5,7 @@ import logging
 from typing import List, Dict, Any
 import aiohttp
 from nodetool.metadata.types import LanguageModel, Provider
-from nodetool.common.environment import Environment
+from nodetool.config.environment import Environment
 from nodetool.storage.memory_node_cache import MemoryNodeCache
 
 log = logging.getLogger(__name__)

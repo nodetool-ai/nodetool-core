@@ -12,7 +12,7 @@ from typing import Any, Dict
 from uuid import uuid4
 
 from nodetool.agents.tools.base import Tool
-from nodetool.common.environment import Environment
+from nodetool.config.environment import Environment
 from nodetool.types.workflow import Workflow
 from nodetool.models.workflow import Workflow as WorkflowModel
 from nodetool.types.graph import Edge, Node, get_input_schema, get_output_schema

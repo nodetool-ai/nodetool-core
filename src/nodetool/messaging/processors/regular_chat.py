@@ -255,7 +255,7 @@ class RegularChatProcessor(MessageProcessor):
         if not collections or not query_text:
             return ""
 
-        from nodetool.common.async_chroma_client import get_async_collection
+        from nodetool.integrations.vectorstores.chroma.async_chroma_client import get_async_collection
 
         all_results = []
 

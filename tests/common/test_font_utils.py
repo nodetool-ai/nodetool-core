@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 import pytest
 
-from nodetool.common.font_utils import get_system_font_path
+from nodetool.media.image.font_utils import get_system_font_path
 
 
 class TestGetSystemFontPath:

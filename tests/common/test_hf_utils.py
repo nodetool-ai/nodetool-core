@@ -5,7 +5,7 @@ Tests for HuggingFace utilities.
 import unittest
 from unittest.mock import patch, MagicMock
 
-from nodetool.common.hf_utils import is_model_cached
+from nodetool.integrations.huggingface.hf_utils import is_model_cached
 
 
 class TestHFUtils(unittest.TestCase):

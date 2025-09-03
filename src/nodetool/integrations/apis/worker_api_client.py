@@ -13,8 +13,8 @@ Pydantic models for data validation and serialization.
 
 import httpx
 
-from nodetool.common.huggingface_models import CachedModel
-from nodetool.common.system_stats import SystemStats
+from nodetool.integrations.huggingface.huggingface_models import CachedModel
+from nodetool.system.system_stats import SystemStats
 from nodetool.metadata.types import HuggingFaceModel
 
 

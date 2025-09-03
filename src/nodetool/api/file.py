@@ -10,7 +10,7 @@ from pydantic import BaseModel
 import aiofiles
 import aiofiles.os
 from nodetool.api.utils import current_user
-from nodetool.common.environment import Environment
+from nodetool.config.environment import Environment
 import logging
 
 log = logging.getLogger(__name__)

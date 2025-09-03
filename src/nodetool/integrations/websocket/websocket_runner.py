@@ -7,10 +7,10 @@ import msgpack
 from typing import AsyncGenerator
 from pydantic import BaseModel
 from fastapi import WebSocket, WebSocketDisconnect
-from nodetool.common.environment import Environment
+from nodetool.config.environment import Environment
 import logging
-from nodetool.common.model_manager import ModelManager
-from nodetool.common.wrap_primitive_types import wrap_primitive_types
+from nodetool.ml.core.model_manager import ModelManager
+from nodetool.datastructures.wrap_primitive_types import wrap_primitive_types
 from nodetool.types.job import JobUpdate
 from nodetool.workflows.base_node import BaseNode
 from nodetool.workflows.processing_context import ProcessingContext

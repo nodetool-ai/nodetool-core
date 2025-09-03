@@ -15,7 +15,7 @@ Tools included:
 from typing import Any
 
 from nodetool.agents.tools.base import Tool
-from nodetool.common.environment import Environment
+from nodetool.config.environment import Environment
 import logging
 from nodetool.workflows.base_node import get_node_class
 from nodetool.workflows.processing_context import ProcessingContext

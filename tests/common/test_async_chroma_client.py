@@ -4,7 +4,7 @@ from typing import Any
 
 import pytest
 
-from nodetool.common.async_chroma_client import (
+from nodetool.integrations.vectorstores.chroma.async_chroma_client import (
     AsyncChromaClient,
     AsyncChromaCollection,
     get_async_chroma_client,

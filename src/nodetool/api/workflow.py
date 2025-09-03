@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 from nodetool.types.graph import Edge, Node, remove_connected_slots
 from nodetool.types.workflow import WorkflowList, Workflow, WorkflowRequest
 from nodetool.api.utils import current_user
-from nodetool.common.environment import Environment
+from nodetool.config.environment import Environment
 import logging
 from typing import Any, Optional
 from nodetool.workflows.read_graph import read_graph

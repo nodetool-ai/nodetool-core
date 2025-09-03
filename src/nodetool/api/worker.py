@@ -5,20 +5,20 @@ from fastapi import FastAPI, WebSocket, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from nodetool.api.model import RepoPath
 from nodetool.api.utils import flatten_models
-from nodetool.common.worker_api_client import WorkerAPIClient
-from nodetool.common.huggingface_file import (
+from nodetool.integrations.apis.worker_api_client import WorkerAPIClient
+from nodetool.integrations.huggingface.huggingface_file import (
     HFFileInfo,
     HFFileRequest,
     get_huggingface_file_infos,
 )
-from nodetool.common.huggingface_cache import try_to_load_from_cache
-from nodetool.common.system_stats import get_system_stats, SystemStats
-from nodetool.common.websocket_runner import WebSocketRunner
+from nodetool.integrations.huggingface.huggingface_cache import try_to_load_from_cache
+from nodetool.system.system_stats import get_system_stats, SystemStats
+from nodetool.integrations.websocket.websocket_runner import WebSocketRunner
 from nodetool.chat.chat_websocket_runner import ChatWebSocketRunner
 
-from nodetool.common.environment import Environment
-from nodetool.common.huggingface_cache import huggingface_download_endpoint
-from nodetool.common.huggingface_models import (
+from nodetool.config.environment import Environment
+from nodetool.integrations.huggingface.huggingface_cache import huggingface_download_endpoint
+from nodetool.integrations.huggingface.huggingface_models import (
     CachedModel,
     delete_cached_hf_model,
     read_cached_hf_models,

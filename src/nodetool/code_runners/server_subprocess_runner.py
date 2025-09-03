@@ -42,8 +42,8 @@ import zipfile
 from nodetool.workflows.base_node import BaseNode
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import LogUpdate
-from nodetool.common.environment import Environment
-from nodetool.common.settings import get_system_data_path
+from nodetool.config.environment import Environment
+from nodetool.config.settings import get_system_data_path
 
 
 def _safe_download_to(path: Path, url: str) -> None:

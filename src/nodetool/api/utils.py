@@ -5,9 +5,9 @@ from fastapi import (
     Cookie,
 )
 from typing import Optional, Any, List, Union
-from nodetool.common.environment import Environment
+from nodetool.config.environment import Environment
 import logging
-from nodetool.common.huggingface_models import CachedModel
+from nodetool.integrations.huggingface.huggingface_models import CachedModel
 from nodetool.metadata.types import HuggingFaceModel
 
 log = logging.getLogger(__name__)

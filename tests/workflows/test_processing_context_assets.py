@@ -23,7 +23,7 @@ from nodetool.metadata.types import (
     DataframeRef,
     ModelRef,
 )
-from nodetool.common.environment import Environment
+from nodetool.config.environment import Environment
 
 
 def _sklearn_available() -> bool:

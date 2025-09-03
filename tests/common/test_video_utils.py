@@ -5,7 +5,7 @@ Tests for video utility functions.
 import numpy as np
 import pytest
 
-from nodetool.common.video_utils import export_to_video_bytes
+from nodetool.media.video.video_utils import export_to_video_bytes
 
 
 class TestExportToVideoBytes:

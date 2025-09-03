@@ -11,7 +11,7 @@ This module provides tools for semantic and keyword searching:
 from typing import Any
 import chromadb
 import uuid
-from nodetool.common.async_chroma_client import AsyncChromaCollection
+from nodetool.integrations.vectorstores.chroma.async_chroma_client import AsyncChromaCollection
 from nodetool.workflows.processing_context import ProcessingContext
 from .base import Tool
 from nodetool.metadata.types import TextChunk

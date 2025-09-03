@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from unittest.mock import MagicMock, patch, mock_open
 
-from nodetool.common.image_utils import image_ref_to_base64_jpeg
+from nodetool.media.image.image_utils import image_ref_to_base64_jpeg
 from nodetool.metadata.types import ImageRef
 
 

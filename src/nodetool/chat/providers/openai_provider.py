@@ -42,7 +42,7 @@ from nodetool.metadata.types import (
     MessageTextContent,
     MessageAudioContent,
 )
-from nodetool.common.environment import Environment
+from nodetool.config.environment import Environment
 from nodetool.workflows.types import Chunk
 
 

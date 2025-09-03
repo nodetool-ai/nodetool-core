@@ -22,7 +22,7 @@ import asyncio
 from typing import AsyncGenerator, List, Sequence, Union, Any, Optional
 
 from nodetool.agents.tools.code_tools import ExecutePythonTool
-from nodetool.common.settings import get_log_path
+from nodetool.config.settings import get_log_path
 from nodetool.workflows.types import (
     Chunk,
     PlanningUpdate,

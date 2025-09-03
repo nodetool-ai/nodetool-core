@@ -1,7 +1,7 @@
 from click.testing import CliRunner
 
 from nodetool.cli import cli
-from nodetool.common.settings import load_settings
+from nodetool.config.settings import load_settings
 
 
 def test_cli_help():

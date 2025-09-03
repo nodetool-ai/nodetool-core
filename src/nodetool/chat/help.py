@@ -30,7 +30,7 @@ from pydantic import BaseModel
 
 from jsonschema import validators
 from nodetool.chat.providers.base import ChatProvider
-from nodetool.common.environment import Environment
+from nodetool.config.environment import Environment
 import logging
 from nodetool.metadata.types import (
     Message,

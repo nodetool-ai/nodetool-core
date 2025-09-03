@@ -39,7 +39,7 @@ import time
 from typing import Any, AsyncGenerator, Optional
 from collections import deque
 
-from nodetool.common.model_manager import ModelManager
+from nodetool.ml.core.model_manager import ModelManager
 from nodetool.types.job import JobUpdate
 from nodetool.workflows.base_node import (
     BaseNode,
@@ -50,7 +50,7 @@ from nodetool.workflows.types import EdgeUpdate, NodeProgress, NodeUpdate, Outpu
 from nodetool.metadata.types import MessageTextContent
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.common.environment import Environment
+from nodetool.config.environment import Environment
 from nodetool.workflows.graph import Graph
 from nodetool.workflows.inbox import NodeInbox
 

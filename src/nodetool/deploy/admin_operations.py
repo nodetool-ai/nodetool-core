@@ -29,11 +29,11 @@ from huggingface_hub import (
     try_to_load_from_cache,
 )
 from huggingface_hub.hf_api import RepoFile
-from nodetool.common.huggingface_models import delete_cached_hf_model
-from nodetool.common.environment import Environment
+from nodetool.integrations.huggingface.huggingface_models import delete_cached_hf_model
+from nodetool.config.environment import Environment
 import logging
 from nodetool.chat.ollama_service import get_ollama_client
-from nodetool.common.huggingface_cache import filter_repo_paths
+from nodetool.integrations.huggingface.huggingface_cache import filter_repo_paths
 from concurrent.futures import ThreadPoolExecutor
 from multiprocessing import Manager
 

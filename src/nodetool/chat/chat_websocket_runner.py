@@ -27,7 +27,7 @@ from enum import Enum
 from fastapi import WebSocket
 from fastapi.websockets import WebSocketState
 from nodetool.chat.base_chat_runner import BaseChatRunner
-from nodetool.common.environment import Environment
+from nodetool.config.environment import Environment
 
 
 log = logging.getLogger(__name__)

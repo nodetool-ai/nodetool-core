@@ -303,7 +303,7 @@ curl http://localhost:8080/health
 import uvicorn
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import StreamingResponse
-from nodetool.common.environment import Environment
+from nodetool.config.environment import Environment
 from nodetool.chat.chat_sse_runner import ChatSSERunner
 from rich.console import Console
 from nodetool.api.model import get_language_models

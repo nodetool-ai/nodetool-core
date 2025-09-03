@@ -8,7 +8,7 @@ from typing import Any, Dict, Tuple
 
 import yaml
 
-from nodetool.common.configuration import register_setting
+from nodetool.config.configuration import register_setting
 
 # Constants
 SETTINGS_FILE = "settings.yaml"

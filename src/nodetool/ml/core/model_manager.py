@@ -10,7 +10,7 @@ production environments.
 
 from typing import Dict, Any
 
-from nodetool.common.environment import Environment
+from nodetool.config.environment import Environment
 import logging
 
 logger = logging.getLogger(__name__)

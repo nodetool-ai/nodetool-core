@@ -25,7 +25,7 @@ from typing import Any
 import openai
 from pydantic import BaseModel
 
-from nodetool.common.environment import Environment
+from nodetool.config.environment import Environment
 from nodetool.metadata.types import (
     OpenAIModel,
 )

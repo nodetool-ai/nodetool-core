@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from nodetool.common.image_utils import (
+from nodetool.media.image.image_utils import (
     image_data_to_base64_jpeg,
     pil_image_to_base64_jpeg,
 )

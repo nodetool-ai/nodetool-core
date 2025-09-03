@@ -1,7 +1,7 @@
 from typing import Any, Optional
 from pydantic import BaseModel, Field as PydanticField
 
-from nodetool.common.content_types import CONTENT_TYPE_TO_EXTENSION
+from nodetool.datastructures.content_types import CONTENT_TYPE_TO_EXTENSION
 
 
 class Asset(BaseModel):

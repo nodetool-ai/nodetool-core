@@ -8,7 +8,7 @@ import pytest_asyncio
 from nodetool.api.server import create_app
 from nodetool.storage.memory_storage import MemoryStorage
 from nodetool.types.graph import Node, Edge
-from nodetool.common.environment import Environment
+from nodetool.config.environment import Environment
 from nodetool.models.message import Message
 from nodetool.models.thread import Thread
 from nodetool.models.workflow import Workflow

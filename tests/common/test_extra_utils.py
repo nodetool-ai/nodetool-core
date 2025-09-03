@@ -1,9 +1,9 @@
 import pytest
 
-from nodetool.common.async_iterators import AsyncByteStream
-from nodetool.common.wrap_primitive_types import wrap_primitive_types
-from nodetool.common.get_files import get_files, get_content
-from nodetool.common.convert_html import convert_html_to_text
+from nodetool.concurrency.async_iterators import AsyncByteStream
+from nodetool.datastructures.wrap_primitive_types import wrap_primitive_types
+from nodetool.io.get_files import get_files, get_content
+from nodetool.html.convert_html import convert_html_to_text
 
 
 def test_wrap_primitive_types_basic():

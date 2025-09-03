@@ -4,7 +4,7 @@ import asyncio
 import pytest
 from unittest.mock import patch, AsyncMock, MagicMock
 from aioresponses import aioresponses
-from nodetool.common.language_models import (
+from nodetool.ml.models.language_models import (
     get_cached_hf_models, 
     get_all_language_models,
     fetch_models_from_hf_provider,
@@ -175,7 +175,7 @@ class TestDynamicLanguageModels:
 
     def test_provider_mapping_completeness(self):
         """Test that all HF providers have appropriate mappings."""
-        from nodetool.common.language_models import HF_PROVIDER_MAPPING
+        from nodetool.ml.models.language_models import HF_PROVIDER_MAPPING
         
         expected_providers = [
             "black-forest-labs", "cerebras", "cohere", "fal-ai", "featherless-ai",

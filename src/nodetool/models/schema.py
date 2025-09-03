@@ -5,7 +5,7 @@ in this package. It imports all necessary model classes and maintains a list of 
 for batch operations.
 """
 
-from nodetool.common.environment import Environment
+from nodetool.config.environment import Environment
 import logging
 
 from nodetool.models.asset import Asset

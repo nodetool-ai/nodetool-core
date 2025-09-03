@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 from unittest.mock import patch, AsyncMock, Mock
 
 from nodetool.chat.chat_sse_runner import ChatSSERunner
-from nodetool.common.environment import Environment
+from nodetool.config.environment import Environment
 
 
 # Create a test FastAPI app with SSE endpoint

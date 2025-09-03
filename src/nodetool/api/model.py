@@ -1,15 +1,15 @@
 #!/usr/bin/env python
 
 from fastapi.responses import StreamingResponse
-from nodetool.common.huggingface_cache import has_cached_files
-from nodetool.common.huggingface_file import (
+from nodetool.integrations.huggingface.huggingface_cache import has_cached_files
+from nodetool.integrations.huggingface.huggingface_file import (
     HFFileInfo,
     HFFileRequest,
     get_huggingface_file_infos_async,
 )
-from nodetool.common.environment import Environment
+from nodetool.config.environment import Environment
 import logging
-from nodetool.common.language_models import get_all_language_models
+from nodetool.ml.models.language_models import get_all_language_models
 from nodetool.metadata.types import (
     LanguageModel,
     ModelFile,
@@ -22,7 +22,7 @@ from huggingface_hub import try_to_load_from_cache
 from huggingface_hub.constants import HF_HUB_CACHE
 from nodetool.api.utils import current_user, flatten_models
 from fastapi import APIRouter, Depends, Query
-from nodetool.common.huggingface_models import (
+from nodetool.integrations.huggingface.huggingface_models import (
     CachedModel,
     delete_cached_hf_model,
     read_cached_hf_models,
@@ -38,7 +38,7 @@ from nodetool.chat.ollama_service import (
 import sys
 from pathlib import Path
 import asyncio
-from nodetool.common.file_explorer import (
+from nodetool.io.file_explorer import (
     get_ollama_models_dir as common_get_ollama_models_dir,
     open_in_explorer as common_open_in_explorer,
 )

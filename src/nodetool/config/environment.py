@@ -1,11 +1,11 @@
 import logging
 import os
 import logging
-from nodetool.common.logging_config import configure_logging, get_logger
+from nodetool.config.logging_config import configure_logging, get_logger
 from typing import Any, Optional, Dict
 
 from nodetool.storage.abstract_node_cache import AbstractNodeCache
-from nodetool.common.settings import (
+from nodetool.config.settings import (
     get_system_data_path,
     load_settings,
     get_value,

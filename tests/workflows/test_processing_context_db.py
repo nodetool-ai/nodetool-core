@@ -15,7 +15,7 @@ from nodetool.models.job import Job
 from nodetool.models.workflow import Workflow
 from nodetool.models.message import Message
 from nodetool.types.chat import MessageCreateRequest
-from nodetool.common.environment import Environment
+from nodetool.config.environment import Environment
 from nodetool.metadata.types import AssetRef
 
 

@@ -10,8 +10,8 @@ from fastapi import HTTPException
 from email.utils import parsedate_to_datetime
 from fastapi.responses import StreamingResponse
 from nodetool.api.utils import current_user
-from nodetool.common.content_types import EXTENSION_TO_CONTENT_TYPE
-from nodetool.common.environment import Environment
+from nodetool.datastructures.content_types import EXTENSION_TO_CONTENT_TYPE
+from nodetool.config.environment import Environment
 import logging
 
 

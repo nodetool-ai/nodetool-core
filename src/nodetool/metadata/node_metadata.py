@@ -5,7 +5,7 @@ import importlib
 import pkgutil
 import inspect
 import logging
-from nodetool.common.logging_config import configure_logging, get_logger
+from nodetool.config.logging_config import configure_logging, get_logger
 from pydantic import BaseModel, Field, ConfigDict
 from nodetool.packages.types import AssetInfo
 from nodetool.workflows.property import Property
