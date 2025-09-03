@@ -1,7 +1,7 @@
 import pytest
 
 from nodetool.concurrency.async_iterators import AsyncByteStream
-from nodetool.datastructures.wrap_primitive_types import wrap_primitive_types
+from nodetool.types.wrap_primitive_types import wrap_primitive_types
 from nodetool.io.get_files import get_files, get_content
 from nodetool.html.convert_html import convert_html_to_text
 

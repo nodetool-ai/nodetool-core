@@ -14,7 +14,7 @@ from .processors.workflow import WorkflowMessageProcessor
 
 __all__ = [
     "MessageProcessor",
-    "RegularChatProcessor", 
+    "RegularChatProcessor",
     "HelpMessageProcessor",
     "AgentMessageProcessor",
     "WorkflowMessageProcessor",

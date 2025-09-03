@@ -34,9 +34,7 @@ def get_ollama_models_dir() -> Optional[Path]:
             except Exception:
                 # Non-fatal: path may not fully resolve if not yet created
                 pass
-            log.debug(
-                f"Using Ollama models directory from OLLAMA_MODELS env var: {p}"
-            )
+            log.debug(f"Using Ollama models directory from OLLAMA_MODELS env var: {p}")
             return p
         except Exception as e:
             log.error(
@@ -137,7 +135,9 @@ async def open_in_explorer(path: str) -> dict:
         return {"status": "success", "path": path_to_open}
     except Exception as e:
         log.error(
-            "Failed to open path %s in explorer: %s", path_to_open if path_to_open else path, e
+            "Failed to open path %s in explorer: %s",
+            path_to_open if path_to_open else path,
+            e,
         )
         return {
             "status": "error",

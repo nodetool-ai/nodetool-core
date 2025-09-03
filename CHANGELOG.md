@@ -19,7 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Deprecated
 
-- Direct imports of `numpy_to_audio_segment` from `nodetool-lib-data/src/nodetool/nodes/lib/numpy/utils.py` - use `from nodetool.common.audio_helpers import numpy_to_audio_segment` instead
+- Direct imports of `numpy_to_audio_segment` from `nodetool-lib-data/src/nodetool/nodes/lib/numpy/utils.py` - use `from nodetool.media.audio.audio_helpers import numpy_to_audio_segment` instead
 
 ## [0.6.0] - 2025-04-07
 

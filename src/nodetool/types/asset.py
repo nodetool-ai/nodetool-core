@@ -1,7 +1,7 @@
 from typing import Any, Optional
 from pydantic import BaseModel, Field as PydanticField
 
-from nodetool.datastructures.content_types import CONTENT_TYPE_TO_EXTENSION
+from nodetool.types.content_types import CONTENT_TYPE_TO_EXTENSION
 
 
 class Asset(BaseModel):
@@ -87,7 +87,7 @@ class AssetWithPath(BaseModel):
     get_url: str | None
     thumb_url: str | None
     duration: float | None
-    
+
     # New fields for search context
     folder_name: str = PydanticField(..., description="Direct parent folder name")
     folder_path: str = PydanticField(..., description="Full path breadcrumb")

@@ -18,7 +18,7 @@ class TestImageUtilsExtra(unittest.TestCase):
         self.test_image_data = b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x01\x00H\x00H\x00\x00\xff\xdb\x00C\x00\x08\x06\x06\x07\x06\x05\x08\x07\x07\x07\t\t\x08\n\x0c\x14\r\x0c\x0b\x0b\x0c\x19\x12\x13\x0f\x14\x1d\x1a\x1f\x1e\x1d\x1a\x1c\x1c $.' \",#\x1c\x1c(7),01444\x1f'9=82<.342\xff\xc0\x00\x11\x08\x00\x01\x00\x01\x01\x01\x11\x00\x02\x11\x01\x03\x11\x01\xff\xc4\x00\x14\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x08\xff\xc4\x00\x14\x10\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xff\xda\x00\x0c\x03\x01\x00\x02\x11\x03\x11\x00\x3f\x00\xaa\xff\xd9"
         self.expected_base64_prefix = "/9j/"  # JPEG base64 prefix
 
-    @patch("nodetool.common.image_utils.image_data_to_base64_jpeg")
+    @patch("nodetool.media.image.image_utils.image_data_to_base64_jpeg")
     def test_image_ref_to_base64_jpeg_with_direct_data(self, mock_convert):
         """Test converting ImageRef with direct data."""
         mock_convert.return_value = "mocked_base64_data"
@@ -32,7 +32,7 @@ class TestImageUtilsExtra(unittest.TestCase):
         self.assertEqual(result, "mocked_base64_data")
         mock_convert.assert_called_once_with(self.test_image_data, (512, 512), 85)
 
-    @patch("nodetool.common.image_utils.image_data_to_base64_jpeg")
+    @patch("nodetool.media.image.image_utils.image_data_to_base64_jpeg")
     def test_image_ref_to_base64_jpeg_with_data_uri(self, mock_convert):
         """Test converting ImageRef with data URI."""
         mock_convert.return_value = "mocked_base64_data"
@@ -51,7 +51,7 @@ class TestImageUtilsExtra(unittest.TestCase):
         self.assertEqual(result, "mocked_base64_data")
         mock_convert.assert_called_once()
 
-    @patch("nodetool.common.image_utils.image_data_to_base64_jpeg")
+    @patch("nodetool.media.image.image_utils.image_data_to_base64_jpeg")
     @patch("httpx.get")
     def test_image_ref_to_base64_jpeg_with_http_url(self, mock_get, mock_convert):
         """Test converting ImageRef with HTTP URL."""
@@ -73,7 +73,7 @@ class TestImageUtilsExtra(unittest.TestCase):
         )
         mock_convert.assert_called_once_with(self.test_image_data, (512, 512), 85)
 
-    @patch("nodetool.common.image_utils.image_data_to_base64_jpeg")
+    @patch("nodetool.media.image.image_utils.image_data_to_base64_jpeg")
     def test_image_ref_to_base64_jpeg_with_file_uri(self, mock_convert):
         """Test converting ImageRef with file URI."""
         mock_convert.return_value = "mocked_base64_data"
@@ -139,7 +139,7 @@ class TestImageUtilsExtra(unittest.TestCase):
     def test_image_ref_to_base64_jpeg_with_custom_max_size_and_quality(self):
         """Test that custom max_size and quality parameters are passed through."""
         with patch(
-            "nodetool.common.image_utils.image_data_to_base64_jpeg"
+            "nodetool.media.image.image_utils.image_data_to_base64_jpeg"
         ) as mock_convert:
             mock_convert.return_value = "mocked_base64_data"
 

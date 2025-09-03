@@ -1,4 +1,4 @@
-# nodetool.common Hugging Face utilities
+# nodetool.integrations.huggingface Hugging Face utilities
 
 Utilities for interacting with the Hugging Face Hub. These modules manage cached models, download files, and fetch metadata.
 

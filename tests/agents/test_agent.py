@@ -42,7 +42,7 @@ async def test_execute_with_initial_task(monkeypatch, tmp_path):
         execute_tasks = fake_execute_tasks
 
     monkeypatch.setattr("nodetool.agents.agent.TaskExecutor", DummyExecutor)
-    monkeypatch.setattr("nodetool.common.settings.get_log_path", lambda f: tmp_path / f)
+    monkeypatch.setattr("nodetool.config.settings.get_log_path", lambda f: tmp_path / f)
 
     agent = Agent(
         name="my agent",

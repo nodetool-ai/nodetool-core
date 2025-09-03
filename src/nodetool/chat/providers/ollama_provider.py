@@ -427,7 +427,7 @@ class OllamaProvider(ChatProvider):
         Converts all images to JPEG format, resizes to 512x512 bounds,
         and returns as a base64 string without data URI prefix.
 
-        DEPRECATED: Use nodetool.common.image_utils.image_ref_to_base64_jpeg instead.
+        DEPRECATED: Use nodetool.media.image.image_utils.image_ref_to_base64_jpeg instead.
 
         Args:
             image: The ImageRef object containing the image URI or data
@@ -438,7 +438,7 @@ class OllamaProvider(ChatProvider):
         import warnings
 
         warnings.warn(
-            "_process_image_content is deprecated. Use nodetool.common.image_utils.image_ref_to_base64_jpeg instead.",
+            "_process_image_content is deprecated. Use nodetool.media.image.image_utils.image_ref_to_base64_jpeg instead.",
             DeprecationWarning,
             stacklevel=2,
         )

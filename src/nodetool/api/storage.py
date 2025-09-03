@@ -10,7 +10,7 @@ from fastapi import HTTPException
 from email.utils import parsedate_to_datetime
 from fastapi.responses import StreamingResponse
 from nodetool.api.utils import current_user
-from nodetool.datastructures.content_types import EXTENSION_TO_CONTENT_TYPE
+from nodetool.types.content_types import EXTENSION_TO_CONTENT_TYPE
 from nodetool.config.environment import Environment
 import logging
 
@@ -26,7 +26,9 @@ def validate_key(key: str) -> None:
     Raises HTTPException if validation fails.
     """
     if "/" in key or "\\" in key:
-        raise HTTPException(status_code=400, detail="Invalid key: path separators not allowed")
+        raise HTTPException(
+            status_code=400, detail="Invalid key: path separators not allowed"
+        )
 
 
 async def _head_file(storage, key: str):

@@ -5,7 +5,7 @@ Tests for graph utilities.
 import unittest
 from unittest.mock import MagicMock, patch
 
-from nodetool.datastructures.graph_utils import (
+from nodetool.workflows.graph_utils import (
     find_node,
     get_node_input_types,
     get_downstream_subgraph,
@@ -78,7 +78,7 @@ class TestGraphUtils(unittest.TestCase):
         result = get_node_input_types(self.graph, "node1")
         self.assertEqual(result, {})
 
-    @patch("nodetool.common.graph_utils.Graph")
+    @patch("nodetool.workflows.graph_utils.Graph")
     def test_get_downstream_subgraph_returns_correct_subgraph(self, mock_graph_class):
         """Test that get_downstream_subgraph returns correct subgraph."""
         # Create a more complex graph for testing downstream
@@ -135,7 +135,7 @@ class TestGraphUtils(unittest.TestCase):
         # Should have all 3 nodes
         self.assertEqual(len(subgraph.nodes), 3)
 
-    @patch("nodetool.common.graph_utils.Graph")
+    @patch("nodetool.workflows.graph_utils.Graph")
     def test_get_downstream_subgraph_handles_missing_nodes(self, mock_graph_class):
         """Test that get_downstream_subgraph handles missing nodes gracefully."""
         # Mock the Graph constructor

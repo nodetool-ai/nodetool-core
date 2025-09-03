@@ -71,7 +71,9 @@ from nodetool.config.environment import Environment
 import logging
 from nodetool.workflows.base_node import BaseNode
 from nodetool.workflows.property import Property
-from nodetool.integrations.vectorstores.chroma.async_chroma_client import get_async_chroma_client
+from nodetool.integrations.vectorstores.chroma.async_chroma_client import (
+    get_async_chroma_client,
+)
 
 
 from io import BytesIO
@@ -100,7 +102,7 @@ from nodetool.media.video.video_utils import export_to_video_bytes
 
 def create_file_uri(path: str) -> str:
     """
-    Compatibility wrapper delegating to nodetool.common.uri_utils.create_file_uri.
+    Compatibility wrapper delegating to nodetool.io.uri_utils.create_file_uri.
     """
     return _create_file_uri(path)
 
@@ -442,40 +444,7 @@ class ProcessingContext:
         asset = await self.find_asset(asset_id)  # type: ignore
         if asset is None:
             raise ValueError(f"Asset with ID {asset_id} not found")
-
         return self.asset_storage_url(asset.file_name)
-
-    def get_node_input_types(self, node_id: str) -> dict[str, TypeMetadata | None]:
-        """
-        Retrieves the input types for a given node, inferred from the output types of the source nodes.
-
-        Args:
-            node_id (str): The ID of the node.
-
-        Returns:
-            dict[str, str]: A dictionary containing the input types for the node, where the keys are the input slot names
-            and the values are the types of the corresponding source nodes.
-        """
-        from nodetool.datastructures.graph_utils import get_node_input_types
-
-        return get_node_input_types(self.graph, node_id)
-
-    def find_node(self, node_id: str) -> BaseNode:
-        """
-        Finds a node by its ID.
-
-        Args:
-            node_id (str): The ID of the node to be found.
-
-        Returns:
-            BaseNode: The node with the given ID.
-
-        Raises:
-            ValueError: If the node with the given ID does not exist.
-        """
-        from nodetool.datastructures.graph_utils import find_node
-
-        return find_node(self.graph, node_id)
 
     async def get_workflow(self, workflow_id: str):
         """
@@ -2117,24 +2086,6 @@ class ProcessingContext:
             FileNotFoundError: If the font file cannot be found in system locations
         """
         return _get_system_font_path_util(font_name, self.environment)
-
-    def get_graph_connected_to_output(
-        self, node_id: str, source_handle: str, as_subgraph: bool = False
-    ) -> tuple[list[Edge], Graph]:
-        """
-        Return the entire downstream spanning subgraph starting at that output.
-
-        Args:
-            node_id (str): The ID of the node to find connections for.
-            source_handle (str): The handle of the output to find connections for.
-
-        Returns:
-            list[BaseNode] | Graph: Either a list of directly connected nodes or a full
-                reachable subgraph as a `Graph`.
-        """
-        from nodetool.datastructures.graph_utils import get_downstream_subgraph
-
-        return get_downstream_subgraph(self.graph, node_id, source_handle, as_subgraph)
 
     def resolve_workspace_path(self, path: str) -> str:
         """

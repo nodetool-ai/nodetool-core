@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 from fastapi.responses import StreamingResponse
+from fastapi import HTTPException
 from nodetool.integrations.huggingface.huggingface_cache import has_cached_files
 from nodetool.integrations.huggingface.huggingface_file import (
     HFFileInfo,
@@ -47,10 +48,10 @@ log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/models", tags=["models"])
 
 
-"""Helper logic moved to nodetool.common.file_explorer"""
+"""Helper logic moved to nodetool.io.file_explorer"""
 
 
-# Explorer roots and opening logic moved to nodetool.common.file_explorer
+# Explorer roots and opening logic moved to nodetool.io.file_explorer
 
 
 class RepoPath(BaseModel):
@@ -104,8 +105,6 @@ async def delete_ollama_model_endpoint(model_name: str) -> bool:
     return await _delete_ollama_model(model_name)
 
 
-
-
 async def get_language_models() -> list[LanguageModel]:
     models = await get_all_language_models()
 
@@ -142,9 +141,7 @@ async def try_cache_files(
         return try_to_load_from_cache(path.repo_id, path.path) is not None
 
     # Offload blocking cache checks to a thread to avoid blocking the loop
-    results = await asyncio.gather(
-        *(asyncio.to_thread(check_path, p) for p in paths)
-    )
+    results = await asyncio.gather(*(asyncio.to_thread(check_path, p) for p in paths))
     return [
         RepoPath(repo_id=p.repo_id, path=p.path, downloaded=downloaded)
         for p, downloaded in zip(paths, results)
@@ -160,9 +157,7 @@ async def try_cache_repos(
         return has_cached_files(repo_id)
 
     # Offload blocking cache checks to a thread
-    results = await asyncio.gather(
-        *(asyncio.to_thread(check_repo, r) for r in repos)
-    )
+    results = await asyncio.gather(*(asyncio.to_thread(check_repo, r) for r in repos))
     return [
         CachedRepo(repo_id=repo_id, downloaded=downloaded)
         for repo_id, downloaded in zip(repos, results)
@@ -196,7 +191,9 @@ if not Environment.is_production():
             }
 
     @router.get("/huggingface_base_path")
-    async def get_huggingface_base_path_endpoint(user: str = Depends(current_user)) -> dict:
+    async def get_huggingface_base_path_endpoint(
+        user: str = Depends(current_user),
+    ) -> dict:
         """Retrieves the Hugging Face cache directory path.
 
         The path is determined from the HF_HUB_CACHE constant which points to the
@@ -214,7 +211,9 @@ if not Environment.is_production():
             if hf_cache_path.exists() and hf_cache_path.is_dir():
                 return {"path": str(hf_cache_path)}
             else:
-                log.warning(f"Hugging Face cache directory {hf_cache_path} does not exist or is not a directory.")
+                log.warning(
+                    f"Hugging Face cache directory {hf_cache_path} does not exist or is not a directory."
+                )
                 return {
                     "status": "error",
                     "message": f"Hugging Face cache directory does not exist: {hf_cache_path}",
@@ -228,6 +227,24 @@ if not Environment.is_production():
 
     @router.post("/pull_ollama_model")
     async def pull_ollama_model(model_name: str, user: str = Depends(current_user)):
+        # Preflight: attempt a lightweight call to detect if Ollama is reachable
+        try:
+            models = await get_ollama_models()
+        except Exception as e:  # noqa: BLE001
+            api_url = Environment.get("OLLAMA_API_URL")
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "status": "unavailable",
+                    "message": (
+                        f"Cannot connect to Ollama at {api_url!s}. "
+                        "Make sure Ollama is running. Try: 'ollama serve' or set OLLAMA_API_URL."
+                    ),
+                    "error": str(e),
+                },
+            )
+
+        # If reachable, start the streaming response
         return StreamingResponse(
             stream_ollama_model_pull(model_name), media_type="application/json"
         )

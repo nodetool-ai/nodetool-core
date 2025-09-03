@@ -57,8 +57,8 @@ def test_get_ollama_base_path_not_found(mock_get_ollama_dir, client):
 # --- Tests for open_in_explorer ---
 
 
-@patch("nodetool.common.file_explorer.get_valid_explorable_roots")
-@patch("nodetool.common.file_explorer.asyncio.create_subprocess_exec")
+@patch("nodetool.io.file_explorer.get_valid_explorable_roots")
+@patch("nodetool.io.file_explorer.asyncio.create_subprocess_exec")
 def test_open_in_explorer_success_ollama_path(mock_create_proc, mock_get_roots, client):
     """Test opening a valid path within the Ollama models directory."""
     mock_get_roots.return_value = [MOCK_OLLAMA_ROOT, MOCK_HF_CACHE_ROOT]
@@ -78,8 +78,8 @@ def test_open_in_explorer_success_ollama_path(mock_create_proc, mock_get_roots, 
     mock_create_proc.assert_called_once()
 
 
-@patch("nodetool.common.file_explorer.get_valid_explorable_roots")
-@patch("nodetool.common.file_explorer.asyncio.create_subprocess_exec")
+@patch("nodetool.io.file_explorer.get_valid_explorable_roots")
+@patch("nodetool.io.file_explorer.asyncio.create_subprocess_exec")
 def test_open_in_explorer_success_hf_cache_path(mock_create_proc, mock_get_roots, client):
     """Test opening a valid path within the Hugging Face cache directory."""
     mock_get_roots.return_value = [MOCK_OLLAMA_ROOT, MOCK_HF_CACHE_ROOT]
@@ -99,8 +99,8 @@ def test_open_in_explorer_success_hf_cache_path(mock_create_proc, mock_get_roots
     mock_create_proc.assert_called_once()
 
 
-@patch("nodetool.common.file_explorer.get_valid_explorable_roots")
-@patch("nodetool.common.file_explorer.asyncio.create_subprocess_exec")
+@patch("nodetool.io.file_explorer.get_valid_explorable_roots")
+@patch("nodetool.io.file_explorer.asyncio.create_subprocess_exec")
 def test_open_in_explorer_path_traversal_attempt(mock_create_proc, mock_get_roots, client):
     """Test path traversal attempt is blocked when path is outside all safe roots."""
     mock_get_roots.return_value = [MOCK_OLLAMA_ROOT, MOCK_HF_CACHE_ROOT]
@@ -124,7 +124,7 @@ def test_open_in_explorer_path_traversal_attempt(mock_create_proc, mock_get_root
     mock_create_proc.assert_not_called()
 
 
-@patch("nodetool.common.file_explorer.get_valid_explorable_roots")
+@patch("nodetool.io.file_explorer.get_valid_explorable_roots")
 def test_open_in_explorer_no_safe_roots_found(mock_get_roots, client):
     """Test case where no safe explorable roots can be determined."""
     mock_get_roots.return_value = []  # No safe roots configured or found
@@ -138,8 +138,8 @@ def test_open_in_explorer_no_safe_roots_found(mock_get_roots, client):
     }
 
 
-@patch("nodetool.common.file_explorer.get_valid_explorable_roots")
-@patch("nodetool.common.file_explorer.asyncio.create_subprocess_exec")
+@patch("nodetool.io.file_explorer.get_valid_explorable_roots")
+@patch("nodetool.io.file_explorer.asyncio.create_subprocess_exec")
 def test_open_in_explorer_subprocess_error(mock_create_proc, mock_get_roots, client):
     """Test error handling when subprocess.run fails."""
     mock_get_roots.return_value = [MOCK_OLLAMA_ROOT]
