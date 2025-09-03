@@ -454,9 +454,7 @@ class TestUtilityFunctions:
     @pytest.mark.asyncio
     async def test_is_huggingface_model_cached(self, context: ProcessingContext):
         """Test checking if HuggingFace model is cached."""
-        with patch(
-            "nodetool.workflows.processing_context.try_to_load_from_cache"
-        ) as mock_cache:
+        with patch("nodetool.common.hf_utils.try_to_load_from_cache") as mock_cache:
             mock_cache.return_value = "/path/to/cache"
 
             result = await context.is_huggingface_model_cached("bert-base-uncased")

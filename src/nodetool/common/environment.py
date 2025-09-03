@@ -2,7 +2,7 @@ import logging
 import os
 import logging
 from nodetool.common.logging_config import configure_logging, get_logger
-from typing import Any
+from typing import Any, Optional, Dict
 
 from nodetool.storage.abstract_node_cache import AbstractNodeCache
 from nodetool.common.settings import (
@@ -83,8 +83,8 @@ class Environment(object):
     development purposes.
     """
 
-    settings: dict[str, Any] | None = None
-    secrets: dict[str, Any] | None = None
+    settings: Optional[Dict[str, Any]] = None
+    secrets: Optional[Dict[str, Any]] = None
     remote_auth: bool = True
 
     @classmethod
@@ -202,10 +202,23 @@ class Environment(object):
 
     @classmethod
     def get_log_level(cls):
+        """Return desired log level string.
+
+        Priority:
+        1) Explicit LOG_LEVEL from settings/secrets/env via get()
+        2) If DEBUG env is truthy, return "DEBUG"
+        3) NODETOOL_LOG_LEVEL env (default "INFO")
         """
-        The log level is the level of logging that we use.
-        """
-        return cls.get("LOG_LEVEL")
+        level = cls.get("LOG_LEVEL")
+        if level:
+            try:
+                return str(level).upper()
+            except Exception:
+                return "INFO"
+        debug_env = os.getenv("DEBUG")
+        if debug_env and debug_env.lower() not in ("0", "false", "no", "off", ""):
+            return "DEBUG"
+        return os.getenv("NODETOOL_LOG_LEVEL", "INFO").upper()
 
     @classmethod
     def get_memcache_host(cls):
@@ -522,15 +535,6 @@ class Environment(object):
         logging.getLogger("httpx").setLevel(logging.WARNING)
         logging.getLogger("httpcore").setLevel(logging.WARNING)
         return get_logger("nodetool")
-
-    @classmethod
-    def get_log_level(cls):
-        """Return desired log level; DEBUG when env `DEBUG` is truthy."""
-        debug_env = os.getenv("DEBUG")
-        if debug_env and debug_env.lower() not in ("0", "false", "no", "off"):
-            return "DEBUG"
-        # Fallback to env-driven default from logging_config
-        return os.getenv("NODETOOL_LOG_LEVEL", "INFO").upper()
 
     @classmethod
     def get_torch_device(cls):

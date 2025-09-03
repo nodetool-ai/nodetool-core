@@ -68,3 +68,144 @@ def pil_to_png_bytes(image: PIL.Image.Image) -> bytes:
 def numpy_to_png_bytes(arr: np.ndarray) -> bytes:
     img = numpy_to_pil_image(arr)
     return pil_to_png_bytes(img)
+
+
+def pil_image_to_base64_jpeg(
+    image: PIL.Image.Image, max_size: tuple[int, int] = (512, 512), quality: int = 85
+) -> str:
+    """
+    Convert a PIL Image to a base64-encoded JPEG string.
+
+    Args:
+        image: PIL Image to convert
+        max_size: Maximum size (width, height) to resize to while maintaining aspect ratio
+        quality: JPEG quality (0-100)
+
+    Returns:
+        str: Base64-encoded JPEG data
+    """
+    import base64
+    from io import BytesIO
+
+    # Convert to RGB if needed (removes alpha channel)
+    if image.mode in ("RGBA", "LA") or (
+        image.mode == "P" and "transparency" in image.info
+    ):
+        background = PIL.Image.new("RGB", image.size, (255, 255, 255))
+        background.paste(image, mask=image.split()[3] if image.mode == "RGBA" else None)
+        image = background
+    elif image.mode != "RGB":
+        image = image.convert("RGB")
+
+    # Resize if needed
+    if image.width > max_size[0] or image.height > max_size[1]:
+        image.thumbnail(max_size, PIL.Image.Resampling.LANCZOS)
+
+    # Save as JPEG
+    output = BytesIO()
+    image.save(output, format="JPEG", quality=quality)
+
+    # Base64 encode without data URI prefix
+    base64_data = base64.b64encode(output.getvalue()).decode("utf-8")
+    return base64_data
+
+
+def image_data_to_base64_jpeg(
+    image_data: bytes, max_size: tuple[int, int] = (512, 512), quality: int = 85
+) -> str:
+    """
+    Convert image data (bytes) to a base64-encoded JPEG string.
+
+    Args:
+        image_data: Raw image data as bytes
+        max_size: Maximum size (width, height) to resize to while maintaining aspect ratio
+        quality: JPEG quality (0-100)
+
+    Returns:
+        str: Base64-encoded JPEG data
+    """
+    from io import BytesIO
+
+    # Open image with PIL
+    with PIL.Image.open(BytesIO(image_data)) as img:
+        return pil_image_to_base64_jpeg(img, max_size, quality)
+
+
+def image_ref_to_base64_jpeg(
+    image_ref, max_size: tuple[int, int] = (512, 512), quality: int = 85
+) -> str:
+    """
+    Convert an ImageRef to a base64-encoded JPEG string.
+
+    Handles various ImageRef types:
+    - Direct data bytes
+    - data: URIs
+    - http(s) URLs (downloads the image)
+    - file:// URIs (loads from local file)
+    - Other URI types
+
+    Args:
+        image_ref: The ImageRef object to convert
+        max_size: Maximum size (width, height) to resize to while maintaining aspect ratio
+        quality: JPEG quality (0-100)
+
+    Returns:
+        str: Base64-encoded JPEG data
+
+    Raises:
+        ValueError: If the ImageRef cannot be processed
+    """
+    import base64
+    import urllib.parse
+    import httpx
+    from io import BytesIO
+
+    # Handle direct data
+    if hasattr(image_ref, "data") and image_ref.data is not None:
+        return image_data_to_base64_jpeg(image_ref.data, max_size, quality)
+
+    # Handle URI-based images
+    if hasattr(image_ref, "uri"):
+        uri = getattr(image_ref, "uri", "")
+    else:
+        uri = ""
+
+    if not uri:
+        raise ValueError("ImageRef has no data or URI")
+
+    # Handle data: URIs
+    if uri.startswith("data:"):
+        # Extract base64 data from data URI
+        try:
+            header, base64_data = uri.split(",", 1)
+            image_data = base64.b64decode(base64_data)
+            return image_data_to_base64_jpeg(image_data, max_size, quality)
+        except (ValueError, base64.binascii.Error) as e:
+            raise ValueError(f"Invalid data URI: {e}")
+
+    # Handle http(s) URLs
+    elif uri.startswith(("http://", "https://")):
+        try:
+            import asyncio
+
+            # For synchronous context, we'll need to handle this differently
+            # This is a simplified version - in practice, you might want async handling
+            response = httpx.get(uri, follow_redirects=True)
+            response.raise_for_status()
+            return image_data_to_base64_jpeg(response.content, max_size, quality)
+        except Exception as e:
+            raise ValueError(f"Failed to download image from {uri}: {e}")
+
+    # Handle file:// URIs
+    elif uri.startswith("file://"):
+        try:
+            file_path = urllib.parse.urlparse(uri).path
+            with open(file_path, "rb") as f:
+                image_data = f.read()
+            return image_data_to_base64_jpeg(image_data, max_size, quality)
+        except Exception as e:
+            raise ValueError(f"Failed to load image from {uri}: {e}")
+
+    # Handle other URIs or fallback
+    else:
+        raise ValueError(f"Unsupported URI scheme for image_ref: {uri}")

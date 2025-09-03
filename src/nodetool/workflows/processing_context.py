@@ -92,6 +92,10 @@ from nodetool.common.uri_utils import create_file_uri as _create_file_uri
 from nodetool.common.image_utils import (
     numpy_to_pil_image as _numpy_to_pil_image_util,
 )
+from nodetool.common.font_utils import (
+    get_system_font_path as _get_system_font_path_util,
+)
+from nodetool.common.video_utils import export_to_video_bytes
 
 
 def create_file_uri(path: str) -> str:
@@ -452,21 +456,9 @@ class ProcessingContext:
             dict[str, str]: A dictionary containing the input types for the node, where the keys are the input slot names
             and the values are the types of the corresponding source nodes.
         """
+        from nodetool.common.graph_utils import get_node_input_types
 
-        def output_type(node_id: str, slot: str):
-            node = self.graph.find_node(node_id)
-            if node is None:
-                return None
-            for output in node.outputs():
-                if output.name == slot:
-                    return output.type
-            return None
-
-        return {
-            edge.targetHandle: output_type(edge.source, edge.sourceHandle)
-            for edge in self.graph.edges
-            if edge.target == node_id
-        }
+        return get_node_input_types(self.graph, node_id)
 
     def find_node(self, node_id: str) -> BaseNode:
         """
@@ -481,10 +473,9 @@ class ProcessingContext:
         Raises:
             ValueError: If the node with the given ID does not exist.
         """
-        node = self.graph.find_node(node_id)
-        if node is None:
-            raise ValueError(f"Node with ID {node_id} does not exist")
-        return node
+        from nodetool.common.graph_utils import find_node
+
+        return find_node(self.graph, node_id)
 
     async def get_workflow(self, workflow_id: str):
         """
@@ -1047,12 +1038,14 @@ class ProcessingContext:
                         out.seek(0)
                         return out
                     elif isinstance(asset_ref, VideoRef):
-                        # Encode numpy video array as MP4 using imageio (T,H,W,C)
+                        # Encode numpy video array as MP4 using shared utility (T,H,W,C)
                         try:
-                            import imageio  # type: ignore
+                            # Convert numpy array to list of frames for the utility function
+                            video_frames = [frame for frame in obj]
 
-                            out = BytesIO()
-                            imageio.mimwrite(out, obj, format="mp4", fps=30)  # type: ignore
+                            # Use shared video utility for consistent behavior
+                            video_bytes = export_to_video_bytes(video_frames, fps=30)
+                            out = BytesIO(video_bytes)
                             out.seek(0)
                             return out
                         except Exception as e:
@@ -1489,7 +1482,11 @@ class ProcessingContext:
             memory_uri = f"memory://{uuid.uuid4()}"
             # Store the AudioSegment directly for fast retrieval
             self._memory_set(memory_uri, audio_segment)
-            return AudioRef(uri=memory_uri)
+            # Also populate data field with binary representation for consistency
+            buffer = BytesIO()
+            audio_segment.export(buffer, format="mp3")
+            buffer.seek(0)
+            return AudioRef(uri=memory_uri, data=buffer.read())
         else:
             # Create asset when name is provided (persistence needed)
             buffer = BytesIO()
@@ -1798,10 +1795,14 @@ class ProcessingContext:
         Returns:
             VideoRef: The VideoRef object.
         """
-        import imageio
+        # Convert numpy array to list of frames for the utility function
+        video_frames = [frame for frame in video]
 
-        buffer = BytesIO()
-        imageio.mimwrite(buffer, video, format="mp4", fps=fps)  # type: ignore
+        # Use shared video utility for consistent behavior
+        video_bytes = export_to_video_bytes(video_frames, fps=fps)
+
+        # Create BytesIO from the video bytes
+        buffer = BytesIO(video_bytes)
         buffer.seek(0)
         return await self.video_from_io(buffer, name=name, parent_id=parent_id)
 
@@ -1974,8 +1975,9 @@ class ProcessingContext:
         Returns:
             bool: True if the model is cached, False otherwise.
         """
-        cache_path = try_to_load_from_cache(repo_id, "config.json")
-        return cache_path is not None
+        from nodetool.common.hf_utils import is_model_cached
+
+        return is_model_cached(repo_id)
 
     def encode_assets_as_uri(self, value: Any) -> Any:
         """
@@ -1987,17 +1989,9 @@ class ProcessingContext:
         Returns:
             Any: The value with all AssetRef objects encoded as URIs
         """
-        if isinstance(value, AssetRef):
-            return value.encode_data_to_uri()
-        elif isinstance(value, dict):
-            return {k: self.encode_assets_as_uri(v) for k, v in value.items()}
-        elif isinstance(value, list):
-            return [self.encode_assets_as_uri(item) for item in value]
-        elif isinstance(value, tuple):
-            items = [self.encode_assets_as_uri(item) for item in value]
-            return tuple(items)
-        else:
-            return value
+        from nodetool.common.asset_utils import encode_assets_as_uri
+
+        return encode_assets_as_uri(value)
 
     async def embed_assets_in_data(self, value: Any) -> Any:
         """
@@ -2121,80 +2115,7 @@ class ProcessingContext:
         Raises:
             FileNotFoundError: If the font file cannot be found in system locations
         """
-        # Determine allowed font extensions per OS (aligned with api/font.py)
-        current_os = platform.system()
-        if current_os == "Darwin":
-            allowed_exts = [".ttf", ".otf", ".ttc", ".dfont"]
-        elif current_os == "Windows":
-            allowed_exts = [".ttf", ".otf", ".ttc"]
-        else:  # Linux and others default to Linux set used in api/font.py
-            allowed_exts = [".ttf", ".otf"]
-
-        input_name_lower = font_name.lower()
-        base_name, input_ext = os.path.splitext(input_name_lower)
-        has_extension = input_ext != ""
-
-        def file_matches(target_file: str) -> bool:
-            file_lower = target_file.lower()
-            name_no_ext, file_ext = os.path.splitext(file_lower)
-            if has_extension:
-                # If user specified an extension, match exact filename (case-insensitive)
-                return file_lower == input_name_lower
-            # No extension provided: match base name with any allowed extension
-            return name_no_ext == base_name and file_ext in allowed_exts
-
-        # First check FONT_PATH environment variable if it exists
-        if "FONT_PATH" in self.environment:
-            font_path = self.environment["FONT_PATH"]
-            if font_path and os.path.exists(font_path):
-                # If FONT_PATH points directly to a file
-                if os.path.isfile(font_path):
-                    return font_path
-                # If FONT_PATH is a directory, search for the font file
-                for root, _, files in os.walk(font_path):
-                    for f in files:
-                        if file_matches(f):
-                            return os.path.join(root, f)
-
-        home_dir = os.path.expanduser("~")
-
-        # Common font locations by OS
-        font_locations = {
-            "Windows": [
-                "C:\\Windows\\Fonts",
-            ],
-            "Darwin": [  # macOS
-                "/System/Library/Fonts",
-                "/Library/Fonts",
-                f"{home_dir}/Library/Fonts",
-            ],
-            "Linux": [
-                "/usr/share/fonts",
-                "/usr/local/share/fonts",
-                f"{home_dir}/.fonts",
-                f"{home_dir}/.local/share/fonts",
-            ],
-        }
-
-        # Get paths for current OS
-        search_paths = font_locations.get(current_os, [])
-
-        log.info(
-            f"Searching for font '{font_name}' in {search_paths} with extensions {allowed_exts}"
-        )
-
-        # Search for the font file
-        for base_path in search_paths:
-            if os.path.exists(base_path):
-                # Walk through all subdirectories
-                for root, _, files in os.walk(base_path):
-                    for f in files:
-                        if file_matches(f):
-                            return os.path.join(root, f)
-
-        raise FileNotFoundError(
-            f"Could not find font '{font_name}' in system locations"
-        )
+        return _get_system_font_path_util(font_name, self.environment)
 
     def get_graph_connected_to_output(
         self, node_id: str, source_handle: str, as_subgraph: bool = False
@@ -2210,51 +2131,9 @@ class ProcessingContext:
             list[BaseNode] | Graph: Either a list of directly connected nodes or a full
                 reachable subgraph as a `Graph`.
         """
-        from collections import deque
+        from nodetool.common.graph_utils import get_downstream_subgraph
 
-        initial_edges = [
-            edge
-            for edge in self.graph.edges
-            if edge.source == node_id and edge.sourceHandle == source_handle
-        ]
-
-        included_node_ids: set[str] = set()
-        included_edges = []
-
-        # Seed the queue with the targets of the initial edges
-        queue = deque()
-        for e in initial_edges:
-            included_edges.append(e)
-            included_node_ids.add(e.target)
-            queue.append(e.target)
-
-        # BFS over outgoing edges to collect downstream nodes and edges
-        while queue:
-            current = queue.popleft()
-            for edge in self.graph.edges:
-                if edge.source == current:
-                    included_edges.append(edge)
-                    if edge.target not in included_node_ids:
-                        included_node_ids.add(edge.target)
-                        queue.append(edge.target)
-
-        # Materialize node instances, skipping any missing nodes gracefully
-        included_nodes: list[BaseNode] = []
-        for nid in included_node_ids:
-            try:
-                included_nodes.append(self.find_node(nid))
-            except ValueError:
-                # Skip nodes that don't exist in the graph
-                pass
-
-        # Filter edges to those whose endpoints are both present in the included set
-        filtered_edges = [
-            e
-            for e in included_edges
-            if e.source in included_node_ids and e.target in included_node_ids
-        ]
-
-        return initial_edges, Graph(nodes=included_nodes, edges=filtered_edges)
+        return get_downstream_subgraph(self.graph, node_id, source_handle, as_subgraph)
 
     def resolve_workspace_path(self, path: str) -> str:
         """
@@ -2263,7 +2142,6 @@ class ProcessingContext:
         by interpreting them relative to the `workspace_dir`.
 
         Args:
-            workspace_dir: The absolute path to the workspace directory.
             path: The path to resolve, which can be:
                 - Prefixed with '/workspace/' (e.g., '/workspace/output/file.txt')
                 - Prefixed with 'workspace/' (e.g., 'workspace/output/file.txt')
@@ -2276,61 +2154,9 @@ class ProcessingContext:
         Raises:
             ValueError: If workspace_dir is not provided or empty.
         """
-        if not self.workspace_dir:
-            raise ValueError("Workspace directory is required")
+        from nodetool.common.path_utils import resolve_workspace_path
 
-        relative_path: str
-        # Normalize path separators for consistent checks
-        normalized_path = path.replace("\\", "/")
-
-        # Handle paths with /workspace/ prefix
-        if normalized_path.startswith("/workspace/"):
-            relative_path = normalized_path[len("/workspace/") :]
-        # Handle paths with workspace/ prefix (without leading slash)
-        elif normalized_path.startswith("workspace/"):
-            relative_path = normalized_path[len("workspace/") :]
-        # Handle absolute paths by stripping leading slash and treating as relative to workspace
-        elif os.path.isabs(normalized_path):
-            # On Windows, isabs('/') is False. Check explicitly.
-            if normalized_path.startswith("/"):
-                relative_path = normalized_path[1:]
-            else:
-                # For Windows absolute paths (e.g., C:\...), we still want to join them relative to workspace?
-                # This behaviour might need clarification. Assuming here they are treated as relative for consistency.
-                # If absolute paths outside workspace should be allowed, this needs change.
-                log.warning(
-                    f"Treating absolute path '{path}' as relative to workspace root '{self.workspace_dir}'."
-                )
-                # Attempt to get path relative to drive root
-                drive, path_part = os.path.splitdrive(normalized_path)
-                relative_path = path_part.lstrip(
-                    "\\/"
-                )  # Strip leading slashes from the part after drive
-        # Handle relative paths
-        else:
-            relative_path = normalized_path
-
-        # Prevent path traversal attempts (e.g., ../../etc/passwd)
-        # Join the workspace directory with the potentially cleaned relative path
-        abs_path = os.path.abspath(os.path.join(self.workspace_dir, relative_path))
-
-        # Final check: ensure the resolved path is still within the workspace directory
-        # Use commonprefix for robustness across OS
-        common_prefix = os.path.commonprefix(
-            [os.path.abspath(self.workspace_dir), abs_path]
-        )
-        if os.path.abspath(self.workspace_dir) != common_prefix:
-            log.error(
-                f"Resolved path '{abs_path}' is outside the workspace directory '{self.workspace_dir}'. Original path: '{path}'"
-            )
-            # Option 1: Raise an error
-            raise ValueError(
-                f"Resolved path '{abs_path}' is outside the workspace directory."
-            )
-            # Option 2: Return a default safe path or the workspace root (less ideal)
-            # return workspace_dir
-
-        return abs_path
+        return resolve_workspace_path(self.workspace_dir, path)
 
     async def get_browser(
         self,

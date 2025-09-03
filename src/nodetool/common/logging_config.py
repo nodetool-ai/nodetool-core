@@ -1,6 +1,7 @@
 import logging
 import os
 import sys
+from typing import Optional, Union
 
 _DEFAULT_LEVEL = os.getenv("NODETOOL_LOG_LEVEL", "INFO").upper()
 _DEFAULT_FORMAT = os.getenv(
@@ -17,10 +18,12 @@ def _supports_color() -> bool:
         return False
 
 
-def configure_logging(level: str | int | None = None,
-                      fmt: str | None = None,
-                      datefmt: str | None = None,
-                      propagate_root: bool = False) -> None:
+def configure_logging(
+    level: Optional[Union[str, int]] = None,
+    fmt: Optional[str] = None,
+    datefmt: Optional[str] = None,
+    propagate_root: bool = False,
+) -> None:
     """Configure root logging once with a consistent format.
 
     Environment overrides:
@@ -44,13 +47,14 @@ def configure_logging(level: str | int | None = None,
 
     # Avoid reconfiguring if handlers already exist (e.g., in tests)
     root = logging.getLogger()
+
     class _LevelColorFormatter(logging.Formatter):
         COLORS = {
-            "DEBUG": "\x1b[37m",   # light gray
-            "INFO": "\x1b[32m",    # green
-            "WARNING": "\x1b[33m", # yellow
-            "ERROR": "\x1b[31m",   # red
-            "CRITICAL": "\x1b[41m",# red background
+            "DEBUG": "\x1b[37m",  # light gray
+            "INFO": "\x1b[32m",  # green
+            "WARNING": "\x1b[33m",  # yellow
+            "ERROR": "\x1b[31m",  # red
+            "CRITICAL": "\x1b[41m",  # red background
         }
 
         RESET = "\x1b[0m"
@@ -59,7 +63,9 @@ def configure_logging(level: str | int | None = None,
             if use_color:
                 levelname = record.levelname
                 color = self.COLORS.get(levelname, "")
-                record.levelname_color = f"{color}{levelname}{self.RESET}" if color else levelname
+                record.levelname_color = (
+                    f"{color}{levelname}{self.RESET}" if color else levelname
+                )
             else:
                 record.levelname_color = record.levelname
             return super().format(record)

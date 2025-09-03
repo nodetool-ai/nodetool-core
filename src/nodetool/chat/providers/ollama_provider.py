@@ -19,6 +19,10 @@ from nodetool.chat.providers.base import ChatProvider
 from nodetool.chat.token_counter import count_messages_tokens
 from nodetool.agents.tools.base import Tool
 from nodetool.common.environment import Environment
+from nodetool.common.image_utils import (
+    image_data_to_base64_jpeg,
+    image_ref_to_base64_jpeg,
+)
 from nodetool.metadata.types import (
     Message,
     Provider,
@@ -200,7 +204,7 @@ class OllamaProvider(ChatProvider):
 
                 # Handle image content
                 image_parts = [
-                    self._process_image_content(part.image)
+                    image_ref_to_base64_jpeg(part.image)
                     for part in message.content
                     if isinstance(part, MessageImageContent)
                 ]
@@ -423,100 +427,22 @@ class OllamaProvider(ChatProvider):
         Converts all images to JPEG format, resizes to 512x512 bounds,
         and returns as a base64 string without data URI prefix.
 
+        DEPRECATED: Use nodetool.common.image_utils.image_ref_to_base64_jpeg instead.
+
         Args:
             image: The ImageRef object containing the image URI or data
 
         Returns:
             str: The processed image as a base64 string
         """
-        import base64
-        import requests
-        from urllib.parse import urlparse
-        import io
-        from PIL import Image
-        import os
+        import warnings
 
-        def process_image_data(image_data: bytes) -> str:
-            """Convert image data to resized JPEG and return as base64 string."""
-            try:
-                # Open image with PIL
-                with Image.open(io.BytesIO(image_data)) as img:
-                    # Convert to RGB if needed (removes alpha channel)
-                    if img.mode in ("RGBA", "LA") or (
-                        img.mode == "P" and "transparency" in img.info
-                    ):
-                        background = Image.new("RGB", img.size, (255, 255, 255))
-                        background.paste(
-                            img, mask=img.split()[3] if img.mode == "RGBA" else None
-                        )
-                        img = background
-                    elif img.mode != "RGB":
-                        img = img.convert("RGB")
-
-                    # Resize if needed
-                    if img.width > 512 or img.height > 512:
-                        img.thumbnail((512, 512), Image.Resampling.LANCZOS)
-
-                    # Save as JPEG
-                    output = io.BytesIO()
-                    img.save(output, format="JPEG", quality=85)
-
-                    # Base64 encode without data URI prefix
-                    base64_data = base64.b64encode(output.getvalue()).decode("utf-8")
-                    return base64_data
-            except Exception as e:
-                print(f"Error processing image: {e}")
-                raise
-
-        # Case 1: Image has data bytes
-        if hasattr(image, "data") and image.data:
-            try:
-                return process_image_data(image.data)
-            except Exception as e:
-                print(f"Failed to process image from data: {e}")
-
-        # Case 2: Already a base64 data URI
-        if image.uri and image.uri.startswith("data:"):
-            try:
-                # Extract the base64 data and decode
-                header, encoded = image.uri.split(",", 1)
-                image_data = base64.b64decode(encoded)
-                # Re-process to standardize format and size
-                return process_image_data(image_data)
-            except Exception as e:
-                print(f"Failed to process base64 image: {e}")
-                # Return original if processing fails, but strip data URI prefix
-                if image.uri.startswith("data:"):
-                    return image.uri.split(",", 1)[1]
-                return image.uri
-
-        # Case 3: URL
-        if image.uri:
-            parsed = urlparse(image.uri)
-            if parsed.scheme in ("http", "https"):
-                try:
-                    response = requests.get(image.uri, timeout=10)
-                    response.raise_for_status()
-                    return process_image_data(response.content)
-                except Exception as e:
-                    print(
-                        f"Failed to download or process image from URL {image.uri}: {e}"
-                    )
-
-            # Case 4: Local file
-            elif parsed.scheme == "file" or not parsed.scheme:
-                try:
-                    file_path = image.uri
-                    if file_path.startswith("file://"):
-                        file_path = file_path[7:]
-
-                    with open(os.path.expanduser(file_path), "rb") as f:
-                        return process_image_data(f.read())
-                except Exception as e:
-                    print(f"Failed to read or process local image {image.uri}: {e}")
-
-        # If all processing attempts fail, return an empty string rather than a data URI
-        return "" if not image.uri else image.uri
+        warnings.warn(
+            "_process_image_content is deprecated. Use nodetool.common.image_utils.image_ref_to_base64_jpeg instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return image_ref_to_base64_jpeg(image)
 
     def is_context_length_error(self, error: Exception) -> bool:
         msg = str(error).lower()

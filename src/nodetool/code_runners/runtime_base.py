@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import asyncio as _asyncio
 import logging as _logging
+import os as _os
 import shlex as _shlex
 import socket
+import subprocess as _subprocess
 import threading as _threading
 from typing import Any, AsyncGenerator, AsyncIterator
 
@@ -253,7 +255,25 @@ class StreamRunnerBase:
         )
         command_str: str | None = None
         try:
-            client = self._get_docker_client()
+            # Attempt to acquire a Docker client; if unavailable, fallback to local subprocess
+            try:
+                client = self._get_docker_client()
+            except Exception as docker_unavailable:
+                self._logger.debug(
+                    "Docker unavailable, falling back to local subprocess execution: %s",
+                    docker_unavailable,
+                )
+                self._local_run(
+                    queue=queue,
+                    loop=loop,
+                    user_code=user_code,
+                    env=env,
+                    env_locals=env_locals,
+                    context=context,
+                    node=node,
+                    stdin_stream=stdin_stream,
+                )
+                return
 
             image = self.image
             command = self.build_container_command(user_code, env_locals)
@@ -299,6 +319,171 @@ class StreamRunnerBase:
                     self._active_sock = None
         except Exception as e:
             self._handle_run_exception(e, command_str, queue, loop)
+
+    # ---- Local subprocess fallback ----
+    def _local_run(
+        self,
+        *,
+        queue: _asyncio.Queue[dict[str, Any]],
+        loop: _asyncio.AbstractEventLoop,
+        user_code: str,
+        env: dict[str, Any],
+        env_locals: dict[str, Any],
+        context: ProcessingContext,
+        node: BaseNode,
+        stdin_stream: AsyncIterator[str] | None,
+    ) -> None:
+        """Execute the command as a local subprocess and stream stdout/stderr.
+
+        This serves as a graceful degradation when Docker is not available,
+        preserving the same streaming semantics as the Docker-backed runner.
+        """
+        self._logger.debug("_local_run() begin: code=%s", user_code)
+        command_vec: list[str] | None = None
+        proc: _subprocess.Popen[bytes] | None = None
+        cancel_timer: _threading.Timer | None = None
+        try:
+            command_vec = self.build_container_command(user_code, env_locals)
+            cmd_str = self._format_command_str(command_vec)
+
+            # Prepare environment and working directory
+            proc_env = _os.environ.copy()
+            proc_env.update(self.build_container_environment(env))
+            cwd = getattr(context, "workspace_dir", None) or _os.getcwd()
+
+            self._logger.debug("starting local subprocess: cmd=%s cwd=%s", cmd_str, cwd)
+            proc = _subprocess.Popen(
+                command_vec or [],
+                cwd=cwd,
+                env=proc_env,
+                stdin=_subprocess.PIPE if stdin_stream is not None else None,
+                stdout=_subprocess.PIPE,
+                stderr=_subprocess.PIPE,
+                bufsize=1,  # line-buffered
+                universal_newlines=False,
+            )
+
+            # Start reader threads
+            stdout_thread: _threading.Thread | None = None
+            stderr_thread: _threading.Thread | None = None
+            if proc.stdout is not None:
+                stdout_thread = _threading.Thread(
+                    target=self._reader_thread,
+                    args=(proc.stdout, "stdout", queue, loop, context, node),
+                    daemon=True,
+                )
+                stdout_thread.start()
+            if proc.stderr is not None:
+                stderr_thread = _threading.Thread(
+                    target=self._reader_thread,
+                    args=(proc.stderr, "stderr", queue, loop, context, node),
+                    daemon=True,
+                )
+                stderr_thread.start()
+
+            # Forward stdin if provided
+            if stdin_stream is not None and proc.stdin is not None:
+
+                async def _feed() -> None:
+                    try:
+                        async for data in stdin_stream:
+                            if not data.endswith("\n"):
+                                data = data + "\n"
+                            b = data.encode("utf-8")
+                            await _asyncio.to_thread(proc.stdin.write, b)
+                            await _asyncio.to_thread(proc.stdin.flush)
+                        try:
+                            await _asyncio.to_thread(proc.stdin.close)
+                        except Exception:
+                            pass
+                    except Exception as e:
+                        self._logger.debug("local stdin feeder ended: %s", e)
+
+                _asyncio.run_coroutine_threadsafe(_feed(), loop)
+
+            # Optional timeout watchdog to terminate long-running local processes
+            if self.timeout_seconds and self.timeout_seconds > 0:
+
+                def _force_kill() -> None:
+                    try:
+                        if proc and proc.poll() is None:
+                            self._logger.debug("forcing kill of local subprocess")
+                            proc.terminate()
+                    except Exception:
+                        pass
+
+                cancel_timer = _threading.Timer(self.timeout_seconds, _force_kill)
+                cancel_timer.daemon = True
+                cancel_timer.start()
+
+            rc = proc.wait()
+            self._logger.debug("local subprocess exited with code %s", rc)
+            # Ensure stdout/stderr reader threads have drained remaining buffered lines
+            try:
+                if stdout_thread is not None:
+                    stdout_thread.join(timeout=0.5)
+            except Exception:
+                pass
+            try:
+                if stderr_thread is not None:
+                    stderr_thread.join(timeout=0.5)
+            except Exception:
+                pass
+            if rc != 0:
+                raise RuntimeError(f"Process exited with code {rc}")
+
+            _asyncio.run_coroutine_threadsafe(
+                queue.put({"type": "final", "ok": True}), loop
+            )
+        except Exception as e:
+            try:
+                self._logger.exception(
+                    "_local_run() error for cmd=%s: %s", command_vec, e
+                )
+            except Exception:
+                pass
+            _asyncio.run_coroutine_threadsafe(
+                queue.put({"type": "final", "ok": False, "error": str(e)}), loop
+            )
+        finally:
+            try:
+                if cancel_timer is not None:
+                    try:
+                        cancel_timer.cancel()
+                    except Exception:
+                        pass
+                if proc is not None:
+                    try:
+                        if proc.poll() is None:
+                            proc.terminate()
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+
+    def _reader_thread(
+        self,
+        pipe,  # IO[bytes]
+        slot: str,
+        queue: _asyncio.Queue[dict[str, Any]],
+        loop: _asyncio.AbstractEventLoop,
+        context: ProcessingContext,
+        node: BaseNode,
+    ) -> None:
+        """Read lines from a byte stream and emit them as messages/logs."""
+        buf = b""
+        try:
+            while True:
+                chunk = pipe.readline()
+                if not chunk:
+                    break
+                buf += chunk
+                while b"\n" in buf:
+                    line, buf = buf.split(b"\n", 1)
+                    text = line.decode("utf-8", errors="ignore")
+                    self._emit_line(queue, loop, context, node, slot, text)
+        except Exception as e:
+            self._logger.debug("reader(%s) ended: %s", slot, e)
 
     # ---- Helpers (Docker) ----
     def _get_docker_client(self):  # type: ignore[no-untyped-def]
