@@ -157,7 +157,7 @@ class RegularChatProcessor(MessageProcessor):
                         log.debug(f"Processing tool call: {chunk.name}")
 
                         # Process the tool call
-                        tool_result = await self._run_tool(
+                        tool_result, message = await self._run_tool(
                             processing_context, chunk, graph
                         )
                         log.debug(
@@ -167,7 +167,15 @@ class RegularChatProcessor(MessageProcessor):
                         # Add tool messages to unprocessed messages
                         assistant_msg = Message(
                             role="assistant",
-                            tool_calls=[chunk],
+                            tool_calls=[
+                                ToolCall(
+                                    id=chunk.id,
+                                    name=chunk.name,
+                                    args=chunk.args,
+                                    result=None,
+                                    message=message,
+                                )
+                            ],
                             thread_id=last_message.thread_id,
                             workflow_id=last_message.workflow_id,
                             provider=last_message.provider,
@@ -175,6 +183,8 @@ class RegularChatProcessor(MessageProcessor):
                             agent_mode=last_message.agent_mode or False,
                         )
                         unprocessed_messages.append(assistant_msg)
+                        # Stream assistant tool-call message to client so UI can render it immediately
+                        await self.send_message(assistant_msg.model_dump())
 
                         # Convert result to JSON
                         converted_result = self._recursively_model_dump(
@@ -184,9 +194,16 @@ class RegularChatProcessor(MessageProcessor):
                         tool_msg = Message(
                             role="tool",
                             tool_call_id=tool_result.id,
+                            name=chunk.name,
                             content=tool_result_json,
+                            thread_id=last_message.thread_id,
+                            workflow_id=last_message.workflow_id,
+                            provider=last_message.provider,
+                            model=last_message.model,
                         )
                         unprocessed_messages.append(tool_msg)
+                        # Stream tool result to client for immediate visualization
+                        await self.send_message(tool_msg.model_dump())
 
                 # If no more unprocessed messages, we're done
                 if not unprocessed_messages:
@@ -322,7 +339,7 @@ class RegularChatProcessor(MessageProcessor):
         context: ProcessingContext,
         tool_call: ToolCall,
         graph: Optional[Graph] = None,
-    ) -> ToolCall:
+    ) -> tuple[ToolCall, str]:
         """Execute a tool call and return the result."""
         tool = await resolve_tool_by_name(tool_call.name, context.user_id)
         log.debug(
@@ -330,13 +347,13 @@ class RegularChatProcessor(MessageProcessor):
         )
 
         # Send tool call to client
-        await self.send_message(
-            ToolCallUpdate(
-                name=tool_call.name,
-                args=tool_call.args,
-                message=tool.user_message(tool_call.args),
-            ).model_dump()
-        )
+        # await self.send_message(
+        #     ToolCallUpdate(
+        #         name=tool_call.name,
+        #         args=tool_call.args,
+        #         message=tool.user_message(tool_call.args),
+        #     ).model_dump()
+        # )
 
         result = await tool.process(context, tool_call.args)
         log.debug(f"Tool {tool_call.name} returned: {result}")
@@ -346,7 +363,7 @@ class RegularChatProcessor(MessageProcessor):
             name=tool_call.name,
             args=tool_call.args,
             result=result,
-        )
+        ), tool.user_message(tool_call.args)
 
     def _recursively_model_dump(self, obj):
         """Recursively convert BaseModel instances to dictionaries."""

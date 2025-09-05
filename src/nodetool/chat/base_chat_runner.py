@@ -377,8 +377,10 @@ class BaseChatRunner(ABC):
                 message = await processor.get_message()
                 if message:
                     if message["type"] == "message":
+                        # Persist and forward message events so the client can render them (e.g., tool calls/results)
                         await self._save_message_to_db_async(message)
-                        log.debug("Saved assistant message to database")
+                        await self.send_message(message)
+                        log.debug("Saved and forwarded message to client")
                     else:
                         await self.send_message(message)
                 else:
@@ -407,6 +409,12 @@ class BaseChatRunner(ABC):
 
         last_message = chat_history[-1]
         processing_context = ProcessingContext(user_id=self.user_id)
+
+        # Add UI tool support if available
+        if hasattr(self, "tool_bridge") and hasattr(self, "client_tools_manifest"):
+            processing_context.tool_bridge = self.tool_bridge
+            processing_context.ui_tool_names = set(self.client_tools_manifest.keys())
+            processing_context.client_tools_manifest = self.client_tools_manifest
 
         assert last_message.model, "Model is required"
 
@@ -464,6 +472,12 @@ class BaseChatRunner(ABC):
         processor = AgentMessageProcessor(provider)
         processing_context = ProcessingContext(user_id=self.user_id)
 
+        # Add UI tool support if available
+        if hasattr(self, "tool_bridge") and hasattr(self, "client_tools_manifest"):
+            processing_context.tool_bridge = self.tool_bridge
+            processing_context.ui_tool_names = set(self.client_tools_manifest.keys())
+            processing_context.client_tools_manifest = self.client_tools_manifest
+
         await self._run_processor(
             processor=processor,
             chat_history=chat_history,
@@ -477,7 +491,12 @@ class BaseChatRunner(ABC):
         chat_history = messages
         processor = WorkflowMessageProcessor(self.user_id)
         processing_context = ProcessingContext(user_id=self.user_id)
-        last_message = chat_history[-1]
+
+        # Add UI tool support if available
+        if hasattr(self, "tool_bridge") and hasattr(self, "client_tools_manifest"):
+            processing_context.tool_bridge = self.tool_bridge
+            processing_context.ui_tool_names = set(self.client_tools_manifest.keys())
+            processing_context.client_tools_manifest = self.client_tools_manifest
 
         await self._run_processor(
             processor=processor,
@@ -514,12 +533,12 @@ class BaseChatRunner(ABC):
                         "message": "Generation stopped by user",
                     }
                 )
-            except:
+            except Exception:
                 pass
         except Exception as e:
             log.error(f"Error processing message: {str(e)}", exc_info=True)
             error_message = {"type": "error", "message": str(e)}
             try:
                 await self.send_message(error_message)
-            except:
+            except Exception:
                 pass

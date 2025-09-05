@@ -1,4 +1,3 @@
-from collections.abc import Sequence
 from datetime import datetime
 from enum import Enum
 import asyncio
@@ -21,42 +20,32 @@ import PIL.ImageOps
 import numpy as np
 import pandas as pd
 from pydub import AudioSegment
-from starlette.datastructures import URL
 
 if TYPE_CHECKING:
     from sklearn.base import BaseEstimator
 
-from huggingface_hub.file_download import try_to_load_from_cache
-from nodetool.metadata.type_metadata import TypeMetadata
 from nodetool.models.asset import Asset
 from nodetool.models.job import Job
 from nodetool.models.workflow import Workflow
 from nodetool.models.message import Message as DBMessage
 from nodetool.types.chat import (
-    MessageList,
     MessageCreateRequest,
 )
-from nodetool.types.graph import Edge, Node
-from nodetool.types.job import JobUpdate
 from nodetool.types.prediction import (
     Prediction,
     PredictionResult,
 )
 from nodetool.chat.workspace_manager import WorkspaceManager
 from nodetool.metadata.types import (
-    Message,
     NPArray,
     Provider,
-    ToolCall,
     TorchTensor,
     asset_types,
 )
 from nodetool.workflows.graph import Graph
 from nodetool.workflows.types import (
-    Chunk,
     ProcessingMessage,
 )
-from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.metadata.types import (
     AssetRef,
     AudioRef,
@@ -65,7 +54,6 @@ from nodetool.metadata.types import (
     ModelRef,
     TextRef,
     VideoRef,
-    dtype_name,
 )
 from nodetool.config.environment import Environment
 import logging
@@ -77,17 +65,10 @@ from nodetool.integrations.vectorstores.chroma.async_chroma_client import (
 
 
 from io import BytesIO
-from typing import IO, Any, AsyncGenerator, Union, Callable
+from typing import IO, Any, AsyncGenerator, Callable
 from chromadb.api import ClientAPI
 from pickle import loads
-import platform
-
-
-log = logging.getLogger(__name__)
-
-
 from nodetool.media.common.media_constants import (
-    AUDIO_CODEC,
     DEFAULT_AUDIO_SAMPLE_RATE,
 )
 from nodetool.io.uri_utils import create_file_uri as _create_file_uri
@@ -98,6 +79,9 @@ from nodetool.media.image.font_utils import (
     get_system_font_path as _get_system_font_path_util,
 )
 from nodetool.media.video.video_utils import export_to_video_bytes
+
+
+log = logging.getLogger(__name__)
 
 
 def create_file_uri(path: str) -> str:
@@ -162,6 +146,9 @@ class ProcessingContext:
         chroma_client: ClientAPI | None = None,
         workspace_dir: str | None = None,
         http_client: httpx.AsyncClient | None = None,
+        tool_bridge: Any | None = None,
+        ui_tool_names: set[str] | None = None,
+        client_tools_manifest: dict[str, dict] | None = None,
     ):
         self.user_id = user_id or "1"
         self.auth_token = auth_token or "local_token"
@@ -181,6 +168,9 @@ class ProcessingContext:
         if http_client is not None:
             self._http_client = http_client
         self.workspace_dir = workspace_dir or WorkspaceManager().get_current_directory()
+        self.tool_bridge = tool_bridge
+        self.ui_tool_names = ui_tool_names or set()
+        self.client_tools_manifest = client_tools_manifest or {}
         # Use global node_cache for memory:// storage to enable portability
 
     def _numpy_to_pil_image(self, arr: np.ndarray) -> PIL.Image.Image:
@@ -264,6 +254,11 @@ class ProcessingContext:
             device=self.device,
             variables=self.variables,
             environment=self.environment,
+            tool_bridge=self.tool_bridge,
+            ui_tool_names=self.ui_tool_names.copy() if self.ui_tool_names else set(),
+            client_tools_manifest=(
+                self.client_tools_manifest.copy() if self.client_tools_manifest else {}
+            ),
         )
 
     def get(self, key: str, default: Any = None) -> Any:
