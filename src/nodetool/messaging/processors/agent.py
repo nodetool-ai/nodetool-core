@@ -21,6 +21,7 @@ from nodetool.workflows.types import (
     SubTaskResult,
 )
 from nodetool.workflows.processing_context import ProcessingContext
+from nodetool.agents.tools.base import Tool
 from nodetool.chat.providers.base import ChatProvider
 from .base import MessageProcessor
 
@@ -54,7 +55,7 @@ class AgentMessageProcessor(MessageProcessor):
         objective = self._extract_objective(last_message)
 
         # Get selected tools based on message.tools
-        selected_tools = []
+        selected_tools: list[Tool] = []
         if last_message.tools:
             tool_names = set(last_message.tools)
             selected_tools = await asyncio.gather(
@@ -66,6 +67,33 @@ class AgentMessageProcessor(MessageProcessor):
             log.debug(
                 f"Selected tools for agent: {[tool.name for tool in selected_tools]}"
             )
+
+        # Include UI proxy tools if client provided a manifest via tool bridge
+        # This mirrors HelpMessageProcessor behavior so the Agent can call frontend tools.
+        try:
+            if (
+                hasattr(processing_context, "tool_bridge")
+                and processing_context.tool_bridge
+                and hasattr(processing_context, "client_tools_manifest")
+                and processing_context.client_tools_manifest
+            ):
+                from .help import UIToolProxy  # local proxy that forwards to frontend
+
+                ui_tools: list[Tool] = []
+                for (
+                    _,
+                    tool_manifest,
+                ) in processing_context.client_tools_manifest.items():
+                    try:
+                        ui_tools.append(UIToolProxy(tool_manifest))
+                    except Exception as e:
+                        log.warning(f"Failed to register UI tool proxy: {e}")
+
+                if ui_tools:
+                    selected_tools.extend(ui_tools)
+                    log.debug(f"Added {len(ui_tools)} UI tool proxies to agent tools")
+        except Exception as e:
+            log.warning(f"Error while adding UI tool proxies: {e}")
 
         try:
             from nodetool.agents.agent import Agent
