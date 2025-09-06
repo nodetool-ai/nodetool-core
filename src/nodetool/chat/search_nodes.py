@@ -1,9 +1,9 @@
-from nodetool.chat.help import registry
 from nodetool.metadata.node_metadata import NodeMetadata
 from nodetool.metadata.type_metadata import TypeMetadata
+from nodetool.packages.registry import Registry
 
 
-from typing import Any
+registry = Registry()
 
 
 def search_nodes(

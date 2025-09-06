@@ -214,6 +214,34 @@ class BaseChatRunner(ABC):
         data_copy.pop("type", None)
         data_copy.pop("user_id", None)
 
+        # Normalize tools field to expected types (list[str])
+        try:
+            tools_value = data_copy.get("tools", None)
+            if tools_value is not None:
+                normalized_tools: list[str] = []
+                if isinstance(tools_value, list):
+                    for item in tools_value:
+                        if isinstance(item, str):
+                            normalized_tools.append(item)
+                        elif isinstance(item, dict):
+                            name = item.get("name")
+                            if isinstance(name, str) and name:
+                                normalized_tools.append(name)
+                            else:
+                                # Fallback to a compact string representation
+                                normalized_tools.append(str(item))
+                        else:
+                            normalized_tools.append(str(item))
+                elif isinstance(tools_value, dict):
+                    # Convert dict to list of keys if client sent mapping
+                    normalized_tools = [str(k) for k in tools_value.keys()]
+                else:
+                    normalized_tools = [str(tools_value)]
+                data_copy["tools"] = normalized_tools
+        except Exception:
+            # Best-effort normalization; if it fails, drop tools to avoid validation errors
+            data_copy["tools"] = None
+
         # Use thread_id from message data if available
         message_thread_id = data_copy.pop("thread_id", None) or ""
 

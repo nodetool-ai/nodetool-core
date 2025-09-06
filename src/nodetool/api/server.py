@@ -10,7 +10,9 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from nodetool.config.environment import Environment
 
-from nodetool.integrations.huggingface.huggingface_cache import huggingface_download_endpoint
+from nodetool.integrations.huggingface.huggingface_cache import (
+    huggingface_download_endpoint,
+)
 from nodetool.integrations.websocket.websocket_runner import WebSocketRunner
 from nodetool.chat.chat_websocket_runner import ChatWebSocketRunner
 
@@ -28,6 +30,7 @@ from . import (
     font,
     collection,
     file,
+    debug,
     message,
     node,
     storage,
@@ -108,6 +111,7 @@ DEFAULT_ROUTERS = [
     storage.router,
     storage.temp_router,
     font.router,
+    debug.router,
 ]
 
 
@@ -155,7 +159,9 @@ def create_app(
 
         try:
             # Import here to avoid circular imports
-            from nodetool.integrations.websocket.websocket_updates import websocket_updates
+            from nodetool.integrations.websocket.websocket_updates import (
+                websocket_updates,
+            )
 
             await websocket_updates.shutdown()
             logger.info("WebSocket updates shutdown complete")
@@ -291,8 +297,11 @@ def run_uvicorn_server(app: Any, host: str, port: int, reload: bool) -> None:
         "format": os.getenv(
             "NODETOOL_LOG_FORMAT",
             (
-                ("\x1b[90m%(asctime)s\x1b[0m | %(levelname)s | \x1b[36m%(name)s\x1b[0m | %(message)s"
-                 if use_color else "%(asctime)s | %(levelname)s | %(name)s | %(message)s")
+                (
+                    "\x1b[90m%(asctime)s\x1b[0m | %(levelname)s | \x1b[36m%(name)s\x1b[0m | %(message)s"
+                    if use_color
+                    else "%(asctime)s | %(levelname)s | %(name)s | %(message)s"
+                )
             ),
         ),
         "datefmt": os.getenv("NODETOOL_LOG_DATEFMT", "%Y-%m-%d %H:%M:%S"),

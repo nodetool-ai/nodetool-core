@@ -139,4 +139,8 @@ class SearchExamplesTool(Tool):
         # Import here to avoid circular imports
         from nodetool.chat.search_examples import search_examples
 
-        return search_examples(query=query)
+        results = []
+        for q in query:
+            log.info(f"Searching for examples with query: {q}")
+            results.extend(search_examples(query=q))
+        return results
