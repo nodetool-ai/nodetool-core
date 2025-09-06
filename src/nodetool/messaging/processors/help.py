@@ -7,9 +7,7 @@ This module provides the processor for help mode messages.
 import logging
 import asyncio
 import json
-import uuid
 from typing import List
-import textwrap
 import httpx
 from nodetool.agents.tools.tool_registry import resolve_tool_by_name
 from pydantic import BaseModel
@@ -209,7 +207,9 @@ class HelpMessageProcessor(MessageProcessor):
 
             # Process messages with tool execution
             while True:
-                messages_to_send = effective_messages + unprocessed_messages
+                # Persist unprocessed messages so the provider sees the full history
+                effective_messages.extend(unprocessed_messages)
+                messages_to_send = effective_messages
                 unprocessed_messages = []
                 assert last_message.model, "Model is required"
 
