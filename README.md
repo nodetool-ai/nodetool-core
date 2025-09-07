@@ -1,6 +1,6 @@
 # NodeTool Core <img src="https://img.shields.io/badge/version-0.6.0-blue.svg" alt="Version Badge">
 
-<h3>Swiss‑Army Knife for AI Builders</h3>
+<h3>AI Workflow Engine</h3>
 
 <p align="center">
   <img src="https://img.shields.io/badge/Python-3.11%2B-blue.svg" alt="Python Version Badge">
@@ -9,19 +9,7 @@
   <img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg" alt="PRs Welcome Badge">
 </p>
 
-> **Drag, drop, deploy — the backend that snaps every AI model into one graph.**
-
-NodeTool Core is the open‑source Python engine that powers [NodeTool Studio](https://github.com/nodetool-ai/nodetool) (desktop) and **NodeTool Scale** (cloud). It turns your laptop into an all‑terrain lab for **agentic, multi‑modal, production‑ready workflows.**
-
----
-
-## ✨ Why Nodetool?
-
-| Pillar    | What it means                                                                         |
-| --------- | ------------------------------------------------------------------------------------- |
-| **Snap**  | Compose LLMs, diffusers, audio models, REST calls & agents as Lego‑like nodes.        |
-| **Scale** | Run locally for privacy, then burst to the cloud or GPU farm with identical graphs.   |
-| **Ship**  | Expose any workflow as a REST/WebSocket API, CLI, or shareable template—zero rewrite. |
+NodeTool Core is the open‑source Python engine that powers [NodeTool](https://github.com/nodetool-ai/nodetool). 
 
 ---
 
@@ -86,27 +74,21 @@ NodeTool's architecture is designed to be flexible and extensible.
 
 ```mermaid
 graph TD
-A[NodeTool Editor<br>ReactJS] -->|HTTP/WebSocket| B[API Server]
-A <-->|WebSocket| C[WebSocket Runner]
-B <-->|Internal Communication| C
-C <-->|WebSocket| D[Worker with ML Models<br>CPU/GPU<br>Local/Cloud]
-D <-->|HTTP Callbacks| B
-E[Other Apps/Websites] -->|HTTP| B
-E <-->|WebSocket| C
-D -->|Optional API Calls| F[OpenAI<br>Replicate<br>Anthropic<br>Others]
+    A[NodeTool Editor<br>ReactJS<br>DAG Templates] -->|HTTP/WebSocket| B[API Server<br>Workflow Orchestration]
+    A <-->|WebSocket| C[Workflow Runner<br>CPU/GPU Local/Cloud]
+    B <-->|Internal RPC| C
+    C -->|Optional API Calls| F[External Providers<br>OpenAI / Replicate / Anthropic / HF / Others]
 
     classDef default fill:#e0eee0,stroke:#333,stroke-width:2px,color:#000;
     classDef frontend fill:#ffcccc,stroke:#333,stroke-width:2px,color:#000;
     classDef server fill:#cce5ff,stroke:#333,stroke-width:2px,color:#000;
     classDef runner fill:#ccffe5,stroke:#333,stroke-width:2px,color:#000;
-    classDef worker fill:#ccf2ff,stroke:#333,stroke-width:2px,color:#000;
     classDef api fill:#e0e0e0,stroke:#333,stroke-width:2px,color:#000;
-    classDef darkgray fill:#a9a9a9,stroke:#333,stroke-width:2px,color:#000;
+    classDef other fill:#d3d3d3,stroke:#333,stroke-width:2px,color:#000;
 
     class A frontend;
     class B server;
     class C runner;
-    class D worker;
     class E other;
     class F api;
 ```
