@@ -29,6 +29,7 @@ from openai.types.chat.chat_completion_message_function_tool_call_param import (
 )
 from pydantic import BaseModel
 from pydub import AudioSegment
+from urllib.parse import unquote_to_bytes
 
 from nodetool.chat.providers.base import ChatProvider
 from nodetool.agents.tools.base import Tool
@@ -142,6 +143,10 @@ class OpenAIProvider(ChatProvider):
         """Convert a URI to a base64 encoded data: URI string.
         If the URI points to an audio file, it converts it to MP3 first.
         """
+        # Handle data URIs directly without fetching
+        if uri.startswith("data:"):
+            return self._normalize_data_uri(uri)
+
         async with httpx.AsyncClient(
             follow_redirects=True, timeout=600, verify=False
         ) as client:
@@ -164,6 +169,51 @@ class OpenAIProvider(ChatProvider):
                 content_b64 = base64.b64encode(response.content).decode("utf-8")
         else:
             content_b64 = base64.b64encode(response.content).decode("utf-8")
+
+        return f"data:{mime_type};base64,{content_b64}"
+
+    def _normalize_data_uri(self, uri: str) -> str:
+        """Normalize a data URI and convert audio/* to MP3 base64 data URI.
+
+        Returns a string in the form: data:<mime>;base64,<base64data>
+        """
+        # Format: data:[<mediatype>][;base64],<data>
+        try:
+            header, data_part = uri.split(",", 1)
+        except ValueError:
+            raise ValueError(f"Invalid data URI: {uri[:64]}...")
+
+        is_base64 = ";base64" in header
+        mime_type = "application/octet-stream"
+        if header[5:]:  # after 'data:'
+            mime_type = header[5:].split(";", 1)[0] or mime_type
+
+        # Decode payload to bytes
+        if is_base64:
+            try:
+                raw_bytes = base64.b64decode(data_part)
+            except Exception as e:
+                raise ValueError(f"Failed to decode base64 data URI: {e}")
+        else:
+            # Percent-decoded textual payload → bytes
+            raw_bytes = unquote_to_bytes(data_part)
+
+        # If audio and not mp3, convert to mp3; otherwise keep as-is
+        if mime_type.startswith("audio/") and mime_type != "audio/mpeg":
+            try:
+                audio = AudioSegment.from_file(io.BytesIO(raw_bytes))
+                with io.BytesIO() as buffer:
+                    audio.export(buffer, format="mp3")
+                    mp3_data = buffer.getvalue()
+                mime_type = "audio/mpeg"
+                content_b64 = base64.b64encode(mp3_data).decode("utf-8")
+            except Exception as e:
+                print(
+                    f"Warning: Failed to convert data URI audio to MP3: {e}. Using original content."
+                )
+                content_b64 = base64.b64encode(raw_bytes).decode("utf-8")
+        else:
+            content_b64 = base64.b64encode(raw_bytes).decode("utf-8")
 
         return f"data:{mime_type};base64,{content_b64}"
 
