@@ -318,7 +318,7 @@ class BaseChatRunner(ABC):
                 if not thread:
                     log.warning(f"Thread {thread_id} not found for user {self.user_id}")
                     # Create a new thread as fallback
-                    thread = Thread.create(user_id=self.user_id)
+                    thread = await Thread.create(user_id=self.user_id)
                     log.debug(f"Created new thread {thread.id} as fallback")
                     return thread.id
                 return thread_id
