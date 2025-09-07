@@ -19,18 +19,36 @@ from nodetool.config.environment import Environment
 import logging
 from nodetool.workflows.base_node import get_node_class
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.metadata.type_metadata import ALL_TYPES
 
 log = logging.getLogger(__name__)
+
+TYPES = [
+    "str",
+    "int",
+    "float",
+    "bool",
+    "list",
+    "dict",
+    "tuple",
+    "union",
+    "enum",
+    "any",
+    "bytes",
+    "audio",
+    "image",
+    "video",
+    "document",
+    "dataframe",
+]
 
 
 class SearchNodesTool(Tool):
     name: str = "search_nodes"
     description: str = (
         """
-        Performs keyword search on Nodetool documentation. 
+        Performs keyword search on nodetool nodes. 
         Use for finding specific node types or features by exact word matches.
-        Supply a list of words to search for, including synonyms and related words.
+        Supply a list of words to search for as array, including synonyms and related words.
         Returns a list of node metadata that match the search query.
         """
     )
@@ -51,12 +69,12 @@ class SearchNodesTool(Tool):
             "input_type": {
                 "type": "string",
                 "description": "Optional. The type of input to filter by. Use to refine search if a broad search is ambiguous or returns too many irrelevant results.",
-                "enum": ALL_TYPES,
+                "enum": TYPES,
             },
             "output_type": {
                 "type": "string",
                 "description": "Optional. The type of output to filter by. Use to refine search if a broad search is ambiguous or returns too many irrelevant results.",
-                "enum": ALL_TYPES,
+                "enum": TYPES,
             },
             "exclude_namespaces": {
                 "type": "array",
@@ -78,9 +96,9 @@ class SearchNodesTool(Tool):
         output_type = params.get("output_type", None)
         n_results = params.get("n_results", 10)
         exclude_namespaces = params.get("exclude_namespaces", self.exclude_namespaces)
-        if input_type and input_type not in ALL_TYPES:
+        if input_type and input_type not in TYPES:
             raise ValueError(f"Invalid input type: {input_type}")
-        if output_type and output_type not in ALL_TYPES:
+        if output_type and output_type not in TYPES:
             raise ValueError(f"Invalid output type: {output_type}")
 
         # Import here to avoid circular imports

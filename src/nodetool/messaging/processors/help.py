@@ -76,7 +76,8 @@ You are a helpful assistant that provides help for Nodetool.
 - nodetool.video: video processing
 
 ## How Nodetool Works
-- Visual editor: build node graphs; connect outputs to inputs; configure in the right panel; run with the play button.
+- Visual editor: build node graphs; connect outputs to inputs; run with the play button at the bottom.
+- Node Menu: press space or double click canvas to open the node menu.
 - Nodes: typed inputs/outputs; includes AI/model provider nodes and utilities (conversion, control flow like Loop).
 - Data flow: values travel across edges; lists/dataframes iterate via Loop; Preview renders outputs for inspection.
 - Assets: manage media in the Assets panel; drag/drop onto canvas to create asset nodes; use as inputs/outputs.
@@ -93,16 +94,25 @@ You are a helpful assistant that provides help for Nodetool.
 8. **Determinism & Efficiency:** Minimize tokens. Prefer canonical, compact JSON for node specifications. Avoid markdown in structured outputs.
 
 ## Streaming
-- Streaming nodes: yield multiple outputs sequentially. Output nodes automatically collect streamed items into lists.
+- Streaming nodes: output a stream of items.
+- Output nodes automatically collect streamed items into lists.
 - Use streaming for iterations and loops
 - A producer node can generate a stream of items
 - Connected nodes will be executed once for each item and continue to stream
+
+## Agent Nodes
+- Connect nodes as tools to an Agent node via dynamic outputs.
+- A tool chain should end with a nodetool.workflows.base_node.ToolResult node.
+- The dynamic output connecting to the tool node should have the correct type and properly named.
+- For example, connect search_google output to search.google.GoogleSearch node's "keyword" property.
+- Agent's chunk output streams tokens while the text output streams the final text.
 
 ## Node Metadata Structure
 Each node type has specific metadata that defines:
 - **properties**: Input fields/parameters the node accepts (these become targetHandles for edges)
 - **outputs**: Output slots the node produces (these become sourceHandles for edges)
 - **is_dynamic**: Boolean flag indicating if the node supports dynamic properties
+- **supports_dynamic_outputs**: Boolean flag indicating if the node supports dynamic outputs
 
 ## Input and Output Node Mappings
 Input nodes: string→StringInput, int→IntegerInput, float→FloatInput, bool→BooleanInput, list[any]→ListInput, image→ImageInput, video→VideoInput, document→DocumentInput, dataframe→DataFrameInput
@@ -264,9 +274,32 @@ class HelpMessageProcessor(MessageProcessor):
                     ui_tools.append(UIToolProxy(tool_manifest))
 
             # Create effective messages with help system prompt
-            effective_messages = [
-                Message(role="system", content=SYSTEM_PROMPT)
-            ] + chat_history
+            effective_messages = [Message(role="system", content=SYSTEM_PROMPT)]
+
+            # If the latest message includes a workflow graph, include it as context
+            # so the provider can ground answers in the user's current workflow.
+            try:
+                if getattr(last_message, "graph", None):
+                    graph_dict = (
+                        last_message.graph.model_dump()
+                        if hasattr(last_message.graph, "model_dump")
+                        else last_message.graph
+                    )
+                    # Keep this as a separate system message to avoid mutating user content
+                    graph_context = Message(
+                        role="system",
+                        content=(
+                            "Current workflow graph (JSON). Use this to answer questions "
+                            "and suggest precise changes.\n" + json.dumps(graph_dict)
+                        ),
+                    )
+                    effective_messages.append(graph_context)
+            except Exception:
+                # Best-effort: if serialization fails, continue without graph context
+                pass
+
+            # Then append the chat history
+            effective_messages.extend(chat_history)
 
             accumulated_content = ""
             unprocessed_messages = []
