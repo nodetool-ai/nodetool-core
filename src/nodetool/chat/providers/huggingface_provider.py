@@ -146,7 +146,7 @@ class HuggingFaceProvider(ChatProvider):
         else:
             return 8192  # Conservative default
 
-    def convert_message(self, message: Message) -> dict:
+    async def convert_message(self, message: Message) -> dict:
         """Convert an internal message to HuggingFace's OpenAI-compatible format."""
         if message.role == "tool":
             if isinstance(message.content, BaseModel):
@@ -182,7 +182,10 @@ class HuggingFaceProvider(ChatProvider):
                     elif isinstance(part, MessageImageContent):
                         # For image content, use image_url format
                         content.append(
-                            {"type": "image_url", "image_url": {"url": part.image.uri}}
+                            {
+                                "type": "image_url",
+                                "image_url": {"url": part.image.uri},
+                            }
                         )
                 return {"role": "user", "content": content}
             else:
@@ -258,7 +261,7 @@ class HuggingFaceProvider(ChatProvider):
         # Convert messages to HuggingFace format
         hf_messages = []
         for message in messages:
-            converted = self.convert_message(message)
+            converted = await self.convert_message(message)
             if converted:  # Skip None messages
                 hf_messages.append(converted)
 
@@ -369,7 +372,7 @@ class HuggingFaceProvider(ChatProvider):
         # Convert messages to HuggingFace format
         hf_messages = []
         for message in messages:
-            converted = self.convert_message(message)
+            converted = await self.convert_message(message)
             if converted:  # Skip None messages
                 hf_messages.append(converted)
 
