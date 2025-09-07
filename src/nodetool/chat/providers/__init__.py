@@ -35,6 +35,11 @@ def get_provider(provider_type: ProviderEnum, **kwargs) -> ChatProvider:
     Raises:
         ValueError: If the provider type is not supported
     """
+    from nodetool.chat.providers.huggingface_provider import HuggingFaceProvider
+    from nodetool.chat.providers.openai_provider import OpenAIProvider
+    from nodetool.chat.providers.gemini_provider import GeminiProvider
+    from nodetool.chat.providers.anthropic_provider import AnthropicProvider
+    from nodetool.chat.providers.ollama_provider import OllamaProvider
 
     if provider_type in _provider_cache:
         return _provider_cache[provider_type]
@@ -42,26 +47,47 @@ def get_provider(provider_type: ProviderEnum, **kwargs) -> ChatProvider:
     provider: ChatProvider
     # Lazy-import providers to avoid importing optional dependencies at module import time
     if provider_type == ProviderEnum.OpenAI:
-        from nodetool.chat.providers.openai_provider import OpenAIProvider
         provider = OpenAIProvider(**kwargs)
     elif provider_type == ProviderEnum.Gemini:
-        from nodetool.chat.providers.gemini_provider import GeminiProvider
         provider = GeminiProvider(**kwargs)
     elif provider_type == ProviderEnum.Anthropic:
-        from nodetool.chat.providers.anthropic_provider import AnthropicProvider
         provider = AnthropicProvider(**kwargs)
     elif provider_type == ProviderEnum.Ollama:
-        from nodetool.chat.providers.ollama_provider import OllamaProvider
         provider = OllamaProvider(**kwargs)
     elif provider_type == ProviderEnum.HuggingFace:
-        from nodetool.chat.providers.huggingface_provider import HuggingFaceProvider
         provider = HuggingFaceProvider(**kwargs)
     elif provider_type == ProviderEnum.HuggingFaceGroq:
-        from nodetool.chat.providers.huggingface_provider import HuggingFaceProvider
         provider = HuggingFaceProvider("groq", **kwargs)
     elif provider_type == ProviderEnum.HuggingFaceCerebras:
-        from nodetool.chat.providers.huggingface_provider import HuggingFaceProvider
         provider = HuggingFaceProvider("cerebras", **kwargs)
+    elif provider_type == ProviderEnum.HuggingFaceCohere:
+        provider = HuggingFaceProvider("cohere", **kwargs)
+    elif provider_type == ProviderEnum.HuggingFaceFalAI:
+        provider = HuggingFaceProvider("fal-ai", **kwargs)
+    elif provider_type == ProviderEnum.HuggingFaceFeatherlessAI:
+        provider = HuggingFaceProvider("featherless-ai", **kwargs)
+    elif provider_type == ProviderEnum.HuggingFaceFireworksAI:
+        provider = HuggingFaceProvider("fireworks-ai", **kwargs)
+    elif provider_type == ProviderEnum.HuggingFaceBlackForestLabs:
+        provider = HuggingFaceProvider("black-forest-labs", **kwargs)
+    elif provider_type == ProviderEnum.HuggingFaceHFInference:
+        provider = HuggingFaceProvider("hf-inference", **kwargs)
+    elif provider_type == ProviderEnum.HuggingFaceHyperbolic:
+        provider = HuggingFaceProvider("hyperbolic", **kwargs)
+    elif provider_type == ProviderEnum.HuggingFaceNebius:
+        provider = HuggingFaceProvider("nebius", **kwargs)
+    elif provider_type == ProviderEnum.HuggingFaceNovita:
+        provider = HuggingFaceProvider("novita", **kwargs)
+    elif provider_type == ProviderEnum.HuggingFaceNscale:
+        provider = HuggingFaceProvider("nscale", **kwargs)
+    elif provider_type == ProviderEnum.HuggingFaceOpenAI:
+        provider = HuggingFaceProvider("openai", **kwargs)
+    elif provider_type == ProviderEnum.HuggingFaceReplicate:
+        provider = HuggingFaceProvider("replicate", **kwargs)
+    elif provider_type == ProviderEnum.HuggingFaceSambanova:
+        provider = HuggingFaceProvider("sambanova", **kwargs)
+    elif provider_type == ProviderEnum.HuggingFaceTogether:
+        provider = HuggingFaceProvider("together", **kwargs)
     else:
         raise ValueError(f"Provider {provider_type} not supported")
 
@@ -74,7 +100,7 @@ __all__ = [
     "MockProvider",
     "FakeProvider",
     "create_fake_tool_call",
-    "create_simple_fake_provider", 
+    "create_simple_fake_provider",
     "create_streaming_fake_provider",
     "create_tool_calling_fake_provider",
     "Chunk",
