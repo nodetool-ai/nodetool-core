@@ -94,20 +94,19 @@ graph TD
 ```
 
 ### Execution TL;DR
+	•	Each node runs in its own async task. No central loop.
+	•	Every node has an input queue (NodeInbox) that delivers data in order and tracks when it ends.
+	•	Streaming nodes handle data piece by piece (gen_process); batch nodes handle all at once (process).
+	•	When finished or failing, nodes signal “done” downstream so others don’t wait forever.
+	•	GPU jobs run one at a time with a global lock, with retries and cleanup if memory runs out.
 
-- One async task (NodeActor) per node; no central scheduler loop.
-- Inputs delivered via per-node `NodeInbox` (FIFO per handle) with EOS tracking.
-- Streaming nodes implement `gen_process` to yield incrementally; batch nodes use `process` once.
-- On completion or error, actors mark downstream EOS to avoid hangs.
-- GPU work is serialized with a global async lock; OOM retries and cleanup.
-
-## 🤝 Contributing
+🤝 Contributing
 
 We welcome contributions from the community! Please see our [Contributing Guidelines](./CONTRIBUTING.md) for more information on how to get involved.
 
 ### Development Setup
 
-This setup is for developing the `nodetool-core` library itself using Poetry. If you want to set up the full NodeTool application (UI, backend, etc.), please refer to the development setup instructions in the main [NodeTool repository](https://github.com/nodetool-ai/nodetool).
+This setup is for developing the `nodetool-core` library itself. If you want to set up the full NodeTool application (UI, backend, etc.), please refer to the development setup instructions in the main [NodeTool repository](https://github.com/nodetool-ai/nodetool).
 
 1. Clone the repository
 
