@@ -306,6 +306,7 @@ class HelpMessageProcessor(MessageProcessor):
             # so the provider can ground answers in the user's current workflow.
             try:
                 if getattr(last_message, "graph", None):
+                    assert last_message.graph
                     graph_dict = (
                         last_message.graph.model_dump()
                         if hasattr(last_message.graph, "model_dump")
