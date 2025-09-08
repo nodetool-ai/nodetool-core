@@ -542,14 +542,10 @@ async def test_multiple_messages_across_handles_fanout_for_non_streaming_node():
 
     await asyncio.wait_for(actor.run(), timeout=2)
 
-    # Fanout: should run once per item in arrival order
-    assert len(calls) == 5
-    assert calls[0].get("cfg") == 7 and "a" not in calls[0]
-    assert calls[1].get("cfg") == 8 and "a" not in calls[1]
-    # After first 'a' arrives, both cfg and a should be set
-    assert calls[2].get("cfg") == 8 and calls[2].get("a") == 1
-    assert calls[3].get("cfg") == 8 and calls[3].get("a") == 2
-    assert calls[4].get("cfg") == 8 and calls[4].get("a") == 3
+    # New semantics: first wait until all handles have one value, then fire per arrival
+    assert len(calls) == 3
+    assert all(c.get("cfg") == 8 for c in calls)
+    assert [c.get("a") for c in calls] == [1, 2, 3]
 
 
 @pytest.mark.asyncio
@@ -603,12 +599,10 @@ async def test_multiple_streaming_inbounds_fanout_for_non_streaming_target():
 
     await asyncio.wait_for(actor.run(), timeout=2)
 
-    # Fanout across two handles in arrival order
-    assert len(calls) == 4
-    assert calls[0] == {"a": 1}
-    assert calls[1] == {"a": 2}
-    assert calls[2] == {"a": 2, "b": 10}
-    assert calls[3] == {"a": 2, "b": 20}
+    # New semantics: wait until both handles have values, then fire on subsequent arrivals
+    assert len(calls) == 2
+    assert calls[0] == {"a": 2, "b": 10}
+    assert calls[1] == {"a": 2, "b": 20}
 
 
 @pytest.mark.asyncio

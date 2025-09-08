@@ -9,10 +9,6 @@ from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.types.graph import Graph as ApiGraph
 from nodetool.workflows.types import OutputUpdate
 
-if not os.environ.get("NODETOOL_INTEGRATION_TESTS"):
-    pytest.skip("Skipping integration tests")
-
-
 """
 Summarize RSS
 
@@ -29,6 +25,10 @@ Requirements:
 """
 
 
+@pytest.mark.skipif(
+    os.environ.get("NODETOOL_INTEGRATION_TESTS", "") == "",
+    reason="Skipping integration tests",
+)
 @pytest.mark.asyncio
 async def test_summarize_rss():
     # Load the golden-path workflow JSON copied into core examples

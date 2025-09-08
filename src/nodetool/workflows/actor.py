@@ -286,11 +286,34 @@ class NodeActor:
                             if upstream_all_non_streaming.get(h, False):
                                 self.inbox.mark_source_done(h)
             else:
-                # Default behavior: fire on any arrival with latest values from others
+                # Default behavior: wait until all inbound handles have at least one
+                # value available, then fire on any subsequent arrival with the latest
+                # values. This avoids emitting partial results for non-streaming nodes.
                 current: dict[str, Any] = {}
+                pending_handles: set[str] = set(handles)
+                initial_fired: bool = False
+
                 async for handle, item in self.inbox.iter_any():
+                    if handle not in handles:
+                        # Ignore unexpected handles
+                        continue
                     current[handle] = item
-                    await self.runner.process_node_with_inputs(ctx, node, dict(current))
+                    if not initial_fired:
+                        pending_handles.discard(handle)
+                        if pending_handles:
+                            # Not all inputs have arrived yet; keep accumulating
+                            continue
+                        # All initial inputs are available – process once
+                        await self.runner.process_node_with_inputs(
+                            ctx, node, dict(current)
+                        )
+                        initial_fired = True
+                    else:
+                        # After initial evaluation, fire on any subsequent arrival
+                        await self.runner.process_node_with_inputs(
+                            ctx, node, dict(current)
+                        )
+
                     # If all upstreams for this handle are non-streaming producers,
                     # they produce at most one item each. Mark one source as done to
                     # prevent indefinite waiting for EOS in isolated actor tests.
