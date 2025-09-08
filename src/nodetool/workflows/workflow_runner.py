@@ -889,6 +889,7 @@ class WorkflowRunner:
 
             # Get the type of the output for metadata purposes
             output_type = node.__class__.__name__.replace("Output", "").lower()
+            value = await context.embed_assets_in_data(value)
 
             # Send the new OutputUpdate message
             context.post_message(
