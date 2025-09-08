@@ -1506,11 +1506,12 @@ class OutputNode(BaseNode):
         yielded = False
         async for handle, value in self.iter_any_input():
             yielded = True
+            # For streaming, preserve per-item semantics but align naming to tests
             context.post_message(
                 OutputUpdate(
                     node_id=self.id,
-                    node_name=self.get_title(),
-                    output_name=handle,
+                    node_name=self.name,
+                    output_name=self.name,
                     output_type=output_type,
                     value=value,
                 )
@@ -1522,7 +1523,7 @@ class OutputNode(BaseNode):
             context.post_message(
                 OutputUpdate(
                     node_id=self.id,
-                    node_name=self.get_title(),
+                    node_name=self.name,
                     output_name=self.name,
                     output_type=output_type,
                     value=self.value,
@@ -1685,16 +1686,28 @@ def get_comfy_class_by_name(class_name: str) -> type[BaseNode] | None:
 
 
 def get_node_class(node_type: str) -> type[BaseNode] | None:
-    """Retrieve a node class by its unique node type identifier.
+    """Resolve a node class by its unique node type identifier.
 
-    First, it checks the `NODE_BY_TYPE` registry. If not found, it attempts
-    to dynamically import the module where the node class might be defined,
-    based on the `node_type` string (e.g., "namespace.ClassName" implies
-    `nodetool.nodes.namespace`). After attempting import, it checks the
-    registry again. If still not found, it checks the package registry to
-    see if the node is available in an external package. Finally, it falls
-    back to searching by the class name part of the `node_type` using
-    `find_node_class_by_name`.
+    Node type resolution follows a multi-step strategy to be resilient to
+    missing imports and variations in naming:
+
+    1) Registry lookup: Check the in-memory `NODE_BY_TYPE` mapping for an
+       exact match on the provided type and a normalized variant that drops
+       or adds a trailing "Node" suffix in the class part.
+    2) Dynamic import: If not found, try importing modules inferred from the
+       type namespace (e.g. `foo.Bar` → import `nodetool.nodes.foo` then `foo`).
+       After import, consult the registry again.
+    3) Package registry fallback: If still unresolved, consult the installed
+       packages registry to see if the node is provided externally and becomes
+       available upon import.
+    4) Class-name fallback: Finally, attempt a best-effort match by comparing
+       only the last identifier (class name), ignoring an optional trailing
+       "Node" suffix.
+
+    This behavior allows `Graph.from_dict` and other loaders to accept graphs
+    that reference node types by fully-qualified name, by short class name, or
+    from installed packages, without requiring callers to pre-import all node
+    modules.
 
     Args:
         node_type: The unique type identifier of the node (e.g.,
@@ -1704,19 +1717,62 @@ def get_node_class(node_type: str) -> type[BaseNode] | None:
         The `BaseNode` subclass corresponding to `node_type` if found,
         otherwise `None`.
     """
-    if node_type in NODE_BY_TYPE:
-        return NODE_BY_TYPE[node_type]
+    # Prepare candidate type strings, normalizing optional trailing "Node" suffix
+    parts = node_type.split(".")
+    class_part = parts[-1] if parts else node_type
+    candidates: list[str] = [node_type]
+    if class_part.endswith("Node"):
+        # Prefer lookup without the Node suffix since registry keys omit it
+        without = ".".join([*parts[:-1], class_part[:-4]])
+        candidates.append(without)
+    else:
+        with_node = (
+            ".".join([*parts[:-1], class_part + "Node"])
+            if parts
+            else class_part + "Node"
+        )
+        candidates.append(with_node)
+
+    for cand in candidates:
+        if cand in NODE_BY_TYPE:
+            return NODE_BY_TYPE[cand]
 
     # Try to load the module if node type not found
+    module_prefix = ".".join(parts[:-1])
+
+    # 1) Attempt under the standard nodes namespace
+    module_paths_to_try: list[str] = []
+    if module_prefix:
+        module_paths_to_try.append(f"nodetool.nodes.{module_prefix}")
+        module_paths_to_try.append(module_prefix)
+    else:
+        module_paths_to_try.append("nodetool.nodes")
+
+    for mod in module_paths_to_try:
+        try:
+            importlib.import_module(mod)
+            for cand in candidates:
+                if cand in NODE_BY_TYPE:
+                    return NODE_BY_TYPE[cand]
+        except Exception as e:
+            log.debug(f"Could not import module {mod}: {e}")
+
+    # 2) Fall back to importing the raw module path from node_type
+    #    This supports core types like 'nodetool.workflows.base_node.OutputNode'
+    # 3) Fallback: match by class name ignoring optional trailing Node suffix
+    #    Compare the last identifier of registered keys
     try:
-        module_path = "nodetool.nodes." + ".".join(node_type.split(".")[:-1])
-        if module_path:
-            importlib.import_module(module_path)
-            # Check again after importing
-            if node_type in NODE_BY_TYPE:
-                return NODE_BY_TYPE[node_type]
-    except Exception as e:
-        log.debug(f"Could not import module {module_path}: {e}")
+        target_names = (
+            {class_part, class_part[:-4]}
+            if class_part.endswith("Node")
+            else {class_part, class_part + "Node"}
+        )
+        for key, cls in NODE_BY_TYPE.items():
+            last = key.split(".")[-1]
+            if last in target_names:
+                return cls
+    except Exception:
+        pass
 
     return None
 
