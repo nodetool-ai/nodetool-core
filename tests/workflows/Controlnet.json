@@ -1,0 +1,445 @@
+{
+  "id": "controlnet",
+  "access": "public",
+  "created_at": "2025-07-06T18:52:09.116186",
+  "updated_at": "2025-07-06T18:52:09.116270",
+  "name": "Controlnet",
+  "description": "",
+  "tags": ["start", "image"],
+  "thumbnail": null,
+  "thumbnail_url": "https://upload.wikimedia.org/wikipedia/commons/thumb/9/94/Baldassare_Castiglione%2C_by_Raffaello_Sanzio%2C_from_C2RMF_retouched.jpg/960px-Baldassare_Castiglione%2C_by_Raffaello_Sanzio%2C_from_C2RMF_retouched.jpg",
+  "graph": {
+    "nodes": [
+      {
+        "id": "b1078fb5-7d24-40a8-be16-5baf23d03f9c",
+        "parent_id": null,
+        "type": "huggingface.image_to_image.StableDiffusionControlNet",
+        "data": {
+          "model": {
+            "type": "hf.stable_diffusion",
+            "repo_id": "Lykon/AbsoluteReality",
+            "path": "AbsoluteReality_1.8.1_pruned.safetensors"
+          },
+          "negative_prompt": "(blurry, low quality, deformed, mutated, bad anatomy, extra limbs, bad proportions, text, watermark, grainy, pixelated, disfigured face, missing fingers, cropped image, bad lighting",
+          "seed": -1,
+          "num_inference_steps": 25,
+          "guidance_scale": 7.5,
+          "scheduler": "EulerDiscreteScheduler",
+          "loras": [],
+          "ip_adapter_model": {},
+          "ip_adapter_image": {},
+          "ip_adapter_scale": 0.5,
+          "pag_scale": 3,
+          "detail_level": 0.5,
+          "enable_tiling": false,
+          "enable_cpu_offload": false,
+          "upscaler": "None",
+          "controlnet": {
+            "type": "hf.controlnet",
+            "repo_id": "lllyasviel/control_v11p_sd15_canny",
+            "path": "diffusion_pytorch_model.fp16.safetensors"
+          },
+          "controlnet_conditioning_scale": 1
+        },
+        "ui_properties": {
+          "selected": false,
+          "position": {
+            "x": 810,
+            "y": 50
+          },
+          "zIndex": 0,
+          "width": 200,
+          "selectable": true
+        },
+        "dynamic_properties": {}
+      },
+      {
+        "id": "95e20d28-acc9-444d-996c-bfade306213a",
+        "parent_id": null,
+        "type": "nodetool.workflows.base_node.Preview",
+        "data": {
+          "name": "image_output"
+        },
+        "ui_properties": {
+          "selected": false,
+          "position": {
+            "x": 1036,
+            "y": 52
+          },
+          "zIndex": 0,
+          "width": 353,
+          "height": 371,
+          "selectable": true
+        },
+        "dynamic_properties": {}
+      },
+      {
+        "id": "baf73408-a404-42cd-8627-c7afb770ada4",
+        "parent_id": null,
+        "type": "nodetool.constant.Image",
+        "data": {
+          "value": {
+            "uri": "https://upload.wikimedia.org/wikipedia/commons/thumb/9/94/Baldassare_Castiglione%2C_by_Raffaello_Sanzio%2C_from_C2RMF_retouched.jpg/960px-Baldassare_Castiglione%2C_by_Raffaello_Sanzio%2C_from_C2RMF_retouched.jpg",
+            "type": "image"
+          }
+        },
+        "ui_properties": {
+          "selected": false,
+          "position": {
+            "x": 60,
+            "y": 55
+          },
+          "zIndex": 0,
+          "width": 200,
+          "selectable": true
+        },
+        "dynamic_properties": {}
+      },
+      {
+        "id": "d07d2ca6-2d77-4fdf-9b32-e81b5dc7a778",
+        "parent_id": null,
+        "type": "lib.pillow.filter.Canny",
+        "data": {
+          "low_threshold": 100,
+          "high_threshold": 200
+        },
+        "ui_properties": {
+          "selected": false,
+          "position": {
+            "x": 550,
+            "y": 332
+          },
+          "zIndex": 0,
+          "width": 200,
+          "selectable": true
+        },
+        "dynamic_properties": {}
+      },
+      {
+        "id": "ca57e571-8f82-4ce1-8769-b0c02ff68271",
+        "parent_id": null,
+        "type": "huggingface.image_to_text.ImageToText",
+        "data": {
+          "model": {
+            "type": "hf.image_to_text",
+            "repo_id": "nlpconnect/vit-gpt2-image-captioning"
+          },
+          "max_new_tokens": 1024
+        },
+        "ui_properties": {
+          "selected": false,
+          "position": {
+            "x": 550,
+            "y": 57
+          },
+          "zIndex": 0,
+          "width": 200,
+          "selectable": true
+        },
+        "dynamic_properties": {}
+      },
+      {
+        "id": "8a50aff9-c64c-49fb-afd2-9e19a6f56b2b",
+        "parent_id": null,
+        "type": "nodetool.image.Fit",
+        "data": {
+          "width": 512,
+          "height": 512
+        },
+        "ui_properties": {
+          "selected": false,
+          "position": {
+            "x": 290,
+            "y": 110
+          },
+          "zIndex": 0,
+          "width": 200,
+          "selectable": true
+        },
+        "dynamic_properties": {}
+      },
+      {
+        "id": "ceb1b957-c8c9-4bfe-8d38-f9ce34f06399",
+        "parent_id": null,
+        "type": "nodetool.workflows.base_node.Comment",
+        "data": {
+          "comment_lexical": {
+            "root": {
+              "children": [
+                {
+                  "children": [
+                    {
+                      "detail": 0,
+                      "format": 1,
+                      "mode": "normal",
+                      "style": "data-large-font-marker: true;",
+                      "text": "Controlnet",
+                      "type": "text",
+                      "version": 1
+                    }
+                  ],
+                  "direction": "ltr",
+                  "format": "",
+                  "indent": 0,
+                  "type": "paragraph",
+                  "version": 1,
+                  "textFormat": 1,
+                  "textStyle": "data-large-font-marker: true;"
+                },
+                {
+                  "children": [
+                    {
+                      "children": [
+                        {
+                          "detail": 0,
+                          "format": 1,
+                          "mode": "normal",
+                          "style": "",
+                          "text": "Image Input",
+                          "type": "text",
+                          "version": 1
+                        },
+                        {
+                          "detail": 0,
+                          "format": 0,
+                          "mode": "normal",
+                          "style": "",
+                          "text": ": A portrait is loaded and resized to 512\u00d7512.",
+                          "type": "text",
+                          "version": 1
+                        }
+                      ],
+                      "direction": "ltr",
+                      "format": "",
+                      "indent": 0,
+                      "type": "listitem",
+                      "version": 1,
+                      "value": 1
+                    },
+                    {
+                      "children": [
+                        {
+                          "detail": 0,
+                          "format": 1,
+                          "mode": "normal",
+                          "style": "",
+                          "text": "Canny Edge Detection",
+                          "type": "text",
+                          "version": 1
+                        },
+                        {
+                          "detail": 0,
+                          "format": 0,
+                          "mode": "normal",
+                          "style": "",
+                          "text": ": Extracts edges from the image to guide structure.",
+                          "type": "text",
+                          "version": 1
+                        }
+                      ],
+                      "direction": "ltr",
+                      "format": "",
+                      "indent": 0,
+                      "type": "listitem",
+                      "version": 1,
+                      "value": 2
+                    },
+                    {
+                      "children": [
+                        {
+                          "detail": 0,
+                          "format": 1,
+                          "mode": "normal",
+                          "style": "",
+                          "text": "Image Captioning",
+                          "type": "text",
+                          "version": 1
+                        },
+                        {
+                          "detail": 0,
+                          "format": 0,
+                          "mode": "normal",
+                          "style": "",
+                          "text": ": Generates a textual description using vit-gpt2.",
+                          "type": "text",
+                          "version": 1
+                        }
+                      ],
+                      "direction": "ltr",
+                      "format": "",
+                      "indent": 0,
+                      "type": "listitem",
+                      "version": 1,
+                      "value": 3
+                    },
+                    {
+                      "children": [
+                        {
+                          "detail": 0,
+                          "format": 1,
+                          "mode": "normal",
+                          "style": "",
+                          "text": "ControlNet Generation",
+                          "type": "text",
+                          "version": 1
+                        },
+                        {
+                          "detail": 0,
+                          "format": 0,
+                          "mode": "normal",
+                          "style": "",
+                          "text": ": Feeds both the edge map and caption into Lykon/AbsoluteReality model with control_v11p_sd15_canny for guided image synthesis.",
+                          "type": "text",
+                          "version": 1
+                        }
+                      ],
+                      "direction": "ltr",
+                      "format": "",
+                      "indent": 0,
+                      "type": "listitem",
+                      "version": 1,
+                      "value": 4
+                    },
+                    {
+                      "children": [
+                        {
+                          "detail": 0,
+                          "format": 1,
+                          "mode": "normal",
+                          "style": "",
+                          "text": "Preview",
+                          "type": "text",
+                          "version": 1
+                        },
+                        {
+                          "detail": 0,
+                          "format": 0,
+                          "mode": "normal",
+                          "style": "",
+                          "text": ": Displays the generated result.",
+                          "type": "text",
+                          "version": 1
+                        }
+                      ],
+                      "direction": "ltr",
+                      "format": "",
+                      "indent": 0,
+                      "type": "listitem",
+                      "version": 1,
+                      "value": 5
+                    }
+                  ],
+                  "direction": "ltr",
+                  "format": "",
+                  "indent": 0,
+                  "type": "list",
+                  "version": 1,
+                  "listType": "number",
+                  "start": 1,
+                  "tag": "ol"
+                },
+                {
+                  "children": [],
+                  "direction": null,
+                  "format": "",
+                  "indent": 0,
+                  "type": "paragraph",
+                  "version": 1,
+                  "textFormat": 0,
+                  "textStyle": ""
+                }
+              ],
+              "direction": "ltr",
+              "format": "",
+              "indent": 0,
+              "type": "root",
+              "version": 1,
+              "textFormat": 1,
+              "textStyle": "data-large-font-marker: true;"
+            }
+          }
+        },
+        "ui_properties": {
+          "selected": false,
+          "position": {
+            "x": 82,
+            "y": -251
+          },
+          "zIndex": 0,
+          "width": 596,
+          "height": 215,
+          "selectable": true
+        },
+        "dynamic_properties": {}
+      }
+    ],
+    "edges": [
+      {
+        "id": "2e39d160-d607-4f5c-80d6-f211c5f545f0",
+        "source": "b1078fb5-7d24-40a8-be16-5baf23d03f9c",
+        "sourceHandle": "output",
+        "target": "95e20d28-acc9-444d-996c-bfade306213a",
+        "targetHandle": "value",
+        "ui_properties": {
+          "className": "image"
+        }
+      },
+      {
+        "id": "5908b3c4-d868-447e-a9c1-01a42eed6ac4",
+        "source": "d07d2ca6-2d77-4fdf-9b32-e81b5dc7a778",
+        "sourceHandle": "output",
+        "target": "b1078fb5-7d24-40a8-be16-5baf23d03f9c",
+        "targetHandle": "control_image",
+        "ui_properties": {
+          "className": "image"
+        }
+      },
+      {
+        "id": "374a61da-3d18-49d8-99b4-6ea6bbad0c38",
+        "source": "ca57e571-8f82-4ce1-8769-b0c02ff68271",
+        "sourceHandle": "output",
+        "target": "b1078fb5-7d24-40a8-be16-5baf23d03f9c",
+        "targetHandle": "prompt",
+        "ui_properties": {
+          "className": "str"
+        }
+      },
+      {
+        "id": "3c68cbed-e175-49ad-912f-66fe5529fd56",
+        "source": "baf73408-a404-42cd-8627-c7afb770ada4",
+        "sourceHandle": "output",
+        "target": "8a50aff9-c64c-49fb-afd2-9e19a6f56b2b",
+        "targetHandle": "image",
+        "ui_properties": {
+          "className": "image"
+        }
+      },
+      {
+        "id": "cbe8e1ad-34e0-4c03-8d42-d3900e3e1364",
+        "source": "8a50aff9-c64c-49fb-afd2-9e19a6f56b2b",
+        "sourceHandle": "output",
+        "target": "d07d2ca6-2d77-4fdf-9b32-e81b5dc7a778",
+        "targetHandle": "image",
+        "ui_properties": {
+          "className": "image"
+        }
+      },
+      {
+        "id": "55d223c4-c214-4c3d-92d0-0b31230d5aca",
+        "source": "8a50aff9-c64c-49fb-afd2-9e19a6f56b2b",
+        "sourceHandle": "output",
+        "target": "ca57e571-8f82-4ce1-8769-b0c02ff68271",
+        "targetHandle": "image",
+        "ui_properties": {
+          "className": "image"
+        }
+      }
+    ]
+  },
+  "input_schema": null,
+  "output_schema": null,
+  "settings": null,
+  "package_name": "nodetool-huggingface",
+  "path": null,
+  "run_mode": null
+}
