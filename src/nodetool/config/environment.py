@@ -1,6 +1,7 @@
 import logging
 import os
 import logging
+from pathlib import Path
 from nodetool.config.logging_config import configure_logging, get_logger
 from typing import Any, Optional, Dict
 
@@ -64,6 +65,33 @@ storage and production deployment with cloud services.
 """
 
 
+def load_dotenv_files():
+    """Load environment variables from .env files based on current environment."""
+    from dotenv import load_dotenv
+
+    # Get the project root directory (where .env files should be located)
+    current_file = Path(__file__)
+    project_root = (
+        current_file.parent.parent.parent.parent
+    )  # Go up to workspace/nodetool-core
+
+    # Determine environment - check ENV var first, then default to development
+    env_name = os.environ.get("ENV", "development")
+
+    # Load .env files in order of precedence (later files override earlier ones)
+    env_files = [
+        project_root / ".env",  # Base .env file
+        project_root / f".env.{env_name}",  # Environment-specific file
+        project_root / f".env.{env_name}.local",  # Local overrides (gitignored)
+    ]
+
+    for env_file in env_files:
+        if env_file.exists():
+            load_dotenv(
+                env_file, override=False
+            )  # Don't override already set variables
+
+
 class Environment(object):
     """
     A class that manages environment variables and provides default values and type conversions.
@@ -89,6 +117,8 @@ class Environment(object):
 
     @classmethod
     def load_settings(cls):
+        # Load .env files first
+        load_dotenv_files()
         cls.settings, cls.secrets = load_settings()
 
     @classmethod
