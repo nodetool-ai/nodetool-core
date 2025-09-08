@@ -102,9 +102,8 @@ After generation, the graph is converted to the standard APIGraph format with
 separate nodes and edges arrays for execution by the WorkflowRunner.
 """
 
-import asyncio
 import json
-import logging
+from nodetool.config.logging_config import get_logger
 from typing import Any, AsyncGenerator, Dict, List, Optional, cast
 import traceback
 from nodetool.chat.providers.anthropic_provider import AnthropicProvider
@@ -135,7 +134,7 @@ from nodetool.types.graph import Graph as APIGraph
 from nodetool.workflows.graph import Graph
 
 # Set up logger for this module
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 # Log level is controlled by env (DEBUG/NODETOOL_LOG_LEVEL)
 
 # Pydantic models for type safety

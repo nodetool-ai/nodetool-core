@@ -30,7 +30,7 @@ Notes:
 from __future__ import annotations
 
 import asyncio
-import logging
+from nodetool.config.logging_config import get_logger
 from typing import Any, AsyncGenerator
 
 from nodetool.workflows.base_node import BaseNode, OutputNode
@@ -65,7 +65,7 @@ class NodeActor:
         self.context = context
         self.inbox = inbox
         self._task: asyncio.Task | None = None
-        self.logger = logging.getLogger(__name__)
+        self.logger = get_logger(__name__)
         # Log level is controlled by env (DEBUG/NODETOOL_LOG_LEVEL)
 
     def _inbound_handles(self) -> set[str]:

@@ -15,7 +15,7 @@ The implementation provides:
 """
 
 import datetime
-import logging
+from nodetool.config.logging_config import get_logger
 import json
 import os
 import asyncio
@@ -43,7 +43,7 @@ from nodetool.ui.console import AgentConsole
 from nodetool.agents.base_agent import BaseAgent
 
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 
 def sanitize_file_path(file_path: str) -> str:

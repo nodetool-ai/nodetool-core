@@ -4,7 +4,7 @@ Help message processor module.
 This module provides the processor for help mode messages.
 """
 
-import logging
+from nodetool.config.logging_config import get_logger
 import asyncio
 import json
 from typing import List
@@ -30,7 +30,7 @@ from nodetool.chat.providers.base import ChatProvider
 from nodetool.agents.tools.base import Tool
 from .base import MessageProcessor
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 # Log level is controlled by env (DEBUG/NODETOOL_LOG_LEVEL)
 
 SYSTEM_PROMPT = """

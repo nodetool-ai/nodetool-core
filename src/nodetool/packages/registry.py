@@ -55,7 +55,7 @@ import tomli
 import re
 import importlib
 import importlib.metadata
-import logging
+from nodetool.config.logging_config import get_logger
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
@@ -227,7 +227,7 @@ class Registry:
             {}
         )  # Cache for loaded examples by package_name:example_name
         self._example_search_cache: Optional[Dict[str, Any]] = None
-        self.logger = logging.getLogger(__name__)
+        self.logger = get_logger(__name__)
 
     def pip_install(
         self, install_path: str, editable: bool = False, upgrade: bool = False

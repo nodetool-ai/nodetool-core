@@ -56,7 +56,7 @@ from nodetool.metadata.types import (
     VideoRef,
 )
 from nodetool.config.environment import Environment
-import logging
+from nodetool.config.logging_config import get_logger
 from nodetool.workflows.base_node import BaseNode
 from nodetool.workflows.property import Property
 from nodetool.integrations.vectorstores.chroma.async_chroma_client import (
@@ -81,7 +81,7 @@ from nodetool.media.image.font_utils import (
 from nodetool.media.video.video_utils import export_to_video_bytes
 
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 
 def create_file_uri(path: str) -> str:

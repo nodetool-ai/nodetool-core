@@ -31,8 +31,9 @@ from nodetool.chat.providers import get_provider
 from nodetool.metadata.types import Provider
 from nodetool.chat.workspace_manager import WorkspaceManager
 import asyncio
+from nodetool.config.logging_config import get_logger
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 router = APIRouter(prefix="/api/workflows", tags=["workflows"])
 
 

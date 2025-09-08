@@ -6,7 +6,7 @@ by agents. Each WorkflowTool instance is configured with a specific workflow
 and uses its input schema for tool parameters.
 """
 
-import logging
+from nodetool.config.logging_config import get_logger
 import re
 from typing import Any, Dict
 from uuid import uuid4
@@ -30,7 +30,7 @@ from nodetool.workflows.types import (
     ToolResultUpdate,
 )
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 # Log level is controlled by env (DEBUG/NODETOOL_LOG_LEVEL)
 
 

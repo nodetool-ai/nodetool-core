@@ -4,7 +4,7 @@ Workflow message processor module.
 This module provides the processor for workflow execution messages.
 """
 
-import logging
+from nodetool.config.logging_config import get_logger
 from typing import List, Optional
 import uuid
 
@@ -22,7 +22,7 @@ from nodetool.workflows.types import OutputUpdate
 from nodetool.workflows.processing_context import ProcessingContext
 from .base import MessageProcessor
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 # Log level is controlled by env (DEBUG/NODETOOL_LOG_LEVEL)
 
 

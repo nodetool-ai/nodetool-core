@@ -1,13 +1,13 @@
 import pytest
 from nodetool.config.environment import Environment
-import logging
+from nodetool.config.logging_config import get_logger
 
 import pytest_asyncio
 
 from nodetool.models.base_model import DBModel, DBField
 from nodetool.models.condition_builder import Field
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 
 class TestModel(DBModel):

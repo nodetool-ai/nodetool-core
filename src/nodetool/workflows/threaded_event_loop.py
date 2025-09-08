@@ -3,11 +3,11 @@ from asyncio import AbstractEventLoop
 from concurrent.futures import Future
 import threading
 from typing import Callable, Coroutine, Any, Optional, TypeVar
-import logging  # Use logging instead of print for library code
+from nodetool.config.logging_config import get_logger
 
 
 T = TypeVar("T")
-log = logging.getLogger(__name__)  # Setup logger
+log = get_logger(__name__)  # Setup logger
 
 
 class ThreadedEventLoop:

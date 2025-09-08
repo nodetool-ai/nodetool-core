@@ -11,9 +11,9 @@ production environments.
 from typing import Dict, Any
 
 from nodetool.config.environment import Environment
-import logging
+from nodetool.config.logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class ModelManager:

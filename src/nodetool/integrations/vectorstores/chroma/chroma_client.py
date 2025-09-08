@@ -23,7 +23,7 @@ Key Functions:
 import chromadb
 from chromadb.config import Settings, DEFAULT_DATABASE, DEFAULT_TENANT
 from urllib.parse import urlparse
-import logging
+from nodetool.config.logging_config import get_logger
 
 
 from nodetool.config.environment import Environment
@@ -41,6 +41,8 @@ from typing import List
 
 from nodetool.metadata.types import TextChunk
 
+log = get_logger(__name__)
+
 
 def get_chroma_client(
     user_id: str | None = None,
@@ -57,7 +59,6 @@ def get_chroma_client(
     """
     url = Environment.get_chroma_url()
     token = Environment.get_chroma_token()
-    log = logging.getLogger(__name__)
 
     if url is not None:
         parsed_url = urlparse(url)
@@ -183,7 +184,6 @@ def get_all_collections() -> List[chromadb.Collection]:
     """
     client = get_chroma_client()
     collections = client.list_collections()
-    log = logging.getLogger(__name__)
 
     ollama_url = Environment.get("OLLAMA_API_URL")
     result = []

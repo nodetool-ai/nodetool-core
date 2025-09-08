@@ -13,6 +13,7 @@ from nodetool.workflows.base_node import BaseNode
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import NodeProgress, Notification, LogUpdate
 from nodetool.code_runners.docker_ws import DockerHijackMultiplexDemuxer
+from nodetool.config.logging_config import get_logger
 
 
 class StreamRunnerBase:
@@ -47,9 +48,8 @@ class StreamRunnerBase:
             nano_cpus: CPU quota in Docker nano-CPUs (1e9 = 1 CPU).
         """
         self.timeout_seconds = timeout_seconds
-        self._logger = _logging.getLogger(__name__)
+        self._logger = get_logger(__name__)
         self._logger.setLevel(_logging.DEBUG)
-        self.image = image
         self.mem_limit = mem_limit
         self.nano_cpus = nano_cpus
         self.network_disabled = network_disabled

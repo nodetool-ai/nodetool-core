@@ -3,9 +3,9 @@ Path utilities for workspace and file path resolution.
 """
 
 import os
-import logging
+from nodetool.config.logging_config import get_logger
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 
 def resolve_workspace_path(workspace_dir: str, path: str) -> str:

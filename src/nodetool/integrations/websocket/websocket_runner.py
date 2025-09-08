@@ -9,7 +9,7 @@ from nodetool.types.wrap_primitive_types import wrap_primitive_types
 from pydantic import BaseModel
 from fastapi import WebSocket, WebSocketDisconnect
 from nodetool.config.environment import Environment
-import logging
+from nodetool.config.logging_config import get_logger
 from nodetool.ml.core.model_manager import ModelManager
 from nodetool.types.job import JobUpdate
 from nodetool.workflows.base_node import BaseNode
@@ -20,7 +20,7 @@ from nodetool.workflows.threaded_event_loop import ThreadedEventLoop
 from nodetool.workflows.types import Error
 import gc
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 """
 WebSocket-based workflow execution manager for Node Tool.

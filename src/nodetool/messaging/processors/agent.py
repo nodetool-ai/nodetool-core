@@ -5,7 +5,7 @@ This module provides the processor for agent mode messages.
 """
 
 import asyncio
-import logging
+from nodetool.config.logging_config import get_logger
 from typing import List
 from nodetool.agents.tools.tool_registry import resolve_tool_by_name
 
@@ -25,7 +25,7 @@ from nodetool.agents.tools.base import Tool
 from nodetool.chat.providers.base import ChatProvider
 from .base import MessageProcessor
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 # Log level is controlled by env (DEBUG/NODETOOL_LOG_LEVEL)
 
 

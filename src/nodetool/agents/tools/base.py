@@ -6,10 +6,10 @@ and utility functions used by multiple tools.
 """
 
 from typing import Any, Dict
-import logging
+from nodetool.config.logging_config import get_logger
 from nodetool.workflows.processing_context import ProcessingContext
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class Tool:

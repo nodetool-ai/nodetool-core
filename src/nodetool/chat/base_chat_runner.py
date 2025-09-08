@@ -15,7 +15,7 @@ Subclasses should implement transport-specific methods for:
 - Protocol-specific formatting
 """
 
-import logging
+from nodetool.config.logging_config import get_logger
 from abc import ABC, abstractmethod
 import traceback
 from typing import List, Optional
@@ -39,7 +39,7 @@ from nodetool.messaging.message_processors import (
     WorkflowMessageProcessor,
 )
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 ollama_models: list[str] = []
 

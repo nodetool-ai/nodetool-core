@@ -2,12 +2,12 @@
 Shared font-related utilities used across the codebase.
 """
 
-import logging
+from nodetool.config.logging_config import get_logger
 import os
 import platform
 from typing import Dict, Optional
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 
 def get_system_font_path(
@@ -98,5 +98,3 @@ def get_system_font_path(
                         return os.path.join(root, f)
 
     raise FileNotFoundError(f"Could not find font '{font_name}' in system locations")
-
-

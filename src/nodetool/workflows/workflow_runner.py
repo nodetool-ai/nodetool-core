@@ -33,7 +33,7 @@ Example:
 import asyncio
 from contextlib import contextmanager
 import gc
-import logging
+from nodetool.config.logging_config import get_logger
 import random
 import time
 from typing import Any, AsyncGenerator, Optional
@@ -72,7 +72,7 @@ try:
 except ImportError:
     pass
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 # Log level is controlled by env (DEBUG/NODETOOL_LOG_LEVEL)
 
 MAX_RETRIES = 2

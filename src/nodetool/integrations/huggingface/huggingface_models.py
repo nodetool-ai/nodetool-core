@@ -26,11 +26,11 @@ import json
 import hashlib
 from pathlib import Path
 from nodetool.config.environment import Environment
-import logging
+from nodetool.config.logging_config import get_logger
 from nodetool.metadata.types import CLASSNAME_TO_MODEL_TYPE, HuggingFaceModel
 from nodetool.workflows.base_node import get_recommended_models
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 # Cache configuration
 CACHE_VERSION = "1.0"
@@ -40,13 +40,14 @@ CACHE_EXPIRY_DAYS = int(os.environ.get("NODETOOL_CACHE_EXPIRY_DAYS", "7"))
 def get_model_info_cache_directory() -> Path:
     """
     Get system-specific cache directory for nodetool's custom model info cache.
-    
+
     Returns:
         Path: System-specific cache directory
     """
     try:
         # Try to use platformdirs if available
         import platformdirs
+
         cache_dir = platformdirs.user_cache_dir("nodetool", "nodetool")
     except ImportError:
         # Fallback to manual platform detection
@@ -60,7 +61,7 @@ def get_model_info_cache_directory() -> Path:
         else:
             # Fallback for unknown systems
             cache_dir = os.path.expanduser("~/.nodetool_cache")
-    
+
     cache_path = Path(cache_dir) / "model_info_cache"
     cache_path.mkdir(parents=True, exist_ok=True)
     return cache_path
@@ -69,11 +70,11 @@ def get_model_info_cache_directory() -> Path:
 def get_cache_file_path(model_id: str, cache_type: str = "model_info") -> Path:
     """
     Get the cache file path for a specific model's metadata.
-    
+
     Args:
         model_id (str): The model ID
         cache_type (str): Type of cache (defaults to 'model_info')
-    
+
     Returns:
         Path: Cache file path
     """
@@ -86,16 +87,16 @@ def get_cache_file_path(model_id: str, cache_type: str = "model_info") -> Path:
 def is_cache_valid(cache_file: Path) -> bool:
     """
     Check if cache file is valid (exists and not expired).
-    
+
     Args:
         cache_file (Path): Path to cache file
-    
+
     Returns:
         bool: True if cache is valid
     """
     if not cache_file.exists():
         return False
-    
+
     try:
         # Check if file is older than CACHE_EXPIRY_DAYS
         file_age = datetime.now().timestamp() - cache_file.stat().st_mtime
@@ -107,24 +108,24 @@ def is_cache_valid(cache_file: Path) -> bool:
 def read_cache_file(cache_file: Path) -> dict[str, Any] | None:
     """
     Read and parse cache file.
-    
+
     Args:
         cache_file (Path): Path to cache file
-    
+
     Returns:
         dict | None: Cached data or None if invalid
     """
     try:
         if not is_cache_valid(cache_file):
             return None
-        
-        with open(cache_file, 'r', encoding='utf-8') as f:
+
+        with open(cache_file, "r", encoding="utf-8") as f:
             data = json.load(f)
-            
+
         # Verify cache version
         if data.get("version") != CACHE_VERSION:
             return None
-            
+
         return data.get("data")  # type: ignore[no-any-return]
     except Exception as e:
         log.debug(f"Failed to read cache file {cache_file}: {e}")
@@ -134,7 +135,7 @@ def read_cache_file(cache_file: Path) -> dict[str, Any] | None:
 def write_cache_file(cache_file: Path, data: Any) -> None:
     """
     Write data to cache file with size verification.
-    
+
     Args:
         cache_file (Path): Path to cache file
         data (Any): Data to cache
@@ -143,27 +144,29 @@ def write_cache_file(cache_file: Path, data: Any) -> None:
         cache_data = {
             "version": CACHE_VERSION,
             "timestamp": datetime.now().isoformat(),
-            "data": data
+            "data": data,
         }
-        
+
         # Ensure directory exists
         cache_file.parent.mkdir(parents=True, exist_ok=True)
-        
+
         # Convert to JSON string first to check size
         json_str = json.dumps(cache_data, indent=2, default=str)
-        expected_size = len(json_str.encode('utf-8'))
-        
-        with open(cache_file, 'w', encoding='utf-8') as f:
+        expected_size = len(json_str.encode("utf-8"))
+
+        with open(cache_file, "w", encoding="utf-8") as f:
             f.write(json_str)
             f.flush()
             os.fsync(f.fileno())  # Ensure data is written to disk
-        
+
         # Verify file was written completely
         actual_size = cache_file.stat().st_size
         if actual_size != expected_size:
-            log.warning(f"Cache file size mismatch for {cache_file}: expected {expected_size}, got {actual_size}")
+            log.warning(
+                f"Cache file size mismatch for {cache_file}: expected {expected_size}, got {actual_size}"
+            )
             cache_file.unlink()  # Remove potentially corrupted file
-            
+
     except Exception as e:
         log.debug(f"Failed to write cache file {cache_file}: {e}")
 
@@ -171,7 +174,7 @@ def write_cache_file(cache_file: Path, data: Any) -> None:
 def delete_cache_file(model_id: str, cache_type: str = "model_info") -> None:
     """
     Delete cache file for a specific model's metadata.
-    
+
     Args:
         model_id (str): The model ID
         cache_type (str): Type of cache (defaults to 'model_info')
@@ -187,7 +190,7 @@ def delete_cache_file(model_id: str, cache_type: str = "model_info") -> None:
 def cleanup_expired_cache() -> int:
     """
     Clean up expired cache files.
-    
+
     Returns:
         int: Number of files removed
     """
@@ -196,7 +199,7 @@ def cleanup_expired_cache() -> int:
         cache_dir = get_model_info_cache_directory()
         if not cache_dir.exists():
             return 0
-            
+
         for cache_file in cache_dir.glob("*.json"):
             if not is_cache_valid(cache_file):
                 try:
@@ -205,10 +208,10 @@ def cleanup_expired_cache() -> int:
                     log.debug(f"Removed expired cache file: {cache_file}")
                 except Exception as e:
                     log.debug(f"Failed to remove expired cache file {cache_file}: {e}")
-                    
+
     except Exception as e:
         log.debug(f"Failed to cleanup expired cache: {e}")
-        
+
     return removed_count
 
 
@@ -250,29 +253,35 @@ async def fetch_model_readme(model_id: str) -> str | None:
     Returns:
         str: The readme content, or None if not found.
     """
-    from huggingface_hub import try_to_load_from_cache, hf_hub_download, _CACHED_NO_EXIST
-    
+    from huggingface_hub import (
+        try_to_load_from_cache,
+        hf_hub_download,
+        _CACHED_NO_EXIST,
+    )
+
     # First, try to load from the HF hub cache
     cached_path = try_to_load_from_cache(repo_id=model_id, filename="README.md")
-    
+
     if isinstance(cached_path, str):
         # File exists in cache, read and return it
         try:
-            with open(cached_path, 'r', encoding='utf-8') as f:
+            with open(cached_path, "r", encoding="utf-8") as f:
                 return f.read()
         except Exception as e:
             log.debug(f"Failed to read cached README for {model_id}: {e}")
     elif cached_path is _CACHED_NO_EXIST:
         # Non-existence is cached, return None immediately
         return None
-    
+
     # File not in cache, try to download it
     try:
         readme_path = await asyncio.get_event_loop().run_in_executor(
-            None, 
-            lambda: hf_hub_download(repo_id=model_id, filename="README.md", repo_type="model")
+            None,
+            lambda: hf_hub_download(
+                repo_id=model_id, filename="README.md", repo_type="model"
+            ),
         )
-        with open(readme_path, 'r', encoding='utf-8') as f:
+        with open(readme_path, "r", encoding="utf-8") as f:
             return f.read()
     except Exception as e:
         log.debug(f"Failed to download README for {model_id}: {e}")
@@ -374,7 +383,7 @@ async def read_cached_hf_models(
         )
     else:
         model_infos = [None] * len(model_repos)
-    
+
     def has_model_index(model_info: ModelInfo | None) -> bool:
         if model_info is None:
             return False
@@ -422,10 +431,11 @@ def delete_cached_hf_model(model_id: str) -> bool:
 
 
 if __name__ == "__main__":
+
     async def main() -> None:
         models = await read_cached_hf_models()
         for model in models:
             if model.the_model_info is not None:
                 print(model.repo_id, model.the_model_info.tags)
-    
+
     asyncio.run(main())

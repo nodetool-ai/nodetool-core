@@ -16,7 +16,6 @@ from nodetool.workflows.base_node import (
 )
 
 
-configure_logging()
 logger = get_logger(__name__)
 
 

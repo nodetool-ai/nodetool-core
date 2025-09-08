@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional, get_args
 from pydantic.fields import FieldInfo
 
 from nodetool.config.environment import Environment
-import logging
+from nodetool.config.logging_config import get_logger
 from nodetool.models.condition_builder import (
     Condition,
     ConditionBuilder,
@@ -25,7 +25,7 @@ from psycopg.sql import SQL, Identifier, Placeholder, Composed
 from enum import EnumMeta as EnumType
 
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 
 def convert_to_postgres_format(
@@ -248,11 +248,15 @@ class PostgresAdapter(DatabaseAdapter):
         if await self.table_exists():
             await self.migrate_table()
             for index in self.indexes:
-                await self.create_index(index["name"], index["columns"], index["unique"])
+                await self.create_index(
+                    index["name"], index["columns"], index["unique"]
+                )
         else:
             await self.create_table()
             for index in self.indexes:
-                await self.create_index(index["name"], index["columns"], index["unique"])
+                await self.create_index(
+                    index["name"], index["columns"], index["unique"]
+                )
 
     async def _get_pool(self) -> AsyncConnectionPool:
         """Provides a lazy-loaded PostgreSQL connection pool using psycopg."""
@@ -371,7 +375,9 @@ class PostgresAdapter(DatabaseAdapter):
         for field_name in fields_to_add:
             for index in self.indexes:
                 if field_name in index["columns"]:
-                    await self.create_index(index["name"], index["columns"], index["unique"])
+                    await self.create_index(
+                        index["name"], index["columns"], index["unique"]
+                    )
 
     async def save(self, item: Dict[str, Any]) -> None:
         """Saves (inserts or updates) an item into the database table.

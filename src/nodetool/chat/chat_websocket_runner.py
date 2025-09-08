@@ -16,7 +16,7 @@ Example:
     await runner.run(websocket)
 """
 
-import logging
+from nodetool.config.logging_config import get_logger
 import json
 import msgpack
 import asyncio
@@ -28,9 +28,10 @@ from fastapi import WebSocket
 from fastapi.websockets import WebSocketState
 from nodetool.chat.base_chat_runner import BaseChatRunner
 from nodetool.config.environment import Environment
+from nodetool.config.logging_config import get_logger
 
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 # Log level is controlled by env (DEBUG/NODETOOL_LOG_LEVEL)
 
 

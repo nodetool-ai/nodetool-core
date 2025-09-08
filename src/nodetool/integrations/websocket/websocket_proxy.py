@@ -3,10 +3,10 @@ import aiohttp
 from fastapi import WebSocket, WebSocketDisconnect
 
 from nodetool.config.environment import Environment
-import logging
+from nodetool.config.logging_config import get_logger
 
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 
 class WebSocketProxy:

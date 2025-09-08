@@ -559,11 +559,7 @@ class Environment(object):
     @classmethod
     def get_logger(cls):
         """Return the shared nodetool logger using centralized config."""
-        # Ensure global logging configured once
-        configure_logging(level=cls.get_log_level())
-        # Reduce noisy third-party libraries
-        logging.getLogger("httpx").setLevel(logging.WARNING)
-        logging.getLogger("httpcore").setLevel(logging.WARNING)
+        configure_logging()
         return get_logger("nodetool")
 
     @classmethod

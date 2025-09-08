@@ -9,10 +9,10 @@ from typing import List, Optional
 from huggingface_hub.constants import HF_HUB_CACHE
 
 from nodetool.config.environment import Environment
-import logging
+from nodetool.config.logging_config import get_logger
 
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 
 def get_ollama_models_dir() -> Optional[Path]:

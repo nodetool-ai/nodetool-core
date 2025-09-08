@@ -6,7 +6,7 @@ primarily system statistics, to connected clients.
 from fastapi import WebSocket
 import asyncio
 from typing import Literal, Set
-import logging
+from nodetool.config.logging_config import get_logger
 from pydantic import BaseModel
 
 from nodetool.config.environment import Environment
@@ -36,7 +36,7 @@ class WebSocketUpdates:
         """Initializes the WebSocketUpdates manager."""
         self.active_connections: Set[WebSocket] = set()
         self._lock = asyncio.Lock()
-        self.log = logging.getLogger(__name__)
+        self.log = get_logger(__name__)
         self.log.info("WebSocketUpdates: instance initialized")
         self._stats_task = None
         self._shutdown = False

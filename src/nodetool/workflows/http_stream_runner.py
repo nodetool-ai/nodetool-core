@@ -4,14 +4,14 @@ import time
 import uuid
 from typing import AsyncGenerator
 from nodetool.config.environment import Environment
-import logging
+from nodetool.config.logging_config import get_logger
 from nodetool.types.wrap_primitive_types import wrap_primitive_types
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.run_workflow import run_workflow
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.workflow_runner import WorkflowRunner
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 
 class HTTPStreamRunner:

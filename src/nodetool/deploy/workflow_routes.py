@@ -17,7 +17,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
 from nodetool.config.environment import Environment
-import logging
+from nodetool.config.logging_config import get_logger
 from nodetool.types.job import JobUpdate
 from nodetool.types.workflow import Workflow
 from nodetool.workflows.processing_context import ProcessingContext
@@ -28,7 +28,7 @@ from nodetool.models.workflow import Workflow as WorkflowModel
 from nodetool.api.workflow import WorkflowList, from_model, WorkflowRequest
 
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 # Simple in-memory registry to support tests that patch it
 _workflow_registry: dict[str, Workflow] = {}
@@ -44,7 +44,6 @@ def get_workflow_by_id(workflow_id: str) -> Workflow:
 
 def create_workflow_router() -> APIRouter:
     router = APIRouter()
-
 
     @router.put("/workflows/{id}")
     async def update_workflow(
@@ -73,7 +72,7 @@ def create_workflow_router() -> APIRouter:
         return updated_workflow
 
     @router.post("/workflows/{id}/run")
-    async def execute_workflow(id: str, request: Request):   
+    async def execute_workflow(id: str, request: Request):
         try:
             params = await request.json()
             req = RunJobRequest(params=params, workflow_id=id)
@@ -111,9 +110,14 @@ def create_workflow_router() -> APIRouter:
             async def generate_sse():
                 results: Dict[str, object] = {}
                 try:
-                    async for msg in run_workflow(req, context=context, use_thread=True):
+                    async for msg in run_workflow(
+                        req, context=context, use_thread=True
+                    ):
                         if isinstance(msg, JobUpdate):
-                            event_data = {"type": "job_update", "data": msg.model_dump()}
+                            event_data = {
+                                "type": "job_update",
+                                "data": msg.model_dump(),
+                            }
                             yield f"data: {json.dumps(event_data)}\n\n"
                             if msg.status == "error":
                                 error_data = {"type": "error", "error": msg.error}
@@ -160,4 +164,3 @@ def create_workflow_router() -> APIRouter:
             raise HTTPException(status_code=500, detail=str(e))
 
     return router
-

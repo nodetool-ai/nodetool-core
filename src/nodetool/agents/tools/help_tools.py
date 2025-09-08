@@ -16,11 +16,11 @@ from typing import Any
 
 from nodetool.agents.tools.base import Tool
 from nodetool.config.environment import Environment
-import logging
+from nodetool.config.logging_config import get_logger
 from nodetool.workflows.base_node import get_node_class
 from nodetool.workflows.processing_context import ProcessingContext
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 TYPES = [
     "str",

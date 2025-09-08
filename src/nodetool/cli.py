@@ -6,6 +6,7 @@ from nodetool.api.workflow import from_model
 from nodetool.config.configuration import get_settings_registry
 from nodetool.config.environment import Environment
 import logging
+from nodetool.config.logging_config import get_logger
 from nodetool.config.settings import load_settings
 from nodetool.deploy.docker import (
     generate_image_tag,
@@ -45,7 +46,7 @@ import atexit
 atexit.register(cleanup_progress)
 
 warnings.filterwarnings("ignore")
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 # Define supported GPU types for RunPod REST API
 # SUPPORTED_GPU_TYPES = [

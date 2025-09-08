@@ -20,7 +20,7 @@ from fastapi import APIRouter, FastAPI, Request, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from uvicorn import run as uvicorn
 import sys
-from nodetool.config.logging_config import configure_logging
+from nodetool.config.logging_config import configure_logging, get_logger
 
 from nodetool.metadata.types import Provider
 from nodetool.packages.registry import get_nodetool_package_source_folders
@@ -78,6 +78,8 @@ mimetypes.add_type("text/plain", ".txt")
 
 
 Environment.initialize_sentry()
+
+log = get_logger(__name__)
 
 
 class ExtensionRouterRegistry:
@@ -142,20 +144,13 @@ def create_app(
             await asyncio.to_thread(Environment.get_asset_storage)
             await asyncio.to_thread(Environment.get_temp_storage)
         except Exception as e:
-            import logging
-
-            logging.getLogger(__name__).warning(
-                f"Storage pre-initialization failed: {e}"
-            )
+            log.warning(f"Storage pre-initialization failed: {e}")
 
         # Hand control back to the app
         yield
 
         # Shutdown: cleanup resources
-        import logging
-
-        logger = logging.getLogger(__name__)
-        logger.info("Server shutdown initiated - cleaning up resources")
+        log.info("Server shutdown initiated - cleaning up resources")
 
         try:
             # Import here to avoid circular imports
@@ -164,13 +159,13 @@ def create_app(
             )
 
             await websocket_updates.shutdown()
-            logger.info("WebSocket updates shutdown complete")
+            log.info("WebSocket updates shutdown complete")
         except Exception as e:
-            logger.error(f"Error during websocket updates shutdown: {e}")
+            log.error(f"Error during websocket updates shutdown: {e}")
 
         # Give a moment for cleanup to complete
         await asyncio.sleep(0.1)
-        logger.info("Server shutdown cleanup complete")
+        log.info("Server shutdown cleanup complete")
 
     app = FastAPI(lifespan=lifespan)
 

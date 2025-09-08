@@ -23,7 +23,7 @@ import asyncio
 from dataclasses import dataclass, field
 from fnmatch import fnmatch
 import importlib
-import logging
+from nodetool.config.logging_config import get_logger
 import traceback
 from typing import Literal
 from fastapi import WebSocket
@@ -179,7 +179,7 @@ class DownloadManager:
 
     def __init__(self):
         self.api = HfApi()
-        self.logger = logging.getLogger(__name__)
+        self.logger = get_logger(__name__)
         self.downloads: dict[str, DownloadState] = {}
         self.process_pool = ProcessPoolExecutor(max_workers=4)
         self.manager = Manager()
@@ -359,7 +359,7 @@ def download_file(repo_id: str, filename: str, queue: Queue):
     return filename, local_path
 
 
-class CustomTqdm(huggingface_hub.file_download.tqdm): # type: ignore
+class CustomTqdm(huggingface_hub.file_download.tqdm):  # type: ignore
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         if parent_queue and "initial" in kwargs:
@@ -372,7 +372,7 @@ class CustomTqdm(huggingface_hub.file_download.tqdm): # type: ignore
 
 
 # Replace the tqdm used by huggingface_hub
-huggingface_hub.file_download.tqdm = CustomTqdm # type: ignore
+huggingface_hub.file_download.tqdm = CustomTqdm  # type: ignore
 
 # `huggingface_hub.utils.tqdm` is a class exported at package import time which
 # also needs to be replaced so that `_get_progress_bar_context` uses our custom
@@ -380,8 +380,8 @@ huggingface_hub.file_download.tqdm = CustomTqdm # type: ignore
 # defined in `huggingface_hub.utils` and gives access to the actual module
 # object.
 tqdm_module = importlib.import_module("huggingface_hub.utils.tqdm")
-tqdm_module.tqdm = CustomTqdm # type: ignore
-huggingface_hub.utils.tqdm = CustomTqdm # type: ignore
+tqdm_module.tqdm = CustomTqdm  # type: ignore
+huggingface_hub.utils.tqdm = CustomTqdm  # type: ignore
 
 
 async def huggingface_download_endpoint(websocket: WebSocket):

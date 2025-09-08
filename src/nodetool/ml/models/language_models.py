@@ -1,14 +1,14 @@
 #!/usr/bin/env python
 
 import asyncio
-import logging
+from nodetool.config.logging_config import get_logger
 from typing import List, Dict, Any
 import aiohttp
 from nodetool.metadata.types import LanguageModel, Provider
 from nodetool.config.environment import Environment
 from nodetool.storage.memory_node_cache import MemoryNodeCache
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 # Cache TTL: 60 minutes = 3600 seconds
 CACHE_TTL = 3600
@@ -137,79 +137,105 @@ HF_PROVIDER_MAPPING = {
     "together": Provider.HuggingFaceTogether,
 }
 
+
 async def fetch_models_from_hf_provider(provider: str) -> List[LanguageModel]:
     """
     Fetch models from HuggingFace Hub API for a specific provider.
-    
+
     Args:
         provider: The provider value (e.g., "groq", "cerebras", etc.)
-        
+
     Returns:
         List of LanguageModel instances
     """
     try:
         url = f"https://huggingface.co/api/models?inference_provider={provider}&pipeline_tag=text-generation&limit=1000"
-        
+
         async with aiohttp.ClientSession() as session:
             async with session.get(url) as response:
                 if response.status == 200:
                     models_data = await response.json()
-                    
+
                     models = []
                     for model_data in models_data:
                         model_id = model_data.get("id", "")
                         if model_id:
                             # Use the model name from the API if available, otherwise use the ID
-                            model_name = model_data.get("name") or model_id.split("/")[-1] if "/" in model_id else model_id
-                            
+                            model_name = (
+                                model_data.get("name") or model_id.split("/")[-1]
+                                if "/" in model_id
+                                else model_id
+                            )
+
                             # Get the appropriate provider enum value
-                            provider_enum = HF_PROVIDER_MAPPING.get(provider, Provider.HuggingFace)
-                            
-                            models.append(LanguageModel(
-                                id=model_id,
-                                name=model_name,
-                                provider=provider_enum,
-                            ))
-                    
+                            provider_enum = HF_PROVIDER_MAPPING.get(
+                                provider, Provider.HuggingFace
+                            )
+
+                            models.append(
+                                LanguageModel(
+                                    id=model_id,
+                                    name=model_name,
+                                    provider=provider_enum,
+                                )
+                            )
+
                     # Preserve API order to match test expectations
-                    log.debug(f"Fetched {len(models)} models from HF provider: {provider}")
+                    log.debug(
+                        f"Fetched {len(models)} models from HF provider: {provider}"
+                    )
                     return models
                 else:
-                    log.warning(f"Failed to fetch models for provider {provider}: HTTP {response.status}")
+                    log.warning(
+                        f"Failed to fetch models for provider {provider}: HTTP {response.status}"
+                    )
                     return []
-                    
+
     except Exception as e:
         log.error(f"Error fetching models for provider {provider}: {e}")
         return []
 
+
 async def get_cached_hf_models() -> List[LanguageModel]:
     """
     Get HuggingFace models from in-memory cache or fetch them dynamically.
-    
+
     Returns:
         List of LanguageModel instances from HuggingFace providers
     """
     cache_key = "hf_language_models"
-    
+
     # Try to get from cache first
     cached_models = _language_model_cache.get(cache_key)
     if cached_models is not None:
         log.debug("Using cached HuggingFace models")
         return cached_models
-    
+
     log.debug("Fetching HuggingFace models from API")
-    
+
     # List of providers to fetch from
     providers = [
-        "black-forest-labs", "cerebras", "cohere", "fal-ai", "featherless-ai",
-        "fireworks-ai", "groq", "hf-inference", "hyperbolic", "nebius",
-        "novita", "nscale", "replicate", "sambanova", "together"
+        "black-forest-labs",
+        "cerebras",
+        "cohere",
+        "fal-ai",
+        "featherless-ai",
+        "fireworks-ai",
+        "groq",
+        "hf-inference",
+        "hyperbolic",
+        "nebius",
+        "novita",
+        "nscale",
+        "replicate",
+        "sambanova",
+        "together",
     ]
-    
+
     # Fetch models from all providers concurrently
     tasks = [fetch_models_from_hf_provider(provider) for provider in providers]
     provider_results = await asyncio.gather(*tasks, return_exceptions=True)
-    
+
     # Combine all models
     all_models = []
     for i, result in enumerate(provider_results):
@@ -217,11 +243,11 @@ async def get_cached_hf_models() -> List[LanguageModel]:
             log.error(f"Error fetching models for provider {providers[i]}: {result}")
         elif isinstance(result, list):
             all_models.extend(result)
-    
+
     # Cache the results in memory
     _language_model_cache.set(cache_key, all_models, ttl=CACHE_TTL)
     log.info(f"Cached {len(all_models)} HuggingFace models in memory")
-    
+
     return all_models
 
 
@@ -249,7 +275,9 @@ async def fetch_openai_language_models() -> List[LanguageModel]:
         async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
             async with session.get("https://api.openai.com/v1/models") as response:
                 if response.status != 200:
-                    log.warning(f"Failed to fetch OpenAI models: HTTP {response.status}")
+                    log.warning(
+                        f"Failed to fetch OpenAI models: HTTP {response.status}"
+                    )
                     return []
                 payload: Dict[str, Any] = await response.json()
                 data = payload.get("data", [])
@@ -320,7 +348,9 @@ async def fetch_gemini_language_models() -> List[LanguageModel]:
         async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.get(url) as response:
                 if response.status != 200:
-                    log.warning(f"Failed to fetch Gemini models: HTTP {response.status}")
+                    log.warning(
+                        f"Failed to fetch Gemini models: HTTP {response.status}"
+                    )
                     return []
                 payload: Dict[str, Any] = await response.json()
                 items = payload.get("models") or payload.get("data") or []
@@ -369,6 +399,7 @@ async def get_cached_gemini_models() -> List[LanguageModel]:
 
     return models
 
+
 async def fetch_anthropic_language_models() -> List[LanguageModel]:
     """
     Fetch available Anthropic models using the Anthropic REST API.
@@ -395,7 +426,9 @@ async def fetch_anthropic_language_models() -> List[LanguageModel]:
         async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
             async with session.get("https://api.anthropic.com/v1/models") as response:
                 if response.status != 200:
-                    log.warning(f"Failed to fetch Anthropic models: HTTP {response.status}")
+                    log.warning(
+                        f"Failed to fetch Anthropic models: HTTP {response.status}"
+                    )
                     return []
                 payload: Dict[str, Any] = await response.json()
                 data = payload.get("data", [])
@@ -441,10 +474,11 @@ async def get_cached_anthropic_models() -> List[LanguageModel]:
 
     return models
 
+
 async def get_all_language_models() -> List[LanguageModel]:
     """
     Get all language models from all providers, including dynamically fetched HF models.
-    
+
     Returns:
         List of all available LanguageModel instances
     """
@@ -467,7 +501,7 @@ async def get_all_language_models() -> List[LanguageModel]:
 def clear_language_model_cache() -> None:
     """
     Clear the in-memory language model cache.
-    
+
     This will force the next call to get_cached_hf_models() to fetch fresh data from the API.
     """
     _language_model_cache.clear()

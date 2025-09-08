@@ -5,7 +5,7 @@ This module provides the processor for standard chat messages without workflows
 or special modes.
 """
 
-import logging
+from nodetool.config.logging_config import get_logger
 import json
 import asyncio
 from typing import List, Dict, Any, Optional
@@ -27,7 +27,7 @@ from nodetool.types.graph import Graph
 from nodetool.chat.providers.base import ChatProvider
 from .base import MessageProcessor
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 # log.setLevel(logging.DEBUG)
 
 REGULAR_SYSTEM_PROMPT = """

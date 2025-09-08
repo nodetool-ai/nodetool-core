@@ -9,6 +9,7 @@ _DEFAULT_FORMAT = os.getenv(
     "%(asctime)s | %(levelname)s | %(name)s | %(message)s",
 )
 _DEFAULT_DATEFMT = os.getenv("NODETOOL_LOG_DATEFMT", "%Y-%m-%d %H:%M:%S")
+_configured = False
 
 
 def _supports_color() -> bool:
@@ -31,10 +32,19 @@ def configure_logging(
     - `NODETOOL_LOG_FORMAT`
     - `NODETOOL_LOG_DATEFMT`
     """
+    from nodetool.config.environment import Environment
+
+    global _configured
+    if _configured:
+        return
+    _configured = True
+
     if isinstance(level, str):
         level = level.upper()
 
-    level = level if level is not None else _DEFAULT_LEVEL
+    if level is None:
+        level = Environment.get_log_level()
+
     # If no explicit fmt provided and no env override, prefer colorful format when supported
     use_color = _supports_color()
     if fmt is None:
@@ -90,4 +100,5 @@ def configure_logging(
 
 def get_logger(name: str) -> logging.Logger:
     """Return a module-scoped logger."""
+    configure_logging()
     return logging.getLogger(name)

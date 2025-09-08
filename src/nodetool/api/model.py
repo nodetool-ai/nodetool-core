@@ -9,7 +9,7 @@ from nodetool.integrations.huggingface.huggingface_file import (
     get_huggingface_file_infos_async,
 )
 from nodetool.config.environment import Environment
-import logging
+from nodetool.config.logging_config import get_logger
 from nodetool.ml.models.language_models import get_all_language_models
 from nodetool.metadata.types import (
     LanguageModel,
@@ -44,7 +44,7 @@ from nodetool.io.file_explorer import (
     open_in_explorer as common_open_in_explorer,
 )
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 router = APIRouter(prefix="/api/models", tags=["models"])
 
 

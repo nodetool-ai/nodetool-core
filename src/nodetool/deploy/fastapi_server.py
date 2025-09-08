@@ -21,7 +21,7 @@ from fastapi import FastAPI, HTTPException
 from rich.console import Console
 
 from nodetool.config.environment import Environment
-import logging
+from nodetool.config.logging_config import get_logger
 from nodetool.api.openai import create_openai_compatible_router
 from nodetool.types.workflow import Workflow
 from nodetool.deploy.workflow_routes import (
@@ -32,7 +32,7 @@ from nodetool.deploy.collection_routes import create_collection_router
 
 
 console = Console()
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 ## Workflow registry and routes moved to nodetool.deploy.workflow_routes
 
