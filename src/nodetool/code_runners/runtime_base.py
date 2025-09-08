@@ -16,6 +16,9 @@ from nodetool.code_runners.docker_ws import DockerHijackMultiplexDemuxer
 from nodetool.config.logging_config import get_logger
 
 
+log = get_logger(__name__)
+
+
 class StreamRunnerBase:
     """Base class for Docker-backed streaming code runners.
 
@@ -47,9 +50,8 @@ class StreamRunnerBase:
             mem_limit: Docker memory limit (e.g., ``"256m"``, ``"1g"``).
             nano_cpus: CPU quota in Docker nano-CPUs (1e9 = 1 CPU).
         """
+        self.image = image
         self.timeout_seconds = timeout_seconds
-        self._logger = get_logger(__name__)
-        self._logger.setLevel(_logging.DEBUG)
         self.mem_limit = mem_limit
         self.nano_cpus = nano_cpus
         self.network_disabled = network_disabled
@@ -100,7 +102,7 @@ class StreamRunnerBase:
         loop = _asyncio.get_running_loop()
         env = {}
 
-        self._logger.debug(
+        log.debug(
             "stream() start: code=%s timeout=%s",
             user_code,
             self.timeout_seconds,
@@ -132,7 +134,7 @@ class StreamRunnerBase:
                 value = msg.get("value")
                 yield slot, value
             elif msg.get("type") == "final":
-                self._logger.debug("final received: ok=%s", msg.get("ok"))
+                log.debug("final received: ok=%s", msg.get("ok"))
                 if not msg.get("ok", False):
                     raise RuntimeError(
                         f"Execution error: {msg.get('error', 'Unknown error')}"
@@ -248,18 +250,13 @@ class StreamRunnerBase:
             allow_dynamic_outputs: Reserved for future use.
             stdin_stream: Optional async iterator feeding container stdin.
         """
-        self._logger.debug(
-            "_docker_run() begin: code=%s image=%s",
-            user_code,
-            self.image,
-        )
         command_str: str | None = None
         try:
             # Attempt to acquire a Docker client; if unavailable, fallback to local subprocess
             try:
                 client = self._get_docker_client()
             except Exception as docker_unavailable:
-                self._logger.debug(
+                log.debug(
                     "Docker unavailable, falling back to local subprocess execution: %s",
                     docker_unavailable,
                 )
@@ -310,7 +307,7 @@ class StreamRunnerBase:
                     pass
 
                 self._finalize_success(queue, loop)
-                self._logger.debug("_docker_run() completed successfully")
+                log.debug("_docker_run() completed successfully")
             finally:
                 self._cleanup_container(container, cancel_timer)
                 # Clear active references
@@ -338,7 +335,7 @@ class StreamRunnerBase:
         This serves as a graceful degradation when Docker is not available,
         preserving the same streaming semantics as the Docker-backed runner.
         """
-        self._logger.debug("_local_run() begin: code=%s", user_code)
+        log.debug("_local_run() begin: code=%s", user_code)
         command_vec: list[str] | None = None
         proc: _subprocess.Popen[bytes] | None = None
         cancel_timer: _threading.Timer | None = None
@@ -351,12 +348,18 @@ class StreamRunnerBase:
             proc_env.update(self.build_container_environment(env))
             cwd = getattr(context, "workspace_dir", None) or _os.getcwd()
 
-            self._logger.debug("starting local subprocess: cmd=%s cwd=%s", cmd_str, cwd)
+            log.debug("starting local subprocess: cmd=%s cwd=%s", cmd_str, cwd)
             proc = _subprocess.Popen(
                 command_vec or [],
                 cwd=cwd,
                 env=proc_env,
-                stdin=_subprocess.PIPE if stdin_stream is not None else None,
+                # If no stdin stream is provided, explicitly close stdin so
+                # commands like `cat` see EOF immediately and do not hang.
+                stdin=(
+                    _subprocess.PIPE
+                    if stdin_stream is not None
+                    else _subprocess.DEVNULL
+                ),
                 stdout=_subprocess.PIPE,
                 stderr=_subprocess.PIPE,
                 bufsize=1,  # line-buffered
@@ -397,7 +400,7 @@ class StreamRunnerBase:
                         except Exception:
                             pass
                     except Exception as e:
-                        self._logger.debug("local stdin feeder ended: %s", e)
+                        log.debug("local stdin feeder ended: %s", e)
 
                 _asyncio.run_coroutine_threadsafe(_feed(), loop)
 
@@ -407,7 +410,7 @@ class StreamRunnerBase:
                 def _force_kill() -> None:
                     try:
                         if proc and proc.poll() is None:
-                            self._logger.debug("forcing kill of local subprocess")
+                            log.debug("forcing kill of local subprocess")
                             proc.terminate()
                     except Exception:
                         pass
@@ -417,7 +420,7 @@ class StreamRunnerBase:
                 cancel_timer.start()
 
             rc = proc.wait()
-            self._logger.debug("local subprocess exited with code %s", rc)
+            log.debug("local subprocess exited with code %s", rc)
             # Ensure stdout/stderr reader threads have drained remaining buffered lines
             try:
                 if stdout_thread is not None:
@@ -437,9 +440,7 @@ class StreamRunnerBase:
             )
         except Exception as e:
             try:
-                self._logger.exception(
-                    "_local_run() error for cmd=%s: %s", command_vec, e
-                )
+                log.exception("_local_run() error for cmd=%s: %s", command_vec, e)
             except Exception:
                 pass
             _asyncio.run_coroutine_threadsafe(
@@ -483,7 +484,7 @@ class StreamRunnerBase:
                     text = line.decode("utf-8", errors="ignore")
                     self._emit_line(queue, loop, context, node, slot, text)
         except Exception as e:
-            self._logger.debug("reader(%s) ended: %s", slot, e)
+            log.debug("reader(%s) ended: %s", slot, e)
 
     # ---- Helpers (Docker) ----
     def _get_docker_client(self):  # type: ignore[no-untyped-def]
@@ -537,7 +538,7 @@ class StreamRunnerBase:
             environment: Environment variables to pass into the container.
         """
         try:
-            self._logger.debug(
+            log.debug(
                 "docker params: image=%s mem=%s cpus=%s cmd_list=%s cmd=%s env_keys=%s",
                 image,
                 self.mem_limit,
@@ -567,7 +568,7 @@ class StreamRunnerBase:
         try:
             client.images.get(image)
         except Exception:
-            self._logger.debug("pulling image: %s", image)
+            log.debug("pulling image: %s", image)
             context.post_message(
                 Notification(
                     node_id=node.id,
@@ -622,7 +623,7 @@ class StreamRunnerBase:
         Returns:
             The created container object.
         """
-        self._logger.debug("creating container")
+        log.debug("creating container")
         container = client.containers.create(
             image=image,
             command=command,
@@ -642,9 +643,7 @@ class StreamRunnerBase:
             environment=environment,
             ipc_mode=self.ipc_mode,
         )
-        self._logger.debug(
-            "container created: id=%s", getattr(container, "id", "<no-id>")
-        )
+        log.debug("container created: id=%s", getattr(container, "id", "<no-id>"))
         return container
 
     def _attach_before_start(self, container: Any, stdin_stream: AsyncIterator[str] | None):  # type: ignore[no-untyped-def]
@@ -662,7 +661,7 @@ class StreamRunnerBase:
         """
         # Attach BEFORE starting the container so we never miss the earliest output
         # Use hijacked HTTP socket (non-WS) for robust local docker schemes
-        self._logger.debug("attaching hijacked socket to container before start")
+        log.debug("attaching hijacked socket to container before start")
         sock = container.attach_socket(
             params={
                 "stdout": True,
@@ -682,11 +681,9 @@ class StreamRunnerBase:
             command_str: Optional command string for logging.
         """
         container.start()
-        self._logger.debug(
-            "container started: id=%s", getattr(container, "id", "<no-id>")
-        )
+        log.debug("container started: id=%s", getattr(container, "id", "<no-id>"))
         if command_str is not None:
-            self._logger.debug("executing command: %s", command_str)
+            log.debug("executing command: %s", command_str)
 
     def _start_stdin_feeder(
         self,
@@ -706,7 +703,7 @@ class StreamRunnerBase:
         """
         # Schedule feeding of stdin on the provided asyncio loop.
         if stdin_stream is None:
-            self._logger.debug("no stdin stream provided")
+            log.debug("no stdin stream provided")
             return
 
         async def feed_stdin() -> None:
@@ -719,7 +716,7 @@ class StreamRunnerBase:
                         data = data + "\n"
                     payload = data.encode("utf-8")
                     bytes_sent += len(payload)
-                    self._logger.debug("feeding stdin to container: %s", payload)
+                    log.debug("feeding stdin to container: %s", payload)
                     # Avoid blocking the event loop with a socket send
                     await _asyncio.to_thread(sock._sock.send, payload)
 
@@ -729,12 +726,12 @@ class StreamRunnerBase:
                 except Exception:
                     pass
 
-                self._logger.debug(
+                log.debug(
                     "fed stdin (hijack): %d bytes and closed stdin",
                     bytes_sent,
                 )
             except Exception as e:
-                self._logger.debug("stdin feed error: %s", e)
+                log.debug("stdin feed error: %s", e)
 
         # Always run on the current loop that owns stream(), per design.
         _asyncio.run_coroutine_threadsafe(feed_stdin(), loop)
@@ -754,7 +751,7 @@ class StreamRunnerBase:
         def _force_kill() -> None:
             try:
                 # If still running, remove forcefully to unblock streams
-                self._logger.debug("forcing kill of container")
+                log.debug("forcing kill of container")
                 container.remove(force=True)
             except Exception:
                 pass
@@ -762,7 +759,7 @@ class StreamRunnerBase:
         cancel_timer = _threading.Timer(self.timeout_seconds, _force_kill)
         cancel_timer.daemon = True
         cancel_timer.start()
-        self._logger.debug("timeout timer started: %ss", self.timeout_seconds)
+        log.debug("timeout timer started: %ss", self.timeout_seconds)
         return cancel_timer
 
     def _wait_for_container_exit(self, container: Any) -> int:  # type: ignore[no-untyped-def]
@@ -782,11 +779,11 @@ class StreamRunnerBase:
                 status = int(res.get("StatusCode", 0) or 0)
             else:
                 status = int(res or 0)
-            self._logger.debug("container exit status: %s", status)
+            log.debug("container exit status: %s", status)
             return status
         except Exception as e:
             # If the container is already gone or API returns an error, log and continue
-            self._logger.debug("wait for container exit failed: %s", e)
+            log.debug("wait for container exit failed: %s", e)
             return -1
 
     def _emit_line(
@@ -808,7 +805,7 @@ class StreamRunnerBase:
         """
         if not line.endswith("\n"):
             line = f"{line}\n"
-        self._logger.debug("emit %s: %s", slot, line)
+        log.debug("emit %s: %s", slot, line)
         _asyncio.run_coroutine_threadsafe(
             queue.put({"type": "yield", "slot": slot, "value": line}),
             loop,
@@ -850,7 +847,7 @@ class StreamRunnerBase:
         try:
             demux_recv = DockerHijackMultiplexDemuxer(sock._sock)
             for slot, chunk in demux_recv.iter_messages():
-                self._logger.debug("docker: %s %s", str(slot), str(chunk))
+                log.debug("docker: %s %s", str(slot), str(chunk))
                 if chunk is None:
                     continue
                 if slot == "stdout":
@@ -868,7 +865,7 @@ class StreamRunnerBase:
                             line, stderr_buf = stderr_buf.split("\n", 1)
                             self._emit_line(queue, loop, context, node, "stderr", line)
         except Exception as e:
-            self._logger.debug("hijack demux loop ended: %s", e)
+            log.debug("hijack demux loop ended: %s", e)
 
         # Flush any remaining buffered text as final lines
         if stdout_buf:
@@ -906,7 +903,7 @@ class StreamRunnerBase:
                 except Exception:
                     pass
             if container is not None:
-                self._logger.debug(
+                log.debug(
                     "removing container: id=%s", getattr(container, "id", "<no-id>")
                 )
                 container.remove(force=True)
@@ -929,11 +926,11 @@ class StreamRunnerBase:
             loop: Event loop that owns the queue.
         """
         if command_str:
-            self._logger.exception(
+            log.exception(
                 "_docker_run() error while running cmd=%s: %s", command_str, e
             )
         else:
-            self._logger.exception("_docker_run() error: %s", e)
+            log.exception("_docker_run() error: %s", e)
         _asyncio.run_coroutine_threadsafe(
             queue.put({"type": "final", "ok": False, "error": str(e)}), loop
         )

@@ -559,7 +559,6 @@ class Environment(object):
     @classmethod
     def get_logger(cls):
         """Return the shared nodetool logger using centralized config."""
-        configure_logging()
         return get_logger("nodetool")
 
     @classmethod
