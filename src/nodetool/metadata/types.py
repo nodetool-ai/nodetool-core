@@ -110,18 +110,6 @@ class Collection(BaseType):
     name: str = ""
 
 
-class Event(BaseType):
-    """
-    An event is a special object in Nodetool.
-    It can be dispatched by a node async.
-    Nodes can received events async.
-    """
-
-    type: Literal["event"] = "event"
-    name: str = ""
-    payload: dict[str, Any] = {}
-
-
 #######################
 # Date and Time Types
 #######################
@@ -304,6 +292,15 @@ class DocumentRef(AssetRef):
     """
 
     type: Literal["document"] = "document"
+
+
+class RSSEntry(BaseType):
+    type: Literal["rss_entry"] = "rss_entry"
+    title: str = ""
+    link: str = ""
+    published: "Datetime" = Datetime()
+    summary: str = ""
+    author: str = ""
 
 
 class WorkflowRef(BaseType):
@@ -2055,17 +2052,6 @@ class IMAPConnection(BaseType):
     def is_configured(self) -> bool:
         """Check if the connection has all required fields set."""
         return bool(self.host and self.username and self.password)
-
-
-class RSSEntry(BaseType):
-    """Represents an RSS entry."""
-
-    type: Literal["rss_entry"] = "rss_entry"
-    title: str = ""
-    link: str = ""
-    published: Datetime = Datetime()
-    summary: str = ""
-    author: str = ""
 
 
 class LoraWeight(BaseType):
