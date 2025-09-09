@@ -32,7 +32,6 @@ from nodetool.config.logging_config import get_logger
 
 
 log = get_logger(__name__)
-# Log level is controlled by env (DEBUG/NODETOOL_LOG_LEVEL)
 
 
 class WebSocketMode(str, Enum):
@@ -127,7 +126,6 @@ class ChatWebSocketRunner(BaseChatRunner):
         await websocket.accept()
         self.websocket = websocket
         log.info("WebSocket connection established for chat")
-        log.debug("WebSocket connection ready")
 
         # Start heartbeat to keep idle connections alive
         if not self.heartbeat_task or self.heartbeat_task.done():
@@ -270,13 +268,13 @@ class ChatWebSocketRunner(BaseChatRunner):
                 raw_bytes = message["bytes"]
                 data = msgpack.unpackb(raw_bytes)
                 self.mode = WebSocketMode.BINARY
-                log.info(f"Received binary WebSocket command: {data}")
+                log.debug(f"Received binary WebSocket command: {data}")
                 return data
             elif "text" in message:
                 raw_text = message["text"]
                 data = json.loads(raw_text)
                 self.mode = WebSocketMode.TEXT
-                log.info(f"Received text WebSocket command: {data}")
+                log.debug(f"Received text WebSocket command: {data}")
                 return data
             else:
                 log.warning(f"Received message with unknown format: {message}")

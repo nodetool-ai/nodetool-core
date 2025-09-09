@@ -24,7 +24,7 @@ def configure_logging(
     fmt: Optional[str] = None,
     datefmt: Optional[str] = None,
     propagate_root: bool = False,
-) -> None:
+) -> str:
     """Configure root logging once with a consistent format.
 
     Environment overrides:
@@ -35,15 +35,16 @@ def configure_logging(
     from nodetool.config.environment import Environment
 
     global _configured
-    if _configured:
-        return
-    _configured = True
 
     if isinstance(level, str):
         level = level.upper()
 
     if level is None:
         level = Environment.get_log_level()
+
+    if _configured:
+        return level
+    _configured = True
 
     # If no explicit fmt provided and no env override, prefer colorful format when supported
     use_color = _supports_color()
@@ -88,7 +89,6 @@ def configure_logging(
                 h.setLevel(level)
                 h.setFormatter(_LevelColorFormatter(fmt=fmt, datefmt=datefmt))
         root.propagate = propagate_root
-        return
 
     logging.basicConfig(level=level, format=fmt, datefmt=datefmt)
     # Replace default formatter with our level-color one if using color
@@ -96,9 +96,13 @@ def configure_logging(
         if isinstance(h, logging.StreamHandler):
             h.setFormatter(_LevelColorFormatter(fmt=fmt, datefmt=datefmt))
     logging.getLogger().propagate = propagate_root
+    logging.getLogger().info(f"Configuring logging with level: {level}")
+    return level
 
 
 def get_logger(name: str) -> logging.Logger:
     """Return a module-scoped logger."""
-    configure_logging()
-    return logging.getLogger(name)
+    level = configure_logging()
+    logger = logging.getLogger(name)
+    logger.setLevel(level)
+    return logger

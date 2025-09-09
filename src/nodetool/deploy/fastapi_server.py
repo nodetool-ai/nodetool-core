@@ -136,9 +136,17 @@ def run_nodetool_server(
         tools: List of tool names to enable
         workflows: List of workflows to make available
     """
-    import dotenv
-
-    dotenv.load_dotenv()
+    # Use centralized dotenv loading for consistency
+    from nodetool.config.environment import load_dotenv_files
+    loaded_before = dict(os.environ)
+    load_dotenv_files()
+    # Simple diagnostic about changes and key flags
+    log.info(
+        "dotenv: ENV=%s | LOG_LEVEL=%s | DEBUG=%s",
+        os.environ.get("ENV"),
+        os.environ.get("LOG_LEVEL"),
+        os.environ.get("DEBUG"),
+    )
 
     app = create_nodetool_server(remote_auth, provider, default_model, tools, workflows)
 

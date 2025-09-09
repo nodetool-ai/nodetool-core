@@ -129,11 +129,15 @@ def create_app(
     static_folder: str | None = None,
     apps_folder: str | None = None,
 ):
-    env_file = dotenv.find_dotenv(usecwd=True)
-
-    if env_file != "":
-        print(f"Loading environment from {env_file}")
-        dotenv.load_dotenv(env_file)
+    # Centralized dotenv loading for consistency with deploy.fastapi_server
+    from nodetool.config.environment import load_dotenv_files
+    load_dotenv_files()
+    log.info(
+        "dotenv: ENV=%s | LOG_LEVEL=%s | DEBUG=%s",
+        os.environ.get("ENV"),
+        os.environ.get("LOG_LEVEL"),
+        os.environ.get("DEBUG"),
+    )
 
     # Use FastAPI lifespan API instead of deprecated on_event hooks
     @asynccontextmanager
