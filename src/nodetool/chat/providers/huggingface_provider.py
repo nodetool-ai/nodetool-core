@@ -14,6 +14,7 @@ from huggingface_hub import AsyncInferenceClient
 
 from nodetool.chat.providers.base import ChatProvider
 from nodetool.agents.tools.base import Tool
+from nodetool.config.logging_config import get_logger
 from nodetool.metadata.types import (
     Message,
     Provider,
@@ -26,6 +27,8 @@ from nodetool.config.environment import Environment
 from nodetool.workflows.base_node import ApiKeyMissingError
 from nodetool.workflows.types import Chunk
 from pydantic import BaseModel
+
+log = get_logger(__name__)
 
 PROVIDER_T = Literal[
     "black-forest-labs",
@@ -86,16 +89,20 @@ class HuggingFaceProvider(ChatProvider):
         self.inference_provider = inference_provider
 
         if not self.api_key:
+            log.error("HF_TOKEN or HUGGINGFACE_API_KEY is not set")
             raise ApiKeyMissingError("HF_TOKEN or HUGGINGFACE_API_KEY is not set")
 
         # Initialize the AsyncInferenceClient
         if self.inference_provider:
+            log.debug(
+                f"Creating AsyncInferenceClient with provider: {self.inference_provider}"
+            )
             self.client = AsyncInferenceClient(
                 api_key=self.api_key,
                 provider=self.inference_provider,
             )
         else:
-            # Let AsyncInferenceClient use default provider
+            log.debug("Creating AsyncInferenceClient with default provider")
             self.client = AsyncInferenceClient(api_key=self.api_key)
 
         self.cost = 0.0
@@ -104,51 +111,74 @@ class HuggingFaceProvider(ChatProvider):
             "completion_tokens": 0,
             "total_tokens": 0,
         }
+        log.debug(
+            f"HuggingFaceProvider initialized with provider: {inference_provider or 'default'}"
+        )
 
     async def __aenter__(self):
         """Async context manager entry."""
+        log.debug("Entering async context manager")
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         """Async context manager exit - properly close client."""
+        log.debug("Exiting async context manager")
         await self.close()
 
     async def close(self):
         """Close the async client properly."""
+        log.debug("Closing async client")
         if hasattr(self.client, "close"):
             await self.client.close()
+            log.debug("Async client closed successfully")
+        else:
+            log.debug("Client does not have close method")
 
     def get_container_env(self) -> dict[str, str]:
         env_vars = {}
         if self.api_key:
             env_vars["HF_TOKEN"] = self.api_key
-        if hasattr(self, "inference_provider"):
+        if hasattr(self, "inference_provider") and self.inference_provider:
             env_vars["HUGGINGFACE_PROVIDER"] = self.inference_provider
+        log.debug(f"Container environment variables: {list(env_vars.keys())}")
         return env_vars
 
     def get_context_length(self, model: str) -> int:
         """Get the maximum token limit for a given model."""
+        log.debug(f"Getting context length for model: {model}")
+
         # Common HuggingFace model limits - this can be expanded based on specific models
         if "llama" in model.lower():
+            log.debug("Using context length: 32768 (Llama)")
             return 32768  # Many Llama models support 32k context
         elif "qwen" in model.lower():
+            log.debug("Using context length: 32768 (Qwen)")
             return 32768  # Qwen models often support large context
         elif "phi" in model.lower():
+            log.debug("Using context length: 128000 (Phi)")
             return 128000  # Phi-4 supports 128k context
         elif "smol" in model.lower():
+            log.debug("Using context length: 8192 (SmolLM)")
             return 8192  # SmolLM models typically have smaller context
         elif "gemma" in model.lower():
+            log.debug("Using context length: 8192 (Gemma)")
             return 8192  # Gemma models typically support 8k context
         elif "deepseek" in model.lower():
+            log.debug("Using context length: 32768 (DeepSeek)")
             return 32768  # DeepSeek models often support large context
         elif "mistral" in model.lower():
+            log.debug("Using context length: 32768 (Mistral)")
             return 32768  # Mistral models support 32k context
         else:
+            log.debug("Using default context length: 8192")
             return 8192  # Conservative default
 
     async def convert_message(self, message: Message) -> dict:
         """Convert an internal message to HuggingFace's OpenAI-compatible format."""
+        log.debug(f"Converting message with role: {message.role}")
+
         if message.role == "tool":
+            log.debug(f"Converting tool message, tool_call_id: {message.tool_call_id}")
             if isinstance(message.content, BaseModel):
                 content = message.content.model_dump_json()
             elif isinstance(message.content, dict):
@@ -159,6 +189,7 @@ class HuggingFaceProvider(ChatProvider):
                 content = message.content
             else:
                 content = json.dumps(message.content)
+            log.debug(f"Tool message content type: {type(message.content)}")
             assert message.tool_call_id is not None, "Tool call ID must not be None"
             return {
                 "role": "tool",
@@ -166,37 +197,51 @@ class HuggingFaceProvider(ChatProvider):
                 "tool_call_id": message.tool_call_id,
             }
         elif message.role == "system":
+            log.debug("Converting system message")
             return {
                 "role": "system",
                 "content": str(message.content),
             }
         elif message.role == "user":
+            log.debug("Converting user message")
             if isinstance(message.content, str):
+                log.debug("User message has string content")
                 return {"role": "user", "content": message.content}
             elif message.content is not None:
                 # Handle multimodal content
+                log.debug(f"Converting {len(message.content)} content parts")
                 content = []
                 for part in message.content:
                     if isinstance(part, MessageTextContent):
                         content.append({"type": "text", "text": part.text})
                     elif isinstance(part, MessageImageContent):
                         # For image content, use image_url format
+                        log.debug(
+                            f"Adding image content with URI: {part.image.uri[:50]}..."
+                        )
                         content.append(
                             {
                                 "type": "image_url",
                                 "image_url": {"url": part.image.uri},
                             }
                         )
+                log.debug(f"Converted to {len(content)} content parts")
                 return {"role": "user", "content": content}
             else:
+                log.debug("User message has no content")
                 return {"role": "user", "content": ""}
         elif message.role == "assistant":
+            log.debug("Converting assistant message")
             result: dict[str, Any] = {"role": "assistant"}
 
             if message.content:
                 result["content"] = str(message.content)
+                log.debug("Assistant message has content")
+            else:
+                log.debug("Assistant message has no content")
 
             if message.tool_calls:
+                log.debug(f"Assistant message has {len(message.tool_calls)} tool calls")
                 result["tool_calls"] = [
                     {
                         "id": tool_call.id,
@@ -212,15 +257,20 @@ class HuggingFaceProvider(ChatProvider):
                     }
                     for tool_call in message.tool_calls
                 ]
+            else:
+                log.debug("Assistant message has no tool calls")
 
             return result
         else:
+            log.error(f"Unsupported message role: {message.role}")
             raise ValueError(f"Unsupported message role: {message.role}")
 
     def format_tools(self, tools: Sequence[Tool]) -> list[dict]:
         """Format tools for HuggingFace API (OpenAI-compatible format)."""
+        log.debug(f"Formatting {len(tools)} tools for HuggingFace API")
         formatted_tools = []
         for tool in tools:
+            log.debug(f"Formatting tool: {tool.name}")
             formatted_tools.append(
                 {
                     "type": "function",
@@ -231,6 +281,7 @@ class HuggingFaceProvider(ChatProvider):
                     },
                 }
             )
+        log.debug(f"Formatted {len(formatted_tools)} tools")
         return formatted_tools
 
     async def generate_message(
@@ -258,12 +309,19 @@ class HuggingFaceProvider(ChatProvider):
         Returns:
             A message returned by the provider.
         """
+        log.debug(f"Generating message for model: {model}")
+        log.debug(
+            f"Input: {len(messages)} messages, {len(tools)} tools, max_tokens: {max_tokens}"
+        )
+
         # Convert messages to HuggingFace format
+        log.debug("Converting messages to HuggingFace format")
         hf_messages = []
         for message in messages:
             converted = await self.convert_message(message)
             if converted:  # Skip None messages
                 hf_messages.append(converted)
+        log.debug(f"Converted to {len(hf_messages)} HuggingFace messages")
 
         # Prepare request parameters - using HuggingFace's chat_completion method
         request_params: dict[str, Any] = {
@@ -271,32 +329,41 @@ class HuggingFaceProvider(ChatProvider):
             "max_tokens": max_tokens,
             "stream": False,
         }
+        log.debug(f"Request params: max_tokens={max_tokens}, stream=False")
 
         # Add tools if provided (following HuggingFace docs format)
         if tools:
             request_params["tools"] = self.format_tools(tools)
             request_params["tool_choice"] = "auto"  # As per HF docs
+            log.debug("Added tools and tool_choice to request")
 
         # Add response format if specified
         if response_format:
             request_params["response_format"] = response_format
+            log.debug("Added response format to request")
 
         max_retries = 3
         base_delay = 1.0
+        log.debug(f"Starting API call with max_retries={max_retries}")
 
         for attempt in range(max_retries + 1):
             try:
+                log.debug(f"API call attempt {attempt + 1}/{max_retries + 1}")
                 completion = await self.client.chat_completion(
                     model=model, **request_params
                 )
+                log.debug("API call successful")
                 break
             except Exception as e:
                 error_str = str(e).lower()
+                log.warning(f"API call attempt {attempt + 1} failed: {str(e)}")
                 if attempt < max_retries:
                     delay = base_delay * (2**attempt)  # Exponential backoff
+                    log.debug(f"Retrying in {delay} seconds...")
                     await asyncio.sleep(delay)
                     continue
                 else:
+                    log.error(f"All {max_retries + 1} attempts failed")
                     traceback.print_exc()
                     raise Exception(
                         f"HuggingFace Inference API request failed: {str(e)}"
@@ -304,13 +371,16 @@ class HuggingFaceProvider(ChatProvider):
 
         # Update usage statistics if available
         if hasattr(completion, "usage") and completion.usage:
+            log.debug("Processing usage statistics")
             self.usage["prompt_tokens"] = completion.usage.prompt_tokens or 0
             self.usage["completion_tokens"] = completion.usage.completion_tokens or 0
             self.usage["total_tokens"] = completion.usage.total_tokens or 0
+            log.debug(f"Updated usage: {self.usage}")
 
         # Extract the response message
         choice = completion.choices[0]
         message_data = choice.message
+        log.debug(f"Response content length: {len(message_data.content or '')}")
 
         # Create the response message
         response_message = Message(
@@ -320,6 +390,7 @@ class HuggingFaceProvider(ChatProvider):
 
         # Handle tool calls if present
         if hasattr(message_data, "tool_calls") and message_data.tool_calls:
+            log.debug(f"Processing {len(message_data.tool_calls)} tool calls")
             tool_calls = []
             for tool_call in message_data.tool_calls:
                 function = tool_call.function
@@ -328,7 +399,13 @@ class HuggingFaceProvider(ChatProvider):
                     args = function.arguments
                     if isinstance(args, str):
                         args = json.loads(args)
-                except (json.JSONDecodeError, AttributeError):
+                        log.debug(f"Parsed JSON arguments for tool: {function.name}")
+                    else:
+                        log.debug(f"Using dict arguments for tool: {function.name}")
+                except (json.JSONDecodeError, AttributeError) as e:
+                    log.warning(
+                        f"Failed to parse arguments for tool {function.name}: {e}"
+                    )
                     args = {}
 
                 tool_calls.append(
@@ -339,7 +416,11 @@ class HuggingFaceProvider(ChatProvider):
                     )
                 )
             response_message.tool_calls = tool_calls
+            log.debug(f"Added {len(tool_calls)} tool calls to response")
+        else:
+            log.debug("Response contains no tool calls")
 
+        log.debug("Returning generated message")
         return response_message
 
     async def generate_messages(
@@ -369,12 +450,17 @@ class HuggingFaceProvider(ChatProvider):
         Yields:
             Chunk objects with content and completion status or ToolCall objects
         """
+        log.debug(f"Starting streaming generation for model: {model}")
+        log.debug(f"Streaming with {len(messages)} messages, {len(tools)} tools")
+
         # Convert messages to HuggingFace format
+        log.debug("Converting messages to HuggingFace format")
         hf_messages = []
         for message in messages:
             converted = await self.convert_message(message)
             if converted:  # Skip None messages
                 hf_messages.append(converted)
+        log.debug(f"Converted to {len(hf_messages)} HuggingFace messages")
 
         # Prepare request parameters for streaming
         request_params: dict[str, Any] = {
@@ -382,37 +468,51 @@ class HuggingFaceProvider(ChatProvider):
             "max_tokens": max_tokens,
             "stream": True,  # Enable streaming
         }
+        log.debug("Prepared streaming request parameters")
 
         # Add tools if provided
         if tools:
             request_params["tools"] = self.format_tools(tools)
             request_params["tool_choice"] = "auto"
+            log.debug("Added tools to streaming request")
 
         # Add response format if specified
         if response_format:
             request_params["response_format"] = response_format
+            log.debug("Added response format to streaming request")
 
         # Create streaming completion using chat_completion method
+        log.debug("Starting streaming API call")
         stream = await self.client.chat_completion(model=model, **request_params)
+        log.debug("Streaming response initialized")
 
         # Track tool calls during streaming
         accumulated_tool_calls = {}
+        chunk_count = 0
 
         async for chunk in stream:
+            chunk_count += 1
+            log.debug(f"Processing streaming chunk {chunk_count}")
+
             # Update usage statistics if available
             if hasattr(chunk, "usage") and chunk.usage:
+                log.debug("Updating usage stats from streaming chunk")
                 self.usage["prompt_tokens"] = chunk.usage.prompt_tokens or 0
                 self.usage["completion_tokens"] = chunk.usage.completion_tokens or 0
                 self.usage["total_tokens"] = chunk.usage.total_tokens or 0
+                log.debug(f"Updated usage: {self.usage}")
 
             if not chunk.choices:
+                log.debug("Chunk has no choices, skipping")
                 continue
 
             choice = chunk.choices[0]
             delta = choice.delta
+            log.debug(f"Processing delta with finish_reason: {choice.finish_reason}")
 
             # Handle content chunks
             if hasattr(delta, "content") and delta.content:
+                log.debug(f"Yielding content chunk: {delta.content[:50]}...")
                 yield Chunk(
                     content=delta.content,
                     done=choice.finish_reason == "stop",
@@ -420,8 +520,10 @@ class HuggingFaceProvider(ChatProvider):
 
             # Handle tool call deltas
             if hasattr(delta, "tool_calls") and delta.tool_calls:
+                log.debug(f"Processing {len(delta.tool_calls)} tool call deltas")
                 for tool_call_delta in delta.tool_calls:
                     index = tool_call_delta.index
+                    log.debug(f"Processing tool call delta at index {index}")
 
                     if index not in accumulated_tool_calls:
                         accumulated_tool_calls[index] = {
@@ -429,27 +531,44 @@ class HuggingFaceProvider(ChatProvider):
                             "name": "",
                             "arguments": "",
                         }
+                        log.debug(f"Created new tool call at index {index}")
 
                     # Accumulate tool call data
                     if tool_call_delta.id:
                         accumulated_tool_calls[index]["id"] = tool_call_delta.id
+                        log.debug(f"Set tool call ID: {tool_call_delta.id}")
 
                     if tool_call_delta.function:
                         if tool_call_delta.function.name:
                             accumulated_tool_calls[index][
                                 "name"
                             ] = tool_call_delta.function.name
+                            log.debug(
+                                f"Set tool call name: {tool_call_delta.function.name}"
+                            )
                         if tool_call_delta.function.arguments:
                             accumulated_tool_calls[index][
                                 "arguments"
                             ] += tool_call_delta.function.arguments
+                            log.debug(
+                                f"Added arguments to tool call: {len(tool_call_delta.function.arguments)} chars"
+                            )
 
             # If streaming is complete and we have tool calls, yield them
             if choice.finish_reason == "tool_calls" and accumulated_tool_calls:
+                log.debug(
+                    f"Streaming complete with {len(accumulated_tool_calls)} tool calls"
+                )
                 for tool_call_data in accumulated_tool_calls.values():
                     try:
                         args = json.loads(tool_call_data["arguments"])
-                    except json.JSONDecodeError:
+                        log.debug(
+                            f"Parsed arguments for tool: {tool_call_data['name']}"
+                        )
+                    except json.JSONDecodeError as e:
+                        log.warning(
+                            f"Failed to parse arguments for tool {tool_call_data['name']}: {e}"
+                        )
                         args = {}
 
                     yield ToolCall(
@@ -457,13 +576,16 @@ class HuggingFaceProvider(ChatProvider):
                         name=tool_call_data["name"],
                         args=args,
                     )
+                log.debug("Yielded all accumulated tool calls")
 
     def get_usage(self) -> dict:
         """Get token usage statistics."""
+        log.debug(f"Getting usage stats: {self.usage}")
         return self.usage
 
     def reset_usage(self) -> None:
         """Reset token usage statistics."""
+        log.debug("Resetting usage counters")
         self.usage = {
             "prompt_tokens": 0,
             "completion_tokens": 0,
@@ -473,7 +595,7 @@ class HuggingFaceProvider(ChatProvider):
     def is_context_length_error(self, error: Exception) -> bool:
         """Check if the error is due to context length exceeding limits."""
         error_str = str(error).lower()
-        return any(
+        is_context_error = any(
             phrase in error_str
             for phrase in [
                 "context length",
@@ -483,6 +605,8 @@ class HuggingFaceProvider(ChatProvider):
                 "context size",
             ]
         )
+        log.debug(f"Checking if error is context length error: {is_context_error}")
+        return is_context_error
 
 
 async def main():
