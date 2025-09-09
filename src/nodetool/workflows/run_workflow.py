@@ -77,6 +77,7 @@ async def run_workflow(
     send_job_updates: bool = True,
     initialize_graph: bool = True,
     validate_graph: bool = True,
+    event_loop: ThreadedEventLoop | None = None,
 ) -> AsyncGenerator[ProcessingMessage, None]:
     """
     Runs a workflow asynchronously, with the option to run in a separate thread.
@@ -89,6 +90,9 @@ async def run_workflow(
         send_job_updates (bool): Whether to send job updates to the client. Defaults to True.
         initialize_graph (bool): Whether to initialize the graph. Defaults to True.
         validate_graph (bool): Whether to validate the graph. Defaults to True.
+        event_loop (ThreadedEventLoop | None): Optional persistent threaded event loop to schedule the workflow on
+            when use_thread is True. If provided, this function will not create or close a new loop and will reuse
+            the given loop. If not provided, a temporary loop is created and closed via context manager.
 
     Yields:
         Any: A generator that yields job updates and messages from the workflow.
@@ -138,8 +142,11 @@ async def run_workflow(
         #    and isolating them in a separate thread prevents interference with other
         #    operations in the main application thread or event loop.
         log.info(f"Running workflow in thread for {request.workflow_id}")
-        with ThreadedEventLoop() as tel:
-            run_future = tel.run_coroutine(run())
+        if event_loop is not None:
+            # Use provided persistent loop (do not close it here)
+            if not event_loop.is_running:
+                event_loop.start()
+            run_future = event_loop.run_coroutine(run())
 
             try:
                 async for msg in process_workflow_messages(context, runner):
@@ -155,6 +162,25 @@ async def run_workflow(
                 log.exception(e)
                 yield Error(error=str(e))
                 yield JobUpdate(job_id=runner.job_id, status="failed", error=str(e))
+        else:
+            # Backwards-compatible behavior: create a temporary loop for this run
+            with ThreadedEventLoop() as tel:
+                run_future = tel.run_coroutine(run())
+
+                try:
+                    async for msg in process_workflow_messages(context, runner):
+                        yield msg
+                except Exception as e:
+                    log.exception(e)
+                    run_future.cancel()
+                    yield Error(error=str(e))
+                    yield JobUpdate(job_id=runner.job_id, status="failed", error=str(e))
+                try:
+                    run_future.result()
+                except Exception as e:
+                    log.exception(e)
+                    yield Error(error=str(e))
+                    yield JobUpdate(job_id=runner.job_id, status="failed", error=str(e))
 
     else:
         run_task = asyncio.create_task(run())

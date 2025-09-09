@@ -4,6 +4,7 @@ from concurrent.futures import Future
 import threading
 from typing import Callable, Coroutine, Any, Optional, TypeVar
 from nodetool.config.logging_config import get_logger
+from nodetool.config.environment import Environment
 
 
 T = TypeVar("T")
@@ -315,6 +316,17 @@ class ThreadedEventLoop:
                 log.error(
                     f"ThreadedEventLoop: _run_event_loop finally: Exception during final task cleanup: {e}",
                     exc_info=True,
+                )
+
+            # Clear per-thread caches now that the loop is stopping, to avoid cross-workflow leaks
+            try:
+                Environment.clear_thread_caches()
+                log.debug(
+                    "ThreadedEventLoop: Cleared thread-local caches via Environment."
+                )
+            except Exception as e:
+                log.warning(
+                    f"ThreadedEventLoop: Failed to clear thread-local caches: {e}",
                 )
 
             if self._loop and not self._loop.is_closed():

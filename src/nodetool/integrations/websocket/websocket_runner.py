@@ -5,6 +5,7 @@ import uuid
 from fastapi.websockets import WebSocketState
 import msgpack
 from typing import AsyncGenerator
+from concurrent.futures import Future
 from nodetool.types.wrap_primitive_types import wrap_primitive_types
 from pydantic import BaseModel
 from fastapi import WebSocket, WebSocketDisconnect
@@ -176,6 +177,7 @@ class WebSocketRunner:
     runner: WorkflowRunner | None = None
     mode: WebSocketMode = WebSocketMode.BINARY
     nodes: dict[str, BaseNode] = {}
+    run_future: Future | None = None
 
     def __init__(
         self,
@@ -196,6 +198,11 @@ class WebSocketRunner:
         self.websocket = websocket
         log.info("WebSocket connection established")
         log.debug(f"Client connected: {websocket.client}")
+        # Start a persistent threaded event loop for this connection (preserve caches)
+        if not self.event_loop:
+            self.event_loop = ThreadedEventLoop()
+        if not self.event_loop.is_running:
+            self.event_loop.start()
 
     async def disconnect(self):
         """
@@ -245,42 +252,52 @@ class WebSocketRunner:
                     encode_assets_as_base64=self.mode == WebSocketMode.TEXT,
                 )
                 log.debug("Processing context created")
-            self.event_loop = ThreadedEventLoop()
-            log.debug("Threaded event loop started")
+            # Ensure persistent event loop is running
+            if not self.event_loop:
+                self.event_loop = ThreadedEventLoop()
+            if not self.event_loop.is_running:
+                self.event_loop.start()
+            log.debug("Threaded event loop ready")
 
-            with self.event_loop as tel:
-                run_future = tel.run_coroutine(
-                    execute_workflow(self.context, self.runner, req)
-                )
+            # Schedule workflow execution on the persistent loop
+            self.run_future = self.event_loop.run_coroutine(
+                execute_workflow(self.context, self.runner, req)
+            )
 
-                try:
-                    async for msg in process_workflow_messages(
-                        context=self.context,
-                        runner=self.runner,
-                        explicit_types=req.explicit_types or False,
-                    ):
-                        await self.send_message(msg)
-                except Exception as e:
-                    log.exception(e)
-                    run_future.cancel()
-                    await self.send_job_update("failed", str(e))
+            try:
+                async for msg in process_workflow_messages(
+                    context=self.context,
+                    runner=self.runner,
+                    explicit_types=req.explicit_types or False,
+                ):
+                    await self.send_message(msg)
+            except Exception as e:
+                log.exception(e)
+                if self.run_future and not self.run_future.done():
+                    self.run_future.cancel()
+                await self.send_job_update("failed", str(e))
 
-                try:
-                    run_future.result()
-                except Exception as e:
-                    log.error(f"An error occurred during workflow execution: {e}")
-                    await self.send_job_update("failed", str(e))
-                else:
-                    log.debug("Workflow execution completed")
+            # Propagate completion status, distinguishing cancellation
+            try:
+                if self.run_future:
+                    self.run_future.result()
+            except asyncio.CancelledError:
+                log.info(f"Workflow {self.job_id} cancelled")
+                await self.send_job_update("cancelled")
+            except Exception as e:
+                log.error(f"An error occurred during workflow execution: {e}")
+                await self.send_job_update("failed", str(e))
+            else:
+                log.debug("Workflow execution completed")
 
         except Exception as e:
             log.exception(f"Error in job {self.job_id}: {e}")
             await self.send_job_update("failed", str(e))
 
         self.active_job = None
-        self.job_id = None
-        log.info(f"Job {self.job_id} resources cleaned up")
-        log.debug("Event loop closed")
+        self.runner = None
+        self.run_future = None
+        log.info("Job resources cleaned up")
 
     async def send_message(self, message: dict):
         """Send a message using the current mode."""
@@ -314,16 +331,10 @@ class WebSocketRunner:
             dict: A dictionary with a message indicating the job was cancelled, or an error if no active job exists.
         """
         log.info(f"Attempting to cancel job: {self.job_id}")
-        if self.event_loop:
-            if self.event_loop:
-                self.event_loop.stop()
-                log.info(f"Cancelled event loop for job: {self.job_id}")
-            log.debug("Job cancellation event loop stopped")
-
-            await self.send_job_update("cancelled")
-            self.event_loop = None
-            self.job_id = None
-            return {"message": "Job cancelled"}
+        # Cancel only the running job; keep the persistent event loop alive
+        if self.run_future and not self.run_future.done():
+            self.run_future.cancel()
+            return {"message": "Job cancellation requested"}
         log.warning("No active job to cancel")
         return {"error": "No active job to cancel"}
 
@@ -365,7 +376,7 @@ class WebSocketRunner:
         if command.command == CommandType.CLEAR_MODELS:
             return await self.clear_models()
         elif command.command == CommandType.RUN_JOB:
-            if self.event_loop:
+            if self.run_future and not self.run_future.done():
                 log.warning("Attempted to start a job while another is running")
                 return {"error": "A job is already running"}
             req = RunJobRequest(**command.data)
