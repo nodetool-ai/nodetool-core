@@ -226,7 +226,16 @@ def image_ref_to_base64_jpeg(
             if isinstance(cached, (bytes, bytearray)):
                 return image_data_to_base64_jpeg(bytes(cached), max_size, quality)
 
-            response = httpx.get(uri, follow_redirects=True)
+            # Send a browser-like User-Agent to avoid blocks
+            response = httpx.get(
+                uri,
+                follow_redirects=True,
+                headers={
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+                    "Accept": "*/*",
+                    "Accept-Language": "en-US,en;q=0.9",
+                },
+            )
             response.raise_for_status()
             data = response.content
             try:

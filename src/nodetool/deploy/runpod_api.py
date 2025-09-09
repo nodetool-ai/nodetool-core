@@ -65,6 +65,7 @@ def run_graphql_query(query: str) -> dict[str, Any]:
 
     return response.json()
 
+
 class GPUType(str, Enum):
     """GPU types available in RunPod using their official GPU ID codes."""
 
@@ -90,6 +91,7 @@ class GPUType(str, Enum):
     def list_values(cls):
         return [item.value for item in cls]
 
+
 def make_runpod_api_call(
     endpoint: str, method: str = "GET", data: dict | None = None
 ) -> dict:
@@ -113,19 +115,23 @@ def make_runpod_api_call(
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
+        "User-Agent": USER_AGENT
+        or "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "Accept": "*/*",
+        "Accept-Language": "en-US,en;q=0.9",
     }
 
     try:
         if method == "POST":
-            response = requests.post(url, headers=headers, json=data)
+            response = requests.post(url, headers=headers, json=data, timeout=60)
         elif method == "PUT":
-            response = requests.put(url, headers=headers, json=data)
+            response = requests.put(url, headers=headers, json=data, timeout=60)
         elif method == "PATCH":
-            response = requests.patch(url, headers=headers, json=data)
+            response = requests.patch(url, headers=headers, json=data, timeout=60)
         elif method == "DELETE":
-            response = requests.delete(url, headers=headers)
+            response = requests.delete(url, headers=headers, timeout=60)
         else:
-            response = requests.get(url, headers=headers)
+            response = requests.get(url, headers=headers, timeout=60)
 
         response.raise_for_status()
 
@@ -537,7 +543,7 @@ def update_runpod_template(template_data: dict, image_name: str, tag: str) -> bo
             "volumeInGb": template_data.get("volumeInGb", 0),
             "volumeMountPath": template_data.get("volumeMountPath", "/workspace"),
             "isPublic": template_data.get("isPublic", False),
-            "env": env
+            "env": env,
         }
 
         # Add optional fields if they exist
@@ -822,7 +828,7 @@ def create_or_update_runpod_endpoint(
         print("4. Check your RunPod account limits and quotas")
         sys.exit(1)
 
-    
+
 def create_runpod_endpoint_graphql(
     template_id: str,
     name: str,
@@ -918,7 +924,7 @@ def create_runpod_endpoint_graphql(
         mutation_parts.append(f'scalerType: "REQUEST_COUNT"')
         mutation_parts.append(f"scalerValue: 4")
         mutation_parts.append(f"executionTimeoutMs: {execution_timeout_ms or 300000}")
-        mutation_parts.append(f"gpuIds: \"{gpu_ids_str}\"")
+        mutation_parts.append(f'gpuIds: "{gpu_ids_str}"')
         mutation_parts.append(f"gpuCount: {gpu_count or 1}")
         # mutation_parts.append(f"cpuFlavorIds: {json.dumps(cpu_flavor_ids)}")
         if vcpu_count:
@@ -989,9 +995,7 @@ def create_runpod_endpoint_graphql(
         print(
             f"  Workers: {endpoint_data.get('workersMin')}-{endpoint_data.get('workersMax')}"
         )
-        print(
-            f"  Scaler: {endpoint_data.get('scalerType')}"
-        )
+        print(f"  Scaler: {endpoint_data.get('scalerType')}")
 
         return endpoint_id
 

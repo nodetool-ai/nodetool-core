@@ -94,7 +94,9 @@ def create_file_uri(path: str) -> str:
 ## AUDIO_CODEC and DEFAULT_AUDIO_SAMPLE_RATE imported from media_constants
 
 HTTP_HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/1"
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+    "Accept": "*/*",
+    "Accept-Language": "en-US,en;q=0.9",
 }
 
 try:
@@ -202,7 +204,10 @@ class ProcessingContext:
     def get_http_client(self):
         if not hasattr(self, "_http_client"):
             self._http_client = httpx.AsyncClient(
-                follow_redirects=True, timeout=600, verify=False
+                follow_redirects=True,
+                timeout=600,
+                verify=False,
+                headers=HTTP_HEADERS.copy(),
             )
         return self._http_client
 
@@ -714,7 +719,8 @@ class ProcessingContext:
             httpx.Response: The response object.
         """
         _headers = HTTP_HEADERS.copy()
-        kwargs["headers"] = _headers.update(kwargs.get("headers", {}))
+        _headers.update(kwargs.get("headers", {}))
+        kwargs["headers"] = _headers
         response = await self.get_http_client().get(url, **kwargs)
         log.info(f"GET {url} {response.status_code}")
         response.raise_for_status()
@@ -736,7 +742,8 @@ class ProcessingContext:
             httpx.Response: The response object.
         """
         _headers = HTTP_HEADERS.copy()
-        kwargs["headers"] = _headers.update(kwargs.get("headers", {}))
+        _headers.update(kwargs.get("headers", {}))
+        kwargs["headers"] = _headers
         response = await self.get_http_client().post(url, **kwargs)
         log.info(f"POST {url} {response.status_code}")
         response.raise_for_status()
@@ -758,7 +765,8 @@ class ProcessingContext:
             httpx.Response: The response object.
         """
         _headers = HTTP_HEADERS.copy()
-        kwargs["headers"] = _headers.update(kwargs.get("headers", {}))
+        _headers.update(kwargs.get("headers", {}))
+        kwargs["headers"] = _headers
         response = await self.get_http_client().patch(url, **kwargs)
         log.info(f"PATCH {url} {response.status_code}")
         response.raise_for_status()
@@ -780,7 +788,8 @@ class ProcessingContext:
             httpx.Response: The response object.
         """
         _headers = HTTP_HEADERS.copy()
-        kwargs["headers"] = _headers.update(kwargs.get("headers", {}))
+        _headers.update(kwargs.get("headers", {}))
+        kwargs["headers"] = _headers
         response = await self.get_http_client().put(url, **kwargs)
         log.info(f"PUT {url} {response.status_code}")
         response.raise_for_status()
@@ -801,7 +810,8 @@ class ProcessingContext:
             bytes: The response content.
         """
         _headers = HTTP_HEADERS.copy()
-        kwargs["headers"] = _headers.update(kwargs.get("headers", {}))
+        _headers.update(kwargs.get("headers", {}))
+        kwargs["headers"] = _headers
         response = await self.get_http_client().delete(url, **kwargs)
         log.info(f"DELETE {url} {response.status_code}")
         response.raise_for_status()
@@ -822,7 +832,8 @@ class ProcessingContext:
             httpx.Response: The response object.
         """
         _headers = HTTP_HEADERS.copy()
-        kwargs["headers"] = _headers.update(kwargs.get("headers", {}))
+        _headers.update(kwargs.get("headers", {}))
+        kwargs["headers"] = _headers
         response = await self.get_http_client().head(url, **kwargs)
         log.info(f"HEAD {url} {response.status_code}")
         response.raise_for_status()

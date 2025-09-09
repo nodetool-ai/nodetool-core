@@ -162,7 +162,15 @@ def get_package_metadata_from_github(github_repo: str) -> Optional[PackageModel]
     # Get the pyproject.toml file from the GitHub repository
     raw_url = f"https://raw.githubusercontent.com/{repo_id}/main/pyproject.toml"
 
-    response = requests.get(raw_url)
+    response = requests.get(
+        raw_url,
+        headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            "Accept": "*/*",
+            "Accept-Language": "en-US,en;q=0.9",
+        },
+        timeout=30,
+    )
     response.raise_for_status()
     pyproject_data = tomli.loads(response.text)
 
@@ -280,7 +288,15 @@ class Registry:
         Note:
             Returns an empty list if the registry cannot be reached or the index cannot be parsed.
         """
-        response = requests.get(REGISTRY_URL)
+        response = requests.get(
+            REGISTRY_URL,
+            headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+                "Accept": "*/*",
+                "Accept-Language": "en-US,en;q=0.9",
+            },
+            timeout=30,
+        )
         response.raise_for_status()
         packages_data = response.json()["packages"]
 

@@ -57,6 +57,12 @@ class DownloadFileTool(Tool):
                 return {"error": "Output file is required"}
 
             headers = params.get("headers", {})
+            default_headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+                "Accept": "*/*",
+                "Accept-Language": "en-US,en;q=0.9",
+            }
+            merged_headers = {**default_headers, **headers}
             timeout = params.get("timeout", 60)
 
             # Create a semaphore to limit concurrent downloads
@@ -67,7 +73,7 @@ class DownloadFileTool(Tool):
 
             async with aiohttp.ClientSession() as session:
                 async with session.get(
-                    url, headers=headers, timeout=timeout
+                    url, headers=merged_headers, timeout=timeout
                 ) as response:
                     if response.status != 200:
                         return {
