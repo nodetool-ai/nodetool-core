@@ -21,6 +21,8 @@ class Workflow(BaseModel):
     package_name: str | None = None
     path: str | None = None
     run_mode: str | None = None
+    required_providers: list[str] | None = None
+    required_models: list[str] | None = None
 
 
 class WorkflowRequest(BaseModel):

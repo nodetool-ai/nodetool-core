@@ -233,9 +233,135 @@ async def get_workflow_tools(
 
 @router.get("/examples")
 async def examples() -> WorkflowList:
+    """
+    List example workflows enriched with required providers and models.
+
+    Provider detection rules:
+    - If a node's namespace matches a known provider namespace
+      (gemini, openai, replicate, huggingface, huggingface_hub, fal, aime)
+    - Or if any node property is a LanguageModel (type == 'language_model')
+      which has a 'provider' field
+
+    Model detection rules:
+    - Collect ids from LanguageModel (id)
+    - Collect repo_id from HuggingFaceModel-like types (types starting with 'hf.')
+    - Collect model_id from InferenceProvider* types
+    """
     example_registry = Registry()
+
+    # Base list (lightweight graph), we will load full example per item to analyze
     examples = await asyncio.to_thread(example_registry.list_examples)
-    return WorkflowList(workflows=examples, next=None)
+
+    provider_namespaces = {
+        "gemini",
+        "openai",
+        "replicate",
+        "huggingface",
+        "huggingface_hub",
+        "fal",
+        "aime",
+    }
+
+    def parse_namespace(node_type: str) -> str:
+        parts = node_type.split(".")
+        if not parts:
+            return ""
+        return parts[0]
+
+    def collect_from_value(val: Any, providers: set[str], models: set[str]):
+        # Recursively collect provider/model info from nested dict/list values
+        if isinstance(val, dict):
+            t = val.get("type")
+            if t == "language_model":
+                # Provider and id from LanguageModel
+                provider = val.get("provider")
+                if isinstance(provider, str) and provider:
+                    providers.add(provider)
+                model_id = val.get("id")
+                if isinstance(model_id, str) and model_id:
+                    models.add(model_id)
+            elif isinstance(t, str) and t.startswith("hf."):
+                # HuggingFace model types (repo_id)
+                repo_id = val.get("repo_id")
+                if isinstance(repo_id, str) and repo_id:
+                    models.add(repo_id)
+            elif isinstance(t, str) and t.startswith("inference_provider_"):
+                # Inference provider types: collect model ids and providers
+                model_id = val.get("model_id")
+                if isinstance(model_id, str) and model_id:
+                    models.add(model_id)
+                provider = "huggingface_hub"
+
+            # Recurse into nested values
+            for v in val.values():
+                collect_from_value(v, providers, models)
+        elif isinstance(val, list):
+            for item in val:
+                collect_from_value(item, providers, models)
+
+    # Load full examples in parallel to speed up detection
+    load_tasks: list[asyncio.Future] = []
+    indices: list[int] = []
+    for i, ex in enumerate(examples):
+        if ex.package_name and ex.name:
+            load_tasks.append(
+                asyncio.to_thread(
+                    example_registry.load_example, ex.package_name, ex.name
+                )
+            )
+            indices.append(i)
+
+    loaded_map: dict[int, Workflow | None] = {}
+    if load_tasks:
+        results = await asyncio.gather(*load_tasks, return_exceptions=True)
+        for pos, res in enumerate(results):
+            idx = indices[pos]
+            if isinstance(res, Exception):
+                log.warning(f"Error loading example {idx}: {res}")
+                loaded_map[idx] = None
+            else:
+                loaded_map[idx] = res
+
+    enriched: list[Workflow] = []
+    for i, ex in enumerate(examples):
+        required_providers: set[str] = set()
+        required_models: set[str] = set()
+
+        full_example = loaded_map.get(i)
+        if full_example and full_example.graph and full_example.graph.nodes:
+            for node in full_example.graph.nodes:
+                ns = parse_namespace(node.type)
+                if ns in provider_namespaces:
+                    required_providers.add(ns)
+                collect_from_value(
+                    getattr(node, "data", {}), required_providers, required_models
+                )
+
+        enriched.append(
+            Workflow(
+                id=ex.id,
+                access=ex.access,
+                created_at=ex.created_at,
+                updated_at=ex.updated_at,
+                name=ex.name,
+                tool_name=ex.tool_name,
+                package_name=ex.package_name,
+                tags=ex.tags,
+                description=ex.description,
+                thumbnail=ex.thumbnail,
+                thumbnail_url=ex.thumbnail_url,
+                graph=ex.graph,
+                input_schema=ex.input_schema,
+                output_schema=ex.output_schema,
+                settings=ex.settings,
+                run_mode=ex.run_mode,
+                path=ex.path,
+                required_providers=sorted(required_providers) or None,
+                required_models=sorted(required_models) or None,
+            )
+        )
+
+    return WorkflowList(workflows=enriched, next=None)
 
 
 @router.get("/examples/search")
