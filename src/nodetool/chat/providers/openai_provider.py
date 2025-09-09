@@ -557,7 +557,6 @@ class OpenAIProvider(ChatProvider):
         async for chunk in completion:
             chunk: ChatCompletionChunk = chunk
             chunk_count += 1
-            log.debug(f"Processing streaming chunk {chunk_count}")
 
             # Track usage information (only available in the final chunk)
             if chunk.usage:
@@ -586,7 +585,6 @@ class OpenAIProvider(ChatProvider):
                 continue
 
             delta = chunk.choices[0].delta
-            log.debug(f"Processing delta: {type(delta)}")
 
             if hasattr(delta, "audio") and "data" in delta.audio:  # type: ignore
                 log.debug("Yielding audio chunk")
@@ -613,8 +611,6 @@ class OpenAIProvider(ChatProvider):
                     )
 
                 content_to_yield = delta.content or ""
-                if content_to_yield:
-                    log.debug(f"Yielding content chunk: {content_to_yield[:50]}...")
                 yield Chunk(
                     content=content_to_yield,
                     done=finish_reason == "stop",

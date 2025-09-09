@@ -492,7 +492,6 @@ class HuggingFaceProvider(ChatProvider):
 
         async for chunk in stream:
             chunk_count += 1
-            log.debug(f"Processing streaming chunk {chunk_count}")
 
             # Update usage statistics if available
             if hasattr(chunk, "usage") and chunk.usage:
@@ -512,7 +511,6 @@ class HuggingFaceProvider(ChatProvider):
 
             # Handle content chunks
             if hasattr(delta, "content") and delta.content:
-                log.debug(f"Yielding content chunk: {delta.content[:50]}...")
                 yield Chunk(
                     content=delta.content,
                     done=choice.finish_reason == "stop",
@@ -577,6 +575,12 @@ class HuggingFaceProvider(ChatProvider):
                         args=args,
                     )
                 log.debug("Yielded all accumulated tool calls")
+            # Some providers may not emit a final stop delta with content.
+            # When finish_reason indicates stop and no more deltas arrive,
+            # downstream expects a terminal done chunk. Emit a synthetic one.
+            if choice.finish_reason == "stop":
+                log.debug("Finish reason is stop; emitting synthetic done chunk")
+                yield Chunk(content="", done=True)
 
     def get_usage(self) -> dict:
         """Get token usage statistics."""

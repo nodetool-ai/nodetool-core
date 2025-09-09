@@ -483,7 +483,10 @@ class GeminiProvider(ChatProvider):
                     log.debug("Chunk candidate has no content")
             else:
                 log.debug("Chunk has no candidates")
-        log.debug("Streaming generation completed")
+        # The Gemini API stream does not emit an explicit done flag.
+        # Emit a synthetic terminal chunk so downstream consumers can close out.
+        log.debug("Streaming generation completed; yielding synthetic done chunk")
+        yield Chunk(content="", done=True)
 
     def get_usage(self) -> dict:
         """Return the current accumulated token usage statistics."""

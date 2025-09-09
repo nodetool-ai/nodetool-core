@@ -347,17 +347,11 @@ class AnthropicProvider(ChatProvider):
         ) as stream:
             log.debug("Streaming response initialized")
             async for event in stream:
-                log.debug(f"Processing streaming event: {event.type}")
-
                 if event.type == "content_block_delta":
                     log.debug(f"Content block delta type: {event.delta.type}")
                     if event.delta.type == "text_delta":
-                        log.debug(f"Yielding text chunk: {event.delta.text[:50]}...")
                         yield Chunk(content=event.delta.text, done=False)
                     elif event.delta.type == "thinking_delta":
-                        log.debug(
-                            f"Yielding thinking chunk: {event.delta.thinking[:50]}..."
-                        )
                         yield Chunk(content=event.delta.thinking, done=False)
                 elif event.type == "content_block_start":
                     if (

@@ -420,7 +420,6 @@ class OllamaProvider(ChatProvider):
 
             async for response in completion:
                 chunk_count += 1
-                log.debug(f"Processing streaming chunk {chunk_count}")
 
                 # Track usage metrics when we receive the final response
                 if response.done:
@@ -442,10 +441,6 @@ class OllamaProvider(ChatProvider):
                         )
 
                 content = response.message.content or ""
-                if content:
-                    log.debug(f"Yielding content chunk: {content[:50]}...")
-                else:
-                    log.debug("Yielding empty content chunk")
 
                 yield Chunk(
                     content=content,

@@ -1,6 +1,7 @@
 import logging
 import os
 import logging
+import threading
 from pathlib import Path
 from nodetool.config.logging_config import configure_logging, get_logger
 from typing import Any, Optional, Dict
@@ -114,6 +115,11 @@ class Environment(object):
     settings: Optional[Dict[str, Any]] = None
     secrets: Optional[Dict[str, Any]] = None
     remote_auth: bool = True
+    _thread_local: threading.local = threading.local()
+
+    @classmethod
+    def _tls(cls) -> threading.local:
+        return cls._thread_local
 
     @classmethod
     def load_settings(cls):
@@ -266,31 +272,33 @@ class Environment(object):
 
     @classmethod
     def set_node_cache(cls, node_cache: AbstractNodeCache):
-        cls.node_cache = node_cache
+        setattr(cls._tls(), "node_cache", node_cache)
 
     @classmethod
     def get_node_cache(cls) -> AbstractNodeCache:
         memcache_host = cls.get_memcache_host()
         memcache_port = cls.get_memcache_port()
 
-        if not hasattr(cls, "node_cache"):
+        if not hasattr(cls._tls(), "node_cache"):
             if memcache_host and memcache_port:
                 from nodetool.storage.memcache_node_cache import MemcachedNodeCache
 
-                cls.node_cache = MemcachedNodeCache(
-                    host=memcache_host, port=int(memcache_port)
+                setattr(
+                    cls._tls(),
+                    "node_cache",
+                    MemcachedNodeCache(host=memcache_host, port=int(memcache_port)),
                 )
             else:
                 from nodetool.storage.memory_node_cache import MemoryNodeCache
 
-                cls.node_cache = MemoryNodeCache()
+                setattr(cls._tls(), "node_cache", MemoryNodeCache())
 
-        return cls.node_cache
+        return getattr(cls._tls(), "node_cache")
 
     @classmethod
     def set_memory_uri_cache(cls, uri_cache: AbstractNodeCache):
         """Override the default in-process memory URI cache (mainly for testing)."""
-        cls.memory_uri_cache = uri_cache
+        setattr(cls._tls(), "memory_uri_cache", uri_cache)
 
     @classmethod
     def get_memory_uri_cache(cls) -> AbstractNodeCache:
@@ -300,12 +308,12 @@ class Environment(object):
         - Used for memory:// objects and downloaded http(s) blobs
         - Defaults to a simple in-memory TTL cache (5 minutes)
         """
-        if not hasattr(cls, "memory_uri_cache"):
+        if not hasattr(cls._tls(), "memory_uri_cache"):
             # Lazy import to avoid import cycles
             from nodetool.storage.memory_uri_cache import MemoryUriCache
 
-            cls.memory_uri_cache = MemoryUriCache(default_ttl=300)
-        return cls.memory_uri_cache
+            setattr(cls._tls(), "memory_uri_cache", MemoryUriCache(default_ttl=300))
+        return getattr(cls._tls(), "memory_uri_cache")
 
     @classmethod
     def get_db_path(cls):
@@ -548,19 +556,25 @@ class Environment(object):
         """
         Get the storage adapter for assets.
         """
-        if not hasattr(cls, "asset_storage"):
+        if not hasattr(cls._tls(), "asset_storage"):
             if cls.is_test():
                 from nodetool.storage.memory_storage import MemoryStorage
 
                 cls.get_logger().info("Using memory storage for asset storage")
 
-                cls.asset_storage = MemoryStorage(base_url=cls.get_storage_api_url())
+                setattr(
+                    cls._tls(),
+                    "asset_storage",
+                    MemoryStorage(base_url=cls.get_storage_api_url()),
+                )
             elif (
                 cls.is_production() or cls.get_s3_access_key_id() is not None or use_s3
             ):
                 cls.get_logger().info("Using S3 storage for asset storage")
-                cls.asset_storage = cls.get_s3_storage(
-                    cls.get_asset_bucket(), cls.get_asset_domain()
+                setattr(
+                    cls._tls(),
+                    "asset_storage",
+                    cls.get_s3_storage(cls.get_asset_bucket(), cls.get_asset_domain()),
                 )
             else:
                 from nodetool.storage.file_storage import FileStorage
@@ -568,13 +582,18 @@ class Environment(object):
                 cls.get_logger().info(
                     f"Using folder {cls.get_asset_folder()} for asset storage with base url {cls.get_storage_api_url()}"
                 )
-                cls.asset_storage = FileStorage(
-                    base_path=cls.get_asset_folder(),
-                    base_url=cls.get_storage_api_url(),
+                setattr(
+                    cls._tls(),
+                    "asset_storage",
+                    FileStorage(
+                        base_path=cls.get_asset_folder(),
+                        base_url=cls.get_storage_api_url(),
+                    ),
                 )
 
-        assert cls.asset_storage is not None
-        return cls.asset_storage
+        asset_storage = getattr(cls._tls(), "asset_storage")
+        assert asset_storage is not None
+        return asset_storage
 
     @classmethod
     def get_logger(cls):
@@ -648,13 +667,15 @@ class Environment(object):
         """
         Get the storage adapter for temporary assets.
         """
-        if not hasattr(cls, "temp_storage"):
+        if not hasattr(cls._tls(), "temp_storage"):
             if not cls.is_production():
                 from nodetool.storage.memory_storage import MemoryStorage
 
                 cls.get_logger().info("Using memory storage for temp storage")
-                cls.temp_storage = MemoryStorage(
-                    base_url=cls.get_temp_storage_api_url()
+                setattr(
+                    cls._tls(),
+                    "temp_storage",
+                    MemoryStorage(base_url=cls.get_temp_storage_api_url()),
                 )
             else:
                 assert (
@@ -667,12 +688,33 @@ class Environment(object):
                     cls.get_asset_temp_domain() is not None
                 ), "Asset temp domain is required"
                 cls.get_logger().info("Using S3 storage for temp asset storage")
-                cls.temp_storage = cls.get_s3_storage(
-                    cls.get_asset_temp_bucket(), cls.get_asset_temp_domain()
+                setattr(
+                    cls._tls(),
+                    "temp_storage",
+                    cls.get_s3_storage(
+                        cls.get_asset_temp_bucket(), cls.get_asset_temp_domain()
+                    ),
                 )
 
-        assert cls.temp_storage is not None
-        return cls.temp_storage
+        temp_storage = getattr(cls._tls(), "temp_storage")
+        assert temp_storage is not None
+        return temp_storage
+
+    @classmethod
+    def clear_thread_caches(cls):
+        """Clear per-thread caches to avoid cross-workflow leaks."""
+        tls = cls._tls()
+        for attr in (
+            "node_cache",
+            "memory_uri_cache",
+            "asset_storage",
+            "temp_storage",
+        ):
+            if hasattr(tls, attr):
+                try:
+                    delattr(tls, attr)
+                except Exception:
+                    pass
 
     @classmethod
     def get_supabase_url(cls):
