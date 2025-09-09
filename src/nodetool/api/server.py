@@ -131,6 +131,7 @@ def create_app(
 ):
     # Centralized dotenv loading for consistency with deploy.fastapi_server
     from nodetool.config.environment import load_dotenv_files
+
     load_dotenv_files()
     log.info(
         "dotenv: ENV=%s | LOG_LEVEL=%s | DEBUG=%s",

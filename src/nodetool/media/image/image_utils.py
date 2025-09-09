@@ -159,6 +159,7 @@ def image_ref_to_base64_jpeg(
     import urllib.parse
     import httpx
     from io import BytesIO
+    from nodetool.config.environment import Environment
 
     # Handle direct data
     if hasattr(image_ref, "data") and image_ref.data is not None:
@@ -173,6 +174,36 @@ def image_ref_to_base64_jpeg(
     if not uri:
         raise ValueError("ImageRef has no data or URI")
 
+    # Handle memory:// URIs via global memory URI cache
+    if uri.startswith("memory://"):
+        try:
+            obj = Environment.get_memory_uri_cache().get(uri)
+        except Exception:
+            obj = None
+        if obj is None:
+            raise ValueError(f"No cached object for memory URI: {uri}")
+
+        # Convert common object types to base64 JPEG
+        if isinstance(obj, PIL.Image.Image):
+            return pil_image_to_base64_jpeg(obj, max_size, quality)
+        if isinstance(obj, (bytes, bytearray)):
+            return image_data_to_base64_jpeg(bytes(obj), max_size, quality)
+        if hasattr(obj, "read"):
+            try:
+                # Try to extract bytes from file-like
+                pos = obj.tell() if hasattr(obj, "tell") else None
+                obj.seek(0) if hasattr(obj, "seek") else None
+                data = obj.read()
+                if pos is not None and hasattr(obj, "seek"):
+                    obj.seek(pos)
+                return image_data_to_base64_jpeg(data, max_size, quality)
+            except Exception:
+                pass
+        if isinstance(obj, np.ndarray):
+            pil_img = numpy_to_pil_image(obj)
+            return pil_image_to_base64_jpeg(pil_img, max_size, quality)
+        raise ValueError(f"Unsupported object type for memory URI: {type(obj)}")
+
     # Handle data: URIs
     if uri.startswith("data:"):
         # Extract base64 data from data URI
@@ -186,13 +217,23 @@ def image_ref_to_base64_jpeg(
     # Handle http(s) URLs
     elif uri.startswith(("http://", "https://")):
         try:
-            import asyncio
+            # Use URI cache to avoid repeated downloads
+            cached = None
+            try:
+                cached = Environment.get_memory_uri_cache().get(uri)
+            except Exception:
+                cached = None
+            if isinstance(cached, (bytes, bytearray)):
+                return image_data_to_base64_jpeg(bytes(cached), max_size, quality)
 
-            # For synchronous context, we'll need to handle this differently
-            # This is a simplified version - in practice, you might want async handling
             response = httpx.get(uri, follow_redirects=True)
             response.raise_for_status()
-            return image_data_to_base64_jpeg(response.content, max_size, quality)
+            data = response.content
+            try:
+                Environment.get_memory_uri_cache().set(uri, bytes(data))
+            except Exception:
+                pass
+            return image_data_to_base64_jpeg(data, max_size, quality)
         except Exception as e:
             raise ValueError(f"Failed to download image from {uri}: {e}")
 

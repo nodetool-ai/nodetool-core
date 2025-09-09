@@ -239,7 +239,7 @@ class Environment(object):
         2) If DEBUG env is truthy, return "DEBUG"
         3) NODETOOL_LOG_LEVEL env (default "INFO")
         """
-        level = cls.get("LOG_LEVEL")
+        level = os.getenv("LOG_LEVEL")
         if level:
             try:
                 return str(level).upper()
@@ -286,6 +286,26 @@ class Environment(object):
                 cls.node_cache = MemoryNodeCache()
 
         return cls.node_cache
+
+    @classmethod
+    def set_memory_uri_cache(cls, uri_cache: AbstractNodeCache):
+        """Override the default in-process memory URI cache (mainly for testing)."""
+        cls.memory_uri_cache = uri_cache
+
+    @classmethod
+    def get_memory_uri_cache(cls) -> AbstractNodeCache:
+        """
+        Global cache for objects addressed by URIs.
+
+        - Used for memory:// objects and downloaded http(s) blobs
+        - Defaults to a simple in-memory TTL cache (5 minutes)
+        """
+        if not hasattr(cls, "memory_uri_cache"):
+            # Lazy import to avoid import cycles
+            from nodetool.storage.memory_uri_cache import MemoryUriCache
+
+            cls.memory_uri_cache = MemoryUriCache(default_ttl=300)
+        return cls.memory_uri_cache
 
     @classmethod
     def get_db_path(cls):

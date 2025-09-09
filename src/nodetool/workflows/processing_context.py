@@ -179,21 +179,23 @@ class ProcessingContext:
 
     def _memory_get(self, key: str) -> Any | None:
         """
-        Retrieve an object stored under a memory:// key from the global node cache.
-        Local per-instance memory is avoided for portability across processes.
+        Retrieve an object stored under a URI (e.g., memory://<id>) from the global
+        memory URI cache. Local per-instance memory is avoided for portability
+        across processes.
         """
         try:
-            return Environment.get_node_cache().get(key)
+            return Environment.get_memory_uri_cache().get(key)
         except Exception:
             return None
 
     def _memory_set(self, key: str, value: Any) -> None:
         """
-        Store an object under a memory:// key in the global node cache only.
-        Use ttl=0 (no expiration) for persistence based on backend policy.
+        Store an object under a URI (e.g., memory://<id>) in the global memory
+        URI cache. Entries expire after the cache TTL (default 5 minutes).
         """
         try:
-            Environment.get_node_cache().set(key, value, ttl=0)
+            # Use cache default TTL (5 minutes)
+            Environment.get_memory_uri_cache().set(key, value)
         except Exception:
             pass
 
@@ -905,8 +907,24 @@ class ProcessingContext:
             except Exception as e:
                 raise FileNotFoundError(f"Failed to access file: {e}")
 
+        # Check URI cache first for downloaded content
+        try:
+            cached = Environment.get_memory_uri_cache().get(url)
+            if isinstance(cached, (bytes, bytearray)):
+                return BytesIO(bytes(cached))
+        except Exception:
+            pass
+
         response = await self.http_get(url)
-        return BytesIO(response.content)
+        content = response.content
+
+        # Store downloaded bytes in URI cache for 5 minutes
+        try:
+            Environment.get_memory_uri_cache().set(url, bytes(content))
+        except Exception:
+            pass
+
+        return BytesIO(content)
 
     def wrap_object(self, obj: Any) -> Any:
         """Wrap raw Python objects into typed refs, storing large media in-memory.
