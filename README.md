@@ -4,12 +4,13 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/Python-3.11%2B-blue.svg" alt="Python Version Badge">
-  <img src="https://img.shields.io/github/actions/workflow/status/nodetool-ai/nodetool-core/test.yml?branch=main" alt="Build Status">
+  <a href="https://github.com/nodetool-ai/nodetool-core/actions/workflows/test.yml"><img src="https://img.shields.io/github/actions/workflow/status/nodetool-ai/nodetool-core/test.yml?branch=main" alt="Tests Status"></a>
+  <a href="https://github.com/nodetool-ai/nodetool-core/actions/workflows/docker-publish.yaml"><img src="https://img.shields.io/github/actions/workflow/status/nodetool-ai/nodetool-core/docker-publish.yaml?label=docker&branch=main" alt="Docker Publish"></a>
   <img src="https://img.shields.io/badge/License-AGPL%20v3-blue.svg" alt="License Badge">
   <img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg" alt="PRs Welcome Badge">
 </p>
 
-NodeTool Core is the open‑source Python engine that powers [NodeTool](https://github.com/nodetool-ai/nodetool). 
+NodeTool Core is the open‑source Python engine that powers [NodeTool](https://github.com/nodetool-ai/nodetool).
 
 ---
 
@@ -107,11 +108,12 @@ graph TD
 ```
 
 ### Execution TL;DR
-	•	Each node runs in its own async task. No central loop.
-	•	Every node has an input queue (NodeInbox) that delivers data in order and tracks when it ends.
-	•	Streaming nodes handle data piece by piece (gen_process); batch nodes handle all at once (process).
-	•	When finished or failing, nodes signal “done” downstream so others don’t wait forever.
-	•	GPU jobs run one at a time with a global lock, with retries and cleanup if memory runs out.
+
+    •	Each node runs in its own async task. No central loop.
+    •	Every node has an input queue (NodeInbox) that delivers data in order and tracks when it ends.
+    •	Streaming nodes handle data piece by piece (gen_process); batch nodes handle all at once (process).
+    •	When finished or failing, nodes signal “done” downstream so others don’t wait forever.
+    •	GPU jobs run one at a time with a global lock, with retries and cleanup if memory runs out.
 
 🤝 Contributing
 
@@ -135,7 +137,7 @@ This setup is for developing the `nodetool-core` library itself. If you want to 
    conda create -n nodetool python=3.11 pandoc ffmpeg -c conda-forge
    conda activate nodetool
    uv sync --group dev
-   
+
    # Or using pip only
    pip install .
    pip install -r requirements-dev.txt
@@ -156,7 +158,7 @@ This setup is for developing the `nodetool-core` library itself. If you want to 
    # Required for most functionality
    OPENAI_API_KEY=your_openai_key_here
    ANTHROPIC_API_KEY=your_anthropic_key_here
-   
+
    # Optional - add as needed
    GEMINI_API_KEY=your_gemini_key_here
    HF_TOKEN=your_huggingface_token_here
@@ -169,7 +171,7 @@ This setup is for developing the `nodetool-core` library itself. If you want to 
 
    - `.env.example` - Template with all configuration options
    - `.env.development` - Development defaults (committed, no secrets)
-   - `.env.test` - Test environment configuration  
+   - `.env.test` - Test environment configuration
    - `.env.production` - Production configuration template
    - `.env.*.local` - Your actual secrets (gitignored)
 
@@ -332,7 +334,7 @@ NodeTool Core uses environment-specific configuration files for managing differe
 ### Configuration Files
 
 - **`.env.example`** - Complete template with all available options
-- **`.env.development`** - Development environment defaults  
+- **`.env.development`** - Development environment defaults
 - **`.env.test`** - Test environment configuration
 - **`.env.production`** - Production environment template
 - **`.env.*.local`** - Local overrides with actual secrets (gitignored)
@@ -343,7 +345,7 @@ Configuration is loaded in this order (later sources override earlier ones):
 
 1. Default values from code
 2. Base `.env` file
-3. Environment-specific file (`.env.development`, `.env.test`, or `.env.production`) 
+3. Environment-specific file (`.env.development`, `.env.test`, or `.env.production`)
 4. Local override file (`.env.{environment}.local`)
 5. System environment variables
 6. YAML settings/secrets files
@@ -351,93 +353,101 @@ Configuration is loaded in this order (later sources override earlier ones):
 ### Environment Variables
 
 #### Core Configuration
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `ENV` | Environment name (`development`, `test`, `production`) | `development` |
-| `DEBUG` | Enable debug mode | `None` |
-| `LOG_LEVEL` | Logging level | `INFO` |
-| `REMOTE_AUTH` | Enable remote authentication | `0` |
+
+| Variable      | Description                                            | Default       |
+| ------------- | ------------------------------------------------------ | ------------- |
+| `ENV`         | Environment name (`development`, `test`, `production`) | `development` |
+| `DEBUG`       | Enable debug mode                                      | `None`        |
+| `LOG_LEVEL`   | Logging level                                          | `INFO`        |
+| `REMOTE_AUTH` | Enable remote authentication                           | `0`           |
 
 #### AI Providers & APIs
-| Variable | Description | Group |
-|----------|-------------|-------|
-| `OPENAI_API_KEY` | OpenAI API key for GPT models, DALL-E | LLM |
-| `ANTHROPIC_API_KEY` | Anthropic API key for Claude models | LLM |
-| `GEMINI_API_KEY` | Google Gemini API key | LLM |
-| `HF_TOKEN` | Hugging Face token for gated models | Hugging Face |
-| `REPLICATE_API_TOKEN` | Replicate API token | Replicate |
-| `ELEVENLABS_API_KEY` | ElevenLabs text-to-speech API key | ElevenLabs |
-| `FAL_API_KEY` | FAL.ai serverless AI infrastructure key | FAL |
-| `AIME_USER` | Aime service username | Aime |
-| `AIME_API_KEY` | Aime API key | Aime |
+
+| Variable              | Description                             | Group        |
+| --------------------- | --------------------------------------- | ------------ |
+| `OPENAI_API_KEY`      | OpenAI API key for GPT models, DALL-E   | LLM          |
+| `ANTHROPIC_API_KEY`   | Anthropic API key for Claude models     | LLM          |
+| `GEMINI_API_KEY`      | Google Gemini API key                   | LLM          |
+| `HF_TOKEN`            | Hugging Face token for gated models     | Hugging Face |
+| `REPLICATE_API_TOKEN` | Replicate API token                     | Replicate    |
+| `ELEVENLABS_API_KEY`  | ElevenLabs text-to-speech API key       | ElevenLabs   |
+| `FAL_API_KEY`         | FAL.ai serverless AI infrastructure key | FAL          |
+| `AIME_USER`           | Aime service username                   | Aime         |
+| `AIME_API_KEY`        | Aime API key                            | Aime         |
 
 #### Database & Storage
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `DB_PATH` | SQLite database path | `~/.config/nodetool/nodetool.sqlite3` |
-| `POSTGRES_DB` | PostgreSQL database name | - |
-| `POSTGRES_USER` | PostgreSQL username | - |
-| `POSTGRES_PASSWORD` | PostgreSQL password | - |
-| `POSTGRES_HOST` | PostgreSQL host | - |
-| `POSTGRES_PORT` | PostgreSQL port | - |
-| `SUPABASE_URL` | Supabase project URL | - |
-| `SUPABASE_KEY` | Supabase service key | - |
+
+| Variable            | Description              | Default                               |
+| ------------------- | ------------------------ | ------------------------------------- |
+| `DB_PATH`           | SQLite database path     | `~/.config/nodetool/nodetool.sqlite3` |
+| `POSTGRES_DB`       | PostgreSQL database name | -                                     |
+| `POSTGRES_USER`     | PostgreSQL username      | -                                     |
+| `POSTGRES_PASSWORD` | PostgreSQL password      | -                                     |
+| `POSTGRES_HOST`     | PostgreSQL host          | -                                     |
+| `POSTGRES_PORT`     | PostgreSQL port          | -                                     |
+| `SUPABASE_URL`      | Supabase project URL     | -                                     |
+| `SUPABASE_KEY`      | Supabase service key     | -                                     |
 
 #### Cloud Storage (S3)
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `ASSET_BUCKET` | S3 bucket for assets | `images` |
-| `ASSET_TEMP_BUCKET` | S3 bucket for temporary assets | - |
-| `ASSET_DOMAIN` | Asset CDN domain | - |
-| `ASSET_TEMP_DOMAIN` | Temporary asset domain | - |
-| `S3_ACCESS_KEY_ID` | AWS access key ID | - |
-| `S3_SECRET_ACCESS_KEY` | AWS secret access key | - |
-| `S3_ENDPOINT_URL` | S3 endpoint URL | - |
-| `S3_REGION` | S3 region | - |
-| `AWS_REGION` | AWS region | `us-east-1` |
+
+| Variable               | Description                    | Default     |
+| ---------------------- | ------------------------------ | ----------- |
+| `ASSET_BUCKET`         | S3 bucket for assets           | `images`    |
+| `ASSET_TEMP_BUCKET`    | S3 bucket for temporary assets | -           |
+| `ASSET_DOMAIN`         | Asset CDN domain               | -           |
+| `ASSET_TEMP_DOMAIN`    | Temporary asset domain         | -           |
+| `S3_ACCESS_KEY_ID`     | AWS access key ID              | -           |
+| `S3_SECRET_ACCESS_KEY` | AWS secret access key          | -           |
+| `S3_ENDPOINT_URL`      | S3 endpoint URL                | -           |
+| `S3_REGION`            | S3 region                      | -           |
+| `AWS_REGION`           | AWS region                     | `us-east-1` |
 
 #### Vector Database & AI Services
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `CHROMA_PATH` | ChromaDB storage path | `~/.local/share/nodetool/chroma` |
-| `CHROMA_URL` | Remote ChromaDB URL | - |
-| `CHROMA_TOKEN` | ChromaDB authentication token | - |
-| `OLLAMA_API_URL` | Ollama API endpoint | `http://127.0.0.1:11434` |
-| `OLLAMA_MODELS` | Custom Ollama models path | - |
+
+| Variable         | Description                   | Default                          |
+| ---------------- | ----------------------------- | -------------------------------- |
+| `CHROMA_PATH`    | ChromaDB storage path         | `~/.local/share/nodetool/chroma` |
+| `CHROMA_URL`     | Remote ChromaDB URL           | -                                |
+| `CHROMA_TOKEN`   | ChromaDB authentication token | -                                |
+| `OLLAMA_API_URL` | Ollama API endpoint           | `http://127.0.0.1:11434`         |
+| `OLLAMA_MODELS`  | Custom Ollama models path     | -                                |
 
 #### External Integrations
-| Variable | Description | Group |
-|----------|-------------|-------|
-| `GOOGLE_MAIL_USER` | Gmail address for email integration | Google |
-| `GOOGLE_APP_PASSWORD` | Google app password | Google |
-| `SERPAPI_API_KEY` | SerpAPI key for web scraping | SerpAPI |
-| `DATA_FOR_SEO_LOGIN` | DataForSEO login | DataForSEO |
-| `DATA_FOR_SEO_PASSWORD` | DataForSEO password | DataForSEO |
-| `BROWSER_URL` | Browser automation endpoint | Browser |
+
+| Variable                | Description                         | Group      |
+| ----------------------- | ----------------------------------- | ---------- |
+| `GOOGLE_MAIL_USER`      | Gmail address for email integration | Google     |
+| `GOOGLE_APP_PASSWORD`   | Google app password                 | Google     |
+| `SERPAPI_API_KEY`       | SerpAPI key for web scraping        | SerpAPI    |
+| `DATA_FOR_SEO_LOGIN`    | DataForSEO login                    | DataForSEO |
+| `DATA_FOR_SEO_PASSWORD` | DataForSEO password                 | DataForSEO |
+| `BROWSER_URL`           | Browser automation endpoint         | Browser    |
 
 #### System & Media Processing
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `FFMPEG_PATH` | Path to ffmpeg executable | `ffmpeg` |
-| `FFPROBE_PATH` | Path to ffprobe executable | `ffprobe` |
-| `FONT_PATH` | Font directory for text rendering | - |
-| `COMFY_FOLDER` | ComfyUI integration folder | - |
+
+| Variable       | Description                       | Default   |
+| -------------- | --------------------------------- | --------- |
+| `FFMPEG_PATH`  | Path to ffmpeg executable         | `ffmpeg`  |
+| `FFPROBE_PATH` | Path to ffprobe executable        | `ffprobe` |
+| `FONT_PATH`    | Font directory for text rendering | -         |
+| `COMFY_FOLDER` | ComfyUI integration folder        | -         |
 
 #### Deployment & Monitoring
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `NODETOOL_API_URL` | NodeTool API base URL | `http://localhost:8000` |
-| `RUNPOD_API_KEY` | RunPod API key for cloud deployment | - |
-| `SENTRY_DSN` | Sentry error tracking DSN | - |
-| `MEMCACHE_HOST` | Memcache server host | - |
-| `MEMCACHE_PORT` | Memcache server port | - |
+
+| Variable           | Description                         | Default                 |
+| ------------------ | ----------------------------------- | ----------------------- |
+| `NODETOOL_API_URL` | NodeTool API base URL               | `http://localhost:8000` |
+| `RUNPOD_API_KEY`   | RunPod API key for cloud deployment | -                       |
+| `SENTRY_DSN`       | Sentry error tracking DSN           | -                       |
+| `MEMCACHE_HOST`    | Memcache server host                | -                       |
+| `MEMCACHE_PORT`    | Memcache server port                | -                       |
 
 ### Environment Detection
 
 The system automatically detects the environment from:
 
 1. `ENV` environment variable
-2. `PYTEST_CURRENT_TEST` (automatically sets test environment)  
+2. `PYTEST_CURRENT_TEST` (automatically sets test environment)
 3. Defaults to "development"
 
 For a complete template with all options, see `.env.example` in the repository.
@@ -448,12 +458,13 @@ For a complete template with all options, see `.env.example` in the repository.
 
 1. Clone the repository
 2. Install dependencies :
+
    ```bash
    # Using conda + uv (recommended)
    conda create -n nodetool python=3.11 pandoc ffmpeg -c conda-forge
    conda activate nodetool
    uv sync
-   
+
    # Or using pip only
    pip install .
    ```
