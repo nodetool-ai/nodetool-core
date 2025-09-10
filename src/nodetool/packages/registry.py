@@ -1249,29 +1249,60 @@ def update_pyproject_include(package: PackageModel, verbose: bool = False) -> No
     # Parse with tomlkit to preserve formatting and comments
     data = tomlkit.parse(content)
 
-    # Navigate to [tool.poetry] section
-    if "tool" not in data:
-        data["tool"] = tomlkit.table()  # type: ignore
-
-    tool_section = data["tool"]  # type: ignore
-    if "poetry" not in tool_section:  # type: ignore
-        tool_section["poetry"] = tomlkit.table()  # type: ignore
-
-    poetry = tool_section["poetry"]  # type: ignore
-
-    # Get existing include list or create new one
-    if "include" not in poetry:  # type: ignore
-        poetry["include"] = tomlkit.array()  # type: ignore
-        include_list = poetry["include"]  # type: ignore
+    # Handle both Poetry and uv/hatchling formats
+    if "project" in data:
+        # New uv/hatchling format - use [tool.hatch.build.targets.wheel]
+        if "tool" not in data:
+            data["tool"] = tomlkit.table()  # type: ignore
+        
+        tool_section = data["tool"]  # type: ignore
+        if "hatch" not in tool_section:  # type: ignore
+            tool_section["hatch"] = tomlkit.table()  # type: ignore
+        
+        hatch_section = tool_section["hatch"]  # type: ignore
+        if "build" not in hatch_section:  # type: ignore
+            hatch_section["build"] = tomlkit.table()  # type: ignore
+        
+        build_section = hatch_section["build"]  # type: ignore
+        if "targets" not in build_section:  # type: ignore
+            build_section["targets"] = tomlkit.table()  # type: ignore
+        
+        targets_section = build_section["targets"]  # type: ignore
+        if "wheel" not in targets_section:  # type: ignore
+            targets_section["wheel"] = tomlkit.table()  # type: ignore
+        
+        wheel_section = targets_section["wheel"]  # type: ignore
+        
+        # Get existing artifacts list or create new one
+        if "artifacts" not in wheel_section:  # type: ignore
+            wheel_section["artifacts"] = tomlkit.array()  # type: ignore
+            include_list = wheel_section["artifacts"]  # type: ignore
+        else:
+            include_list = wheel_section["artifacts"]  # type: ignore
     else:
-        include_item = poetry["include"]  # type: ignore
-        # Convert to list if it's a single string
-        if isinstance(include_item, str):
+        # Legacy Poetry format - use [tool.poetry.include]
+        if "tool" not in data:
+            data["tool"] = tomlkit.table()  # type: ignore
+
+        tool_section = data["tool"]  # type: ignore
+        if "poetry" not in tool_section:  # type: ignore
+            tool_section["poetry"] = tomlkit.table()  # type: ignore
+
+        poetry = tool_section["poetry"]  # type: ignore
+
+        # Get existing include list or create new one
+        if "include" not in poetry:  # type: ignore
             poetry["include"] = tomlkit.array()  # type: ignore
-            poetry["include"].append(include_item)  # type: ignore
             include_list = poetry["include"]  # type: ignore
         else:
-            include_list = include_item
+            include_item = poetry["include"]  # type: ignore
+            # Convert to list if it's a single string
+            if isinstance(include_item, str):
+                poetry["include"] = tomlkit.array()  # type: ignore
+                poetry["include"].append(include_item)  # type: ignore
+                include_list = poetry["include"]  # type: ignore
+            else:
+                include_list = include_item
 
     # Prepare paths to include
     metadata_path = f"src/nodetool/package_metadata/{package.name}.json"

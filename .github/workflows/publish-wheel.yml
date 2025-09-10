@@ -1,0 +1,224 @@
+# .github/workflows/publish-wheel.yml
+# Template workflow for individual NodeTool package repositories
+# Copy this to each package repository: nodetool-base, nodetool-huggingface, etc.
+
+name: Build and Publish Wheel
+
+on:
+  # Trigger on version tags
+  push:
+    tags:
+      - 'v*.*.*'
+      
+  # Manual trigger for testing
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g., 0.6.0)'
+        required: true
+        type: string
+      prerelease:
+        description: 'Mark as prerelease'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  PACKAGE_NAME: ${{ github.event.repository.name }}  # e.g., "nodetool-base"
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.get-version.outputs.version }}
+      tag-name: ${{ steps.get-version.outputs.tag-name }}
+      is-prerelease: ${{ steps.get-version.outputs.is-prerelease }}
+    steps:
+      - name: Get version from tag or input
+        id: get-version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+            TAG_NAME="v${VERSION}"
+            IS_PRERELEASE="${{ github.event.inputs.prerelease }}"
+          else
+            TAG_NAME="${{ github.ref_name }}"
+            VERSION="${TAG_NAME#v}"
+            IS_PRERELEASE="false"
+          fi
+          
+          # Validate version format
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([a-zA-Z][0-9]*)?$ ]]; then
+            echo "❌ Invalid version format: $VERSION"
+            exit 1
+          fi
+          
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag-name=$TAG_NAME" >> $GITHUB_OUTPUT
+          echo "is-prerelease=$IS_PRERELEASE" >> $GITHUB_OUTPUT
+          
+          echo "📋 Version: $VERSION"
+          echo "🏷️ Tag: $TAG_NAME"
+          echo "🔄 Prerelease: $IS_PRERELEASE"
+
+  build-wheel:
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.validate.outputs.tag-name }}
+          
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          
+      - name: Install build dependencies
+        run: |
+          pip install --upgrade pip
+          pip install build hatchling twine
+          
+      - name: Verify version in pyproject.toml
+        run: |
+          EXPECTED_VERSION="${{ needs.validate.outputs.version }}"
+          PYPROJECT_VERSION=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")
+          
+          if [ "$PYPROJECT_VERSION" != "$EXPECTED_VERSION" ]; then
+            echo "❌ Version mismatch: pyproject.toml has $PYPROJECT_VERSION, expected $EXPECTED_VERSION"
+            exit 1
+          fi
+          
+          echo "✅ Version verified: $PYPROJECT_VERSION"
+          
+      - name: Build wheel
+        run: |
+          echo "🏗️ Building wheel for ${{ env.PACKAGE_NAME }}"
+          python -m build --wheel
+          
+          # Verify wheel was created
+          WHEEL_FILE=$(find dist/ -name "*.whl" -type f)
+          if [ -z "$WHEEL_FILE" ]; then
+            echo "❌ No wheel file found in dist/"
+            exit 1
+          fi
+          
+          echo "✅ Built wheel: $(basename $WHEEL_FILE)"
+          echo "📊 Wheel size: $(du -h $WHEEL_FILE | cut -f1)"
+          
+      - name: Validate wheel
+        run: |
+          WHEEL_FILE=$(find dist/ -name "*.whl" -type f)
+          
+          # Check wheel contents
+          echo "🔍 Wheel contents:"
+          python -m zipfile -l "$WHEEL_FILE" | head -20
+          
+          # Validate with twine
+          echo "🔍 Validating wheel with twine:"
+          twine check "$WHEEL_FILE"
+          
+      - name: Upload wheel artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheel-${{ env.PACKAGE_NAME }}-${{ needs.validate.outputs.version }}
+          path: dist/*.whl
+          retention-days: 30
+
+  create-release:
+    needs: [validate, build-wheel]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.validate.outputs.tag-name }}
+          
+      - name: Download wheel artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: wheel-${{ env.PACKAGE_NAME }}-${{ needs.validate.outputs.version }}
+          path: dist/
+          
+      - name: Generate release notes
+        id: release-notes
+        run: |
+          VERSION="${{ needs.validate.outputs.version }}"
+          PACKAGE="${{ env.PACKAGE_NAME }}"
+          
+          # Generate automatic release notes
+          cat > release_notes.md << EOF
+          ## $PACKAGE v$VERSION
+          
+          ### 📦 Package Information
+          - **Package**: \`$PACKAGE\`
+          - **Version**: \`$VERSION\`
+          - **Python**: \`>=3.11\`
+          
+          ### 📥 Installation
+          \`\`\`bash
+          # From NodeTool registry
+          pip install --index-url https://nodetool-ai.github.io/nodetool-registry/simple/ $PACKAGE
+          
+          # Direct from release
+          pip install https://github.com/${{ github.repository }}/releases/download/${{ needs.validate.outputs.tag-name }}/$PACKAGE-$VERSION-py3-none-any.whl
+          \`\`\`
+          
+          ### 🔗 Dependencies
+          - \`nodetool-core>=0.6.0,<0.7.0\`
+          
+          ---
+          *This release was automatically generated from tag \`${{ needs.validate.outputs.tag-name }}\`*
+          EOF
+          
+          echo "📄 Generated release notes"
+          
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ needs.validate.outputs.tag-name }}
+          name: "${{ env.PACKAGE_NAME }} v${{ needs.validate.outputs.version }}"
+          body_path: release_notes.md
+          files: dist/*.whl
+          draft: false
+          prerelease: ${{ needs.validate.outputs.is-prerelease }}
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          
+      - name: Notify registry
+        if: success()
+        run: |
+          # Trigger registry update
+          curl -X POST \
+            -H "Authorization: token ${{ secrets.REGISTRY_UPDATE_TOKEN || secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            https://api.github.com/repos/nodetool-ai/nodetool-registry/dispatches \
+            -d '{
+              "event_type": "package-released",
+              "client_payload": {
+                "package": "${{ env.PACKAGE_NAME }}",
+                "version": "${{ needs.validate.outputs.version }}",
+                "tag": "${{ needs.validate.outputs.tag-name }}",
+                "repository": "${{ github.repository }}",
+                "release_url": "${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ needs.validate.outputs.tag-name }}"
+              }
+            }' || echo "⚠️ Failed to notify registry (non-fatal)"
+          
+      - name: Create success summary
+        run: |
+          echo "## ✅ Release Published Successfully" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Package**: \`${{ env.PACKAGE_NAME }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Version**: \`${{ needs.validate.outputs.version }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Tag**: \`${{ needs.validate.outputs.tag-name }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Release URL**: ${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ needs.validate.outputs.tag-name }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📦 Installation" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
+          echo "pip install --index-url https://nodetool-ai.github.io/nodetool-registry/simple/ ${{ env.PACKAGE_NAME }}" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY

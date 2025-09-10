@@ -609,24 +609,31 @@ def init():
     author = click.prompt("Author (name <email>)", type=str)
     python_version = "^3.10"
 
-    # Create pyproject.toml content
+    # Create pyproject.toml content  
+    author_name = author.split(' <')[0] if ' <' in author else author
+    author_email = author.split(' <')[1].rstrip('>') if ' <' in author else "author@example.com"
+    python_req = python_version.lstrip('^')
+    
     pyproject_content = f"""[build-system]
-requires = ["poetry-core>=1.0.0"]
-build-backend = "poetry.core.masonry.api"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
-[tool.poetry]
+[project]
 name = "{name}"
 version = "{version}"
 description = "{description}"
 readme = "README.md"
-authors = ["{author}"]
-packages = [{{ include = "nodetool", from = "src" }}]
-package-mode = true
-include = []
+authors = [
+    {{name = "{author_name}", email = "{author_email}"}}
+]
+requires-python = ">={python_req}"
 
-[tool.poetry.dependencies]
-python = "{python_version}"
-nodetool-core = {{ git = "https://github.com/nodetool-ai/nodetool-core.git", rev = "main" }}
+dependencies = [
+    "nodetool-core @ git+https://github.com/nodetool-ai/nodetool-core.git@main",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/nodetool"]
 """
 
     # Write to pyproject.toml
