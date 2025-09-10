@@ -77,6 +77,9 @@ from nodetool.workflows.base_node import get_node_class, split_camel_case
 
 # Constants
 PACKAGES_DIR = "packages"
+# New wheel-based package index (PEP 503 compliant)
+PACKAGE_INDEX_URL = "https://nodetool-ai.github.io/nodetool-registry/simple/"
+# Legacy JSON registry for backward compatibility
 REGISTRY_URL = (
     "https://raw.githubusercontent.com/nodetool-ai/nodetool-registry/main/index.json"
 )
@@ -235,20 +238,36 @@ class Registry:
             {}
         )  # Cache for loaded examples by package_name:example_name
         self._example_search_cache: Optional[Dict[str, Any]] = None
+        self._index_available = None  # Cache for package index availability
         self.logger = get_logger(__name__)
 
     def pip_install(
-        self, install_path: str, editable: bool = False, upgrade: bool = False
+        self, install_path: str, editable: bool = False, upgrade: bool = False, use_index: bool = True
     ) -> None:
         """
-        Call the pip install command.
+        Call the pip install command with optional wheel index support.
+        
+        Args:
+            install_path: Package name or path to install
+            editable: Install in editable mode
+            upgrade: Upgrade to latest version
+            use_index: Use the NodeTool package index for wheel-based installation
         """
+        cmd = [*self.pkg_mgr, "install"]
+        
+        # Add package index if using wheel-based installation
+        # Skip index for: paths, git URLs, file URLs, editable installs
+        if (use_index and not editable and 
+            not install_path.startswith(("/", ".", "git+", "file://", "http://", "https://"))):
+            cmd.extend(["--index-url", PACKAGE_INDEX_URL])
+        
         if upgrade:
-            subprocess.check_call([*self.pkg_mgr, "install", "--upgrade", install_path])
-        elif editable:
-            subprocess.check_call([*self.pkg_mgr, "install", "-e", install_path])
-        else:
-            subprocess.check_call([*self.pkg_mgr, "install", install_path])
+            cmd.append("--upgrade")
+        if editable:
+            cmd.append("-e")
+            
+        cmd.append(install_path)
+        subprocess.check_call(cmd)
 
     def pip_uninstall(self, package_name: str) -> None:
         """
@@ -301,14 +320,103 @@ class Registry:
         packages_data = response.json()["packages"]
 
         return [PackageInfo(**package) for package in packages_data]
-
-    def install_package(self, repo_id: str, local_path: Optional[str] = None) -> None:
-        """Install a package by repository ID or from local path."""
-        if local_path:
-            self.pip_install(local_path, editable=True)
+    
+    def check_package_index_available(self) -> bool:
+        """Check if the wheel-based package index is available.
+        
+        Returns:
+            bool: True if the package index is reachable, False otherwise
+        """
+        if self._index_available is not None:
+            return self._index_available
+            
+        try:
+            response = requests.get(
+                PACKAGE_INDEX_URL,
+                headers={
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                },
+                timeout=10,
+            )
+            self._index_available = response.status_code == 200
+            if self._index_available:
+                self.logger.info(f"Package index available at {PACKAGE_INDEX_URL}")
+            else:
+                self.logger.warning(f"Package index returned status {response.status_code}")
+        except Exception as e:
+            self._index_available = False
+            self.logger.warning(f"Package index not available: {e}")
+            
+        return self._index_available
+    
+    def get_install_command_for_package(self, repo_id: str) -> str:
+        """Get the recommended install command for a package.
+        
+        Args:
+            repo_id: Repository ID in format owner/project
+            
+        Returns:
+            str: The pip install command string
+        """
+        package_name = repo_id.split("/")[1]
+        
+        if self.check_package_index_available():
+            return f"pip install --index-url {PACKAGE_INDEX_URL} {package_name}"
         else:
+            return f"pip install git+https://github.com/{repo_id}"
+    
+    def get_package_installation_info(self, repo_id: str) -> Dict[str, Any]:
+        """Get comprehensive installation information for a package.
+        
+        Args:
+            repo_id: Repository ID in format owner/project
+            
+        Returns:
+            Dict containing installation methods and recommendations
+        """
+        package_name = repo_id.split("/")[1]
+        index_available = self.check_package_index_available()
+        
+        return {
+            "package_name": package_name,
+            "repo_id": repo_id,
+            "wheel_available": index_available,
+            "recommended_command": self.get_install_command_for_package(repo_id),
+            "wheel_command": f"pip install --index-url {PACKAGE_INDEX_URL} {package_name}",
+            "git_command": f"pip install git+https://github.com/{repo_id}",
+            "package_index_url": PACKAGE_INDEX_URL,
+        }
+
+    def install_package(self, repo_id: str, local_path: Optional[str] = None, use_git: bool = False) -> None:
+        """Install a package by repository ID or from local path.
+        
+        Args:
+            repo_id: Repository ID in format owner/project (e.g., 'nodetool-ai/nodetool-base')
+            local_path: Local path for editable install
+            use_git: Force git-based installation instead of wheel-based
+        """
+        if local_path:
+            self.pip_install(local_path, editable=True, use_index=False)
+        elif use_git:
+            # Fallback to git-based installation
             install_path = f"git+https://github.com/{repo_id}"
-            self.pip_install(install_path)
+            self.pip_install(install_path, use_index=False)
+        else:
+            # Try wheel-based installation first, fallback to git if it fails
+            package_name = repo_id.split("/")[1]
+            
+            try:
+                if self.check_package_index_available():
+                    self.logger.info(f"Installing {package_name} from wheel index")
+                    self.pip_install(package_name, use_index=True)
+                else:
+                    raise Exception("Package index not available")
+            except (subprocess.CalledProcessError, Exception) as e:
+                self.logger.warning(f"Wheel installation failed: {e}. Falling back to git installation.")
+                install_path = f"git+https://github.com/{repo_id}"
+                self.pip_install(install_path, use_index=False)
+                
         # Clear the cache since we've installed a new package
         self.clear_packages_cache()
 
@@ -329,15 +437,37 @@ class Registry:
             print(f"Error uninstalling package {repo_id}: {e}")
             return False
 
-    def update_package(self, repo_id: str) -> bool:
-        """Update a package to the latest version."""
+    def update_package(self, repo_id: str, use_git: bool = False) -> bool:
+        """Update a package to the latest version.
+        
+        Args:
+            repo_id: Repository ID in format owner/project
+            use_git: Force git-based update instead of wheel-based
+        """
         is_valid, error_msg = validate_repo_id(repo_id)
         if not is_valid:
             raise ValueError(error_msg)
 
         try:
-            install_url = f"git+https://github.com/{repo_id}"
-            self.pip_install(install_url, upgrade=True)
+            if use_git:
+                # Fallback to git-based update
+                install_url = f"git+https://github.com/{repo_id}"
+                self.pip_install(install_url, upgrade=True, use_index=False)
+            else:
+                # Try wheel-based update first, fallback to git if it fails
+                package_name = repo_id.split("/")[1]
+                
+                try:
+                    if self.check_package_index_available():
+                        self.logger.info(f"Updating {package_name} from wheel index")
+                        self.pip_install(package_name, upgrade=True, use_index=True)
+                    else:
+                        raise Exception("Package index not available")
+                except (subprocess.CalledProcessError, Exception) as e:
+                    self.logger.warning(f"Wheel update failed: {e}. Falling back to git update.")
+                    install_url = f"git+https://github.com/{repo_id}"
+                    self.pip_install(install_url, upgrade=True, use_index=False)
+            
             print(f"Successfully updated package {repo_id}")
             # Clear the cache since we've updated a package
             self.clear_packages_cache()
@@ -543,6 +673,10 @@ class Registry:
         """
         self._examples_cache = {}
         self._example_search_cache = None
+        
+    def clear_index_cache(self) -> None:
+        """Clear the package index availability cache."""
+        self._index_available = None
 
     def _populate_example_search_cache(self) -> None:
         """
@@ -702,10 +836,11 @@ class Registry:
         return examples
 
     def clear_cache(self) -> None:
-        """Clear all caches (packages, nodes, and examples) to force fresh data on next calls."""
+        """Clear all caches (packages, nodes, examples, and index) to force fresh data on next calls."""
         self.clear_packages_cache()
         self.clear_node_cache()
         self.clear_examples_cache()
+        self.clear_index_cache()
 
     def list_examples(self) -> List[Workflow]:
         """

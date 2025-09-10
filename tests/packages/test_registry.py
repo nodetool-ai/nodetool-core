@@ -374,3 +374,117 @@ def test_search_no_match_returns_empty(mock_registry: Registry):
     with patch.object(mock_registry, 'load_example', MagicMock(side_effect=load_example_for_no_match_test)):
         results = mock_registry.search_example_workflows(query="NonExistentQueryString")
         assert len(results) == 0 
+
+
+class TestRegistryWheelIntegration:
+    """Integration tests for wheel features with existing registry functionality."""
+    
+    def test_registry_initialization_includes_wheel_cache(self):
+        """Test that Registry initialization includes wheel-related cache attributes."""
+        registry = Registry()
+        
+        # Check that all expected cache attributes are initialized
+        assert hasattr(registry, '_index_available')
+        assert registry._index_available is None
+        assert hasattr(registry, '_packages_cache')
+        assert hasattr(registry, '_node_cache')
+        assert hasattr(registry, '_examples_cache')
+    
+    def test_clear_cache_integration(self):
+        """Test that clear_cache works with all cache types including wheel cache."""
+        registry = Registry()
+        
+        # Set all caches to non-None values
+        registry._packages_cache = ["test"]
+        registry._node_cache = ["test"] 
+        registry._examples_cache = {"test": "value"}
+        registry._example_search_cache = {"test": "value"}
+        registry._index_available = True
+        
+        # Clear all caches
+        registry.clear_cache()
+        
+        # Verify all caches are cleared
+        assert registry._packages_cache is None
+        assert registry._node_cache is None
+        assert registry._examples_cache == {}
+        assert registry._example_search_cache is None
+        assert registry._index_available is None
+    
+    def test_existing_methods_unaffected_by_wheel_features(self, mock_registry):
+        """Test that existing registry methods work unchanged with wheel features present."""
+        # Test that find_package_by_name still works
+        result = mock_registry.find_package_by_name("test-package")
+        assert result is not None
+        assert result.name == "test-package"
+        
+        # Test that list_examples still works
+        examples = mock_registry.list_examples()
+        assert isinstance(examples, list)
+        
+        # Test that list_assets still works
+        assets = mock_registry.list_assets()
+        assert isinstance(assets, list)
+    
+    @patch('nodetool.packages.registry.PACKAGE_INDEX_URL', 'https://test.example.com/simple/')
+    def test_constants_integration(self):
+        """Test that new constants integrate properly with existing code."""
+        from nodetool.packages.registry import PACKAGE_INDEX_URL, REGISTRY_URL
+        
+        # Both old and new constants should be available
+        assert PACKAGE_INDEX_URL == 'https://test.example.com/simple/'
+        assert REGISTRY_URL is not None
+        assert 'github' in REGISTRY_URL.lower()
+    
+    def test_wheel_methods_available_on_registry_instance(self):
+        """Test that all new wheel-related methods are available on Registry instances."""
+        registry = Registry()
+        
+        # Check that all new methods exist
+        assert hasattr(registry, 'check_package_index_available')
+        assert hasattr(registry, 'get_install_command_for_package')
+        assert hasattr(registry, 'get_package_installation_info')
+        assert hasattr(registry, 'clear_index_cache')
+        
+        # Check that methods are callable
+        assert callable(getattr(registry, 'check_package_index_available'))
+        assert callable(getattr(registry, 'get_install_command_for_package'))
+        assert callable(getattr(registry, 'get_package_installation_info'))
+        assert callable(getattr(registry, 'clear_index_cache'))
+    
+    def test_pip_install_method_signature_compatibility(self):
+        """Test that pip_install method maintains backward compatibility."""
+        registry = Registry()
+        
+        # Test that the method can be called with original signature
+        with patch('subprocess.check_call') as mock_subprocess:
+            # Original usage should still work
+            registry.pip_install("test-package")
+            mock_subprocess.assert_called_once()
+            
+            mock_subprocess.reset_mock()
+            
+            # Original usage with editable should still work
+            registry.pip_install("test-package", editable=True)
+            mock_subprocess.assert_called_once()
+            
+            mock_subprocess.reset_mock()
+            
+            # Original usage with upgrade should still work
+            registry.pip_install("test-package", upgrade=True)
+            mock_subprocess.assert_called_once()
+    
+    def test_install_and_update_methods_signature_compatibility(self):
+        """Test that install_package and update_package maintain backward compatibility."""
+        registry = Registry()
+        
+        with patch.object(registry, 'pip_install'), \
+             patch.object(registry, 'clear_packages_cache'), \
+             patch.object(registry, 'check_package_index_available', return_value=False):
+            
+            # Original install_package usage should work
+            registry.install_package("owner/repo")
+            
+            # Original update_package usage should work
+            result = registry.update_package("owner/repo")
+            assert result is True
