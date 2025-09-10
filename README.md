@@ -31,6 +31,19 @@ NodeTool Core is the open‑source Python engine that powers [NodeTool](https:
 ```bash
 # Install using pip
 pip install nodetool-core
+
+# Or install from source (recommended for development)
+git clone https://github.com/nodetool-ai/nodetool-core
+cd nodetool-core
+
+# Option 1: Using conda + uv (recommended - includes system dependencies)
+conda create -n nodetool python=3.11 pandoc ffmpeg -c conda-forge
+conda activate nodetool
+uv sync
+
+# Option 2: Using pip only
+pip install .
+# Note: Install pandoc and ffmpeg separately for full functionality
 ```
 
 ### Basic Usage
@@ -118,6 +131,12 @@ This setup is for developing the `nodetool-core` library itself. If you want to 
 2. **Install dependencies**
 
    ```bash
+   # Using conda + uv (recommended)
+   conda create -n nodetool python=3.11 pandoc ffmpeg -c conda-forge
+   conda activate nodetool
+   uv sync --group dev
+   
+   # Or using pip only
    pip install .
    pip install -r requirements-dev.txt
    ```
@@ -430,6 +449,12 @@ For a complete template with all options, see `.env.example` in the repository.
 1. Clone the repository
 2. Install dependencies :
    ```bash
+   # Using conda + uv (recommended)
+   conda create -n nodetool python=3.11 pandoc ffmpeg -c conda-forge
+   conda activate nodetool
+   uv sync
+   
+   # Or using pip only
    pip install .
    ```
 
@@ -438,7 +463,11 @@ For a complete template with all options, see `.env.example` in the repository.
 Run tests with pytest:
 
 ```bash
-poetry run pytest
+# Using uv (recommended)
+uv run pytest
+
+# Or directly if using activated environment
+pytest
 ```
 
 ## License

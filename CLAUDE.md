@@ -45,37 +45,66 @@ The system determines the environment from:
 
 ### Setup and Installation
 
-```bash
-# Install dependencies
-pip install .
+**Recommended: Using conda + uv**
 
-# Install development dependencies 
-pip install -r requirements-dev.txt
+```bash
+# Create and activate conda environment with system dependencies
+conda create -n nodetool python=3.11 pandoc ffmpeg -c conda-forge
+conda activate nodetool
+
+# Install Python dependencies with uv (fast and reliable)
+uv sync
+
+# Install development dependencies
+uv sync --group dev
 
 # Set up environment configuration
 cp .env.example .env.development.local
 # Edit .env.development.local with your actual API keys
 ```
 
+**Alternative: Using pip only**
+
+```bash
+# Install dependencies with pip
+pip install .
+
+# Install development dependencies 
+pip install -r requirements-dev.txt
+
+# Note: You'll need to install system dependencies separately:
+# - pandoc (for document processing)
+# - ffmpeg (for media processing)
+```
+
 ### Common Commands
 
 ```bash
 # Run all tests
-pytest -q
+uv run pytest -q
 
 # Run a specific test file
-pytest tests/path/to/test_file.py
+uv run pytest tests/path/to/test_file.py
 
 # Run tests with coverage report
-pytest --cov=src
+uv run pytest --cov=src
 
 # Lint code
-ruff check .
-black --check .
-mypy .
+uv run ruff check .
+uv run black --check .
+uv run mypy .
 
 # Format code
-black .
+uv run black .
+
+# Add dependencies
+uv add package-name
+
+# Add development dependencies
+uv add --group dev package-name
+
+# Update dependencies
+uv sync
 
 ## Project Architecture
 
