@@ -33,6 +33,7 @@ async def setup_and_teardown(request):
         return
 
     Environment.set_remote_auth(False)
+    Environment.clear_test_storage()
 
     await create_all_tables()
 
@@ -89,7 +90,7 @@ def pil_to_bytes(image: PIL.Image.Image, format="PNG") -> bytes:
         return buffer.getvalue()
 
 
-def upload_test_image(image: Asset, width: int = 512, height: int = 512):
+async def upload_test_image(image: Asset, width: int = 512, height: int = 512):
     """
     Upload a test image to the memory storage.
 
@@ -101,7 +102,8 @@ def upload_test_image(image: Asset, width: int = 512, height: int = 512):
     storage = Environment.get_asset_storage()
     assert isinstance(storage, MemoryStorage)
     img = PIL.Image.new("RGB", (width, height))
-    storage.storage[image.file_name] = pil_to_bytes(img)
+    content = io.BytesIO(pil_to_bytes(img))
+    await storage.upload(image.file_name, content)
 
 
 async def make_image(
@@ -131,7 +133,7 @@ async def make_image(
         content_type="image/jpeg",
         workflow_id=workflow_id,
     )
-    upload_test_image(image, width, height)
+    await upload_test_image(image, width, height)
     return image
 
 

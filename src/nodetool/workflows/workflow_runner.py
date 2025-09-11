@@ -761,19 +761,27 @@ class WorkflowRunner:
             if requires_gpu and self.device != "cpu":
                 await acquire_gpu_lock(node, context)
                 try:
+                    self.log_vram_usage(
+                        f"Node {node.get_title()} ({node._id}) VRAM before GPU processing"
+                    )
                     await node.preload_model(context)
+                    self.log_vram_usage(
+                        f"Node {node.get_title()} ({node._id}) VRAM after preload_model"
+                    )
                     await node.move_to_device(self.device)
                     self.log_vram_usage(
                         f"Node {node.get_title()} ({node._id}) VRAM after move to {self.device}"
                     )
 
                     await node.run(context, node_inputs, outputs_collector)  # type: ignore[arg-type]
+                    self.log_vram_usage(
+                        f"Node {node.get_title()} ({node._id}) VRAM after run completion"
+                    )
                 finally:
-                    if Environment.is_production():
-                        await node.move_to_device("cpu")
-                        self.log_vram_usage(
-                            f"Node {node.get_title()} ({node._id}) VRAM after move to cpu"
-                        )
+                    await node.move_to_device("cpu")
+                    self.log_vram_usage(
+                        f"Node {node.get_title()} ({node._id}) VRAM after move to cpu"
+                    )
                     release_gpu_lock()
             else:
                 await node.preload_model(context)

@@ -218,11 +218,51 @@ class NodeActor:
         ]
         await node.send_update(ctx, "running", properties=safe_properties)
 
+        # Apply GPU lifecycle management for streaming nodes (same as non-streaming)
+        requires_gpu = node.requires_gpu()
+        
+        if requires_gpu and self.runner.device == "cpu":
+            error_msg = f"Node {node.get_title()} ({node._id}) requires a GPU, but no GPU is available."
+            self.logger.error(error_msg)
+            raise RuntimeError(error_msg)
+
         # Drive the unified run() method (bridges to gen_process by default)
         try:
-            await node.run(
-                ctx, NodeInputs(self.inbox), NodeOutputs(self.runner, node, ctx)
-            )
+            if requires_gpu and self.runner.device != "cpu":
+                from nodetool.workflows.workflow_runner import acquire_gpu_lock, release_gpu_lock
+                
+                await acquire_gpu_lock(node, ctx)
+                try:
+                    self.runner.log_vram_usage(
+                        f"Node {node.get_title()} ({node._id}) VRAM before GPU processing"
+                    )
+                    await node.preload_model(ctx)
+                    self.runner.log_vram_usage(
+                        f"Node {node.get_title()} ({node._id}) VRAM after preload_model"
+                    )
+                    await node.move_to_device(self.runner.device)
+                    self.runner.log_vram_usage(
+                        f"Node {node.get_title()} ({node._id}) VRAM after move to {self.runner.device}"
+                    )
+
+                    await node.run(
+                        ctx, NodeInputs(self.inbox), NodeOutputs(self.runner, node, ctx)
+                    )
+                    self.runner.log_vram_usage(
+                        f"Node {node.get_title()} ({node._id}) VRAM after run completion"
+                    )
+                finally:
+                    await node.move_to_device("cpu")
+                    self.runner.log_vram_usage(
+                        f"Node {node.get_title()} ({node._id}) VRAM after move to cpu"
+                    )
+                    release_gpu_lock()
+            else:
+                await node.preload_model(ctx)
+                await node.run(
+                    ctx, NodeInputs(self.inbox), NodeOutputs(self.runner, node, ctx)
+                )
+                
             await node.send_update(ctx, "completed", result={"status": "completed"})
         finally:
             await self._mark_downstream_eos()

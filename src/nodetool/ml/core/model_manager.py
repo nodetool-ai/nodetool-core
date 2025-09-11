@@ -46,8 +46,14 @@ class ModelManager:
         if not Environment.is_production():
             key = f"{model_id}_{task}_{path}"
             model = cls._models.get(key)
-            logger.debug(f"Retrieved model for key: {key}")
+            if model is not None:
+                logger.info(f"✓ Cache HIT: Retrieved cached model for {model_id} (task: {task}, path: {path})")
+            else:
+                logger.info(f"✗ Cache MISS: No cached model found for {model_id} (task: {task}, path: {path})")
+            logger.debug(f"Model cache status - Total models: {len(cls._models)}, Key searched: {key}")
             return model
+        else:
+            logger.debug(f"Production environment: Model caching disabled for {model_id}")
         return None
 
     @classmethod
@@ -65,9 +71,18 @@ class ModelManager:
         """
         if not Environment.is_production():
             key = f"{model_id}_{task}_{path}"
+            was_existing = key in cls._models
             cls._models[key] = model
             cls._models_by_node[node_id] = key
-            logger.debug(f"Stored model for node {node_id} with key: {key}")
+            
+            if was_existing:
+                logger.info(f"↻ Cache UPDATE: Replaced cached model for {model_id} (task: {task}, path: {path}) - Node: {node_id}")
+            else:
+                logger.info(f"+ Cache STORE: Cached new model for {model_id} (task: {task}, path: {path}) - Node: {node_id}")
+            
+            logger.debug(f"Model cache status - Total models: {len(cls._models)}, Node associations: {len(cls._models_by_node)}")
+        else:
+            logger.debug(f"Production environment: Model caching disabled, not storing {model_id} for node {node_id}")
 
     @classmethod
     def clear_unused(cls, node_ids: list[str]):
@@ -77,19 +92,52 @@ class ModelManager:
             node_ids (list[str]): List of active node IDs to check against
         """
         cleared_count = 0
+        cleared_models = []
+        
         for node_id in node_ids:
             key = cls._models_by_node.pop(node_id, None)
             if key:
-                del cls._models[key]
-                cleared_count += 1
-                logger.debug(f"Cleared model for node {node_id} with key: {key}")
-        logger.info(f"Cleared {cleared_count} unused models")
+                if key in cls._models:
+                    # Extract model info for logging
+                    parts = key.split('_', 2)
+                    model_id = parts[0] if len(parts) > 0 else 'unknown'
+                    task = parts[1] if len(parts) > 1 else 'unknown'
+                    path = parts[2] if len(parts) > 2 else None
+                    
+                    del cls._models[key]
+                    cleared_count += 1
+                    cleared_models.append(f"{model_id} (task: {task}, path: {path})")
+                    logger.debug(f"- Cleared cached model for node {node_id}: {model_id}")
+        
+        if cleared_count > 0:
+            logger.info(f"🗑️ Cache CLEANUP: Removed {cleared_count} unused models: {', '.join(cleared_models)}")
+            logger.debug(f"Model cache status after cleanup - Total models: {len(cls._models)}, Node associations: {len(cls._models_by_node)}")
+        else:
+            logger.debug("Cache cleanup: No unused models to remove")
 
     @classmethod
     def clear(cls):
         """Removes all stored models and node associations."""
         model_count = len(cls._models)
         node_count = len(cls._models_by_node)
+        
+        # Log which models are being cleared
+        if model_count > 0:
+            model_info = []
+            for key in cls._models.keys():
+                parts = key.split('_', 2)
+                model_id = parts[0] if len(parts) > 0 else 'unknown'
+                task = parts[1] if len(parts) > 1 else 'unknown'
+                path = parts[2] if len(parts) > 2 else None
+                model_info.append(f"{model_id} (task: {task}, path: {path})")
+            
+            logger.info(f"🧹 Cache CLEAR ALL: Removing {model_count} cached models, {node_count} node associations")
+            logger.debug(f"Models being cleared: {', '.join(model_info)}")
+        else:
+            logger.debug("Cache clear: No models to remove")
+        
         cls._models.clear()
         cls._models_by_node.clear()
-        logger.info(f"Cleared all models: {model_count} models, {node_count} nodes")
+        
+        if model_count > 0:
+            logger.info(f"✅ Cache cleared successfully: {model_count} models removed")

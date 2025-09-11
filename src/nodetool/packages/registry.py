@@ -140,8 +140,7 @@ def get_package_metadata_from_github(github_repo: str) -> Optional[PackageModel]
     Get package metadata from a GitHub repository.
 
     This function fetches the pyproject.toml file from a GitHub repository and
-    extracts package metadata from it. It supports both standard project metadata
-    and Poetry-style metadata.
+    extracts package metadata using PEP 621 `[project]` metadata.
 
     Args:
         github_repo: GitHub repository URL (e.g. "https://github.com/nodetool-ai/nodetool-comfy")
@@ -177,27 +176,34 @@ def get_package_metadata_from_github(github_repo: str) -> Optional[PackageModel]
     response.raise_for_status()
     pyproject_data = tomli.loads(response.text)
 
-    # Extract metadata
+    # Extract metadata (PEP 621 only)
     project_data = pyproject_data.get("project", {})
     if not project_data:
-        project_data = pyproject_data.get("tool", {}).get("poetry", {})
-
-    if not project_data:
         raise ValueError(
-            f"No project metadata found in pyproject.toml for {github_repo}"
+            f"No PEP 621 [project] metadata found in pyproject.toml for {github_repo}"
         )
 
-    # Check if repository is defined
-    if "repository" not in project_data:
-        raise ValueError(
-            f"'repository' field is missing in pyproject.toml for {github_repo}. Please define the repository URL."
-        )
+    # Authors can be list of tables
+    raw_authors = project_data.get("authors", [])
+    authors: list[str] = []
+    if isinstance(raw_authors, list) and raw_authors and isinstance(raw_authors[0], dict):
+        for a in raw_authors:
+            name = a.get("name")
+            email = a.get("email")
+            if name and email:
+                authors.append(f"{name} <{email}>")
+            elif name:
+                authors.append(str(name))
+            elif email:
+                authors.append(str(email))
+    elif isinstance(raw_authors, list):
+        authors = [str(a) for a in raw_authors]
 
     return PackageModel(
         name=project_data.get("name", github_repo),
         description=project_data.get("description", ""),
         version=project_data.get("version", "0.1.0"),
-        authors=project_data.get("authors", []),
+        authors=authors,
         repo_id=repo_id,
     )
 
@@ -1245,18 +1251,68 @@ def scan_for_package_nodes(verbose: bool = False) -> PackageModel:
     with open("pyproject.toml", "rb") as f:
         pyproject_data = tomli.loads(f.read().decode())
 
-    # Extract metadata
+    # Extract metadata (PEP 621 only)
     project_data = pyproject_data.get("project", {})
     if not project_data:
-        project_data = pyproject_data.get("tool", {}).get("poetry", {})
-
-    if not project_data:
-        print("Error: No project metadata found in pyproject.toml")
+        print("Error: No [project] metadata found in pyproject.toml")
         sys.exit(1)
 
-    repo_id = project_data.get("repository", "").split("/")[-2:]
-    repo_id = "/".join(repo_id)
+    # Name and version
     package_name = project_data.get("name", "")
+    version = project_data.get("version", "0.1.0")
+
+    # Description
+    description = project_data.get("description", "")
+
+    # Authors: PEP 621 may use list of tables, Poetry uses list of strings
+    raw_authors = project_data.get("authors", [])
+    authors: list[str] = []
+    try:
+        if isinstance(raw_authors, list) and raw_authors and isinstance(raw_authors[0], dict):
+            for a in raw_authors:
+                name = a.get("name")
+                email = a.get("email")
+                if name and email:
+                    authors.append(f"{name} <{email}>")
+                elif name:
+                    authors.append(str(name))
+                elif email:
+                    authors.append(str(email))
+        elif isinstance(raw_authors, list):
+            authors = [str(a) for a in raw_authors]
+    except Exception:
+        # Safe fallback
+        authors = []
+
+    # Repository URL -> repo_id extraction
+    repo_url: str | None = None
+    # PEP 621: [project].urls.Repository or .Source
+    urls = project_data.get("urls") if isinstance(project_data, dict) else None
+    if isinstance(urls, dict):
+        repo_url = urls.get("Repository") or urls.get("Source") or urls.get("Homepage")
+    else:
+        repo_url = None
+
+    def _to_repo_id(url: str | None) -> str | None:
+        if not url or not isinstance(url, str):
+            return None
+        try:
+            from urllib.parse import urlparse
+
+            parsed = urlparse(url)
+            path = parsed.path.strip("/")
+            if not path:
+                return None
+            # Remove trailing .git if present
+            if path.endswith(".git"):
+                path = path[:-4]
+            # Expect format: owner/repo[/...]
+            owner_repo = "/".join(path.split("/")[:2])
+            return owner_repo or None
+        except Exception:
+            return None
+
+    repo_id = _to_repo_id(repo_url) or ""
 
     # Discover examples and assets using unified Registry
     registry = Registry()
@@ -1264,9 +1320,9 @@ def scan_for_package_nodes(verbose: bool = False) -> PackageModel:
     # Create package model
     package = PackageModel(
         name=package_name,
-        description=project_data.get("description", ""),
-        version=project_data.get("version", "0.1.0"),
-        authors=project_data.get("authors", []),
+        description=description,
+        version=version,
+        authors=authors,
         repo_id=repo_id,
         nodes=[],
         examples=registry._load_examples_from_directory(
@@ -1370,7 +1426,12 @@ def save_package_metadata(package: PackageModel, verbose: bool = False):
 
 
 def update_pyproject_include(package: PackageModel, verbose: bool = False) -> None:
-    """Ensure package assets are listed in pyproject.toml's include section."""
+    """Ensure package assets are included for PEP 621 + setuptools.
+
+    This updates `[tool.setuptools.package-data]` for the `nodetool` package,
+    adding entries for the generated metadata and asset files so they are
+    included in built distributions.
+    """
     pyproject_path = "pyproject.toml"
     if not os.path.exists(pyproject_path):
         if verbose:
@@ -1411,9 +1472,9 @@ def update_pyproject_include(package: PackageModel, verbose: bool = False) -> No
         # Get existing artifacts list or create new one
         if "artifacts" not in wheel_section:  # type: ignore
             wheel_section["artifacts"] = tomlkit.array()  # type: ignore
-            include_list = wheel_section["artifacts"]  # type: ignore
+            patterns = wheel_section["artifacts"]  # type: ignore
         else:
-            include_list = wheel_section["artifacts"]  # type: ignore
+            patterns = wheel_section["artifacts"]  # type: ignore
     else:
         # Legacy Poetry format - use [tool.poetry.include]
         if "tool" not in data:
@@ -1428,37 +1489,35 @@ def update_pyproject_include(package: PackageModel, verbose: bool = False) -> No
         # Get existing include list or create new one
         if "include" not in poetry:  # type: ignore
             poetry["include"] = tomlkit.array()  # type: ignore
-            include_list = poetry["include"]  # type: ignore
+            patterns = poetry["include"]  # type: ignore
         else:
             include_item = poetry["include"]  # type: ignore
             # Convert to list if it's a single string
             if isinstance(include_item, str):
                 poetry["include"] = tomlkit.array()  # type: ignore
                 poetry["include"].append(include_item)  # type: ignore
-                include_list = poetry["include"]  # type: ignore
+                patterns = poetry["include"]  # type: ignore
             else:
-                include_list = include_item
+                patterns = include_item
 
-    # Prepare paths to include
-    metadata_path = f"src/nodetool/package_metadata/{package.name}.json"
-    asset_paths = [
-        f"src/nodetool/assets/{package.name}/{asset.name}"
-        for asset in package.assets or []
+    # Convert absolute source paths to patterns relative to package root
+    metadata_rel = f"package_metadata/{package.name}.json"
+    asset_rels = [
+        f"assets/{package.name}/{asset.name}" for asset in package.assets or []
     ]
 
-    # Add new paths that aren't already included
-    for path in [metadata_path, *asset_paths]:
-        if path not in include_list:  # type: ignore
-            include_list.append(path)  # type: ignore
+    for rel in [metadata_rel, *asset_rels]:
+        if rel not in patterns:  # type: ignore
+            patterns.append(rel)  # type: ignore
             if verbose:
-                print(f"Added {path} to include list")
+                print(f"Added package-data pattern: {rel}")
 
     # Write back the file
     with open(pyproject_path, "w", encoding="utf-8") as f:
         f.write(tomlkit.dumps(data))
 
     if verbose:
-        print(f"Updated {pyproject_path} include section with asset files")
+        print(f"Updated {pyproject_path} setuptools.package-data with asset files")
 
 
 def load_node_packages():

@@ -16,6 +16,10 @@ from nodetool.config.settings import (
     SECRETS_FILE,
 )
 
+# Global test storage instances to avoid thread-local issues in tests
+_test_asset_storage = None
+_test_temp_storage = None
+
 DEFAULT_ENV = {
     "ASSET_BUCKET": "images",
     "ASSET_DOMAIN": None,
@@ -556,17 +560,20 @@ class Environment(object):
         """
         Get the storage adapter for assets.
         """
+        global _test_asset_storage
+        
+        if cls.is_test() and _test_asset_storage is not None:
+            return _test_asset_storage
+            
         if not hasattr(cls._tls(), "asset_storage"):
             if cls.is_test():
                 from nodetool.storage.memory_storage import MemoryStorage
 
                 cls.get_logger().info("Using memory storage for asset storage")
-
-                setattr(
-                    cls._tls(),
-                    "asset_storage",
-                    MemoryStorage(base_url=cls.get_storage_api_url()),
-                )
+                
+                storage = MemoryStorage(base_url=cls.get_storage_api_url())
+                _test_asset_storage = storage
+                setattr(cls._tls(), "asset_storage", storage)
             elif (
                 cls.is_production() or cls.get_s3_access_key_id() is not None or use_s3
             ):
@@ -594,6 +601,18 @@ class Environment(object):
         asset_storage = getattr(cls._tls(), "asset_storage")
         assert asset_storage is not None
         return asset_storage
+
+    @classmethod
+    def set_asset_storage(cls, asset_storage):
+        """Override the default asset storage (mainly for testing)."""
+        setattr(cls._tls(), "asset_storage", asset_storage)
+
+    @classmethod
+    def clear_test_storage(cls):
+        """Clear global test storage instances."""
+        global _test_asset_storage, _test_temp_storage
+        _test_asset_storage = None
+        _test_temp_storage = None
 
     @classmethod
     def get_logger(cls):

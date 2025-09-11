@@ -594,6 +594,10 @@ class HFFlux(HFCheckpointModel):
     type: Literal["hf.flux"] = "hf.flux"
 
 
+class HFQwenImage(HFCheckpointModel):
+    type: Literal["hf.qwen_image"] = "hf.qwen_image"
+
+
 class HFLTXV(HFCheckpointModel):
     type: Literal["hf.ltxv"] = "hf.ltxv"
 

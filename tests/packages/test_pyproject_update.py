@@ -45,5 +45,5 @@ package-mode = true
         os.chdir(cwd)
 
     content = pyproject.read_text()
-    assert "src/nodetool/package_metadata/demo.json" in content
-    assert "src/nodetool/assets/demo/image.png" in content
+    assert "package_metadata/demo.json" in content
+    assert "assets/demo/image.png" in content

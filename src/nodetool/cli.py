@@ -607,7 +607,24 @@ def init():
     version = "0.1.0"
     description = click.prompt("Description", type=str, default="")
     author = click.prompt("Author (name <email>)", type=str)
-    python_version = "^3.10"
+    python_version = "3.11"
+
+    # Create pyproject.toml content (PEP 621 + setuptools)
+    author_name, author_email = (author, None)
+    if "<" in author and ">" in author:
+        try:
+            author_name = author.split("<")[0].strip()
+            author_email = author.split("<")[1].split(">")[0].strip()
+        except Exception:
+            author_name, author_email = author, None
+
+    deps_line = "\n".join(
+        [
+            "dependencies = [",
+            f"  \"nodetool-core @ git+https://github.com/nodetool-ai/nodetool-core.git@main\"",
+            "]",
+        ]
+    )
 
     # Create pyproject.toml content  
     author_name = author.split(' <')[0] if ' <' in author else author
@@ -700,10 +717,7 @@ def docs(output_dir: str, compact: bool, verbose: bool):
 
         project_data = pyproject_data.get("project", {})
         if not project_data:
-            project_data = pyproject_data.get("tool", {}).get("poetry", {})
-
-        if not project_data:
-            click.echo("Error: No project metadata found in pyproject.toml", err=True)
+            click.echo("Error: No [project] metadata found in pyproject.toml", err=True)
             sys.exit(1)
 
         package_name = project_data.get("name")
@@ -711,12 +725,13 @@ def docs(output_dir: str, compact: bool, verbose: bool):
             click.echo("Error: No package name found in pyproject.toml", err=True)
             sys.exit(1)
 
-        repository = project_data.get("repository")
-        if not repository:
-            click.echo("Error: No repository found in pyproject.toml", err=True)
-            sys.exit(1)
-
-        repository.split("/")[-2]
+        # Optional: repository URL from PEP 621 URLs
+        urls = project_data.get("urls") if isinstance(project_data, dict) else None
+        if isinstance(urls, dict):
+            repository = urls.get("Repository") or urls.get("Source") or urls.get("Homepage")
+        else:
+            repository = None
+        # repository is not strictly required for docs generation
 
         # Discover node classes by scanning the directory
         node_classes = []

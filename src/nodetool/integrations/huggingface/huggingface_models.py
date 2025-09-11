@@ -329,6 +329,11 @@ async def fetch_model_info(model_id: str) -> ModelInfo | None:
         return model_info
 
 
+class CachedFileInfo(BaseModel):
+    file_name: str
+    size_on_disk: int
+
+
 class CachedModel(BaseModel):
     repo_id: str
     repo_type: str
@@ -338,6 +343,7 @@ class CachedModel(BaseModel):
     the_model_type: Optional[str] = None
     the_model_info: ModelInfo | None = None
     readme: str | None = None
+    cached_files: List[CachedFileInfo] = []
 
 
 def model_type_from_model_info(
@@ -394,8 +400,18 @@ async def read_cached_hf_models(
                 return True
         return False
 
-    models = [
-        CachedModel(
+    models = []
+    for repo, model_info in zip(model_repos, model_infos):
+        # Get cached files from all revisions
+        cached_files = []
+        for revision in repo.revisions:
+            for file_info in revision.files:
+                cached_files.append(CachedFileInfo(
+                    file_name=file_info.file_name,
+                    size_on_disk=file_info.size_on_disk,
+                ))
+        
+        models.append(CachedModel(
             repo_id=repo.repo_id,
             repo_type=repo.repo_type,
             path=str(repo.repo_path),
@@ -405,9 +421,8 @@ async def read_cached_hf_models(
             the_model_type=model_type_from_model_info(
                 recommended_models, repo.repo_id, model_info
             ),
-        )
-        for repo, model_info in zip(model_repos, model_infos)
-    ]
+            cached_files=cached_files,
+        ))
     return models
 
 
