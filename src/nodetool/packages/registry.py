@@ -248,11 +248,15 @@ class Registry:
         self.logger = get_logger(__name__)
 
     def pip_install(
-        self, install_path: str, editable: bool = False, upgrade: bool = False, use_index: bool = True
+        self,
+        install_path: str,
+        editable: bool = False,
+        upgrade: bool = False,
+        use_index: bool = True,
     ) -> None:
         """
         Call the pip install command with optional wheel index support.
-        
+
         Args:
             install_path: Package name or path to install
             editable: Install in editable mode
@@ -260,18 +264,23 @@ class Registry:
             use_index: Use the NodeTool package index for wheel-based installation
         """
         cmd = [*self.pkg_mgr, "install"]
-        
+
         # Add package index if using wheel-based installation
         # Skip index for: paths, git URLs, file URLs, editable installs
-        if (use_index and not editable and 
-            not install_path.startswith(("/", ".", "git+", "file://", "http://", "https://"))):
+        if (
+            use_index
+            and not editable
+            and not install_path.startswith(
+                ("/", ".", "git+", "file://", "http://", "https://")
+            )
+        ):
             cmd.extend(["--index-url", PACKAGE_INDEX_URL])
-        
+
         if upgrade:
             cmd.append("--upgrade")
         if editable:
             cmd.append("-e")
-            
+
         cmd.append(install_path)
         subprocess.check_call(cmd)
 
@@ -326,16 +335,16 @@ class Registry:
         packages_data = response.json()["packages"]
 
         return [PackageInfo(**package) for package in packages_data]
-    
+
     def check_package_index_available(self) -> bool:
         """Check if the wheel-based package index is available.
-        
+
         Returns:
             bool: True if the package index is reachable, False otherwise
         """
         if self._index_available is not None:
             return self._index_available
-            
+
         try:
             response = requests.get(
                 PACKAGE_INDEX_URL,
@@ -349,41 +358,43 @@ class Registry:
             if self._index_available:
                 self.logger.info(f"Package index available at {PACKAGE_INDEX_URL}")
             else:
-                self.logger.warning(f"Package index returned status {response.status_code}")
+                self.logger.warning(
+                    f"Package index returned status {response.status_code}"
+                )
         except Exception as e:
             self._index_available = False
             self.logger.warning(f"Package index not available: {e}")
-            
+
         return self._index_available
-    
+
     def get_install_command_for_package(self, repo_id: str) -> str:
         """Get the recommended install command for a package.
-        
+
         Args:
             repo_id: Repository ID in format owner/project
-            
+
         Returns:
             str: The pip install command string
         """
         package_name = repo_id.split("/")[1]
-        
+
         if self.check_package_index_available():
             return f"pip install --index-url {PACKAGE_INDEX_URL} {package_name}"
         else:
             return f"pip install git+https://github.com/{repo_id}"
-    
+
     def get_package_installation_info(self, repo_id: str) -> Dict[str, Any]:
         """Get comprehensive installation information for a package.
-        
+
         Args:
             repo_id: Repository ID in format owner/project
-            
+
         Returns:
             Dict containing installation methods and recommendations
         """
         package_name = repo_id.split("/")[1]
         index_available = self.check_package_index_available()
-        
+
         return {
             "package_name": package_name,
             "repo_id": repo_id,
@@ -394,9 +405,11 @@ class Registry:
             "package_index_url": PACKAGE_INDEX_URL,
         }
 
-    def install_package(self, repo_id: str, local_path: Optional[str] = None, use_git: bool = False) -> None:
+    def install_package(
+        self, repo_id: str, local_path: Optional[str] = None, use_git: bool = False
+    ) -> None:
         """Install a package by repository ID or from local path.
-        
+
         Args:
             repo_id: Repository ID in format owner/project (e.g., 'nodetool-ai/nodetool-base')
             local_path: Local path for editable install
@@ -411,7 +424,7 @@ class Registry:
         else:
             # Try wheel-based installation first, fallback to git if it fails
             package_name = repo_id.split("/")[1]
-            
+
             try:
                 if self.check_package_index_available():
                     self.logger.info(f"Installing {package_name} from wheel index")
@@ -419,10 +432,12 @@ class Registry:
                 else:
                     raise Exception("Package index not available")
             except (subprocess.CalledProcessError, Exception) as e:
-                self.logger.warning(f"Wheel installation failed: {e}. Falling back to git installation.")
+                self.logger.warning(
+                    f"Wheel installation failed: {e}. Falling back to git installation."
+                )
                 install_path = f"git+https://github.com/{repo_id}"
                 self.pip_install(install_path, use_index=False)
-                
+
         # Clear the cache since we've installed a new package
         self.clear_packages_cache()
 
@@ -445,7 +460,7 @@ class Registry:
 
     def update_package(self, repo_id: str, use_git: bool = False) -> bool:
         """Update a package to the latest version.
-        
+
         Args:
             repo_id: Repository ID in format owner/project
             use_git: Force git-based update instead of wheel-based
@@ -462,7 +477,7 @@ class Registry:
             else:
                 # Try wheel-based update first, fallback to git if it fails
                 package_name = repo_id.split("/")[1]
-                
+
                 try:
                     if self.check_package_index_available():
                         self.logger.info(f"Updating {package_name} from wheel index")
@@ -470,10 +485,12 @@ class Registry:
                     else:
                         raise Exception("Package index not available")
                 except (subprocess.CalledProcessError, Exception) as e:
-                    self.logger.warning(f"Wheel update failed: {e}. Falling back to git update.")
+                    self.logger.warning(
+                        f"Wheel update failed: {e}. Falling back to git update."
+                    )
                     install_url = f"git+https://github.com/{repo_id}"
                     self.pip_install(install_url, upgrade=True, use_index=False)
-            
+
             print(f"Successfully updated package {repo_id}")
             # Clear the cache since we've updated a package
             self.clear_packages_cache()
@@ -679,7 +696,7 @@ class Registry:
         """
         self._examples_cache = {}
         self._example_search_cache = None
-        
+
     def clear_index_cache(self) -> None:
         """Clear the package index availability cache."""
         self._index_available = None
@@ -1170,16 +1187,34 @@ def discover_node_packages() -> list[PackageModel]:
     # First try to get the package's development location (for editable installs)
     for path in sys.path:
         if "nodetool-" in path:
-            package_path = Path(path) / "nodetool" / "package_metadata"
-            metadata_files = list(package_path.glob("*.json"))
-            for metadata_file in metadata_files:
-                try:
-                    with open(metadata_file) as f:
-                        metadata = json.load(f)
-                        metadata["source_folder"] = str(path)
-                        packages.append(PackageModel(**metadata))
-                except Exception as e:
-                    print(f"Error processing {metadata_file}: {e}")
+            base_path = Path(path)
+            # Support both project-root on sys.path with src layout and direct src on sys.path
+            candidate_dirs = [
+                base_path / "nodetool" / "package_metadata",
+                base_path / "src" / "nodetool" / "package_metadata",
+            ]
+            # If sys.path already points to a src folder, prefer that
+            if base_path.name == "src":
+                candidate_dirs.insert(0, base_path / "nodetool" / "package_metadata")
+
+            for package_path in candidate_dirs:
+                if not package_path.exists():
+                    continue
+                metadata_files = list(package_path.glob("*.json"))
+                for metadata_file in metadata_files:
+                    try:
+                        with open(metadata_file) as f:
+                            metadata = json.load(f)
+                            # Prefer src folder if present for a cleaner source path
+                            source_folder = (
+                                str(base_path / "src")
+                                if (base_path / "src").exists()
+                                else str(base_path)
+                            )
+                            metadata["source_folder"] = source_folder
+                            packages.append(PackageModel(**metadata))
+                    except Exception as e:
+                        print(f"Error processing {metadata_file}: {e}")
 
     # Get all installed distributions
     visited_paths = set()
@@ -1220,8 +1255,10 @@ def get_nodetool_package_source_folders() -> List[Path]:
     # Check for editable installs in sys.path
     for path in sys.path:
         if "nodetool-" in path:
-            # For editable installs, the path itself is typically the source folder
             source_path = Path(path)
+            # Prefer the src directory if it exists (hatch/uv editable layout)
+            if (source_path / "src").exists():
+                source_path = source_path / "src"
             if source_path.exists():
                 source_folders.append(source_path)
 
@@ -1476,9 +1513,8 @@ def update_pyproject_include(package: PackageModel, verbose: bool = False) -> No
     # Get existing artifacts list or create new one
     if "artifacts" not in wheel_section:  # type: ignore
         wheel_section["artifacts"] = tomlkit.array()  # type: ignore
-        patterns = wheel_section["artifacts"]  # type: ignore
-    else:
-        patterns = wheel_section["artifacts"]  # type: ignore
+    
+    patterns = wheel_section["artifacts"]  # type: ignore
 
     # Convert absolute source paths to patterns relative to package root
     metadata_rel = f"package_metadata/{package.name}.json"
