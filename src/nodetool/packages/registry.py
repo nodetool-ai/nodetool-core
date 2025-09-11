@@ -186,7 +186,11 @@ def get_package_metadata_from_github(github_repo: str) -> Optional[PackageModel]
     # Authors can be list of tables
     raw_authors = project_data.get("authors", [])
     authors: list[str] = []
-    if isinstance(raw_authors, list) and raw_authors and isinstance(raw_authors[0], dict):
+    if (
+        isinstance(raw_authors, list)
+        and raw_authors
+        and isinstance(raw_authors[0], dict)
+    ):
         for a in raw_authors:
             name = a.get("name")
             email = a.get("email")
@@ -1185,6 +1189,7 @@ def discover_node_packages() -> list[PackageModel]:
     import sys
 
     # First try to get the package's development location (for editable installs)
+    seen_names: set[str] = set()
     for path in sys.path:
         if "nodetool-" in path:
             base_path = Path(path)
@@ -1205,6 +1210,11 @@ def discover_node_packages() -> list[PackageModel]:
                     try:
                         with open(metadata_file) as f:
                             metadata = json.load(f)
+                            name = metadata.get("name")
+                            if isinstance(name, str):
+                                if name in seen_names:
+                                    continue
+                                seen_names.add(name)
                             # Prefer src folder if present for a cleaner source path
                             source_folder = (
                                 str(base_path / "src")
@@ -1215,12 +1225,18 @@ def discover_node_packages() -> list[PackageModel]:
                             packages.append(PackageModel(**metadata))
                     except Exception as e:
                         print(f"Error processing {metadata_file}: {e}")
+                # Avoid scanning both root and src when one already provided metadata
+                if metadata_files:
+                    break
 
     # Get all installed distributions
     visited_paths = set()
     for dist in importlib.metadata.distributions():
         package_name = dist.metadata["Name"]
         if not package_name.startswith("nodetool-"):
+            continue
+        # Skip if already discovered from editable location
+        if package_name in seen_names:
             continue
 
         # If no dev location found, try site-packages
@@ -1235,7 +1251,10 @@ def discover_node_packages() -> list[PackageModel]:
                 try:
                     metadata = json.load(f)
                     metadata["source_folder"] = str(Path(base_path).parent.parent)
-                    packages.append(PackageModel(**metadata))
+                    pkg = PackageModel(**metadata)
+                    packages.append(pkg)
+                    if isinstance(pkg.name, str):
+                        seen_names.add(pkg.name)
                 except Exception as e:
                     print(f"Error processing {metadata_file}: {e}")
 
@@ -1305,7 +1324,11 @@ def scan_for_package_nodes(verbose: bool = False) -> PackageModel:
     raw_authors = project_data.get("authors", [])
     authors: list[str] = []
     try:
-        if isinstance(raw_authors, list) and raw_authors and isinstance(raw_authors[0], dict):
+        if (
+            isinstance(raw_authors, list)
+            and raw_authors
+            and isinstance(raw_authors[0], dict)
+        ):
             for a in raw_authors:
                 name = a.get("name")
                 email = a.get("email")
@@ -1463,11 +1486,13 @@ def save_package_metadata(package: PackageModel, verbose: bool = False):
 
 
 def update_pyproject_include(package: PackageModel, verbose: bool = False) -> None:
-    """Ensure package assets are included for PEP 621 + Hatch.
+    """Ensure package assets are included for both Poetry and PEP 621 + Hatch formats.
 
-    This updates `[tool.hatch.build.targets.wheel]` for the `nodetool` package,
-    adding entries for the generated metadata and asset files so they are
-    included in built distributions.
+    This updates either:
+    - `[tool.hatch.build.targets.wheel]` for PEP 621 + Hatch projects
+    - `[tool.poetry.include]` for legacy Poetry projects
+
+    Provides backward compatibility for both package management systems.
     """
     pyproject_path = "pyproject.toml"
     if not os.path.exists(pyproject_path):
@@ -1482,39 +1507,60 @@ def update_pyproject_include(package: PackageModel, verbose: bool = False) -> No
     # Parse with tomlkit to preserve formatting and comments
     data = tomlkit.parse(content)
 
-    # Handle Hatch format with PEP 621 projects
-    if "project" not in data:
-        if verbose:
-            print("Warning: No [project] section found. This function expects PEP 621 format.")
-        return
+    # Handle both Poetry and uv/hatchling formats
+    if "project" in data:
+        # New PEP 621 + Hatch format - use [tool.hatch.build.targets.wheel]
+        if "tool" not in data:
+            data["tool"] = tomlkit.table()  # type: ignore
 
-    # Use Hatch format - [tool.hatch.build.targets.wheel]
-    if "tool" not in data:
-        data["tool"] = tomlkit.table()  # type: ignore
-    
-    tool_section = data["tool"]  # type: ignore
-    if "hatch" not in tool_section:  # type: ignore
-        tool_section["hatch"] = tomlkit.table()  # type: ignore
-    
-    hatch_section = tool_section["hatch"]  # type: ignore
-    if "build" not in hatch_section:  # type: ignore
-        hatch_section["build"] = tomlkit.table()  # type: ignore
-    
-    build_section = hatch_section["build"]  # type: ignore
-    if "targets" not in build_section:  # type: ignore
-        build_section["targets"] = tomlkit.table()  # type: ignore
-    
-    targets_section = build_section["targets"]  # type: ignore
-    if "wheel" not in targets_section:  # type: ignore
-        targets_section["wheel"] = tomlkit.table()  # type: ignore
-    
-    wheel_section = targets_section["wheel"]  # type: ignore
-    
-    # Get existing artifacts list or create new one
-    if "artifacts" not in wheel_section:  # type: ignore
-        wheel_section["artifacts"] = tomlkit.array()  # type: ignore
-    
-    patterns = wheel_section["artifacts"]  # type: ignore
+        tool_section = data["tool"]  # type: ignore
+        if "hatch" not in tool_section:  # type: ignore
+            tool_section["hatch"] = tomlkit.table()  # type: ignore
+
+        hatch_section = tool_section["hatch"]  # type: ignore
+        if "build" not in hatch_section:  # type: ignore
+            hatch_section["build"] = tomlkit.table()  # type: ignore
+
+        build_section = hatch_section["build"]  # type: ignore
+        if "targets" not in build_section:  # type: ignore
+            build_section["targets"] = tomlkit.table()  # type: ignore
+
+        targets_section = build_section["targets"]  # type: ignore
+        if "wheel" not in targets_section:  # type: ignore
+            targets_section["wheel"] = tomlkit.table()  # type: ignore
+
+        wheel_section = targets_section["wheel"]  # type: ignore
+
+        # Get existing artifacts list or create new one
+        if "artifacts" not in wheel_section:  # type: ignore
+            wheel_section["artifacts"] = tomlkit.array()  # type: ignore
+            patterns = wheel_section["artifacts"]  # type: ignore
+        else:
+            patterns = wheel_section["artifacts"]  # type: ignore
+    else:
+        # Legacy Poetry format - use [tool.poetry.include]
+        if "tool" not in data:
+            data["tool"] = tomlkit.table()  # type: ignore
+
+        tool_section = data["tool"]  # type: ignore
+        if "poetry" not in tool_section:  # type: ignore
+            tool_section["poetry"] = tomlkit.table()  # type: ignore
+
+        poetry = tool_section["poetry"]  # type: ignore
+
+        # Get existing include list or create new one
+        if "include" not in poetry:  # type: ignore
+            poetry["include"] = tomlkit.array()  # type: ignore
+            patterns = poetry["include"]  # type: ignore
+        else:
+            include_item = poetry["include"]  # type: ignore
+            # Convert to list if it's a single string
+            if isinstance(include_item, str):
+                poetry["include"] = tomlkit.array()  # type: ignore
+                poetry["include"].append(include_item)  # type: ignore
+                patterns = poetry["include"]  # type: ignore
+            else:
+                patterns = include_item
 
     # Convert absolute source paths to patterns relative to package root
     metadata_rel = f"package_metadata/{package.name}.json"
@@ -1533,7 +1579,12 @@ def update_pyproject_include(package: PackageModel, verbose: bool = False) -> No
         f.write(tomlkit.dumps(data))
 
     if verbose:
-        print(f"Updated {pyproject_path} hatch.build.targets.wheel.artifacts with asset files")
+        build_tool = (
+            "hatch.build.targets.wheel.artifacts"
+            if "project" in data
+            else "poetry.include"
+        )
+        print(f"Updated {pyproject_path} {build_tool} with asset files")
 
 
 def load_node_packages():
