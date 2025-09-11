@@ -8,7 +8,7 @@ Before installing NodeTool Core, make sure you have the following prerequisites:
 
 - Python 3.11 or higher
 - pip (Python package installer)
-- Optional: Poetry (for development)
+- Optional: uv (for fast dependency management)
 
 ## Installation Methods
 
@@ -22,12 +22,12 @@ The simplest way to install NodeTool Core is using pip:
 pip install nodetool-core
 ```
 
-### 2. Install using Poetry
+### 2. Install using uv
 
-If you prefer using Poetry for dependency management:
+If you prefer using uv for fast dependency management:
 
 ```bash
-poetry add nodetool-core
+uv add nodetool-core
 ```
 
 ### 3. Install from source
@@ -42,8 +42,8 @@ cd nodetool-core
 # Install using pip
 pip install -e .
 
-# Or install using Poetry
-poetry install
+# Or install using uv
+uv sync
 ```
 
 ## Verifying Installation

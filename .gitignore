@@ -112,8 +112,9 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
-# Poetry
-poetry.lock
+# Build artifacts
+dist/
+build/
 
 # IDE specific files
 .idea/

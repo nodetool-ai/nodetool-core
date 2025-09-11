@@ -4,7 +4,7 @@
 - Source: `src/nodetool/` (e.g., `agents/`, `api/`, `chat/`, `common/`, `dsl/`, `workflows/`).
 - Tests: `tests/` mirrors the source layout (e.g., `tests/agents`, `tests/api`).
 - Docs and examples: `docs/`, `examples/`.
-- Packaging: Poetry project (`pyproject.toml`), console entry `nodetool`.
+- Packaging: Hatch project (`pyproject.toml`), console entry `nodetool`.
 
 ## Build, Test, and Development Commands
 - `conda activate nodetool` (or use your preferred Python environment)
