@@ -7,6 +7,7 @@ handling message conversion, streaming, and tool integration.
 
 import json
 import base64
+from typing import cast
 from typing import Any, AsyncGenerator, AsyncIterator, Sequence
 import anthropic
 from anthropic.types.message_param import MessageParam
@@ -15,6 +16,7 @@ from anthropic.types.url_image_source_param import URLImageSourceParam
 from anthropic.types.base64_image_source_param import Base64ImageSourceParam
 from anthropic.types.tool_param import ToolParam
 from nodetool.chat.providers.base import ChatProvider
+from nodetool.io.media_fetch import fetch_uri_bytes_and_mime_sync
 from nodetool.chat.providers.openai_prediction import calculate_chat_cost
 from nodetool.config.logging_config import get_logger
 from nodetool.metadata.types import (
@@ -188,30 +190,46 @@ class AnthropicProvider(ChatProvider):
                         content.append({"type": "text", "text": part.text})
                     elif isinstance(part, MessageImageContent):
                         log.debug("Converting image content")
-                        # Handle image content - either data URI or raw base64
-                        uri = part.image.uri
+                        # Handle image content via shared helper for non-HTTP URIs
+                        uri = part.image.uri or ""
                         if uri.startswith("http"):
                             log.debug(f"Handling image URL: {uri[:50]}...")
-                            # Handle image URL
-                            media_type = "image/png"
-                            data = uri
                             image_source = URLImageSourceParam(
                                 type="url",
                                 url=uri,
                             )
+                        elif uri.startswith(("data:", "file://", "memory://")):
+                            log.debug(
+                                f"Fetching non-HTTP image via helper: {uri[:50]}..."
+                            )
+                            try:
+                                mime_type, data_bytes = fetch_uri_bytes_and_mime_sync(
+                                    uri
+                                )
+                                data = base64.b64encode(data_bytes).decode("utf-8")
+                                media_type = mime_type or "image/png"
+                            except Exception as e:
+                                log.error(f"Failed to fetch image from {uri}: {e}")
+                                raise
+                            image_source = Base64ImageSourceParam(
+                                type="base64",
+                                media_type=media_type,  # type: ignore
+                                data=data,
+                            )
                         elif part.image.data:
                             log.debug("Handling raw image data")
-                            # Handle raw image data
                             data = base64.b64encode(part.image.data).decode("utf-8")
-                            media_type = "image/png"  # Default assumption
+                            media_type = "image/png"
                             image_source = Base64ImageSourceParam(
                                 type="base64",
                                 media_type=media_type,  # type: ignore
                                 data=data,
                             )
                         else:
-                            log.error(f"Invalid image URI: {uri}")
-                            raise ValueError(f"Invalid image URI: {uri}")
+                            log.error("Invalid image reference with no uri or data")
+                            raise ValueError(
+                                "Invalid image reference with no uri or data"
+                            )
 
                         content.append(
                             ImageBlockParam(
@@ -269,14 +287,17 @@ class AnthropicProvider(ChatProvider):
     def format_tools(self, tools: Sequence[Any]) -> list[ToolParam]:
         """Convert tools to Anthropic's format."""
         log.debug(f"Formatting {len(tools)} tools for Anthropic API")
-        formatted_tools = [
-            {
-                "name": tool.name,
-                "description": tool.description,
-                "input_schema": tool.input_schema,
-            }
-            for tool in tools
-        ]
+        formatted_tools = cast(
+            list[ToolParam],
+            [
+                {
+                    "name": tool.name,
+                    "description": tool.description,
+                    "input_schema": tool.input_schema,
+                }
+                for tool in tools
+            ],
+        )
         log.debug(f"Formatted tools: {[tool['name'] for tool in formatted_tools]}")
         return formatted_tools
 

@@ -46,6 +46,8 @@ from nodetool.metadata.types import (
 )
 from nodetool.config.environment import Environment
 from nodetool.workflows.types import Chunk
+from nodetool.io.uri_utils import fetch_uri_bytes_and_mime
+from nodetool.media.image.image_utils import image_data_to_base64_jpeg
 
 log = get_logger(__name__)
 
@@ -161,31 +163,26 @@ class OpenAIProvider(ChatProvider):
         """
         log.debug(f"Converting URI to base64: {uri[:50]}...")
 
-        # Handle data URIs directly without fetching
+        # Handle data URIs via normalizer to ensure audio normalization
         if uri.startswith("data:"):
-            log.debug("Processing data URI directly")
+            log.debug("Processing data URI directly via normalizer")
             return self._normalize_data_uri(uri)
 
-        log.debug(f"Fetching data from URI: {uri}")
-        async with httpx.AsyncClient(
-            follow_redirects=True, timeout=600, verify=False
-        ) as client:
-            response = await client.get(uri)
-            response.raise_for_status()  # Raise an exception for bad status codes
-
-        mime_type = response.headers.get("content-type", "application/octet-stream")
+        # Use shared utility for consistent fetching across providers
+        mime_type, data_bytes = await fetch_uri_bytes_and_mime(uri)
         log.debug(
-            f"Detected mime type: {mime_type}, content length: {len(response.content)}"
+            f"Fetched bytes via utility. Mime: {mime_type}, length: {len(data_bytes)}"
         )
 
+        # Convert audio to mp3 if needed
         if mime_type.startswith("audio/") and mime_type != "audio/mpeg":
             log.debug("Converting audio to MP3 format")
             try:
-                audio = AudioSegment.from_file(io.BytesIO(response.content))
+                audio = AudioSegment.from_file(io.BytesIO(data_bytes))
                 with io.BytesIO() as buffer:
                     audio.export(buffer, format="mp3")
                     mp3_data = buffer.getvalue()
-                mime_type = "audio/mpeg"  # Update mime type to mp3
+                mime_type = "audio/mpeg"
                 content_b64 = base64.b64encode(mp3_data).decode("utf-8")
                 log.debug(f"Audio converted to MP3, new length: {len(mp3_data)}")
             except Exception as e:
@@ -195,10 +192,10 @@ class OpenAIProvider(ChatProvider):
                 print(
                     f"Warning: Failed to convert audio URI {uri} to MP3: {e}. Using original content."
                 )
-                content_b64 = base64.b64encode(response.content).decode("utf-8")
+                content_b64 = base64.b64encode(data_bytes).decode("utf-8")
         else:
             log.debug("Encoding content to base64")
-            content_b64 = base64.b64encode(response.content).decode("utf-8")
+            content_b64 = base64.b64encode(data_bytes).decode("utf-8")
 
         result = f"data:{mime_type};base64,{content_b64}"
         log.debug(f"Created data URI with mime type: {mime_type}")
@@ -328,10 +325,9 @@ class OpenAIProvider(ChatProvider):
                 }
             else:
                 log.debug("Converting raw image data")
-                # Base64 encode raw image data
-                data = base64.b64encode(content.image.data).decode("utf-8")
-                # Assuming PNG for raw data, adjust if needed
-                image_url = f"data:image/png;base64,{data}"
+                # Normalize to JPEG base64 using shared helper
+                data = image_data_to_base64_jpeg(content.image.data)
+                image_url = f"data:image/jpeg;base64,{data}"
                 log.debug(f"Raw image data processed, length: {len(data)}")
                 return {
                     "type": "image_url",

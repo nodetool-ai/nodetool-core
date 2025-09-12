@@ -40,6 +40,7 @@ from nodetool.media.image.image_utils import (
     numpy_to_pil_image,
     pil_to_png_bytes,
 )
+from nodetool.io.uri_utils import fetch_uri_bytes_and_mime
 
 log = get_logger(__name__)
 
@@ -76,124 +77,11 @@ class GeminiProvider(ChatProvider):
         return 1000000
 
     async def _uri_to_blob(self, uri: str) -> Blob:
-        """Fetch data from URI and return a Gemini Blob.
-
-        Supports http(s), data URIs, and file URIs.
-        """
+        """Fetch data from URI and return a Gemini Blob using shared utility."""
         log.debug(f"Fetching data from URI: {uri}")
-
-        # Handle data URIs (e.g. data:image/png;base64,....)
-        if uri.startswith("data:"):
-            try:
-                header, b64data = uri.split(",", 1)
-                # header example: data:image/png;base64
-                mime_type = "application/octet-stream"
-                if ";" in header:
-                    meta = header[5:]  # strip 'data:'
-                    parts = meta.split(";")
-                    if parts and "/" in parts[0]:
-                        mime_type = parts[0]
-                data = (
-                    b64data.encode("utf-8") if not isinstance(b64data, bytes) else b64data
-                )
-                import base64
-
-                raw = base64.b64decode(data)
-                log.debug(
-                    f"Parsed data URI with mime type {mime_type}, {len(raw)} bytes"
-                )
-                return Blob(mime_type=mime_type, data=raw)
-            except Exception as e:
-                log.error(f"Failed to parse data URI: {e}")
-                raise
-
-        # Handle memory:// URIs via MemoryUriCache
-        if uri.startswith("memory://"):
-            try:
-                obj = Environment.get_memory_uri_cache().get(uri)
-            except Exception:
-                obj = None
-            if obj is None:
-                raise ValueError(f"No cached object for memory URI: {uri}")
-
-            # Normalize various object types into PNG bytes
-            if isinstance(obj, PIL.Image.Image):
-                data = pil_to_png_bytes(obj)
-                return Blob(mime_type="image/png", data=data)
-            if isinstance(obj, (bytes, bytearray)):
-                raw = bytes(obj)
-                # Try to detect image via PIL and normalize to PNG for safety
-                try:
-                    with PIL.Image.open(BytesIO(raw)) as img:
-                        return Blob(mime_type="image/png", data=pil_to_png_bytes(img))
-                except Exception:
-                    # Fallback: treat as generic binary
-                    return Blob(mime_type="application/octet-stream", data=raw)
-            if hasattr(obj, "read"):
-                try:
-                    pos = obj.tell() if hasattr(obj, "tell") else None
-                    obj.seek(0) if hasattr(obj, "seek") else None
-                    raw = obj.read()
-                    if pos is not None and hasattr(obj, "seek"):
-                        obj.seek(pos)
-                    with PIL.Image.open(BytesIO(raw)) as img:
-                        return Blob(mime_type="image/png", data=pil_to_png_bytes(img))
-                except Exception:
-                    pass
-            if isinstance(obj, np.ndarray):
-                pil_img = numpy_to_pil_image(obj)
-                return Blob(mime_type="image/png", data=pil_to_png_bytes(pil_img))
-            raise ValueError(f"Unsupported object type for memory URI: {type(obj)}")
-
-        # Handle file URIs
-        if uri.startswith("file://"):
-            try:
-                import pathlib
-
-                # Convert file:// URI to local path
-                path = uri[len("file://") :]
-                p = pathlib.Path(path)
-                data = p.read_bytes()
-                mime_type, _ = mimetypes.guess_type(uri)
-                if not mime_type:
-                    mime_type = "application/octet-stream"
-                log.debug(
-                    f"Read {len(data)} bytes from file URI with mime {mime_type}"
-                )
-                return Blob(mime_type=mime_type, data=data)
-            except Exception as e:
-                log.error(f"Failed to read file URI {uri}: {e}")
-                raise
-
-        # Default: http(s)
-        async with aiohttp.ClientSession() as session:
-            async with session.get(uri) as response:
-                response.raise_for_status()  # Raise exception for bad status codes
-                data = await response.read()
-                log.debug(f"Fetched {len(data)} bytes from URI")
-
-                content_type = response.headers.get("Content-Type")
-                mime_type: str | None = None
-                if content_type:
-                    # Extract the main part (e.g., 'image/png' from 'image/png; charset=utf-8')
-                    mime_type = content_type.split(";")[0]
-                    log.debug(
-                        f"Detected mime type from Content-Type header: {mime_type}"
-                    )
-
-                if not mime_type:
-                    # Try to guess mime type from URI extension if Content-Type is missing
-                    mime_type, _ = mimetypes.guess_type(uri)
-                    log.debug(f"Guessed mime type from URI: {mime_type}")
-
-                if not mime_type:
-                    # Consider adding more robust type detection if needed (e.g., python-magic)
-                    log.error(f"Could not determine mime type for URI: {uri}")
-                    raise ValueError(f"Could not determine mime type for URI: {uri}")
-
-                blob = Blob(mime_type=mime_type, data=data)
-                log.debug(f"Created blob with mime type: {mime_type}")
-                return blob
+        mime_type, data = await fetch_uri_bytes_and_mime(uri)
+        log.debug(f"Resolved mime type {mime_type}, bytes: {len(data)}")
+        return Blob(mime_type=mime_type, data=data)
 
     async def _prepare_message_content(self, message: Message) -> list[Part]:
         """Convert Message content to a format compatible with Gemini API."""

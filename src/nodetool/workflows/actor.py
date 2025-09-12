@@ -203,7 +203,7 @@ class NodeActor:
             # For non-streaming-input nodes, gather one per inbound handle
             initial_inputs = await self._gather_initial_inputs()
 
-        self.logger.debug(f"Initial inputs: {initial_inputs}")
+        # self.logger.debug(f"Initial inputs: {initial_inputs}")
 
         for name, value in initial_inputs.items():
             node.assign_property(name, value)
@@ -220,7 +220,7 @@ class NodeActor:
 
         # Apply GPU lifecycle management for streaming nodes (same as non-streaming)
         requires_gpu = node.requires_gpu()
-        
+
         if requires_gpu and self.runner.device == "cpu":
             error_msg = f"Node {node.get_title()} ({node._id}) requires a GPU, but no GPU is available."
             self.logger.error(error_msg)
@@ -229,8 +229,11 @@ class NodeActor:
         # Drive the unified run() method (bridges to gen_process by default)
         try:
             if requires_gpu and self.runner.device != "cpu":
-                from nodetool.workflows.workflow_runner import acquire_gpu_lock, release_gpu_lock
-                
+                from nodetool.workflows.workflow_runner import (
+                    acquire_gpu_lock,
+                    release_gpu_lock,
+                )
+
                 await acquire_gpu_lock(node, ctx)
                 try:
                     self.runner.log_vram_usage(
@@ -262,7 +265,7 @@ class NodeActor:
                 await node.run(
                     ctx, NodeInputs(self.inbox), NodeOutputs(self.runner, node, ctx)
                 )
-                
+
             await node.send_update(ctx, "completed", result={"status": "completed"})
         finally:
             await self._mark_downstream_eos()

@@ -157,9 +157,8 @@ def image_ref_to_base64_jpeg(
     """
     import base64
     import urllib.parse
-    import httpx
-    from io import BytesIO
     from nodetool.config.environment import Environment
+    from nodetool.io.media_fetch import fetch_uri_bytes_and_mime_sync
 
     # Handle direct data
     if hasattr(image_ref, "data") and image_ref.data is not None:
@@ -174,88 +173,7 @@ def image_ref_to_base64_jpeg(
     if not uri:
         raise ValueError("ImageRef has no data or URI")
 
-    # Handle memory:// URIs via global memory URI cache
-    if uri.startswith("memory://"):
-        try:
-            obj = Environment.get_memory_uri_cache().get(uri)
-        except Exception:
-            obj = None
-        if obj is None:
-            raise ValueError(f"No cached object for memory URI: {uri}")
-
-        # Convert common object types to base64 JPEG
-        if isinstance(obj, PIL.Image.Image):
-            return pil_image_to_base64_jpeg(obj, max_size, quality)
-        if isinstance(obj, (bytes, bytearray)):
-            return image_data_to_base64_jpeg(bytes(obj), max_size, quality)
-        if hasattr(obj, "read"):
-            try:
-                # Try to extract bytes from file-like
-                pos = obj.tell() if hasattr(obj, "tell") else None
-                obj.seek(0) if hasattr(obj, "seek") else None
-                data = obj.read()
-                if pos is not None and hasattr(obj, "seek"):
-                    obj.seek(pos)
-                return image_data_to_base64_jpeg(data, max_size, quality)
-            except Exception:
-                pass
-        if isinstance(obj, np.ndarray):
-            pil_img = numpy_to_pil_image(obj)
-            return pil_image_to_base64_jpeg(pil_img, max_size, quality)
-        raise ValueError(f"Unsupported object type for memory URI: {type(obj)}")
-
-    # Handle data: URIs
-    if uri.startswith("data:"):
-        # Extract base64 data from data URI
-        try:
-            header, base64_data = uri.split(",", 1)
-            image_data = base64.b64decode(base64_data)
-            return image_data_to_base64_jpeg(image_data, max_size, quality)
-        except (ValueError, base64.binascii.Error) as e:
-            raise ValueError(f"Invalid data URI: {e}")
-
-    # Handle http(s) URLs
-    elif uri.startswith(("http://", "https://")):
-        try:
-            # Use URI cache to avoid repeated downloads
-            cached = None
-            try:
-                cached = Environment.get_memory_uri_cache().get(uri)
-            except Exception:
-                cached = None
-            if isinstance(cached, (bytes, bytearray)):
-                return image_data_to_base64_jpeg(bytes(cached), max_size, quality)
-
-            # Send a browser-like User-Agent to avoid blocks
-            response = httpx.get(
-                uri,
-                follow_redirects=True,
-                headers={
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-                    "Accept": "*/*",
-                    "Accept-Language": "en-US,en;q=0.9",
-                },
-            )
-            response.raise_for_status()
-            data = response.content
-            try:
-                Environment.get_memory_uri_cache().set(uri, bytes(data))
-            except Exception:
-                pass
-            return image_data_to_base64_jpeg(data, max_size, quality)
-        except Exception as e:
-            raise ValueError(f"Failed to download image from {uri}: {e}")
-
-    # Handle file:// URIs
-    elif uri.startswith("file://"):
-        try:
-            file_path = urllib.parse.urlparse(uri).path
-            with open(file_path, "rb") as f:
-                image_data = f.read()
-            return image_data_to_base64_jpeg(image_data, max_size, quality)
-        except Exception as e:
-            raise ValueError(f"Failed to load image from {uri}: {e}")
-
-    # Handle other URIs or fallback
-    else:
-        raise ValueError(f"Unsupported URI scheme for image_ref: {uri}")
+    # Delegate all URI handling to shared sync helper for DRY behavior
+    mime, data = fetch_uri_bytes_and_mime_sync(uri)
+    # Accept only image-like content; attempt conversion regardless of mime
+    return image_data_to_base64_jpeg(data, max_size, quality)

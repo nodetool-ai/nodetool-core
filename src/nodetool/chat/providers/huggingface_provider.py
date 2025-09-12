@@ -15,6 +15,9 @@ from huggingface_hub import AsyncInferenceClient
 from nodetool.chat.providers.base import ChatProvider
 from nodetool.agents.tools.base import Tool
 from nodetool.config.logging_config import get_logger
+import base64
+from nodetool.media.image.image_utils import image_data_to_base64_jpeg
+from nodetool.io.media_fetch import fetch_uri_bytes_and_mime_sync
 from nodetool.metadata.types import (
     Message,
     Provider,
@@ -215,16 +218,47 @@ class HuggingFaceProvider(ChatProvider):
                     if isinstance(part, MessageTextContent):
                         content.append({"type": "text", "text": part.text})
                     elif isinstance(part, MessageImageContent):
-                        # For image content, use image_url format
-                        log.debug(
-                            f"Adding image content with URI: {part.image.uri[:50]}..."
-                        )
-                        content.append(
-                            {
-                                "type": "image_url",
-                                "image_url": {"url": part.image.uri},
-                            }
-                        )
+                        # Normalize image inputs to data URI using shared helpers
+                        if part.image.uri:
+                            uri = part.image.uri
+                            if uri.startswith("http"):
+                                # Keep remote URLs as-is for HF compatibility
+                                log.debug(
+                                    f"Adding image content with URL: {uri[:50]}..."
+                                )
+                                content.append(
+                                    {
+                                        "type": "image_url",
+                                        "image_url": {"url": uri},
+                                    }
+                                )
+                            else:
+                                # Convert non-http URIs to data URI
+                                log.debug(
+                                    f"Converting non-HTTP image via helper: {uri[:50]}..."
+                                )
+                                mime, data = fetch_uri_bytes_and_mime_sync(uri)
+                                b64 = base64.b64encode(data).decode("utf-8")
+                                content.append(
+                                    {
+                                        "type": "image_url",
+                                        "image_url": {
+                                            "url": f"data:{mime};base64,{b64}"
+                                        },
+                                    }
+                                )
+                        elif part.image.data:
+                            # Convert raw bytes to JPEG base64 data URI
+                            log.debug("Converting raw image data to JPEG base64")
+                            b64 = image_data_to_base64_jpeg(part.image.data)
+                            content.append(
+                                {
+                                    "type": "image_url",
+                                    "image_url": {
+                                        "url": f"data:image/jpeg;base64,{b64}"
+                                    },
+                                }
+                            )
                 log.debug(f"Converted to {len(content)} content parts")
                 return {"role": "user", "content": content}
             else:
