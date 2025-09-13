@@ -258,11 +258,12 @@ class WorkflowRunner:
         """
         if self._input_queue is None:
             raise RuntimeError("Input queue is not initialized")
+        # Default to the standard InputNode output handle when none is provided
         event = {
             "op": "push",
             "input": input_name,
             "value": value,
-            "handle": source_handle,
+            "handle": source_handle or "output",
         }
         log.debug(
             f"Enqueue input push: op:{event['op']}, input:{event['input']}, handle:{event['handle']}"
@@ -278,7 +279,8 @@ class WorkflowRunner:
         """
         if self._input_queue is None:
             raise RuntimeError("Input queue is not initialized")
-        event = {"op": "end", "input": input_name, "handle": source_handle}
+        # Default to the standard InputNode output handle when none is provided
+        event = {"op": "end", "input": input_name, "handle": source_handle or "output"}
         log.debug(
             f"Enqueue input end: op:{event['op']}, input:{event['input']}, handle:{event['handle']}"
         )
@@ -313,7 +315,8 @@ class WorkflowRunner:
                     )
                     continue
                 # Determine output handle from event or InputNode defaults
-                handle = ev.get("handle")
+                # Default to the standard InputNode output handle when none is provided
+                handle = ev.get("handle") or "output"
                 if ev.get("op") == "push":
                     value = ev.get("value")
 
