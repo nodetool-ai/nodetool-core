@@ -20,6 +20,7 @@ from __future__ import annotations
 import asyncio
 from collections import deque
 from typing import Any, AsyncIterator
+from nodetool.config.logging_config import get_logger
 
 
 class NodeInbox:
@@ -39,7 +40,16 @@ class NodeInbox:
         self._arrival: deque[str] = deque()
         # Condition to coordinate producers/consumers
         self._cond: asyncio.Condition = asyncio.Condition()
+        # Event loop where this inbox/condition were created (runner loop)
+        try:
+            self._loop = asyncio.get_running_loop()
+        except RuntimeError:
+            self._loop = None
         self._closed: bool = False
+        try:
+            self._log = get_logger(__name__)
+        except Exception:
+            self._log = None
 
     def add_upstream(self, handle: str, count: int = 1) -> None:
         """Declare upstream producers for a given handle.
@@ -66,21 +76,22 @@ class NodeInbox:
         self._buffers.setdefault(handle, deque()).append(item)
         # Record arrival for multiplexed consumption preserving cross-handle order
         self._arrival.append(handle)
+        try:
+            if self._log:
+                self._log.debug(
+                    f"Inbox[{id(self)}] put: handle={handle} size={len(self._buffers.get(handle, []))}"
+                )
+        except Exception:
+            pass
 
-        # Notify waiters if an event loop is running; otherwise skip (no waiters yet)
+        # Notify waiters on the inbox's owning loop (runner loop) if available
         async def _notify() -> None:
             async with self._cond:
                 self._cond.notify_all()
 
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            # No running loop; nothing to wake up right now
-            return
-        else:
-            # Schedule the coroutine on the owning loop thread-safely
+        if self._loop is not None:
             try:
-                loop.call_soon_threadsafe(lambda: asyncio.create_task(_notify()))
+                self._loop.call_soon_threadsafe(lambda: asyncio.create_task(_notify()))
             except Exception:
                 pass
 
@@ -95,18 +106,21 @@ class NodeInbox:
         if new_val < 0:
             new_val = 0
         self._open_counts[handle] = new_val
+        try:
+            if self._log:
+                self._log.debug(
+                    f"Inbox[{id(self)}] eos: handle={handle} open={self._open_counts.get(handle,0)}"
+                )
+        except Exception:
+            pass
 
         async def _notify() -> None:
             async with self._cond:
                 self._cond.notify_all()
 
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            return
-        else:
+        if self._loop is not None:
             try:
-                loop.call_soon_threadsafe(lambda: asyncio.create_task(_notify()))
+                self._loop.call_soon_threadsafe(lambda: asyncio.create_task(_notify()))
             except Exception:
                 pass
 

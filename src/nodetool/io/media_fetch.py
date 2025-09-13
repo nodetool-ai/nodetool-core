@@ -69,17 +69,27 @@ def _parse_data_uri(uri: str) -> Tuple[str, bytes]:
         )
         return mime_type, raw
     except Exception as e:
-        raise ValueError(f"Failed to parse data URI: {e}")
+        # Tests expect the phrase "Invalid data URI" to appear
+        raise ValueError(f"Invalid data URI: {e}")
 
 
 def _fetch_file_uri(uri: str) -> Tuple[str, bytes]:
-    """Read file:// URI and return (mime, bytes)."""
+    """Read file:// URI and return (mime, bytes).
+
+    Use builtins.open so tests can mock file IO with patch("builtins.open").
+    """
     import mimetypes
     import pathlib
 
     path = uri[len("file://") :]
+    # Normalize path
     p = pathlib.Path(path)
-    data = p.read_bytes()
+    try:
+        with open(p, "rb") as f:  # type: ignore[arg-type]
+            data = f.read()
+    except Exception as e:
+        # Surface as FileNotFoundError or underlying IO error
+        raise
     mime_type, _ = mimetypes.guess_type(uri)
     if not mime_type:
         mime_type = "application/octet-stream"
@@ -160,7 +170,10 @@ async def fetch_uri_bytes_and_mime_async(uri: str) -> Tuple[str, bytes]:
         return _fetch_memory_uri(uri)
     if uri.startswith("file://"):
         return _fetch_file_uri(uri)
-    return await _fetch_http_uri_async(uri)
+    if uri.startswith("http://") or uri.startswith("https://"):
+        return await _fetch_http_uri_async(uri)
+    # Explicitly reject unsupported schemes (e.g., ftp)
+    raise ValueError(f"Unsupported URI scheme: {uri.split(':', 1)[0]}://")
 
 
 def fetch_uri_bytes_and_mime_sync(uri: str) -> Tuple[str, bytes]:
@@ -173,4 +186,7 @@ def fetch_uri_bytes_and_mime_sync(uri: str) -> Tuple[str, bytes]:
         return _fetch_memory_uri(uri)
     if uri.startswith("file://"):
         return _fetch_file_uri(uri)
-    return _fetch_http_uri_sync(uri)
+    if uri.startswith("http://") or uri.startswith("https://"):
+        return _fetch_http_uri_sync(uri)
+    # Explicitly reject unsupported schemes (e.g., ftp)
+    raise ValueError(f"Unsupported URI scheme: {uri.split(':', 1)[0]}://")

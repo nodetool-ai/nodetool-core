@@ -173,7 +173,13 @@ def image_ref_to_base64_jpeg(
     if not uri:
         raise ValueError("ImageRef has no data or URI")
 
-    # Delegate all URI handling to shared sync helper for DRY behavior
-    mime, data = fetch_uri_bytes_and_mime_sync(uri)
+    # Delegate URI handling to shared sync helper. For http(s), wrap errors with
+    # a friendlier message expected by tests.
+    try:
+        mime, data = fetch_uri_bytes_and_mime_sync(uri)
+    except Exception as e:
+        if uri.startswith("http://") or uri.startswith("https://"):
+            raise ValueError(f"Failed to download image: {e}")
+        raise
     # Accept only image-like content; attempt conversion regardless of mime
     return image_data_to_base64_jpeg(data, max_size, quality)

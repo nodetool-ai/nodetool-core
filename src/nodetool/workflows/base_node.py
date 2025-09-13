@@ -656,7 +656,6 @@ class BaseNode(BaseModel):
                 recommended_models=cls.get_recommended_models(),
                 basic_fields=cls.get_basic_fields(),
                 is_dynamic=cls.is_dynamic(),
-                is_streaming=cls.is_streaming(),
                 expose_as_tool=cls.expose_as_tool(),
                 supports_dynamic_outputs=cls.supports_dynamic_outputs(),
             )
@@ -938,20 +937,13 @@ class BaseNode(BaseModel):
         return is_assignable(prop.type, value)
 
     @classmethod
-    def is_streaming(cls):
-        """
-        Check if the node is streaming.
-        """
-        return cls.gen_process is not BaseNode.gen_process
-
-    @classmethod
     def is_cacheable(cls):
         """
         Check if the node is cacheable.
         Nodes that implement gen_process (i.e., have overridden it) are not cacheable.
         """
         # Check if gen_process method in cls is different from the one in BaseNode
-        return not cls.is_dynamic() and not cls.is_streaming()
+        return not cls.is_dynamic() and not cls.is_streaming_output()
 
     def get_dynamic_properties(self):
         from nodetool.workflows.property import Property
@@ -1357,7 +1349,7 @@ class BaseNode(BaseModel):
         - Otherwise, call `process(context)`, convert the result using `convert_output`,
           and emit via `outputs`.
         """
-        if self.__class__.is_streaming_output():
+        if self.is_streaming_output():
             agen = self.gen_process(context)
             # Iterate yielded items and forward to outputs
             async for item in agen:

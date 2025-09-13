@@ -394,7 +394,7 @@ class NodeActor:
             # Select the appropriate runner coroutine for this node
             if isinstance(node, OutputNode):
                 run_coro = self._run_output_node()
-            elif node.is_streaming_output() or node.__class__.is_streaming_input():
+            elif node.is_streaming_output() or node.is_streaming_input():
                 run_coro = self._run_streaming()
             else:
                 # Dynamic streaming: if any upstream is streaming, we still use the

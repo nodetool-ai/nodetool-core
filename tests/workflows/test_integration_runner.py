@@ -25,12 +25,12 @@ def test_workflow_runner_completes_and_produces_output(event_loop):
         APINode(
             id="in1",
             type="nodetool.workflows.test_nodes.NumberInput",
-            data={"value": 5.0},
+            data={"name": "in1", "value": 5.0},
         ),
         APINode(
             id="in2",
             type="nodetool.workflows.test_nodes.NumberInput",
-            data={"value": 3.0},
+            data={"name": "in2", "value": 3.0},
         ),
         APINode(id="mul", type="nodetool.workflows.test_nodes.Multiply", data={}),
         APINode(
@@ -40,9 +40,19 @@ def test_workflow_runner_completes_and_produces_output(event_loop):
         ),
     ]
     edges = [
-        APIEdge(id="e1", source="in1", sourceHandle="output", target="mul", targetHandle="a"),
-        APIEdge(id="e2", source="in2", sourceHandle="output", target="mul", targetHandle="b"),
-        APIEdge(id="e3", source="mul", sourceHandle="output", target="out", targetHandle="value"),
+        APIEdge(
+            id="e1", source="in1", sourceHandle="output", target="mul", targetHandle="a"
+        ),
+        APIEdge(
+            id="e2", source="in2", sourceHandle="output", target="mul", targetHandle="b"
+        ),
+        APIEdge(
+            id="e3",
+            source="mul",
+            sourceHandle="output",
+            target="out",
+            targetHandle="value",
+        ),
     ]
     api_graph = APIGraph(nodes=nodes, edges=edges)
 
@@ -89,7 +99,13 @@ def test_workflow_cancellation_drains_edges_and_finalizes(event_loop):
         ),
     ]
     edges = [
-        APIEdge(id="eS", source="slow", sourceHandle="output", target="out", targetHandle="value"),
+        APIEdge(
+            id="eS",
+            source="slow",
+            sourceHandle="output",
+            target="out",
+            targetHandle="value",
+        ),
     ]
     api_graph = APIGraph(nodes=nodes, edges=edges)
 

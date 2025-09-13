@@ -176,7 +176,7 @@ class HuggingFaceProvider(ChatProvider):
             log.debug("Using default context length: 8192")
             return 8192  # Conservative default
 
-    async def convert_message(self, message: Message) -> dict:
+    def convert_message(self, message: Message) -> dict:
         """Convert an internal message to HuggingFace's OpenAI-compatible format."""
         log.debug(f"Converting message with role: {message.role}")
 
@@ -352,7 +352,7 @@ class HuggingFaceProvider(ChatProvider):
         log.debug("Converting messages to HuggingFace format")
         hf_messages = []
         for message in messages:
-            converted = await self.convert_message(message)
+            converted = self.convert_message(message)
             if converted:  # Skip None messages
                 hf_messages.append(converted)
         log.debug(f"Converted to {len(hf_messages)} HuggingFace messages")
@@ -491,7 +491,7 @@ class HuggingFaceProvider(ChatProvider):
         log.debug("Converting messages to HuggingFace format")
         hf_messages = []
         for message in messages:
-            converted = await self.convert_message(message)
+            converted = self.convert_message(message)
             if converted:  # Skip None messages
                 hf_messages.append(converted)
         log.debug(f"Converted to {len(hf_messages)} HuggingFace messages")

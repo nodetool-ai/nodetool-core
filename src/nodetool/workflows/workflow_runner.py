@@ -36,6 +36,7 @@ import gc
 from nodetool.config.logging_config import get_logger
 import random
 import time
+import threading
 from typing import Any, AsyncGenerator, Optional
 from collections import deque
 
@@ -195,6 +196,153 @@ class WorkflowRunner:
             log.debug(
                 f"WorkflowRunner initialized for job_id: {self.job_id} with device: {self.device}"
             )
+        # Streaming input queue and dispatcher task (created during run())
+        self._input_queue: asyncio.Queue | None = None
+        self._input_task: asyncio.Task | None = None
+        # Event loop where the runner is executing; used for thread-safe enqueues
+        self._runner_loop: asyncio.AbstractEventLoop | None = None
+
+    # --- Streaming Input support for InputNode(is_streaming=True) ---
+    def _enqueue_input_event(self, event: dict[str, Any]) -> None:
+        """
+        Thread-safe enqueue of input events onto the runner's asyncio.Queue.
+
+        If called from another thread (e.g., WebSocket server loop), schedules
+        the put_nowait on the runner loop via call_soon_threadsafe.
+        """
+        if self._input_queue is None:
+            raise RuntimeError("Input queue is not initialized")
+        loop = self._runner_loop
+        if loop is not None:
+            try:
+                try:
+                    op = event.get("op")
+                    inp = event.get("input")
+                    handle = event.get("handle")
+                    log.debug(
+                        f"Enqueue (thread-safe) input event: op={op} input={inp} handle={handle} current_thread={threading.get_ident()} loop_id={id(loop)}"
+                    )
+                except Exception:
+                    pass
+                loop.call_soon_threadsafe(self._input_queue.put_nowait, event)
+                return
+            except Exception:
+                # Fallback to direct put; best-effort if loop reference is stale
+                log.debug(
+                    "call_soon_threadsafe failed; falling back to direct queue put",
+                    exc_info=True,
+                )
+        try:
+            op = event.get("op")
+            inp = event.get("input")
+            handle = event.get("handle")
+            log.debug(
+                f"Enqueue (direct) input event: op={op} input={inp} handle={handle} (no runner loop)"
+            )
+        except Exception:
+            pass
+        self._input_queue.put_nowait(event)
+
+    def _find_input_node_id(self, context: ProcessingContext, input_name: str) -> str:
+        assert context.graph is not None, "Graph not set in context"
+        for node in context.graph.inputs():
+            if getattr(node, "name", None) == input_name:
+                return node._id
+        raise ValueError(f"Input node not found for input name: {input_name}")
+
+    def push_input_value(
+        self, *, input_name: str, value: Any, source_handle: str | None = None
+    ) -> None:
+        """
+        Enqueue a streaming input event to be dispatched on the runner loop.
+        """
+        if self._input_queue is None:
+            raise RuntimeError("Input queue is not initialized")
+        event = {
+            "op": "push",
+            "input": input_name,
+            "value": value,
+            "handle": source_handle,
+        }
+        log.debug(
+            f"Enqueue input push: op:{event['op']}, input:{event['input']}, handle:{event['handle']}"
+        )
+        self._enqueue_input_event(event)
+
+    def finish_input_stream(
+        self, *, input_name: str, source_handle: str | None = None
+    ) -> None:
+        """
+        Signal end-of-stream for a streaming input. This marks downstream inboxes as
+        done for the corresponding target handles so consumers can complete.
+        """
+        if self._input_queue is None:
+            raise RuntimeError("Input queue is not initialized")
+        event = {"op": "end", "input": input_name, "handle": source_handle}
+        log.debug(
+            f"Enqueue input end: op:{event['op']}, input:{event['input']}, handle:{event['handle']}"
+        )
+        self._enqueue_input_event(event)
+
+    async def _dispatch_inputs(self, context: ProcessingContext) -> None:
+        assert self._input_queue is not None
+        assert context.graph is not None
+        graph = context.graph
+        try:
+            loop = asyncio.get_running_loop()
+            log.debug(
+                f"Input dispatcher started: loop_id={id(loop)} queue_id={id(self._input_queue)}"
+            )
+        except Exception:
+            log.debug("Input dispatcher started (loop id unavailable)")
+        while True:
+            ev = await self._input_queue.get()
+            log.debug(
+                f"Dispatch input event: op:{ev.get('op')}, input:{ev.get('input')}, handle:{ev.get('handle')}"
+            )
+            if ev.get("op") == "shutdown":
+                log.debug("Input dispatcher received shutdown; exiting")
+                return
+            try:
+                input_name: str = ev.get("input")
+                node_id = self._find_input_node_id(context, input_name)
+                node = graph.find_node(node_id)
+                if node is None:
+                    log.warning(
+                        f"Dispatch event dropped: input node not found for {input_name}"
+                    )
+                    continue
+                # Determine output handle from event or InputNode defaults
+                handle = ev.get("handle")
+                if ev.get("op") == "push":
+                    value = ev.get("value")
+
+                    for edge in graph.find_edges(node_id, handle):
+                        inbox = self.node_inboxes.get(edge.target)
+                        if inbox is not None:
+                            inbox.put(edge.targetHandle, value)
+                            context.post_message(
+                                EdgeUpdate(edge_id=edge.id or "", status="message_sent")
+                            )
+                        else:
+                            log.debug(
+                                f"No inbox for target {edge.target} on edge {edge.id}"
+                            )
+                elif ev.get("op") == "end":
+                    for edge in graph.find_edges(node_id, handle):
+                        inbox = self.node_inboxes.get(edge.target)
+                        if inbox is not None:
+                            inbox.mark_source_done(edge.targetHandle)
+                            context.post_message(
+                                EdgeUpdate(edge_id=edge.id or "", status="drained")
+                            )
+                        else:
+                            log.debug(
+                                f"No inbox for target {edge.target} on edge {edge.id}"
+                            )
+            except Exception as e:
+                log.error(f"Error dispatching input event: {e}")
+                pass
 
     def is_running(self) -> bool:
         """
@@ -332,6 +480,19 @@ class WorkflowRunner:
         context.device = self.device
         log.debug(f"Context and device set. Device: {self.device}")
 
+        # Validate that all InputNodes have non-empty names
+        invalid_inputs: list[str] = []
+        for node in graph.inputs():
+            try:
+                if not getattr(node, "name", None):
+                    invalid_inputs.append(node._id)
+            except Exception:
+                pass
+        if invalid_inputs:
+            raise ValueError(
+                f"All InputNode(s) must have a non-empty name. Invalid: {', '.join(invalid_inputs)}"
+            )
+
         input_nodes = {node.name: node for node in graph.inputs()}
 
         start_time = time.time()
@@ -348,12 +509,59 @@ class WorkflowRunner:
                         node = input_nodes[key]
                         node.assign_property("value", value)
 
-                self._handle_messages(request, context)
                 if validate_graph:
                     await self.validate_graph(context, graph)
                 if initialize_graph:
                     await self.initialize_graph(context, graph)
-                # Actor-based processing replaces legacy scheduler loop
+                # Start input dispatcher to consume queued input events and route to inboxes
+                # Capture the runner's event loop for thread-safe enqueues
+                try:
+                    self._runner_loop = asyncio.get_running_loop()
+                except RuntimeError:
+                    self._runner_loop = None
+                self._input_queue = asyncio.Queue()
+                self._input_task = asyncio.create_task(self._dispatch_inputs(context))
+                try:
+                    log.debug(
+                        f"Runner loop captured: loop_id={id(self._runner_loop) if self._runner_loop else None} thread_id={threading.get_ident()}"
+                    )
+                    log.debug(
+                        f"Input queue and dispatcher started: queue_id={id(self._input_queue)} task_id={id(self._input_task)}"
+                    )
+                except Exception:
+                    pass
+                # Enqueue initial params/messages via unified input queue
+                if request.params:
+                    for key, value in request.params.items():
+                        if key not in input_nodes:
+                            raise ValueError(f"No input node found for param: {key}")
+                        node = input_nodes[key]
+                        # push value; end stream immediately if not streaming
+                        self.push_input_value(
+                            input_name=getattr(node, "name", key), value=value
+                        )
+                        if not node.is_streaming_output():
+                            # default: treat as non-streaming and end
+                            self.finish_input_stream(
+                                input_name=getattr(node, "name", key)
+                            )
+
+                # Also enqueue default values configured directly on graph InputNodes
+                # (e.g., NumberInput.value) when not provided via request.params.
+                for node in graph.inputs():
+                    name = getattr(node, "name", None)
+                    if not name:
+                        continue
+                    # Skip if provided via params
+                    if request.params and name in request.params:
+                        continue
+                    default_value = getattr(node, "value", None)
+                    if default_value is None:
+                        continue
+                    self.push_input_value(input_name=name, value=default_value)
+                    if not node.is_streaming_output():
+                        self.finish_input_stream(input_name=name)
+
                 await self.process_graph(context, graph)
 
                 # If we reach here, no exceptions from the main processing stages
@@ -396,6 +604,14 @@ class WorkflowRunner:
             finally:
                 # This block executes whether an exception occurred or not.
                 log.info(f"Finalizing nodes for job {self.job_id} in finally block")
+                # Stop input dispatcher if running
+                try:
+                    if self._input_queue is not None:
+                        await self._input_queue.put({"op": "shutdown"})
+                    if self._input_task is not None:
+                        await self._input_task
+                except Exception:
+                    pass
                 if (
                     graph and graph.nodes
                 ):  # graph is the internal Graph instance from the start of run
@@ -656,7 +872,7 @@ class WorkflowRunner:
         from nodetool.workflows.actor import NodeActor
 
         log.info(
-            "Processing graph in actor mode (%d nodes, %d edges)",
+            "Processing graph (%d nodes, %d edges)",
             len(graph.nodes),
             len(graph.edges),
         )
@@ -664,6 +880,12 @@ class WorkflowRunner:
         for node in graph.nodes:
             inbox = self.node_inboxes.get(node._id)
             assert inbox is not None, f"No inbox found for node {node._id}"
+            # Skip starting actors for InputNodes; they are driven externally via input queue
+            try:
+                if isinstance(node, InputNode):
+                    continue
+            except Exception:
+                pass
             actor = NodeActor(self, node, context, inbox)
             tasks.append(asyncio.create_task(actor.run()))
         # Wait for all, propagate first error if any
@@ -1001,58 +1223,3 @@ class WorkflowRunner:
                 f"Torch not available, falling back to regular process for node: {node.get_title()}"
             )
             return await node.process(context)
-
-    def _handle_messages(self, req: RunJobRequest, context: ProcessingContext):
-        """
-        Handles message assignment to appropriate input nodes.
-
-        Args:
-            req (RunJobRequest): The request containing messages to be processed.
-            context (ProcessingContext): The processing context containing the graph.
-
-        Raises:
-            ValueError: If no suitable input node is found or message content is invalid.
-        """
-        if not req.messages:
-            return
-
-        chat_input_node = next(
-            (
-                node
-                for node in context.graph.nodes
-                if node.get_node_type() == "nodetool.input.ChatInput"
-            ),
-            None,
-        )
-        if chat_input_node is None:
-            string_input_node = next(
-                (
-                    node
-                    for node in context.graph.nodes
-                    if node.get_node_type() == "nodetool.input.StringInput"
-                ),
-                None,
-            )
-            if string_input_node is None:
-                raise ValueError(
-                    "Neither ChatInput nor StringInput node found. Make sure you have a ChatInput or StringInput node in your graph."
-                )
-            last_message_content = req.messages[-1].content
-            if isinstance(last_message_content, str):
-                string_input_node.assign_property("value", last_message_content)
-            elif isinstance(last_message_content, list):
-                text_content = next(
-                    (
-                        item.text
-                        for item in last_message_content
-                        if isinstance(item, MessageTextContent)
-                    ),
-                    None,
-                )
-                string_input_node.assign_property("value", text_content)
-            else:
-                raise ValueError(
-                    "Last message content is not a string or list. Make sure you have a ChatInput or StringInput node in your graph."
-                )
-        else:
-            chat_input_node.assign_property("value", req.messages)

@@ -18,7 +18,7 @@ from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.workflow_runner import WorkflowRunner
 from nodetool.workflows.threaded_event_loop import ThreadedEventLoop
-from nodetool.workflows.types import Error
+from nodetool.workflows.types import Chunk, Error
 import gc
 
 log = get_logger(__name__)
@@ -58,6 +58,8 @@ class CommandType(str, Enum):
     GET_STATUS = "get_status"
     SET_MODE = "set_mode"
     CLEAR_MODELS = "clear_models"
+    STREAM_INPUT = "stream_input"  # Push a streaming input item
+    END_INPUT_STREAM = "end_input_stream"  # Close a streaming input
 
 
 class WebSocketCommand(BaseModel):
@@ -385,6 +387,51 @@ class WebSocketRunner:
             asyncio.create_task(self.run_job(req))
             log.debug("Run job command scheduled")
             return {"message": "Job started"}
+        elif command.command == CommandType.STREAM_INPUT:
+            # Expected data: { input: str, value: Any, handle?: str }
+            if not self.runner or not self.context:
+                return {"error": "No active runner/context"}
+            input_name = command.data.get("input")
+            if not isinstance(input_name, str) or input_name.strip() == "":
+                return {"error": "Invalid input name"}
+            value = command.data.get("value")
+            handle = command.data.get("handle")
+            try:
+                log.debug(
+                    f"STREAM_INPUT received: input={input_name} handle={handle} type={type(value)}"
+                )
+                if value and value.get("type") == "chunk":
+                    value = Chunk(
+                        content=value["content"],
+                        done=value["done"],
+                        content_type=value["content_type"],
+                    )
+                self.runner.push_input_value(input_name=input_name, value=value, source_handle=handle)  # type: ignore[arg-type]
+                log.debug("STREAM_INPUT enqueued to runner input queue")
+                return {"message": "Input item streamed"}
+            except Exception as e:
+                log.exception(e)
+                return {"error": str(e)}
+        elif command.command == CommandType.END_INPUT_STREAM:
+            # Expected data: { input: str, handle?: str }
+            if not self.runner or not self.context:
+                return {"error": "No active runner/context"}
+            input_name = command.data.get("input")
+            if not isinstance(input_name, str) or input_name.strip() == "":
+                return {"error": "Invalid input name"}
+            handle = command.data.get("handle")
+            try:
+                log.debug(
+                    f"END_INPUT_STREAM received: input={input_name} handle={handle}"
+                )
+                self.runner.finish_input_stream(
+                    input_name=input_name, source_handle=handle
+                )
+                log.debug("END_INPUT_STREAM enqueued to runner input queue")
+                return {"message": "Input stream ended"}
+            except Exception as e:
+                log.exception(e)
+                return {"error": str(e)}
         elif command.command == CommandType.CANCEL_JOB:
             return await self.cancel_job()
         elif command.command == CommandType.GET_STATUS:

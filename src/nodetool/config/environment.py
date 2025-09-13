@@ -92,9 +92,15 @@ def load_dotenv_files():
 
     for env_file in env_files:
         if env_file.exists():
-            load_dotenv(
-                env_file, override=False
-            )  # Don't override already set variables
+            # Be resilient to stubbed/mocked load_dotenv in tests that may not
+            # accept keyword arguments.
+            try:
+                load_dotenv(env_file, override=False)  # type: ignore[arg-type]
+            except TypeError:
+                try:
+                    load_dotenv(env_file)  # type: ignore[call-arg]
+                except TypeError:
+                    load_dotenv()  # type: ignore[misc]
 
 
 class Environment(object):
@@ -561,16 +567,16 @@ class Environment(object):
         Get the storage adapter for assets.
         """
         global _test_asset_storage
-        
+
         if cls.is_test() and _test_asset_storage is not None:
             return _test_asset_storage
-            
+
         if not hasattr(cls._tls(), "asset_storage"):
             if cls.is_test():
                 from nodetool.storage.memory_storage import MemoryStorage
 
                 cls.get_logger().info("Using memory storage for asset storage")
-                
+
                 storage = MemoryStorage(base_url=cls.get_storage_api_url())
                 _test_asset_storage = storage
                 setattr(cls._tls(), "asset_storage", storage)

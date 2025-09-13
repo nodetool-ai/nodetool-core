@@ -17,7 +17,7 @@ from typing import Any
 from nodetool.agents.tools.base import Tool
 from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
-from nodetool.workflows.base_node import get_node_class
+from nodetool.workflows.base_node import BaseNode, get_node_class
 from nodetool.workflows.processing_context import ProcessingContext
 
 log = get_logger(__name__)
@@ -111,25 +111,30 @@ class SearchNodesTool(Tool):
             n_results=n_results,
             exclude_namespaces=exclude_namespaces,
         )
+        node_types: list[type[BaseNode]] = []
         for result in results:
             # Import node class to import necessary types
-            get_node_class(result.node_type)
+            node_type = get_node_class(result.node_type)
+            assert node_type is not None, f"Node type {result.node_type} not found"
+            node_types.append(node_type)
 
         return [
             {
-                "type": result.node_type,
-                "title": result.title,
-                "description": result.description,
+                "type": node_type.get_node_type(),
+                "title": node_type.get_title(),
+                "description": node_type.get_description(),
                 "properties": {
-                    prop.name: prop.type.get_json_schema() for prop in result.properties
+                    prop.name: prop.type.get_json_schema()
+                    for prop in node_type.properties()
                 },
                 "outputs": {
-                    out.name: out.type.get_json_schema() for out in result.outputs
+                    out.name: out.type.get_json_schema() for out in node_type.outputs()
                 },
-                "is_dynamic": result.is_dynamic,
-                "is_streaming": result.is_streaming,
+                "is_dynamic": node_type.is_dynamic(),
+                "is_streaming_output": node_type.is_streaming_output(),
+                "is_streaming_input": node_type.is_streaming_input(),
             }
-            for result in results
+            for node_type in node_types
         ]
 
 

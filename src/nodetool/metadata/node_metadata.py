@@ -61,9 +61,6 @@ class NodeMetadata(BaseModel):
         default_factory=list, description="Basic fields of the node"
     )
     is_dynamic: bool = Field(default=False, description="Whether the node is dynamic")
-    is_streaming: bool = Field(
-        default=False, description="Whether the node is streaming"
-    )
     expose_as_tool: bool = Field(
         default=False, description="Whether the node is exposed as a tool"
     )
