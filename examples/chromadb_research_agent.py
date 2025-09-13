@@ -20,7 +20,7 @@ from nodetool.agents.tools.chroma_tools import (
     ChromaHybridSearchTool,
     ChromaMarkdownSplitAndIndexTool,
 )
-from nodetool.common.async_chroma_client import get_async_chroma_client
+from nodetool.integrations.vectorstores.chroma.async_chroma_client import get_async_chroma_client
 
 
 async def test_chromadb_research_agent(provider: ChatProvider, model: str):

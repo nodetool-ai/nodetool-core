@@ -16,7 +16,7 @@ Example:
     await runner.run(websocket)
 """
 
-import logging
+from nodetool.config.logging_config import get_logger
 import json
 import msgpack
 import asyncio
@@ -27,16 +27,44 @@ from enum import Enum
 from fastapi import WebSocket
 from fastapi.websockets import WebSocketState
 from nodetool.chat.base_chat_runner import BaseChatRunner
-from nodetool.common.environment import Environment
+from nodetool.config.environment import Environment
+from nodetool.config.logging_config import get_logger
 
 
-log = logging.getLogger(__name__)
-log.setLevel(logging.DEBUG)
+log = get_logger(__name__)
 
 
 class WebSocketMode(str, Enum):
     BINARY = "binary"
     TEXT = "text"
+
+
+class ToolBridge:
+    """
+    Manages waiting for frontend tool results from WebSocket messages.
+    """
+
+    def __init__(self):
+        self._futures: dict[str, asyncio.Future] = {}
+
+    def create_waiter(self, tool_call_id: str) -> asyncio.Future:
+        """Create a future that will be resolved when tool result arrives."""
+        fut = asyncio.get_running_loop().create_future()
+        self._futures[tool_call_id] = fut
+        return fut
+
+    def resolve_result(self, tool_call_id: str, payload: dict):
+        """Resolve the waiting future with the tool result payload."""
+        fut = self._futures.pop(tool_call_id, None)
+        if fut and not fut.done():
+            fut.set_result(payload)
+
+    def cancel_all(self):
+        """Cancel all pending tool result waiters."""
+        for fut in self._futures.values():
+            if not fut.done():
+                fut.cancel()
+        self._futures.clear()
 
 
 class ChatWebSocketRunner(BaseChatRunner):
@@ -58,6 +86,9 @@ class ChatWebSocketRunner(BaseChatRunner):
         self.mode: WebSocketMode = WebSocketMode.BINARY
         # Background heartbeat task to keep the connection alive through proxies
         self.heartbeat_task: asyncio.Task | None = None
+        # Frontend tool bridge and manifest
+        self.tool_bridge = ToolBridge()
+        self.client_tools_manifest: dict[str, dict] = {}
 
     async def connect(self, websocket: WebSocket):
         """
@@ -95,7 +126,6 @@ class ChatWebSocketRunner(BaseChatRunner):
         await websocket.accept()
         self.websocket = websocket
         log.info("WebSocket connection established for chat")
-        log.debug("WebSocket connection ready")
 
         # Start heartbeat to keep idle connections alive
         if not self.heartbeat_task or self.heartbeat_task.done():
@@ -138,14 +168,14 @@ class ChatWebSocketRunner(BaseChatRunner):
                         "message": "Generation stopped by user",
                     }
                 )
-            except:
+            except Exception:
                 pass
         except Exception as e:
             log.error(f"Error processing message: {str(e)}", exc_info=True)
             error_message = {"type": "error", "message": str(e)}
             try:
                 await self.send_message(error_message)
-            except:
+            except Exception:
                 pass
 
     async def disconnect(self):
@@ -156,6 +186,9 @@ class ChatWebSocketRunner(BaseChatRunner):
         if self.current_task and not self.current_task.done():
             log.debug("Stopping threaded event loop during disconnect")
             self.current_task.cancel()
+
+        # Cancel any pending tool result waiters
+        self.tool_bridge.cancel_all()
 
         # Stop heartbeat task
         if self.heartbeat_task and not self.heartbeat_task.done():
@@ -235,13 +268,13 @@ class ChatWebSocketRunner(BaseChatRunner):
                 raw_bytes = message["bytes"]
                 data = msgpack.unpackb(raw_bytes)
                 self.mode = WebSocketMode.BINARY
-                log.info(f"Received binary WebSocket command: {data}")
+                log.debug(f"Received binary WebSocket command: {data}")
                 return data
             elif "text" in message:
                 raw_text = message["text"]
                 data = json.loads(raw_text)
                 self.mode = WebSocketMode.TEXT
-                log.info(f"Received text WebSocket command: {data}")
+                log.debug(f"Received text WebSocket command: {data}")
                 return data
             else:
                 log.warning(f"Received message with unknown format: {message}")
@@ -306,13 +339,33 @@ class ChatWebSocketRunner(BaseChatRunner):
                     if self.current_task and not self.current_task.done():
                         log.debug("Stopping current processor")
                         self.current_task.cancel()
-                        await self.send_message(
-                            {
-                                "type": "generation_stopped",
-                                "message": "Generation stopped by user",
-                            }
-                        )
-                        log.info("Generation stopped by user command")
+                    # Cancel any pending tool result waiters
+                    self.tool_bridge.cancel_all()
+                    await self.send_message(
+                        {
+                            "type": "generation_stopped",
+                            "message": "Generation stopped by user",
+                        }
+                    )
+                    log.info("Generation stopped by user command")
+                    continue
+
+                # Handle client tools manifest
+                if (
+                    isinstance(data, dict)
+                    and data.get("type") == "client_tools_manifest"
+                ):
+                    tools = data.get("tools", [])
+                    self.client_tools_manifest = {tool["name"]: tool for tool in tools}
+                    log.debug(f"Received client tools manifest with {len(tools)} tools")
+                    continue
+
+                # Handle tool result from frontend
+                if isinstance(data, dict) and data.get("type") == "tool_result":
+                    tool_call_id = data.get("tool_call_id")
+                    if tool_call_id:
+                        self.tool_bridge.resolve_result(tool_call_id, data)
+                        log.debug(f"Resolved tool result for call_id: {tool_call_id}")
                     continue
 
                 # Respond to ping without invoking processors
@@ -336,7 +389,7 @@ class ChatWebSocketRunner(BaseChatRunner):
                 try:
                     error_message = {"type": "error", "message": str(e)}
                     await self.send_message(error_message)
-                except:
+                except Exception:
                     pass  # Ignore errors when sending error message
                 continue
 

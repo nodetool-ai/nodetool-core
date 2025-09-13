@@ -2,12 +2,12 @@ from datetime import date, datetime, timedelta, timezone
 from enum import Enum
 import enum
 from types import NoneType
-from nodetool.types.workflow import Workflow
 import numpy as np
 import pandas as pd
 from pydantic import BaseModel, Field
 from typing import Any, Literal, Optional, Type, Union
 import base64
+from pathlib import Path
 
 from nodetool.metadata.type_metadata import TypeMetadata
 from nodetool.types.graph import Graph
@@ -100,7 +100,7 @@ class BaseType(BaseModel):
             raise ValueError("Type name is missing. Types must derive from BaseType")
         if type_name not in NameToType:
             raise ValueError(
-                f"Unknown type name: {type_name}. Types must derive from BaseType"
+                f"Unknown type name: {type_name}. Types must derive from BaseType. Data: {data}"
             )
         return NameToType[type_name](**data)
 
@@ -108,18 +108,6 @@ class BaseType(BaseModel):
 class Collection(BaseType):
     type: Literal["collection"] = "collection"
     name: str = ""
-
-
-class Event(BaseType):
-    """
-    An event is a special object in Nodetool.
-    It can be dispatched by a node async.
-    Nodes can received events async.
-    """
-
-    type: Literal["event"] = "event"
-    name: str = ""
-    payload: dict[str, Any] = {}
 
 
 #######################
@@ -203,6 +191,21 @@ class AssetRef(BaseType):
     uri: str = ""
     asset_id: str | None = None
     data: Any = None
+
+    @staticmethod
+    def from_file(path: str):
+        # Accept already-formed file URIs
+        if isinstance(path, str) and path.startswith("file://"):
+            return AssetRef(uri=path)
+
+        try:
+            resolved_path = Path(path).expanduser().resolve(strict=False)
+            return AssetRef(uri=resolved_path.as_uri())
+        except Exception:
+            # Fallback: best-effort POSIX-style URI
+            posix_path = Path(path).as_posix()
+            prefix = "file:///" if not posix_path.startswith("/") else "file://"
+            return AssetRef(uri=f"{prefix}{posix_path}")
 
     def to_dict(self):
         res = {
@@ -289,6 +292,15 @@ class DocumentRef(AssetRef):
     """
 
     type: Literal["document"] = "document"
+
+
+class RSSEntry(BaseType):
+    type: Literal["rss_entry"] = "rss_entry"
+    title: str = ""
+    link: str = ""
+    published: "Datetime" = Datetime()
+    summary: str = ""
+    author: str = ""
 
 
 class WorkflowRef(BaseType):
@@ -580,6 +592,10 @@ class HFStableDiffusion3(HFCheckpointModel):
 
 class HFFlux(HFCheckpointModel):
     type: Literal["hf.flux"] = "hf.flux"
+
+
+class HFQwenImage(HFCheckpointModel):
+    type: Literal["hf.qwen_image"] = "hf.qwen_image"
 
 
 class HFLTXV(HFCheckpointModel):
@@ -2042,17 +2058,6 @@ class IMAPConnection(BaseType):
         return bool(self.host and self.username and self.password)
 
 
-class RSSEntry(BaseType):
-    """Represents an RSS entry."""
-
-    type: Literal["rss_entry"] = "rss_entry"
-    title: str = ""
-    link: str = ""
-    published: Datetime = Datetime()
-    summary: str = ""
-    author: str = ""
-
-
 class LoraWeight(BaseType):
     """A weight for a LoRA model."""
 
@@ -2077,3 +2082,11 @@ class Source(BaseType):
     type: Literal["source"] = "source"
     title: str = ""
     url: str = ""
+
+
+class LeannSearchResult(BaseType):
+    type: Literal["leann_search_result"] = "leann_search_result"
+    id: str
+    score: float
+    text: str
+    metadata: dict[str, Any]

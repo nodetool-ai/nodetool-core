@@ -1,78 +1,59 @@
 """
-Workflow execution engine for processing directed acyclic graphs (DAGs) of computational nodes.
+Workflow execution engine using per-node actors for DAG graphs.
 
-This module provides the core workflow execution functionality, handling parallel processing,
-resource management, and orchestration of computational nodes. It supports both CPU and
-GPU-based computations with automatic device selection and memory management.
+This module implements the actor-based execution model for workflow graphs:
+- One lightweight async task (NodeActor) per node drives that node to completion.
+- Actors consume inputs from per-node inboxes, run the node (`process` once or
+  `gen_process` for streaming outputs), and deliver outputs downstream.
+- End-of-stream (EOS) is tracked per input handle; actors mark downstream EOS on
+  completion or error to unblock consumers.
 
-The primary class, `WorkflowRunner`, manages the execution of a workflow graph defined by
-`RunJobRequest` and `ProcessingContext`. It orchestrates node execution, message passing
-between nodes, and handles GPU resources via an `OrderedLock`.
+Unified model:
+- Everything is a stream; single values are delivered as one-item streams.
+- Nodes either consume once (buffered `process`) or iteratively (`gen_process`
+  with `is_streaming_input() = True`).
+- For repeating a subgraph per item, prefer an explicit ForEach/Map group node
+  that feeds the subgraph N times and streams/collects outputs.
 
-Key Components:
-    - WorkflowRunner: Main execution engine that processes DAGs of nodes.
-    - OrderedLock: A FIFO lock mechanism primarily used for managing access to GPU resources,
-                   ensuring that nodes acquire GPU access in a sequential, ordered manner.
-    - Message: A Pydantic model representing data passed between nodes.
-
-Core Functionality:
-    - Graph Processing: Parses and validates the workflow graph, initializing nodes.
-    - Node Execution: Processes individual nodes, handling inputs, outputs, and execution logic.
-                       Supports regular nodes, iterator nodes, and output nodes.
-    - Parallelism: Executes independent nodes in parallel using `asyncio`.
-    - GPU Management:
-        - Uses `OrderedLock` to serialize GPU access.
-        - Attempts to move models to and from GPU, and to CPU to free VRAM.
-        - Implements retry logic for CUDA OutOfMemory errors, including VRAM cleanup attempts.
-    - Message Passing: Manages a message queue for inter-node communication.
-    - Result Caching: Supports caching of results for cacheable nodes.
-    - Error Handling: Captures and reports errors at both node and job levels.
-    - Progress Tracking: Sends updates on node and job status.
-    - Dynamic Device Selection: Chooses between "cpu", "cuda", or "mps" based on availability.
-    - Context Management: Utilizes `torch_context` for managing PyTorch-specific operations,
-                          including ComfyUI progress hooks if available.
+Core features:
+- Validation and initialization of nodes based on a `Graph`.
+- Unified execution for streaming and non-streaming nodes without a central scheduler loop.
+- GPU coordination via a global FIFO lock when a node requires GPU.
+- Caching for cacheable nodes, progress reporting, and output updates for `OutputNode`s.
+- Dynamic device selection (cpu, cuda, mps) and torch context hooks (optional Comfy).
 
 Example:
-    ```python
     from nodetool.workflows.run_job_request import RunJobRequest
     from nodetool.workflows.processing_context import ProcessingContext
 
-    # Assuming req and context are properly initialized
     runner = WorkflowRunner(job_id="unique_job_id")
     await runner.run(req, context)
-    ```
-
-Dependencies:
-    - Optional: `torch`, `comfy` (for GPU operations and ComfyUI integration)
-    - Required: `asyncio`, `pydantic`, `logging`
 """
 
 import asyncio
 from contextlib import contextmanager
 import gc
-import logging
+from nodetool.config.logging_config import get_logger
+import random
 import time
+import threading
 from typing import Any, AsyncGenerator, Optional
 from collections import deque
-import random
 
-from nodetool.common.model_manager import ModelManager
+from nodetool.ml.core.model_manager import ModelManager
 from nodetool.types.job import JobUpdate
 from nodetool.workflows.base_node import (
     BaseNode,
     InputNode,
     OutputNode,
 )
-from nodetool.workflows.types import NodeProgress, NodeUpdate, OutputUpdate
-from nodetool.metadata.types import Event, MessageTextContent
+from nodetool.workflows.types import EdgeUpdate, NodeProgress, NodeUpdate, OutputUpdate
+from nodetool.metadata.types import MessageTextContent
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.common.environment import Environment
+from nodetool.config.environment import Environment
 from nodetool.workflows.graph import Graph
-from nodetool.types.graph import (
-    Graph as APIGraph,
-)
-from nodetool.types.graph import Node, Edge
+from nodetool.workflows.inbox import NodeInbox
 
 # Optional dependencies check
 TORCH_AVAILABLE = False
@@ -92,8 +73,8 @@ try:
 except ImportError:
     pass
 
-log = logging.getLogger(__name__)
-# log.setLevel(logging.DEBUG)
+log = get_logger(__name__)
+# Log level is controlled by env (DEBUG/NODETOOL_LOG_LEVEL)
 
 MAX_RETRIES = 2
 BASE_DELAY = 1  # seconds
@@ -153,32 +134,26 @@ def get_available_vram():
 
 class WorkflowRunner:
     """
-    A workflow execution engine that processes directed acyclic graphs (DAGs) of computational nodes.
+    Actor-based DAG execution engine for computational nodes.
 
-    The WorkflowRunner handles the execution of complex workflows by managing node dependencies,
-    parallel processing, GPU resource allocation using an `OrderedLock`, and result caching.
-    It supports both CPU and GPU-based computations, with automatic device selection
-    (CPU, CUDA, MPS) based on availability and node requirements.
-
-    The engine processes a graph by:
-    1. Validating the graph structure and node inputs.
-    2. Initializing all nodes.
-    3. Processing initial nodes (those with no dependencies).
-    4. Entering a main loop to manage message passing and execute ready nodes in batches.
-    5. Handling node-specific logic, including GPU operations, caching, and retries for OOM errors.
+    WorkflowRunner orchestrates execution by:
+    1. Validating the graph and initializing nodes.
+    2. Building per-node `NodeInbox` instances and attaching them to nodes.
+    3. Starting one `NodeActor` per node; each actor consumes inputs, executes the node
+       (`process` once or `gen_process` for streaming), and emits outputs downstream.
+    4. Managing GPU access via a global FIFO lock when needed.
+    5. Handling caching, output updates, and cleanup.
 
     Attributes:
-        job_id (str): Unique identifier for the workflow execution.
-        status (str): Current status of the workflow (e.g., "running", "completed", "error").
-        current_node (Optional[str]): ID of the node currently being processed (primarily for ComfyUI progress).
-        context (Optional[ProcessingContext]): The processing context for the current job.
-        outputs (dict[str, Any]): A dictionary to store the final outputs of the workflow,
-                                populated by `OutputNode`s.
-        device (str): The primary computing device ("cpu", "cuda", "mps") selected for the workflow.
-        active_processing_node_ids (set[str]): A set of node IDs currently being processed in an
-                                             async task, to prevent re-processing before completion.
-        edge_queues (dict[tuple[str, str, str, str], deque[Any]]): A dictionary to store edge queues.
-        active_generators (dict[str, tuple[AsyncGenerator, dict[str, Any]]]): Stores (generator_iterator, initial_config_properties)
+        job_id: Unique identifier for this workflow run.
+        status: "running", "completed", or "error".
+        current_node: ID of the node currently being processed (for progress hooks).
+        context: The active `ProcessingContext` during a run.
+        outputs: Final outputs collected from `OutputNode`s (list per output name).
+        device: Selected device ("cpu", "cuda", "mps").
+        active_processing_node_ids: Node IDs currently running in async tasks.
+        node_inboxes: Per-node inboxes for input delivery and EOS tracking.
+        node_inboxes: Per-node inboxes for input delivery and EOS tracking.
     """
 
     def __init__(
@@ -203,10 +178,7 @@ class WorkflowRunner:
         self.active_processing_node_ids: set[str] = (
             set()
         )  # Track nodes currently in an async task
-        self.edge_queues: dict[tuple[str, str, str, str], deque[Any]] = {}
-        self.active_generators: dict[str, tuple[AsyncGenerator, dict[str, Any]]] = (
-            {}
-        )  # Stores (generator_iterator, initial_config_properties)
+        self.node_inboxes: dict[str, NodeInbox] = {}
         self.disable_caching = disable_caching
         if device:
             self.device = device
@@ -224,6 +196,153 @@ class WorkflowRunner:
             log.debug(
                 f"WorkflowRunner initialized for job_id: {self.job_id} with device: {self.device}"
             )
+        # Streaming input queue and dispatcher task (created during run())
+        self._input_queue: asyncio.Queue | None = None
+        self._input_task: asyncio.Task | None = None
+        # Event loop where the runner is executing; used for thread-safe enqueues
+        self._runner_loop: asyncio.AbstractEventLoop | None = None
+
+    # --- Streaming Input support for InputNode(is_streaming=True) ---
+    def _enqueue_input_event(self, event: dict[str, Any]) -> None:
+        """
+        Thread-safe enqueue of input events onto the runner's asyncio.Queue.
+
+        If called from another thread (e.g., WebSocket server loop), schedules
+        the put_nowait on the runner loop via call_soon_threadsafe.
+        """
+        if self._input_queue is None:
+            raise RuntimeError("Input queue is not initialized")
+        loop = self._runner_loop
+        if loop is not None:
+            try:
+                try:
+                    op = event.get("op")
+                    inp = event.get("input")
+                    handle = event.get("handle")
+                    log.debug(
+                        f"Enqueue (thread-safe) input event: op={op} input={inp} handle={handle} current_thread={threading.get_ident()} loop_id={id(loop)}"
+                    )
+                except Exception:
+                    pass
+                loop.call_soon_threadsafe(self._input_queue.put_nowait, event)
+                return
+            except Exception:
+                # Fallback to direct put; best-effort if loop reference is stale
+                log.debug(
+                    "call_soon_threadsafe failed; falling back to direct queue put",
+                    exc_info=True,
+                )
+        try:
+            op = event.get("op")
+            inp = event.get("input")
+            handle = event.get("handle")
+            log.debug(
+                f"Enqueue (direct) input event: op={op} input={inp} handle={handle} (no runner loop)"
+            )
+        except Exception:
+            pass
+        self._input_queue.put_nowait(event)
+
+    def _find_input_node_id(self, context: ProcessingContext, input_name: str) -> str:
+        assert context.graph is not None, "Graph not set in context"
+        for node in context.graph.inputs():
+            if getattr(node, "name", None) == input_name:
+                return node._id
+        raise ValueError(f"Input node not found for input name: {input_name}")
+
+    def push_input_value(
+        self, *, input_name: str, value: Any, source_handle: str | None = None
+    ) -> None:
+        """
+        Enqueue a streaming input event to be dispatched on the runner loop.
+        """
+        if self._input_queue is None:
+            raise RuntimeError("Input queue is not initialized")
+        event = {
+            "op": "push",
+            "input": input_name,
+            "value": value,
+            "handle": source_handle,
+        }
+        log.debug(
+            f"Enqueue input push: op:{event['op']}, input:{event['input']}, handle:{event['handle']}"
+        )
+        self._enqueue_input_event(event)
+
+    def finish_input_stream(
+        self, *, input_name: str, source_handle: str | None = None
+    ) -> None:
+        """
+        Signal end-of-stream for a streaming input. This marks downstream inboxes as
+        done for the corresponding target handles so consumers can complete.
+        """
+        if self._input_queue is None:
+            raise RuntimeError("Input queue is not initialized")
+        event = {"op": "end", "input": input_name, "handle": source_handle}
+        log.debug(
+            f"Enqueue input end: op:{event['op']}, input:{event['input']}, handle:{event['handle']}"
+        )
+        self._enqueue_input_event(event)
+
+    async def _dispatch_inputs(self, context: ProcessingContext) -> None:
+        assert self._input_queue is not None
+        assert context.graph is not None
+        graph = context.graph
+        try:
+            loop = asyncio.get_running_loop()
+            log.debug(
+                f"Input dispatcher started: loop_id={id(loop)} queue_id={id(self._input_queue)}"
+            )
+        except Exception:
+            log.debug("Input dispatcher started (loop id unavailable)")
+        while True:
+            ev = await self._input_queue.get()
+            log.debug(
+                f"Dispatch input event: op:{ev.get('op')}, input:{ev.get('input')}, handle:{ev.get('handle')}"
+            )
+            if ev.get("op") == "shutdown":
+                log.debug("Input dispatcher received shutdown; exiting")
+                return
+            try:
+                input_name: str = ev.get("input")
+                node_id = self._find_input_node_id(context, input_name)
+                node = graph.find_node(node_id)
+                if node is None:
+                    log.warning(
+                        f"Dispatch event dropped: input node not found for {input_name}"
+                    )
+                    continue
+                # Determine output handle from event or InputNode defaults
+                handle = ev.get("handle")
+                if ev.get("op") == "push":
+                    value = ev.get("value")
+
+                    for edge in graph.find_edges(node_id, handle):
+                        inbox = self.node_inboxes.get(edge.target)
+                        if inbox is not None:
+                            inbox.put(edge.targetHandle, value)
+                            context.post_message(
+                                EdgeUpdate(edge_id=edge.id or "", status="message_sent")
+                            )
+                        else:
+                            log.debug(
+                                f"No inbox for target {edge.target} on edge {edge.id}"
+                            )
+                elif ev.get("op") == "end":
+                    for edge in graph.find_edges(node_id, handle):
+                        inbox = self.node_inboxes.get(edge.target)
+                        if inbox is not None:
+                            inbox.mark_source_done(edge.targetHandle)
+                            context.post_message(
+                                EdgeUpdate(edge_id=edge.id or "", status="drained")
+                            )
+                        else:
+                            log.debug(
+                                f"No inbox for target {edge.target} on edge {edge.id}"
+                            )
+            except Exception as e:
+                log.error(f"Error dispatching input event: {e}")
+                pass
 
     def is_running(self) -> bool:
         """
@@ -233,19 +352,6 @@ class WorkflowRunner:
             bool: True if the workflow status is "running", False otherwise.
         """
         return self.status == "running"
-
-    def _initialize_edge_queues(self, graph: Graph):
-        log.debug("Initializing edge queues for graph with %d edges", len(graph.edges))
-        for edge in graph.edges:
-            edge_key = (
-                edge.source,
-                edge.sourceHandle,
-                edge.target,
-                edge.targetHandle,
-            )
-            self.edge_queues[edge_key] = deque()
-            log.debug("Initialized queue for edge %s", edge_key)
-        log.debug("Edge queues initialized: %s", list(self.edge_queues.keys()))
 
     def _filter_invalid_edges(self, graph: Graph) -> None:
         """Remove edges that reference non-existent nodes/slots or feed into a node's
@@ -292,6 +398,12 @@ class WorkflowRunner:
 
             # Edge passed all checks – keep it
             valid_edges.append(edge)
+
+        # Save removed edge IDs for potential teardown notifications
+        try:
+            self._removed_edge_ids = removed
+        except Exception:
+            pass
 
         if removed:
             log.warning(
@@ -353,19 +465,7 @@ class WorkflowRunner:
 
         assert request.graph is not None, "Graph is required"
 
-        self.edge_queues.clear()
-
-        # Load node instances using the context
-        # loaded_node_instances = []
-        # for node in req.graph.nodes:
-        #     loaded_node_instances.append(BaseNode.from_dict(node.model_dump()))
-        # log.debug("Loaded %d node instances", len(loaded_node_instances))
-
-        # Create the internal Graph object with these loaded instances
         graph = Graph.from_dict(request.graph.model_dump())
-
-        # Filter invalid/miswired edges before initializing queues to avoid passing
-        # messages into non-existent properties/outputs.
         self._filter_invalid_edges(graph)
 
         log.info(
@@ -375,11 +475,23 @@ class WorkflowRunner:
         )
 
         context.graph = graph
-        self._initialize_edge_queues(graph)
-        log.debug("Edge queues after initialization: %s", self.edge_queues)
+        self._initialize_inboxes(context, graph)
         self.context = context
         context.device = self.device
         log.debug(f"Context and device set. Device: {self.device}")
+
+        # Validate that all InputNodes have non-empty names
+        invalid_inputs: list[str] = []
+        for node in graph.inputs():
+            try:
+                if not getattr(node, "name", None):
+                    invalid_inputs.append(node._id)
+            except Exception:
+                pass
+        if invalid_inputs:
+            raise ValueError(
+                f"All InputNode(s) must have a non-empty name. Invalid: {', '.join(invalid_inputs)}"
+            )
 
         input_nodes = {node.name: node for node in graph.inputs()}
 
@@ -397,11 +509,59 @@ class WorkflowRunner:
                         node = input_nodes[key]
                         node.assign_property("value", value)
 
-                self._handle_messages(request, context)
                 if validate_graph:
                     await self.validate_graph(context, graph)
                 if initialize_graph:
                     await self.initialize_graph(context, graph)
+                # Start input dispatcher to consume queued input events and route to inboxes
+                # Capture the runner's event loop for thread-safe enqueues
+                try:
+                    self._runner_loop = asyncio.get_running_loop()
+                except RuntimeError:
+                    self._runner_loop = None
+                self._input_queue = asyncio.Queue()
+                self._input_task = asyncio.create_task(self._dispatch_inputs(context))
+                try:
+                    log.debug(
+                        f"Runner loop captured: loop_id={id(self._runner_loop) if self._runner_loop else None} thread_id={threading.get_ident()}"
+                    )
+                    log.debug(
+                        f"Input queue and dispatcher started: queue_id={id(self._input_queue)} task_id={id(self._input_task)}"
+                    )
+                except Exception:
+                    pass
+                # Enqueue initial params/messages via unified input queue
+                if request.params:
+                    for key, value in request.params.items():
+                        if key not in input_nodes:
+                            raise ValueError(f"No input node found for param: {key}")
+                        node = input_nodes[key]
+                        # push value; end stream immediately if not streaming
+                        self.push_input_value(
+                            input_name=getattr(node, "name", key), value=value
+                        )
+                        if not node.is_streaming_output():
+                            # default: treat as non-streaming and end
+                            self.finish_input_stream(
+                                input_name=getattr(node, "name", key)
+                            )
+
+                # Also enqueue default values configured directly on graph InputNodes
+                # (e.g., NumberInput.value) when not provided via request.params.
+                for node in graph.inputs():
+                    name = getattr(node, "name", None)
+                    if not name:
+                        continue
+                    # Skip if provided via params
+                    if request.params and name in request.params:
+                        continue
+                    default_value = getattr(node, "value", None)
+                    if default_value is None:
+                        continue
+                    self.push_input_value(input_name=name, value=default_value)
+                    if not node.is_streaming_output():
+                        self.finish_input_stream(input_name=name)
+
                 await self.process_graph(context, graph)
 
                 # If we reach here, no exceptions from the main processing stages
@@ -410,6 +570,14 @@ class WorkflowRunner:
                 ):  # Check if it wasn't set to error by some internal logic
                     self.status = "completed"
 
+            except asyncio.CancelledError:
+                # Gracefully handle external cancellation.
+                # We do not emit synthetic per-edge "drained" UI messages.
+                self.status = "cancelled"
+                if send_job_updates:
+                    context.post_message(
+                        JobUpdate(job_id=self.job_id, status="cancelled")
+                    )
             except Exception as e:
                 error_message_for_job_update = str(e)
                 log.error(
@@ -436,22 +604,41 @@ class WorkflowRunner:
             finally:
                 # This block executes whether an exception occurred or not.
                 log.info(f"Finalizing nodes for job {self.job_id} in finally block")
+                # Stop input dispatcher if running
+                try:
+                    if self._input_queue is not None:
+                        await self._input_queue.put({"op": "shutdown"})
+                    if self._input_task is not None:
+                        await self._input_task
+                except Exception:
+                    pass
                 if (
                     graph and graph.nodes
                 ):  # graph is the internal Graph instance from the start of run
                     for node in graph.nodes:
-                        await node.finalize(context)
+                        try:
+                            await node.finalize(context)
+                        except Exception as e:
+                            log.debug(
+                                "Finalize failed for node %s (%s): %s",
+                                node.get_title(),
+                                node._id,
+                                e,
+                                exc_info=True,
+                            )
+                        inbox = self.node_inboxes.get(node._id)
+                        if inbox is not None:
+                            try:
+                                await inbox.close_all()
+                            except Exception:
+                                pass
                 log.debug("Nodes finalized in finally block.")
 
                 if TORCH_AVAILABLE and torch.cuda.is_available():
                     torch.cuda.empty_cache()
                 log.debug("CUDA cache emptied if available.")
 
-                self.active_generators.clear()
-                log.info(
-                    f"Cleared active_generators for job {self.job_id} in finally block"
-                )
-                log.debug("Final edge queue state: %s", self.edge_queues)
+                # No legacy generator state to clear in actor mode
 
             # This part is reached ONLY IF no exception propagated from the try-except block.
             # If an exception was raised and re-thrown by the 'except' block, execution does not reach here.
@@ -473,17 +660,6 @@ class WorkflowRunner:
                         )
                     )
             # If self.status became "error" and the exception was re-raised, we don't reach here.
-            # If self.status became "error" due to some internal logic but no exception was re-raised (not current design),
-            # then we might reach here with status "error", and no "completed" message would be sent.
-
-        # This log helps understand the ultimate exit status of the run() method itself.
-        log.info(
-            f"WorkflowRunner.run for job_id: {self.job_id} method ending with status: {self.status}"
-        )
-        log.debug("Workflow outputs: %s", str(self.outputs)[:1000])
-        log.debug(
-            f"WorkflowRunner.run finished for job_id: {self.job_id}. Final status: {self.status}, Outputs: {self.outputs}"
-        )
 
     async def validate_graph(self, context: ProcessingContext, graph: Graph):
         """
@@ -598,11 +774,6 @@ class WorkflowRunner:
         """
         Sends messages from a completed node or streaming node to connected target nodes.
 
-        For each key-value pair in the `result` dictionary (representing an output slot
-        and its value), this method finds all outgoing edges from that slot. If the value
-        is an Event object, it is handled specially to trigger immediate processing.
-        Otherwise, the value is appended to the `deque` in `self.edge_queues`.
-
         Args:
             node (BaseNode): The source node that has produced the results.
             result (dict[str, Any]): A dictionary where keys are output slot names
@@ -612,971 +783,119 @@ class WorkflowRunner:
         """
         log.debug(f"Sending messages from {node.get_title()} ({node.id})")
         for key, value_to_send in result.items():
+            if not node.should_route_output(key):
+                log.debug(
+                    "Routing suppressed by node hook for output '%s' on node %s",
+                    key,
+                    node.id,
+                )
+                continue
             # find edges from node.id and this specific output slot (key)
             outgoing_edges = context.graph.find_edges(node.id, key)
             for edge in outgoing_edges:
-                edge_key = (
-                    edge.source,
-                    edge.sourceHandle,
-                    edge.target,
-                    edge.targetHandle,
-                )
-
-                if edge_key not in self.edge_queues:
-                    log.warning(
-                        f"Edge key {edge_key} not found in self.edge_queues. "
-                        f"Message from {node.get_title()} ({node.id}) for slot '{key}' not sent."
-                    )
-                    continue
-
-                # Enqueue the value so normal downstream processing can occur (including OutputNodes)
-                # Additionally, if the target node is an OutputNode, capture the value immediately so
-                # that workflows which rely solely on streaming updates still have their outputs
-                # available even if the OutputNode is not explicitly executed before termination.
-                target_node = context.graph.find_node(edge.target)
-                if target_node and isinstance(target_node, OutputNode):
-                    output_name = getattr(target_node, "name", "") or edge.targetHandle
-                    existing_values = self.outputs.get(output_name, [])
-                    if not existing_values or existing_values[-1] != value_to_send:
-                        self.outputs.setdefault(output_name, []).append(value_to_send)
-
-                self.edge_queues[edge_key].append(value_to_send)
                 log.debug(
                     f"Sent message from {node.get_title()} ({node.id}) output '{key}' "
-                    f"to {edge.target} input '{edge.targetHandle}' via edge_queue. Value: {str(value_to_send)[:50]}"
+                    f"to {edge.target} input '{edge.targetHandle}'. Value: {str(value_to_send)[:50]}"
+                )
+                # Deliver to inboxes for streaming-input consumers
+                inbox = self.node_inboxes.get(edge.target)
+                if inbox is not None:
+                    inbox.put(edge.targetHandle, value_to_send)
+                context.post_message(
+                    EdgeUpdate(
+                        edge_id=edge.id or "",
+                        status="message_sent",
+                    )
                 )
         log.debug(f"send_messages finished for node: {node.get_title()} ({node.id})")
 
-    async def _process_trigger_nodes(
-        self,
-        context: ProcessingContext,
-        graph: Graph,
-    ):
-        """
-        Processes trigger nodes in the graph (those with no incoming edges).
-
-        These nodes are typically input nodes.
-
-        Args:
-            context (ProcessingContext): The execution context for the workflow,
-                                     used for posting updates and errors.
-            graph (Graph): The graph of nodes to be processed.
-
-        Raises:
-            Exception: If any of the initial nodes raise an exception during their
-                       `process_node` call. The first such exception encountered is
-                       re-raised after logging and posting error messages.
-                       The job status is also set to "error".
-        """
-        log.info("Identifying and running trigger nodes (nodes without incoming edges)")
-        log.debug("_process_trigger_nodes called.")
-        initial_processing_tasks = []
-        initial_nodes_for_tasks = []
+    def _initialize_inboxes(self, context: ProcessingContext, graph: Graph) -> None:
+        """Build and attach `NodeInbox` instances for each node based on graph topology."""
+        self.node_inboxes.clear()
+        # Pre-compute upstream counts per (node_id, handle)
+        upstream_counts: dict[tuple[str, str], int] = {}
+        for edge in graph.edges:
+            key = (edge.target, edge.targetHandle)
+            upstream_counts[key] = upstream_counts.get(key, 0) + 1
 
         for node in graph.nodes:
-            # A node is a trigger if it has no incoming edges to any of its input handles.
-            # These nodes derive their initial values from configuration (e.g. node.data or req.params).
-            has_incoming_edges = any(edge.target == node._id for edge in graph.edges)
-            if not has_incoming_edges:
-                log.debug(
-                    f"Queueing initial/trigger node for processing: {node.get_title()} ({node._id})"
-                )
-                # Inputs for these nodes are typically part of their config, not passed dynamically here.
-                initial_processing_tasks.append(self.process_node(context, node, {}))
-                initial_nodes_for_tasks.append(node)
+            inbox = NodeInbox()
+            # Attach per-handle upstream counts
+            # Only handles with at least one upstream are registered; others remain implicit
+            for (target_id, handle), count in upstream_counts.items():
+                if target_id == node._id:
+                    inbox.add_upstream(handle, count)
+            self.node_inboxes[node._id] = inbox
+            node.attach_inbox(inbox)
 
-        if initial_processing_tasks:
-            results = await asyncio.gather(
-                *initial_processing_tasks, return_exceptions=True
-            )
-            for i, (node_obj, result_or_exc) in enumerate(
-                zip(initial_nodes_for_tasks, results)
-            ):
-                if isinstance(result_or_exc, Exception):
-                    log.error(
-                        f"Error processing initial node {node_obj.get_title()}: {result_or_exc}"
-                    )
-                    context.post_message(
-                        NodeUpdate(
-                            node_id=node_obj.id,
-                            node_name=node_obj.get_title(),
-                            node_type=node_obj.get_node_type(),
-                            status="error",
-                            error=str(result_or_exc)[:1000],
-                        )
-                    )
-                    log.debug(
-                        f"Error in _process_trigger_nodes for node {node_obj.get_title()}: {result_or_exc}",
-                        exc_info=True,
-                    )
-                    raise result_or_exc
-        log.info(
-            "Trigger node processing complete – processed %d trigger node(s)",
-            len(initial_nodes_for_tasks),
-        )
+    def drain_active_edges(self, context: ProcessingContext, graph: Graph) -> None:
+        """Post a drained update for any edge with pending or open input.
 
-    def _get_ready_nodes_and_prepare_tasks(
-        self,
-        context: ProcessingContext,
-        graph: Graph,
-    ) -> tuple[list[tuple[BaseNode, dict[str, Any]]], list[asyncio.Task], bool]:
-        """
-        Identifies nodes ready for processing and creates `asyncio.Task`s for them.
-
-        A node is considered ready if:
-        1. It is not currently in `self.active_processing_node_ids`.
-        2. EITHER:
-           a. It's a streaming node and `node._id` is in `self.active_generators` (already initialized).
-           b. All its required input slots (defined by incoming edges)
-              have messages available in the `self.edge_queues`.
-           c. An event message is available for any of its input slots (for event handling).
-
-        Nodes identified as ready are added to `self.active_processing_node_ids`.
-        For non-streaming nodes, inputs are consumed from `edge_queues`.
-        For active streaming nodes, input dict is empty as they self-drive or use stored config.
-        For event-driven processing, the event is passed specially.
+        Inspects each edge's target node inbox and posts an ``EdgeUpdate`` with
+        status ``"drained"`` for edges whose target handle either still has
+        buffered items or open upstream sources. This is intended for workflow
+        teardown (completed, cancelled, or error) to ensure front‑end consumers
+        stop listening to streams and clear any spinners.
 
         Args:
-            context (ProcessingContext): The execution context for the workflow.
-            graph (Graph): The graph of nodes.
+            context: The processing context used to post messages.
+            graph: The workflow graph containing edges to inspect.
 
         Returns:
-            tuple[list[tuple[BaseNode, dict[str, Any]]], list[asyncio.Task], bool]:
-                A tuple containing:
-                - `ready_node_task_details_list`: List of `(BaseNode, dict_of_inputs_for_run)`
-                  tuples. For active generator nodes, dict is empty. For event processing,
-                  dict contains special event marker.
-                - `tasks_to_run_this_iteration`: List of `asyncio.Task` objects.
-                - `any_progress_potential`: Boolean indicating if any node was scheduled
-                                          (either an active generator or a node with inputs).
+            None
         """
-        log.debug("Scanning graph for ready nodes")
-        log.debug("_get_ready_nodes_and_prepare_tasks called.")
-        tasks_to_run_this_iteration = []
-        ready_node_task_details_list: list[tuple[BaseNode, dict[str, Any]]] = []
-        any_progress_potential = False
-
-        for node in graph.nodes:
-            # Skip nodes already scheduled or running
-            if node._id in self.active_processing_node_ids:
-                log.debug(
-                    f"Node {node.get_title()} ({node._id}) is already active. Skipping."
-                )
-                continue
-
-            # Case 1: Active streaming node ready to pull next item
-            streaming_task = self._try_prepare_active_streaming_task(context, node)
-            if streaming_task is not None:
-                detail, task = streaming_task
-                log.debug(
-                    f"Active streaming node {node.get_title()} ({node._id}) is ready to pull next item."
-                )
-                tasks_to_run_this_iteration.append(task)
-                ready_node_task_details_list.append(detail)
-                self.active_processing_node_ids.add(node._id)
-                any_progress_potential = True
-                continue
-
-            # Case 2: Event-driven processing takes priority when an Event is present on any handle
-            event_inputs = self._detect_event_and_prepare_inputs(graph, node)
-            if event_inputs is not None:
-                log.info(
-                    f"Event detected for node {node.get_title()} on input handle. Preparing for immediate processing."
-                )
-                tasks_to_run_this_iteration.append(
-                    self.process_node(context, node, event_inputs)
-                )
-                ready_node_task_details_list.append((node, event_inputs))
-                self.active_processing_node_ids.add(node._id)
-                any_progress_potential = True
-                log.debug(
-                    f"Node {node.get_title()} ({node._id}) scheduled for event-triggered processing. "
-                    f"Inputs provided: {list(event_inputs.keys())}"
-                )
-                continue
-
-            # Case 3: Regular message-driven processing when all required inputs are available
-            regular_inputs = self._prepare_regular_inputs_if_available(graph, node)
-            if regular_inputs is None:
-                continue
-
-            log.debug(
-                f"Node {node.get_title()} ({node._id}) is ready for processing. Inputs provided: {list(regular_inputs.keys())}"
-            )
-            tasks_to_run_this_iteration.append(
-                self.process_node(context, node, dict(regular_inputs))
-            )
-            ready_node_task_details_list.append((node, dict(regular_inputs)))
-            self.active_processing_node_ids.add(node._id)
-            any_progress_potential = True
-
-        log.debug("Found %d ready nodes", len(ready_node_task_details_list))
-        log.debug(
-            f"_get_ready_nodes_and_prepare_tasks found {len(ready_node_task_details_list)} ready nodes. any_progress_potential: {any_progress_potential}"
-        )
-        return (
-            ready_node_task_details_list,
-            tasks_to_run_this_iteration,
-            any_progress_potential,
-        )
-
-    def _try_prepare_active_streaming_task(
-        self, context: ProcessingContext, node: BaseNode
-    ) -> Optional[tuple[tuple[BaseNode, dict[str, Any]], Any]]:
-        """
-        Returns a task detail and coroutine for an active streaming node ready to yield the next item.
-        If the node is not an active streaming generator, returns None.
-        """
-        if node.is_streaming_output() and node._id in self.active_generators:
-            active_stream_inputs: dict[str, Any] = {}
-            return (
-                (node, active_stream_inputs),
-                self.process_node(context, node, active_stream_inputs),
-            )
-        return None
-
-    def _detect_event_and_prepare_inputs(
-        self, graph: Graph, node: BaseNode
-    ) -> Optional[dict[str, Any]]:
-        """
-        Detects whether any input handle for the node has an Event at the head of its queue.
-        If so, consumes one message from each available input handle and returns the inputs dict.
-        Returns None if no event is detected or if nothing could be consumed.
-        """
-        node_input_handles = {
-            edge.targetHandle for edge in graph.edges if edge.target == node._id
-        }
-
-        # Peek for an event on any handle
-        event_detected = False
-        for handle_name in node_input_handles:
-            for edge in graph.edges:
-                if edge.target == node._id and edge.targetHandle == handle_name:
-                    edge_key = (
-                        edge.source,
-                        edge.sourceHandle,
-                        edge.target,
-                        edge.targetHandle,
-                    )
-                    if edge_key in self.edge_queues and self.edge_queues[edge_key]:
-                        first_item = self.edge_queues[edge_key][0]
-                        if isinstance(first_item, Event):  # type: ignore
-                            event_detected = True
-                            break
-            if event_detected:
-                break
-
-        if not event_detected:
-            return None
-
-        # Consume one message from each handle that has something, prioritizing immediate processing
-        inputs_for_run: dict[str, Any] = {}
-        for handle_to_fill in node_input_handles:
-            for edge_iter in graph.edges:
-                if (
-                    edge_iter.target == node._id
-                    and edge_iter.targetHandle == handle_to_fill
+        if not graph or not graph.edges:
+            return
+        for edge in graph.edges:
+            try:
+                inbox = self.node_inboxes.get(edge.target)
+                if inbox is None:
+                    continue
+                if inbox.has_buffered(edge.targetHandle) or inbox.is_open(
+                    edge.targetHandle
                 ):
-                    edge_key_consume = (
-                        edge_iter.source,
-                        edge_iter.sourceHandle,
-                        edge_iter.target,
-                        edge_iter.targetHandle,
-                    )
-                    if (
-                        edge_key_consume in self.edge_queues
-                        and self.edge_queues[edge_key_consume]
-                    ):
-                        item = self.edge_queues[edge_key_consume].popleft()
-                        inputs_for_run[handle_to_fill] = item
-                        log.debug(
-                            f"Consumed message for event-triggered node {node.get_title()} input '{handle_to_fill}'. "
-                            f"Queue for edge {edge_key_consume} now has {len(self.edge_queues[edge_key_consume])} items."
+                    if edge.id:
+                        context.post_message(
+                            EdgeUpdate(edge_id=edge.id, status="drained")
                         )
-                        break
-
-        if not inputs_for_run:
-            log.warning(
-                f"Event was detected for {node.get_title()}, but no inputs were consumed. Skipping node for this cycle."
-            )
-            return None
-
-        return inputs_for_run
-
-    def _prepare_regular_inputs_if_available(
-        self, graph: Graph, node: BaseNode
-    ) -> Optional[dict[str, Any]]:
-        """
-        For non-event, non-active-streaming nodes, determines if all required input slots
-        have messages available. If yes, consumes one message per required slot and returns
-        the inputs dict. Returns None if not all inputs are available or if the node should
-        not be scheduled in this pass (e.g., trigger nodes without edges and not streaming).
-        """
-        required_input_slots = {
-            edge.targetHandle for edge in graph.edges if edge.target == node._id
-        }
-
-        # Trigger nodes with no edge-defined input slots are handled elsewhere unless streaming
-        if not required_input_slots and not (
-            node.is_streaming_output() and node._id in self.active_generators
-        ):
-            return None
-
-        # Ensure all required slots have at least one message available
-        for slot_name in required_input_slots:
-            slot_has_available_data = False
-            for edge in graph.edges:
-                if edge.target == node._id and edge.targetHandle == slot_name:
-                    edge_key = (
-                        edge.source,
-                        edge.sourceHandle,
-                        edge.target,
-                        edge.targetHandle,
-                    )
-                    if edge_key in self.edge_queues and self.edge_queues[edge_key]:
-                        slot_has_available_data = True
-                        break
-            if not slot_has_available_data:
-                return None
-
-        # Consume one message per required slot
-        inputs_for_this_run: dict[str, Any] = {}
-        for slot_name in required_input_slots:
-            for edge in graph.edges:
-                if edge.target == node._id and edge.targetHandle == slot_name:
-                    edge_key = (
-                        edge.source,
-                        edge.sourceHandle,
-                        edge.target,
-                        edge.targetHandle,
-                    )
-                    if edge_key in self.edge_queues and self.edge_queues[edge_key]:
-                        item = self.edge_queues[edge_key].popleft()
-                        inputs_for_this_run[slot_name] = item
-                        log.debug(
-                            f"Consumed message for {node.get_title()} slot '{slot_name}' from edge {edge_key}. "
-                            f"Queue for edge {edge_key} now has {len(self.edge_queues[edge_key])} items."
-                        )
-                        break
-
-        if required_input_slots and not inputs_for_this_run:
-            return None
-
-        return inputs_for_this_run
-
-    async def _execute_node_batch(
-        self,
-        context: ProcessingContext,
-        ready_node_task_details_list: list[tuple[BaseNode, dict[str, Any]]],
-        tasks_to_run: list[asyncio.Task],
-    ) -> bool:
-        """
-        Executes a batch of node processing tasks concurrently and handles results.
-
-        This method uses `asyncio.gather` to run the provided `tasks_to_run`.
-        After completion (or error) of each task:
-        - The corresponding node is removed from `self.active_processing_node_ids`.
-        - If an error occurred, it's logged and a `NodeUpdate` is posted.
-        - The node is added to `processed_nodes` (to mark it as attempted).
-        - If successful, the node is added to `processed_nodes`.
-        - CRITICALLY, for successful nodes, the inputs that were just consumed for this run
-          (from `inputs_that_were_used`) are cleared from the `node_inputs_buffer`.
-          If a node's entry in the buffer becomes empty, it's removed.
-
-        Args:
-            context (ProcessingContext): The execution context.
-            ready_node_task_details_list (list[tuple[BaseNode, dict[str, Any]]]):
-                List of `(BaseNode, dict_of_inputs_used)` tuples corresponding to the tasks.
-                The `dict_of_inputs_used` is crucial for clearing the correct buffer entries.
-            tasks_to_run (list[asyncio.Task]): The list of `asyncio.Task` objects to execute.
-            node_inputs_buffer (dict[str, dict[str, Any]]): Buffer of inputs, which will be
-                modified by clearing consumed inputs for successful nodes.
-
-        Returns:
-            bool: True if any tasks were dispatched and processed (i.e., `tasks_to_run` was not empty),
-                  False otherwise.
-        """
-        log.debug("Executing node batch of size %d", len(tasks_to_run))
-        log.debug(f"_execute_node_batch called with {len(tasks_to_run)} tasks.")
-        if not tasks_to_run:
-            return False
-
-        results = await asyncio.gather(*tasks_to_run, return_exceptions=True)
-        executed_something = False
-
-        for i, (node_processed, inputs_that_were_used) in enumerate(
-            ready_node_task_details_list
-        ):
-            executed_something = True
-            self.active_processing_node_ids.remove(
-                node_processed._id
-            )  # Node task finished, remove from active set
-
-            if isinstance(results[i], Exception):
-                log.error(
-                    f"Error processing node {node_processed.get_title()}: {results[i]}"
-                )
-                context.post_message(
-                    NodeUpdate(
-                        node_id=node_processed.id,
-                        node_name=node_processed.get_title(),
-                        node_type=node_processed.get_node_type(),
-                        status="error",
-                        error=str(results[i])[:1000],
-                    )
-                )
-                log.debug(
-                    f"Exception in _execute_node_batch for node {node_processed.get_title()}: {results[i]}",
-                    exc_info=True,
-                )
-                raise results[i]  # Propagate the error to halt graph processing
-
-        log.debug("Batch execution completed. Success=%s", executed_something)
-        log.debug(
-            f"_execute_node_batch finished. executed_something: {executed_something}"
-        )
-        return executed_something
-
-    def _check_loop_termination_conditions(
-        self,
-        context: ProcessingContext,
-        graph: Graph,
-        iterations_without_progress: int,
-        max_iterations_limit: int,
-    ) -> bool:
-        # Primary condition for normal termination:
-        # If no new data was consumed into nodes AND no nodes actually ran for a few cycles.
-        if iterations_without_progress > 2:
-            log.info(
-                f"System has been idle for {iterations_without_progress} iterations (no new tasks scheduled, "
-                f"no tasks completed, no tasks in-flight). Checking for termination."
-            )
-            log.debug(f"Active processing node IDs: {self.active_processing_node_ids}")
-            log.debug(f"Current edge queues: {self.edge_queues}")
-            # Check if there's any pending data in any edge queue. If so, it might be a stall.
-            # Otherwise, it's a clean completion.
-            pending_data_in_queues = False
-            for edge_key, queue in self.edge_queues.items():
-                if queue:
-                    log.warning(
-                        f"Graph processing concluding, but edge queue {edge_key} still has {len(queue)} items."
-                    )
-                    pending_data_in_queues = True
-
-            if pending_data_in_queues:
-                # If there is still data queued after sufficient idle iterations,
-                # this indicates a potential deadlock or stall. Terminate with warning.
-                log.warning(
-                    "Terminating workflow despite pending data in edge queues after idle iterations. "
-                    "This may indicate a deadlock or unreachable nodes."
-                )
-                return True  # Terminate the processing loop due to potential deadlock.
-
-            # No pending data and idle for sufficient iterations – safe to terminate.
-            return True
-
-        log.debug(
-            f"_check_loop_termination_conditions returning False (continue loop). iterations_without_progress: {iterations_without_progress}"
-        )
-        return False  # Default: continue loop
-
-    async def _main_processing_loop(
-        self,
-        context: ProcessingContext,
-        graph: Graph,
-        parent_id: str | None,  # Used for logging context
-    ):
-        """
-        The main event loop for processing nodes within a graph (or subgraph).
-
-        This loop iteratively performs the following steps until termination conditions are met:
-        1. Identifies ready nodes and prepares tasks: Calls `_get_ready_nodes_and_prepare_tasks` to find nodes
-           whose input dependencies are met and creates processing tasks for them.
-        2. Executes node batch: Calls `_execute_node_batch` to run the tasks for ready nodes
-           concurrently, clearing consumed inputs upon success.
-        3. Updates progress counter: Resets `iterations_without_progress` if messages were
-           consumed or nodes were processed; otherwise, increments it.
-        4. Checks termination: Calls `_check_loop_termination_conditions` to see if the
-           loop should exit (e.g., due to completion, stall, or max iterations).
-
-        Args:
-            context (ProcessingContext): The execution context for the workflow.
-            graph (Graph): The graph (or subgraph) of nodes to be processed.
-            parent_id (str | None): Optional ID of a parent group node, used primarily for
-                                    contextual logging if this is a subgraph execution.
-        """
-        log.info(
-            "Entering main processing loop (%d nodes, %d edges)",
-            len(graph.nodes),
-            len(graph.edges),
-        )
-        log.debug(f"_main_processing_loop started for parent_id: {parent_id}")
-        iterations_without_progress = 0
-        # Heuristic limit: N*3 (3 passes per node for complex message patterns) + buffer
-        max_iterations_limit = len(graph.nodes) * 3 + 10
-
-        while True:
-            # 1. Identify ready nodes and prepare tasks
-            ready_node_task_details_list, tasks_to_run, any_progress_potential = (
-                self._get_ready_nodes_and_prepare_tasks(context, graph)
-            )
-
-            # 2. Execute the batch of ready nodes
-            nodes_were_processed_this_iteration = await self._execute_node_batch(
-                context,
-                ready_node_task_details_list,
-                tasks_to_run,
-            )
-
-            # 3. Update progress counter
-            # Progress is defined as:
-            #   - New tasks were identified and scheduled in this iteration (any_progress_potential), OR
-            #   - Tasks from this iteration's batch ran (nodes_were_processed_this_iteration), OR
-            #   - There are still tasks from previous iterations that are in-flight (active_processing_node_ids is not empty).
-            # If none of these are true, then the system is truly idle for this iteration.
-            if (
-                nodes_were_processed_this_iteration
-                or any_progress_potential
-                or self.active_processing_node_ids
-            ):
-                log.debug(
-                    f"Progress made in iteration. Resetting iterations_without_progress. nodes_processed: {nodes_were_processed_this_iteration}, progress_potential: {any_progress_potential}, active_ids: {self.active_processing_node_ids}"
-                )
-                iterations_without_progress = 0
-            else:
-                iterations_without_progress += 1
-                log.debug(
-                    f"System idle this iteration. iterations_without_progress: {iterations_without_progress} for parent_id: {parent_id}"
-                )
-
-            # 4. Check termination conditions
-            if self._check_loop_termination_conditions(
-                context,
-                graph,
-                iterations_without_progress,
-                max_iterations_limit,
-            ):
-                log.info("Main processing loop finished – termination condition met")
-                break
-
-        log.debug("Main processing loop complete")
-        log.debug(f"_main_processing_loop finished for parent_id: {parent_id}")
+            except Exception:
+                # Best effort – ignore errors during draining
+                pass
 
     async def process_graph(
         self, context: ProcessingContext, graph: Graph, parent_id: str | None = None
-    ):
-        """
-        Orchestrates the processing of a given graph (or subgraph).
+    ) -> None:
+        """Actor-based processing: start one actor per node and await completion.
 
-        This method performs the following high-level steps:
-        1. Initializes a set for `processed_nodes`.
-        2. Processes initial nodes: Calls `_process_initial_nodes` to execute nodes
-           that have no input dependencies within the graph.
-           If initial node processing fails, graph processing is halted.
-        3. Starts the main processing loop: Calls `_main_processing_loop` to handle
-           message passing, identify ready nodes, and execute them iteratively until
-           the graph is complete or a termination condition (e.g., deadlock) is met.
-        4. Logs a warning if not all nodes were processed upon loop completion, which
-           might indicate an issue if termination wasn't due to full completion.
-
-        Args:
-            context (ProcessingContext): The execution context for the workflow.
-            graph (Graph): The graph of nodes to be processed.
-            parent_id (str | None): Optional ID of a parent group node, used if this graph
-                                    is a subgraph being processed. This is primarily for
-                                    logging and contextual information.
+        OutputNodes are not driven by actors (outputs are captured in send_messages).
         """
-        log.info(f"Processing graph (parent_id: {parent_id})")
-        log.debug(
-            "Graph has %d nodes and %d edges",
+        from nodetool.workflows.actor import NodeActor
+
+        log.info(
+            "Processing graph (%d nodes, %d edges)",
             len(graph.nodes),
             len(graph.edges),
         )
-        log.debug(
-            f"process_graph called for parent_id: {parent_id}. Graph: {len(graph.nodes)} nodes, {len(graph.edges)} edges."
-        )
-
-        await self._process_trigger_nodes(context, graph)
-
-        # Start the main processing loop for the rest of the graph.
-        # This loop handles message passing and sequential/parallel execution of nodes
-        # based on their dependencies.
-        await self._main_processing_loop(context, graph, parent_id)
-        log.debug("Graph processing finished for parent_id: %s", parent_id)
-        log.debug(f"process_graph finished for parent_id: {parent_id}")
-
-    async def _init_streaming_node(
-        self,
-        context: ProcessingContext,
-        node: BaseNode,
-        initial_config_properties: dict[str, Any],
-    ):
-        """
-        Initializes a streaming node for its first run.
-        Sets up the generator, assigns initial properties, and sends a "running" update.
-        """
-        log.info(f"Initializing streaming node: {node.get_title()} ({node._id})")
-        log.debug(f" initial_config: {initial_config_properties}")
-        self.current_node = node._id  # Ensure current_node is set for ComfyUI hooks
-
-        # Assign initial configuration properties to the node instance.
-        # These might come from upstream nodes (via inputs_from_edges) or be intrinsic to the node (for trigger nodes).
-        for name, value in initial_config_properties.items():
+        tasks: list[asyncio.Task] = []
+        for node in graph.nodes:
+            inbox = self.node_inboxes.get(node._id)
+            assert inbox is not None, f"No inbox found for node {node._id}"
+            # Skip starting actors for InputNodes; they are driven externally via input queue
             try:
-                node.assign_property(name, value)
-            except Exception as e:
-                log.error(
-                    f"Error assigning property {name} to streaming node {node.id} during init: {str(e)}"
-                )
-                # Depending on node design, this might be critical. For now, log and continue.
-                # The node's gen_process should be robust to missing/incorrect properties.
-
-        await node.pre_process(context)
-
-        # Send "running" update. Properties reflect the initial configuration.
-        # Only include properties that exist on the node to avoid read_property errors
-        safe_properties = [
-            name
-            for name in initial_config_properties.keys()
-            if node.find_property(name) is not None
-        ]
-        await node.send_update(context, "running", properties=safe_properties)
-
-        try:
-            generator = node.gen_process(context)
-            self.active_generators[node._id] = (generator, initial_config_properties)
-            log.debug(
-                f"Streaming node {node.get_title()} ({node._id}) initialized and generator stored."
-            )
-        except Exception as e:
-            log.error(
-                f"Error creating generator for streaming node {node.get_title()} ({node._id}): {str(e)}"
-            )
-            await node.send_update(
-                context,
-                "error",
-                result={"error": str(e)[:1000]},
-                properties=list(initial_config_properties.keys()),
-            )
-            log.debug(
-                f"Error in _init_streaming_node for node {node.get_title()}: {e}",
-                exc_info=True,
-            )
-            # Remove from active_processing_node_ids if it was added by the caller of process_node
-            if node._id in self.active_processing_node_ids:
-                self.active_processing_node_ids.remove(node._id)
-            raise
-
-    async def _pull_from_streaming_node(
-        self, context: ProcessingContext, node: BaseNode
-    ):
-        """
-        Pulls the next item from an active streaming node's generator.
-        Handles item yielding, completion, and errors.
-        Raises StopAsyncIteration if generator completes, or other exceptions on error.
-        """
-        log.debug(
-            f"Pulling next item from streaming node: {node.get_title()} ({node._id})"
-        )
-        log.debug(
-            f"_pull_from_streaming_node called for node: {node.get_title()} ({node._id})"
-        )
-        self.current_node = node._id  # Ensure current_node is set
-
-        if node._id not in self.active_generators:
-            log.error(
-                f"Attempted to pull from streaming node {node.get_title()} ({node._id}) not in active_generators."
-            )
-            # This indicates a logic error. The node should have been removed if completed/errored.
-            await node.send_update(
-                context,
-                "error",
-                result={
-                    "error": "Streaming state error: generator not found for pull."
-                },
-            )
-            # To prevent further issues, ensure it's marked as an error that halts the graph.
-            raise RuntimeError(
-                f"Streaming state error for node {node.get_title()}: generator not found for pull."
-            )
-            log.debug(
-                f"Streaming state error in _pull_from_streaming_node for node {node.get_title()}: generator not found.",
-                exc_info=True,
-            )
-
-        generator, initial_config_properties = self.active_generators[node._id]
-
-        try:
-            item = await anext(generator)
-
-            # Validate the format of the yielded item from the generator
-            # Based on `AsyncGenerator[tuple[str, Any], None]` type hint for gen_process.
-            if not isinstance(item, tuple):
-                slot_name = "output"
-                value = item
-            else:
-                if not (len(item) == 2 and isinstance(item[0], str)):
-                    error_message = (
-                        f"Streaming node {node.get_title()} ({node._id}) yielded item with invalid format. "
-                        f"Expected (str, Any) tuple, got {type(item)} with value resembling: {str(item)[:100]}."
-                    )
-                    log.error(error_message)  # Log here for immediate specific context
-                    # Let the generic exception handler below handle send_update, cleanup, and re-raise.
-                    raise ValueError(error_message)
-
-                slot_name: str = item[0]
-                value: Any = item[1]
-
-            # Check if the yielded slot_name is a declared output for the node.
-            # This assumes BaseNode has a method get_output_fields() -> list[str].
-            # If this method doesn't exist or has a different signature on BaseNode,
-            # this part will need adaptation based on how output fields are actually defined/retrieved.
-            return_type = node.return_type()
-            if return_type is None:
-                raise ValueError(
-                    f"Streaming node {node.get_title()} ({node._id}) has no return type."
-                )
-            if not isinstance(return_type, dict):
-                raise ValueError(
-                    f"Streaming node {node.get_title()} ({node._id}) has invalid return type: {type(return_type)}"
-                )
-
-            declared_outputs = list(return_type.keys())
-            if slot_name not in declared_outputs:
-                error_message = (
-                    f"Streaming node {node.get_title()} ({node._id}) yielded for undeclared output slot: '{slot_name}'. "
-                    f"Declared outputs: {declared_outputs}. Input properties during init: {list(initial_config_properties.keys())}."
-                )
-                log.error(error_message)  # Log here for immediate specific context
-                # Let the generic exception handler below handle send_update, cleanup, and re-raise.
-                raise ValueError(error_message)
-
-            self.send_messages(node, {slot_name: value}, context)
-            log.debug(
-                f"Streaming node {node.get_title()} ({node._id}) yielded item for slot: '{slot_name}'"
-            )
-        except StopAsyncIteration:
-            log.info(
-                f"Streaming node {node.get_title()} ({node._id}) completed generation."
-            )
-            await node.send_update(
-                context,
-                "completed",
-                result={"status": "completed"},
-                properties=list(initial_config_properties.keys()),
-            )
-            del self.active_generators[node._id]
-            raise  # Re-raise StopAsyncIteration to signal completion to process_node
-        except Exception as e:
-            log.error(
-                f"Error during generation for streaming node {node.get_title()} ({node._id}): {str(e)}"
-            )
-            log.debug(
-                f"Exception in _pull_from_streaming_node for node {node.get_title()}: {e}",
-                exc_info=True,
-            )
-            await node.send_update(
-                context,
-                "error",
-                result={"error": str(e)[:1000]},
-                properties=list(initial_config_properties.keys()),
-            )
-            if (
-                node._id in self.active_generators
-            ):  # Ensure cleanup if error happened before StopAsyncIteration
-                del self.active_generators[node._id]
-            raise  # Re-raise to be caught by _execute_node_batch
-
-    async def process_node(
-        self,
-        context: ProcessingContext,
-        node: BaseNode,
-        inputs_from_edges: dict[str, Any],
-    ):
-        """
-        Processes a single node in the workflow graph.
-        Orchestrates initialization and item pulling for streaming nodes,
-        event handling for reactive nodes, or standard processing for other nodes.
-        """
-        log.debug(
-            f"Processing node: {node.get_title()} ({node._id}) with inputs: {list(inputs_from_edges.keys())}"
-        )
-        self.current_node = node._id
-
-        try:
-            # Attempt to identify if this invocation is primarily for an event
-            event_value_for_handling = None
-            event_slot_for_handling = None
-
-            if hasattr(node, "handle_event"):  # Only consider if node has handle_event
-                for slot_name, value in inputs_from_edges.items():
-                    if isinstance(value, Event):
-                        event_value_for_handling = value
-                        event_slot_for_handling = slot_name
-                        # Found an event for a node that can handle events.
-                        # Prioritize this path. Take the first event found.
-                        break
-
-            if event_value_for_handling and event_slot_for_handling:
-                # An event is present and node is capable of handling it via handle_event.
-                # We need to ensure ALL inputs_from_edges are assigned as properties before calling process_event_node,
-                # because handle_event might rely on other properties being set.
-                log.debug(
-                    f"Node {node.get_title()} has an Event on slot '{event_slot_for_handling}'. Assigning all inputs and routing to event processing."
-                )
-                for key, val in inputs_from_edges.items():
-                    try:
-                        node.assign_property(key, val)
-                    except Exception as e:
-                        # Log and potentially raise, as this might be critical
-                        log.error(
-                            f"Error assigning property {key} to node {node.id} before event handling: {str(e)}"
-                        )
-                        raise ValueError(
-                            f"Error assigning property {key} to node {node.id} for event context: {str(e)}"
-                        ) from e
-
-                # Now call process_event_node. It will re-assign the event to event_slot (harmless if already done)
-                # and then call node.handle_event(context, event_value_for_handling).
-                await self.process_event_node(
-                    context, node, event_value_for_handling, event_slot_for_handling
-                )
-                log.debug(
-                    f"process_node routed to event processing for node {node.get_title()}"
-                )
-
-            # Existing logic for other node types
-            elif node.is_streaming_output():
-                # inputs_from_edges are used as initial_config_properties for _init_streaming_node
-                # _init_streaming_node assigns these.
-                if node._id not in self.active_generators:
-                    # First time processing this streaming node instance in this run.
-                    # `inputs_from_edges` contains its initial configuration if it's not a trigger node.
-                    # `_init_streaming_node` will assign these or node uses intrinsic config.
-                    log.debug(
-                        f"process_node: Initializing streaming node {node.get_title()}"
-                    )
-                    await self._init_streaming_node(context, node, inputs_from_edges)
-                    # After initialization, immediately try to pull.
-                    # `_pull_from_streaming_node` will raise StopAsyncIteration if it completes,
-                    # or another exception on error, or return normally if it yields an item.
-                    await self._pull_from_streaming_node(context, node)
-                else:
-                    # Node is already an active generator, pull next item.
-                    await self._pull_from_streaming_node(context, node)
-
-            elif isinstance(node, OutputNode):
-                # OutputNode processing relies on inputs being passed to it,
-                # and its 'process' method might use properties set from these inputs.
-                # Ensure properties are assigned for OutputNode here.
-                log.debug(
-                    f"Node {node.get_title()} is OutputNode. Assigning inputs as properties."
-                )
-                for key, val in inputs_from_edges.items():
-                    try:
-                        node.assign_property(key, val)
-                    except Exception as e:
-                        log.error(
-                            f"Error assigning property {key} to OutputNode {node.id}: {str(e)}"
-                        )
-                        raise ValueError(
-                            f"Error assigning property {key} to OutputNode {node.id}: {str(e)}"
-                        ) from e
-                await self.process_output_node(context, node, inputs_from_edges)
-                log.debug(
-                    f"process_node routed to output node processing for node {node.get_title()}"
-                )
-            else:
-                # Regular, non-streaming, non-output node.
-                # process_node_with_inputs handles assigning properties from inputs_from_edges.
-                log.debug(
-                    f"process_node routed to regular node processing for node {node.get_title()}"
-                )
-                await self.process_node_with_inputs(context, node, inputs_from_edges)
-
-        except StopAsyncIteration:
-            # This occurs when a streaming node (either newly initialized or existing) finishes its generation.
-            # _pull_from_streaming_node has already sent "completed" and cleaned up from active_generators.
-            log.debug(
-                f"Node {node.get_title()} ({node._id}) (streaming) finished generation (caught StopAsyncIteration in process_node)."
-            )
-            # The task for this node will complete successfully.
-        except Exception as e:
-            log.error(
-                f"Exception during process_node for {node.get_title()} ({node._id}): {str(e)}"
-            )
-            log.debug(
-                f"Exception in process_node for node {node.get_title()}: {e}",
-                exc_info=True,
-            )
-            # If it was a streaming node that errored, ensure it's cleaned up.
-            # _pull_from_streaming_node should handle this, but this is a safeguard.
-            if node.is_streaming_output() and node._id in self.active_generators:
-                log.debug(
-                    f"Ensuring cleanup of errored streaming node {node.get_title()} from active_generators in process_node exception handler."
-                )
-                del self.active_generators[node._id]
-                # An error update should have been sent by _pull_from_streaming_node or other specific handlers.
-
-            # Re-raise so _execute_node_batch can see the exception and halt graph if necessary.
-            raise
-
-    async def process_event_node(
-        self, context: ProcessingContext, node: BaseNode, event: Event, event_slot: str
-    ):
-        """
-        Processes a node in response to an event.
-
-        This method calls the node's handle_event method, which is an async generator
-        that can yield more outputs (including additional events).
-
-        Args:
-            context (ProcessingContext): The processing context.
-            node (BaseNode): The node to process.
-            event (Event): The event that triggered this processing.
-            event_slot (str): The input slot that received the event.
-        """
-        log.info(
-            f"Processing EVENT {event.name} for node {node.get_title()} ({node._id}) on slot '{event_slot}'"
-        )
-
-        # Assign event to the appropriate slot
-        node.assign_property(event_slot, event)
-
-        # Send running update
-        await node.send_update(context, "running", properties=[event_slot])
-
-        try:
-            # Call handle_event which returns an async generator
-            async for slot_name, value in node.handle_event(context, event):
-                # Each yielded value gets sent as a message
-                self.send_messages(node, {slot_name: value}, context)
-                log.debug(
-                    f"Event handler for {node.get_title()} ({node._id}) yielded output for slot '{slot_name}'"
-                )
-
-            # Send completed update
-            await node.send_update(
-                context,
-                "completed",
-                result={},
-                properties=[event_slot],
-            )
-        except Exception as e:
-            log.error(
-                f"Error handling event for node {node.get_title()} ({node._id}): {str(e)}"
-            )
-            log.debug(
-                f"Error in process_event_node for node {node.get_title()}: {e}",
-                exc_info=True,
-            )
-            await node.send_update(
-                context,
-                "error",
-                result={"error": str(e)[:1000]},
-                properties=[event_slot],
-            )
-            raise
+                if isinstance(node, InputNode):
+                    continue
+            except Exception:
+                pass
+            actor = NodeActor(self, node, context, inbox)
+            tasks.append(asyncio.create_task(actor.run()))
+        # Wait for all, propagate first error if any
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        first_error: Exception | None = None
+        for r in results:
+            if isinstance(r, Exception) and first_error is None:
+                first_error = r
+        if first_error is not None:
+            raise first_error
 
     async def process_node_with_inputs(
         self, context: ProcessingContext, node: BaseNode, inputs: dict[str, Any]
@@ -1589,21 +908,7 @@ class WorkflowRunner:
         1. Assigns input values to the node's properties.
         2. Calls `node.pre_process(context)`.
         3. Checks for cached results if `node.is_cacheable()`.
-           - If cached, uses the cached result.
-           - Otherwise, proceeds to execution.
         4. Determines if GPU is required (`node.requires_gpu()`).
-           - If GPU required and not available on `self.device`, raises RuntimeError.
-           - Sends a "running" `NodeUpdate`.
-           - If GPU required and available:
-             - Acquires `gpu_lock`.
-             - Calls `node.move_to_device(self.device)`.
-             - Calls `node.process_with_gpu(context)`.
-             - Converts output using `node.convert_output()`.
-             - Releases `gpu_lock`.
-             - Optionally moves node back to CPU (if in production environment).
-           - Else (CPU processing):
-             - Calls `node.process(context)`.
-             - Converts output using `node.convert_output()`.
         5. Caches the result if `node.is_cacheable()`.
         6. Sends a "completed" `NodeUpdate` with the result.
         7. Calls `self.send_messages` to propagate the result to downstream nodes.
@@ -1653,6 +958,10 @@ class WorkflowRunner:
             # Determine if the node requires GPU processing
             requires_gpu = node.requires_gpu()
 
+            # Dynamic streaming: if upstream is streaming, treat this node as stream-driven
+            # and avoid caching side-effects during the run path.
+            driven_by_stream = context.graph.has_streaming_upstream(node._id)
+
             if requires_gpu and self.device == "cpu":
                 error_msg = f"Node {node.get_title()} ({node._id}) requires a GPU, but no GPU is available."
                 log.error(error_msg)
@@ -1664,35 +973,54 @@ class WorkflowRunner:
                 result=None,
             )
 
+            # Prepare unified I/O wrappers
+            inbox = self.node_inboxes.get(node._id)
+            from nodetool.workflows.io import NodeInputs, NodeOutputs
+
+            outputs_collector = NodeOutputs(self, node, context, capture_only=True)
+            node_inputs = NodeInputs(inbox) if inbox is not None else None
+
             if requires_gpu and self.device != "cpu":
                 await acquire_gpu_lock(node, context)
                 try:
+                    self.log_vram_usage(
+                        f"Node {node.get_title()} ({node._id}) VRAM before GPU processing"
+                    )
                     await node.preload_model(context)
+                    self.log_vram_usage(
+                        f"Node {node.get_title()} ({node._id}) VRAM after preload_model"
+                    )
                     await node.move_to_device(self.device)
                     self.log_vram_usage(
                         f"Node {node.get_title()} ({node._id}) VRAM after move to {self.device}"
                     )
 
-                    result = await self.process_with_gpu(context, node, 0)
-                    result = await node.convert_output(context, result)
+                    await node.run(context, node_inputs, outputs_collector)  # type: ignore[arg-type]
+                    self.log_vram_usage(
+                        f"Node {node.get_title()} ({node._id}) VRAM after run completion"
+                    )
                 finally:
-                    if Environment.is_production():
-                        await node.move_to_device("cpu")
-                        self.log_vram_usage(
-                            f"Node {node.get_title()} ({node._id}) VRAM after move to cpu"
-                        )
+                    await node.move_to_device("cpu")
+                    self.log_vram_usage(
+                        f"Node {node.get_title()} ({node._id}) VRAM after move to cpu"
+                    )
                     release_gpu_lock()
             else:
                 await node.preload_model(context)
-                result = await node.process(context)
-                result = await node.convert_output(context, result)
+                await node.run(context, node_inputs, outputs_collector)  # type: ignore[arg-type]
+
+            result = outputs_collector.collected()
 
             # Cache the result if the node is cacheable
-            if node.is_cacheable() and not self.disable_caching:
+            if (
+                node.is_cacheable()
+                and not self.disable_caching
+                and not driven_by_stream
+            ):
                 log.debug(f"Caching result for node: {node.get_title()} ({node._id})")
                 context.cache_result(node, result)
 
-        # Send completion update
+        # Send completion update and route collected outputs downstream
         await node.send_update(context, "completed", result=result)
         self.send_messages(node, result, context)
         # log.info(
@@ -1778,6 +1106,8 @@ class WorkflowRunner:
         """
         if "value" in inputs:
             value = inputs["value"]
+            # Emit a running update for OutputNode for consistency with other nodes
+            await node.send_update(context, "running", properties=["name"])
             if node.name in self.outputs:
                 if self.outputs[node.name] and self.outputs[node.name][-1] == value:
                     # Skip duplicate
@@ -1789,6 +1119,7 @@ class WorkflowRunner:
 
             # Get the type of the output for metadata purposes
             output_type = node.__class__.__name__.replace("Output", "").lower()
+            value = await context.embed_assets_in_data(value)
 
             # Send the new OutputUpdate message
             context.post_message(
@@ -1799,6 +1130,13 @@ class WorkflowRunner:
                     value=value,
                     output_type=output_type,
                 )
+            )
+            # Emit a completed NodeUpdate including the value in the result
+            await node.send_update(
+                context,
+                "completed",
+                result={"value": value},
+                properties=["name"],
             )
         else:
             # This case should ideally not happen if graph is validated.
@@ -1885,268 +1223,3 @@ class WorkflowRunner:
                 f"Torch not available, falling back to regular process for node: {node.get_title()}"
             )
             return await node.process(context)
-
-    def _handle_messages(self, req: RunJobRequest, context: ProcessingContext):
-        """
-        Handles message assignment to appropriate input nodes.
-
-        Args:
-            req (RunJobRequest): The request containing messages to be processed.
-            context (ProcessingContext): The processing context containing the graph.
-
-        Raises:
-            ValueError: If no suitable input node is found or message content is invalid.
-        """
-        if not req.messages:
-            return
-
-        chat_input_node = next(
-            (
-                node
-                for node in context.graph.nodes
-                if node.get_node_type() == "nodetool.input.ChatInput"
-            ),
-            None,
-        )
-        if chat_input_node is None:
-            string_input_node = next(
-                (
-                    node
-                    for node in context.graph.nodes
-                    if node.get_node_type() == "nodetool.input.StringInput"
-                ),
-                None,
-            )
-            if string_input_node is None:
-                raise ValueError(
-                    "Neither ChatInput nor StringInput node found. Make sure you have a ChatInput or StringInput node in your graph."
-                )
-            last_message_content = req.messages[-1].content
-            if isinstance(last_message_content, str):
-                string_input_node.assign_property("value", last_message_content)
-            elif isinstance(last_message_content, list):
-                text_content = next(
-                    (
-                        item.text
-                        for item in last_message_content
-                        if isinstance(item, MessageTextContent)
-                    ),
-                    None,
-                )
-                string_input_node.assign_property("value", text_content)
-            else:
-                raise ValueError(
-                    "Last message content is not a string or list. Make sure you have a ChatInput or StringInput node in your graph."
-                )
-        else:
-            chat_input_node.assign_property("value", req.messages)
-
-
-async def main():
-    class Generator(BaseNode):
-        first_name: str = ""
-        last_name: str = ""
-
-        async def gen_process(
-            self, context: ProcessingContext
-        ) -> AsyncGenerator[tuple[str, Any], None]:  # Ensure signature matches BaseNode
-            yield "output", self.first_name
-            await asyncio.sleep(0.01)  # Using a very short sleep for tests
-            yield "output", self.last_name
-            await asyncio.sleep(0.01)
-            yield "output", "!"
-
-    class Collector(BaseNode):
-        value: str = ""
-
-        async def process(self, context: ProcessingContext) -> str:
-            return self.value
-
-    class String(BaseNode):
-        value: str = ""
-
-        async def process(self, context: ProcessingContext) -> str:
-            return self.value
-
-    class StringOutput(OutputNode):
-        value: str = ""
-
-        async def process(self, context: ProcessingContext) -> str:
-            return self.value
-
-    class IntegerOutput(OutputNode):
-        value: int = 0
-
-        async def process(self, context: ProcessingContext) -> int:
-            return self.value
-
-    class IntegerInput(InputNode):
-        value: int = 0
-
-        async def process(self, context: ProcessingContext) -> int:
-            return self.value
-
-    class Add(BaseNode):
-        a: float = 0.0
-        b: float = 0.0
-
-        async def process(self, context: ProcessingContext) -> float:
-            return self.a + self.b
-
-    # Test 3: Event-based Communication
-    print("\n--- Starting Event-based Communication Test ---")
-
-    class EventProducer(BaseNode):
-        message_prefix: str = "Event"
-
-        @classmethod
-        def return_type(cls):
-            return {"event_out": Event}
-
-        async def gen_process(
-            self, context: ProcessingContext
-        ) -> AsyncGenerator[tuple[str, Any], None]:
-            for i in range(3):
-                event = Event(name=f"{self.message_prefix}_{i}", payload={"index": i})
-                yield "event_out", event
-                await asyncio.sleep(0.01)
-
-    class EventConsumer(BaseNode):
-        event_in: Event | None = None
-        messages_received: list[str] = []
-
-        @classmethod
-        def return_type(cls):
-            return {"response": str}
-
-        async def handle_event(self, context: ProcessingContext, event: Event):
-            self.messages_received.append(event.name)
-            yield "response", f"Handled: {event.name}"
-
-    event_producer_def = {
-        "id": "event_producer",
-        "type": EventProducer.get_node_type(),
-        "data": {"message_prefix": "TestEvent"},
-    }
-
-    event_consumer_def = {
-        "id": "event_consumer",
-        "type": EventConsumer.get_node_type(),
-    }
-
-    event_output_def = {
-        "id": "event_output",
-        "type": StringOutput.get_node_type(),
-        "data": {"name": "event_responses"},
-    }
-
-    event_nodes = [event_producer_def, event_consumer_def, event_output_def]
-
-    event_edges = [
-        {
-            "id": "e1",
-            "source": "event_producer",
-            "sourceHandle": "event_out",
-            "target": "event_consumer",
-            "targetHandle": "event_in",
-            "ui_properties": {},
-        },
-        {
-            "id": "e2",
-            "source": "event_consumer",
-            "sourceHandle": "response",
-            "target": "event_output",
-            "targetHandle": "value",
-            "ui_properties": {},
-        },
-    ]
-
-    event_graph = APIGraph(
-        nodes=[Node(**n) for n in event_nodes],
-        edges=[Edge(**e) for e in event_edges],
-    )
-
-    event_req = RunJobRequest(
-        user_id="user_event_test",
-        workflow_id="wf_event_test",
-        job_type="event_communication_test",
-        params={},
-        graph=event_graph,
-    )
-
-    event_context = ProcessingContext(
-        user_id="user_event_test",
-        auth_token="local_token_event",
-    )
-
-    event_workflow_runner = WorkflowRunner(job_id="event_job_1")
-
-    await event_workflow_runner.run(event_req, event_context)
-
-    print("--------------------------------")
-    print("Outputs from Event Communication test:")
-    print(event_workflow_runner.outputs)
-
-    # Test 4: Direct Generator to Consumer (OutputNode)
-    print("\n--- Starting Direct Generator to Consumer Test ---")
-
-    # Node definitions
-    direct_generator_def = {
-        "id": "gen_direct_1",
-        "type": Generator.get_node_type(),
-        "data": {
-            "first_name": "TestFirst",
-            "last_name": "TestLast",
-        },  # Properties set directly
-    }
-    consumer_output_def = {
-        "id": "consumer_out_1",
-        "type": StringOutput.get_node_type(),  # StringOutput will act as the consumer
-        "data": {
-            "name": "direct_gen_consumed_output"
-        },  # This name will be the key in outputs
-    }
-
-    direct_gen_nodes_list = [
-        direct_generator_def,
-        consumer_output_def,
-    ]
-
-    direct_gen_edges_list = [
-        {
-            "id": "e_gen_direct_consumer",
-            "source": "gen_direct_1",  # Source node ID
-            "sourceHandle": "output",  # Output slot of Generator
-            "target": "consumer_out_1",  # Target node ID
-            "targetHandle": "value",  # Input slot of StringOutput
-            "ui_properties": {},
-        },
-    ]
-
-    direct_gen_graph = APIGraph(
-        nodes=[Node(**n) for n in direct_gen_nodes_list],
-        edges=[Edge(**e) for e in direct_gen_edges_list],
-    )
-
-    direct_gen_req = RunJobRequest(
-        user_id="user_direct_gen_test",
-        workflow_id="wf_direct_gen_test",
-        job_type="direct_generator_consumer_test",
-        params={},  # No external params, generator values are in its data
-        graph=direct_gen_graph,
-    )
-    direct_gen_context = ProcessingContext(
-        user_id="user_direct_gen_test",
-        auth_token="local_token_direct_gen",
-    )
-    direct_gen_workflow_runner = WorkflowRunner(job_id="direct_gen_job_1")
-
-    await direct_gen_workflow_runner.run(direct_gen_req, direct_gen_context)
-
-    print("--------------------------------")
-    print("Outputs from Direct Generator to Consumer test:")
-    print(direct_gen_workflow_runner.outputs)
-
-
-if __name__ == "__main__":
-    asyncio.run(main())

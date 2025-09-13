@@ -1,14 +1,16 @@
 #!/usr/bin/env python
 
 from fastapi.responses import StreamingResponse
-from nodetool.common.huggingface_cache import has_cached_files
-from nodetool.common.huggingface_file import (
+from fastapi import HTTPException
+from nodetool.integrations.huggingface.huggingface_cache import has_cached_files
+from nodetool.integrations.huggingface.huggingface_file import (
     HFFileInfo,
     HFFileRequest,
     get_huggingface_file_infos_async,
 )
-from nodetool.common.environment import Environment
-from nodetool.common.language_models import get_all_language_models
+from nodetool.config.environment import Environment
+from nodetool.config.logging_config import get_logger
+from nodetool.ml.models.language_models import get_all_language_models
 from nodetool.metadata.types import (
     LanguageModel,
     ModelFile,
@@ -21,7 +23,7 @@ from huggingface_hub import try_to_load_from_cache
 from huggingface_hub.constants import HF_HUB_CACHE
 from nodetool.api.utils import current_user, flatten_models
 from fastapi import APIRouter, Depends, Query
-from nodetool.common.huggingface_models import (
+from nodetool.integrations.huggingface.huggingface_models import (
     CachedModel,
     delete_cached_hf_model,
     read_cached_hf_models,
@@ -34,102 +36,22 @@ from nodetool.chat.ollama_service import (
     stream_ollama_model_pull,
     delete_ollama_model as _delete_ollama_model,
 )
-import subprocess
 import sys
-import os
 from pathlib import Path
-import shlex
 import asyncio
+from nodetool.io.file_explorer import (
+    get_ollama_models_dir as common_get_ollama_models_dir,
+    open_in_explorer as common_open_in_explorer,
+)
 
-log = Environment.get_logger()
+log = get_logger(__name__)
 router = APIRouter(prefix="/api/models", tags=["models"])
 
 
-# Internal helper to get Ollama models directory
-def _get_ollama_models_dir() -> Path | None:
-    """Determines and caches the Ollama models directory path.
-
-    The path is determined based on the operating system and common Ollama conventions.
-    The result is cached in a module-level variable to avoid repeated lookups.
-
-    Returns:
-        Path | None: The resolved absolute path to the Ollama models directory if found
-                      and valid, otherwise None.
-    """
-    path = None
-
-    # 1. Check explicit environment variable first. According to Ollama's
-    #    documentation, the OLLAMA_MODELS variable allows users to override the
-    #    default location. This takes precedence over any heuristic paths.
-    custom_path = os.environ.get("OLLAMA_MODELS")
-    if custom_path:
-        try:
-            # Expand ~ and resolve as far as possible (even if the folder doesn't
-            # exist yet)
-            p = Path(custom_path).expanduser()
-            try:
-                p = p.resolve(strict=False)
-            except Exception:
-                # If resolve fails (e.g., path portion doesn't yet exist) keep the expanded path.
-                pass
-
-            # Honour the env var regardless of whether the directory exists.
-            log.debug(f"Using Ollama models directory from OLLAMA_MODELS env var: {p}")
-            return p
-        except Exception as e:
-            log.error(
-                f"Failed to process OLLAMA_MODELS environment variable '{custom_path}': {e}"
-            )
-
-    try:
-        if sys.platform == "win32":
-            path = Path(os.environ["USERPROFILE"]) / ".ollama" / "models"
-        elif sys.platform == "darwin":
-            path = Path.home() / ".ollama" / "models"
-        else:  # Linux and other UNIX-like
-            user_path = Path.home() / ".ollama" / "models"
-            if user_path.exists() and user_path.is_dir():
-                path = user_path
-            else:
-                path = Path("/usr/share/ollama/.ollama/models")
-        
-        if path and path.exists() and path.is_dir():
-            return path.resolve()
-        
-        return None
-    except Exception as e:
-        log.error(f"Error determining Ollama models directory: {e}")
-        return None
+"""Helper logic moved to nodetool.io.file_explorer"""
 
 
-# Internal helper to get all safe directories for opening in explorer
-def _get_valid_explorable_roots() -> list[Path]:
-    """Determines and returns a list of valid root directories for file explorer operations.
-
-    Currently includes the Ollama models directory and the Hugging Face hub cache directory.
-    Paths are resolved to their absolute form.
-
-    Returns:
-        list[Path]: A list of Path objects representing safe explorable roots.
-    """
-    safe_roots: list[Path] = []
-
-    ollama_dir = _get_ollama_models_dir()
-    if isinstance(ollama_dir, Path):
-        safe_roots.append(ollama_dir)
-    
-    try:
-        # HF_HUB_CACHE is the path to the root of the Hugging Face cache directory
-        # e.g., ~/.cache/huggingface/hub or M:\HUGGINGFACE\hub if HF_HOME is M:\HUGGINGFACE
-        hf_cache_path = Path(HF_HUB_CACHE).resolve()
-        if hf_cache_path.exists() and hf_cache_path.is_dir():
-            safe_roots.append(hf_cache_path)
-        else:
-            log.warning(f"Hugging Face cache directory {hf_cache_path} does not exist or is not a directory.")
-    except Exception as e:
-        log.error(f"Error determining Hugging Face cache directory: {e}")
-        
-    return safe_roots
+# Explorer roots and opening logic moved to nodetool.io.file_explorer
 
 
 class RepoPath(BaseModel):
@@ -183,8 +105,6 @@ async def delete_ollama_model_endpoint(model_name: str) -> bool:
     return await _delete_ollama_model(model_name)
 
 
-
-
 async def get_language_models() -> list[LanguageModel]:
     models = await get_all_language_models()
 
@@ -221,9 +141,7 @@ async def try_cache_files(
         return try_to_load_from_cache(path.repo_id, path.path) is not None
 
     # Offload blocking cache checks to a thread to avoid blocking the loop
-    results = await asyncio.gather(
-        *(asyncio.to_thread(check_path, p) for p in paths)
-    )
+    results = await asyncio.gather(*(asyncio.to_thread(check_path, p) for p in paths))
     return [
         RepoPath(repo_id=p.repo_id, path=p.path, downloaded=downloaded)
         for p, downloaded in zip(paths, results)
@@ -239,9 +157,7 @@ async def try_cache_repos(
         return has_cached_files(repo_id)
 
     # Offload blocking cache checks to a thread
-    results = await asyncio.gather(
-        *(asyncio.to_thread(check_repo, r) for r in repos)
-    )
+    results = await asyncio.gather(*(asyncio.to_thread(check_repo, r) for r in repos))
     return [
         CachedRepo(repo_id=repo_id, downloaded=downloaded)
         for repo_id, downloaded in zip(repos, results)
@@ -264,7 +180,7 @@ if not Environment.is_production():
             dict: A dictionary containing the path if found (e.g., {"path": "/path/to/ollama/models"}),
                   or an error message if not found (e.g., {"status": "error", "message": "..."}).
         """
-        ollama_path = _get_ollama_models_dir()
+        ollama_path = common_get_ollama_models_dir()
         if ollama_path:
             return {"path": str(ollama_path)}
         else:
@@ -275,7 +191,9 @@ if not Environment.is_production():
             }
 
     @router.get("/huggingface_base_path")
-    async def get_huggingface_base_path_endpoint(user: str = Depends(current_user)) -> dict:
+    async def get_huggingface_base_path_endpoint(
+        user: str = Depends(current_user),
+    ) -> dict:
         """Retrieves the Hugging Face cache directory path.
 
         The path is determined from the HF_HUB_CACHE constant which points to the
@@ -293,7 +211,9 @@ if not Environment.is_production():
             if hf_cache_path.exists() and hf_cache_path.is_dir():
                 return {"path": str(hf_cache_path)}
             else:
-                log.warning(f"Hugging Face cache directory {hf_cache_path} does not exist or is not a directory.")
+                log.warning(
+                    f"Hugging Face cache directory {hf_cache_path} does not exist or is not a directory."
+                )
                 return {
                     "status": "error",
                     "message": f"Hugging Face cache directory does not exist: {hf_cache_path}",
@@ -307,6 +227,24 @@ if not Environment.is_production():
 
     @router.post("/pull_ollama_model")
     async def pull_ollama_model(model_name: str, user: str = Depends(current_user)):
+        # Preflight: attempt a lightweight call to detect if Ollama is reachable
+        try:
+            models = await get_ollama_models()
+        except Exception as e:  # noqa: BLE001
+            api_url = Environment.get("OLLAMA_API_URL")
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "status": "unavailable",
+                    "message": (
+                        f"Cannot connect to Ollama at {api_url!s}. "
+                        "Make sure Ollama is running. Try: 'ollama serve' or set OLLAMA_API_URL."
+                    ),
+                    "error": str(e),
+                },
+            )
+
+        # If reachable, start the streaming response
         return StreamingResponse(
             stream_ollama_model_pull(model_name), media_type="application/json"
         )
@@ -315,71 +253,7 @@ if not Environment.is_production():
     async def open_in_explorer(
         path: str = Query(...), user: str = Depends(current_user)
     ):
-        """Opens the specified path in the system's default file explorer.
-
-        Security measures:
-        - The requested path must be within a pre-configured list of safe root directories
-          (e.g., Ollama models directory, Hugging Face cache).
-        - The input path is sanitized using `shlex.quote` for non-Windows platforms before
-          being passed to subprocess commands to prevent command injection.
-
-        Args:
-            path (str): The path to open in the file explorer.
-            user (str): The current user, injected by FastAPI dependency.
-
-        Returns:
-            dict: A dictionary indicating success (e.g., {"status": "success", "path": "/validated/path"})
-                  or an error (e.g., {"status": "error", "message": "..."}).
-        """
-        safe_roots = _get_valid_explorable_roots()
-
-        if not safe_roots:
-            return {
-                "status": "error",
-                "message": "Cannot open path: No safe directories (like Ollama or Hugging Face cache) could be determined.",
-            }
-
-        path_to_open: str | None = None
-        try:
-            requested_path = Path(path).resolve()
-            is_safe_path = False
-            for root_dir in safe_roots:
-                if requested_path.is_relative_to(root_dir):
-                    is_safe_path = True
-                    break
-            
-            if not is_safe_path:
-                log.warning(
-                    f"Path traversal attempt: User path {requested_path} is not within any of the configured safe directories: {safe_roots}"
-                )
-                return {
-                    "status": "error",
-                    "message": "Access denied: Path is outside the allowed directories.",
-                }
-
-            path_to_open = str(requested_path)
-
-            # Use async subprocess calls to avoid blocking the event loop
-            if sys.platform == "win32":
-                proc = await asyncio.create_subprocess_exec("explorer", path_to_open)
-            elif sys.platform == "darwin":
-                proc = await asyncio.create_subprocess_exec("open", path_to_open)
-            else:
-                proc = await asyncio.create_subprocess_exec("xdg-open", path_to_open)
-
-            return_code = await proc.wait()
-            if return_code != 0:
-                raise RuntimeError(f"Explorer command exited with code {return_code}")
-
-            return {"status": "success", "path": path_to_open}
-        except Exception as e:
-            log.error(
-                f"Failed to open path {path_to_open if path_to_open else path} in explorer: {e}"
-            )
-            return {
-                "status": "error",
-                "message": "An internal error occurred while attempting to open the path. Please check server logs for details.",
-            }
+        return await common_open_in_explorer(path)
 
     @router.post("/huggingface/file_info")
     async def get_huggingface_file_info(

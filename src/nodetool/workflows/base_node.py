@@ -2,9 +2,9 @@
 Base Node Module for Workflow System
 ====================================
 
-This module defines the core components and functionality for nodes in a workflow graph system.
-It provides the foundation for creating, managing, and executing computational nodes within
-a directed graph workflow.
+This module defines the core components and functionality for nodes in a workflow
+graph system. It provides the foundation for creating, managing, and executing
+computational nodes within a directed graph workflow.
 
 Key Components:
 --------------
@@ -22,9 +22,42 @@ Core Functionality:
 - Node serialization and deserialization
 - Workflow execution utilities
 
-This module is essential for constructing and managing complex computational graphs
-in the workflow system. It handles the registration, validation, and execution of
-nodes, as well as providing utilities for type checking and metadata generation.
+Unified Input/Streaming Model
+-----------------------------
+- Everything is a stream; a scalar is a stream of length 1. The engine routes
+  output values downstream as items. Inputs are consumed either once (buffered)
+  or iteratively (streaming) depending on the node style.
+- Two consumption styles per node:
+  1) Single-execute (buffered): implement `process(context)`. The actor gathers
+     at most one item per inbound handle, assigns them as properties, then calls
+     `process()` once. Use this when inputs are configuration-like or naturally
+     batch up-front.
+  2) Streaming-consume/produce: implement `gen_process(context)` and (optionally)
+     override `is_streaming_input()` to `True` if you want to pull inbound items
+     via the inbox. Use `iter_input(handle)` for a dedicated stream or
+     `iter_any_input()` to multiplex across handles in arrival order. Yield
+     `(slot_name, value)` tuples (or just `value` for the default "output") to
+     stream results as they become available.
+- Spanning-graph fanout ("run the subgraph N times"): prefer a graph-level
+  control node such as a ForEach/Map wrapper that feeds a subgraph per item and
+  either streams or collects outputs. Alternatively, a node/actor fanout hint
+  can map one streaming input handle to repeated `process()` calls; this keeps
+  nodes simple but is best for pure map-like behavior. The recommended pattern
+  is the explicit ForEach/Map node for clarity and composition.
+
+Authoring Guidelines
+--------------------
+- Single-run nodes: implement `process(context)` and use standard fields.
+- Streaming producers: implement `gen_process(context)` and `yield` items.
+- Streaming consumers/transforms: set `is_streaming_input() -> True` and
+  implement `gen_process(context)` using `iter_input()` / `iter_any_input()`.
+- Multi-input stream alignment is not implicit; if required, add explicit
+  combinators (e.g., Zip/Join/Merge) in the graph rather than relying on timing.
+
+This module is essential for constructing and managing complex computational
+graphs in the workflow system. It handles the registration, validation, and
+execution of nodes, as well as providing utilities for type checking and
+metadata generation.
 """
 
 import functools
@@ -35,16 +68,26 @@ from weakref import WeakKeyDictionary
 from pydantic import BaseModel, Field
 from pydantic.fields import FieldInfo
 import traceback
-from typing import Any, AsyncGenerator, Callable, Optional, Type, TypeVar
+from typing import (
+    Any,
+    AsyncGenerator,
+    Callable,
+    Optional,
+    Type,
+    TypeVar,
+    AsyncIterator,
+    TYPE_CHECKING,
+    get_type_hints,
+)
 
 from nodetool.types.graph import Edge
-from nodetool.common.environment import Environment
+from nodetool.config.environment import Environment
+from nodetool.config.logging_config import get_logger
 from nodetool.metadata.type_metadata import TypeMetadata
 from nodetool.metadata.types import (
     AssetRef,
     ComfyData,
     ComfyModel,
-    Event,
     HuggingFaceModel,
     NPArray,
     NameToType,
@@ -69,6 +112,9 @@ from nodetool.metadata.utils import (
 
 from nodetool.workflows.types import NodeUpdate
 
+from .inbox import NodeInbox
+from .io import NodeInputs, NodeOutputs
+
 try:
     import torch
 
@@ -79,7 +125,7 @@ except ImportError:
 NODE_BY_TYPE: dict[str, type["BaseNode"]] = {}
 COMFY_NODE_CLASSES: dict[str, type["BaseNode"]] = {}
 
-log = Environment.get_logger()
+log = get_logger(__name__)
 
 
 def sanitize_node_name(node_name: str) -> str:
@@ -277,41 +323,138 @@ class BaseNode(BaseModel):
         _layout (str): The layout style for the node in the UI.
         _requires_grad (bool): Whether the node requires torch backward pass.
         _expose_as_tool (bool): Whether the node should be exposed as a tool for agents.
+        _supports_dynamic_outputs (bool): Whether the node can declare outputs dynamically at runtime (only for dynamic nodes).
+        _sync_mode (str): The input synchronization mode for the node.
 
     Methods:
         Includes methods for initialization, property management, metadata generation,
         type checking, and node processing.
     """
 
-    _id: str = ""
-    _parent_id: str | None = ""
-    _ui_properties: dict[str, Any] = {}
+    _id: str
+    _parent_id: str | None
+    _ui_properties: dict[str, Any]
     _layout: str = "default"
-    _dynamic_properties: dict[str, Any] = {}
-    _dynamic_outputs: dict[str, TypeMetadata] = {}
+    _dynamic_properties: dict[str, Any]
+    _dynamic_outputs: dict[str, TypeMetadata]
     _is_dynamic: bool = False
     _requires_grad: bool = False
     _expose_as_tool: bool = False
     _supports_dynamic_outputs: bool = False
+    _inbox: "NodeInbox | None"
+    _sync_mode: str
 
     def __init__(
         self,
         id: str = "",
         parent_id: str | None = None,
-        ui_properties: dict[str, Any] = {},
-        dynamic_properties: dict[str, Any] = {},
-        dynamic_outputs: dict[str, TypeMetadata] = {},
+        ui_properties: dict[str, Any] | None = None,
+        dynamic_properties: dict[str, Any] | None = None,
+        dynamic_outputs: dict[str, TypeMetadata] | None = None,
+        sync_mode: str = "on_any",
         **data: Any,
     ):
         super().__init__(**data)
         self._id = id
         self._parent_id = parent_id
-        self._ui_properties = ui_properties
-        self._dynamic_properties = dynamic_properties
-        self._dynamic_outputs = dynamic_outputs
+        self._ui_properties = {} if ui_properties is None else dict(ui_properties)
+        self._dynamic_properties = (
+            {} if dynamic_properties is None else dict(dynamic_properties)
+        )
+        self._dynamic_outputs = {} if dynamic_outputs is None else dict(dynamic_outputs)
+        self._sync_mode = sync_mode
+        self._inbox = None
 
     def required_inputs(self):
         return []
+
+    # Streaming input integration
+    def attach_inbox(self, inbox: "NodeInbox") -> None:
+        """Attach a streaming input inbox to this node (runner-managed)."""
+        self._inbox = inbox
+
+    def get_sync_mode(self) -> str:
+        """Return the input synchronization mode for this node.
+
+        Returns:
+            str: "on_any" or "zip_all". Applies only to non-streaming nodes
+            (i.e., nodes that do not implement streaming outputs and do not
+            opt into streaming input). Streaming-input nodes coordinate their
+            own consumption via the inbox helpers.
+        """
+        mode = getattr(self, "_sync_mode", "on_any")
+        return mode if mode in ("on_any", "zip_all") else "on_any"
+
+    def set_sync_mode(self, mode: str) -> None:
+        """Set the input synchronization mode for this node.
+
+        Accepts "on_any" (default) or "zip_all". Invalid values fall back to "on_any".
+        """
+        self._sync_mode = mode if mode in ("on_any", "zip_all") else "on_any"
+
+    def should_route_output(self, output_name: str) -> bool:
+        """
+        Hook to control whether a given output should be routed downstream.
+
+        Defaults to True. Nodes can override to suppress routing for special
+        outputs (e.g., dynamic tool entry points) so that values are not
+        delivered to downstream inboxes.
+        """
+        return True
+
+    def has_input(self) -> bool:
+        """Return True if the inbox currently has any buffered input."""
+        return bool(self._inbox and self._inbox.has_any())
+
+    async def recv(self, handle: str) -> Any:
+        """Receive a single item from a specific input handle.
+
+        Raises StopAsyncIteration if the handle reaches EOS without yielding an item.
+        """
+        if not self._inbox:
+            raise RuntimeError("Inbox not attached to node; recv unavailable")
+        async for item in self._inbox.iter_input(handle):
+            return item
+        raise StopAsyncIteration
+
+    async def iter_input(self, handle: str) -> AsyncIterator[Any]:
+        """Iterate items for a specific input handle until EOS.
+
+        Use this when your node consumes a dedicated stream from one handle.
+        The iterator blocks until data arrives or the upstream(s) finish and
+        the handle reaches end-of-stream (EOS). If you need to arbitrate across
+        multiple handles by arrival order, use `iter_any_input()` instead.
+        """
+        if not self._inbox:
+            raise RuntimeError("Inbox not attached to node; iter_input unavailable")
+        async for item in self._inbox.iter_input(handle):
+            yield item
+
+    async def iter_any_input(self) -> AsyncIterator[tuple[str, Any]]:
+        """Iterate (handle, item) across all inputs in arrival order until EOS.
+
+        This multiplexes all inbound handles by arrival order with no implicit
+        alignment between handles. If you need alignment (e.g., zip by index),
+        model it explicitly in the graph with a combinator node.
+        """
+        if not self._inbox:
+            raise RuntimeError("Inbox not attached to node; iter_any_input unavailable")
+        async for handle, item in self._inbox.iter_any():
+            yield handle, item
+
+    @classmethod
+    def is_streaming_input(cls) -> bool:
+        """Nodes can override to opt-in to streaming input via inbox.
+
+        When True, the actor pre-gathers only non-streaming upstream inputs
+        (treating them as configuration) then calls `gen_process`, expecting the
+        node to iterate its inputs via the inbox helpers. When False, the actor
+        gathers at-most-one item per inbound handle and calls `process()` once.
+        """
+        return False
+
+    @classmethod
+    # Removed pre_gather_non_streaming_inputs; actor no longer pre-gathers selectively.
 
     @classmethod
     def expose_as_tool(cls):
@@ -375,7 +518,12 @@ class BaseNode(BaseModel):
 
         super().__init_subclass__()
         add_node_type(cls)
-        for field_type in cls.__annotations__.values():
+        # Resolve annotations robustly (handles postponed annotations)
+        try:
+            resolved_annotations = get_type_hints(cls)
+        except Exception:
+            resolved_annotations = getattr(cls, "__annotations__", {}) or {}
+        for field_type in resolved_annotations.values():
             if is_enum_type(field_type):
                 name = f"{field_type.__module__}.{field_type.__name__}"
                 NameToType[name] = field_type
@@ -420,6 +568,7 @@ class BaseNode(BaseModel):
             ui_properties=node.get("ui_properties", {}),
             dynamic_properties=node.get("dynamic_properties", {}),
             dynamic_outputs=node.get("dynamic_outputs", {}),
+            sync_mode=node.get("sync_mode", "on_any"),
         )
         data = node.get("data", {})
         # `set_node_properties` will raise ValueError if skip_errors is False and an error occurs.
@@ -494,22 +643,24 @@ class BaseNode(BaseModel):
         # avoid circular import
         from nodetool.metadata.node_metadata import NodeMetadata
 
-        return NodeMetadata(
-            title=cls.get_title(),
-            description=cls.get_description(),
-            namespace=cls.get_namespace(),
-            node_type=cls.get_node_type(),
-            properties=cls.properties(),  # type: ignore
-            outputs=cls.outputs(),
-            the_model_info=cls.get_model_info(),
-            layout=cls.layout(),
-            recommended_models=cls.get_recommended_models(),
-            basic_fields=cls.get_basic_fields(),
-            is_dynamic=cls.is_dynamic(),
-            is_streaming=cls.is_streaming(),
-            expose_as_tool=cls.expose_as_tool(),
-            supports_dynamic_outputs=cls.supports_dynamic_outputs(),
-        )
+        try:
+            return NodeMetadata(
+                title=cls.get_title(),
+                description=cls.get_description(),
+                namespace=cls.get_namespace(),
+                node_type=cls.get_node_type(),
+                properties=cls.properties(),  # type: ignore
+                outputs=cls.outputs(),
+                the_model_info=cls.get_model_info(),
+                layout=cls.layout(),
+                recommended_models=cls.get_recommended_models(),
+                basic_fields=cls.get_basic_fields(),
+                is_dynamic=cls.is_dynamic(),
+                expose_as_tool=cls.expose_as_tool(),
+                supports_dynamic_outputs=cls.supports_dynamic_outputs(),
+            )
+        except Exception as e:
+            raise ValueError(f"Error getting metadata for {cls.__name__}: {e}")
 
     @classmethod
     def get_json_schema(cls):
@@ -680,6 +831,7 @@ class BaseNode(BaseModel):
 
         This method is used when the node is sending updates for all outputs.
         """
+
         res_for_update = {}
 
         # Include both class-declared and instance-declared dynamic outputs
@@ -785,20 +937,13 @@ class BaseNode(BaseModel):
         return is_assignable(prop.type, value)
 
     @classmethod
-    def is_streaming(cls):
-        """
-        Check if the node is streaming.
-        """
-        return cls.gen_process is not BaseNode.gen_process
-
-    @classmethod
     def is_cacheable(cls):
         """
         Check if the node is cacheable.
         Nodes that implement gen_process (i.e., have overridden it) are not cacheable.
         """
         # Check if gen_process method in cls is different from the one in BaseNode
-        return not cls.is_dynamic() and not cls.is_streaming()
+        return not cls.is_dynamic() and not cls.is_streaming_output()
 
     def get_dynamic_properties(self):
         from nodetool.workflows.property import Property
@@ -911,7 +1056,11 @@ class BaseNode(BaseModel):
             Type | dict[str, Type] | None: The return type annotation of the process function,
             or None if no return type is specified.
         """
-        type_hints = cls.process.__annotations__
+        # Use get_type_hints to normalize annotations across modules
+        try:
+            type_hints = get_type_hints(cls.process)
+        except Exception:
+            type_hints = getattr(cls.process, "__annotations__", {})
 
         if "return" not in type_hints:
             return None
@@ -948,7 +1097,10 @@ class BaseNode(BaseModel):
                     for field, field_type in return_type.items()
                 ]
             elif is_output_type(return_type):
-                types = return_type.__annotations__
+                try:
+                    types = get_type_hints(return_type)
+                except Exception:
+                    types = getattr(return_type, "__annotations__", {})
                 return [
                     OutputSlot(
                         type=type_metadata(types[field]),
@@ -1015,7 +1167,8 @@ class BaseNode(BaseModel):
         """
         Returns the input slots of the node, including those inherited from all base classes.
         """
-        types = cls.__annotations__
+        # Resolve class annotations robustly (handles postponed annotations)
+        types = get_type_hints(cls)
         super_types = {}
         for base in cls.__bases__:
             if hasattr(base, "field_types"):
@@ -1159,24 +1312,62 @@ class BaseNode(BaseModel):
     async def gen_process(self, context: Any) -> AsyncGenerator[tuple[str, Any], None]:
         """
         Generate output messages for streaming.
-        Node implementers should override this method to provide streaming output.
-        It should yield tuples of (slot_name, value).
-        If this method is implemented, `process` should not be.
+
+        Override to provide streaming output and/or consume streaming inputs.
+        When `is_streaming_input()` returns True, pull inbound items using
+        `iter_input()` or `iter_any_input()`. Yield `(slot_name, value)` to target
+        a specific output slot, or yield `value` to target the default slot
+        named "output". If this method is implemented, `process` should not be.
         """
         # This construct ensures this is a generator function template.
         # It will not yield anything unless overridden by a subclass.
         if False:
             yield "", None  # type: ignore
 
-    async def handle_event(
-        self, context: Any, event: Event
-    ) -> AsyncGenerator[tuple[str, Any], None]:
+    def get_timeout_seconds(self) -> float | None:
+        """Return a per-node timeout in seconds, if any.
+
+        Nodes may override this method to enforce a maximum runtime. The
+        ``NodeActor`` will wrap the node execution in ``asyncio.wait_for``
+        when a positive timeout is returned.
+
+        Returns:
+            float | None: Timeout in seconds; ``None`` or a non-positive value
+            disables the timeout.
         """
-        Handle an incoming event async.
-        May dispatch output or events.
+        return None
+
+    async def run(
+        self, context: Any, inputs: "NodeInputs", outputs: "NodeOutputs"
+    ) -> None:
         """
-        if False:
-            yield "", None  # type: ignore
+        Unified entry point for node execution.
+
+        Default behavior bridges to existing methods:
+        - If the node implements streaming outputs (overrides `gen_process`), iterate the
+          generator and forward items via `outputs.emit`/`outputs.default`.
+        - Otherwise, call `process(context)`, convert the result using `convert_output`,
+          and emit via `outputs`.
+        """
+        if self.is_streaming_output():
+            agen = self.gen_process(context)
+            # Iterate yielded items and forward to outputs
+            async for item in agen:
+                if isinstance(item, tuple):
+                    if not (len(item) == 2 and isinstance(item[0], str)):
+                        raise ValueError(
+                            f"Streaming node {self.get_title()} ({self._id}) yielded item with invalid format"
+                        )
+                    slot_name, value = item
+                    await outputs.emit(slot_name, value)
+                else:
+                    await outputs.default(item)
+        else:
+            # Buffered path: single call to process() and emit converted outputs
+            result = await self.process(context)
+            converted = await self.convert_output(context, result)
+            for k, v in converted.items():
+                await outputs.emit(k, v)
 
     async def process_with_gpu(self, context: Any, max_retries: int = 3) -> Any:
         """
@@ -1235,11 +1426,26 @@ class ToolResultNode(BaseNode):
 
     _is_dynamic = True
 
-    async def process(self, context: Any) -> Any:
-        return self._dynamic_properties
+    @classmethod
+    def return_type(cls):
+        return {
+            "result": Any,
+        }
 
-    def result_for_client(self, result: dict[str, Any]) -> dict[str, Any]:
-        return result
+    async def gen_process(self, context: Any):
+        from nodetool.workflows.types import ToolResultUpdate
+
+        if self.has_input():
+            async for handle, value in self.iter_any_input():
+                yield "result", {handle: value}
+                context.post_message(
+                    ToolResultUpdate(node_id=self.id, result={handle: value})
+                )
+        else:
+            yield "result", self._dynamic_properties
+            context.post_message(
+                ToolResultUpdate(node_id=self.id, result=self._dynamic_properties)
+            )
 
 
 class OutputNode(BaseNode):
@@ -1266,8 +1472,66 @@ class OutputNode(BaseNode):
     def get_basic_fields(cls):
         return ["name", "value"]
 
-    def result_for_client(self, result: dict[str, Any]) -> dict[str, Any]:
-        return self.result_for_all_outputs({"name": self.name, **result})
+    @classmethod
+    def return_type(cls):
+        return {
+            "output": Any,
+        }
+
+    async def gen_process(self, context: Any):
+        """Stream-first sink semantics with fallback.
+
+        - If there are inbound sources (registered via the inbox), consume the
+          entire stream using `iter_any_input()` and forward each value while
+          posting `OutputUpdate` messages.
+        - If there are no inbound sources (or none produced any values and EOS
+          was reached immediately), fall back to emitting the configured
+          property `value` once.
+
+        This avoids race conditions with the actor's pre-gather stage and ensures
+        we don't miss later arrivals by only checking the immediate buffer.
+        """
+        from nodetool.workflows.types import OutputUpdate
+
+        output_type = self.__class__.__name__.replace("Output", "").lower()
+
+        yielded = False
+        async for handle, value in self.iter_any_input():
+            yielded = True
+            # For streaming, preserve per-item semantics but align naming to tests
+            context.post_message(
+                OutputUpdate(
+                    node_id=self.id,
+                    node_name=self.name,
+                    output_name=self.name,
+                    output_type=output_type,
+                    value=value,
+                )
+            )
+            yield "output", value
+
+        if not yielded:
+            # No inbound sources or no items arrived before EOS -> fallback to property
+            context.post_message(
+                OutputUpdate(
+                    node_id=self.id,
+                    node_name=self.name,
+                    output_name=self.name,
+                    output_type=output_type,
+                    value=self.value,
+                )
+            )
+            yield "output", self.value
+
+    @classmethod
+    def is_streaming_input(cls) -> bool:  # type: ignore[override]
+        """Treat inbound values as a stream to avoid pre-gather races.
+
+        Declaring streaming input prevents the actor from eagerly consuming one
+        item upfront. The generator above will block on `iter_any_input()` and
+        stream values as they arrive.
+        """
+        return True
 
     @classmethod
     def is_cacheable(cls):
@@ -1311,10 +1575,28 @@ class Preview(BaseNode):
         return False
 
     async def process(self, context: Any) -> Any:
-        return self.value
+        raise NotImplementedError("Preview node does not support process")
 
-    def result_for_client(self, result: dict[str, Any]) -> dict[str, Any]:
-        return self.result_for_all_outputs(result)
+    async def gen_process(self, context: Any):
+        """Stream previews from inbound values with fallback to configured value.
+
+        Mirrors the stream-first pattern used by `OutputNode`. If no inbound
+        sources or no items are available, falls back to previewing `self.value`.
+        """
+        from nodetool.workflows.types import PreviewUpdate
+
+        async for _handle, value in self.iter_any_input():
+            result = await context.embed_assets_in_data(value)
+            context.post_message(PreviewUpdate(node_id=self.id, value=result))
+            yield "output", result
+
+    @classmethod
+    def is_streaming_input(cls) -> bool:  # type: ignore[override]
+        """Consume inbound preview values as a stream to avoid missing items."""
+        return True
+
+    # def result_for_client(self, result: dict[str, Any]) -> dict[str, Any]:
+    #     return self.result_for_all_outputs(result)
 
 
 def find_node_class_by_name(class_name: str) -> type[BaseNode] | None:
@@ -1396,16 +1678,28 @@ def get_comfy_class_by_name(class_name: str) -> type[BaseNode] | None:
 
 
 def get_node_class(node_type: str) -> type[BaseNode] | None:
-    """Retrieve a node class by its unique node type identifier.
+    """Resolve a node class by its unique node type identifier.
 
-    First, it checks the `NODE_BY_TYPE` registry. If not found, it attempts
-    to dynamically import the module where the node class might be defined,
-    based on the `node_type` string (e.g., "namespace.ClassName" implies
-    `nodetool.nodes.namespace`). After attempting import, it checks the
-    registry again. If still not found, it checks the package registry to
-    see if the node is available in an external package. Finally, it falls
-    back to searching by the class name part of the `node_type` using
-    `find_node_class_by_name`.
+    Node type resolution follows a multi-step strategy to be resilient to
+    missing imports and variations in naming:
+
+    1) Registry lookup: Check the in-memory `NODE_BY_TYPE` mapping for an
+       exact match on the provided type and a normalized variant that drops
+       or adds a trailing "Node" suffix in the class part.
+    2) Dynamic import: If not found, try importing modules inferred from the
+       type namespace (e.g. `foo.Bar` → import `nodetool.nodes.foo` then `foo`).
+       After import, consult the registry again.
+    3) Package registry fallback: If still unresolved, consult the installed
+       packages registry to see if the node is provided externally and becomes
+       available upon import.
+    4) Class-name fallback: Finally, attempt a best-effort match by comparing
+       only the last identifier (class name), ignoring an optional trailing
+       "Node" suffix.
+
+    This behavior allows `Graph.from_dict` and other loaders to accept graphs
+    that reference node types by fully-qualified name, by short class name, or
+    from installed packages, without requiring callers to pre-import all node
+    modules.
 
     Args:
         node_type: The unique type identifier of the node (e.g.,
@@ -1415,19 +1709,62 @@ def get_node_class(node_type: str) -> type[BaseNode] | None:
         The `BaseNode` subclass corresponding to `node_type` if found,
         otherwise `None`.
     """
-    if node_type in NODE_BY_TYPE:
-        return NODE_BY_TYPE[node_type]
+    # Prepare candidate type strings, normalizing optional trailing "Node" suffix
+    parts = node_type.split(".")
+    class_part = parts[-1] if parts else node_type
+    candidates: list[str] = [node_type]
+    if class_part.endswith("Node"):
+        # Prefer lookup without the Node suffix since registry keys omit it
+        without = ".".join([*parts[:-1], class_part[:-4]])
+        candidates.append(without)
+    else:
+        with_node = (
+            ".".join([*parts[:-1], class_part + "Node"])
+            if parts
+            else class_part + "Node"
+        )
+        candidates.append(with_node)
+
+    for cand in candidates:
+        if cand in NODE_BY_TYPE:
+            return NODE_BY_TYPE[cand]
 
     # Try to load the module if node type not found
+    module_prefix = ".".join(parts[:-1])
+
+    # 1) Attempt under the standard nodes namespace
+    module_paths_to_try: list[str] = []
+    if module_prefix:
+        module_paths_to_try.append(f"nodetool.nodes.{module_prefix}")
+        module_paths_to_try.append(module_prefix)
+    else:
+        module_paths_to_try.append("nodetool.nodes")
+
+    for mod in module_paths_to_try:
+        try:
+            importlib.import_module(mod)
+            for cand in candidates:
+                if cand in NODE_BY_TYPE:
+                    return NODE_BY_TYPE[cand]
+        except Exception as e:
+            log.debug(f"Could not import module {mod}: {e}")
+
+    # 2) Fall back to importing the raw module path from node_type
+    #    This supports core types like 'nodetool.workflows.base_node.OutputNode'
+    # 3) Fallback: match by class name ignoring optional trailing Node suffix
+    #    Compare the last identifier of registered keys
     try:
-        module_path = "nodetool.nodes." + ".".join(node_type.split(".")[:-1])
-        if module_path:
-            importlib.import_module(module_path)
-            # Check again after importing
-            if node_type in NODE_BY_TYPE:
-                return NODE_BY_TYPE[node_type]
-    except Exception as e:
-        log.debug(f"Could not import module {module_path}: {e}")
+        target_names = (
+            {class_part, class_part[:-4]}
+            if class_part.endswith("Node")
+            else {class_part, class_part + "Node"}
+        )
+        for key, cls in NODE_BY_TYPE.items():
+            last = key.split(".")[-1]
+            if last in target_names:
+                return cls
+    except Exception:
+        pass
 
     return None
 

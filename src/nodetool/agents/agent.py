@@ -15,14 +15,14 @@ The implementation provides:
 """
 
 import datetime
-import logging
+from nodetool.config.logging_config import get_logger
 import json
 import os
 import asyncio
 from typing import AsyncGenerator, List, Sequence, Union, Any, Optional
 
 from nodetool.agents.tools.code_tools import ExecutePythonTool
-from nodetool.common.settings import get_log_path
+from nodetool.config.settings import get_log_path
 from nodetool.workflows.types import (
     Chunk,
     PlanningUpdate,
@@ -43,7 +43,7 @@ from nodetool.ui.console import AgentConsole
 from nodetool.agents.base_agent import BaseAgent
 
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 
 def sanitize_file_path(file_path: str) -> str:

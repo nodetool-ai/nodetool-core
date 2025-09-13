@@ -10,7 +10,7 @@ from unittest.mock import Mock, AsyncMock, patch, MagicMock
 from fastapi import WebSocket
 from fastapi.websockets import WebSocketState
 from nodetool.chat.chat_websocket_runner import ChatWebSocketRunner, WebSocketMode
-from nodetool.common.environment import Environment
+from nodetool.config.environment import Environment
 
 
 @pytest.mark.asyncio

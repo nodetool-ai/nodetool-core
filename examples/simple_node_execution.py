@@ -8,10 +8,9 @@ from nodetool.nodes.nodetool.text import Concat, FormatText
 from nodetool.nodes.nodetool.constant import Float, Text
 
 # Set up logging
-import logging
+from nodetool.config.logging_config import get_logger
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 async def simple_math_example():

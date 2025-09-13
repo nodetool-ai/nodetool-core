@@ -8,8 +8,8 @@ This page shows how to install NodeTool Core and run a simple workflow.
 # Install using pip
 pip install nodetool-core
 
-# Or with Poetry
-poetry add nodetool-core
+# Or with uv
+uv add nodetool-core
 ```
 
 ## Basic Usage

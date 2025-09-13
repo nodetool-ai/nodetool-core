@@ -15,21 +15,40 @@ Tools included:
 from typing import Any
 
 from nodetool.agents.tools.base import Tool
-from nodetool.common.environment import Environment
-from nodetool.workflows.base_node import get_node_class
+from nodetool.config.environment import Environment
+from nodetool.config.logging_config import get_logger
+from nodetool.workflows.base_node import BaseNode, get_node_class
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.metadata.type_metadata import ALL_TYPES
 
-log = Environment.get_logger()
+log = get_logger(__name__)
+
+TYPES = [
+    "str",
+    "int",
+    "float",
+    "bool",
+    "list",
+    "dict",
+    "tuple",
+    "union",
+    "enum",
+    "any",
+    "bytes",
+    "audio",
+    "image",
+    "video",
+    "document",
+    "dataframe",
+]
 
 
 class SearchNodesTool(Tool):
     name: str = "search_nodes"
     description: str = (
         """
-        Performs keyword search on Nodetool documentation. 
+        Performs keyword search on nodetool nodes. 
         Use for finding specific node types or features by exact word matches.
-        Supply a list of words to search for, including synonyms and related words.
+        Supply a list of words to search for as array, including synonyms and related words.
         Returns a list of node metadata that match the search query.
         """
     )
@@ -50,12 +69,12 @@ class SearchNodesTool(Tool):
             "input_type": {
                 "type": "string",
                 "description": "Optional. The type of input to filter by. Use to refine search if a broad search is ambiguous or returns too many irrelevant results.",
-                "enum": ALL_TYPES,
+                "enum": TYPES,
             },
             "output_type": {
                 "type": "string",
                 "description": "Optional. The type of output to filter by. Use to refine search if a broad search is ambiguous or returns too many irrelevant results.",
-                "enum": ALL_TYPES,
+                "enum": TYPES,
             },
             "exclude_namespaces": {
                 "type": "array",
@@ -77,9 +96,9 @@ class SearchNodesTool(Tool):
         output_type = params.get("output_type", None)
         n_results = params.get("n_results", 10)
         exclude_namespaces = params.get("exclude_namespaces", self.exclude_namespaces)
-        if input_type and input_type not in ALL_TYPES:
+        if input_type and input_type not in TYPES:
             raise ValueError(f"Invalid input type: {input_type}")
-        if output_type and output_type not in ALL_TYPES:
+        if output_type and output_type not in TYPES:
             raise ValueError(f"Invalid output type: {output_type}")
 
         # Import here to avoid circular imports
@@ -92,25 +111,30 @@ class SearchNodesTool(Tool):
             n_results=n_results,
             exclude_namespaces=exclude_namespaces,
         )
+        node_types: list[type[BaseNode]] = []
         for result in results:
             # Import node class to import necessary types
-            get_node_class(result.node_type)
+            node_type = get_node_class(result.node_type)
+            assert node_type is not None, f"Node type {result.node_type} not found"
+            node_types.append(node_type)
 
         return [
             {
-                "type": result.node_type,
-                "title": result.title,
-                "description": result.description,
+                "type": node_type.get_node_type(),
+                "title": node_type.get_title(),
+                "description": node_type.get_description(),
                 "properties": {
-                    prop.name: prop.type.get_json_schema() for prop in result.properties
+                    prop.name: prop.type.get_json_schema()
+                    for prop in node_type.properties()
                 },
                 "outputs": {
-                    out.name: out.type.get_json_schema() for out in result.outputs
+                    out.name: out.type.get_json_schema() for out in node_type.outputs()
                 },
-                "is_dynamic": result.is_dynamic,
-                "is_streaming": result.is_streaming,
+                "is_dynamic": node_type.is_dynamic(),
+                "is_streaming_output": node_type.is_streaming_output(),
+                "is_streaming_input": node_type.is_streaming_input(),
             }
-            for result in results
+            for node_type in node_types
         ]
 
 
@@ -138,4 +162,8 @@ class SearchExamplesTool(Tool):
         # Import here to avoid circular imports
         from nodetool.chat.search_examples import search_examples
 
-        return search_examples(query=query)
+        results = []
+        for q in query:
+            log.info(f"Searching for examples with query: {q}")
+            results.extend(search_examples(query=q))
+        return results

@@ -7,7 +7,7 @@
 # import os
 # from nodetool.metadata.types import AudioRef, DataframeRef, NPArray
 # from nodetool.metadata.types import FolderRef
-# from nodetool.common.environment import Environment
+# from nodetool.config.environment import Environment
 
 # from nodetool.nodes.lib.pillow import Blend, Composite
 # from nodetool.nodes.lib.audio import SaveAudio

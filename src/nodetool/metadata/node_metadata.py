@@ -5,6 +5,7 @@ import importlib
 import pkgutil
 import inspect
 import logging
+from nodetool.config.logging_config import get_logger
 from pydantic import BaseModel, Field, ConfigDict
 from nodetool.packages.types import AssetInfo
 from nodetool.workflows.property import Property
@@ -15,13 +16,7 @@ from nodetool.workflows.base_node import (
 )
 
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class NodeMetadata(BaseModel):
@@ -66,9 +61,6 @@ class NodeMetadata(BaseModel):
         default_factory=list, description="Basic fields of the node"
     )
     is_dynamic: bool = Field(default=False, description="Whether the node is dynamic")
-    is_streaming: bool = Field(
-        default=False, description="Whether the node is streaming"
-    )
     expose_as_tool: bool = Field(
         default=False, description="Whether the node is exposed as a tool"
     )

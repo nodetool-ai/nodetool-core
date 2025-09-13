@@ -8,9 +8,16 @@ from nodetool.types.job import JobUpdate
 from nodetool.workflows.types import Error, OutputUpdate
 from pydantic import BaseModel, Field
 from nodetool.types.graph import Edge, Node, remove_connected_slots
-from nodetool.types.workflow import WorkflowList, Workflow, WorkflowRequest
+from nodetool.types.workflow import (
+    WorkflowList,
+    Workflow,
+    WorkflowRequest,
+    WorkflowToolList,
+    WorkflowTool,
+)
 from nodetool.api.utils import current_user
-from nodetool.common.environment import Environment
+from nodetool.config.environment import Environment
+import logging
 from typing import Any, Optional
 from nodetool.workflows.read_graph import read_graph
 from nodetool.models.workflow import Workflow as WorkflowModel
@@ -24,8 +31,9 @@ from nodetool.chat.providers import get_provider
 from nodetool.metadata.types import Provider
 from nodetool.chat.workspace_manager import WorkspaceManager
 import asyncio
+from nodetool.config.logging_config import get_logger
 
-log = Environment.get_logger()
+log = get_logger(__name__)
 router = APIRouter(prefix="/api/workflows", tags=["workflows"])
 
 
@@ -45,6 +53,7 @@ def from_model(workflow: WorkflowModel):
         created_at=workflow.created_at.isoformat(),
         updated_at=workflow.updated_at.isoformat(),
         name=workflow.name,
+        tool_name=workflow.tool_name,
         package_name=workflow.package_name,
         tags=workflow.tags,
         description=workflow.description or "",
@@ -187,8 +196,7 @@ async def get_workflow_tools(
     user: str = Depends(current_user),
     cursor: Optional[str] = None,
     limit: int = 100,
-    columns: Optional[str] = None,
-) -> WorkflowList:
+) -> WorkflowToolList:
     """
     Get all workflows that have run_mode set to "tool".
 
@@ -203,27 +211,157 @@ async def get_workflow_tools(
     Returns:
         WorkflowList: List of tool workflows with pagination info
     """
-    column_list = columns.split(",") if columns else None
-
     # Get all user workflows
-    workflows, cursor = await WorkflowModel.paginate(
-        user_id=user, limit=limit, start_key=cursor, columns=column_list
+    workflows, cursor = await WorkflowModel.paginate_tools(
+        user_id=user,
+        limit=limit,
+        start_key=cursor,
     )
 
-    # Filter for workflows with run_mode = "tool"
-    tool_workflows = [w for w in workflows if w.run_mode == "tool"]
-
-    return WorkflowList(
-        workflows=[from_model(workflow) for workflow in tool_workflows],
+    return WorkflowToolList(
+        workflows=[
+            WorkflowTool(
+                name=workflow.name,
+                tool_name=workflow.tool_name,
+                description=workflow.description,
+            )
+            for workflow in workflows
+        ],
         next=cursor if len(workflows) == limit else None,
     )
 
 
 @router.get("/examples")
 async def examples() -> WorkflowList:
+    """
+    List example workflows enriched with required providers and models.
+
+    Provider detection rules:
+    - If a node's namespace matches a known provider namespace
+      (gemini, openai, replicate, huggingface, huggingface_hub, fal, aime)
+    - Or if any node property is a LanguageModel (type == 'language_model')
+      which has a 'provider' field
+
+    Model detection rules:
+    - Collect ids from LanguageModel (id)
+    - Collect repo_id from HuggingFaceModel-like types (types starting with 'hf.')
+    - Collect model_id from InferenceProvider* types
+    """
     example_registry = Registry()
+
+    # Base list (lightweight graph), we will load full example per item to analyze
     examples = await asyncio.to_thread(example_registry.list_examples)
-    return WorkflowList(workflows=examples, next=None)
+
+    provider_namespaces = {
+        "gemini",
+        "openai",
+        "replicate",
+        "huggingface",
+        "huggingface_hub",
+        "fal",
+        "aime",
+    }
+
+    def parse_namespace(node_type: str) -> str:
+        parts = node_type.split(".")
+        if not parts:
+            return ""
+        return parts[0]
+
+    def collect_from_value(val: Any, providers: set[str], models: set[str]):
+        # Recursively collect provider/model info from nested dict/list values
+        if isinstance(val, dict):
+            t = val.get("type")
+            if t == "language_model":
+                # Provider and id from LanguageModel
+                provider = val.get("provider")
+                if isinstance(provider, str) and provider:
+                    providers.add(provider)
+                model_id = val.get("id")
+                if isinstance(model_id, str) and model_id:
+                    models.add(model_id)
+            elif isinstance(t, str) and t.startswith("hf."):
+                # HuggingFace model types (repo_id)
+                repo_id = val.get("repo_id")
+                if isinstance(repo_id, str) and repo_id:
+                    models.add(repo_id)
+            elif isinstance(t, str) and t.startswith("inference_provider_"):
+                # Inference provider types: collect model ids and providers
+                model_id = val.get("model_id")
+                if isinstance(model_id, str) and model_id:
+                    models.add(model_id)
+                provider = "huggingface_hub"
+
+            # Recurse into nested values
+            for v in val.values():
+                collect_from_value(v, providers, models)
+        elif isinstance(val, list):
+            for item in val:
+                collect_from_value(item, providers, models)
+
+    # Load full examples in parallel to speed up detection
+    load_tasks: list[asyncio.Future] = []
+    indices: list[int] = []
+    for i, ex in enumerate(examples):
+        if ex.package_name and ex.name:
+            load_tasks.append(
+                asyncio.to_thread(
+                    example_registry.load_example, ex.package_name, ex.name
+                )
+            )
+            indices.append(i)
+
+    loaded_map: dict[int, Workflow | None] = {}
+    if load_tasks:
+        results = await asyncio.gather(*load_tasks, return_exceptions=True)
+        for pos, res in enumerate(results):
+            idx = indices[pos]
+            if isinstance(res, Exception):
+                log.warning(f"Error loading example {idx}: {res}")
+                loaded_map[idx] = None
+            else:
+                loaded_map[idx] = res
+
+    enriched: list[Workflow] = []
+    for i, ex in enumerate(examples):
+        required_providers: set[str] = set()
+        required_models: set[str] = set()
+
+        full_example = loaded_map.get(i)
+        if full_example and full_example.graph and full_example.graph.nodes:
+            for node in full_example.graph.nodes:
+                ns = parse_namespace(node.type)
+                if ns in provider_namespaces:
+                    required_providers.add(ns)
+                collect_from_value(
+                    getattr(node, "data", {}), required_providers, required_models
+                )
+
+        enriched.append(
+            Workflow(
+                id=ex.id,
+                access=ex.access,
+                created_at=ex.created_at,
+                updated_at=ex.updated_at,
+                name=ex.name,
+                tool_name=ex.tool_name,
+                package_name=ex.package_name,
+                tags=ex.tags,
+                description=ex.description,
+                thumbnail=ex.thumbnail,
+                thumbnail_url=ex.thumbnail_url,
+                graph=ex.graph,
+                input_schema=ex.input_schema,
+                output_schema=ex.output_schema,
+                settings=ex.settings,
+                run_mode=ex.run_mode,
+                path=ex.path,
+                required_providers=sorted(required_providers) or None,
+                required_models=sorted(required_models) or None,
+            )
+        )
+
+    return WorkflowList(workflows=enriched, next=None)
 
 
 @router.get("/examples/search")
@@ -298,6 +436,7 @@ async def update_workflow(
     if workflow_request.graph is None:
         raise HTTPException(status_code=400, detail="Invalid workflow")
     workflow.name = workflow_request.name
+    workflow.tool_name = workflow_request.tool_name
     workflow.description = workflow_request.description
     workflow.tags = workflow_request.tags
     workflow.package_name = workflow_request.package_name
@@ -325,7 +464,7 @@ async def delete_workflow(
         raise HTTPException(status_code=404, detail="Workflow not found")
     if workflow.user_id != user:
         raise HTTPException(status_code=404, detail="Workflow not found")
-    workflow.delete()
+    await workflow.delete()
 
 
 @router.put("/examples/{id}")
@@ -362,7 +501,9 @@ async def save_example_workflow(
         workflow.tags = [tag for tag in workflow.tags if tag != "example"]
 
     try:
-        saved_workflow = await asyncio.to_thread(example_registry.save_example, workflow)
+        saved_workflow = await asyncio.to_thread(
+            example_registry.save_example, workflow
+        )
         return saved_workflow
     except ValueError as e:
         log.error(f"Error saving example workflow: {str(e)}")

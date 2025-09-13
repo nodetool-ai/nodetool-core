@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, HTTPException
 import httpx
-from nodetool.common.system_stats import SystemStats
+from nodetool.system.system_stats import SystemStats
 from nodetool.types.job import (
     JobUpdate,
 )
@@ -89,12 +89,14 @@ from nodetool.metadata.types import (
     InferenceProviderImageSegmentationModel,
 )
 from nodetool.workflows.base_node import ToolResultNode, get_node_class
-from nodetool.common.environment import Environment
+from nodetool.config.environment import Environment
+from nodetool.config.logging_config import get_logger
+from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.types import ProcessingMessage
 from nodetool.packages.registry import Registry
 import asyncio
 
-log = Environment.get_logger()
+log = get_logger(__name__)
 router = APIRouter(prefix="/api/nodes", tags=["nodes"])
 
 
@@ -183,6 +185,7 @@ UnionType = (
     | InferenceProviderImageToImageModel
     | InferenceProviderImageSegmentationModel
     | ProcessingMessage
+    | RunJobRequest
 )
 
 

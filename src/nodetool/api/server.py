@@ -1,30 +1,47 @@
 import os
 import asyncio
 import platform
-import multiprocessing
+import sys
 from typing import Any, List
 import dotenv
+from contextlib import asynccontextmanager
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
-from nodetool.api import collection, file, package, prediction, font
-from nodetool.common.environment import Environment
+from nodetool.config.environment import Environment
 
-from nodetool.common.huggingface_cache import huggingface_download_endpoint
-from nodetool.common.websocket_runner import WebSocketRunner
+from nodetool.integrations.huggingface.huggingface_cache import (
+    huggingface_download_endpoint,
+)
+from nodetool.integrations.websocket.websocket_runner import WebSocketRunner
 from nodetool.chat.chat_websocket_runner import ChatWebSocketRunner
 
 from fastapi import APIRouter, FastAPI, Request, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from uvicorn import run as uvicorn
+import sys
+from nodetool.config.logging_config import configure_logging, get_logger
 
 from nodetool.metadata.types import Provider
 from nodetool.packages.registry import get_nodetool_package_source_folders
 
-from . import asset, job, message, node, storage, workflow, model, settings, thread
+from . import (
+    asset,
+    font,
+    collection,
+    file,
+    debug,
+    message,
+    node,
+    storage,
+    workflow,
+    model,
+    settings,
+    thread,
+)
 import mimetypes
 
-from nodetool.common.websocket_updates import websocket_updates
+from nodetool.integrations.websocket.websocket_updates import websocket_updates
 from nodetool.api.openai import create_openai_compatible_router
 
 if platform.system() == "Windows":
@@ -62,6 +79,8 @@ mimetypes.add_type("text/plain", ".txt")
 
 Environment.initialize_sentry()
 
+log = get_logger(__name__)
+
 
 class ExtensionRouterRegistry:
     _instance = None
@@ -86,16 +105,15 @@ class ExtensionRouterRegistry:
 
 DEFAULT_ROUTERS = [
     asset.router,
-    job.router,
     message.router,
     thread.router,
     model.router,
     node.router,
-    prediction.router,
     workflow.router,
     storage.router,
     storage.temp_router,
     font.router,
+    debug.router,
 ]
 
 
@@ -103,7 +121,6 @@ if not Environment.is_production():
     DEFAULT_ROUTERS.append(file.router)
     DEFAULT_ROUTERS.append(settings.router)
     DEFAULT_ROUTERS.append(collection.router)
-    DEFAULT_ROUTERS.append(package.router)
 
 
 def create_app(
@@ -112,13 +129,50 @@ def create_app(
     static_folder: str | None = None,
     apps_folder: str | None = None,
 ):
-    env_file = dotenv.find_dotenv(usecwd=True)
+    # Centralized dotenv loading for consistency with deploy.fastapi_server
+    from nodetool.config.environment import load_dotenv_files
 
-    if env_file != "":
-        print(f"Loading environment from {env_file}")
-        dotenv.load_dotenv(env_file)
+    load_dotenv_files()
+    log.info(
+        "dotenv: ENV=%s | LOG_LEVEL=%s | DEBUG=%s",
+        os.environ.get("ENV"),
+        os.environ.get("LOG_LEVEL"),
+        os.environ.get("DEBUG"),
+    )
 
-    app = FastAPI()
+    # Use FastAPI lifespan API instead of deprecated on_event hooks
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        # Startup: pre-initialize storages to avoid first-request blocking
+        try:
+            # Offload potential filesystem setup to threads
+            await asyncio.to_thread(Environment.get_asset_storage)
+            await asyncio.to_thread(Environment.get_temp_storage)
+        except Exception as e:
+            log.warning(f"Storage pre-initialization failed: {e}")
+
+        # Hand control back to the app
+        yield
+
+        # Shutdown: cleanup resources
+        log.info("Server shutdown initiated - cleaning up resources")
+
+        try:
+            # Import here to avoid circular imports
+            from nodetool.integrations.websocket.websocket_updates import (
+                websocket_updates,
+            )
+
+            await websocket_updates.shutdown()
+            log.info("WebSocket updates shutdown complete")
+        except Exception as e:
+            log.error(f"Error during websocket updates shutdown: {e}")
+
+        # Give a moment for cleanup to complete
+        await asyncio.sleep(0.1)
+        log.info("Server shutdown cleanup complete")
+
+    app = FastAPI(lifespan=lifespan)
 
     app.add_middleware(
         CORSMiddleware,
@@ -156,15 +210,7 @@ def create_app(
         print(f"Mounting apps folder: {apps_folder}")
         app.mount("/apps", StaticFiles(directory=apps_folder, html=True), name="apps")
 
-    # Pre-initialize storages to avoid first-request blocking due to lazy init
-    @app.on_event("startup")
-    async def _initialize_storages() -> None:
-        try:
-            # Offload potential filesystem setup to threads
-            await asyncio.to_thread(Environment.get_asset_storage)
-            await asyncio.to_thread(Environment.get_temp_storage)
-        except Exception as e:
-            Environment.get_logger().warning(f"Storage pre-initialization failed: {e}")
+    # Pre-initialization and shutdown cleanup handled via lifespan above
 
     @app.get("/health")
     async def health_check() -> str:
@@ -211,6 +257,13 @@ def create_app(
     return app
 
 
+def setup_signal_handlers() -> None:
+    """Setup signal handlers for graceful shutdown."""
+    # Don't override signal handlers - let uvicorn handle them
+    # Our cleanup will happen via the FastAPI shutdown event
+    pass
+
+
 def run_uvicorn_server(app: Any, host: str, port: int, reload: bool) -> None:
     """
     Starts api using Uvicorn with the specified configuration.
@@ -229,27 +282,61 @@ def run_uvicorn_server(app: Any, host: str, port: int, reload: bool) -> None:
     else:
         reload_dirs = []
 
-    if platform.system() == "Windows":
-        loop = "asyncio"
-    else:
-        try:
-            import uvloop  # type: ignore  # noqa: F401
+    use_color = sys.stdout.isatty() and os.getenv("NO_COLOR") is None
 
-            loop = "uvloop"
-        except Exception:
-            loop = "asyncio"
+    configure_logging(
+        fmt=(
+            "\x1b[90m%(asctime)s\x1b[0m | %(levelname)s | \x1b[36m%(name)s\x1b[0m | %(message)s"
+            if use_color
+            else None
+        )
+    )
 
-    workers = 1
+    # Uvicorn uses its own logging; keep level name plain for compatibility
+    formatter = {
+        "format": os.getenv(
+            "NODETOOL_LOG_FORMAT",
+            (
+                (
+                    "\x1b[90m%(asctime)s\x1b[0m | %(levelname)s | \x1b[36m%(name)s\x1b[0m | %(message)s"
+                    if use_color
+                    else "%(asctime)s | %(levelname)s | %(name)s | %(message)s"
+                )
+            ),
+        ),
+        "datefmt": os.getenv("NODETOOL_LOG_DATEFMT", "%Y-%m-%d %H:%M:%S"),
+    }
 
-    # Uvicorn requires an import string when using reload=True or workers > 1
-    if (reload or workers > 1) and not isinstance(app, str):
-        app = "nodetool.api.app:app"
-
-    # Workaround: On Windows, uvicorn's reload mode may prevent clean Ctrl-C shutdown.
-    # Disable reload on Windows to avoid reloader child-process hang.
-    if platform.system() == "Windows" and reload:
-        print("Windows detected: disabling uvicorn reload for clean Ctrl-C shutdown.")
-        reload = False
+    uvicorn_log_config = {
+        "version": 1,
+        "disable_existing_loggers": False,
+        "formatters": {"default": formatter},
+        "handlers": {
+            "default": {
+                "class": "logging.StreamHandler",
+                "formatter": "default",
+                "level": os.getenv("NODETOOL_LOG_LEVEL", "INFO").upper(),
+                "stream": "ext://sys.stdout",
+            }
+        },
+        "loggers": {
+            "uvicorn": {
+                "handlers": ["default"],
+                "level": os.getenv("NODETOOL_LOG_LEVEL", "INFO").upper(),
+                "propagate": False,
+            },
+            "uvicorn.error": {
+                "handlers": ["default"],
+                "level": os.getenv("NODETOOL_LOG_LEVEL", "INFO").upper(),
+                "propagate": False,
+            },
+            "uvicorn.access": {
+                "handlers": ["default"],
+                "level": os.getenv("NODETOOL_LOG_LEVEL", "INFO").upper(),
+                "propagate": False,
+            },
+        },
+    }
 
     try:
         uvicorn(
@@ -258,14 +345,34 @@ def run_uvicorn_server(app: Any, host: str, port: int, reload: bool) -> None:
             port=port,
             reload=reload,
             reload_dirs=reload_dirs,
-            loop=loop,
-            workers=workers,
+            log_config=uvicorn_log_config,
+            loop="asyncio",
+            workers=1,
         )
     except KeyboardInterrupt:
-        # Ensure immediate termination on Windows where child processes may linger
+        print("\nServer interrupted by user (Ctrl+C)")
+        # On Windows, uvicorn shutdown can hang - force exit immediately after cleanup
+        if platform.system() == "Windows":
+            print("Windows detected: forcing immediate exit to prevent hanging...")
+            # Use a separate thread to force exit after a short delay
+            import threading
+            import time
+
+            def force_exit():
+                time.sleep(2)  # Give cleanup handlers time to run
+                print("Forcing process termination...")
+                os._exit(0)
+
+            # Start the force exit timer
+            exit_thread = threading.Thread(target=force_exit, daemon=True)
+            exit_thread.start()
+
+            # Let the normal shutdown proceed, but it will be terminated by the timer
+        raise
+    finally:
+        # As a last resort on Windows, forcefully exit the process to avoid hangs
         if platform.system() == "Windows":
             os._exit(0)
-        raise
 
 
 if __name__ == "__main__":

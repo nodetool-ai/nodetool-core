@@ -1,7 +1,7 @@
 from httpx import AsyncClient, HTTPStatusError, RequestError
 from nodetool.agents.serp_providers.serp_providers import ErrorResponse, SerpProvider
 from nodetool.agents.tools._remove_base64_images import _remove_base64_images
-from nodetool.common.environment import Environment
+from nodetool.config.environment import Environment
 
 
 import json

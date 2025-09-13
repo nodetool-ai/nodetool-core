@@ -1,11 +1,12 @@
 from datetime import datetime
 import re
 import aiosqlite
+import sqlite3
 from types import UnionType
 from typing import Any, Dict, List, Optional, get_args
 from pydantic.fields import FieldInfo
 
-from nodetool.common.environment import Environment
+from nodetool.config.environment import Environment
 from nodetool.models.condition_builder import (
     Condition,
     ConditionBuilder,
@@ -249,14 +250,16 @@ class SQLiteAdapter(DatabaseAdapter):
         connection = await aiosqlite.connect(db_path, timeout=30)
         connection.row_factory = aiosqlite.Row
         if Environment.is_debug():
-            connection.set_trace_callback(print)
+            await connection.set_trace_callback(print)
         self = cls(db_path, fields, table_schema, indexes, connection)
         if await self.table_exists():
             await self.migrate_table()
         else:
             await self.create_table()
             for index in self.indexes:
-                await self.create_index(index["name"], index["columns"], index["unique"])
+                await self.create_index(
+                    index["name"], index["columns"], index["unique"]
+                )
         return self
 
     @property
@@ -369,10 +372,25 @@ class SQLiteAdapter(DatabaseAdapter):
         # Handle table schema changes
         if fields_to_add:
             for field_name in fields_to_add:
+                # Refresh schema each time to avoid races; skip if already present
+                try:
+                    current_schema = await self.get_current_schema()
+                except Exception:
+                    current_schema = set()
+                if field_name in current_schema:
+                    continue
+
                 field_type = get_sqlite_type(self.fields[field_name].annotation)
-                await self.connection.execute(
-                    f"ALTER TABLE {self.table_name} ADD COLUMN {field_name} {field_type}"
-                )
+                try:
+                    await self.connection.execute(
+                        f"ALTER TABLE {self.table_name} ADD COLUMN {field_name} {field_type}"
+                    )
+                except sqlite3.OperationalError as e:
+                    # If another concurrent migration added the column, ignore
+                    if "duplicate column name" in str(e).lower():
+                        pass
+                    else:
+                        raise
 
         if fields_to_remove:
             # Create new table with desired schema
@@ -391,7 +409,9 @@ class SQLiteAdapter(DatabaseAdapter):
 
             # Recreate all indexes
             for index in self.indexes:
-                await self.create_index(index["name"], index["columns"], index["unique"])
+                await self.create_index(
+                    index["name"], index["columns"], index["unique"]
+                )
         else:
             # Create new indexes and update modified ones
             for index_name in indexes_to_add | set(indexes_to_update):
@@ -519,10 +539,7 @@ class SQLiteAdapter(DatabaseAdapter):
 
         cursor = await self.connection.execute(query, params)
         rows = await cursor.fetchall()
-        res = [
-            convert_from_sqlite_attributes(dict(row), self.fields)
-            for row in rows
-        ]
+        res = [convert_from_sqlite_attributes(dict(row), self.fields) for row in rows]
 
         if len(res) == 0 or len(res) < limit:
             return res, ""

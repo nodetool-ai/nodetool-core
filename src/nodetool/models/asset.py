@@ -8,8 +8,9 @@ and optional workflow association.
 
 from typing import Dict, Optional, Literal, Sequence
 from datetime import datetime
-from nodetool.common.content_types import CONTENT_TYPE_TO_EXTENSION
-from nodetool.common.environment import Environment
+from nodetool.types.content_types import CONTENT_TYPE_TO_EXTENSION
+from nodetool.config.environment import Environment
+from nodetool.config.logging_config import get_logger
 
 from nodetool.models.base_model import (
     DBModel,
@@ -19,7 +20,7 @@ from nodetool.models.base_model import (
 )
 from nodetool.models.condition_builder import Field
 
-log = Environment.get_logger()
+log = get_logger(__name__)
 
 
 @DBIndex(["user_id", "parent_id"])

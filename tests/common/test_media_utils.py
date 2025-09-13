@@ -4,7 +4,7 @@ import cv2
 import numpy as np
 import pytest
 
-from nodetool.common.media_utils import (
+from nodetool.media.common.media_utils import (
     create_image_thumbnail,
     create_video_thumbnail,
     get_video_duration,

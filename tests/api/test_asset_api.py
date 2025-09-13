@@ -3,7 +3,7 @@ import zipfile
 from io import BytesIO
 from fastapi.testclient import TestClient
 import pytest
-from nodetool.common.environment import Environment
+from nodetool.config.environment import Environment
 from nodetool.models.asset import Asset
 from nodetool.types.asset import AssetCreateRequest, AssetUpdateRequest
 from conftest import make_image, make_text

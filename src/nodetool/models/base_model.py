@@ -1,7 +1,8 @@
 from typing import Any
 from pydantic import BaseModel, Field
 
-from nodetool.common.environment import Environment
+from nodetool.config.environment import Environment
+from nodetool.config.logging_config import get_logger
 from uuid import uuid1
 from random import randint
 
@@ -24,7 +25,7 @@ Key Components:
 """
 
 
-log = Environment.get_logger()
+log = get_logger(__name__)
 
 # Global registry to track all database adapters for cleanup
 _global_adapters: list[DatabaseAdapter] = []

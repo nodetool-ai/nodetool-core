@@ -1,6 +1,6 @@
 import json
 from typing import AsyncGenerator
-from nodetool.common.environment import Environment
+from nodetool.config.environment import Environment
 from nodetool.metadata.types import LlamaModel
 from ollama import AsyncClient
 
@@ -54,10 +54,24 @@ async def get_ollama_model_info(model_name: str) -> dict | None:
 
 
 async def stream_ollama_model_pull(model_name: str) -> AsyncGenerator[str, None]:
-    ollama = get_ollama_client()
-    res = await ollama.pull(model_name, stream=True)
-    async for chunk in res:
-        yield json.dumps(chunk.model_dump()) + "\n"
+    try:
+        ollama = get_ollama_client()
+        res = await ollama.pull(model_name, stream=True)
+        async for chunk in res:
+            yield json.dumps(chunk.model_dump()) + "\n"
+    except Exception as e:
+        # Surface a clear, user-friendly error when Ollama is not reachable
+        api_url = Environment.get("OLLAMA_API_URL")
+        error_payload = {
+            "status": "error",
+            "message": (
+                f"Cannot connect to Ollama at {api_url!s}. "
+                "Make sure Ollama is running. Try: 'ollama serve' or set OLLAMA_API_URL."
+            ),
+            "error": str(e),
+            "model": model_name,
+        }
+        yield json.dumps(error_payload) + "\n"
 
 
 async def delete_ollama_model(model_name: str) -> bool:

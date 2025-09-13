@@ -20,15 +20,14 @@ def load_all_nodes():
             _tool_node_registry[sanitize_node_name(node.node_type)] = node
 
 
-def resolve_tool_by_name(
+async def resolve_tool_by_name(
     name: str,
+    user_id: str,
 ):
     """
     Resolve a tool instance by name using the following precedence:
-    1) Exact match from provided available_tools instances
-    2) Match using sanitized node/tool name from available_tools
-    3) Instantiate from registry by exact name
-    4) Instantiate from registry by sanitized name
+    1) match using sanitized node name
+    2) match using workflow tool name
 
     Args:
         name: The requested tool name (from model/tool call or message)
@@ -40,11 +39,6 @@ def resolve_tool_by_name(
     Raises:
         ValueError: If the tool cannot be resolved
     """
-
-    # Try registry by exact name
-    # tool_class = get_tool_by_name(name)
-    # if tool_class:
-    #     return tool_class()
 
     if len(_tool_node_registry) == 0:
         load_all_nodes()
@@ -64,9 +58,18 @@ def resolve_tool_by_name(
             return NodeTool(node_class)
 
     if name.startswith("workflow_"):
-        # TODO: check user is owner of workflow
-        workflow = Workflow.get(name.replace("workflow_", ""))
+        workflow = await Workflow.find_by_tool_name(
+            user_id, name.replace("workflow_", "")
+        )
         if workflow:
             return WorkflowTool(from_model(workflow))
+        else:
+            raise ValueError(f"Workflow tool with tool name {name} not found")
 
     raise ValueError(f"Tool {name} not found")
+
+
+if __name__ == "__main__":
+    load_all_nodes()
+    for name, tool in _tool_node_registry.items():
+        print(name)

@@ -3,7 +3,7 @@ import json
 import os
 from typing import Any, Type, Union
 from pydantic import BaseModel
-import logging
+from nodetool.config.logging_config import get_logger
 from nodetool.workflows.base_node import BaseNode
 
 
@@ -13,7 +13,7 @@ logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def defined_in_module(obj: Any, module: Union[Type[Any], Any]) -> bool:

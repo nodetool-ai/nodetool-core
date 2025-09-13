@@ -8,11 +8,17 @@ from nodetool.packages.registry import update_pyproject_include
 def test_update_pyproject_include_adds_assets(tmp_path):
     pyproject = tmp_path / "pyproject.toml"
     pyproject.write_text(
-        """[tool.poetry]
-name = \"demo\"
-version = \"0.1\"
-packages = [{ include = \"nodetool\", from = \"src\" }]
-package-mode = true
+        """[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "demo"
+version = "0.1.0"
+description = "Demo package"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/nodetool"]
 """
     )
 
@@ -45,5 +51,5 @@ package-mode = true
         os.chdir(cwd)
 
     content = pyproject.read_text()
-    assert "src/nodetool/package_metadata/demo.json" in content
-    assert "src/nodetool/assets/demo/image.png" in content
+    assert "package_metadata/demo.json" in content
+    assert "assets/demo/image.png" in content

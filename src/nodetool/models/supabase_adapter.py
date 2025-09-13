@@ -2,7 +2,7 @@
 Adapter for interacting with a Supabase backend (PostgreSQL with PostgREST).
 """
 
-import logging
+from nodetool.config.logging_config import get_logger
 
 # mypy: ignore-errors
 from typing import Any, Dict, List, Type, Union, get_origin, get_args
@@ -23,7 +23,7 @@ from nodetool.models.condition_builder import (
     LogicalOperator,
 )
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 
 # --- Type Conversion Helpers (Similar to Postgres, adjust if needed for Supabase client) ---
@@ -368,7 +368,7 @@ class SupabaseAdapter(DatabaseAdapter):
         """
         # Supabase client typically manages its own connection lifecycle
         # Check if the client has a close method or similar cleanup
-        if hasattr(self.supabase_client, 'close'):
+        if hasattr(self.supabase_client, "close"):
             await self.supabase_client.close()
         # For most Supabase client implementations, explicit cleanup isn't required
         # as connections are managed automatically

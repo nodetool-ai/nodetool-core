@@ -59,65 +59,142 @@ def test_from_dict_with_invalid_nodes():
     """Test Graph.from_dict handles invalid nodes gracefully"""
     data = {
         "nodes": [
-            {"id": "1", "type": "tests.workflows.test_graph_module.InNode", "name": "a", "value": 1}, # invalid - not registered
-            {"id": "2", "type": "InvalidNodeType"}, # invalid
-            {"id": "3", "type": "tests.workflows.test_graph_module.OutNode", "name": "out"} # invalid - not registered
+            {
+                "id": "1",
+                "type": "tests.workflows.test_graph_module.InNode",
+                "name": "a",
+                "value": 1,
+            },  # invalid - not registered
+            {"id": "2", "type": "InvalidNodeType"},  # invalid
+            {
+                "id": "3",
+                "type": "tests.workflows.test_graph_module.OutNode",
+                "name": "out",
+            },  # invalid - not registered
         ],
         "edges": [
-            {"id": "e1", "source": "1", "sourceHandle": "output", "target": "3", "targetHandle": "value"}
-        ]
+            {
+                "id": "e1",
+                "source": "1",
+                "sourceHandle": "output",
+                "target": "3",
+                "targetHandle": "value",
+            }
+        ],
     }
     graph = Graph.from_dict(data)
-    # All nodes are invalid since test node types are not registered, so expect empty graph
-    assert len(graph.nodes) == 0 # Should skip all invalid nodes
-    assert graph.find_node("1") is None
-    assert graph.find_node("2") is None
-    assert graph.find_node("3") is None
-    assert len(graph.edges) == 0 # No edges since no valid nodes
+    # New behavior: Graph.from_dict attempts to resolve node classes dynamically.
+    # For unknown external test types, classes may be resolved (InNode/OutNode exist here),
+    # so nodes can be instantiated even if originally considered "not registered".
+    assert len(graph.nodes) == 2
+    # The single edge remains since both endpoints resolved
+    assert len(graph.edges) == 1
 
 
 def test_from_dict_with_invalid_edges():
     """Test Graph.from_dict handles invalid edges gracefully"""
     data = {
         "nodes": [
-            {"id": "1", "type": "tests.workflows.test_graph_module.InNode", "name": "a", "value": 1}, # invalid - not registered
-            {"id": "2", "type": "tests.workflows.test_graph_module.OutNode", "name": "out"} # invalid - not registered
+            {
+                "id": "1",
+                "type": "tests.workflows.test_graph_module.InNode",
+                "name": "a",
+                "value": 1,
+            },  # invalid - not registered
+            {
+                "id": "2",
+                "type": "tests.workflows.test_graph_module.OutNode",
+                "name": "out",
+            },  # invalid - not registered
         ],
         "edges": [
-            {"id": "e1", "source": "1", "sourceHandle": "output", "target": "2", "targetHandle": "value"}, # invalid - no valid nodes
-            {"id": "e2", "source": "1", "target": "nonexistent_target"}, # invalid - missing sourceHandle, targetHandle and invalid target
-            {"id": "e3", "source": "nonexistent_source", "sourceHandle": "output", "target": "2", "targetHandle": "value"} # invalid
-        ]
+            {
+                "id": "e1",
+                "source": "1",
+                "sourceHandle": "output",
+                "target": "2",
+                "targetHandle": "value",
+            },  # invalid - no valid nodes
+            {
+                "id": "e2",
+                "source": "1",
+                "target": "nonexistent_target",
+            },  # invalid - missing sourceHandle, targetHandle and invalid target
+            {
+                "id": "e3",
+                "source": "nonexistent_source",
+                "sourceHandle": "output",
+                "target": "2",
+                "targetHandle": "value",
+            },  # invalid
+        ],
     }
     graph = Graph.from_dict(data)
-    # No valid nodes since test node types are not registered
-    assert len(graph.nodes) == 0
-    assert len(graph.edges) == 0 # Should skip all edges due to no valid nodes
+    # New behavior: InNode and OutNode can be resolved; keep nodes and valid edges
+    assert len(graph.nodes) == 2
+    # One valid edge (e1) since both ends resolve; invalid edges are skipped
+    assert len(graph.edges) == 1
 
 
 def test_from_dict_mixed_valid_invalid():
     """Test Graph.from_dict with mix of valid/invalid data"""
     data = {
         "nodes": [
-            {"id": "1", "type": "tests.workflows.test_graph_module.InNode", "name": "a", "value": 1}, # invalid - not registered
-            {"id": "2", "type": "UnknownNodeType"}, # invalid node
-            {"id": "3", "type": "tests.workflows.test_graph_module.AddNode", "a": 1, "b": 2}, # invalid - not registered
-            {"id": "4", "type": "tests.workflows.test_graph_module.OutNode", "name": "out"} # invalid - not registered
+            {
+                "id": "1",
+                "type": "tests.workflows.test_graph_module.InNode",
+                "name": "a",
+                "value": 1,
+            },  # invalid - not registered
+            {"id": "2", "type": "UnknownNodeType"},  # invalid node
+            {
+                "id": "3",
+                "type": "tests.workflows.test_graph_module.AddNode",
+                "a": 1,
+                "b": 2,
+            },  # invalid - not registered
+            {
+                "id": "4",
+                "type": "tests.workflows.test_graph_module.OutNode",
+                "name": "out",
+            },  # invalid - not registered
         ],
         "edges": [
-            {"id": "e1", "source": "1", "sourceHandle": "output", "target": "3", "targetHandle": "a"}, # valid
-            {"id": "e2", "source": "1", "sourceHandle": "output", "target": "2", "targetHandle": "input"}, # invalid edge (target node is invalid)
-            {"id": "e3", "source": "3", "sourceHandle": "output", "target": "4", "targetHandle": "value"}, # valid
-            {"id": "e4", "source": "non_existent", "sourceHandle": "output", "target": "4", "targetHandle": "value"} # invalid edge
-        ]
+            {
+                "id": "e1",
+                "source": "1",
+                "sourceHandle": "output",
+                "target": "3",
+                "targetHandle": "a",
+            },  # valid
+            {
+                "id": "e2",
+                "source": "1",
+                "sourceHandle": "output",
+                "target": "2",
+                "targetHandle": "input",
+            },  # invalid edge (target node is invalid)
+            {
+                "id": "e3",
+                "source": "3",
+                "sourceHandle": "output",
+                "target": "4",
+                "targetHandle": "value",
+            },  # valid
+            {
+                "id": "e4",
+                "source": "non_existent",
+                "sourceHandle": "output",
+                "target": "4",
+                "targetHandle": "value",
+            },  # invalid edge
+        ],
     }
     graph = Graph.from_dict(data)
-    # All nodes are invalid since test node types are not registered
-    assert len(graph.nodes) == 0 # All nodes should be skipped
-    assert graph.find_node("1") is None
-    assert graph.find_node("2") is None
-    assert graph.find_node("3") is None
-    assert graph.find_node("4") is None
-    
-    # All edges are invalid since there are no valid nodes
-    assert len(graph.edges) == 0
+    # New behavior: InNode, AddNode, OutNode are defined here and resolvable
+    assert len(graph.nodes) == 3
+    assert graph.find_node("1") is not None
+    assert graph.find_node("3") is not None
+    assert graph.find_node("4") is not None
+    # Valid edges between resolved nodes are retained: e1 and e3
+    assert len(graph.edges) == 2

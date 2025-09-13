@@ -18,12 +18,11 @@ from nodetool.workflows.run_workflow import run_workflow
 from nodetool.workflows.types import Chunk, PlanningUpdate
 
 # Set up logging
-import logging
+from nodetool.config.logging_config import get_logger
 
 import pandas as pd
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 async def create_and_execute_workflow(

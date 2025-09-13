@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 from unittest.mock import patch, AsyncMock, Mock
 
 from nodetool.chat.chat_sse_runner import ChatSSERunner
-from nodetool.common.environment import Environment
+from nodetool.config.environment import Environment
 
 
 # Create a test FastAPI app with SSE endpoint
@@ -55,6 +55,13 @@ class TestOpenAIChatSSEIntegration:
     def setup_method(self):
         """Set up test client"""
         self.client = TestClient(app)
+
+    def teardown_method(self):
+        """Ensure the TestClient is closed to avoid event loop/resource leaks"""
+        try:
+            self.client.close()
+        except Exception:
+            pass
 
     @patch.object(Environment, "use_remote_auth", return_value=False)
     def test_openai_chat_completions_request(self, mock_auth):

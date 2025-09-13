@@ -13,6 +13,7 @@ class Node(BaseModel):
     ui_properties: Any = Field(default_factory=dict)
     dynamic_properties: dict[str, Any] = Field(default_factory=dict)
     dynamic_outputs: dict[str, TypeMetadata] = Field(default_factory=dict)
+    sync_mode: str = "on_any"
 
 
 class Edge(BaseModel):

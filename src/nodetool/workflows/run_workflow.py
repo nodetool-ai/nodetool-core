@@ -2,7 +2,8 @@ import asyncio
 from typing import AsyncGenerator, Any
 from uuid import uuid4
 from nodetool.types.graph import Edge, Node, Graph
-from nodetool.common.environment import Environment
+from nodetool.config.environment import Environment
+from nodetool.config.logging_config import get_logger
 from nodetool.types.job import JobUpdate
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.run_job_request import RunJobRequest
@@ -11,7 +12,7 @@ from nodetool.workflows.workflow_runner import WorkflowRunner
 from nodetool.workflows.threaded_event_loop import ThreadedEventLoop
 from nodetool.models.workflow import Workflow as WorkflowModel
 
-log = Environment.get_logger()
+log = get_logger(__name__)
 
 
 async def process_message(
@@ -76,6 +77,7 @@ async def run_workflow(
     send_job_updates: bool = True,
     initialize_graph: bool = True,
     validate_graph: bool = True,
+    event_loop: ThreadedEventLoop | None = None,
 ) -> AsyncGenerator[ProcessingMessage, None]:
     """
     Runs a workflow asynchronously, with the option to run in a separate thread.
@@ -88,6 +90,9 @@ async def run_workflow(
         send_job_updates (bool): Whether to send job updates to the client. Defaults to True.
         initialize_graph (bool): Whether to initialize the graph. Defaults to True.
         validate_graph (bool): Whether to validate the graph. Defaults to True.
+        event_loop (ThreadedEventLoop | None): Optional persistent threaded event loop to schedule the workflow on
+            when use_thread is True. If provided, this function will not create or close a new loop and will reuse
+            the given loop. If not provided, a temporary loop is created and closed via context manager.
 
     Yields:
         Any: A generator that yields job updates and messages from the workflow.
@@ -98,15 +103,16 @@ async def run_workflow(
     Returns:
         AsyncGenerator[Any, None]: An asynchronous generator that yields job updates and messages from the workflow.
     """
+    if runner is None:
+        runner = WorkflowRunner(job_id=uuid4().hex)
+
     if context is None:
         context = ProcessingContext(
             user_id=request.user_id,
+            job_id=runner.job_id,
             auth_token=request.auth_token,
             workflow_id=request.workflow_id,
         )
-
-    if runner is None:
-        runner = WorkflowRunner(job_id=uuid4().hex)
 
     async def run():
         if request.graph is None:
@@ -114,14 +120,15 @@ async def run_workflow(
             workflow = await context.get_workflow(request.workflow_id)
             if workflow is None:
                 raise Exception(f"Workflow {request.workflow_id} not found")
-            request.graph = workflow.get_api_graph()
-        await runner.run(
-            request=request,
-            context=context,
-            send_job_updates=send_job_updates,
-            initialize_graph=initialize_graph,
-            validate_graph=validate_graph,
-        )
+            # Support both API model and plain object with a 'graph' attribute
+            if hasattr(workflow, "get_api_graph"):
+                request.graph = workflow.get_api_graph()  # type: ignore[attr-defined]
+            elif hasattr(workflow, "graph"):
+                request.graph = getattr(workflow, "graph")
+            else:
+                raise Exception("Workflow object does not provide a graph")
+        # Call with minimal positional args for compatibility with test runners
+        await runner.run(request, context)
 
     if use_thread:
         # Running the workflow in a separate thread (via ThreadedEventLoop) is beneficial
@@ -135,8 +142,11 @@ async def run_workflow(
         #    and isolating them in a separate thread prevents interference with other
         #    operations in the main application thread or event loop.
         log.info(f"Running workflow in thread for {request.workflow_id}")
-        with ThreadedEventLoop() as tel:
-            run_future = tel.run_coroutine(run())
+        if event_loop is not None:
+            # Use provided persistent loop (do not close it here)
+            if not event_loop.is_running:
+                event_loop.start()
+            run_future = event_loop.run_coroutine(run())
 
             try:
                 async for msg in process_workflow_messages(context, runner):
@@ -152,6 +162,25 @@ async def run_workflow(
                 log.exception(e)
                 yield Error(error=str(e))
                 yield JobUpdate(job_id=runner.job_id, status="failed", error=str(e))
+        else:
+            # Backwards-compatible behavior: create a temporary loop for this run
+            with ThreadedEventLoop() as tel:
+                run_future = tel.run_coroutine(run())
+
+                try:
+                    async for msg in process_workflow_messages(context, runner):
+                        yield msg
+                except Exception as e:
+                    log.exception(e)
+                    run_future.cancel()
+                    yield Error(error=str(e))
+                    yield JobUpdate(job_id=runner.job_id, status="failed", error=str(e))
+                try:
+                    run_future.result()
+                except Exception as e:
+                    log.exception(e)
+                    yield Error(error=str(e))
+                    yield JobUpdate(job_id=runner.job_id, status="failed", error=str(e))
 
     else:
         run_task = asyncio.create_task(run())

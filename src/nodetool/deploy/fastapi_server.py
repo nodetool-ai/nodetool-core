@@ -20,7 +20,8 @@ import uvicorn
 from fastapi import FastAPI, HTTPException
 from rich.console import Console
 
-from nodetool.common.environment import Environment
+from nodetool.config.environment import Environment
+from nodetool.config.logging_config import get_logger
 from nodetool.api.openai import create_openai_compatible_router
 from nodetool.types.workflow import Workflow
 from nodetool.deploy.workflow_routes import (
@@ -31,7 +32,7 @@ from nodetool.deploy.collection_routes import create_collection_router
 
 
 console = Console()
-log = Environment.get_logger()
+log = get_logger(__name__)
 
 ## Workflow registry and routes moved to nodetool.deploy.workflow_routes
 
@@ -135,9 +136,17 @@ def run_nodetool_server(
         tools: List of tool names to enable
         workflows: List of workflows to make available
     """
-    import dotenv
-
-    dotenv.load_dotenv()
+    # Use centralized dotenv loading for consistency
+    from nodetool.config.environment import load_dotenv_files
+    loaded_before = dict(os.environ)
+    load_dotenv_files()
+    # Simple diagnostic about changes and key flags
+    log.info(
+        "dotenv: ENV=%s | LOG_LEVEL=%s | DEBUG=%s",
+        os.environ.get("ENV"),
+        os.environ.get("LOG_LEVEL"),
+        os.environ.get("DEBUG"),
+    )
 
     app = create_nodetool_server(remote_auth, provider, default_model, tools, workflows)
 

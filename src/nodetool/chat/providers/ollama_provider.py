@@ -8,7 +8,7 @@ handling message conversion, streaming, and tool integration.
 import asyncio
 import json
 import re
-from typing import Any, AsyncGenerator, Sequence, Dict
+from typing import Any, AsyncGenerator, AsyncIterator, Sequence, Dict
 from contextlib import asynccontextmanager
 
 from ollama import AsyncClient, Client
@@ -18,7 +18,12 @@ import tiktoken
 from nodetool.chat.providers.base import ChatProvider
 from nodetool.chat.token_counter import count_messages_tokens
 from nodetool.agents.tools.base import Tool
-from nodetool.common.environment import Environment
+from nodetool.config.environment import Environment
+from nodetool.config.logging_config import get_logger
+from nodetool.media.image.image_utils import (
+    image_data_to_base64_jpeg,
+    image_ref_to_base64_jpeg,
+)
 from nodetool.metadata.types import (
     Message,
     Provider,
@@ -29,11 +34,14 @@ from nodetool.metadata.types import (
 )
 from nodetool.workflows.types import Chunk
 
+log = get_logger(__name__)
+
 
 def get_ollama_sync_client() -> Client:
     """Get a sync client for the Ollama API."""
     api_url = Environment.get("OLLAMA_API_URL")
     assert api_url, "OLLAMA_API_URL not set"
+    log.debug(f"Creating sync Ollama client with URL: {api_url}")
 
     return Client(api_url)
 
@@ -43,11 +51,13 @@ async def get_ollama_client() -> AsyncGenerator[AsyncClient, None]:
     """Get an AsyncClient for the Ollama API."""
     api_url = Environment.get("OLLAMA_API_URL")
     assert api_url, "OLLAMA_API_URL not set"
+    log.debug(f"Creating async Ollama client with URL: {api_url}")
 
     client = AsyncClient(api_url)
     try:
         yield client
     finally:
+        log.debug("Closing async Ollama client")
         await client._client.aclose()
 
 
@@ -110,25 +120,35 @@ class OllamaProvider(ChatProvider):
         }
         self.encoding = tiktoken.get_encoding("cl100k_base")
         self.log_file = log_file
+        log.debug(
+            f"OllamaProvider initialized. API URL present: {bool(self.api_url)}, log_file: {log_file}"
+        )
 
     def get_container_env(self) -> dict[str, str]:
         env_vars = {}
         if self.api_url:
             env_vars["OLLAMA_API_URL"] = self.api_url
+        log.debug(f"Container environment variables: {list(env_vars.keys())}")
         return env_vars
 
     def get_context_length(self, model: str) -> int:
         """Get the maximum token limit for a given model."""
+        log.debug(f"Getting context length for model: {model}")
         try:
             client = get_ollama_sync_client()
+            log.debug(f"Fetching model info for: {model}")
 
             # Construct the URL for the show endpoint
             model_info = client.show(model=model).modelinfo
             if model_info is None:
+                log.debug("Model info is None, using default context length: 4096")
                 return 4096
+
+            log.debug(f"Model info keys: {list(model_info.keys())}")
 
             for key, value in model_info.items():
                 if ".context_length" in key:
+                    log.debug(f"Found context length in model info: {key} = {value}")
                     return int(value)
 
             # Otherwise, try to extract from modelfile parameters
@@ -136,18 +156,26 @@ class OllamaProvider(ChatProvider):
                 modelfile = model_info["modelfile"]
                 param_match = re.search(r"PARAMETER\s+num_ctx\s+(\d+)", modelfile)
                 if param_match:
-                    return int(param_match.group(1))
+                    context_length = int(param_match.group(1))
+                    log.debug(f"Found context length in modelfile: {context_length}")
+                    return context_length
+                else:
+                    log.debug("No num_ctx parameter found in modelfile")
 
             # Default fallback if we can't determine the context length
+            log.debug("Using default context length: 4096")
             return 4096
         except Exception as e:
+            log.error(f"Error determining model context length: {e}")
             print(f"Error determining model context length: {e}")
             # Fallback to a reasonable default
             return 4096
 
     def _count_tokens(self, messages: Sequence[Message]) -> int:
         """Estimate token count for a sequence of messages."""
-        return count_messages_tokens(messages, encoding=self.encoding)
+        token_count = count_messages_tokens(messages, encoding=self.encoding)
+        log.debug(f"Estimated token count for {len(messages)} messages: {token_count}")
+        return token_count
 
     def convert_message(self, message: Message) -> Dict[str, Any]:
         """
@@ -156,21 +184,24 @@ class OllamaProvider(ChatProvider):
         Args:
             message: The message to convert
         """
+        log.debug(f"Converting message with role: {message.role}")
+
         if message.role == "tool":
-            # Standard tool message format
+            log.debug(f"Converting tool message with name: {message.name}")
             if isinstance(message.content, BaseModel):
                 content = message.content.model_dump_json()
+            elif isinstance(message.content, dict):
+                content = json.dumps(message.content)
+            elif isinstance(message.content, list):
+                content = json.dumps([part.model_dump() for part in message.content])
+            elif isinstance(message.content, str):
+                content = message.content
             else:
-                if isinstance(message.content, dict):
-                    content = json.dumps(message.content)
-                elif isinstance(message.content, list):
-                    content = json.dumps(
-                        [part.model_dump() for part in message.content]
-                    )
-                else:
-                    content = str(message.content)
+                content = json.dumps(message.content)
+            log.debug(f"Tool message content type: {type(message.content)}")
             return {"role": "tool", "content": content, "name": message.name}
         elif message.role == "system":
+            log.debug("Converting system message")
             # Handle system message content conversion
             if message.content is None:
                 content = ""
@@ -184,13 +215,16 @@ class OllamaProvider(ChatProvider):
                     if isinstance(part, MessageTextContent)
                 ]
                 content = "\n".join(text_parts)
+                log.debug(f"Extracted {len(text_parts)} text parts from system message")
             return {"role": "system", "content": content}
         elif message.role == "user":
+            log.debug("Converting user message")
             assert message.content is not None, "User message content must not be None"
             message_dict: Dict[str, Any] = {"role": "user"}
 
             if isinstance(message.content, str):
                 message_dict["content"] = message.content
+                log.debug("User message has string content")
             else:
                 # Handle text content
                 text_parts = [
@@ -199,18 +233,26 @@ class OllamaProvider(ChatProvider):
                     if isinstance(part, MessageTextContent)
                 ]
                 message_dict["content"] = "\n".join(text_parts)
+                log.debug(f"User message has {len(text_parts)} text parts")
 
                 # Handle image content
                 image_parts = [
-                    self._process_image_content(part.image)
+                    image_ref_to_base64_jpeg(part.image)
                     for part in message.content
                     if isinstance(part, MessageImageContent)
                 ]
                 if image_parts:
                     message_dict["images"] = image_parts
+                    log.debug(f"User message has {len(image_parts)} images")
+                else:
+                    log.debug("User message has no images")
 
             return message_dict
         elif message.role == "assistant":
+            log.debug("Converting assistant message")
+            tool_calls = message.tool_calls or []
+            log.debug(f"Assistant message has {len(tool_calls)} tool calls")
+
             message_dict = {
                 "role": "assistant",
                 "tool_calls": [
@@ -220,15 +262,17 @@ class OllamaProvider(ChatProvider):
                             "arguments": tool_call.args,
                         },
                     }
-                    for tool_call in message.tool_calls or []
+                    for tool_call in tool_calls
                 ],
             }
 
             # Handle None content (common when only tool calls are present)
             if message.content is None:
                 message_dict["content"] = ""
+                log.debug("Assistant message has no content (tool calls only)")
             elif isinstance(message.content, str):
                 message_dict["content"] = message.content
+                log.debug("Assistant message has string content")
             else:
                 text_parts = [
                     part.text
@@ -236,14 +280,21 @@ class OllamaProvider(ChatProvider):
                     if isinstance(part, MessageTextContent)
                 ]
                 message_dict["content"] = "\n".join(text_parts)
+                log.debug(f"Assistant message has {len(text_parts)} text parts")
 
             return message_dict
         else:
+            log.error(f"Unknown message role: {message.role}")
             raise ValueError(f"Unknown message role {message.role}")
 
     def format_tools(self, tools: Sequence[Any]) -> list:
         """Convert tools to Ollama's format."""
-        return [tool.tool_param() for tool in tools]
+        log.debug(f"Formatting {len(tools)} tools for Ollama API")
+        formatted_tools = [tool.tool_param() for tool in tools]
+        log.debug(
+            f"Formatted tools: {[tool.get('function', {}).get('name', 'unknown') for tool in formatted_tools]}"
+        )
+        return formatted_tools
 
     def _prepare_request_params(
         self,
@@ -267,8 +318,13 @@ class OllamaProvider(ChatProvider):
         Returns:
             Dict[str, Any]: Parameters ready for Ollama API request
         """
+        log.debug(
+            f"Preparing request params for model: {model}, {len(messages)} messages, {len(tools)} tools"
+        )
+
         # Regular message conversion only
         ollama_messages = [self.convert_message(m) for m in messages]
+        log.debug(f"Converted to {len(ollama_messages)} Ollama messages")
 
         params = {
             "model": model,
@@ -278,22 +334,30 @@ class OllamaProvider(ChatProvider):
                 "num_ctx": context_window,
             },
         }
+        log.debug(f"Set options: num_predict={max_tokens}, num_ctx={context_window}")
 
         if len(tools) > 0:
             params["tools"] = self.format_tools(tools)
+            log.debug(f"Added {len(tools)} tools to request")
 
         if response_format:
+            log.debug(f"Processing response format: {response_format.get('type')}")
             if (
                 response_format.get("type") == "json_schema"
                 and "json_schema" in response_format
             ):
                 schema = response_format["json_schema"]
                 if "schema" not in schema:
+                    log.error("schema is required in json_schema response format")
                     raise ValueError(
                         "schema is required in json_schema response format"
                     )
                 params["format"] = schema["schema"]
+                log.debug("Added JSON schema format to request")
+            else:
+                log.debug("Response format type not supported, skipping")
 
+        log.debug(f"Prepared request params with keys: {list(params.keys())}")
         return params
 
     def _update_usage_stats(self, response):
@@ -301,9 +365,13 @@ class OllamaProvider(ChatProvider):
         prompt_tokens = getattr(response, "prompt_eval_count", 0)
         completion_tokens = getattr(response, "eval_count", 0)
 
+        log.debug(
+            f"Updating usage stats - prompt: {prompt_tokens}, completion: {completion_tokens}"
+        )
         self.usage["prompt_tokens"] += prompt_tokens
         self.usage["completion_tokens"] += completion_tokens
         self.usage["total_tokens"] += prompt_tokens + completion_tokens
+        log.debug(f"Updated usage stats: {self.usage}")
 
     async def generate_messages(
         self,
@@ -314,7 +382,7 @@ class OllamaProvider(ChatProvider):
         context_window: int = 4096,
         response_format: dict | None = None,
         **kwargs,
-    ) -> AsyncGenerator[Chunk | ToolCall, Any]:
+    ) -> AsyncIterator[Chunk | ToolCall]:
         """
         Generate streaming completions from Ollama.
 
@@ -328,6 +396,8 @@ class OllamaProvider(ChatProvider):
         Yields:
             Chunk | ToolCall: Content chunks or tool calls
         """
+        log.debug(f"Starting streaming generation for model: {model}")
+        log.debug(f"Streaming with {len(messages)} messages, {len(tools)} tools")
         self._log_api_request("chat_stream", messages, model, tools)
 
         async with get_ollama_client() as client:
@@ -340,23 +410,48 @@ class OllamaProvider(ChatProvider):
                 **kwargs,
             )
             params["stream"] = True
+            log.debug("Starting streaming chat request")
 
             completion = await client.chat(**params)
+            log.debug("Streaming response initialized")
+
+            chunk_count = 0
+            tool_call_count = 0
+
             async for response in completion:
+                chunk_count += 1
+
                 # Track usage metrics when we receive the final response
                 if response.done:
+                    log.debug("Final chunk received, updating usage stats")
                     self._update_usage_stats(response)
 
                 if response.message.tool_calls is not None:
+                    log.debug(
+                        f"Chunk contains {len(response.message.tool_calls)} tool calls"
+                    )
                     for tool_call in response.message.tool_calls:
+                        tool_call_count += 1
+                        log.debug(
+                            f"Yielding tool call {tool_call_count}: {tool_call.function.name}"
+                        )
                         yield ToolCall(
                             name=tool_call.function.name,
                             args=dict(tool_call.function.arguments),
                         )
+
+                content = response.message.content or ""
+
                 yield Chunk(
-                    content=response.message.content or "",
+                    content=content,
                     done=response.done or False,
                 )
+
+                if response.done:
+                    log.debug(
+                        f"Streaming completed. Total chunks: {chunk_count}, tool calls: {tool_call_count}"
+                    )
+                    break
 
     async def generate_message(
         self,
@@ -380,6 +475,8 @@ class OllamaProvider(ChatProvider):
         Returns:
             Message: The complete response message
         """
+        log.debug(f"Generating complete message for model: {model}")
+        log.debug(f"Non-streaming with {len(messages)} messages, {len(tools)} tools")
         self._log_api_request("chat", messages, model, tools)
 
         async with get_ollama_client() as client:
@@ -391,11 +488,14 @@ class OllamaProvider(ChatProvider):
                 max_tokens=max_tokens,
             )
             params["stream"] = False
+            log.debug("Making non-streaming chat request")
 
             response = await client.chat(**params)
+            log.debug("Received complete response from Ollama")
 
             self._update_usage_stats(response)
             content = response.message.content or ""
+            log.debug(f"Response content length: {len(content)}")
 
             tool_calls = None
             if response.message.tool_calls:
@@ -406,6 +506,9 @@ class OllamaProvider(ChatProvider):
                     )
                     for tool_call in response.message.tool_calls
                 ]
+                log.debug(f"Response contains {len(tool_calls)} tool calls")
+            else:
+                log.debug("Response contains no tool calls")
 
             res = Message(
                 role="assistant",
@@ -414,6 +517,7 @@ class OllamaProvider(ChatProvider):
             )
 
             self._log_api_response("chat", res)
+            log.debug("Returning generated message")
 
             return res
 
@@ -425,106 +529,47 @@ class OllamaProvider(ChatProvider):
         Converts all images to JPEG format, resizes to 512x512 bounds,
         and returns as a base64 string without data URI prefix.
 
+        DEPRECATED: Use nodetool.media.image.image_utils.image_ref_to_base64_jpeg instead.
+
         Args:
             image: The ImageRef object containing the image URI or data
 
         Returns:
             str: The processed image as a base64 string
         """
-        import base64
-        import requests
-        from urllib.parse import urlparse
-        import io
-        from PIL import Image
-        import os
+        import warnings
 
-        def process_image_data(image_data: bytes) -> str:
-            """Convert image data to resized JPEG and return as base64 string."""
-            try:
-                # Open image with PIL
-                with Image.open(io.BytesIO(image_data)) as img:
-                    # Convert to RGB if needed (removes alpha channel)
-                    if img.mode in ("RGBA", "LA") or (
-                        img.mode == "P" and "transparency" in img.info
-                    ):
-                        background = Image.new("RGB", img.size, (255, 255, 255))
-                        background.paste(
-                            img, mask=img.split()[3] if img.mode == "RGBA" else None
-                        )
-                        img = background
-                    elif img.mode != "RGB":
-                        img = img.convert("RGB")
-
-                    # Resize if needed
-                    if img.width > 512 or img.height > 512:
-                        img.thumbnail((512, 512), Image.Resampling.LANCZOS)
-
-                    # Save as JPEG
-                    output = io.BytesIO()
-                    img.save(output, format="JPEG", quality=85)
-
-                    # Base64 encode without data URI prefix
-                    base64_data = base64.b64encode(output.getvalue()).decode("utf-8")
-                    return base64_data
-            except Exception as e:
-                print(f"Error processing image: {e}")
-                raise
-
-        # Case 1: Image has data bytes
-        if hasattr(image, "data") and image.data:
-            try:
-                return process_image_data(image.data)
-            except Exception as e:
-                print(f"Failed to process image from data: {e}")
-
-        # Case 2: Already a base64 data URI
-        if image.uri and image.uri.startswith("data:"):
-            try:
-                # Extract the base64 data and decode
-                header, encoded = image.uri.split(",", 1)
-                image_data = base64.b64decode(encoded)
-                # Re-process to standardize format and size
-                return process_image_data(image_data)
-            except Exception as e:
-                print(f"Failed to process base64 image: {e}")
-                # Return original if processing fails, but strip data URI prefix
-                if image.uri.startswith("data:"):
-                    return image.uri.split(",", 1)[1]
-                return image.uri
-
-        # Case 3: URL
-        if image.uri:
-            parsed = urlparse(image.uri)
-            if parsed.scheme in ("http", "https"):
-                try:
-                    response = requests.get(image.uri, timeout=10)
-                    response.raise_for_status()
-                    return process_image_data(response.content)
-                except Exception as e:
-                    print(
-                        f"Failed to download or process image from URL {image.uri}: {e}"
-                    )
-
-            # Case 4: Local file
-            elif parsed.scheme == "file" or not parsed.scheme:
-                try:
-                    file_path = image.uri
-                    if file_path.startswith("file://"):
-                        file_path = file_path[7:]
-
-                    with open(os.path.expanduser(file_path), "rb") as f:
-                        return process_image_data(f.read())
-                except Exception as e:
-                    print(f"Failed to read or process local image {image.uri}: {e}")
-
-        # If all processing attempts fail, return an empty string rather than a data URI
-        return "" if not image.uri else image.uri
+        log.debug("Processing image content (deprecated method)")
+        warnings.warn(
+            "_process_image_content is deprecated. Use nodetool.media.image.image_utils.image_ref_to_base64_jpeg instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        result = image_ref_to_base64_jpeg(image)
+        log.debug(f"Processed image to base64 string of length: {len(result)}")
+        return result
 
     def is_context_length_error(self, error: Exception) -> bool:
         msg = str(error).lower()
-        return (
+        is_context_error = (
             "context length" in msg or "context window" in msg or "token limit" in msg
         )
+        log.debug(f"Checking if error is context length error: {is_context_error}")
+        return is_context_error
+
+    def get_usage(self) -> dict:
+        """Return the current accumulated token usage statistics."""
+        log.debug(f"Getting usage stats: {self.usage}")
+        return self.usage.copy()
+
+    def reset_usage(self) -> None:
+        """Reset the usage counters to zero."""
+        log.debug("Resetting usage counters")
+        self.usage = {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+        }
 
 
 async def main():

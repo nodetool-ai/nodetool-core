@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from nodetool.common.async_chroma_client import get_async_collection
+from nodetool.integrations.vectorstores.chroma.async_chroma_client import get_async_collection
 from nodetool.indexing.ingestion import default_ingestion_workflow, find_input_nodes
 from nodetool.metadata.types import Collection, FilePath
 from nodetool.types.job import JobUpdate

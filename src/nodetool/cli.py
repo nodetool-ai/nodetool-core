@@ -3,9 +3,11 @@ import sys
 import shutil
 import click
 from nodetool.api.workflow import from_model
-from nodetool.common.configuration import get_settings_registry
-from nodetool.common.environment import Environment
-from nodetool.common.settings import load_settings
+from nodetool.config.configuration import get_settings_registry
+from nodetool.config.environment import Environment
+import logging
+from nodetool.config.logging_config import get_logger
+from nodetool.config.settings import load_settings
 from nodetool.deploy.docker import (
     generate_image_tag,
     build_docker_image,
@@ -44,7 +46,7 @@ import atexit
 atexit.register(cleanup_progress)
 
 warnings.filterwarnings("ignore")
-log = Environment.get_logger()
+log = get_logger(__name__)
 
 # Define supported GPU types for RunPod REST API
 # SUPPORTED_GPU_TYPES = [
@@ -415,7 +417,7 @@ def settings():
 @click.option("--mask", is_flag=True, help="Mask secret values with ****.")
 def show_settings(secrets: bool, mask: bool):
     """Show current settings or secrets."""
-    from nodetool.common.settings import load_settings
+    from nodetool.config.settings import load_settings
 
     # Load settings and secrets
     settings_obj, secrets_obj = load_settings()
@@ -446,7 +448,7 @@ def show_settings(secrets: bool, mask: bool):
 @click.option("--secrets", is_flag=True, help="Edit secrets instead of settings.")
 def edit_settings(secrets: bool = False):
     """Edit settings or secrets."""
-    from nodetool.common.settings import (
+    from nodetool.config.settings import (
         load_settings,
         get_system_file_path,
         SETTINGS_FILE,
@@ -605,26 +607,50 @@ def init():
     version = "0.1.0"
     description = click.prompt("Description", type=str, default="")
     author = click.prompt("Author (name <email>)", type=str)
-    python_version = "^3.10"
+    python_version = "3.11"
 
-    # Create pyproject.toml content
+    # Create pyproject.toml content (PEP 621 + setuptools)
+    author_name, author_email = (author, None)
+    if "<" in author and ">" in author:
+        try:
+            author_name = author.split("<")[0].strip()
+            author_email = author.split("<")[1].split(">")[0].strip()
+        except Exception:
+            author_name, author_email = author, None
+
+    deps_line = "\n".join(
+        [
+            "dependencies = [",
+            f"  \"nodetool-core @ git+https://github.com/nodetool-ai/nodetool-core.git@main\"",
+            "]",
+        ]
+    )
+
+    # Create pyproject.toml content  
+    author_name = author.split(' <')[0] if ' <' in author else author
+    author_email = author.split(' <')[1].rstrip('>') if ' <' in author else "author@example.com"
+    python_req = python_version.lstrip('^')
+    
     pyproject_content = f"""[build-system]
-requires = ["poetry-core>=1.0.0"]
-build-backend = "poetry.core.masonry.api"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
-[tool.poetry]
+[project]
 name = "{name}"
 version = "{version}"
 description = "{description}"
 readme = "README.md"
-authors = ["{author}"]
-packages = [{{ include = "nodetool", from = "src" }}]
-package-mode = true
-include = []
+authors = [
+    {{name = "{author_name}", email = "{author_email}"}}
+]
+requires-python = ">={python_req}"
 
-[tool.poetry.dependencies]
-python = "{python_version}"
-nodetool-core = {{ git = "https://github.com/nodetool-ai/nodetool-core.git", rev = "main" }}
+dependencies = [
+    "nodetool-core @ git+https://github.com/nodetool-ai/nodetool-core.git@main",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/nodetool"]
 """
 
     # Write to pyproject.toml
@@ -691,10 +717,7 @@ def docs(output_dir: str, compact: bool, verbose: bool):
 
         project_data = pyproject_data.get("project", {})
         if not project_data:
-            project_data = pyproject_data.get("tool", {}).get("poetry", {})
-
-        if not project_data:
-            click.echo("Error: No project metadata found in pyproject.toml", err=True)
+            click.echo("Error: No [project] metadata found in pyproject.toml", err=True)
             sys.exit(1)
 
         package_name = project_data.get("name")
@@ -702,12 +725,13 @@ def docs(output_dir: str, compact: bool, verbose: bool):
             click.echo("Error: No package name found in pyproject.toml", err=True)
             sys.exit(1)
 
-        repository = project_data.get("repository")
-        if not repository:
-            click.echo("Error: No repository found in pyproject.toml", err=True)
-            sys.exit(1)
-
-        repository.split("/")[-2]
+        # Optional: repository URL from PEP 621 URLs
+        urls = project_data.get("urls") if isinstance(project_data, dict) else None
+        if isinstance(urls, dict):
+            repository = urls.get("Repository") or urls.get("Source") or urls.get("Homepage")
+        else:
+            repository = None
+        # repository is not strictly required for docs generation
 
         # Discover node classes by scanning the directory
         node_classes = []
@@ -1549,7 +1573,7 @@ def deploy_runpod(
       nodetool deploy --list-gpu-types
       nodetool deploy --list-all-options
     """
-    from nodetool.common.settings import load_settings
+    from nodetool.config.settings import load_settings
     import dotenv
 
     dotenv.load_dotenv()

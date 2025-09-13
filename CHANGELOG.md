@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **Media Utilities Consolidation**: Refactored media/asset conversion utilities out of `processing_context.py` into focused, reusable modules:
+  - Added `common/font_utils.py` with `get_system_font_path()` for cross-platform font discovery
+  - Extended `common/image_utils.py` with `pil_image_to_base64_jpeg()` and `image_data_to_base64_jpeg()` for consistent image processing
+  - Extended `common/video_utils.py` with `export_to_video_bytes()` for in-memory video encoding
+  - Updated `processing_context.py` to delegate to shared utilities for `numpy_to_pil_image`, `get_system_font_path`, and video encoding
+  - Consolidated duplicate `numpy_to_audio_segment` implementations across packages to use `common/audio_helpers`
+  - Updated `ollama_provider.py` to use shared image utilities for JPEG conversion and resizing
+
+### Deprecated
+
+- Direct imports of `numpy_to_audio_segment` from `nodetool-lib-data/src/nodetool/nodes/lib/numpy/utils.py` - use `from nodetool.media.audio.audio_helpers import numpy_to_audio_segment` instead
+
 ## [0.6.0] - 2025-04-07
 
 ### Added

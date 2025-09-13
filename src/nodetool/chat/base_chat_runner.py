@@ -15,8 +15,9 @@ Subclasses should implement transport-specific methods for:
 - Protocol-specific formatting
 """
 
-import logging
+from nodetool.config.logging_config import get_logger
 from abc import ABC, abstractmethod
+import traceback
 from typing import List, Optional
 import asyncio
 
@@ -24,13 +25,13 @@ from supabase import create_async_client, AsyncClient
 
 from nodetool.chat.ollama_service import get_ollama_models
 from nodetool.chat.providers import get_provider
-from nodetool.common.environment import Environment
+from nodetool.config.environment import Environment
 from nodetool.models.message import Message as DBMessage
 from nodetool.models.thread import Thread
 from nodetool.metadata.types import Message as ApiMessage, Provider
 from nodetool.types.graph import Graph
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.common.message_processors import (
+from nodetool.messaging.message_processors import (
     MessageProcessor,
     RegularChatProcessor,
     HelpMessageProcessor,
@@ -38,7 +39,7 @@ from nodetool.common.message_processors import (
     WorkflowMessageProcessor,
 )
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 ollama_models: list[str] = []
 
@@ -213,6 +214,34 @@ class BaseChatRunner(ABC):
         data_copy.pop("type", None)
         data_copy.pop("user_id", None)
 
+        # Normalize tools field to expected types (list[str])
+        try:
+            tools_value = data_copy.get("tools", None)
+            if tools_value is not None:
+                normalized_tools: list[str] = []
+                if isinstance(tools_value, list):
+                    for item in tools_value:
+                        if isinstance(item, str):
+                            normalized_tools.append(item)
+                        elif isinstance(item, dict):
+                            name = item.get("name")
+                            if isinstance(name, str) and name:
+                                normalized_tools.append(name)
+                            else:
+                                # Fallback to a compact string representation
+                                normalized_tools.append(str(item))
+                        else:
+                            normalized_tools.append(str(item))
+                elif isinstance(tools_value, dict):
+                    # Convert dict to list of keys if client sent mapping
+                    normalized_tools = [str(k) for k in tools_value.keys()]
+                else:
+                    normalized_tools = [str(tools_value)]
+                data_copy["tools"] = normalized_tools
+        except Exception:
+            # Best-effort normalization; if it fails, drop tools to avoid validation errors
+            data_copy["tools"] = None
+
         # Use thread_id from message data if available
         message_thread_id = data_copy.pop("thread_id", None) or ""
 
@@ -289,7 +318,7 @@ class BaseChatRunner(ABC):
                 if not thread:
                     log.warning(f"Thread {thread_id} not found for user {self.user_id}")
                     # Create a new thread as fallback
-                    thread = Thread.create(user_id=self.user_id)
+                    thread = await Thread.create(user_id=self.user_id)
                     log.debug(f"Created new thread {thread.id} as fallback")
                     return thread.id
                 return thread_id
@@ -363,6 +392,7 @@ class BaseChatRunner(ABC):
                     **kwargs,
                 )
             except Exception as e:
+                traceback.print_exc()
                 log.error(f"Error during chat processing: {e}")
                 await processor.send_message({"type": "error", "message": str(e)})
                 processor.is_processing = False
@@ -375,8 +405,10 @@ class BaseChatRunner(ABC):
                 message = await processor.get_message()
                 if message:
                     if message["type"] == "message":
+                        # Persist and forward message events so the client can render them (e.g., tool calls/results)
                         await self._save_message_to_db_async(message)
-                        log.debug("Saved assistant message to database")
+                        await self.send_message(message)
+                        log.debug("Saved and forwarded message to client")
                     else:
                         await self.send_message(message)
                 else:
@@ -405,6 +437,12 @@ class BaseChatRunner(ABC):
 
         last_message = chat_history[-1]
         processing_context = ProcessingContext(user_id=self.user_id)
+
+        # Add UI tool support if available
+        if hasattr(self, "tool_bridge") and hasattr(self, "client_tools_manifest"):
+            processing_context.tool_bridge = self.tool_bridge
+            processing_context.ui_tool_names = set(self.client_tools_manifest.keys())
+            processing_context.client_tools_manifest = self.client_tools_manifest
 
         assert last_message.model, "Model is required"
 
@@ -462,6 +500,12 @@ class BaseChatRunner(ABC):
         processor = AgentMessageProcessor(provider)
         processing_context = ProcessingContext(user_id=self.user_id)
 
+        # Add UI tool support if available
+        if hasattr(self, "tool_bridge") and hasattr(self, "client_tools_manifest"):
+            processing_context.tool_bridge = self.tool_bridge
+            processing_context.ui_tool_names = set(self.client_tools_manifest.keys())
+            processing_context.client_tools_manifest = self.client_tools_manifest
+
         await self._run_processor(
             processor=processor,
             chat_history=chat_history,
@@ -475,7 +519,12 @@ class BaseChatRunner(ABC):
         chat_history = messages
         processor = WorkflowMessageProcessor(self.user_id)
         processing_context = ProcessingContext(user_id=self.user_id)
-        last_message = chat_history[-1]
+
+        # Add UI tool support if available
+        if hasattr(self, "tool_bridge") and hasattr(self, "client_tools_manifest"):
+            processing_context.tool_bridge = self.tool_bridge
+            processing_context.ui_tool_names = set(self.client_tools_manifest.keys())
+            processing_context.client_tools_manifest = self.client_tools_manifest
 
         await self._run_processor(
             processor=processor,
@@ -512,12 +561,12 @@ class BaseChatRunner(ABC):
                         "message": "Generation stopped by user",
                     }
                 )
-            except:
+            except Exception:
                 pass
         except Exception as e:
             log.error(f"Error processing message: {str(e)}", exc_info=True)
             error_message = {"type": "error", "message": str(e)}
             try:
                 await self.send_message(error_message)
-            except:
+            except Exception:
                 pass

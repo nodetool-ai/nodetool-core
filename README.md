@@ -1,41 +1,29 @@
 # NodeTool Core <img src="https://img.shields.io/badge/version-0.6.0-blue.svg" alt="Version Badge">
 
-<h3>Swiss‑Army Knife for AI Builders</h3>
+<h3>AI Workflow Engine</h3>
 
 <p align="center">
   <img src="https://img.shields.io/badge/Python-3.11%2B-blue.svg" alt="Python Version Badge">
-  <img src="https://img.shields.io/github/actions/workflow/status/nodetool-ai/nodetool-core/test.yml?branch=main" alt="Build Status">
+  <a href="https://github.com/nodetool-ai/nodetool-core/actions/workflows/test.yml"><img src="https://img.shields.io/github/actions/workflow/status/nodetool-ai/nodetool-core/test.yml?branch=main" alt="Tests Status"></a>
+  <a href="https://github.com/nodetool-ai/nodetool-core/actions/workflows/docker-publish.yaml"><img src="https://img.shields.io/github/actions/workflow/status/nodetool-ai/nodetool-core/docker-publish.yaml?label=docker&branch=main" alt="Docker Publish"></a>
   <img src="https://img.shields.io/badge/License-AGPL%20v3-blue.svg" alt="License Badge">
   <img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg" alt="PRs Welcome Badge">
 </p>
 
-> **Drag, drop, deploy — the backend that snaps every AI model into one graph.**
-
-NodeTool Core is the open‑source Python engine that powers [NodeTool Studio](https://github.com/nodetool-ai/nodetool) (desktop) and **NodeTool Scale** (cloud). It turns your laptop into an all‑terrain lab for **agentic, multi‑modal, production‑ready workflows.**
-
----
-
-## ✨ Why Nodetool?
-
-| Pillar    | What it means                                                                         |
-| --------- | ------------------------------------------------------------------------------------- |
-| **Snap**  | Compose LLMs, diffusers, audio models, REST calls & agents as Lego‑like nodes.        |
-| **Scale** | Run locally for privacy, then burst to the cloud or GPU farm with identical graphs.   |
-| **Ship**  | Expose any workflow as a REST/WebSocket API, CLI, or shareable template—zero rewrite. |
+NodeTool Core is the open‑source Python engine that powers [NodeTool](https://github.com/nodetool-ai/nodetool).
 
 ---
 
 ## 🔑 Feature Highlights
 
-* 🧩 **Node-Based DSL** – Declare graphs in pure Python or JSON; no vendor lock‑in.
-* 🤖 **First‑Class Agents** – Planner, browser, search & tool‑calling baked in.
-* 🌐 **Multi‑Provider Models** – OpenAI, Anthropic, Ollama, Mistral, Hugging Face, local GGUF—one line swap.
-* 🔄 **RAG & Vector Stores** – Native adapters for Chroma, Milvus, Weaviate.
-* ⚡ **Async Execution Engine** – Parallel node scheduling, GPU locking, result caching.
-* 🔌 **Plugin SDK** – Bring your own blade: custom nodes register in two lines.
+- 🧩 **Node-Based DSL** – Declare graphs in pure Python or JSON; no vendor lock‑in.
+- 🤖 **First‑Class Agents** – Planner, browser, search & tool‑calling baked in.
+- 🌐 **Multi‑Provider Models** – OpenAI, Anthropic, Ollama, Hugging Face.
+- 🔄 **RAG & Vector Stores** – Native adapters for Chroma.
+- ⚡ **Actor-Based Execution Engine** – One actor per node, streaming-first.
+- 🔌 **Plugin SDK** – Bring your own node.
 
 ---
-
 
 ## 🚀 Quick Start
 
@@ -44,6 +32,19 @@ NodeTool Core is the open‑source Python engine that powers [NodeTool Studio
 ```bash
 # Install using pip
 pip install nodetool-core
+
+# Or install from source (recommended for development)
+git clone https://github.com/nodetool-ai/nodetool-core
+cd nodetool-core
+
+# Option 1: Using conda + uv (recommended - includes system dependencies)
+conda create -n nodetool python=3.11 pandoc ffmpeg -c conda-forge
+conda activate nodetool
+uv sync
+
+# Option 2: Using pip only
+pip install .
+# Note: Install pandoc and ffmpeg separately for full functionality
 ```
 
 ### Basic Usage
@@ -81,148 +82,100 @@ See [docs/cli.md](docs/cli.md) for all commands.
 - [Examples](https://docs.nodetool.ai/examples/)
 - [Advanced Usage](https://docs.nodetool.ai/advanced/)
 
-## 🧩 Examples
-
-```python
-import asyncio
-
-from nodetool.agents.agent import Agent
-from nodetool.agents.tools import BrowserTool, GoogleSearchTool
-from nodetool.chat.providers import get_provider
-from nodetool.metadata.types import Provider
-from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.workflows.types import Chunk
-
-
-async def main() -> None:
-    context = ProcessingContext()
-
-    provider = get_provider(Provider.OpenAI)
-    model = "gpt-4o"
-
-    retrieval_tools = [
-        GoogleSearchTool(context.workspace_dir),
-        BrowserTool(context.workspace_dir),
-    ]
-
-    agent = Agent(
-        name="Research Agent",
-        objective="""
-        Research the competitive landscape of AI code assistant tools.
-        1. Use google search and browser to identify a list of AI code assistant tools
-        2. For each tool, identify the following information:
-            - Name of the tool
-            - Description of the tool
-            - Key features of the tool
-            - Pricing information
-            - User reviews
-            - Comparison with other tools
-        3. Summarize the findings in a table format
-        """,
-        provider=provider,
-        model=model,
-        tools=retrieval_tools,
-        output_schema={
-            "type": "object",
-            "properties": {
-                "tools": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "name": {"type": "string"},
-                            "description": {"type": "string"},
-                            "key_features": {"type": "string"},
-                            "pricing": {"type": "string"},
-                            "user_reviews": {"type": "string"},
-                            "comparison_with_other_tools": {"type": "string"},
-                        },
-                    },
-                },
-            },
-        },
-    )
-
-    async for item in agent.execute(context):
-        if isinstance(item, Chunk):
-            print(item.content, end="", flush=True)
-
-    print(f"\nWorkspace: {context.workspace_dir}")
-    print(f"Results: {agent.results}")
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
-
-```
-
-More examples can be found in the [examples](./examples) directory.
-
-### Coding Agent Example
-
-Run the advanced coding agent directly on your machine:
-
-```bash
-python examples/test_coding_agent.py
-```
-
-To execute the agent inside a container, pass a Docker image:
-
-```bash
-python examples/test_coding_agent.py --docker-image nodetool
-```
-
 ## 🏗️ Architecture
 
 NodeTool's architecture is designed to be flexible and extensible.
 
 ```mermaid
 graph TD
-A[NodeTool Editor<br>ReactJS] -->|HTTP/WebSocket| B[API Server]
-A <-->|WebSocket| C[WebSocket Runner]
-B <-->|Internal Communication| C
-C <-->|WebSocket| D[Worker with ML Models<br>CPU/GPU<br>Local/Cloud]
-D <-->|HTTP Callbacks| B
-E[Other Apps/Websites] -->|HTTP| B
-E <-->|WebSocket| C
-D -->|Optional API Calls| F[OpenAI<br>Replicate<br>Anthropic<br>Others]
+    A[NodeTool Editor<br>ReactJS<br>DAG Templates] -->|HTTP/WebSocket| B[API Server<br>Workflow Orchestration]
+    A <-->|WebSocket| C[Workflow Runner<br>CPU/GPU Local/Cloud]
+    B <-->|Internal RPC| C
+    C -->|Optional API Calls| F[External Providers<br>OpenAI / Replicate / Anthropic / HF / Others]
 
     classDef default fill:#e0eee0,stroke:#333,stroke-width:2px,color:#000;
     classDef frontend fill:#ffcccc,stroke:#333,stroke-width:2px,color:#000;
     classDef server fill:#cce5ff,stroke:#333,stroke-width:2px,color:#000;
     classDef runner fill:#ccffe5,stroke:#333,stroke-width:2px,color:#000;
-    classDef worker fill:#ccf2ff,stroke:#333,stroke-width:2px,color:#000;
     classDef api fill:#e0e0e0,stroke:#333,stroke-width:2px,color:#000;
-    classDef darkgray fill:#a9a9a9,stroke:#333,stroke-width:2px,color:#000;
+    classDef other fill:#d3d3d3,stroke:#333,stroke-width:2px,color:#000;
 
     class A frontend;
     class B server;
     class C runner;
-    class D worker;
     class E other;
     class F api;
 ```
 
-## 🤝 Contributing
+### Execution TL;DR
+
+    •	Each node runs in its own async task. No central loop.
+    •	Every node has an input queue (NodeInbox) that delivers data in order and tracks when it ends.
+    •	Streaming nodes handle data piece by piece (gen_process); batch nodes handle all at once (process).
+    •	When finished or failing, nodes signal “done” downstream so others don’t wait forever.
+    •	GPU jobs run one at a time with a global lock, with retries and cleanup if memory runs out.
+
+🤝 Contributing
 
 We welcome contributions from the community! Please see our [Contributing Guidelines](./CONTRIBUTING.md) for more information on how to get involved.
 
 ### Development Setup
 
-This setup is for developing the `nodetool-core` library itself using Poetry. If you want to set up the full NodeTool application (UI, backend, etc.), please refer to the development setup instructions in the main [NodeTool repository](https://github.com/nodetool-ai/nodetool).
+This setup is for developing the `nodetool-core` library itself. If you want to set up the full NodeTool application (UI, backend, etc.), please refer to the development setup instructions in the main [NodeTool repository](https://github.com/nodetool-ai/nodetool).
 
-1. Clone the repository
+1. **Clone the repository**
 
    ```bash
    git clone https://github.com/yourusername/nodetool-core.git
    cd nodetool-core
    ```
 
-2. Install dependencies with Poetry
+2. **Install dependencies**
 
    ```bash
-   poetry install
+   # Using conda + uv (recommended)
+   conda create -n nodetool python=3.11 pandoc ffmpeg -c conda-forge
+   conda activate nodetool
+   uv sync --group dev
+
+   # Or using pip only
+   pip install .
+   pip install -r requirements-dev.txt
    ```
+
+3. **Environment Configuration**
+
+   Set up your environment configuration for development:
+
+   ```bash
+   # Copy the example file to create your local config
+   cp .env.example .env.development.local
+   ```
+
+   Edit `.env.development.local` and add your API keys:
+
+   ```env
+   # Required for most functionality
+   OPENAI_API_KEY=your_openai_key_here
+   ANTHROPIC_API_KEY=your_anthropic_key_here
+
+   # Optional - add as needed
+   GEMINI_API_KEY=your_gemini_key_here
+   HF_TOKEN=your_huggingface_token_here
+   REPLICATE_API_TOKEN=your_replicate_token_here
+   ```
+
+   > **Security Note**: Never commit `.env.*.local` files - they contain your actual API keys and are automatically gitignored.
+
+4. **Environment Files Overview**
+
+   - `.env.example` - Template with all configuration options
+   - `.env.development` - Development defaults (committed, no secrets)
+   - `.env.test` - Test environment configuration
+   - `.env.production` - Production configuration template
+   - `.env.*.local` - Your actual secrets (gitignored)
+
+   The system automatically loads the appropriate config based on your environment.
 
 ## 📄 License
 
@@ -279,53 +232,6 @@ When using NodeTool programmatically, keep these key concepts in mind:
 
 4. **Execution**: Workflows are executed using the `run_graph` function, which takes a graph object created with the `graph` function.
 
-## Workflow Execution Architecture
-
-NodeTool Core includes a sophisticated workflow execution engine that processes directed graphs of computational nodes. Understanding how workflows are executed can help you build more efficient and effective workflows.
-
-### WorkflowRunner
-
-The `WorkflowRunner` class is the heart of NodeTool's execution engine. It handles:
-
-- Parallel execution of independent nodes
-- GPU resource management with ordered locking
-- Result caching for cacheable nodes
-- Error handling and retry logic for GPU OOM situations
-- Progress tracking and status updates
-- Support for both regular nodes and group nodes (subgraphs)
-
-### Execution Process
-
-When you run a workflow, the following steps occur:
-
-1. **Initialization**: The runner is initialized with a job ID and automatically detects the available device (CPU, CUDA, or MPS).
-
-2. **Graph Loading**: The workflow graph is loaded from the request, and nodes are instantiated.
-
-3. **Input Processing**: Input parameters are assigned to the corresponding input nodes.
-
-4. **Graph Validation**: The graph is validated to ensure all edges are valid and all required inputs are provided.
-
-5. **Node Initialization**: All nodes in the graph are initialized.
-
-6. **Graph Processing**:
-
-   - Nodes without incoming edges are processed first
-   - As nodes complete, messages are sent to downstream nodes
-   - Nodes are processed when all their required inputs are available
-   - GPU-intensive nodes acquire a lock before execution to manage resources
-
-7. **Result Collection**: Results from output nodes are collected and returned.
-
-8. **Finalization**: Resources are cleaned up, and the final status is reported.
-
-### Advanced Features
-
-- **Parallel Execution**: Independent nodes are executed in parallel using asyncio.
-- **GPU Management**: The runner intelligently manages GPU resources, with retry logic for out-of-memory situations.
-- **Subgraph Support**: Group nodes can contain entire subgraphs, enabling hierarchical workflows.
-- **Progress Tracking**: The runner provides real-time progress updates during execution.
-
 ## Using the Workflow API 🔌
 
 NodeTool provides a powerful Workflow API that allows you to integrate and run your AI workflows programmatically.
@@ -372,73 +278,6 @@ const response = await fetch(
 const outputs = await response.json();
 // outputs is an object with one property for each output node in the workflow
 // the value is the output of the node, which can be a string, image, audio, etc.
-```
-
-#### Streaming API
-
-The streaming API is useful for getting real-time updates on the status of the workflow.
-
-See [run_workflow_streaming.js](examples/run_workflow_streaming.js) for an example.
-
-These updates include:
-
-- job_update: The overall status of the job (e.g. running, completed, failed, cancelled)
-- node_update: The status of a specific node (e.g. running, completed, error)
-- node_progress: The progress of a specific node (e.g. 20% complete)
-
-The final result of the workflow is also streamed as a single job_update with the status "completed".
-
-```javascript
-const response = await fetch(
-  "http://localhost:8000/api/workflows/<workflow_id>/run?stream=true",
-  {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      params: params,
-    }),
-  }
-);
-
-const reader = response.body.getReader();
-const decoder = new TextDecoder();
-
-while (true) {
-  const { done, value } = await reader.read();
-  if (done) break;
-
-  const lines = decoder.decode(value).split("\n");
-  for (const line of lines) {
-    if (line.trim() === "") continue;
-
-    const message = JSON.parse(line);
-    switch (message.type) {
-      case "job_update":
-        console.log("Job status:", message.status);
-        if (message.status === "completed") {
-          console.log("Workflow completed:", message.result);
-        }
-        break;
-      case "node_progress":
-        console.log(
-          "Node progress:",
-          message.node_name,
-          (message.progress / message.total) * 100
-        );
-        break;
-      case "node_update":
-        console.log(
-          "Node update:",
-          message.node_name,
-          message.status,
-          message.error
-        );
-        break;
-    }
-  }
-}
 ```
 
 ##### WebSocket API
@@ -488,44 +327,146 @@ socket.send(msgpack.encode({ command: "cancel_job" }));
 socket.send(msgpack.encode({ command: "get_status" }));
 ```
 
-### API Demo
-
-- Download the [html file](<(api-demo.html)>)
-- Open in a browser locally.
-- Select the endpoint, local or api.nodetool.ai (for alpha users)
-- Enter API token (from Nodetool settings dialog)
-- Select workflow
-- Run workflow
-- The page will live stream the output from the local or remote API
-
-## Installation
-
-```bash
-# Install using Poetry
-poetry install
-```
-
 ## Configuration
+
+NodeTool Core uses environment-specific configuration files for managing different deployment scenarios. The configuration system supports multiple environments with automatic loading based on context.
+
+### Configuration Files
+
+- **`.env.example`** - Complete template with all available options
+- **`.env.development`** - Development environment defaults
+- **`.env.test`** - Test environment configuration
+- **`.env.production`** - Production environment template
+- **`.env.*.local`** - Local overrides with actual secrets (gitignored)
+
+### Loading Priority
+
+Configuration is loaded in this order (later sources override earlier ones):
+
+1. Default values from code
+2. Base `.env` file
+3. Environment-specific file (`.env.development`, `.env.test`, or `.env.production`)
+4. Local override file (`.env.{environment}.local`)
+5. System environment variables
+6. YAML settings/secrets files
 
 ### Environment Variables
 
-The following environment variables can be used to configure the library:
+#### Core Configuration
 
-| Variable       | Description                    | Default   |
-| -------------- | ------------------------------ | --------- |
-| `FFMPEG_PATH`  | Path to the ffmpeg executable  | `ffmpeg`  |
-| `FFPROBE_PATH` | Path to the ffprobe executable | `ffprobe` |
+| Variable      | Description                                            | Default       |
+| ------------- | ------------------------------------------------------ | ------------- |
+| `ENV`         | Environment name (`development`, `test`, `production`) | `development` |
+| `DEBUG`       | Enable debug mode                                      | `None`        |
+| `LOG_LEVEL`   | Logging level                                          | `INFO`        |
+| `REMOTE_AUTH` | Enable remote authentication                           | `0`           |
 
-These variables are useful when you need to specify custom binary paths for media processing tools, especially in Docker containers or CI/CD environments.
+#### AI Providers & APIs
+
+| Variable              | Description                             | Group        |
+| --------------------- | --------------------------------------- | ------------ |
+| `OPENAI_API_KEY`      | OpenAI API key for GPT models, DALL-E   | LLM          |
+| `ANTHROPIC_API_KEY`   | Anthropic API key for Claude models     | LLM          |
+| `GEMINI_API_KEY`      | Google Gemini API key                   | LLM          |
+| `HF_TOKEN`            | Hugging Face token for gated models     | Hugging Face |
+| `REPLICATE_API_TOKEN` | Replicate API token                     | Replicate    |
+| `ELEVENLABS_API_KEY`  | ElevenLabs text-to-speech API key       | ElevenLabs   |
+| `FAL_API_KEY`         | FAL.ai serverless AI infrastructure key | FAL          |
+| `AIME_USER`           | Aime service username                   | Aime         |
+| `AIME_API_KEY`        | Aime API key                            | Aime         |
+
+#### Database & Storage
+
+| Variable            | Description              | Default                               |
+| ------------------- | ------------------------ | ------------------------------------- |
+| `DB_PATH`           | SQLite database path     | `~/.config/nodetool/nodetool.sqlite3` |
+| `POSTGRES_DB`       | PostgreSQL database name | -                                     |
+| `POSTGRES_USER`     | PostgreSQL username      | -                                     |
+| `POSTGRES_PASSWORD` | PostgreSQL password      | -                                     |
+| `POSTGRES_HOST`     | PostgreSQL host          | -                                     |
+| `POSTGRES_PORT`     | PostgreSQL port          | -                                     |
+| `SUPABASE_URL`      | Supabase project URL     | -                                     |
+| `SUPABASE_KEY`      | Supabase service key     | -                                     |
+
+#### Cloud Storage (S3)
+
+| Variable               | Description                    | Default     |
+| ---------------------- | ------------------------------ | ----------- |
+| `ASSET_BUCKET`         | S3 bucket for assets           | `images`    |
+| `ASSET_TEMP_BUCKET`    | S3 bucket for temporary assets | -           |
+| `ASSET_DOMAIN`         | Asset CDN domain               | -           |
+| `ASSET_TEMP_DOMAIN`    | Temporary asset domain         | -           |
+| `S3_ACCESS_KEY_ID`     | AWS access key ID              | -           |
+| `S3_SECRET_ACCESS_KEY` | AWS secret access key          | -           |
+| `S3_ENDPOINT_URL`      | S3 endpoint URL                | -           |
+| `S3_REGION`            | S3 region                      | -           |
+| `AWS_REGION`           | AWS region                     | `us-east-1` |
+
+#### Vector Database & AI Services
+
+| Variable         | Description                   | Default                          |
+| ---------------- | ----------------------------- | -------------------------------- |
+| `CHROMA_PATH`    | ChromaDB storage path         | `~/.local/share/nodetool/chroma` |
+| `CHROMA_URL`     | Remote ChromaDB URL           | -                                |
+| `CHROMA_TOKEN`   | ChromaDB authentication token | -                                |
+| `OLLAMA_API_URL` | Ollama API endpoint           | `http://127.0.0.1:11434`         |
+| `OLLAMA_MODELS`  | Custom Ollama models path     | -                                |
+
+#### External Integrations
+
+| Variable                | Description                         | Group      |
+| ----------------------- | ----------------------------------- | ---------- |
+| `GOOGLE_MAIL_USER`      | Gmail address for email integration | Google     |
+| `GOOGLE_APP_PASSWORD`   | Google app password                 | Google     |
+| `SERPAPI_API_KEY`       | SerpAPI key for web scraping        | SerpAPI    |
+| `DATA_FOR_SEO_LOGIN`    | DataForSEO login                    | DataForSEO |
+| `DATA_FOR_SEO_PASSWORD` | DataForSEO password                 | DataForSEO |
+| `BROWSER_URL`           | Browser automation endpoint         | Browser    |
+
+#### System & Media Processing
+
+| Variable       | Description                       | Default   |
+| -------------- | --------------------------------- | --------- |
+| `FFMPEG_PATH`  | Path to ffmpeg executable         | `ffmpeg`  |
+| `FFPROBE_PATH` | Path to ffprobe executable        | `ffprobe` |
+| `FONT_PATH`    | Font directory for text rendering | -         |
+| `COMFY_FOLDER` | ComfyUI integration folder        | -         |
+
+#### Deployment & Monitoring
+
+| Variable           | Description                         | Default                 |
+| ------------------ | ----------------------------------- | ----------------------- |
+| `NODETOOL_API_URL` | NodeTool API base URL               | `http://localhost:8000` |
+| `RUNPOD_API_KEY`   | RunPod API key for cloud deployment | -                       |
+| `SENTRY_DSN`       | Sentry error tracking DSN           | -                       |
+| `MEMCACHE_HOST`    | Memcache server host                | -                       |
+| `MEMCACHE_PORT`    | Memcache server port                | -                       |
+
+### Environment Detection
+
+The system automatically detects the environment from:
+
+1. `ENV` environment variable
+2. `PYTEST_CURRENT_TEST` (automatically sets test environment)
+3. Defaults to "development"
+
+For a complete template with all options, see `.env.example` in the repository.
 
 ## Development
 
 ### Setup
 
 1. Clone the repository
-2. Install dependencies with Poetry:
+2. Install dependencies :
+
    ```bash
-   poetry install
+   # Using conda + uv (recommended)
+   conda create -n nodetool python=3.11 pandoc ffmpeg -c conda-forge
+   conda activate nodetool
+   uv sync
+
+   # Or using pip only
+   pip install .
    ```
 
 ### Testing
@@ -533,15 +474,11 @@ These variables are useful when you need to specify custom binary paths for medi
 Run tests with pytest:
 
 ```bash
-poetry run pytest
-```
+# Using uv (recommended)
+uv run pytest
 
-### Code Style
-
-This project uses Black for code formatting:
-
-```bash
-poetry run black .
+# Or directly if using activated environment
+pytest
 ```
 
 ## License

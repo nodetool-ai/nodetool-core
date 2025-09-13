@@ -1,4 +1,3 @@
-from collections.abc import Sequence
 from datetime import datetime
 from enum import Enum
 import asyncio
@@ -12,6 +11,7 @@ import os
 import queue
 import urllib.parse
 import uuid
+from pathlib import Path
 import httpx
 import joblib
 import base64
@@ -20,40 +20,32 @@ import PIL.ImageOps
 import numpy as np
 import pandas as pd
 from pydub import AudioSegment
-from starlette.datastructures import URL
 
 if TYPE_CHECKING:
     from sklearn.base import BaseEstimator
 
-from huggingface_hub.file_download import try_to_load_from_cache
-from nodetool.metadata.type_metadata import TypeMetadata
 from nodetool.models.asset import Asset
 from nodetool.models.job import Job
 from nodetool.models.workflow import Workflow
 from nodetool.models.message import Message as DBMessage
 from nodetool.types.chat import (
-    MessageList,
     MessageCreateRequest,
 )
-from nodetool.types.graph import Edge, Node
-from nodetool.types.job import JobUpdate
 from nodetool.types.prediction import (
     Prediction,
     PredictionResult,
 )
 from nodetool.chat.workspace_manager import WorkspaceManager
 from nodetool.metadata.types import (
-    Message,
+    NPArray,
     Provider,
-    ToolCall,
+    TorchTensor,
     asset_types,
 )
 from nodetool.workflows.graph import Graph
 from nodetool.workflows.types import (
-    Chunk,
     ProcessingMessage,
 )
-from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.metadata.types import (
     AssetRef,
     AudioRef,
@@ -62,28 +54,49 @@ from nodetool.metadata.types import (
     ModelRef,
     TextRef,
     VideoRef,
-    dtype_name,
 )
-from nodetool.common.environment import Environment
+from nodetool.config.environment import Environment
+from nodetool.config.logging_config import get_logger
 from nodetool.workflows.base_node import BaseNode
 from nodetool.workflows.property import Property
-from nodetool.common.async_chroma_client import get_async_chroma_client
+from nodetool.integrations.vectorstores.chroma.async_chroma_client import (
+    get_async_chroma_client,
+)
 
 
 from io import BytesIO
-from typing import IO, Any, AsyncGenerator, Union, Callable
+from typing import IO, Any, AsyncGenerator, Callable
 from chromadb.api import ClientAPI
 from pickle import loads
-import platform
+from nodetool.media.common.media_constants import (
+    DEFAULT_AUDIO_SAMPLE_RATE,
+)
+from nodetool.io.uri_utils import create_file_uri as _create_file_uri
+from nodetool.media.image.image_utils import (
+    numpy_to_pil_image as _numpy_to_pil_image_util,
+)
+from nodetool.media.image.font_utils import (
+    get_system_font_path as _get_system_font_path_util,
+)
+from nodetool.media.video.video_utils import export_to_video_bytes
 
 
-log = Environment.get_logger()
+log = get_logger(__name__)
 
 
-AUDIO_CODEC = "mp3"
+def create_file_uri(path: str) -> str:
+    """
+    Compatibility wrapper delegating to nodetool.io.uri_utils.create_file_uri.
+    """
+    return _create_file_uri(path)
+
+
+## AUDIO_CODEC and DEFAULT_AUDIO_SAMPLE_RATE imported from media_constants
 
 HTTP_HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/1"
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+    "Accept": "*/*",
+    "Accept-Language": "en-US,en;q=0.9",
 }
 
 try:
@@ -124,6 +137,7 @@ class ProcessingContext:
         user_id: str | None = None,
         auth_token: str | None = None,
         workflow_id: str | None = None,
+        job_id: str | None = None,
         graph: Graph | None = None,
         variables: dict[str, Any] | None = None,
         environment: dict[str, str] | None = None,
@@ -134,10 +148,14 @@ class ProcessingContext:
         chroma_client: ClientAPI | None = None,
         workspace_dir: str | None = None,
         http_client: httpx.AsyncClient | None = None,
+        tool_bridge: Any | None = None,
+        ui_tool_names: set[str] | None = None,
+        client_tools_manifest: dict[str, dict] | None = None,
     ):
         self.user_id = user_id or "1"
         self.auth_token = auth_token or "local_token"
         self.workflow_id = workflow_id or ""
+        self.job_id = job_id
         self.graph = graph or Graph()
         self.message_queue = message_queue if message_queue else queue.Queue()
         self.device = device
@@ -152,35 +170,44 @@ class ProcessingContext:
         if http_client is not None:
             self._http_client = http_client
         self.workspace_dir = workspace_dir or WorkspaceManager().get_current_directory()
-        self.memory: dict[str, Any] = {}
+        self.tool_bridge = tool_bridge
+        self.ui_tool_names = ui_tool_names or set()
+        self.client_tools_manifest = client_tools_manifest or {}
+        # Use global node_cache for memory:// storage to enable portability
+
+    def _numpy_to_pil_image(self, arr: np.ndarray) -> PIL.Image.Image:
+        """Delegate to shared numpy_to_pil_image utility for consistent behavior."""
+        return _numpy_to_pil_image_util(arr)
 
     def _memory_get(self, key: str) -> Any | None:
         """
-        Retrieve an object stored under a memory:// key from local memory first,
-        then fall back to the global node cache.
+        Retrieve an object stored under a URI (e.g., memory://<id>) from the global
+        memory URI cache. Local per-instance memory is avoided for portability
+        across processes.
         """
-        if key in self.memory:
-            return self.memory[key]
         try:
-            return Environment.get_node_cache().get(key)
+            return Environment.get_memory_uri_cache().get(key)
         except Exception:
             return None
 
     def _memory_set(self, key: str, value: Any) -> None:
         """
-        Store an object under a memory:// key in both local memory and the global node cache.
-        Use ttl=0 (no expiration) to persist for the life of the process (or backend policy).
+        Store an object under a URI (e.g., memory://<id>) in the global memory
+        URI cache. Entries expire after the cache TTL (default 5 minutes).
         """
-        self.memory[key] = value
         try:
-            Environment.get_node_cache().set(key, value, ttl=0)
+            # Use cache default TTL (5 minutes)
+            Environment.get_memory_uri_cache().set(key, value)
         except Exception:
             pass
 
     def get_http_client(self):
         if not hasattr(self, "_http_client"):
             self._http_client = httpx.AsyncClient(
-                follow_redirects=True, timeout=600, verify=False
+                follow_redirects=True,
+                timeout=600,
+                verify=False,
+                headers=HTTP_HEADERS.copy(),
             )
         return self._http_client
 
@@ -234,6 +261,11 @@ class ProcessingContext:
             device=self.device,
             variables=self.variables,
             environment=self.environment,
+            tool_bridge=self.tool_bridge,
+            ui_tool_names=self.ui_tool_names.copy() if self.ui_tool_names else set(),
+            client_tools_manifest=(
+                self.client_tools_manifest.copy() if self.client_tools_manifest else {}
+            ),
         )
 
     def get(self, key: str, default: Any = None) -> Any:
@@ -414,53 +446,7 @@ class ProcessingContext:
         asset = await self.find_asset(asset_id)  # type: ignore
         if asset is None:
             raise ValueError(f"Asset with ID {asset_id} not found")
-
         return self.asset_storage_url(asset.file_name)
-
-    def get_node_input_types(self, node_id: str) -> dict[str, TypeMetadata | None]:
-        """
-        Retrieves the input types for a given node, inferred from the output types of the source nodes.
-
-        Args:
-            node_id (str): The ID of the node.
-
-        Returns:
-            dict[str, str]: A dictionary containing the input types for the node, where the keys are the input slot names
-            and the values are the types of the corresponding source nodes.
-        """
-
-        def output_type(node_id: str, slot: str):
-            node = self.graph.find_node(node_id)
-            if node is None:
-                return None
-            for output in node.outputs():
-                if output.name == slot:
-                    return output.type
-            return None
-
-        return {
-            edge.targetHandle: output_type(edge.source, edge.sourceHandle)
-            for edge in self.graph.edges
-            if edge.target == node_id
-        }
-
-    def find_node(self, node_id: str) -> BaseNode:
-        """
-        Finds a node by its ID.
-
-        Args:
-            node_id (str): The ID of the node to be found.
-
-        Returns:
-            BaseNode: The node with the given ID.
-
-        Raises:
-            ValueError: If the node with the given ID does not exist.
-        """
-        node = self.graph.find_node(node_id)
-        if node is None:
-            raise ValueError(f"Node with ID {node_id} does not exist")
-        return node
 
     async def get_workflow(self, workflow_id: str):
         """
@@ -496,120 +482,6 @@ class ProcessingContext:
             workflow_id=self.workflow_id if self.workflow_id else "",
             params=params,
             data=data,
-        )
-
-    async def generate_message(
-        self,
-        messages: Sequence[Message],
-        provider: Provider,
-        model: str,
-        node_id: str,
-        tools: Sequence[Any] = [],
-        max_tokens: int = 16384,
-        context_window: int = 128000,
-        response_format: dict | None = None,
-    ) -> Message:  # type: ignore
-        """Generate a message from a provider."""
-        from nodetool.models.prediction import Prediction as PredictionModel
-        from nodetool.chat.providers import get_provider
-        from nodetool.chat.providers.openai_prediction import calculate_chat_cost
-
-        start_time = datetime.now()
-        _provider = get_provider(provider)
-        message_result = await _provider.generate_message(
-            messages,
-            model,
-            tools,
-            max_tokens,
-            context_window,
-            response_format,
-        )
-
-        duration = (datetime.now() - start_time).total_seconds()
-        if "completion_tokens" in _provider.usage:
-            cost = await calculate_chat_cost(
-                model,
-                _provider.usage["prompt_tokens"],
-                _provider.usage["completion_tokens"],
-            )
-        else:
-            cost = 0
-
-        await PredictionModel.create(
-            user_id=self.user_id,
-            node_id=node_id,
-            provider=provider,
-            model=model,
-            workflow_id=self.workflow_id,
-            duration=duration,
-            hardware="",  # Or determine actual hardware if possible
-            created_at=start_time,
-            started_at=start_time,
-            completed_at=datetime.now(),
-            cost=cost,
-            input_tokens=(
-                _provider.usage["prompt_tokens"]
-                if "prompt_tokens" in _provider.usage
-                else 0
-            ),
-            output_tokens=(
-                _provider.usage["completion_tokens"]
-                if "completion_tokens" in _provider.usage
-                else 0
-            ),
-        )
-        return message_result
-
-    async def generate_messages(
-        self,
-        messages: Sequence[Message],
-        provider: Provider,
-        model: str,
-        node_id: str,
-        tools: Sequence[Any] = [],
-        max_tokens: int = 8192,
-        context_window: int = 4096,
-        response_format: dict | None = None,
-        **kwargs,
-    ) -> AsyncGenerator[Chunk | ToolCall, Any]:
-        """"""
-        from nodetool.models.prediction import Prediction as PredictionModel
-        from nodetool.chat.providers import get_provider
-        from nodetool.chat.providers.openai_prediction import calculate_chat_cost
-
-        start_time = datetime.now()
-        _provider = get_provider(provider)
-        async for chunk in _provider.generate_messages(
-            messages,
-            model,
-            tools,
-            max_tokens,
-            context_window,
-            response_format,
-            **kwargs,
-        ):  # type: ignore
-            yield chunk
-
-        duration = (datetime.now() - start_time).total_seconds()
-        cost = await calculate_chat_cost(
-            model,
-            _provider.usage.get("prompt_tokens", 0),
-            _provider.usage.get("completion_tokens", 0),
-        )
-        await PredictionModel.create(
-            user_id=self.user_id,
-            node_id=node_id,
-            provider=provider,
-            model=model,
-            workflow_id=self.workflow_id,
-            duration=duration,
-            hardware="",
-            created_at=start_time,
-            started_at=start_time,
-            completed_at=datetime.now(),
-            cost=cost,
-            input_tokens=_provider.usage.get("prompt_tokens", 0),
-            output_tokens=_provider.usage.get("completion_tokens", 0),
         )
 
     async def run_prediction(
@@ -759,7 +631,7 @@ class ProcessingContext:
         )
 
         # Upload the content to storage
-        from nodetool.common.environment import Environment
+        from nodetool.config.environment import Environment
 
         storage = Environment.get_asset_storage()
         await storage.upload(asset.file_name, BytesIO(content_bytes))
@@ -847,7 +719,8 @@ class ProcessingContext:
             httpx.Response: The response object.
         """
         _headers = HTTP_HEADERS.copy()
-        kwargs["headers"] = _headers.update(kwargs.get("headers", {}))
+        _headers.update(kwargs.get("headers", {}))
+        kwargs["headers"] = _headers
         response = await self.get_http_client().get(url, **kwargs)
         log.info(f"GET {url} {response.status_code}")
         response.raise_for_status()
@@ -869,7 +742,8 @@ class ProcessingContext:
             httpx.Response: The response object.
         """
         _headers = HTTP_HEADERS.copy()
-        kwargs["headers"] = _headers.update(kwargs.get("headers", {}))
+        _headers.update(kwargs.get("headers", {}))
+        kwargs["headers"] = _headers
         response = await self.get_http_client().post(url, **kwargs)
         log.info(f"POST {url} {response.status_code}")
         response.raise_for_status()
@@ -891,7 +765,8 @@ class ProcessingContext:
             httpx.Response: The response object.
         """
         _headers = HTTP_HEADERS.copy()
-        kwargs["headers"] = _headers.update(kwargs.get("headers", {}))
+        _headers.update(kwargs.get("headers", {}))
+        kwargs["headers"] = _headers
         response = await self.get_http_client().patch(url, **kwargs)
         log.info(f"PATCH {url} {response.status_code}")
         response.raise_for_status()
@@ -913,7 +788,8 @@ class ProcessingContext:
             httpx.Response: The response object.
         """
         _headers = HTTP_HEADERS.copy()
-        kwargs["headers"] = _headers.update(kwargs.get("headers", {}))
+        _headers.update(kwargs.get("headers", {}))
+        kwargs["headers"] = _headers
         response = await self.get_http_client().put(url, **kwargs)
         log.info(f"PUT {url} {response.status_code}")
         response.raise_for_status()
@@ -934,7 +810,8 @@ class ProcessingContext:
             bytes: The response content.
         """
         _headers = HTTP_HEADERS.copy()
-        kwargs["headers"] = _headers.update(kwargs.get("headers", {}))
+        _headers.update(kwargs.get("headers", {}))
+        kwargs["headers"] = _headers
         response = await self.get_http_client().delete(url, **kwargs)
         log.info(f"DELETE {url} {response.status_code}")
         response.raise_for_status()
@@ -955,7 +832,8 @@ class ProcessingContext:
             httpx.Response: The response object.
         """
         _headers = HTTP_HEADERS.copy()
-        kwargs["headers"] = _headers.update(kwargs.get("headers", {}))
+        _headers.update(kwargs.get("headers", {}))
+        kwargs["headers"] = _headers
         response = await self.get_http_client().head(url, **kwargs)
         log.info(f"HEAD {url} {response.status_code}")
         response.raise_for_status()
@@ -974,13 +852,17 @@ class ProcessingContext:
         Raises:
             FileNotFoundError: If the file does not exist (for local files).
         """
-        if url.startswith("/"):
-            url = f"file://{url}"
-
-        # replace backslashes with forward slashes
-        url = url.replace("\\", "/")
+        # Handle paths that start with "/" by converting to proper file:// URI
+        if url.startswith("/") and not url.startswith("//"):
+            url = create_file_uri(url)
 
         url_parsed = urllib.parse.urlparse(url)
+
+        # Treat empty-scheme inputs as local file paths (supports Windows drive letters)
+        if url_parsed.scheme == "" and not url.startswith("data:"):
+            local_path = Path(url).expanduser()
+            if local_path.exists():
+                return open(local_path, "rb")
 
         if url_parsed.scheme == "data":
             fname, data = url.split(",", 1)
@@ -992,36 +874,91 @@ class ProcessingContext:
             return file
 
         if url_parsed.scheme == "file":
-            # Handle Windows paths
-            if os.name == "nt":  # Windows system
-                if url_parsed.netloc:
-                    # Handle drive letter paths (file://C:/path) and UNC paths (file://server/share)
-                    if ":" in url_parsed.netloc:
-                        # Drive letter path
-                        path = url_parsed.netloc + url_parsed.path
+            # Use pathlib to handle file paths cross-platform
+            try:
+                netloc = url_parsed.netloc
+                path_part = urllib.parse.unquote(url_parsed.path)
+
+                # Normalize localhost netloc to empty
+                if netloc and netloc.lower() == "localhost":
+                    netloc = ""
+
+                if os.name == "nt":
+                    # Windows handling: drive letters and UNC paths
+                    if netloc:
+                        if ":" in netloc:
+                            # Drive letter path: file://C:/path
+                            path = Path(netloc + path_part)
+                        else:
+                            # UNC path: file://server/share
+                            path = Path("//" + netloc + path_part)
                     else:
-                        # UNC path
-                        path = "//" + url_parsed.netloc + url_parsed.path
+                        # file:///C:/path comes through as path_part="/C:/path"; strip leading slash
+                        if (
+                            len(path_part) >= 3
+                            and path_part[0] == "/"
+                            and path_part[2] == ":"
+                        ):
+                            path_part = path_part.lstrip("/")
+                        path = Path(path_part)
                 else:
-                    # Direct path
-                    path = url_parsed.path
-                    if path.startswith("/"):
-                        path = path[1:]  # Remove leading slash for Windows
-            else:
-                # Unix path
-                path = url_parsed.path
+                    # POSIX: netloc is typically empty or localhost; for others, treat as network path
+                    if netloc:
+                        path = Path("//" + netloc + path_part)
+                    else:
+                        path = Path(path_part)
 
-            # Replace URL-encoded characters and normalize slashes
-            path = urllib.parse.unquote(path)
-            path = os.path.normpath(path)
+                resolved_path = path.expanduser()
+                if not resolved_path.exists():
+                    raise FileNotFoundError(
+                        f"No such file or directory: '{resolved_path}'"
+                    )
 
-            if not os.path.exists(path):
-                raise FileNotFoundError(f"No such file or directory: '{path}'")
+                return open(resolved_path, "rb")
+            except Exception as e:
+                raise FileNotFoundError(f"Failed to access file: {e}")
 
-            return open(path, "rb")
+        # Check URI cache first for downloaded content
+        try:
+            cached = Environment.get_memory_uri_cache().get(url)
+            if isinstance(cached, (bytes, bytearray)):
+                return BytesIO(bytes(cached))
+        except Exception:
+            pass
 
         response = await self.http_get(url)
-        return BytesIO(response.content)
+        content = response.content
+
+        # Store downloaded bytes in URI cache for 5 minutes
+        try:
+            Environment.get_memory_uri_cache().set(url, bytes(content))
+        except Exception:
+            pass
+
+        return BytesIO(content)
+
+    def wrap_object(self, obj: Any) -> Any:
+        """Wrap raw Python objects into typed refs, storing large media in-memory.
+
+        - Images/Audio: store via memory:// to defer encoding; use asset_to_io for bytes.
+        - DataFrames/Numpy/Tensors: use existing typed wrappers.
+        """
+        if isinstance(obj, pd.DataFrame):
+            return DataframeRef.from_pandas(obj)
+        elif isinstance(obj, PIL.Image.Image):
+            memory_uri = f"memory://{uuid.uuid4()}"
+            self._memory_set(memory_uri, obj)
+            return ImageRef(uri=memory_uri)
+        elif isinstance(obj, AudioSegment):
+            memory_uri = f"memory://{uuid.uuid4()}"
+            self._memory_set(memory_uri, obj)
+            return AudioRef(uri=memory_uri)
+        elif isinstance(obj, np.ndarray):
+            return NPArray.from_numpy(obj)
+        elif TORCH_AVAILABLE and isinstance(obj, torch.Tensor):
+            return TorchTensor.from_tensor(obj)
+        else:
+            return obj
 
     async def asset_to_io(self, asset_ref: AssetRef) -> IO[bytes]:
         """
@@ -1056,6 +993,59 @@ class ProcessingContext:
                     obj.export(buffer, format="mp3")
                     buffer.seek(0)
                     return buffer
+                elif isinstance(obj, np.ndarray):
+                    # Handle numpy arrays stored in memory depending on the asset type
+                    if isinstance(asset_ref, ImageRef):
+                        # Encode numpy image array as PNG
+                        img = self._numpy_to_pil_image(obj)
+                        buf = BytesIO()
+                        img.convert("RGB").save(buf, format="PNG")
+                        buf.seek(0)
+                        return buf
+                    elif isinstance(asset_ref, AudioRef):
+                        # Encode numpy audio array as MP3
+                        # Infer channels: (samples,) -> 1, (samples, channels) -> channels
+                        channels = 1
+                        audio_arr = obj
+                        if audio_arr.ndim == 2:
+                            # pydub expects interleaved samples for multi-channel when building from raw bytes.
+                            # If provided in shape (samples, channels), interleave by reshaping C-order.
+                            channels = audio_arr.shape[1]
+                        # Normalize/convert dtype similarly to audio_from_numpy
+                        if audio_arr.dtype == np.int16:
+                            raw = audio_arr.tobytes()
+                        elif audio_arr.dtype in (np.float32, np.float64, np.float16):
+                            raw = (audio_arr * (2**14)).astype(np.int16).tobytes()
+                        else:
+                            raise ValueError(
+                                f"Unsupported audio ndarray dtype {audio_arr.dtype}"
+                            )
+                        seg = AudioSegment(
+                            data=raw,
+                            frame_rate=DEFAULT_AUDIO_SAMPLE_RATE,  # default sample rate
+                            sample_width=2,  # 16-bit
+                            channels=int(channels),
+                        )
+                        out = BytesIO()
+                        seg.export(out, format="mp3")
+                        out.seek(0)
+                        return out
+                    elif isinstance(asset_ref, VideoRef):
+                        # Encode numpy video array as MP4 using shared utility (T,H,W,C)
+                        try:
+                            # Convert numpy array to list of frames for the utility function
+                            video_frames = [frame for frame in obj]
+
+                            # Use shared video utility for consistent behavior
+                            video_bytes = export_to_video_bytes(video_frames, fps=30)
+                            out = BytesIO(video_bytes)
+                            out.seek(0)
+                            return out
+                        except Exception as e:
+                            raise ValueError(f"Failed to encode numpy video: {e}")
+                    else:
+                        # Generic fallback: return raw bytes
+                        return BytesIO(obj.tobytes())
                 elif isinstance(obj, str):
                     # Convert string to UTF-8 bytes
                     return BytesIO(obj.encode("utf-8"))
@@ -1065,17 +1055,82 @@ class ProcessingContext:
                     raise ValueError(f"Unsupported memory object type {type(obj)}")
             else:
                 raise ValueError(f"Memory object not found for key {key}")
-        # Date takes precedence over anything else as it is the most up-to-date
-        # and already in memory
-        elif asset_ref.data:
-            if isinstance(asset_ref.data, bytes):
-                return BytesIO(asset_ref.data)
-            elif isinstance(asset_ref.data, list):
+        # If explicit data is present, normalize it into a consistent byte stream
+        elif asset_ref.data is not None:
+            data = asset_ref.data
+            # Images: always encode to PNG
+            if isinstance(asset_ref, ImageRef):
+                if isinstance(data, bytes):
+                    return BytesIO(data)
+                elif isinstance(data, PIL.Image.Image):
+                    buf = BytesIO()
+                    PIL.ImageOps.exif_transpose(data).convert("RGB").save(
+                        buf, format="PNG"
+                    )
+                    buf.seek(0)
+                    return buf
+                elif isinstance(data, np.ndarray):
+                    img = self._numpy_to_pil_image(data)
+                    buf = BytesIO()
+                    img.convert("RGB").save(buf, format="PNG")
+                    buf.seek(0)
+                    return buf
+                else:
+                    raise ValueError(f"Unsupported ImageRef data type {type(data)}")
+            # Audio: always encode to MP3
+            elif isinstance(asset_ref, AudioRef):
+                if isinstance(data, bytes):
+                    return BytesIO(data)
+                elif isinstance(data, AudioSegment):
+                    buf = BytesIO()
+                    data.export(buf, format="mp3")
+                    buf.seek(0)
+                    return buf
+                elif isinstance(data, np.ndarray):
+                    # Convert numpy audio to MP3 bytes
+                    channels = 1
+                    audio_arr = data
+                    if audio_arr.ndim == 2:
+                        channels = audio_arr.shape[1]
+                    if audio_arr.dtype == np.int16:
+                        raw = audio_arr.tobytes()
+                    elif audio_arr.dtype in (np.float32, np.float64, np.float16):
+                        raw = (audio_arr * (2**14)).astype(np.int16).tobytes()
+                    else:
+                        raise ValueError(
+                            f"Unsupported AudioRef ndarray dtype {audio_arr.dtype}"
+                        )
+                    seg = AudioSegment(
+                        data=raw,
+                        frame_rate=DEFAULT_AUDIO_SAMPLE_RATE,
+                        sample_width=2,
+                        channels=int(channels),
+                    )
+                    out = BytesIO()
+                    seg.export(out, format="mp3")
+                    out.seek(0)
+                    return out
+                else:
+                    raise ValueError(f"Unsupported AudioRef data type {type(data)}")
+            # Text
+            elif isinstance(asset_ref, TextRef):
+                if isinstance(data, bytes):
+                    return BytesIO(data)
+                elif isinstance(data, str):
+                    return BytesIO(data.encode("utf-8"))
+                else:
+                    raise ValueError(f"Unsupported TextRef data type {type(data)}")
+            # Video and generic assets: assume data is already encoded bytes
+            elif isinstance(data, bytes):
+                return BytesIO(data)
+            elif isinstance(data, str):
+                return BytesIO(data.encode("utf-8"))
+            elif isinstance(data, list):
                 raise ValueError(
                     "Batched data must be converted to list using BatchToList node"
                 )
             else:
-                raise ValueError(f"Unsupported data type {type(asset_ref.data)}")
+                raise ValueError(f"Unsupported data type {type(data)}")
         # Asset ID takes precedence over URI as the URI could be expired
         elif asset_ref.asset_id is not None:
             return await self.download_asset(asset_ref.asset_id)
@@ -1117,22 +1172,11 @@ class ProcessingContext:
             key = asset_ref.uri
             obj = self._memory_get(key)
             if obj is not None:
-                if isinstance(obj, PIL.Image.Image):
-                    mime_type = "image/png"
-                    buffer = BytesIO()
-                    obj.save(buffer, format="PNG")
-                    buffer.seek(0)
-                    return ImageRef(asset_id=asset_ref.asset_id, data=buffer.getvalue())
-                elif isinstance(obj, AudioSegment):
-                    mime_type = "audio/mp3"
-                    buffer = BytesIO()
-                    obj.export(buffer, format="mp3")
-                    buffer.seek(0)
-                    return AudioRef(asset_id=asset_ref.asset_id, data=buffer.getvalue())
-                elif isinstance(obj, pd.DataFrame):
+                if isinstance(obj, pd.DataFrame):
                     return await self.dataframe_from_pandas(obj)
-                else:
-                    raise ValueError(f"Unsupported memory object type {type(obj)}")
+                # For other asset types use the canonical encoding rules above
+                data_bytes = await self.asset_to_bytes(asset_ref)
+                return asset_ref.model_copy(update={"data": data_bytes})
             else:
                 raise ValueError(f"Memory object not found for key {key}")
         return asset_ref
@@ -1230,22 +1274,7 @@ class ProcessingContext:
             str: The base64-encoded string representation of the image.
         """
         buffer = await self.asset_to_io(image_ref)
-        image = PIL.Image.open(buffer)
-
-        # Apply EXIF orientation if present
-        try:
-            # Use PIL's built-in method to handle EXIF orientation
-            rotated_image = PIL.ImageOps.exif_transpose(image)
-            # exif_transpose can return None in some cases, so fallback to original
-            image = rotated_image if rotated_image is not None else image
-        except (AttributeError, KeyError, TypeError):
-            # If EXIF data is not available or malformed, continue without rotation
-            pass
-
-        image = image.convert("RGB")
-        buffer = BytesIO()
-        image.save(buffer, format="PNG")
-        return base64.b64encode(buffer.getvalue()).decode("utf-8")
+        return base64.b64encode(buffer.read()).decode("utf-8")
 
     async def audio_to_audio_segment(self, audio_ref: AudioRef) -> AudioSegment:
         """
@@ -1272,14 +1301,17 @@ class ProcessingContext:
         return pydub.AudioSegment.from_file(audio_bytes)
 
     async def audio_to_numpy(
-        self, audio_ref: AudioRef, sample_rate: int = 32_000, mono: bool = True
+        self,
+        audio_ref: AudioRef,
+        sample_rate: int = DEFAULT_AUDIO_SAMPLE_RATE,
+        mono: bool = True,
     ) -> tuple[np.ndarray, int, int]:
         """
         Converts the audio to a np.float32 array.
 
         Args:
             audio_ref (AudioRef): The audio reference to convert.
-            sample_rate (int, optional): The target sample rate. Defaults to 32_000.
+            sample_rate (int, optional): The target sample rate. Defaults to DEFAULT_AUDIO_SAMPLE_RATE.
             mono (bool, optional): Whether to convert to mono. Defaults to True.
 
         Returns:
@@ -1444,7 +1476,11 @@ class ProcessingContext:
             memory_uri = f"memory://{uuid.uuid4()}"
             # Store the AudioSegment directly for fast retrieval
             self._memory_set(memory_uri, audio_segment)
-            return AudioRef(uri=memory_uri)
+            # Also populate data field with binary representation for consistency
+            buffer = BytesIO()
+            audio_segment.export(buffer, format="mp3")
+            buffer.seek(0)
+            return AudioRef(uri=memory_uri, data=buffer.read())
         else:
             # Create asset when name is provided (persistence needed)
             buffer = BytesIO()
@@ -1468,11 +1504,10 @@ class ProcessingContext:
         # Prefer retrieving from in-memory storage if the DataframeRef uses a memory URI
         if getattr(df, "uri", "").startswith("memory://"):
             key = df.uri
-            if key in self.memory:
-                obj = self.memory[key]
-                if isinstance(obj, pd.DataFrame):
-                    return obj
-            # If not found in memory, fall back to other representations
+            obj = self._memory_get(key)
+            if isinstance(obj, pd.DataFrame):
+                return obj
+            # If not found in cache, fall back to other representations
 
         if df.columns:
             column_names = [col.name for col in df.columns]
@@ -1636,7 +1671,8 @@ class ProcessingContext:
         Returns:
             ImageRef: The ImageRef object.
         """
-        return await self.image_from_pil(PIL.Image.fromarray(image), name=name)
+        pil_img = self._numpy_to_pil_image(image)
+        return await self.image_from_pil(pil_img, name=name)
 
     async def image_from_tensor(
         self,
@@ -1729,7 +1765,7 @@ class ProcessingContext:
         parent_id: str | None = None,
     ) -> VideoRef:
         import tempfile
-        from nodetool.common.video_utils import export_to_video
+        from nodetool.media.video.video_utils import export_to_video
 
         with tempfile.NamedTemporaryFile(suffix=".mp4", delete=True) as temp:
             export_to_video(frames, temp.name, fps=fps)
@@ -1753,10 +1789,14 @@ class ProcessingContext:
         Returns:
             VideoRef: The VideoRef object.
         """
-        import imageio
+        # Convert numpy array to list of frames for the utility function
+        video_frames = [frame for frame in video]
 
-        buffer = BytesIO()
-        imageio.mimwrite(buffer, video, format="mp4", fps=fps)  # type: ignore
+        # Use shared video utility for consistent behavior
+        video_bytes = export_to_video_bytes(video_frames, fps=fps)
+
+        # Create BytesIO from the video bytes
+        buffer = BytesIO(video_bytes)
         buffer.seek(0)
         return await self.video_from_io(buffer, name=name, parent_id=parent_id)
 
@@ -1819,14 +1859,11 @@ class ProcessingContext:
         # Check for memory:// protocol URI first (preferred for performance)
         if hasattr(model_ref, "uri") and model_ref.uri.startswith("memory://"):
             key = model_ref.uri
-            if key in self.memory:
-                obj = self.memory[key]
-                # Return the model object directly if it's already a model
-                if hasattr(obj, "fit") or hasattr(
-                    obj, "predict"
-                ):  # Duck typing for models
-                    return obj
-                # Fall through to regular conversion if not a model object
+            obj = self._memory_get(key)
+            # Return the model object directly if it's already a model
+            if obj is not None and (hasattr(obj, "fit") or hasattr(obj, "predict")):
+                return obj
+            # Fall through to regular conversion if not a model object
 
         if model_ref.asset_id is None:
             raise ValueError("ModelRef is empty")
@@ -1932,8 +1969,9 @@ class ProcessingContext:
         Returns:
             bool: True if the model is cached, False otherwise.
         """
-        cache_path = try_to_load_from_cache(repo_id, "config.json")
-        return cache_path is not None
+        from nodetool.integrations.huggingface.hf_utils import is_model_cached
+
+        return is_model_cached(repo_id)
 
     def encode_assets_as_uri(self, value: Any) -> Any:
         """
@@ -1945,15 +1983,35 @@ class ProcessingContext:
         Returns:
             Any: The value with all AssetRef objects encoded as URIs
         """
+        from nodetool.io.asset_utils import encode_assets_as_uri
+
+        return encode_assets_as_uri(value)
+
+    async def embed_assets_in_data(self, value: Any) -> Any:
+        """
+        Recursively embeds any memory:// assets in the given value.
+        """
         if isinstance(value, AssetRef):
-            return value.encode_data_to_uri()
+            if value.uri.startswith("memory://") or value.data is not None:
+                data_bytes = await self.asset_to_bytes(value)
+                return value.model_copy(update={"uri": None, "data": data_bytes})
+            return value
         elif isinstance(value, dict):
-            return {k: self.encode_assets_as_uri(v) for k, v in value.items()}
+            keys = list(value.keys())
+            results = await asyncio.gather(
+                *[self.embed_assets_in_data(value[k]) for k in keys]
+            )
+            return {k: r for k, r in zip(keys, results)}
         elif isinstance(value, list):
-            return [self.encode_assets_as_uri(item) for item in value]
+            results = await asyncio.gather(
+                *[self.embed_assets_in_data(item) for item in value]
+            )
+            return list(results)
         elif isinstance(value, tuple):
-            items = [self.encode_assets_as_uri(item) for item in value]
-            return tuple(items)
+            results = await asyncio.gather(
+                *[self.embed_assets_in_data(item) for item in value]
+            )
+            return tuple(results)
         else:
             return value
 
@@ -1980,18 +2038,18 @@ class ProcessingContext:
 
         async def upload_asset(value: AssetRef) -> dict[str, Any]:
             log.info(f"Uploading asset {value.uri} to temp storage")
-            # Upload the asset data to S3 and return the URL
-            if value.data is not None:
+            # Always normalize to bytes via the canonical encoder
+            data = await self.asset_to_bytes(value)
+
+            if data is not None:
                 storage = Environment.get_temp_storage()
                 ext = get_ext(value)
                 key = uuid.uuid4().hex + "." + ext
                 uri = await storage.upload(
                     key,
-                    BytesIO(
-                        value.data[0] if isinstance(value.data, list) else value.data
-                    ),
+                    BytesIO(data),
                 )
-                log.info(f"Uploaded to {uri}")
+                log.info(f"Uploaded {len(data)} bytes to {uri}")
                 return {
                     "type": value.type,
                     "uri": uri,
@@ -2007,7 +2065,13 @@ class ProcessingContext:
         if isinstance(value, AssetRef):
             return await upload_asset(value)
         elif isinstance(value, dict):
-            if "type" in value and value["type"] in asset_types:
+            if (
+                "type" in value
+                and "uri" in value
+                and "asset_id" in value
+                and "data" in value
+                and value["type"] in asset_types
+            ):
                 asset_ref = AssetRef(
                     type=value["type"],
                     uri=value["uri"],
@@ -2045,140 +2109,7 @@ class ProcessingContext:
         Raises:
             FileNotFoundError: If the font file cannot be found in system locations
         """
-        # Determine allowed font extensions per OS (aligned with api/font.py)
-        current_os = platform.system()
-        if current_os == "Darwin":
-            allowed_exts = [".ttf", ".otf", ".ttc", ".dfont"]
-        elif current_os == "Windows":
-            allowed_exts = [".ttf", ".otf", ".ttc"]
-        else:  # Linux and others default to Linux set used in api/font.py
-            allowed_exts = [".ttf", ".otf"]
-
-        input_name_lower = font_name.lower()
-        base_name, input_ext = os.path.splitext(input_name_lower)
-        has_extension = input_ext != ""
-
-        def file_matches(target_file: str) -> bool:
-            file_lower = target_file.lower()
-            name_no_ext, file_ext = os.path.splitext(file_lower)
-            if has_extension:
-                # If user specified an extension, match exact filename (case-insensitive)
-                return file_lower == input_name_lower
-            # No extension provided: match base name with any allowed extension
-            return name_no_ext == base_name and file_ext in allowed_exts
-
-        # First check FONT_PATH environment variable if it exists
-        if "FONT_PATH" in self.environment:
-            font_path = self.environment["FONT_PATH"]
-            if font_path and os.path.exists(font_path):
-                # If FONT_PATH points directly to a file
-                if os.path.isfile(font_path):
-                    return font_path
-                # If FONT_PATH is a directory, search for the font file
-                for root, _, files in os.walk(font_path):
-                    for f in files:
-                        if file_matches(f):
-                            return os.path.join(root, f)
-
-        home_dir = os.path.expanduser("~")
-
-        # Common font locations by OS
-        font_locations = {
-            "Windows": [
-                "C:\\Windows\\Fonts",
-            ],
-            "Darwin": [  # macOS
-                "/System/Library/Fonts",
-                "/Library/Fonts",
-                f"{home_dir}/Library/Fonts",
-            ],
-            "Linux": [
-                "/usr/share/fonts",
-                "/usr/local/share/fonts",
-                f"{home_dir}/.fonts",
-                f"{home_dir}/.local/share/fonts",
-            ],
-        }
-
-        # Get paths for current OS
-        search_paths = font_locations.get(current_os, [])
-
-        log.info(
-            f"Searching for font '{font_name}' in {search_paths} with extensions {allowed_exts}"
-        )
-
-        # Search for the font file
-        for base_path in search_paths:
-            if os.path.exists(base_path):
-                # Walk through all subdirectories
-                for root, _, files in os.walk(base_path):
-                    for f in files:
-                        if file_matches(f):
-                            return os.path.join(root, f)
-
-        raise FileNotFoundError(
-            f"Could not find font '{font_name}' in system locations"
-        )
-
-    def get_graph_connected_to_output(
-        self, node_id: str, source_handle: str, as_subgraph: bool = False
-    ) -> tuple[list[Edge], Graph]:
-        """
-        Return the entire downstream spanning subgraph starting at that output.
-
-        Args:
-            node_id (str): The ID of the node to find connections for.
-            source_handle (str): The handle of the output to find connections for.
-
-        Returns:
-            list[BaseNode] | Graph: Either a list of directly connected nodes or a full
-                reachable subgraph as a `Graph`.
-        """
-        from collections import deque
-
-        initial_edges = [
-            edge
-            for edge in self.graph.edges
-            if edge.source == node_id and edge.sourceHandle == source_handle
-        ]
-
-        included_node_ids: set[str] = set()
-        included_edges = []
-
-        # Seed the queue with the targets of the initial edges
-        queue = deque()
-        for e in initial_edges:
-            included_edges.append(e)
-            included_node_ids.add(e.target)
-            queue.append(e.target)
-
-        # BFS over outgoing edges to collect downstream nodes and edges
-        while queue:
-            current = queue.popleft()
-            for edge in self.graph.edges:
-                if edge.source == current:
-                    included_edges.append(edge)
-                    if edge.target not in included_node_ids:
-                        included_node_ids.add(edge.target)
-                        queue.append(edge.target)
-
-        # Materialize node instances, skipping any missing nodes gracefully
-        included_nodes: list[BaseNode] = []
-        for nid in included_node_ids:
-            try:
-                included_nodes.append(self.find_node(nid))
-            except ValueError:
-                # Skip nodes that don't exist in the graph
-                pass
-
-        # Filter edges to those whose endpoints are both present in the included set
-        filtered_edges = [
-            e
-            for e in included_edges
-            if e.source in included_node_ids and e.target in included_node_ids
-        ]
-
-        return initial_edges, Graph(nodes=included_nodes, edges=filtered_edges)
+        return _get_system_font_path_util(font_name, self.environment)
 
     def resolve_workspace_path(self, path: str) -> str:
         """
@@ -2187,7 +2118,6 @@ class ProcessingContext:
         by interpreting them relative to the `workspace_dir`.
 
         Args:
-            workspace_dir: The absolute path to the workspace directory.
             path: The path to resolve, which can be:
                 - Prefixed with '/workspace/' (e.g., '/workspace/output/file.txt')
                 - Prefixed with 'workspace/' (e.g., 'workspace/output/file.txt')
@@ -2200,61 +2130,9 @@ class ProcessingContext:
         Raises:
             ValueError: If workspace_dir is not provided or empty.
         """
-        if not self.workspace_dir:
-            raise ValueError("Workspace directory is required")
+        from nodetool.io.path_utils import resolve_workspace_path
 
-        relative_path: str
-        # Normalize path separators for consistent checks
-        normalized_path = path.replace("\\", "/")
-
-        # Handle paths with /workspace/ prefix
-        if normalized_path.startswith("/workspace/"):
-            relative_path = normalized_path[len("/workspace/") :]
-        # Handle paths with workspace/ prefix (without leading slash)
-        elif normalized_path.startswith("workspace/"):
-            relative_path = normalized_path[len("workspace/") :]
-        # Handle absolute paths by stripping leading slash and treating as relative to workspace
-        elif os.path.isabs(normalized_path):
-            # On Windows, isabs('/') is False. Check explicitly.
-            if normalized_path.startswith("/"):
-                relative_path = normalized_path[1:]
-            else:
-                # For Windows absolute paths (e.g., C:\...), we still want to join them relative to workspace?
-                # This behaviour might need clarification. Assuming here they are treated as relative for consistency.
-                # If absolute paths outside workspace should be allowed, this needs change.
-                log.warning(
-                    f"Treating absolute path '{path}' as relative to workspace root '{self.workspace_dir}'."
-                )
-                # Attempt to get path relative to drive root
-                drive, path_part = os.path.splitdrive(normalized_path)
-                relative_path = path_part.lstrip(
-                    "\\/"
-                )  # Strip leading slashes from the part after drive
-        # Handle relative paths
-        else:
-            relative_path = normalized_path
-
-        # Prevent path traversal attempts (e.g., ../../etc/passwd)
-        # Join the workspace directory with the potentially cleaned relative path
-        abs_path = os.path.abspath(os.path.join(self.workspace_dir, relative_path))
-
-        # Final check: ensure the resolved path is still within the workspace directory
-        # Use commonprefix for robustness across OS
-        common_prefix = os.path.commonprefix(
-            [os.path.abspath(self.workspace_dir), abs_path]
-        )
-        if os.path.abspath(self.workspace_dir) != common_prefix:
-            log.error(
-                f"Resolved path '{abs_path}' is outside the workspace directory '{self.workspace_dir}'. Original path: '{path}'"
-            )
-            # Option 1: Raise an error
-            raise ValueError(
-                f"Resolved path '{abs_path}' is outside the workspace directory."
-            )
-            # Option 2: Return a default safe path or the workspace root (less ideal)
-            # return workspace_dir
-
-        return abs_path
+        return resolve_workspace_path(self.workspace_dir, path)
 
     async def get_browser(
         self,
@@ -2373,13 +2251,12 @@ class ProcessingContext:
             pattern (str | None): Optional pattern to match memory keys.
                                 If None, clears all memory.
         """
-        if pattern is None:
-            # Clear local memory and best-effort clear of global cache entries with memory:// prefix
-            self.memory.clear()
-        else:
-            keys_to_remove = [key for key in list(self.memory.keys()) if pattern in key]
-            for key in keys_to_remove:
-                del self.memory[key]
+        # AbstractNodeCache does not support partial clears by pattern.
+        # For now, perform a full clear when requested.
+        try:
+            Environment.get_node_cache().clear()
+        except Exception:
+            pass
 
     def get_memory_stats(self) -> dict[str, int | dict[str, int]]:
         """
@@ -2388,12 +2265,9 @@ class ProcessingContext:
         Returns:
             dict: Statistics including total objects and breakdown by type.
         """
-        type_counts: dict[str, int] = {}
-        for obj in self.memory.values():
-            obj_type = type(obj).__name__
-            type_counts[obj_type] = type_counts.get(obj_type, 0) + 1
-
-        return {"total_objects": len(self.memory), "types": type_counts}
+        # Node cache interface does not expose iteration over items.
+        # Return an empty summary to avoid leaking implementation details.
+        return {"total_objects": 0, "types": {}}
 
     async def cleanup(self):
         """

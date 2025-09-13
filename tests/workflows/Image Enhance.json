@@ -1,0 +1,218 @@
+{
+  "id": "7c89894e8ce411f083b10000284d49a0",
+  "access": "public",
+  "created_at": "2025-09-08T21:09:02.210522",
+  "updated_at": "2025-09-08T21:09:02.210536",
+  "name": "Image Enhance",
+  "tool_name": null,
+  "description": "Improve image quality with basic enhancement tools like sharpening, contrast and color adjustment",
+  "tags": [
+    "image",
+    "start"
+  ],
+  "thumbnail": null,
+  "thumbnail_url": null,
+  "graph": {
+    "nodes": [
+      {
+        "id": "97876",
+        "parent_id": null,
+        "type": "nodetool.workflows.base_node.Comment",
+        "data": {
+          "headline": "Image Enhance",
+          "comment": [
+            {
+              "type": "paragraph",
+              "children": [
+                {
+                  "text": "The Nodetool.Image.Enhance namespace contains nodes for  basic image enhancement."
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "children": [
+                {
+                  "text": ""
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "children": [
+                {
+                  "text": "Also check the Replicate.Image.Process and Replicate.Image.Upscale namespaces for more advanced image enhancement nodes."
+                }
+              ]
+            }
+          ],
+          "comment_lexical": {
+            "root": {
+              "children": [
+                {
+                  "children": [
+                    {
+                      "detail": 0,
+                      "format": 0,
+                      "mode": "normal",
+                      "style": "",
+                      "text": "The Nodetool.Image.Enhance namespace contains nodes for  basic image enhancement.\n\nAlso check the Replicate.Image.Process and Replicate.Image.Upscale namespaces for more advanced image enhancement nodes.",
+                      "type": "text",
+                      "version": 1
+                    }
+                  ],
+                  "direction": "ltr",
+                  "format": "",
+                  "indent": 0,
+                  "type": "paragraph",
+                  "version": 1,
+                  "textFormat": 0,
+                  "textStyle": ""
+                }
+              ],
+              "direction": "ltr",
+              "format": "",
+              "indent": 0,
+              "type": "root",
+              "version": 1
+            }
+          }
+        },
+        "ui_properties": {
+          "selected": false,
+          "position": {
+            "x": 4,
+            "y": -138
+          },
+          "zIndex": 0,
+          "width": 546,
+          "height": 132,
+          "selectable": true
+        },
+        "dynamic_properties": {},
+        "dynamic_outputs": {},
+        "sync_mode": "on_any"
+      },
+      {
+        "id": "97877",
+        "parent_id": null,
+        "type": "nodetool.output.ImageOutput",
+        "data": {
+          "name": "enhanced",
+          "description": ""
+        },
+        "ui_properties": {
+          "selected": false,
+          "position": {
+            "x": 641,
+            "y": 50
+          },
+          "zIndex": 0,
+          "width": 159,
+          "selectable": true
+        },
+        "dynamic_properties": {},
+        "dynamic_outputs": {},
+        "sync_mode": "on_any"
+      },
+      {
+        "id": "97879",
+        "parent_id": null,
+        "type": "nodetool.input.ImageInput",
+        "data": {
+          "name": "image",
+          "description": "",
+          "value": {
+            "uri": "https://upload.wikimedia.org/wikipedia/commons/thumb/8/8d/Blurry_photo.jpg/1600px-Blurry_photo.jpg?20220511161035",
+            "type": "image"
+          }
+        },
+        "ui_properties": {
+          "selected": false,
+          "position": {
+            "x": 50,
+            "y": 50
+          },
+          "zIndex": 0,
+          "width": 159,
+          "selectable": true
+        },
+        "dynamic_properties": {},
+        "dynamic_outputs": {},
+        "sync_mode": "on_any"
+      },
+      {
+        "id": "9d8850a4-c20f-4698-9cb4-e315c956aee6",
+        "parent_id": null,
+        "type": "lib.pillow.enhance.Sharpen",
+        "data": {},
+        "ui_properties": {
+          "selected": false,
+          "position": {
+            "x": 239,
+            "y": 131
+          },
+          "zIndex": 0,
+          "width": 171,
+          "selectable": true
+        },
+        "dynamic_properties": {},
+        "dynamic_outputs": {},
+        "sync_mode": "on_any"
+      },
+      {
+        "id": "4c9c6b63-646a-4da9-8794-abd180c59041",
+        "parent_id": null,
+        "type": "lib.pillow.enhance.AutoContrast",
+        "data": {
+          "cutoff": 108
+        },
+        "ui_properties": {
+          "selected": false,
+          "position": {
+            "x": 440,
+            "y": 113
+          },
+          "zIndex": 0,
+          "width": 171,
+          "selectable": true
+        },
+        "dynamic_properties": {},
+        "dynamic_outputs": {},
+        "sync_mode": "on_any"
+      }
+    ],
+    "edges": [
+      {
+        "id": "f1509e03-19ac-4795-8083-8903020ba58e",
+        "source": "97879",
+        "sourceHandle": "output",
+        "target": "9d8850a4-c20f-4698-9cb4-e315c956aee6",
+        "targetHandle": "image",
+        "ui_properties": null
+      },
+      {
+        "id": "b2247412-d88e-4c79-95aa-95ff9120575f",
+        "source": "9d8850a4-c20f-4698-9cb4-e315c956aee6",
+        "sourceHandle": "output",
+        "target": "4c9c6b63-646a-4da9-8794-abd180c59041",
+        "targetHandle": "image",
+        "ui_properties": null
+      },
+      {
+        "id": "82f3bfe6-17b1-4685-b4ef-bb84e4d6f1d1",
+        "source": "4c9c6b63-646a-4da9-8794-abd180c59041",
+        "sourceHandle": "output",
+        "target": "97877",
+        "targetHandle": "value",
+        "ui_properties": null
+      }
+    ]
+  },
+  "input_schema": null,
+  "output_schema": null,
+  "settings": null,
+  "package_name": "nodetool-base",
+  "path": null,
+  "run_mode": null
+}

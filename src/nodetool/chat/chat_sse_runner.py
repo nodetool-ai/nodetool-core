@@ -22,11 +22,12 @@ Example:
         yield event
 """
 
-import logging
+from nodetool.config.logging_config import get_logger
 import json
 import asyncio
 import time
-from typing import AsyncGenerator, Iterable, Optional, List, Union
+from typing import AsyncGenerator, Iterable, Optional, List
+from typing import Union
 
 from openai.types.chat import (
     ChatCompletionChunk,
@@ -55,12 +56,12 @@ from nodetool.metadata.types import (
     ImageRef,
     AudioRef,
 )
-from nodetool.common.environment import Environment
+from nodetool.config.environment import Environment
 from nodetool.types.workflow import Workflow
 from nodetool.workflows.types import Chunk
 
-log = logging.getLogger(__name__)
-log.setLevel(logging.DEBUG)
+log = get_logger(__name__)
+# Log level is controlled by env (DEBUG/NODETOOL_LOG_LEVEL)
 
 
 class ChatSSERunner(BaseChatRunner):

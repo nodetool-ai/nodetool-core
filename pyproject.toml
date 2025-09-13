@@ -1,134 +1,138 @@
 [build-system]
-requires = ["poetry-core>=1.0.0"]
-build-backend = "poetry.core.masonry.api"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
-[tool.poetry]
+[project]
 name = "nodetool-core"
 version = "0.6.0"
 description = "Nodetool Core is the core library for Nodetool, providing the necessary functionality for building and running AI workflows."
 readme = "README.md"
-authors = ["Matthias Georgi <matti.georgi@gmail.com>"]
-packages = [{ include = "nodetool", from = "src" }]
-package-mode = true
+authors = [
+    {name = "Matthias Georgi", email = "matti.georgi@gmail.com"}
+]
+requires-python = ">=3.11"
 
-[tool.poetry.dependencies]
-python = "^3.11"
+dependencies = [
 
-# Core dependencies
-pydantic = ">=2.11.2"
-python-multipart = ">=0.0.17"
-aiohttp = ">=3.11.2"
-websockets = ">=14.1"
-fastapi = ">=0.115.5"
-openapi-pydantic = "*"
-uvicorn = ">=0.32.0"
-msgpack = ">=1.1.0"
-networkx = ">=3.4.2"
-supabase = ">=2.15.0"
-psycopg = { version = ">=3.2.9", extras = ["binary"] }
-psycopg-pool = ">=3.2.6"
+    # Core dependencies
+    "pydantic>=2.11.2",
+    "python-multipart>=0.0.17",
+    "aiohttp>=3.11.2",
+    "websockets>=14.1",
+    "fastapi>=0.115.5",
+    "openapi-pydantic",
+    "uvicorn>=0.32.0",
+    "msgpack>=1.1.0",
+    "networkx>=3.4.2",
+    "supabase>=2.15.0",
+    "psycopg[binary]>=3.2.9",
+    "psycopg-pool>=3.2.6",
+    "docker==7.1.0",
 
-# Utils dependencies
-aioconsole = "*"
-black = ">=24.10.0"
-click = ">=8.1.7"
-feedparser = "*"
-ftfy = ">=6.3.1"
-importlib_metadata = "*"
-importlib-resources = "*"
-joblib = "*"
-jsonpath-ng = ">=1.7.0"
-jsonschema = "*"
-psutil = ">=6.1.0"
-pynvml = ">=12.0.0"
-python-dateutil = ">=2.9.0.post0"
-prompt_toolkit = ">=3.0.50"
-pyyaml = ">=6.0.2"
-rich = ">=13.9.4"
-setuptools = ">=80.8.0"
-tabulate = ">=0.9.0"
-tomli = ">=2.2.1"
-tomlkit = "*"
-tqdm = ">=4.67.0"
+    # Utils dependencies
+    "aioconsole",
+    "black>=24.10.0",
+    "click>=8.1.7",
+    "feedparser",
+    "ftfy>=6.3.1",
+    "importlib_metadata",
+    "importlib-resources",
+    "joblib",
+    "jsonpath-ng>=1.7.0",
+    "jsonschema",
+    "psutil>=6.1.0",
+    "pynvml>=12.0.0",
+    "python-dateutil>=2.9.0.post0",
+    "python-dotenv>=1.0.0",
+    "prompt_toolkit>=3.0.50",
+    "pyyaml>=6.0.2",
+    "rich>=13.9.4",
+    "setuptools>=80.8.0",
+    "tabulate>=0.9.0",
+    "tomli>=2.2.1",
+    "tomlkit",
+    "tqdm>=4.67.0",
 
-# Document processing dependencies
-bs4 = "0.0.2"
-langchain-text-splitters = "0.3.4"
-html2text = "*"
-markitdown = "*"
-PyMuPDF = "1.25.2"
-pymupdf4llm = "0.0.17"
+    # Document processing dependencies
+    "bs4==0.0.2",
+    "langchain-text-splitters==0.3.11",
+    "html2text",
+    "markitdown",
+    "PyMuPDF==1.25.2",
+    "pymupdf4llm==0.0.17",
 
-# AI dependencies
-anthropic = "*"
-huggingface_hub = "*"
-openai = "*"
-# fal-client = "0.5.6"
-ollama = "*"
-tiktoken = "*"
-sentencepiece = "*"
-google-genai = ">=1.30.0"
-# replicate = "1.0.3"
-runpod = "*"
-mcp = "*"
+    # AI dependencies
+    "anthropic",
+    "huggingface_hub",
+    "openai>=1.102.0",
+    # "fal-client==0.5.6",
+    "ollama",
+    "tiktoken",
+    "sentencepiece",
+    "google-genai>=1.34.0",
+    # "replicate==1.0.3",
+    "runpod",
+    "mcp",
+    # Media dependencies
+    "ffmpeg-python==0.2.0",
+    "pillow==11.2.1",
+    "imageio==2.37.0",
+    "imageio-ffmpeg==0.6.0",
+    "pydub==0.25.1",
+    "opencv-python-headless==4.11.0.86",
 
+    # Data dependencies
+    "numpy==1.26.4",
+    "pandas==2.2.3",
+    "llama-index==0.12.13",
+    "llama-index-embeddings-ollama==0.6.0",
+    "matplotlib==3.9.2",
+    "seaborn==0.13.2",
+    "pypandoc==1.14.0",
 
-# Media dependencies
-ffmpeg-python = "0.2.0"
-pillow = "11.2.1"
-imageio = "2.37.0"
-imageio-ffmpeg = "0.6.0"
-pydub = "0.25.1"
-opencv-python-headless = "4.11.0.86"
+    # Database and storage
+    "chromadb>=1.0.20",
+    "leann>=0.3.2",
+    "aiofiles==24.1.0",
+    "aiosqlite>=0.20.0",
+    "boto3==1.35.63",
+    "pymemcache==4.0.0",
+    "protobuf<=3.20.3",
+    "moto>=5.1.4",
 
-# Data dependencies
-numpy = "1.26.4"
-pandas = "2.2.3"
-llama-index = "0.12.13"
-llama-index-embeddings-ollama = "0.6.0"
-matplotlib = "3.9.2"
-seaborn = "0.13.2"
-pypandoc = "1.14.0"
+    # Web and networking
+    "httpx>=0.27.2",
+    "websocket-client>=1.8.0",
+    "imapclient>=3.0.1",
+    "pyngrok>=7.2.8",
+    "selenium>=4.26.1",
+    "playwright>=1.40.0",
+    "browser-use",
+    "readability-lxml>=0.8.1",
+    "lxml_html_clean>=0.4.1",
+    "trafilatura>=2.0.0",
 
-# Database and storage
-chromadb = "1.0.20"
-aiofiles = "24.1.0"
-aiosqlite = ">=0.20.0"
-boto3 = "1.35.63"
-pymemcache = "4.0.0"
-protobuf = "<=3.20.3"
-moto = ">=5.1.4"
+    # Authentication and security
+    "annotated-types==0.7.0",
+    "authlib==1.3.2",
+    "itsdangerous",
+    "jinja2==3.1.6",
+    "PyJWT",
 
-# Web and networking
-httpx = ">=0.27.2"
-websocket-client = ">=1.8.0"
-imapclient = ">=3.0.1"
-pyngrok = ">=7.2.8"
-selenium = ">=4.26.1"
-playwright = ">=1.40.0"
-browser-use = "*"
-readability-lxml = ">=0.8.1"
-lxml_html_clean = ">=0.4.1"
-trafilatura = ">=2.0.0"
+    # LLM dependencies
+    "langchain-openai",
+    "langchain-ollama",
+    "langchain-anthropic",
+]
 
-# Authentication and security
-annotated-types = "0.7.0"
-authlib = "1.3.2"
-itsdangerous = "*"
-jinja2 = "3.1.6"
-PyJWT = "*"
+[project.optional-dependencies]
+dev = [
+    "aioresponses>=0.7.8",
+    "pytest-timeout>=2.3.1",
+]
 
-# LLM dependencies
-langchain-openai = "*"
-langchain-ollama = "*"
-langchain-anthropic = "*"
-
-[tool.poetry.group.dev.dependencies]
-aioresponses = ">=0.7.8"
-pytest-timeout = ">=2.3.1"
-
-[tool.poetry.scripts]
+[project.scripts]
 nodetool = "nodetool.cli:cli"
 
-[tool.poetry.requires-plugins]
-poetry-plugin-export = ">=1.8"
+[tool.hatch.build.targets.wheel]
+packages = ["src/nodetool"]

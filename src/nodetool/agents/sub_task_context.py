@@ -209,12 +209,11 @@ from typing import (
     Optional,
     cast,
 )
-import logging
+from nodetool.config.logging_config import get_logger
 
 from jinja2 import Environment, BaseLoader
 
-log = logging.getLogger(__name__)
-# log.setLevel(logging.DEBUG)
+log = get_logger(__name__)
 
 
 DEFAULT_MAX_TOKEN_LIMIT: int = 4096

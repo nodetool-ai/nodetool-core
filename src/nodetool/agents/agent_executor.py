@@ -14,7 +14,7 @@ Key simplifications:
 
 import asyncio
 import json
-import logging
+from nodetool.config.logging_config import get_logger
 import time
 from typing import Any, AsyncGenerator, Dict, List, Optional, Sequence, Union
 
@@ -24,7 +24,7 @@ from nodetool.metadata.types import Message, ToolCall
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import Chunk
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 DEFAULT_MAX_ITERATIONS = 10
 
@@ -334,9 +334,6 @@ async def main():
     import os
     from nodetool.chat.providers.openai_provider import OpenAIProvider
     from nodetool.workflows.processing_context import ProcessingContext
-
-    # Setup logging
-    logging.basicConfig(level=logging.INFO)
 
     # Test input data
     input_values = {

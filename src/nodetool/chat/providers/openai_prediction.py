@@ -13,7 +13,7 @@ import pydub.silence
 from openai.types.chat import ChatCompletion
 from openai.types.images_response import ImagesResponse
 
-from nodetool.common.environment import Environment
+from nodetool.config.environment import Environment
 from nodetool.metadata.types import OpenAIModel
 from nodetool.types.prediction import Prediction, PredictionResult
 

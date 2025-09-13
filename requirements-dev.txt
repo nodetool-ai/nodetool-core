@@ -1,3 +1,6 @@
+# NOTE: Use 'uv sync --group dev' instead of pip install -r requirements-dev.txt
+# This file is kept for backward compatibility
+
 # Testing
 pytest>=8.0.0
 pytest-cov>=4.1.0

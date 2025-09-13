@@ -2,10 +2,10 @@
 
 from typing import List, Optional
 from fastapi import APIRouter, HTTPException, Header, UploadFile, File
-from nodetool.common.environment import Environment
+from nodetool.config.environment import Environment
 from nodetool.types.job import JobUpdate
 from pydantic import BaseModel
-from nodetool.common.async_chroma_client import (
+from nodetool.integrations.vectorstores.chroma.async_chroma_client import (
     get_async_chroma_client,
     get_async_collection,
 )
@@ -201,7 +201,10 @@ async def index(
 
         return IndexResponse(path=file.filename or "unknown", error=None)
     except Exception as e:
-        Environment.get_logger().error(f"Error indexing file {file.filename}: {e}")
+        from nodetool.config.logging_config import get_logger
+
+        log = get_logger(__name__)
+        log.error(f"Error indexing file {file.filename}: {e}")
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
     finally:

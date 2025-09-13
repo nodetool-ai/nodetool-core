@@ -14,7 +14,6 @@ def test_run_uvicorn_server_configures_loop_and_workers(monkeypatch):
 
     with (
         patch("nodetool.api.server.uvicorn") as mock_run,
-        patch("nodetool.api.server.multiprocessing.cpu_count", return_value=2),
         patch("nodetool.api.server.platform.system", return_value="Linux"),
         patch(
             "nodetool.api.server.get_nodetool_package_source_folders", return_value=[]
@@ -23,5 +22,5 @@ def test_run_uvicorn_server_configures_loop_and_workers(monkeypatch):
         run_uvicorn_server(dummy_app, host="0.0.0.0", port=8123, reload=False)
         mock_run.assert_called_once()
         _, kwargs = mock_run.call_args
-        assert kwargs["loop"] == "uvloop"
-        assert kwargs["workers"] == 2
+        assert kwargs["loop"] == "asyncio"
+        assert kwargs["workers"] == 1

@@ -10,10 +10,12 @@ from pydantic import BaseModel
 import aiofiles
 import aiofiles.os
 from nodetool.api.utils import current_user
-from nodetool.common.environment import Environment
+from nodetool.config.environment import Environment
+from nodetool.config.logging_config import get_logger
 
-log = Environment.get_logger()
+log = get_logger(__name__)
 router = APIRouter(prefix="/api/files", tags=["files"])
+
 
 # Base directory for file operations - restrict access to user's home directory
 # or a specific workspace directory
@@ -33,22 +35,22 @@ def validate_path(path: str) -> str:
     """
     Validate that the resolved path is within the allowed base directory.
     Prevents path traversal attacks.
-    
+
     Args:
         path: The path to validate
-        
+
     Returns:
         The absolute path if valid
-        
+
     Raises:
         HTTPException: If the path is outside the allowed directory
     """
     base_directory = get_base_directory()
-    
+
     # Expand user home directory and resolve to absolute path
     expanded_path = os.path.expanduser(path)
     abs_path = os.path.abspath(expanded_path)
-    
+
     # Ensure the resolved path is within the base directory
     try:
         # os.path.commonpath will raise ValueError if paths are on different drives (Windows)
@@ -56,15 +58,14 @@ def validate_path(path: str) -> str:
         if common_path != base_directory:
             raise HTTPException(
                 status_code=403,
-                detail="Access denied: Path is outside allowed directory"
+                detail="Access denied: Path is outside allowed directory",
             )
     except ValueError:
         # Paths are on different drives
         raise HTTPException(
-            status_code=403,
-            detail="Access denied: Path is outside allowed directory"
+            status_code=403, detail="Access denied: Path is outside allowed directory"
         )
-    
+
     return abs_path
 
 

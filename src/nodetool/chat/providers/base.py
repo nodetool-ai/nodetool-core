@@ -6,7 +6,7 @@ a common interface that all providers must implement for streaming completions a
 """
 
 from abc import ABC, abstractmethod
-from typing import Any, AsyncGenerator, Sequence
+from typing import Any, AsyncGenerator, AsyncIterator, Sequence
 
 from nodetool.agents.tools.base import Tool
 from nodetool.metadata.types import Message, Provider, ToolCall
@@ -82,10 +82,6 @@ class ChatProvider(ABC):
             tools: Optional tools to make available to the model
             **kwargs: Additional parameters to pass to the API
         """
-
-        for msg in messages:
-            print(json.dumps(msg.model_dump(), indent=4))
-
         if not self.log_file:
             return
 
@@ -199,7 +195,7 @@ class ChatProvider(ABC):
         pass
 
     @abstractmethod
-    async def generate_messages(
+    def generate_messages(
         self,
         messages: Sequence[Message],
         model: str,
@@ -208,9 +204,10 @@ class ChatProvider(ABC):
         context_window: int = 4096,
         response_format: dict | None = None,
         **kwargs,
-    ) -> AsyncGenerator[Chunk | ToolCall, Any]:
+    ) -> AsyncIterator[Chunk | ToolCall]:
         """
         Generate message completions from the provider, yielding chunks or tool calls.
+        Subclass implementations should declare this method as async.
 
         Args:
             messages: Sequence of Message objects representing the conversation
@@ -222,8 +219,9 @@ class ChatProvider(ABC):
             **kwargs: Additional provider-specific parameters
 
         Yields:
-            Chunk objects with content and completion status or ToolCall objects
+            Async iterator of Chunk objects with content and completion status or ToolCall objects
         """
+
         pass
 
 

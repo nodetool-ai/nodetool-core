@@ -13,7 +13,7 @@ a specified workspace. Validation is a key aspect of the planner's role to
 ensure the generated plan is robust and executable.
 """
 
-import logging
+from nodetool.config.logging_config import get_logger
 import traceback
 from nodetool.chat.providers import ChatProvider
 from nodetool.agents.tools.base import Tool
@@ -54,7 +54,7 @@ from jinja2 import Environment, BaseLoader
 
 from nodetool.workflows.types import Chunk, PlanningUpdate
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 COMPACT_SUBTASK_NOTATION_DESCRIPTION = """
 --- Data Flow Representation (DOT/Graphviz Syntax) ---

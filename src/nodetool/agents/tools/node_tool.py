@@ -8,7 +8,7 @@ independently within agent workflows.
 """
 
 from typing import Any, Dict, Type
-from llama_index.embeddings.ollama.base import asyncio
+import asyncio
 from nodetool.agents.tools.base import Tool
 from nodetool.metadata.types import AssetRef
 from nodetool.workflows.base_node import (
@@ -121,7 +121,6 @@ class NodeTool(Tool):
 
             # Convert output according to node's output format
             converted_result = await node.convert_output(context, result)
-            converted_result = await context.upload_assets_to_temp(converted_result)
 
             return {
                 "node_type": self.node_type,

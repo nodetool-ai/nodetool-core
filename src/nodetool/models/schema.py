@@ -5,7 +5,8 @@ in this package. It imports all necessary model classes and maintains a list of 
 for batch operations.
 """
 
-from nodetool.common.environment import Environment
+from nodetool.config.environment import Environment
+from nodetool.config.logging_config import get_logger
 
 from nodetool.models.asset import Asset
 from nodetool.models.job import Job
@@ -14,7 +15,7 @@ from nodetool.models.prediction import Prediction
 from nodetool.models.thread import Thread
 from nodetool.models.workflow import Workflow
 
-log = Environment.get_logger()
+log = get_logger(__name__)
 
 models = [Asset, Job, Message, Prediction, Thread, Workflow]
 

@@ -55,7 +55,7 @@ import tomli
 import re
 import importlib
 import importlib.metadata
-import logging
+from nodetool.config.logging_config import get_logger
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
@@ -66,8 +66,8 @@ import asyncio
 import click
 import tomlkit
 
-from nodetool.common.environment import Environment
-from nodetool.common.settings import get_system_file_path
+from nodetool.config.environment import Environment
+from nodetool.config.settings import get_system_file_path
 from nodetool.metadata.node_metadata import NodeMetadata, PackageModel, ExampleMetadata
 from nodetool.packages.types import AssetInfo, PackageInfo
 from nodetool.types.workflow import Workflow
@@ -77,6 +77,9 @@ from nodetool.workflows.base_node import get_node_class, split_camel_case
 
 # Constants
 PACKAGES_DIR = "packages"
+# New wheel-based package index (PEP 503 compliant)
+PACKAGE_INDEX_URL = "https://nodetool-ai.github.io/nodetool-registry/simple/"
+# Legacy JSON registry for backward compatibility
 REGISTRY_URL = (
     "https://raw.githubusercontent.com/nodetool-ai/nodetool-registry/main/index.json"
 )
@@ -137,8 +140,7 @@ def get_package_metadata_from_github(github_repo: str) -> Optional[PackageModel]
     Get package metadata from a GitHub repository.
 
     This function fetches the pyproject.toml file from a GitHub repository and
-    extracts package metadata from it. It supports both standard project metadata
-    and Poetry-style metadata.
+    extracts package metadata using PEP 621 `[project]` metadata.
 
     Args:
         github_repo: GitHub repository URL (e.g. "https://github.com/nodetool-ai/nodetool-comfy")
@@ -162,31 +164,50 @@ def get_package_metadata_from_github(github_repo: str) -> Optional[PackageModel]
     # Get the pyproject.toml file from the GitHub repository
     raw_url = f"https://raw.githubusercontent.com/{repo_id}/main/pyproject.toml"
 
-    response = requests.get(raw_url)
+    response = requests.get(
+        raw_url,
+        headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            "Accept": "*/*",
+            "Accept-Language": "en-US,en;q=0.9",
+        },
+        timeout=30,
+    )
     response.raise_for_status()
     pyproject_data = tomli.loads(response.text)
 
-    # Extract metadata
+    # Extract metadata (PEP 621 only)
     project_data = pyproject_data.get("project", {})
     if not project_data:
-        project_data = pyproject_data.get("tool", {}).get("poetry", {})
-
-    if not project_data:
         raise ValueError(
-            f"No project metadata found in pyproject.toml for {github_repo}"
+            f"No PEP 621 [project] metadata found in pyproject.toml for {github_repo}"
         )
 
-    # Check if repository is defined
-    if "repository" not in project_data:
-        raise ValueError(
-            f"'repository' field is missing in pyproject.toml for {github_repo}. Please define the repository URL."
-        )
+    # Authors can be list of tables
+    raw_authors = project_data.get("authors", [])
+    authors: list[str] = []
+    if (
+        isinstance(raw_authors, list)
+        and raw_authors
+        and isinstance(raw_authors[0], dict)
+    ):
+        for a in raw_authors:
+            name = a.get("name")
+            email = a.get("email")
+            if name and email:
+                authors.append(f"{name} <{email}>")
+            elif name:
+                authors.append(str(name))
+            elif email:
+                authors.append(str(email))
+    elif isinstance(raw_authors, list):
+        authors = [str(a) for a in raw_authors]
 
     return PackageModel(
         name=project_data.get("name", github_repo),
         description=project_data.get("description", ""),
         version=project_data.get("version", "0.1.0"),
-        authors=project_data.get("authors", []),
+        authors=authors,
         repo_id=repo_id,
     )
 
@@ -227,20 +248,45 @@ class Registry:
             {}
         )  # Cache for loaded examples by package_name:example_name
         self._example_search_cache: Optional[Dict[str, Any]] = None
-        self.logger = logging.getLogger(__name__)
+        self._index_available = None  # Cache for package index availability
+        self.logger = get_logger(__name__)
 
     def pip_install(
-        self, install_path: str, editable: bool = False, upgrade: bool = False
+        self,
+        install_path: str,
+        editable: bool = False,
+        upgrade: bool = False,
+        use_index: bool = True,
     ) -> None:
         """
-        Call the pip install command.
+        Call the pip install command with optional wheel index support.
+
+        Args:
+            install_path: Package name or path to install
+            editable: Install in editable mode
+            upgrade: Upgrade to latest version
+            use_index: Use the NodeTool package index for wheel-based installation
         """
+        cmd = [*self.pkg_mgr, "install"]
+
+        # Add package index if using wheel-based installation
+        # Skip index for: paths, git URLs, file URLs, editable installs
+        if (
+            use_index
+            and not editable
+            and not install_path.startswith(
+                ("/", ".", "git+", "file://", "http://", "https://")
+            )
+        ):
+            cmd.extend(["--index-url", PACKAGE_INDEX_URL])
+
         if upgrade:
-            subprocess.check_call([*self.pkg_mgr, "install", "--upgrade", install_path])
-        elif editable:
-            subprocess.check_call([*self.pkg_mgr, "install", "-e", install_path])
-        else:
-            subprocess.check_call([*self.pkg_mgr, "install", install_path])
+            cmd.append("--upgrade")
+        if editable:
+            cmd.append("-e")
+
+        cmd.append(install_path)
+        subprocess.check_call(cmd)
 
     def pip_uninstall(self, package_name: str) -> None:
         """
@@ -280,19 +326,122 @@ class Registry:
         Note:
             Returns an empty list if the registry cannot be reached or the index cannot be parsed.
         """
-        response = requests.get(REGISTRY_URL)
+        response = requests.get(
+            REGISTRY_URL,
+            headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+                "Accept": "*/*",
+                "Accept-Language": "en-US,en;q=0.9",
+            },
+            timeout=30,
+        )
         response.raise_for_status()
         packages_data = response.json()["packages"]
 
         return [PackageInfo(**package) for package in packages_data]
 
-    def install_package(self, repo_id: str, local_path: Optional[str] = None) -> None:
-        """Install a package by repository ID or from local path."""
-        if local_path:
-            self.pip_install(local_path, editable=True)
+    def check_package_index_available(self) -> bool:
+        """Check if the wheel-based package index is available.
+
+        Returns:
+            bool: True if the package index is reachable, False otherwise
+        """
+        if self._index_available is not None:
+            return self._index_available
+
+        try:
+            response = requests.get(
+                PACKAGE_INDEX_URL,
+                headers={
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                },
+                timeout=10,
+            )
+            self._index_available = response.status_code == 200
+            if self._index_available:
+                self.logger.info(f"Package index available at {PACKAGE_INDEX_URL}")
+            else:
+                self.logger.warning(
+                    f"Package index returned status {response.status_code}"
+                )
+        except Exception as e:
+            self._index_available = False
+            self.logger.warning(f"Package index not available: {e}")
+
+        return self._index_available
+
+    def get_install_command_for_package(self, repo_id: str) -> str:
+        """Get the recommended install command for a package.
+
+        Args:
+            repo_id: Repository ID in format owner/project
+
+        Returns:
+            str: The pip install command string
+        """
+        package_name = repo_id.split("/")[1]
+
+        if self.check_package_index_available():
+            return f"pip install --index-url {PACKAGE_INDEX_URL} {package_name}"
         else:
+            return f"pip install git+https://github.com/{repo_id}"
+
+    def get_package_installation_info(self, repo_id: str) -> Dict[str, Any]:
+        """Get comprehensive installation information for a package.
+
+        Args:
+            repo_id: Repository ID in format owner/project
+
+        Returns:
+            Dict containing installation methods and recommendations
+        """
+        package_name = repo_id.split("/")[1]
+        index_available = self.check_package_index_available()
+
+        return {
+            "package_name": package_name,
+            "repo_id": repo_id,
+            "wheel_available": index_available,
+            "recommended_command": self.get_install_command_for_package(repo_id),
+            "wheel_command": f"pip install --index-url {PACKAGE_INDEX_URL} {package_name}",
+            "git_command": f"pip install git+https://github.com/{repo_id}",
+            "package_index_url": PACKAGE_INDEX_URL,
+        }
+
+    def install_package(
+        self, repo_id: str, local_path: Optional[str] = None, use_git: bool = False
+    ) -> None:
+        """Install a package by repository ID or from local path.
+
+        Args:
+            repo_id: Repository ID in format owner/project (e.g., 'nodetool-ai/nodetool-base')
+            local_path: Local path for editable install
+            use_git: Force git-based installation instead of wheel-based
+        """
+        if local_path:
+            self.pip_install(local_path, editable=True, use_index=False)
+        elif use_git:
+            # Fallback to git-based installation
             install_path = f"git+https://github.com/{repo_id}"
-            self.pip_install(install_path)
+            self.pip_install(install_path, use_index=False)
+        else:
+            # Try wheel-based installation first, fallback to git if it fails
+            package_name = repo_id.split("/")[1]
+
+            try:
+                if self.check_package_index_available():
+                    self.logger.info(f"Installing {package_name} from wheel index")
+                    self.pip_install(package_name, use_index=True)
+                else:
+                    raise Exception("Package index not available")
+            except (subprocess.CalledProcessError, Exception) as e:
+                self.logger.warning(
+                    f"Wheel installation failed: {e}. Falling back to git installation."
+                )
+                install_path = f"git+https://github.com/{repo_id}"
+                self.pip_install(install_path, use_index=False)
+
         # Clear the cache since we've installed a new package
         self.clear_packages_cache()
 
@@ -313,15 +462,39 @@ class Registry:
             print(f"Error uninstalling package {repo_id}: {e}")
             return False
 
-    def update_package(self, repo_id: str) -> bool:
-        """Update a package to the latest version."""
+    def update_package(self, repo_id: str, use_git: bool = False) -> bool:
+        """Update a package to the latest version.
+
+        Args:
+            repo_id: Repository ID in format owner/project
+            use_git: Force git-based update instead of wheel-based
+        """
         is_valid, error_msg = validate_repo_id(repo_id)
         if not is_valid:
             raise ValueError(error_msg)
 
         try:
-            install_url = f"git+https://github.com/{repo_id}"
-            self.pip_install(install_url, upgrade=True)
+            if use_git:
+                # Fallback to git-based update
+                install_url = f"git+https://github.com/{repo_id}"
+                self.pip_install(install_url, upgrade=True, use_index=False)
+            else:
+                # Try wheel-based update first, fallback to git if it fails
+                package_name = repo_id.split("/")[1]
+
+                try:
+                    if self.check_package_index_available():
+                        self.logger.info(f"Updating {package_name} from wheel index")
+                        self.pip_install(package_name, upgrade=True, use_index=True)
+                    else:
+                        raise Exception("Package index not available")
+                except (subprocess.CalledProcessError, Exception) as e:
+                    self.logger.warning(
+                        f"Wheel update failed: {e}. Falling back to git update."
+                    )
+                    install_url = f"git+https://github.com/{repo_id}"
+                    self.pip_install(install_url, upgrade=True, use_index=False)
+
             print(f"Successfully updated package {repo_id}")
             # Clear the cache since we've updated a package
             self.clear_packages_cache()
@@ -528,6 +701,10 @@ class Registry:
         self._examples_cache = {}
         self._example_search_cache = None
 
+    def clear_index_cache(self) -> None:
+        """Clear the package index availability cache."""
+        self._index_available = None
+
     def _populate_example_search_cache(self) -> None:
         """
         Load necessary example data into an in-memory cache for searching.
@@ -686,10 +863,11 @@ class Registry:
         return examples
 
     def clear_cache(self) -> None:
-        """Clear all caches (packages, nodes, and examples) to force fresh data on next calls."""
+        """Clear all caches (packages, nodes, examples, and index) to force fresh data on next calls."""
         self.clear_packages_cache()
         self.clear_node_cache()
         self.clear_examples_cache()
+        self.clear_index_cache()
 
     def list_examples(self) -> List[Workflow]:
         """
@@ -1011,24 +1189,54 @@ def discover_node_packages() -> list[PackageModel]:
     import sys
 
     # First try to get the package's development location (for editable installs)
+    seen_names: set[str] = set()
     for path in sys.path:
         if "nodetool-" in path:
-            package_path = Path(path) / "nodetool" / "package_metadata"
-            metadata_files = list(package_path.glob("*.json"))
-            for metadata_file in metadata_files:
-                try:
-                    with open(metadata_file) as f:
-                        metadata = json.load(f)
-                        metadata["source_folder"] = str(path)
-                        packages.append(PackageModel(**metadata))
-                except Exception as e:
-                    print(f"Error processing {metadata_file}: {e}")
+            base_path = Path(path)
+            # Support both project-root on sys.path with src layout and direct src on sys.path
+            candidate_dirs = [
+                base_path / "nodetool" / "package_metadata",
+                base_path / "src" / "nodetool" / "package_metadata",
+            ]
+            # If sys.path already points to a src folder, prefer that
+            if base_path.name == "src":
+                candidate_dirs.insert(0, base_path / "nodetool" / "package_metadata")
+
+            for package_path in candidate_dirs:
+                if not package_path.exists():
+                    continue
+                metadata_files = list(package_path.glob("*.json"))
+                for metadata_file in metadata_files:
+                    try:
+                        with open(metadata_file) as f:
+                            metadata = json.load(f)
+                            name = metadata.get("name")
+                            if isinstance(name, str):
+                                if name in seen_names:
+                                    continue
+                                seen_names.add(name)
+                            # Prefer src folder if present for a cleaner source path
+                            source_folder = (
+                                str(base_path / "src")
+                                if (base_path / "src").exists()
+                                else str(base_path)
+                            )
+                            metadata["source_folder"] = source_folder
+                            packages.append(PackageModel(**metadata))
+                    except Exception as e:
+                        print(f"Error processing {metadata_file}: {e}")
+                # Avoid scanning both root and src when one already provided metadata
+                if metadata_files:
+                    break
 
     # Get all installed distributions
     visited_paths = set()
     for dist in importlib.metadata.distributions():
         package_name = dist.metadata["Name"]
         if not package_name.startswith("nodetool-"):
+            continue
+        # Skip if already discovered from editable location
+        if package_name in seen_names:
             continue
 
         # If no dev location found, try site-packages
@@ -1043,7 +1251,10 @@ def discover_node_packages() -> list[PackageModel]:
                 try:
                     metadata = json.load(f)
                     metadata["source_folder"] = str(Path(base_path).parent.parent)
-                    packages.append(PackageModel(**metadata))
+                    pkg = PackageModel(**metadata)
+                    packages.append(pkg)
+                    if isinstance(pkg.name, str):
+                        seen_names.add(pkg.name)
                 except Exception as e:
                     print(f"Error processing {metadata_file}: {e}")
 
@@ -1063,8 +1274,10 @@ def get_nodetool_package_source_folders() -> List[Path]:
     # Check for editable installs in sys.path
     for path in sys.path:
         if "nodetool-" in path:
-            # For editable installs, the path itself is typically the source folder
             source_path = Path(path)
+            # Prefer the src directory if it exists (hatch/uv editable layout)
+            if (source_path / "src").exists():
+                source_path = source_path / "src"
             if source_path.exists():
                 source_folders.append(source_path)
 
@@ -1094,18 +1307,72 @@ def scan_for_package_nodes(verbose: bool = False) -> PackageModel:
     with open("pyproject.toml", "rb") as f:
         pyproject_data = tomli.loads(f.read().decode())
 
-    # Extract metadata
+    # Extract metadata (PEP 621 only)
     project_data = pyproject_data.get("project", {})
     if not project_data:
-        project_data = pyproject_data.get("tool", {}).get("poetry", {})
-
-    if not project_data:
-        print("Error: No project metadata found in pyproject.toml")
+        print("Error: No [project] metadata found in pyproject.toml")
         sys.exit(1)
 
-    repo_id = project_data.get("repository", "").split("/")[-2:]
-    repo_id = "/".join(repo_id)
+    # Name and version
     package_name = project_data.get("name", "")
+    version = project_data.get("version", "0.1.0")
+
+    # Description
+    description = project_data.get("description", "")
+
+    # Authors: PEP 621 may use list of tables
+    raw_authors = project_data.get("authors", [])
+    authors: list[str] = []
+    try:
+        if (
+            isinstance(raw_authors, list)
+            and raw_authors
+            and isinstance(raw_authors[0], dict)
+        ):
+            for a in raw_authors:
+                name = a.get("name")
+                email = a.get("email")
+                if name and email:
+                    authors.append(f"{name} <{email}>")
+                elif name:
+                    authors.append(str(name))
+                elif email:
+                    authors.append(str(email))
+        elif isinstance(raw_authors, list):
+            authors = [str(a) for a in raw_authors]
+    except Exception:
+        # Safe fallback
+        authors = []
+
+    # Repository URL -> repo_id extraction
+    repo_url: str | None = None
+    # PEP 621: [project].urls.Repository or .Source
+    urls = project_data.get("urls") if isinstance(project_data, dict) else None
+    if isinstance(urls, dict):
+        repo_url = urls.get("Repository") or urls.get("Source") or urls.get("Homepage")
+    else:
+        repo_url = None
+
+    def _to_repo_id(url: str | None) -> str | None:
+        if not url or not isinstance(url, str):
+            return None
+        try:
+            from urllib.parse import urlparse
+
+            parsed = urlparse(url)
+            path = parsed.path.strip("/")
+            if not path:
+                return None
+            # Remove trailing .git if present
+            if path.endswith(".git"):
+                path = path[:-4]
+            # Expect format: owner/repo[/...]
+            owner_repo = "/".join(path.split("/")[:2])
+            return owner_repo or None
+        except Exception:
+            return None
+
+    repo_id = _to_repo_id(repo_url) or ""
 
     # Discover examples and assets using unified Registry
     registry = Registry()
@@ -1113,9 +1380,9 @@ def scan_for_package_nodes(verbose: bool = False) -> PackageModel:
     # Create package model
     package = PackageModel(
         name=package_name,
-        description=project_data.get("description", ""),
-        version=project_data.get("version", "0.1.0"),
-        authors=project_data.get("authors", []),
+        description=description,
+        version=version,
+        authors=authors,
         repo_id=repo_id,
         nodes=[],
         examples=registry._load_examples_from_directory(
@@ -1219,7 +1486,14 @@ def save_package_metadata(package: PackageModel, verbose: bool = False):
 
 
 def update_pyproject_include(package: PackageModel, verbose: bool = False) -> None:
-    """Ensure package assets are listed in pyproject.toml's include section."""
+    """Ensure package assets are included for both Poetry and PEP 621 + Hatch formats.
+
+    This updates either:
+    - `[tool.hatch.build.targets.wheel]` for PEP 621 + Hatch projects
+    - `[tool.poetry.include]` for legacy Poetry projects
+
+    Provides backward compatibility for both package management systems.
+    """
     pyproject_path = "pyproject.toml"
     if not os.path.exists(pyproject_path):
         if verbose:
@@ -1233,50 +1507,84 @@ def update_pyproject_include(package: PackageModel, verbose: bool = False) -> No
     # Parse with tomlkit to preserve formatting and comments
     data = tomlkit.parse(content)
 
-    # Navigate to [tool.poetry] section
-    if "tool" not in data:
-        data["tool"] = tomlkit.table()  # type: ignore
+    # Handle both Poetry and uv/hatchling formats
+    if "project" in data:
+        # New PEP 621 + Hatch format - use [tool.hatch.build.targets.wheel]
+        if "tool" not in data:
+            data["tool"] = tomlkit.table()  # type: ignore
 
-    tool_section = data["tool"]  # type: ignore
-    if "poetry" not in tool_section:  # type: ignore
-        tool_section["poetry"] = tomlkit.table()  # type: ignore
+        tool_section = data["tool"]  # type: ignore
+        if "hatch" not in tool_section:  # type: ignore
+            tool_section["hatch"] = tomlkit.table()  # type: ignore
 
-    poetry = tool_section["poetry"]  # type: ignore
+        hatch_section = tool_section["hatch"]  # type: ignore
+        if "build" not in hatch_section:  # type: ignore
+            hatch_section["build"] = tomlkit.table()  # type: ignore
 
-    # Get existing include list or create new one
-    if "include" not in poetry:  # type: ignore
-        poetry["include"] = tomlkit.array()  # type: ignore
-        include_list = poetry["include"]  # type: ignore
-    else:
-        include_item = poetry["include"]  # type: ignore
-        # Convert to list if it's a single string
-        if isinstance(include_item, str):
-            poetry["include"] = tomlkit.array()  # type: ignore
-            poetry["include"].append(include_item)  # type: ignore
-            include_list = poetry["include"]  # type: ignore
+        build_section = hatch_section["build"]  # type: ignore
+        if "targets" not in build_section:  # type: ignore
+            build_section["targets"] = tomlkit.table()  # type: ignore
+
+        targets_section = build_section["targets"]  # type: ignore
+        if "wheel" not in targets_section:  # type: ignore
+            targets_section["wheel"] = tomlkit.table()  # type: ignore
+
+        wheel_section = targets_section["wheel"]  # type: ignore
+
+        # Get existing artifacts list or create new one
+        if "artifacts" not in wheel_section:  # type: ignore
+            wheel_section["artifacts"] = tomlkit.array()  # type: ignore
+            patterns = wheel_section["artifacts"]  # type: ignore
         else:
-            include_list = include_item
+            patterns = wheel_section["artifacts"]  # type: ignore
+    else:
+        # Legacy Poetry format - use [tool.poetry.include]
+        if "tool" not in data:
+            data["tool"] = tomlkit.table()  # type: ignore
 
-    # Prepare paths to include
-    metadata_path = f"src/nodetool/package_metadata/{package.name}.json"
-    asset_paths = [
-        f"src/nodetool/assets/{package.name}/{asset.name}"
-        for asset in package.assets or []
+        tool_section = data["tool"]  # type: ignore
+        if "poetry" not in tool_section:  # type: ignore
+            tool_section["poetry"] = tomlkit.table()  # type: ignore
+
+        poetry = tool_section["poetry"]  # type: ignore
+
+        # Get existing include list or create new one
+        if "include" not in poetry:  # type: ignore
+            poetry["include"] = tomlkit.array()  # type: ignore
+            patterns = poetry["include"]  # type: ignore
+        else:
+            include_item = poetry["include"]  # type: ignore
+            # Convert to list if it's a single string
+            if isinstance(include_item, str):
+                poetry["include"] = tomlkit.array()  # type: ignore
+                poetry["include"].append(include_item)  # type: ignore
+                patterns = poetry["include"]  # type: ignore
+            else:
+                patterns = include_item
+
+    # Convert absolute source paths to patterns relative to package root
+    metadata_rel = f"package_metadata/{package.name}.json"
+    asset_rels = [
+        f"assets/{package.name}/{asset.name}" for asset in package.assets or []
     ]
 
-    # Add new paths that aren't already included
-    for path in [metadata_path, *asset_paths]:
-        if path not in include_list:  # type: ignore
-            include_list.append(path)  # type: ignore
+    for rel in [metadata_rel, *asset_rels]:
+        if rel not in patterns:  # type: ignore
+            patterns.append(rel)  # type: ignore
             if verbose:
-                print(f"Added {path} to include list")
+                print(f"Added package-data pattern: {rel}")
 
     # Write back the file
     with open(pyproject_path, "w", encoding="utf-8") as f:
         f.write(tomlkit.dumps(data))
 
     if verbose:
-        print(f"Updated {pyproject_path} include section with asset files")
+        build_tool = (
+            "hatch.build.targets.wheel.artifacts"
+            if "project" in data
+            else "poetry.include"
+        )
+        print(f"Updated {pyproject_path} {build_tool} with asset files")
 
 
 def load_node_packages():

@@ -4,12 +4,12 @@ from fastapi import (
     status,
     Cookie,
 )
-from typing import Optional, Any, List, Union
-from nodetool.common.environment import Environment
-from nodetool.common.huggingface_models import CachedModel
+from typing import Optional
+from nodetool.config.environment import Environment
+from nodetool.config.logging_config import get_logger
 from nodetool.metadata.types import HuggingFaceModel
 
-log = Environment.get_logger()
+log = get_logger(__name__)
 
 
 async def current_user(
@@ -59,11 +59,13 @@ async def current_user(
             detail="Failed to validate authentication token.",
         )
 
+
 async def abort(status_code: int, detail: Optional[str] = None) -> None:
     """
     Abort the current request with the given status code and detail.
     """
     raise HTTPException(status_code=status_code, detail=detail)
+
 
 def flatten_models(
     models: list[list[HuggingFaceModel]],

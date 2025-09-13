@@ -1,7 +1,7 @@
 """
 Admin Operations Module for RunPod Handlers
 
-This module provides shared admin operations for model management across 
+This module provides shared admin operations for model management across
 RunPod workflow and chat handlers. All operations support streaming where applicable.
 
 Operations include:
@@ -12,7 +12,7 @@ Operations include:
 
 Usage:
     from nodetool.deploy.admin_operations import handle_admin_operation
-    
+
     result = await handle_admin_operation(job_input)
     # For streaming operations, iterate over the async generator:
     async for chunk in handle_admin_operation(job_input):
@@ -29,14 +29,15 @@ from huggingface_hub import (
     try_to_load_from_cache,
 )
 from huggingface_hub.hf_api import RepoFile
-from nodetool.common.huggingface_models import delete_cached_hf_model
-from nodetool.common.environment import Environment
+from nodetool.integrations.huggingface.huggingface_models import delete_cached_hf_model
+from nodetool.config.environment import Environment
+from nodetool.config.logging_config import get_logger
 from nodetool.chat.ollama_service import get_ollama_client
-from nodetool.common.huggingface_cache import filter_repo_paths
+from nodetool.integrations.huggingface.huggingface_cache import filter_repo_paths
 from concurrent.futures import ThreadPoolExecutor
 from multiprocessing import Manager
 
-logger = Environment.get_logger()
+logger = get_logger(__name__)
 
 
 class AdminDownloadManager:
@@ -426,5 +427,3 @@ async def calculate_cache_size(
     except Exception as e:
         logger.error(f"Error calculating cache size: {e}")
         yield {"status": "error", "cache_dir": cache_dir, "error": str(e)}
-
-
