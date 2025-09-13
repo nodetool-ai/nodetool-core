@@ -17,58 +17,6 @@ log = get_logger(__name__)
 router = APIRouter(prefix="/api/files", tags=["files"])
 
 
-# Base directory for file operations - restrict access to user's home directory
-# or a specific workspace directory
-def get_base_directory():
-    """Get the base directory for file operations."""
-    # Check for environment variable override first
-    if "FILE_API_BASE_DIR" in os.environ:
-        return os.environ["FILE_API_BASE_DIR"]
-    # In test mode, use temp directory
-    if Environment.is_test():
-        return "/tmp/nodetool_test_files"
-    # Otherwise use home directory
-    return os.path.expanduser("~")
-
-
-def validate_path(path: str) -> str:
-    """
-    Validate that the resolved path is within the allowed base directory.
-    Prevents path traversal attacks.
-
-    Args:
-        path: The path to validate
-
-    Returns:
-        The absolute path if valid
-
-    Raises:
-        HTTPException: If the path is outside the allowed directory
-    """
-    base_directory = get_base_directory()
-
-    # Expand user home directory and resolve to absolute path
-    expanded_path = os.path.expanduser(path)
-    abs_path = os.path.abspath(expanded_path)
-
-    # Ensure the resolved path is within the base directory
-    try:
-        # os.path.commonpath will raise ValueError if paths are on different drives (Windows)
-        common_path = os.path.commonpath([base_directory, abs_path])
-        if common_path != base_directory:
-            raise HTTPException(
-                status_code=403,
-                detail="Access denied: Path is outside allowed directory",
-            )
-    except ValueError:
-        # Paths are on different drives
-        raise HTTPException(
-            status_code=403, detail="Access denied: Path is outside allowed directory"
-        )
-
-    return abs_path
-
-
 class FileInfo(BaseModel):
     name: str
     path: str
@@ -104,8 +52,58 @@ async def list_files(
     List files and directories in the specified path, excluding hidden files (starting with dot)
     """
     try:
+        # Special handling for cross-platform base paths
+        # "~" means: on Windows -> list all available drive roots; on POSIX -> user's home directory
+        if path == "~":
+            if os.name == "nt":
+                # Probe all possible drive letters concurrently
+                roots = [f"{letter}:\\" for letter in "ABCDEFGHIJKLMNOPQRSTUVWXYZ"]
+                exists_flags = await asyncio.gather(
+                    *[asyncio.to_thread(os.path.exists, root) for root in roots]
+                )
+
+                existing_roots = [root for root, ok in zip(roots, exists_flags) if ok]
+
+                async def get_drive_mtime(root: str) -> float | None:
+                    try:
+                        st = await aiofiles.os.stat(root)
+                        return st.st_mtime
+                    except Exception:
+                        return None
+
+                # Fetch mtimes concurrently for existing roots
+                mtimes = await asyncio.gather(
+                    *[get_drive_mtime(root) for root in existing_roots]
+                )
+
+                files: List[FileInfo] = []
+                now_iso = datetime.now(timezone.utc).isoformat()
+                for root, mtime in zip(existing_roots, mtimes):
+                    modified = (
+                        datetime.fromtimestamp(mtime, tz=timezone.utc).isoformat()
+                        if mtime is not None
+                        else now_iso
+                    )
+
+                    files.append(
+                        FileInfo(
+                            name=root,
+                            path=root,
+                            size=0,
+                            is_dir=True,
+                            modified_at=modified,
+                        )
+                    )
+                return files
+            else:
+                # Expand to home directory on POSIX systems
+                path = os.path.expanduser("~")
+        else:
+            # Expand user (~) if included in other paths
+            path = os.path.expanduser(path)
+
         # Validate and normalize path
-        abs_path = validate_path(path)
+        abs_path = path
         exists = await asyncio.to_thread(os.path.exists, abs_path)
         if not exists:
             raise HTTPException(status_code=404, detail=f"Path not found: {path}")
@@ -140,11 +138,10 @@ async def get_file(path: str, user: str = Depends(current_user)) -> FileInfo:
     Get information about a specific file or directory
     """
     try:
-        abs_path = validate_path(path)
-        exists = await asyncio.to_thread(os.path.exists, abs_path)
+        exists = await asyncio.to_thread(os.path.exists, path)
         if not exists:
             raise HTTPException(status_code=404, detail=f"Path not found: {path}")
-        return await get_file_info(abs_path)
+        return await get_file_info(path)
     except HTTPException:
         # Re-raise HTTPExceptions (like from validate_path)
         raise
@@ -159,7 +156,7 @@ async def download_file(path: str, user: str = Depends(current_user)):
     Download a file from the specified path
     """
     try:
-        abs_path = validate_path(path)
+        abs_path = path
         exists = await asyncio.to_thread(os.path.exists, abs_path)
         is_dir = await asyncio.to_thread(os.path.isdir, abs_path)
         if not exists or is_dir:
@@ -192,7 +189,7 @@ async def upload_file(path: str, file: UploadFile, user: str = Depends(current_u
     Upload a file to the specified path
     """
     try:
-        abs_path = validate_path(path)
+        abs_path = path
         await asyncio.to_thread(os.makedirs, os.path.dirname(abs_path), exist_ok=True)
 
         # Read and write in chunks to handle large files
