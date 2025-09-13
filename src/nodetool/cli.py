@@ -99,6 +99,12 @@ def cli():
     is_flag=True,
     help="Use single local user with id 1 for authentication. Will be ingnored on production.",
 )
+@click.option(
+    "--verbose",
+    "-v",
+    is_flag=True,
+    help="Enable verbose logging (DEBUG level) for detailed output.",
+)
 def serve(
     host: str,
     port: int,
@@ -108,9 +114,18 @@ def serve(
     remote_auth: bool = False,
     apps_folder: str | None = None,
     production: bool = False,
+    verbose: bool = False,
 ):
     """Serve the Nodetool API server."""
     from nodetool.api.server import create_app, run_uvicorn_server
+
+    # Configure logging level based on verbose flag
+    if verbose:
+        from nodetool.config.logging_config import configure_logging
+
+        configure_logging(level="DEBUG")
+        os.environ["LOG_LEVEL"] = "DEBUG"
+        console.print("[cyan]🐛 Verbose logging enabled (DEBUG level)[/]")
 
     try:
         import comfy.cli_args  # type: ignore
@@ -235,6 +250,12 @@ def chat():
     type=click.Path(exists=True, resolve_path=True, file_okay=True, dir_okay=False),
     help="One or more workflow files to use.",
 )
+@click.option(
+    "--verbose",
+    "-v",
+    is_flag=True,
+    help="Enable verbose logging (DEBUG level) for detailed output.",
+)
 def chat_server(
     host: str,
     port: int,
@@ -243,6 +264,7 @@ def chat_server(
     default_model: str,
     tools: str,
     workflows: list[str],
+    verbose: bool = False,
 ):
     """Start a chat server SSE protocol.
 
@@ -255,8 +277,18 @@ def chat_server(
 
       # Start with tools
       nodetool chat-server --tools "google_search,google_news,google_images"
+
+      # Start with verbose logging
+      nodetool chat-server --verbose
     """
     from nodetool.chat.server import run_chat_server
+
+    # Configure logging level based on verbose flag
+    if verbose:
+        from nodetool.config.logging_config import configure_logging
+
+        configure_logging(level="DEBUG")
+        console.print("[cyan]🐛 Verbose logging enabled (DEBUG level)[/]")
     import json
     from nodetool.types.workflow import Workflow
     import dotenv
@@ -621,16 +653,18 @@ def init():
     deps_line = "\n".join(
         [
             "dependencies = [",
-            f"  \"nodetool-core @ git+https://github.com/nodetool-ai/nodetool-core.git@main\"",
+            f'  "nodetool-core @ git+https://github.com/nodetool-ai/nodetool-core.git@main"',
             "]",
         ]
     )
 
-    # Create pyproject.toml content  
-    author_name = author.split(' <')[0] if ' <' in author else author
-    author_email = author.split(' <')[1].rstrip('>') if ' <' in author else "author@example.com"
-    python_req = python_version.lstrip('^')
-    
+    # Create pyproject.toml content
+    author_name = author.split(" <")[0] if " <" in author else author
+    author_email = (
+        author.split(" <")[1].rstrip(">") if " <" in author else "author@example.com"
+    )
+    python_req = python_version.lstrip("^")
+
     pyproject_content = f"""[build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
@@ -728,7 +762,9 @@ def docs(output_dir: str, compact: bool, verbose: bool):
         # Optional: repository URL from PEP 621 URLs
         urls = project_data.get("urls") if isinstance(project_data, dict) else None
         if isinstance(urls, dict):
-            repository = urls.get("Repository") or urls.get("Source") or urls.get("Homepage")
+            repository = (
+                urls.get("Repository") or urls.get("Source") or urls.get("Homepage")
+            )
         else:
             repository = None
         # repository is not strictly required for docs generation

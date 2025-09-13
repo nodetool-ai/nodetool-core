@@ -42,9 +42,9 @@ def configure_logging(
     if level is None:
         level = Environment.get_log_level()
 
-    if _configured:
+    if _configured and _configured == level:
         return level
-    _configured = True
+    _configured = level
 
     # If no explicit fmt provided and no env override, prefer colorful format when supported
     use_color = _supports_color()
