@@ -364,6 +364,9 @@ class OllamaProvider(ChatProvider):
         """Update token usage statistics from response."""
         prompt_tokens = getattr(response, "prompt_eval_count", 0)
         completion_tokens = getattr(response, "eval_count", 0)
+        # Guard against None from partial/streaming responses
+        prompt_tokens = 0 if prompt_tokens is None else int(prompt_tokens)
+        completion_tokens = 0 if completion_tokens is None else int(completion_tokens)
 
         log.debug(
             f"Updating usage stats - prompt: {prompt_tokens}, completion: {completion_tokens}"
@@ -398,7 +401,9 @@ class OllamaProvider(ChatProvider):
         """
         log.debug(f"Starting streaming generation for model: {model}")
         log.debug(f"Streaming with {len(messages)} messages, {len(tools)} tools")
-        self._log_api_request("chat_stream", messages, model, tools)
+        self._log_api_request(
+            "chat_stream", messages, model=model, tools=tools, **kwargs
+        )
 
         async with get_ollama_client() as client:
             params = self._prepare_request_params(
@@ -461,6 +466,7 @@ class OllamaProvider(ChatProvider):
         max_tokens: int = 8192,
         context_window: int = 4096,
         response_format: dict | None = None,
+        **kwargs,
     ) -> Message:
         """
         Generate a complete message from Ollama without streaming.
@@ -477,7 +483,7 @@ class OllamaProvider(ChatProvider):
         """
         log.debug(f"Generating complete message for model: {model}")
         log.debug(f"Non-streaming with {len(messages)} messages, {len(tools)} tools")
-        self._log_api_request("chat", messages, model, tools)
+        self._log_api_request("chat", messages, model=model, tools=tools, **kwargs)
 
         async with get_ollama_client() as client:
             params = self._prepare_request_params(
@@ -552,7 +558,11 @@ class OllamaProvider(ChatProvider):
     def is_context_length_error(self, error: Exception) -> bool:
         msg = str(error).lower()
         is_context_error = (
-            "context length" in msg or "context window" in msg or "token limit" in msg
+            "context length" in msg
+            or "context window" in msg
+            or "token limit" in msg
+            or "request too large" in msg
+            or "413" in msg
         )
         log.debug(f"Checking if error is context length error: {is_context_error}")
         return is_context_error

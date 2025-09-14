@@ -69,8 +69,6 @@ class ChatProvider(ABC):
         self,
         method: str,
         messages: Sequence[Message],
-        model: str,
-        tools: Sequence[Tool],
         **kwargs,
     ) -> None:
         """Log an API request to the specified log file.
@@ -78,8 +76,6 @@ class ChatProvider(ABC):
         Args:
             method: The API method being called
             messages: The conversation history
-            model: The model to use
-            tools: Optional tools to make available to the model
             **kwargs: Additional parameters to pass to the API
         """
         if not self.log_file:
@@ -92,9 +88,7 @@ class ChatProvider(ABC):
                     "timestamp": timestamp,
                     "type": "request",
                     "method": method,
-                    "model": model,
                     "messages": [msg.model_dump() for msg in messages],
-                    "tools": [tool.name for tool in tools],
                     **kwargs,
                 }
                 f.write(json.dumps(log_entry) + "\n")
@@ -269,7 +263,9 @@ class MockProvider(ChatProvider):
 
         Logs the call and returns the next predefined response.
         """
-        self._log_api_request("generate_message", messages, model, tools, **kwargs)
+        self._log_api_request(
+            "generate_message", messages, model=model, tools=tools, **kwargs
+        )
         self.call_log.append(
             {
                 "method": "generate_message",
@@ -304,7 +300,9 @@ class MockProvider(ChatProvider):
         Currently yields the entire next predefined response. Can be adapted
         to yield individual chunks/tool calls if needed for more granular testing.
         """
-        self._log_api_request("generate_messages", messages, model, tools, **kwargs)
+        self._log_api_request(
+            "generate_messages", messages, model=model, tools=tools, **kwargs
+        )
         self.call_log.append(
             {
                 "method": "generate_messages",

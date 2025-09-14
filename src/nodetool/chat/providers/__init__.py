@@ -40,6 +40,7 @@ def get_provider(provider_type: ProviderEnum, **kwargs) -> ChatProvider:
     from nodetool.chat.providers.gemini_provider import GeminiProvider
     from nodetool.chat.providers.anthropic_provider import AnthropicProvider
     from nodetool.chat.providers.ollama_provider import OllamaProvider
+    from nodetool.chat.providers.llama_provider import LlamaProvider
 
     if provider_type in _provider_cache:
         return _provider_cache[provider_type]
@@ -54,6 +55,8 @@ def get_provider(provider_type: ProviderEnum, **kwargs) -> ChatProvider:
         provider = AnthropicProvider(**kwargs)
     elif provider_type == ProviderEnum.Ollama:
         provider = OllamaProvider(**kwargs)
+    elif provider_type == ProviderEnum.LlamaCpp:
+        provider = LlamaProvider(**kwargs)
     elif provider_type == ProviderEnum.HuggingFace:
         provider = HuggingFaceProvider(**kwargs)
     elif provider_type == ProviderEnum.HuggingFaceGroq:

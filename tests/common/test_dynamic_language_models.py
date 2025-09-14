@@ -194,7 +194,7 @@ class TestDynamicLanguageModels:
                 return_value=mock_openai_models,
             ),
             patch(
-                "nodetool.ml.models.language_models.get_cached_hf_models",
+                "nodetool.ml.models.language_models.get_cached_hf_inference_provider_models",
                 return_value=[],
             ),
         ):

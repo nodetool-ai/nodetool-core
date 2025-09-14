@@ -9,6 +9,7 @@ import json
 import asyncio
 import traceback
 from typing import Any, AsyncGenerator, Literal, Sequence
+import httpx
 
 from huggingface_hub import AsyncInferenceClient
 
@@ -391,6 +392,12 @@ class HuggingFaceProvider(ChatProvider):
             except Exception as e:
                 error_str = str(e).lower()
                 log.warning(f"API call attempt {attempt + 1} failed: {str(e)}")
+                # Do not retry on client-side errors (4xx), including 429, 413, 404.
+                status = getattr(getattr(e, "response", None), "status_code", None)
+                body_text = getattr(getattr(e, "response", None), "text", None)
+                if isinstance(status, int) and 400 <= status < 500:
+                    log.error(f"Non-retryable client error {status}; aborting retries")
+                    raise Exception(f"{status} {body_text or str(e)}")
                 if attempt < max_retries:
                     delay = base_delay * (2**attempt)  # Exponential backoff
                     log.debug(f"Retrying in {delay} seconds...")
@@ -399,9 +406,10 @@ class HuggingFaceProvider(ChatProvider):
                 else:
                     log.error(f"All {max_retries + 1} attempts failed")
                     traceback.print_exc()
-                    raise Exception(
-                        f"HuggingFace Inference API request failed: {str(e)}"
-                    )
+                    # Include status code/body text when available for clearer errors/tests
+                    if status is not None:
+                        raise Exception(f"{status} {body_text or str(e)}")
+                    raise Exception(str(e))
 
         # Update usage statistics if available
         if hasattr(completion, "usage") and completion.usage:
@@ -524,8 +532,9 @@ class HuggingFaceProvider(ChatProvider):
         accumulated_tool_calls = {}
         chunk_count = 0
 
-        async for chunk in stream:
-            chunk_count += 1
+        try:
+            async for chunk in stream:
+                chunk_count += 1
 
             # Update usage statistics if available
             if hasattr(chunk, "usage") and chunk.usage:
@@ -537,25 +546,24 @@ class HuggingFaceProvider(ChatProvider):
 
             if not chunk.choices:
                 log.debug("Chunk has no choices, skipping")
-                continue
-
-            choice = chunk.choices[0]
-            delta = choice.delta
-            log.debug(f"Processing delta with finish_reason: {choice.finish_reason}")
+            else:
+                choice = chunk.choices[0]
+                delta = choice.delta
+                log.debug(f"Processing delta with finish_reason: {choice.finish_reason}")
 
             # Handle content chunks
-            if hasattr(delta, "content") and delta.content:
-                yield Chunk(
-                    content=delta.content,
-                    done=choice.finish_reason == "stop",
-                )
+                if hasattr(delta, "content") and delta.content:
+                    yield Chunk(
+                        content=delta.content,
+                        done=choice.finish_reason == "stop",
+                    )
 
             # Handle tool call deltas
-            if hasattr(delta, "tool_calls") and delta.tool_calls:
-                log.debug(f"Processing {len(delta.tool_calls)} tool call deltas")
-                for tool_call_delta in delta.tool_calls:
-                    index = tool_call_delta.index
-                    log.debug(f"Processing tool call delta at index {index}")
+                if hasattr(delta, "tool_calls") and delta.tool_calls:
+                    log.debug(f"Processing {len(delta.tool_calls)} tool call deltas")
+                    for tool_call_delta in delta.tool_calls:
+                        index = tool_call_delta.index
+                        log.debug(f"Processing tool call delta at index {index}")
 
                     if index not in accumulated_tool_calls:
                         accumulated_tool_calls[index] = {
@@ -587,7 +595,7 @@ class HuggingFaceProvider(ChatProvider):
                             )
 
             # If streaming is complete and we have tool calls, yield them
-            if choice.finish_reason == "tool_calls" and accumulated_tool_calls:
+            if (chunk.choices and choice.finish_reason == "tool_calls" and accumulated_tool_calls):
                 log.debug(
                     f"Streaming complete with {len(accumulated_tool_calls)} tool calls"
                 )
@@ -612,9 +620,15 @@ class HuggingFaceProvider(ChatProvider):
             # Some providers may not emit a final stop delta with content.
             # When finish_reason indicates stop and no more deltas arrive,
             # downstream expects a terminal done chunk. Emit a synthetic one.
-            if choice.finish_reason == "stop":
+            if chunk.choices and choice.finish_reason == "stop":
                 log.debug("Finish reason is stop; emitting synthetic done chunk")
                 yield Chunk(content="", done=True)
+        except Exception as e:
+            status = getattr(getattr(e, "response", None), "status_code", None)
+            body_text = getattr(getattr(e, "response", None), "text", None)
+            if status is not None:
+                raise Exception(f"{status} {body_text or str(e)}")
+            raise
 
     def get_usage(self) -> dict:
         """Get token usage statistics."""
@@ -641,6 +655,8 @@ class HuggingFaceProvider(ChatProvider):
                 "token limit",
                 "too long",
                 "context size",
+                "request too large",
+                "413",
             ]
         )
         log.debug(f"Checking if error is context length error: {is_context_error}")
