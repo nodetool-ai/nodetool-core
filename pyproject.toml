@@ -7,9 +7,7 @@ name = "nodetool-core"
 version = "0.6.0"
 description = "Nodetool Core is the core library for Nodetool, providing the necessary functionality for building and running AI workflows."
 readme = "README.md"
-authors = [
-    {name = "Matthias Georgi", email = "matti.georgi@gmail.com"}
-]
+authors = [{ name = "Matthias Georgi", email = "matti.georgi@gmail.com" }]
 requires-python = ">=3.11"
 
 dependencies = [
@@ -92,7 +90,7 @@ dependencies = [
 
     # Database and storage
     "chromadb>=1.0.20",
-    "leann>=0.3.2",
+    "leann>=0.3.2; platform_system == \"Darwin\" or platform_system == \"Linux\"",
     "aiofiles==24.1.0",
     "aiosqlite>=0.20.0",
     "boto3==1.35.63",
@@ -126,10 +124,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = [
-    "aioresponses>=0.7.8",
-    "pytest-timeout>=2.3.1",
-]
+dev = ["aioresponses>=0.7.8", "pytest-timeout>=2.3.1"]
 
 [project.scripts]
 nodetool = "nodetool.cli:cli"
