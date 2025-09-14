@@ -79,6 +79,13 @@ Before running these examples, you'll need to:
 - Integrates OpenAI's capabilities with web search
 - Shows combined AI and search functionality
 
+### 5. Deployment
+
+#### AWS Lambda Handler (`aws_lambda_handler.py`)
+
+- Demonstrates deploying a workflow as an AWS Lambda function
+- Provides a simple `lambda_handler` entry point
+
 ## Running the Examples
 
 To run any of these examples:
