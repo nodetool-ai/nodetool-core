@@ -39,6 +39,7 @@ class StreamRunnerBase:
         mem_limit: str = "256m",
         nano_cpus: int = 1_000_000_000,
         network_disabled: bool = True,
+        allow_subprocess: bool = True,
         ipc_mode: str | None = "host",
     ) -> None:
         """Initialize the stream runner.
@@ -56,6 +57,7 @@ class StreamRunnerBase:
         self.nano_cpus = nano_cpus
         self.network_disabled = network_disabled
         self.ipc_mode = ipc_mode
+        self.allow_subprocess = allow_subprocess
         # Runtime / lifecycle tracking for cooperative shutdown
         self._active_container_id: str | None = None
         self._active_sock: Any | None = None
@@ -260,16 +262,19 @@ class StreamRunnerBase:
                     "Docker unavailable, falling back to local subprocess execution: %s",
                     docker_unavailable,
                 )
-                self._local_run(
-                    queue=queue,
-                    loop=loop,
-                    user_code=user_code,
-                    env=env,
-                    env_locals=env_locals,
-                    context=context,
-                    node=node,
-                    stdin_stream=stdin_stream,
-                )
+                if self.allow_subprocess:
+                    self._local_run(
+                        queue=queue,
+                        loop=loop,
+                        user_code=user_code,
+                        env=env,
+                        env_locals=env_locals,
+                        context=context,
+                        node=node,
+                        stdin_stream=stdin_stream,
+                    )
+                else:
+                    raise RuntimeError("Docker is not available")
                 return
 
             image = self.image
