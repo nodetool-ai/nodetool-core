@@ -1,5 +1,7 @@
 import pytest
-from conftest import make_job
+import sys
+import os
+from tests.conftest import make_job
 from nodetool.models.job import Job
 
 
@@ -63,5 +65,7 @@ async def test_paginate_jobs_by_workflow(user_id: str):
             user_id=user_id,
         )
 
-    jobs, last_evaluated_key = await Job.paginate(user_id=user_id, workflow_id="workflow_id")
+    jobs, last_evaluated_key = await Job.paginate(
+        user_id=user_id, workflow_id="workflow_id"
+    )
     assert len(jobs) == 10

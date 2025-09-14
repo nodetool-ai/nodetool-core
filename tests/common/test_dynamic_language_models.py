@@ -5,7 +5,7 @@ import pytest
 from unittest.mock import patch, AsyncMock, MagicMock
 from aioresponses import aioresponses
 from nodetool.ml.models.language_models import (
-    get_cached_hf_models,
+    get_cached_hf_inference_provider_models,
     get_all_language_models,
     fetch_models_from_hf_provider,
     clear_language_model_cache,
@@ -103,10 +103,10 @@ class TestDynamicLanguageModels:
                 m.get(url, payload=sample_hf_api_response)
 
             # First call - should fetch from API
-            models_first = await get_cached_hf_models()
+            models_first = await get_cached_hf_inference_provider_models()
 
         # Second call should use cache (no HTTP mock needed)
-        models_second = await get_cached_hf_models()
+        models_second = await get_cached_hf_inference_provider_models()
 
         # Should return the same models from cache
         assert len(models_first) == len(models_second)
@@ -143,7 +143,7 @@ class TestDynamicLanguageModels:
                 url = f"https://huggingface.co/api/models?inference_provider={provider}&pipeline_tag=text-generation&limit=1000"
                 m.get(url, payload=sample_hf_api_response)
 
-            models = await get_cached_hf_models()
+            models = await get_cached_hf_inference_provider_models()
 
             # Should have fetched models from multiple providers
             assert len(models) > 0
@@ -176,20 +176,27 @@ class TestDynamicLanguageModels:
             LanguageModel(id="gpt-4", name="GPT-4", provider=Provider.OpenAI)
         ]
 
-        with patch(
-            "nodetool.config.environment.Environment.get_environment",
-            return_value=mock_env,
-        ), patch(
-            "nodetool.ml.models.language_models.get_cached_anthropic_models",
-            return_value=mock_anthropic_models,
-        ), patch(
-            "nodetool.ml.models.language_models.get_cached_gemini_models",
-            return_value=mock_gemini_models,
-        ), patch(
-            "nodetool.ml.models.language_models.get_cached_openai_models",
-            return_value=mock_openai_models,
-        ), patch(
-            "nodetool.ml.models.language_models.get_cached_hf_models", return_value=[]
+        with (
+            patch(
+                "nodetool.config.environment.Environment.get_environment",
+                return_value=mock_env,
+            ),
+            patch(
+                "nodetool.ml.models.language_models.get_cached_anthropic_models",
+                return_value=mock_anthropic_models,
+            ),
+            patch(
+                "nodetool.ml.models.language_models.get_cached_gemini_models",
+                return_value=mock_gemini_models,
+            ),
+            patch(
+                "nodetool.ml.models.language_models.get_cached_openai_models",
+                return_value=mock_openai_models,
+            ),
+            patch(
+                "nodetool.ml.models.language_models.get_cached_hf_models",
+                return_value=[],
+            ),
         ):
 
             models = await get_all_language_models()

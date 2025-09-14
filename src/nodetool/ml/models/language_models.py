@@ -5,6 +5,9 @@ from nodetool.config.logging_config import get_logger
 from typing import List, Dict, Any
 import aiohttp
 from nodetool.metadata.types import LanguageModel, Provider
+from nodetool.integrations.huggingface.huggingface_models import (
+    get_llamacpp_language_models_from_hf_cache,
+)
 from nodetool.config.environment import Environment
 from nodetool.storage.memory_node_cache import MemoryNodeCache
 
@@ -196,7 +199,7 @@ async def fetch_models_from_hf_provider(provider: str) -> List[LanguageModel]:
         return []
 
 
-async def get_cached_hf_models() -> List[LanguageModel]:
+async def get_cached_hf_inference_provider_models() -> List[LanguageModel]:
     """
     Get HuggingFace models from in-memory cache or fetch them dynamically.
 
@@ -477,7 +480,8 @@ async def get_cached_anthropic_models() -> List[LanguageModel]:
 
 async def get_all_language_models() -> List[LanguageModel]:
     """
-    Get all language models from all providers, including dynamically fetched HF models.
+    Get all language models from all providers, including dynamically fetched HF models
+    and locally cached GGUF models for llama.cpp.
 
     Returns:
         List of all available LanguageModel instances
@@ -493,7 +497,13 @@ async def get_all_language_models() -> List[LanguageModel]:
     if "OPENAI_API_KEY" in env:
         models.extend(await get_cached_openai_models())
     if "HF_TOKEN" in env or "HUGGINGFACE_API_KEY" in env:
-        models.extend(await get_cached_hf_models())
+        models.extend(await get_cached_hf_inference_provider_models())
+
+    # Always include locally cached GGUF models for llama.cpp if present
+    try:
+        models.extend(await get_llamacpp_language_models_from_hf_cache())
+    except Exception as e:
+        log.debug(f"Skipping local GGUF discovery due to error: {e}")
 
     return models
 

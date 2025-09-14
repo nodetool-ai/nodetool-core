@@ -27,7 +27,12 @@ import hashlib
 from pathlib import Path
 from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
-from nodetool.metadata.types import CLASSNAME_TO_MODEL_TYPE, HuggingFaceModel
+from nodetool.metadata.types import (
+    CLASSNAME_TO_MODEL_TYPE,
+    HuggingFaceModel,
+    LanguageModel,
+    Provider,
+)
 from nodetool.workflows.base_node import get_recommended_models
 
 log = get_logger(__name__)
@@ -406,24 +411,175 @@ async def read_cached_hf_models(
         cached_files = []
         for revision in repo.revisions:
             for file_info in revision.files:
-                cached_files.append(CachedFileInfo(
-                    file_name=file_info.file_name,
-                    size_on_disk=file_info.size_on_disk,
-                ))
-        
-        models.append(CachedModel(
-            repo_id=repo.repo_id,
-            repo_type=repo.repo_type,
-            path=str(repo.repo_path),
-            size_on_disk=repo.size_on_disk,
-            has_model_index=has_model_index(model_info),
-            the_model_info=model_info,
-            the_model_type=model_type_from_model_info(
-                recommended_models, repo.repo_id, model_info
-            ),
-            cached_files=cached_files,
-        ))
+                cached_files.append(
+                    CachedFileInfo(
+                        file_name=file_info.file_name,
+                        size_on_disk=file_info.size_on_disk,
+                    )
+                )
+
+        models.append(
+            CachedModel(
+                repo_id=repo.repo_id,
+                repo_type=repo.repo_type,
+                path=str(repo.repo_path),
+                size_on_disk=repo.size_on_disk,
+                has_model_index=has_model_index(model_info),
+                the_model_info=model_info,
+                the_model_type=model_type_from_model_info(
+                    recommended_models, repo.repo_id, model_info
+                ),
+                cached_files=cached_files,
+            )
+        )
     return models
+
+
+async def get_llamacpp_language_models_from_hf_cache() -> List[LanguageModel]:
+    """
+    Return LanguageModel entries for cached Hugging Face repos containing GGUF files
+    that look suitable for llama.cpp.
+
+    Heuristics:
+    - File ends with .gguf (case-insensitive)
+    - Each GGUF file yields a LanguageModel with id "<repo_id>:<filename>"
+
+    Returns:
+        List[LanguageModel]: Llama.cpp-compatible models discovered in the HF cache
+    """
+    cached = await read_cached_hf_models(load_model_info=False)
+    seen: set[str] = set()
+    results: list[LanguageModel] = []
+
+    for repo in cached:
+        for f in repo.cached_files:
+            fname = f.file_name
+            print(fname)
+            if not fname:
+                continue
+            if not fname.lower().endswith(".gguf"):
+                continue
+            model_id = f"{repo.repo_id}:{fname}"
+            if model_id in seen:
+                continue
+            seen.add(model_id)
+            display = f"{repo.repo_id.split('/')[-1]} • {fname}"
+            results.append(
+                LanguageModel(
+                    id=model_id,
+                    name=display,
+                    provider=Provider.LlamaCpp,
+                )
+            )
+
+    # Sort for stability: by repo then filename
+    results.sort(key=lambda m: (m.id.split(":", 1)[0], m.id))
+    return results
+
+
+async def _fetch_models_by_author(author: str) -> list[dict]:
+    """Fetch models list from HF API for a given author.
+
+    Returns raw model dicts from the public API.
+    """
+    url = "https://huggingface.co/api/models"
+    params = {"author": author, "limit": 1000}
+    try:
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            resp = await client.get(url, params=params)
+            if resp.status_code != 200:
+                log.debug(
+                    f"HF API returned {resp.status_code} for author={author}: {resp.text[:200]}"
+                )
+                return []
+            data = resp.json()
+            if isinstance(data, list):
+                return data
+            return []
+    except Exception as e:
+        log.debug(f"Failed to fetch HF models for author={author}: {e}")
+        return []
+
+
+async def get_gguf_language_models_from_authors(
+    authors: list[str],
+) -> List[HuggingFaceModel]:
+    """
+    Fetch all HF repos authored by the given authors that include GGUF files/tags.
+
+    Heuristic: filter API results to those with a "gguf" tag, then for each
+    author select the top 30 repos sorted by likes.
+
+    Args:
+        authors: List of HF author/org names (e.g., ["unsloth", "ggml-org"]).
+
+    Returns:
+        List[HuggingFaceModel]: One entry per matching repo.
+    """
+    # Fetch authors concurrently
+    results = await asyncio.gather(*(_fetch_models_by_author(a) for a in authors))
+
+    # Collect qualifying repo_ids: top 30 per author by likes
+    repo_ids: list[str] = []
+    seen_repo: set[str] = set()
+    for author, author_models in zip(authors, results):
+        try:
+            # Filter models with gguf tag
+            gguf_models = []
+            for m in author_models:
+                try:
+                    tags = m.get("tags") or []
+                    if not isinstance(tags, list):
+                        continue
+                    if any(isinstance(t, str) and t.lower() == "gguf" for t in tags):
+                        gguf_models.append(m)
+                except Exception:
+                    continue
+
+            # Sort by likes desc; likes may be missing
+            gguf_models.sort(key=lambda x: int(x.get("likes") or 0), reverse=True)
+            top_models = gguf_models[:30]
+
+            for m in top_models:
+                rid = m.get("id") or m.get("modelId")
+                if not isinstance(rid, str):
+                    continue
+                if rid in seen_repo:
+                    continue
+                seen_repo.add(rid)
+                repo_ids.append(rid)
+        except Exception as e:
+            log.warning(f"Failed to fetch HF models for author={author}: {e}")
+            continue
+
+    # Fetch model info to enumerate GGUF files per repo (quantizations)
+    model_infos = await asyncio.gather(
+        *(fetch_model_info(rid) for rid in repo_ids), return_exceptions=True
+    )
+
+    entries: list[HuggingFaceModel] = []
+    seen_file: set[tuple[str, str]] = set()
+    for rid, info in zip(repo_ids, model_infos):
+        try:
+            if info is None or isinstance(info, BaseException):
+                continue
+            sibs = getattr(info, "siblings", None) or []
+            for sib in sibs:
+                fname = getattr(sib, "rfilename", None)
+                if not isinstance(fname, str) or not fname.lower().endswith(".gguf"):
+                    continue
+                key = (rid, fname)
+                if key in seen_file:
+                    continue
+                seen_file.add(key)
+                entries.append(HuggingFaceModel(repo_id=rid, path=fname))
+        except Exception as e:
+            log.warning(f"Failed to fetch HF models for rid={rid}: {e}")
+            continue
+
+    # Sort for stability: repo then filename
+    entries.sort(key=lambda m: (m.repo_id, m.path or ""))
+    return entries
 
 
 def delete_cached_hf_model(model_id: str) -> bool:
@@ -448,9 +604,8 @@ def delete_cached_hf_model(model_id: str) -> bool:
 if __name__ == "__main__":
 
     async def main() -> None:
-        models = await read_cached_hf_models()
+        models = await get_llamacpp_language_models_from_hf_cache()
         for model in models:
-            if model.the_model_info is not None:
-                print(model.repo_id, model.the_model_info.tags)
+            print(model)
 
     asyncio.run(main())

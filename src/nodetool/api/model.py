@@ -29,6 +29,9 @@ from nodetool.integrations.huggingface.huggingface_models import (
     read_cached_hf_models,
 )
 from nodetool.workflows.base_node import get_recommended_models
+from nodetool.integrations.huggingface.huggingface_models import (
+    get_gguf_language_models_from_authors,
+)
 from pydantic import BaseModel
 from nodetool.chat.ollama_service import (
     get_ollama_models,
@@ -70,8 +73,14 @@ async def recommended_models(
     user: str = Depends(current_user),
 ) -> list[HuggingFaceModel]:
     recommended = get_recommended_models()
-    # Flatten the list of lists into a single list
+    # Flatten node-derived recommendations
     models = flatten_models(list(recommended.values()))
+    # Add all GGUF repos from selected HF authors (unsloth and ggml-org)
+    # Reference endpoints:
+    # - https://huggingface.co/api/models?author=unsloth
+    # - https://huggingface.co/api/models?author=ggml-org
+    gguf_models = await get_gguf_language_models_from_authors(["unsloth", "ggml-org"])
+    models.extend(gguf_models)
     return models
 
 

@@ -327,6 +327,7 @@ class Provider(str, enum.Enum):
     Ollama = "ollama"
     Comfy = "comfy"
     Local = "local"
+    LlamaCpp = "llama_cpp"
     Gemini = "gemini"
     Empty = "empty"
     # Providers for HuggingFace Inference Providers

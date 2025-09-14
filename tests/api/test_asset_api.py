@@ -6,6 +6,9 @@ import pytest
 from nodetool.config.environment import Environment
 from nodetool.models.asset import Asset
 from nodetool.types.asset import AssetCreateRequest, AssetUpdateRequest
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from conftest import make_image, make_text
 
 
