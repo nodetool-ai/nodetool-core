@@ -54,53 +54,43 @@ log = get_logger(__name__)
 
 
 class OpenAIProvider(ChatProvider):
-    """
-    OpenAI implementation of the ChatProvider interface.
+    """OpenAI implementation of the ChatProvider interface.
 
     Handles conversion between internal message format and OpenAI's API format,
-    as well as streaming completions and tool calling.
+    streaming completions, and tool calling.
 
-    OpenAI's message structure follows a specific format:
+    Overview of OpenAI chat constructs used:
 
     1. Message Format:
        - Each message is a dict with "role" and "content" fields
        - Role can be: "system", "user", "assistant", or "tool"
-       - Content contains the message text (string) or content blocks (for multimodal)
-       - Messages can have optional "name" field to identify specific users/assistants
+       - Content contains the message text (string) or content blocks (multimodal)
+       - Messages may include an optional "name" field
 
     2. Tool Calls:
-       - When a model wants to call a tool, the response includes a "tool_calls" field
-       - Each tool call contains:
-         - "id": A unique identifier for the tool call
-         - "function": An object with "name" and "arguments" (JSON string)
-       - When responding to a tool call, you provide a message with:
-         - "role": "tool"
-         - "tool_call_id": The ID of the tool call being responded to
-         - "name": The name of the function that was called
-         - "content": The result of the function call
+       - When a model wants to call a tool, the response includes "tool_calls"
+       - Each tool call has an "id" and a "function" with name and arguments
+       - To respond, send a message with role "tool" including tool_call_id
 
     3. Response Structure:
-       - response.choices[0].message contains the model's response
-       - It includes fields like "role", "content", and optionally "tool_calls"
-       - response.usage contains token usage statistics
-         - "prompt_tokens": Number of tokens in the input
-         - "completion_tokens": Number of tokens in the output
-         - "total_tokens": Total tokens used
+       - ``response.choices[0].message`` holds the model response
+       - ``response.usage`` contains token usage stats
 
-    4. Tool Call Flow:
-       - Model generates a response with tool_calls
-       - Application executes the tool(s) based on arguments
-       - Result is sent back as a "tool" message
-       - Model generates a new response incorporating tool results
+    4. Flow with Tools:
+       - Model returns tool_calls → App executes tools → App replies with role
+         "tool" → Model continues using results.
 
-    For more details, see: https://platform.openai.com/docs/guides/function-calling
+    For details, see the OpenAI function calling guide.
     """
 
     has_code_interpreter: bool = False
     provider: Provider = Provider.OpenAI
 
     def __init__(self):
-        """Initialize the OpenAI provider with client credentials."""
+        """Initialize the OpenAI provider with client credentials.
+
+        Reads ``OPENAI_API_KEY`` from environment and prepares usage tracking.
+        """
         super().__init__()
         env = Environment.get_environment()
         self.api_key = env.get("OPENAI_API_KEY")
@@ -117,6 +107,11 @@ class OpenAIProvider(ChatProvider):
         log.debug("OpenAIProvider initialized. API key present: True")
 
     def get_container_env(self) -> dict[str, str]:
+        """Return environment variables required for containerized execution.
+
+        Returns:
+            A mapping containing ``OPENAI_API_KEY`` if available; otherwise empty.
+        """
         env_vars = {"OPENAI_API_KEY": self.api_key} if self.api_key else {}
         log.debug(f"Container environment variables: {list(env_vars.keys())}")
         return env_vars
@@ -124,6 +119,11 @@ class OpenAIProvider(ChatProvider):
     def get_client(
         self,
     ) -> openai.AsyncClient:
+        """Create and return an OpenAI async client.
+
+        Returns:
+            An initialized ``openai.AsyncClient`` with reasonable timeouts.
+        """
         log.debug("Creating OpenAI async client")
         client = openai.AsyncClient(
             api_key=self.api_key,
@@ -135,10 +135,16 @@ class OpenAIProvider(ChatProvider):
         return client
 
     def get_context_length(self, model: str) -> int:
-        """Get the maximum token limit for a given model.
+        """Return an approximate maximum token limit for a given model.
 
-        Provides reasonable defaults for common OpenAI model names and
-        a conservative fallback for unknown models to satisfy tests.
+        Provides reasonable defaults for common OpenAI model names and a
+        conservative fallback for unknown models.
+
+        Args:
+            model: Model identifier string.
+
+        Returns:
+            Approximate maximum number of tokens the model can handle.
         """
         log.debug(f"Getting context length for model: {model}")
 
@@ -173,8 +179,15 @@ class OpenAIProvider(ChatProvider):
         return 4096
 
     async def uri_to_base64(self, uri: str) -> str:
-        """Convert a URI to a base64 encoded data: URI string.
-        If the URI points to an audio file, it converts it to MP3 first.
+        """Convert a URI to a base64-encoded ``data:`` URI string.
+
+        If the URI points to audio, convert it to MP3 first for compatibility.
+
+        Args:
+            uri: Source URI. Supports standard URLs and ``data:`` URIs.
+
+        Returns:
+            A ``data:<mime>;base64,<data>`` string suitable for OpenAI APIs.
         """
         log.debug(f"Converting URI to base64: {uri[:50]}...")
 
@@ -217,9 +230,13 @@ class OpenAIProvider(ChatProvider):
         return result
 
     def _normalize_data_uri(self, uri: str) -> str:
-        """Normalize a data URI and convert audio/* to MP3 base64 data URI.
+        """Normalize a data URI and convert audio to MP3 when necessary.
 
-        Returns a string in the form: data:<mime>;base64,<base64data>
+        Args:
+            uri: A ``data:`` URI string.
+
+        Returns:
+            A normalized ``data:<mime>;base64,<base64data>`` string.
         """
         log.debug(f"Normalizing data URI: {uri[:50]}...")
 
@@ -280,7 +297,14 @@ class OpenAIProvider(ChatProvider):
     async def message_content_to_openai_content_part(
         self, content: MessageContent
     ) -> ChatCompletionContentPartParam:
-        """Convert a message content to an OpenAI content part."""
+        """Convert a message content to an OpenAI content part.
+
+        Args:
+            content: Internal message content variant (text, image, audio).
+
+        Returns:
+            A content part dictionary per OpenAI's chat API specification.
+        """
         log.debug(f"Converting message content type: {type(content)}")
 
         if isinstance(content, MessageTextContent):
@@ -353,7 +377,14 @@ class OpenAIProvider(ChatProvider):
             raise ValueError(f"Unknown content type {content}")
 
     async def convert_message(self, message: Message) -> ChatCompletionMessageParam:
-        """Convert an internal message to OpenAI's format."""
+        """Convert an internal message to OpenAI's message param format.
+
+        Args:
+            message: Internal ``Message`` instance.
+
+        Returns:
+            OpenAI chat message structure matching the input role/content.
+        """
         log.debug(f"Converting message with role: {message.role}")
 
         if message.role == "tool":
@@ -452,7 +483,14 @@ class OpenAIProvider(ChatProvider):
     def format_tools(
         self, tools: Sequence[Tool]
     ) -> list[ChatCompletionMessageFunctionToolCallParam]:
-        """Convert tools to OpenAI's format."""
+        """Convert internal tools to OpenAI function/tool definitions.
+
+        Args:
+            tools: Iterable of tools to expose to the model.
+
+        Returns:
+            List of OpenAI-compatible tool specifications.
+        """
         log.debug(f"Formatting {len(tools)} tools for OpenAI API")
         formatted_tools = []
 
@@ -489,7 +527,21 @@ class OpenAIProvider(ChatProvider):
         response_format: dict | None = None,
         **kwargs,
     ) -> AsyncIterator[Chunk | ToolCall]:
-        """Generate streaming completions from OpenAI."""
+        """Stream assistant deltas and tool calls from OpenAI.
+
+        Args:
+            messages: Conversation history to send.
+            model: Target OpenAI model.
+            tools: Optional tool definitions to provide.
+            max_tokens: Maximum tokens to generate.
+            context_window: Maximum tokens considered for context.
+            response_format: Optional response schema.
+            **kwargs: Additional OpenAI parameters such as temperature.
+
+        Yields:
+            Text ``Chunk`` items and ``ToolCall`` objects when the model
+            requests tool execution.
+        """
         log.debug(f"Starting streaming generation for model: {model}")
         log.debug(f"Streaming with {len(messages)} messages, {len(tools)} tools")
 
@@ -820,7 +872,11 @@ class OpenAIProvider(ChatProvider):
         return message
 
     def get_usage(self) -> dict:
-        """Return the current accumulated token usage statistics."""
+        """Return the current accumulated token usage statistics.
+
+        Returns:
+            A shallow copy of the usage counters collected so far.
+        """
         log.debug(f"Getting usage stats: {self.usage}")
         return self.usage.copy()
 
@@ -837,7 +893,14 @@ class OpenAIProvider(ChatProvider):
         self.cost = 0.0
 
     def is_context_length_error(self, error: Exception) -> bool:
-        """Detect OpenAI context window errors."""
+        """Detect whether an exception represents a context window error.
+
+        Args:
+            error: Exception to inspect.
+
+        Returns:
+            True if the error message suggests a context length violation.
+        """
         msg = str(error).lower()
         is_context_error = "context length" in msg or "maximum context" in msg
         log.debug(f"Checking if error is context length error: {is_context_error}")

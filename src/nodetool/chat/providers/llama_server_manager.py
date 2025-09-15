@@ -32,12 +32,13 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import os
+import shutil
 import shlex
 import signal
 import socket
 import time
 import atexit
-from typing import Dict, Optional, Tuple, TYPE_CHECKING
+from typing import Dict, Optional, Tuple, TYPE_CHECKING, Any
 import weakref
 
 import httpx
@@ -49,16 +50,29 @@ log = get_logger(__name__)
 
 
 def _find_free_port() -> int:
+    """Find an available TCP port bound to 127.0.0.1.
+
+    Returns:
+        A free port number chosen by the operating system.
+    """
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(("127.0.0.1", 0))
         return s.getsockname()[1]
 
 
 def _is_windows_abs_path(path: str) -> bool:
-    """Detect Windows absolute paths (e.g., "C:\\...") or UNC paths.
+    """Return True if the string looks like a Windows absolute or UNC path.
 
-    This helps disambiguate from HF repo specs like "org/repo:file.gguf"
-    which contain a colon but are not filesystem paths on POSIX systems.
+    Args:
+        path: Path-like string to inspect.
+
+    Returns:
+        True if `path` looks like ``C:\\...`` or a UNC path starting with ``\\\\``,
+        False otherwise.
+
+    Notes:
+        This helps disambiguate from HF repo specs like ``org/repo:file.gguf``,
+        which contain a colon but are not filesystem paths on POSIX systems.
     """
     try:
         if len(path) >= 3 and path[1] == ":" and (path[2] == "\\" or path[2] == "/"):
@@ -71,13 +85,19 @@ def _is_windows_abs_path(path: str) -> bool:
 
 
 def _is_path_model(model: str) -> bool:
-    """Heuristically determine if the model string is a filesystem path.
+    """Heuristically determine whether the model spec is a filesystem path.
 
     Rules:
-    - POSIX absolute or relative path prefixes: "/", "./", "../"
+    - POSIX abs/rel prefixes: "/", "./", "../"
     - Windows absolute or UNC paths
-    - A bare filename ending with ".gguf" that does not contain a colon
-      (to avoid misclassifying HF specs like "org/repo:file.gguf")
+    - Bare filename ending with ".gguf" that does not contain a colon (to avoid
+      misclassifying HF specs like "org/repo:file.gguf").
+
+    Args:
+        model: Model spec string as provided by the caller.
+
+    Returns:
+        True if `model` is recognized as a local path, False otherwise.
     """
     if model.startswith("/") or model.startswith("./") or model.startswith("../"):
         return True
@@ -89,10 +109,16 @@ def _is_path_model(model: str) -> bool:
 
 
 def _hf_cache_dir() -> str:
-    """Return the Hugging Face hub cache directory.
+    """Return the local Hugging Face hub cache directory.
 
-    Respects HUGGINGFACE_HUB_CACHE or HF_HOME; otherwise defaults to
-    ~/.cache/huggingface/hub
+    Order of precedence:
+    - HUGGINGFACE_HUB_CACHE (must exist)
+    - HF_HOME/hub (must exist)
+    - ~/.cache/huggingface/hub
+
+    Returns:
+        Path to the hub cache directory. The path may not exist if the cache
+        has not been created yet.
     """
     cache = os.environ.get("HUGGINGFACE_HUB_CACHE")
     if cache and os.path.isdir(cache):
@@ -107,68 +133,57 @@ def _hf_cache_dir() -> str:
 
 
 def _resolve_hf_cached_file(repo_id: str, filename: str) -> Optional[str]:
-    """Attempt to resolve a repo file to a local path in the HF cache.
+    """Resolve a repo file to a local path in the Hugging Face cache.
 
-    Strategy:
-    1) Prefer huggingface_hub.hf_hub_download(local_files_only=True) when available
-    2) Fallback to scanning ~/.cache/huggingface/hub snapshots structure
+    Args:
+        repo_id: Hugging Face repo id like "org/repo".
+        filename: File name within the repo, e.g., "model.Q4_K_M.gguf".
+
+    Returns:
+        Absolute path to the file if found locally, otherwise None.
     """
-    # 1) Try huggingface_hub API with local-only to avoid implicit downloads
-    try:
-        from huggingface_hub import hf_hub_download  # type: ignore
-
-        token = os.environ.get("HF_TOKEN") or None
-        try:
-            path = hf_hub_download(
-                repo_id=repo_id,
-                filename=filename,
-                token=token,
-                local_files_only=True,
-            )
-            if os.path.exists(path):
-                log.debug(
-                    f"Resolved HF file locally via huggingface_hub: {repo_id}:{filename} -> {path}"
-                )
-                return path
-        except Exception:
-            pass
-    except Exception:
-        # huggingface_hub not available; fallback to cache scanning
-        pass
-
-    # 2) Scan hub snapshots for the file
-    try:
-        hub_cache = _hf_cache_dir()
-        repo_dir = f"models--{repo_id.replace('/', '--')}"
-        snapshots_dir = os.path.join(hub_cache, repo_dir, "snapshots")
-        if not os.path.isdir(snapshots_dir):
-            return None
-
-        snapshot_paths = [
-            os.path.join(snapshots_dir, d)
-            for d in os.listdir(snapshots_dir)
-            if os.path.isdir(os.path.join(snapshots_dir, d))
-        ]
-        # Sort by mtime, newest first
-        snapshot_paths.sort(key=lambda p: os.path.getmtime(p), reverse=True)
-
-        for snap in snapshot_paths:
-            candidate = os.path.join(snap, filename)
-            if os.path.exists(candidate):
-                log.debug(
-                    f"Resolved HF file from cache snapshots: {repo_id}:{filename} -> {candidate}"
-                )
-                return candidate
-    except Exception:
+    hub_cache = _hf_cache_dir()
+    repo_dir = f"models--{repo_id.replace('/', '--')}"
+    snapshots_dir = os.path.join(hub_cache, repo_dir, "snapshots")
+    if not os.path.isdir(snapshots_dir):
         return None
+
+    snapshot_paths = [
+        os.path.join(snapshots_dir, d)
+        for d in os.listdir(snapshots_dir)
+        if os.path.isdir(os.path.join(snapshots_dir, d))
+    ]
+    # Sort by mtime, newest first
+    snapshot_paths.sort(key=lambda p: os.path.getmtime(p), reverse=True)
+
+    for snap in snapshot_paths:
+        candidate = os.path.join(snap, filename)
+        if os.path.exists(candidate):
+            log.debug(
+                f"Resolved HF file from cache snapshots: {repo_id}:{filename} -> {candidate}"
+            )
+            return candidate
 
     return None
 
 
 def _parse_model_args(model: str) -> Tuple[list[str], str]:
-    """Return (args, alias) for llama-server based on the model spec.
+    """Build llama-server model arguments from a model spec.
 
-    alias is used to set --alias so the OAI client can pass a stable model name.
+    Args:
+        model: Model spec. Supported forms:
+            - Absolute/relative .gguf file path
+            - "<repo_id>:<filename>" where <filename> has a dot
+            - "<repo_id>:<quant_or_tag>" with no dot
+            - "<repo_id>"
+
+    Returns:
+        A tuple (args, alias) where:
+        - args: List of CLI arguments for llama-server representing the model.
+        - alias: A stable alias to pass via --alias.
+
+    Raises:
+        FileNotFoundError: If a "<repo_id>:<filename>" cannot be found locally.
     """
     model = model.strip()
     alias = model
@@ -196,12 +211,58 @@ def _parse_model_args(model: str) -> Tuple[list[str], str]:
     return ["-hf", model], alias
 
 
+def _gpu_seems_available() -> bool:
+    """Heuristically determine whether a GPU seems available.
+
+    Considers:
+    - LLAMA_FORCE_CPU: if set, force False
+    - CUDA_VISIBLE_DEVICES: non-empty and not -1/none
+    - Availability of `nvidia-smi` on PATH
+    - torch.cuda.is_available() if torch is importable
+
+    Returns:
+        True if GPU availability is likely, False otherwise.
+    """
+    try:
+        if os.environ.get("LLAMA_FORCE_CPU"):
+            return False
+        cvd = os.environ.get("CUDA_VISIBLE_DEVICES")
+        if cvd is not None and cvd.strip() not in ("-1", "", "none"):
+            return True
+        if shutil.which("nvidia-smi") is not None:
+            return True
+        try:
+            import torch  # type: ignore
+
+            if getattr(torch, "cuda", None) and torch.cuda.is_available():
+                return True
+        except Exception:
+            pass
+    except Exception:
+        pass
+    return False
+
+
 if TYPE_CHECKING:  # pragma: no cover - typing hints only
     pass
 
 
 @dataclasses.dataclass
 class _RunningServer:
+    """Container for a running llama-server process and its metadata.
+
+    Attributes:
+        process: Asyncio subprocess handle (or shim) for the server process.
+        base_url: Base HTTP URL of the server, e.g., "http://127.0.0.1:12345".
+        model_key: Key used to index this server in the manager (the model spec).
+        alias: Alias advertised to the server via --alias.
+        last_used: UNIX timestamp of the last access.
+        host: Host bound by the server.
+        port: Port bound by the server.
+        stdout_task: Background task forwarding stdout logs, if any.
+        stderr_task: Background task forwarding stderr logs, if any.
+    """
+
     process: asyncio.subprocess.Process
     base_url: str
     model_key: str
@@ -218,6 +279,11 @@ _GLOBAL_PIDS: set[int] = set()
 
 
 def _register_pid(pid: int) -> None:
+    """Register a PID for best-effort cleanup at interpreter exit.
+
+    Args:
+        pid: Process ID to track.
+    """
     try:
         _GLOBAL_PIDS.add(pid)
     except Exception:
@@ -225,6 +291,11 @@ def _register_pid(pid: int) -> None:
 
 
 def _unregister_pid(pid: int) -> None:
+    """Unregister a PID previously added to the global registry.
+
+    Args:
+        pid: Process ID to stop tracking.
+    """
     try:
         _GLOBAL_PIDS.discard(pid)
     except Exception:
@@ -232,6 +303,12 @@ def _unregister_pid(pid: int) -> None:
 
 
 def _kill_pid(pid: int, sig: int) -> None:
+    """Send a signal to a PID, ignoring errors if the process is gone.
+
+    Args:
+        pid: Target process ID.
+        sig: Signal number to send.
+    """
     try:
         os.kill(pid, sig)
     except ProcessLookupError:
@@ -242,6 +319,11 @@ def _kill_pid(pid: int, sig: int) -> None:
 
 
 def _atexit_kill_all() -> None:  # pragma: no cover - runs at interpreter shutdown
+    """Terminate all registered PIDs at interpreter shutdown.
+
+    Tries SIGTERM first, waits briefly, then SIGKILL for any stragglers.
+    All failures are ignored as this is best-effort cleanup.
+    """
     pids = list(_GLOBAL_PIDS)
     if not pids:
         return
@@ -262,7 +344,36 @@ atexit.register(_atexit_kill_all)
 
 
 class LlamaServerManager:
+    """Manage lifecycle of llama-server processes keyed by model spec.
+
+    Starts servers on demand, reuses them across calls, prunes them after an
+    inactivity TTL, and exposes OpenAI-compatible base URLs.
+    """
+
     def __init__(self, ttl_seconds: Optional[int] = None):
+        """Initialize the manager.
+
+        Args:
+            ttl_seconds: Optional inactivity TTL in seconds. If None, uses
+                LLAMA_SERVER_TTL_SECONDS from the environment or defaults to 300.
+
+        Environment:
+            - LLAMA_SERVER_BINARY
+            - LLAMA_SERVER_HOST
+            - LLAMA_SERVER_READY_TIMEOUT
+            - LLAMA_SERVER_TTL_SECONDS
+            - LLAMA_SERVER_THREADS
+            - LLAMA_SERVER_PARALLEL
+            - LLAMA_SERVER_CTX_SIZE
+            - LLAMA_SERVER_N_GPU_LAYERS
+            - LLAMA_SERVER_EXTRA_ARGS
+            - HF_TOKEN
+            - LLAMA_API_KEY
+
+        Notes:
+            If a GPU appears available and LLAMA_SERVER_N_GPU_LAYERS is not set,
+            this defaults to "999" to enable maximum offload.
+        """
         self._binary = Environment.get("LLAMA_SERVER_BINARY", "llama-server")
         self._host = Environment.get("LLAMA_SERVER_HOST", "127.0.0.1")
         self._ready_timeout = int(Environment.get("LLAMA_SERVER_READY_TIMEOUT", 300))
@@ -284,10 +395,26 @@ class LlamaServerManager:
         self._signals_installed = False
         self._atexit_registered = False
 
-    async def ensure_server(self, model: str) -> str:
-        """Ensure a llama-server is running for the given model spec and return base URL.
+        # Auto-enable GPU offload if available unless explicitly set
+        if not self._n_gpu_layers and _gpu_seems_available():
+            self._n_gpu_layers = "999"
+            log.debug("GPU detected; defaulting --n-gpu-layers=999")
 
-        The server is started on-demand and kept alive until the inactivity TTL elapses.
+    async def ensure_server(self, model: str) -> str:
+        """Ensure a llama-server is running for the given model and return its URL.
+
+        If a compatible server already exists, updates its last-used timestamp and
+        returns immediately; otherwise spawns a new process and waits for readiness.
+
+        Args:
+            model: Model spec string. See `_parse_model_args` for supported forms.
+
+        Returns:
+            Base URL as "http://host:port" suitable for OpenAI-compatible clients.
+
+        Raises:
+            RuntimeError: If the server fails to become ready before the timeout.
+            FileNotFoundError: For "<repo_id>:<filename>" when the file is not cached.
         """
         model_key = model.strip()
         async with self._lock:
@@ -340,7 +467,14 @@ class LlamaServerManager:
                 argv += shlex.split(self._extra_args)
 
             def _format_argv_for_log(args: list[str]) -> str:
-                """Return a safely loggable command string with sensitive values redacted."""
+                """Return a loggable command string with sensitive values redacted.
+
+                Args:
+                    args: Full argv list.
+
+                Returns:
+                    A single string with tokens joined and --hf-token/--api-key values redacted.
+                """
                 redacted: list[str] = []
                 redact_next = False
                 for part in args:
@@ -356,11 +490,66 @@ class LlamaServerManager:
                 return " ".join(shlex.quote(a) for a in redacted)
 
             log.debug(f"Starting llama-server: {_format_argv_for_log(argv)}")
-            proc = await asyncio.create_subprocess_exec(
-                *argv,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    *argv,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+            except NotImplementedError:
+                # Windows: some event loop implementations lack subprocess support
+                loop = asyncio.get_running_loop()
+
+                def _spawn_blocking() -> tuple[int, Any]:
+                    """Spawn the server using subprocess.Popen as a blocking fallback.
+
+                    Returns:
+                        A tuple of (pid, Popen instance).
+                    """
+                    import subprocess
+
+                    # Use Popen as a fallback; we will poll it asynchronously
+                    p = subprocess.Popen(
+                        argv,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                    )
+                    return p.pid or -1, p
+
+                pid, popen = await loop.run_in_executor(None, _spawn_blocking)
+
+                class _ProcShim:
+                    """Small adapter exposing a Popen-like process to asyncio callers."""
+
+                    def __init__(self, pid: int, popen: Any):
+                        self._popen = popen
+                        self.pid = pid
+                        self.returncode = None
+                        # Expose stdout/stderr as async-friendly readers using threads
+                        self.stdout = None
+                        self.stderr = None
+
+                    async def wait(self):
+                        """Wait for process termination in a thread executor."""
+                        loop2 = asyncio.get_running_loop()
+                        return await loop2.run_in_executor(None, self._popen.wait)
+
+                    def terminate(self):
+                        """Request graceful process termination."""
+                        try:
+                            self._popen.terminate()
+                        except Exception:
+                            pass
+
+                    def kill(self):
+                        """Forcefully kill the process."""
+                        try:
+                            self._popen.kill()
+                        except Exception:
+                            pass
+
+                proc = _ProcShim(pid, popen)  # type: ignore[assignment]
             if proc.pid is not None:
                 _register_pid(proc.pid)
 
@@ -368,6 +557,12 @@ class LlamaServerManager:
 
             # Background async readers to forward server logs to our logger
             async def _reader(stream: asyncio.StreamReader, which: str) -> None:
+                """Read a process stream line-by-line and forward to the logger.
+
+                Args:
+                    stream: Async stream reader to consume.
+                    which: Label used in debug messages.
+                """
                 try:
                     while True:
                         line = await stream.readline()
@@ -380,10 +575,17 @@ class LlamaServerManager:
 
             t_out: asyncio.Task | None = None
             t_err: asyncio.Task | None = None
-            if proc.stdout is not None:
-                t_out = asyncio.create_task(_reader(proc.stdout, "stdout"))
-            if proc.stderr is not None:
-                t_err = asyncio.create_task(_reader(proc.stderr, "stderr"))
+            # Only attach readers if using asyncio subprocess with streams
+            if hasattr(proc, "stdout") and isinstance(
+                proc.stdout, asyncio.StreamReader
+            ):
+                if proc.stdout is not None:
+                    t_out = asyncio.create_task(_reader(proc.stdout, "stdout"))
+            if hasattr(proc, "stderr") and isinstance(
+                proc.stderr, asyncio.StreamReader
+            ):
+                if proc.stderr is not None:
+                    t_err = asyncio.create_task(_reader(proc.stderr, "stderr"))
 
             ok = await self._wait_ready(base_url)
             if not ok:
@@ -421,6 +623,15 @@ class LlamaServerManager:
             return base_url
 
     async def _wait_ready(self, base_url: str) -> bool:
+        """Poll the server health endpoint until ready or timeout.
+
+        Args:
+            base_url: Base URL of the server to poll.
+
+        Returns:
+            True if the server responded with HTTP 200 on /health before the deadline,
+            False otherwise.
+        """
         deadline = time.time() + max(5, self._ready_timeout)
         async with httpx.AsyncClient(timeout=5.0, verify=False) as client:  # nosec B501
             while time.time() < deadline:
@@ -434,16 +645,19 @@ class LlamaServerManager:
         return False
 
     def _ensure_pruner(self) -> None:
+        """Start the background pruning task if not already running."""
         if self._pruner_task is None or self._pruner_task.done():
             self._pruner_task = asyncio.create_task(self._prune_loop())
 
     def _install_signal_handlers(self) -> None:
+        """Install signal handlers to trigger graceful shutdown on SIGINT/SIGTERM."""
         if self._signals_installed:
             return
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
             return
+
         # Install best-effort handlers; not all platforms allow this
         def _handle_signal(signame: str) -> None:
             try:
@@ -473,6 +687,7 @@ class LlamaServerManager:
         self._signals_installed = True
 
     def _register_instance_atexit(self) -> None:
+        """Register a per-instance atexit hook to stop all servers on exit."""
         if self._atexit_registered:
             return
         mgr_ref = weakref.ref(self)
@@ -505,6 +720,7 @@ class LlamaServerManager:
             pass
 
     async def _prune_loop(self) -> None:
+        """Periodic loop that prunes expired or dead servers."""
         try:
             while True:
                 await asyncio.sleep(5.0)
@@ -513,6 +729,10 @@ class LlamaServerManager:
             return
 
     async def _prune_once(self) -> None:
+        """Terminate servers that exceeded TTL or already exited.
+
+        Removes instances from registry, cancels log tasks, and unregisters PIDs.
+        """
         now = time.time()
         expired: list[str] = []
         async with self._lock:
@@ -549,12 +769,18 @@ class LlamaServerManager:
                     _unregister_pid(inst.process.pid)
 
     async def touch(self, model: str) -> None:
+        """Update the last-used timestamp for a given model's server, if present.
+
+        Args:
+            model: Model spec key to touch.
+        """
         async with self._lock:
             inst = self._servers.get(model)
             if inst:
                 inst.last_used = time.time()
 
     async def stop_all(self) -> None:
+        """Terminate all running servers and cancel background tasks."""
         async with self._lock:
             items = list(self._servers.items())
             self._servers.clear()
@@ -588,11 +814,13 @@ class LlamaServerManager:
                 pass
 
     def shutdown_sync(self) -> None:
-        """Best-effort sync shutdown for interpreter exit.
+        """Best-effort synchronous shutdown for interpreter exit.
 
-        Sends SIGTERM then SIGKILL without awaiting. This is used by atexit as a
-        fallback in case the event loop is unavailable. Normal code paths should
-        call the async stop_all().
+        Sends SIGTERM then SIGKILL to tracked processes without awaiting their exit.
+        Intended for use from atexit when an event loop may be unavailable.
+
+        Notes:
+            Normal code paths should prefer the async `stop_all`.
         """
         try:
             procs = []
@@ -600,13 +828,18 @@ class LlamaServerManager:
                 if inst.process.pid is not None:
                     procs.append(inst.process.pid)
             for pid in procs:
-                _kill_pid(pid, signal.SIGTERM if hasattr(signal, "SIGTERM") else signal.SIGINT)
+                _kill_pid(
+                    pid, signal.SIGTERM if hasattr(signal, "SIGTERM") else signal.SIGINT
+                )
             try:
                 time.sleep(0.3)
             except Exception:
                 pass
             for pid in procs:
-                _kill_pid(pid, signal.SIGKILL if hasattr(signal, "SIGKILL") else signal.SIGTERM)
+                _kill_pid(
+                    pid,
+                    signal.SIGKILL if hasattr(signal, "SIGKILL") else signal.SIGTERM,
+                )
                 _unregister_pid(pid)
         except Exception:
             pass

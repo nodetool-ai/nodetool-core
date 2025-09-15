@@ -110,6 +110,11 @@ class Collection(BaseType):
     name: str = ""
 
 
+class FaissIndex(BaseType):
+    type: Literal["faiss_index"] = "faiss_index"
+    index: Any = None
+
+
 #######################
 # Date and Time Types
 #######################
@@ -233,7 +238,7 @@ class AssetRef(BaseType):
     @property
     def document_id(self):
         if self.asset_id:
-            return self.asset_id
+            return "asset://" + self.asset_id
         return self.uri
 
     @classmethod

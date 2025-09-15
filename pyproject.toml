@@ -71,6 +71,8 @@ dependencies = [
     # "replicate==1.0.3",
     "runpod",
     "mcp",
+    "pywhispercpp @ git+https://github.com/absadiki/pywhispercpp",
+
     # Media dependencies
     "ffmpeg-python==0.2.0",
     "pillow==11.2.1",
@@ -90,6 +92,7 @@ dependencies = [
 
     # Database and storage
     "chromadb>=1.0.20",
+    "faiss-cpu>=1.12.0",
     "leann>=0.3.2; platform_system == \"Darwin\" or platform_system == \"Linux\"",
     "aiofiles==24.1.0",
     "aiosqlite>=0.20.0",
@@ -109,6 +112,7 @@ dependencies = [
     "readability-lxml>=0.8.1",
     "lxml_html_clean>=0.4.1",
     "trafilatura>=2.0.0",
+    "hf_xet>=0.0.1",
 
     # Authentication and security
     "annotated-types==0.7.0",
@@ -125,6 +129,9 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["aioresponses>=0.7.8", "pytest-timeout>=2.3.1"]
+
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [project.scripts]
 nodetool = "nodetool.cli:cli"

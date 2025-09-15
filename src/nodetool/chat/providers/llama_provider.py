@@ -15,6 +15,7 @@ import asyncio
 import httpx
 import openai
 from openai.types.chat import ChatCompletionChunk
+from huggingface_hub import hf_hub_download
 
 from nodetool.agents.tools.base import Tool
 from nodetool.chat.providers.base import ChatProvider
@@ -29,9 +30,25 @@ log = get_logger(__name__)
 
 
 class LlamaProvider(ChatProvider, OpenAICompat):
+    """OpenAI-compatible chat provider backed by a local llama.cpp server.
+
+    This provider automatically manages a background ``llama-server`` process per
+    model via ``LlamaServerManager`` and exposes a familiar OpenAI client
+    interface. It normalizes messages to conform to llama.cpp's chat template
+    alternation rules (user/assistant), and supports tool calls.
+
+    Attributes:
+        provider: Provider identifier used by the application.
+    """
+
     provider: Provider = Provider.LlamaCpp
 
     def __init__(self, ttl_seconds: int = 300):
+        """Initialize the provider and its server manager.
+
+        Args:
+            ttl_seconds: Inactivity time-to-live for each managed llama-server.
+        """
         super().__init__()
         self._manager = LlamaServerManager(ttl_seconds=ttl_seconds)
         self._usage = {
@@ -45,18 +62,22 @@ class LlamaProvider(ChatProvider, OpenAICompat):
     def _normalize_messages_for_llama(
         self, messages: Sequence[Message]
     ) -> list[Message]:
-        """
-        llama.cpp's jinja templates require roles to alternate user/assistant
-        (optionally preceded by a single system message). The OpenAI-compatible
-        "tool" role breaks this alternation. We normalize by:
+        """Normalize messages to satisfy llama.cpp alternation constraints.
 
-        - Merging multiple system messages into a single system message
-        - Converting tool messages into user messages that include the tool result
-        - Inserting an empty assistant message before a tool result when needed
-        - Leaving other roles unchanged
+        llama.cpp's chat templates require strict role alternation between
+        user and assistant turns, optionally preceded by a single system
+        message. The OpenAI-compatible "tool" role violates this alternation.
 
-        This preserves semantics while satisfying the alternation constraint:
-        user → assistant(tool_calls) → user(tool result) → assistant …
+        The normalization performs:
+        - Merge multiple system messages into a single system message
+        - Convert tool messages into user messages that embed tool output
+        - Insert blank turns as necessary to maintain alternation
+
+        Args:
+            messages: Original message sequence.
+
+        Returns:
+            A list of messages compatible with llama.cpp chat templates.
         """
 
         system_parts: list[str] = []
@@ -138,9 +159,23 @@ class LlamaProvider(ChatProvider, OpenAICompat):
         return fixed
 
     def get_container_env(self) -> dict[str, str]:
+        """Return environment variables for containerized execution.
+
+        Returns:
+            A mapping of environment variables to inject. Empty for llama.cpp
+            since the local server is spawned by this process.
+        """
         return {}
 
     def get_client(self, base_url: str) -> openai.AsyncClient:
+        """Create an OpenAI-compatible async client targeting llama-server.
+
+        Args:
+            base_url: Base URL returned by ``LlamaServerManager.ensure_server``.
+
+        Returns:
+            Configured ``openai.AsyncClient`` instance.
+        """
         # llama-server accepts any API key; None is fine when auth is disabled
         return openai.AsyncClient(
             base_url=f"{base_url}/v1",
@@ -151,6 +186,14 @@ class LlamaProvider(ChatProvider, OpenAICompat):
         )
 
     def get_context_length(self, model: str) -> int:
+        """Return an approximate context window for the provided model.
+
+        Args:
+            model: Model identifier passed to llama.cpp.
+
+        Returns:
+            A conservative default context size; server may support more.
+        """
         # Defer to server; commonly 4k-128k. Return a safe default.
         return 128000
 
@@ -164,6 +207,21 @@ class LlamaProvider(ChatProvider, OpenAICompat):
         response_format: dict | None = None,
         **kwargs,
     ) -> AsyncIterator[Chunk | ToolCall]:
+        """Stream assistant deltas and tool calls from llama.cpp.
+
+        Args:
+            messages: Conversation history to send.
+            model: Model spec (GGUF path or HF repo/tag) to run.
+            tools: Optional tool definitions.
+            max_tokens: Maximum new tokens to generate.
+            context_window: Unused hint; present for interface parity.
+            response_format: Optional response schema.
+            **kwargs: Additional OpenAI-compatible parameters.
+
+        Yields:
+            ``Chunk`` objects for text deltas and ``ToolCall`` entries when
+            the model requests tool execution.
+        """
         base_url = await self._manager.ensure_server(model)
         _kwargs: dict[str, Any] = {
             "model": model,
@@ -246,6 +304,20 @@ class LlamaProvider(ChatProvider, OpenAICompat):
         response_format: dict | None = None,
         **kwargs,
     ) -> Message:
+        """Return a single, non-streaming assistant message.
+
+        Args:
+            messages: Conversation history to send.
+            model: Model spec (GGUF path or HF repo/tag) to run.
+            tools: Optional tool definitions.
+            max_tokens: Maximum new tokens to generate.
+            context_window: Unused hint; present for interface parity.
+            response_format: Optional response schema.
+            **kwargs: Additional OpenAI-compatible parameters.
+
+        Returns:
+            Final assistant ``Message`` with optional ``tool_calls``.
+        """
         base_url = await self._manager.ensure_server(model)
         _kwargs: dict[str, Any] = {
             "max_tokens": max_tokens,
@@ -301,9 +373,11 @@ class LlamaProvider(ChatProvider, OpenAICompat):
         return message
 
     def get_usage(self) -> dict:
+        """Return a shallow copy of accumulated usage counters."""
         return self._usage.copy()
 
     def reset_usage(self) -> None:
+        """Reset all usage counters to zero."""
         self._usage = {
             "prompt_tokens": 0,
             "completion_tokens": 0,
@@ -311,24 +385,6 @@ class LlamaProvider(ChatProvider, OpenAICompat):
             "cached_prompt_tokens": 0,
             "reasoning_tokens": 0,
         }
-
-
-async def _smoke_test() -> None:
-    """Simple smoke test that spins up llama-server and requests a short reply."""
-    provider = LlamaProvider(ttl_seconds=120)
-    model = "Qwen/Qwen2.5-7B-Instruct-GGUF"
-    messages: list[Message] = [
-        Message(role="user", content="Tell me what model is this?"),
-    ]
-    try:
-        reply = await provider.generate_message(
-            messages=messages, model=model, max_tokens=32
-        )
-        content_str = reply.content if isinstance(reply.content, str) else ""
-        print("Response:", content_str.strip())
-    except Exception as e:
-        # Keep errors visible for quick diagnostics
-        print("Smoke test failed:", e)
 
 
 if __name__ == "__main__":
@@ -349,6 +405,9 @@ if __name__ == "__main__":
             async def process(self, context: ProcessingContext, params: dict[str, Any]) -> Any:  # type: ignore[override]
                 return {"echo": params.get("text", "")}
 
+        hf_hub_download(
+            "Qwen/Qwen2.5-7B-Instruct-GGUF", filename="qwen2.5-7b-instruct-q2_k.gguf"
+        )
         provider = LlamaProvider(ttl_seconds=120)
         model = "Qwen/Qwen2.5-7B-Instruct-GGUF"
         tools: list[Tool] = [EchoTool()]

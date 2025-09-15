@@ -301,6 +301,8 @@ curl http://localhost:8080/health
 """
 
 import uvicorn
+import asyncio
+import platform
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import StreamingResponse
 from nodetool.config.environment import Environment
@@ -312,6 +314,11 @@ import json
 from nodetool.types.workflow import Workflow
 
 console = Console()
+
+
+if platform.system() == "Windows":
+    # Ensure subprocess support in asyncio on Windows
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 
 def create_chat_server(
