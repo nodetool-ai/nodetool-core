@@ -127,9 +127,10 @@ class ChatWebSocketRunner(BaseChatRunner):
         self.websocket = websocket
         log.info("WebSocket connection established for chat")
 
-        # Start heartbeat to keep idle connections alive
-        if not self.heartbeat_task or self.heartbeat_task.done():
-            self.heartbeat_task = asyncio.create_task(self._heartbeat())
+        # Start heartbeat to keep idle connections alive (skip in tests to avoid leaked tasks)
+        if not Environment.is_test():
+            if not self.heartbeat_task or self.heartbeat_task.done():
+                self.heartbeat_task = asyncio.create_task(self._heartbeat())
 
     async def handle_message(self, data: dict):
         """

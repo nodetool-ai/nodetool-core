@@ -48,6 +48,9 @@ class TestChatWebSocketRunner:
             # Verify websocket was never closed
             assert not hasattr(websocket, "close") or not websocket.close.called
 
+            # Ensure cleanup to avoid leaking heartbeat tasks in CI
+            await runner.disconnect()
+
     async def test_missing_auth_token_when_required(self):
         """Test that missing auth token is rejected when authentication is required"""
         with patch.object(Environment, "use_remote_auth", return_value=True):
@@ -103,6 +106,9 @@ class TestChatWebSocketRunner:
             assert runner.user_id == "test-user-123"
             # Verify close was never called
             assert not hasattr(websocket, "close") or not websocket.close.called
+
+            # Ensure cleanup to avoid leaking heartbeat tasks in CI
+            await runner.disconnect()
 
     async def test_validate_token_with_supabase(self):
         """Test the validate_token method with Supabase integration"""
