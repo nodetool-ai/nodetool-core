@@ -29,8 +29,8 @@ jobs:
       - name: Verify Python from packaged env
         run: |
           which python
-          python -V
-          uv pip -V
+          python --version
+          uv pip --version
 
       - name: Install project and test dependencies
         run: |
