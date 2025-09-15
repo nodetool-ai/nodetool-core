@@ -19,10 +19,27 @@ jobs:
           URL="https://github.com/nodetool-ai/nodetool/releases/download/v0.6.0/conda-env-linux-x64.tar.gz"
           echo "Downloading Conda env from ${URL}"
           curl -L -o conda_env.tgz "$URL"
+
+          echo "=== Debug: Checking tar file structure ==="
+          tar -tzf conda_env.tgz | head -20
+
           mkdir -p conda_env
-          tar -xzf conda_env.tgz -C conda_env
+          echo "=== Debug: Extracting tar file ==="
+          tar -xzf conda_env.tgz -C conda_env --strip-components=1
+
+          echo "=== Debug: Contents of conda_env directory ==="
+          ls -la conda_env/
+
+          echo "=== Debug: Contents of conda_env/bin ==="
+          ls -la conda_env/bin/ | head -10
+
           chmod +x conda_env/bin/conda-unpack
+          echo "=== Debug: Running conda-unpack ==="
           ./conda_env/bin/conda-unpack
+
+          echo "=== Debug: After conda-unpack ==="
+          ls -la conda_env/bin/ | head -10
+
           ./conda_env/bin/conda uninstall -y git
           echo "CONDA_ENV_BIN=$(pwd)/conda_env/bin" >> $GITHUB_ENV
 
