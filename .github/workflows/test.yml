@@ -20,24 +20,13 @@ jobs:
           echo "Downloading Conda env from ${URL}"
           curl -L -o conda_env.tgz "$URL"
 
-          echo "=== Debug: Checking tar file structure ==="
-          tar -tzf conda_env.tgz | head -100
-
           mkdir -p conda_env
-          echo "=== Debug: Extracting tar file ==="
           tar -xzf conda_env.tgz -C conda_env
 
-          echo "=== Debug: Contents of conda_env directory ==="
-          ls -la conda_env/
-
-          echo "=== Debug: Contents of conda_env/bin ==="
-          ls -la conda_env/bin/
-
           chmod +x conda_env/bin/conda-unpack
-          echo "=== Debug: Running conda-unpack ==="
           ./conda_env/bin/conda-unpack
+          rm conda_env/bin/git
 
-          ./conda_env/bin/conda uninstall -y git
           echo "CONDA_ENV_BIN=$(pwd)/conda_env/bin" >> $GITHUB_ENV
 
       - name: Add Conda env to PATH
