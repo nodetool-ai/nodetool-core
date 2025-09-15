@@ -21,6 +21,9 @@ jobs:
           curl -L -o conda_env.tgz "$URL"
           mkdir -p conda_env
           tar -xzf conda_env.tgz -C conda_env
+          chmod +x conda_env/bin/conda-unpack
+          ./conda_env/bin/conda-unpack
+          ./conda_env/bin/conda uninstall -y git
           echo "CONDA_ENV_BIN=$(pwd)/conda_env/bin" >> $GITHUB_ENV
 
       - name: Add Conda env to PATH
