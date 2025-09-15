@@ -13,7 +13,16 @@ from nodetool.chat.chat_websocket_runner import ChatWebSocketRunner, WebSocketMo
 from nodetool.config.environment import Environment
 
 
+DEFAULT_TEST_TIMEOUT = 5
+
+
+async def wait_for(coro, timeout: float = DEFAULT_TEST_TIMEOUT):
+    """Await a coroutine with a timeout to avoid test hangs."""
+    return await asyncio.wait_for(coro, timeout=timeout)
+
+
 @pytest.mark.asyncio
+@pytest.mark.timeout(DEFAULT_TEST_TIMEOUT)
 class TestChatWebSocketRunner:
     """Test suite for ChatWebSocketRunner functionality"""
 
@@ -39,7 +48,7 @@ class TestChatWebSocketRunner:
             websocket = Mock()
             websocket.accept = AsyncMock()
 
-            await runner.connect(websocket)
+            await wait_for(runner.connect(websocket))
 
             # Verify connection was accepted
             websocket.accept.assert_called_once()
@@ -49,7 +58,7 @@ class TestChatWebSocketRunner:
             assert not hasattr(websocket, "close") or not websocket.close.called
 
             # Ensure cleanup to avoid leaking heartbeat tasks in CI
-            await runner.disconnect()
+            await wait_for(runner.disconnect())
 
     async def test_missing_auth_token_when_required(self):
         """Test that missing auth token is rejected when authentication is required"""
@@ -58,7 +67,7 @@ class TestChatWebSocketRunner:
             websocket = Mock()
             websocket.close = AsyncMock()
 
-            await runner.connect(websocket)
+            await wait_for(runner.connect(websocket))
 
             # Verify connection was closed with correct code and reason
             websocket.close.assert_called_once_with(
@@ -76,7 +85,7 @@ class TestChatWebSocketRunner:
 
             # Mock validate_token to return False
             with patch.object(runner, "validate_token", return_value=False):
-                await runner.connect(websocket)
+                await wait_for(runner.connect(websocket))
 
             # Verify connection was closed with correct code and reason
             websocket.close.assert_called_once_with(
@@ -108,7 +117,7 @@ class TestChatWebSocketRunner:
             assert not hasattr(websocket, "close") or not websocket.close.called
 
             # Ensure cleanup to avoid leaking heartbeat tasks in CI
-            await runner.disconnect()
+            await wait_for(runner.disconnect())
 
     async def test_validate_token_with_supabase(self):
         """Test the validate_token method with Supabase integration"""
@@ -128,7 +137,7 @@ class TestChatWebSocketRunner:
 
         runner.supabase = mock_supabase
 
-        result = await runner.validate_token("test_jwt_token")
+        result = await wait_for(runner.validate_token("test_jwt_token"))
 
         # Verify the token validation was successful
         assert result is True
@@ -151,7 +160,7 @@ class TestChatWebSocketRunner:
         task = asyncio.create_task(dummy_task())
         self.runner.current_task = task
 
-        await self.runner.disconnect()
+        await wait_for(self.runner.disconnect())
 
         # Verify cleanup
         # Task should be cancelled but we need to handle the CancelledError
@@ -174,7 +183,7 @@ class TestChatWebSocketRunner:
         self.runner.mode = WebSocketMode.BINARY
 
         message = {"type": "test", "content": "Hello"}
-        await self.runner.send_message(message)
+        await wait_for(self.runner.send_message(message))
 
         # Verify message was packed and sent
         expected_packed = msgpack.packb(message, use_bin_type=True)
@@ -187,7 +196,7 @@ class TestChatWebSocketRunner:
         self.runner.mode = WebSocketMode.TEXT
 
         message = {"type": "test", "content": "Hello"}
-        await self.runner.send_message(message)
+        await wait_for(self.runner.send_message(message))
 
         # Verify message was JSON encoded and sent
         expected_json = json.dumps(message)
@@ -206,7 +215,7 @@ class TestChatWebSocketRunner:
         )
 
         # Receive message
-        result = await self.runner.receive_message()
+        result = await wait_for(self.runner.receive_message())
 
         # Verify unpacking and mode setting
         assert result == test_data
@@ -224,7 +233,7 @@ class TestChatWebSocketRunner:
         )
 
         # Receive message
-        result = await self.runner.receive_message()
+        result = await wait_for(self.runner.receive_message())
 
         # Verify parsing and mode setting
         assert result == test_data
@@ -239,7 +248,7 @@ class TestChatWebSocketRunner:
         )
 
         # Receive message
-        result = await self.runner.receive_message()
+        result = await wait_for(self.runner.receive_message())
 
         # Verify None is returned for disconnect
         assert result is None
@@ -262,7 +271,7 @@ class TestChatWebSocketRunner:
             with patch.object(
                 self.runner, "_receive_messages", side_effect=mock_receive
             ):
-                await self.runner.run(websocket)
+                await wait_for(self.runner.run(websocket))
 
                 # Verify connect was called
                 mock_connect.assert_called_once_with(websocket)
@@ -285,7 +294,7 @@ class TestChatWebSocketRunner:
             with patch.object(
                 self.runner, "send_message", new_callable=AsyncMock
             ) as mock_send:
-                await self.runner._receive_messages()
+                await wait_for(self.runner._receive_messages())
 
                 # Verify task was cancelled
                 mock_task.cancel.assert_called_once()
@@ -310,7 +319,7 @@ class TestChatWebSocketRunner:
             with patch.object(
                 self.runner, "handle_message", new_callable=AsyncMock
             ) as mock_handle:
-                await self.runner._receive_messages()
+                await wait_for(self.runner._receive_messages())
 
                 # Verify message was handled
                 mock_handle.assert_called_once_with(test_message)
@@ -326,7 +335,7 @@ class TestChatWebSocketRunner:
             with patch.object(
                 self.runner, "send_message", new_callable=AsyncMock
             ) as mock_send:
-                await self.runner._receive_messages()
+                await wait_for(self.runner._receive_messages())
 
                 # Verify error message was sent
                 mock_send.assert_called_once()
