@@ -16,9 +16,7 @@ jobs:
       - name: Download packaged Conda environment
         run: |
           set -e
-          TAG=$(curl -sL https://api.github.com/repos/nodetool-ai/nodetool/releases/latest | grep -m1 '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
-          FILENAME=conda-env-linux-x64.tar.gz
-          URL="https://github.com/nodetool-ai/nodetool/releases/download/${TAG}/${FILENAME}"
+          URL="https://github.com/nodetool-ai/nodetool/releases/download/v0.6.0/conda-env-linux-x64.tar.gz"
           echo "Downloading Conda env from ${URL}"
           curl -L -o conda_env.tgz "$URL"
           mkdir -p conda_env
