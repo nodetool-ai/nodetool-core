@@ -75,7 +75,7 @@ def _lua_literal(value: Any, depth: int = 0) -> str:
     return _lua_escape_string(str(value))
 
 
-class LuaSubprocessRunner(StreamRunnerBase):
+class LuaRunner(StreamRunnerBase):
     """Execute Lua code with Docker or local subprocess, streaming stdout/stderr."""
 
     def __init__(
@@ -85,11 +85,7 @@ class LuaSubprocessRunner(StreamRunnerBase):
         *args,
         **kwargs,
     ) -> None:
-        super().__init__(
-            *args,
-            image=image,
-            **kwargs,
-        )
+        super().__init__(*args, image=image, **kwargs)
         self.executable = executable
 
     def build_container_command(
@@ -122,14 +118,21 @@ class LuaSubprocessRunner(StreamRunnerBase):
             + _lua_escape_string(user_code)
             + "; "
             + (
+                # Prefer Lua 5.1-compatible loadstring first; fall back to 5.2+ load with env
                 "local fn, err = nil, nil; "
-                "if _G.load then fn, err = _G.load(src, 'user', 't', _ENV) "
-                "elseif _G.loadstring then fn, err = _G.loadstring(src); if fn and _G.setfenv then _G.setfenv(fn, _ENV) end "
-                "end; "
+                "if _G.loadstring then fn, err = _G.loadstring(src); if fn and _G.setfenv then _G.setfenv(fn, _ENV) end end; "
+                "if not fn and _G.load then fn, err = _G.load(src, 'user', 't', _ENV) end; "
                 "if not fn then error(err or 'failed to load code') end; "
-                "local _ = fn(); if _G.os and _G.os.exit then _G.os.exit(0) end "
+                "fn(); "
             )
             + "end"
         )
 
         return [self.executable, "-e", lua_snippet]
+
+
+class LuaSubprocessRunner(LuaRunner):
+    """Convenience runner that always uses local subprocess mode."""
+
+    def __init__(self, *args, executable: str = "lua", **kwargs) -> None:
+        super().__init__(*args, executable=executable, mode="subprocess", **kwargs)

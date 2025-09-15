@@ -20,11 +20,11 @@ log = get_logger(__name__)
 
 
 class StreamRunnerBase:
-    """Base class for Docker-backed streaming code runners.
+    """Base class for streaming code runners with explicit execution modes.
 
-    This runner manages the Docker lifecycle and streams raw stdout/stderr
-    from a hijacked Docker socket. Subclasses only need to provide the
-    container command and optionally the environment mapping.
+    Supports two mutually exclusive modes:
+    - "docker": run inside a Docker container
+    - "subprocess": run as a local subprocess on the host
 
     The public entrypoint is `stream`, which yields `(slot, value)` tuples
     where `slot` is either ``"stdout"`` or ``"stderr"`` and ``value`` is a
@@ -39,8 +39,8 @@ class StreamRunnerBase:
         mem_limit: str = "256m",
         nano_cpus: int = 1_000_000_000,
         network_disabled: bool = True,
-        allow_subprocess: bool = True,
         ipc_mode: str | None = "host",
+        mode: str = "docker",
     ) -> None:
         """Initialize the stream runner.
 
@@ -57,7 +57,8 @@ class StreamRunnerBase:
         self.nano_cpus = nano_cpus
         self.network_disabled = network_disabled
         self.ipc_mode = ipc_mode
-        self.allow_subprocess = allow_subprocess
+        # Explicit execution mode: "docker" or "subprocess"
+        self.mode = mode
         # Runtime / lifecycle tracking for cooperative shutdown
         self._active_container_id: str | None = None
         self._active_sock: Any | None = None
@@ -110,8 +111,9 @@ class StreamRunnerBase:
             self.timeout_seconds,
         )
 
+        target = self._docker_run if (self.mode == "docker") else self._local_run
         worker = _threading.Thread(
-            target=self._docker_run,
+            target=target,
             kwargs={
                 "queue": queue,
                 "loop": loop,
@@ -254,28 +256,8 @@ class StreamRunnerBase:
         """
         command_str: str | None = None
         try:
-            # Attempt to acquire a Docker client; if unavailable, fallback to local subprocess
-            try:
-                client = self._get_docker_client()
-            except Exception as docker_unavailable:
-                log.debug(
-                    "Docker unavailable, falling back to local subprocess execution: %s",
-                    docker_unavailable,
-                )
-                if self.allow_subprocess:
-                    self._local_run(
-                        queue=queue,
-                        loop=loop,
-                        user_code=user_code,
-                        env=env,
-                        env_locals=env_locals,
-                        context=context,
-                        node=node,
-                        stdin_stream=stdin_stream,
-                    )
-                else:
-                    raise RuntimeError("Docker is not available")
-                return
+            # Acquire a Docker client; if unavailable, propagate error (no fallback in docker mode)
+            client = self._get_docker_client()
 
             image = self.image
             command = self.build_container_command(user_code, env_locals)

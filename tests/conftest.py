@@ -4,6 +4,7 @@ from pydantic import Field
 from fastapi.testclient import TestClient
 import httpx
 import pytest
+import os
 import pytest_asyncio
 from nodetool.api.server import create_app
 from nodetool.storage.memory_storage import MemoryStorage
@@ -51,6 +52,18 @@ async def setup_and_teardown(request):
     # manages loop lifecycle. Force-cancelling unknown tasks can corrupt the
     # loop state and trigger errors like missing _ssock on loop close.
 
+
+@pytest.fixture(autouse=True)
+def _set_dummy_api_keys(monkeypatch):
+    """Provide dummy API keys so provider constructors don't fail in unit tests.
+
+    These tests mock network calls; real keys are not required. Setting the env vars
+    prevents providers from raising ApiKeyMissingError during initialization.
+    """
+    monkeypatch.setenv("OPENAI_API_KEY", os.getenv("OPENAI_API_KEY", "test-openai-key"))
+    monkeypatch.setenv("ANTHROPIC_API_KEY", os.getenv("ANTHROPIC_API_KEY", "test-anthropic-key"))
+    monkeypatch.setenv("GEMINI_API_KEY", os.getenv("GEMINI_API_KEY", "test-gemini-key"))
+    monkeypatch.setenv("HF_TOKEN", os.getenv("HF_TOKEN", "test-hf-token"))
 
 @pytest.fixture(scope="function")
 def event_loop():

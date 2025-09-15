@@ -12,26 +12,38 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      
-      - name: Install FFmpeg via apt-get
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg
-          echo "FFmpeg version:"
-          ffmpeg -version
-          
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: "3.11"
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-
-      - name: Install dependencies
+      - name: Download packaged Conda environment
         run: |
-          uv pip install --system .
-          uv pip install --system pytest pytest-asyncio pytest-mock pytest-timeout aioresponses
+          set -e
+          TAG=$(curl -sL https://api.github.com/repos/nodetool-ai/nodetool/releases/latest | grep -m1 '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+          FILENAME=conda-env-linux-x64.tar.gz
+          URL="https://github.com/nodetool-ai/nodetool/releases/download/${TAG}/${FILENAME}"
+          echo "Downloading Conda env from ${URL}"
+          curl -L -o conda_env.tgz "$URL"
+          mkdir -p conda_env
+          tar -xzf conda_env.tgz -C conda_env
+          echo "CONDA_ENV_BIN=$(pwd)/conda_env/bin" >> $GITHUB_ENV
+
+      - name: Add Conda env to PATH
+        run: echo "$CONDA_ENV_BIN" >> $GITHUB_PATH
+
+      - name: Verify Python from packaged env
+        run: |
+          which python
+          python -V
+          uv pip -V
+
+      - name: Install project and test dependencies
+        run: |
+          uv pip install -e . --system
+          uv pip install -r requirements-dev.txt --system
 
       - name: Run Tests
+        env:
+          # Provide dummy keys to satisfy constructors; tests mock network
+          OPENAI_API_KEY: test-openai-key
+          ANTHROPIC_API_KEY: test-anthropic-key
+          GEMINI_API_KEY: test-gemini-key
+          HF_TOKEN: test-hf-token
         run: pytest tests/

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import pytest
 
 from nodetool.workflows.processing_context import ProcessingContext
@@ -12,6 +13,13 @@ class _Node:
         self.id = id
 
 
+def _runner() -> CommandDockerRunner:
+    # Use subprocess mode on Windows where Docker may be unavailable
+    if os.name == "nt":
+        return CommandDockerRunner(mode="subprocess")
+    return CommandDockerRunner()
+
+
 @pytest.mark.asyncio
 async def test_command_runner_seq_streams_lines():
     """seq 3 should yield three stdout lines: 1, 2, 3."""
@@ -19,7 +27,7 @@ async def test_command_runner_seq_streams_lines():
     node = _Node("n-seq")
 
     out: list[tuple[str, str]] = []
-    async for slot, value in CommandDockerRunner().stream(
+    async for slot, value in _runner().stream(
         user_code="seq 3",
         env_locals={},
         context=ctx,
@@ -44,7 +52,7 @@ async def test_command_runner_cat_streams_stdin_lines():
             await asyncio.sleep(0.02)
 
     out: list[tuple[str, str]] = []
-    async for slot, value in CommandDockerRunner().stream(
+    async for slot, value in _runner().stream(
         user_code="cat",
         env_locals={},
         context=ctx,
@@ -64,7 +72,7 @@ async def test_command_runner_cat_handles_empty_and_flush():
     node = _Node("n-cat-empty")
 
     out: list[tuple[str, str]] = []
-    async for slot, value in CommandDockerRunner().stream(
+    async for slot, value in _runner().stream(
         user_code="cat",
         env_locals={},
         context=ctx,
