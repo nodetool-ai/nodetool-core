@@ -2,29 +2,22 @@ from __future__ import annotations
 
 import asyncio
 import os
+from nodetool.workflows.base_node import BaseNode
 import pytest
 
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.code_runners.command_runner import CommandDockerRunner
 
 
-class _Node:
-    def __init__(self, id: str) -> None:
-        self.id = id
-
-
 def _runner() -> CommandDockerRunner:
-    # Use subprocess mode on Windows where Docker may be unavailable
-    if os.name == "nt":
-        return CommandDockerRunner(mode="subprocess")
-    return CommandDockerRunner()
+    return CommandDockerRunner(mode="subprocess")
 
 
 @pytest.mark.asyncio
 async def test_command_runner_seq_streams_lines():
     """seq 3 should yield three stdout lines: 1, 2, 3."""
     ctx = ProcessingContext()
-    node = _Node("n-seq")
+    node = BaseNode("n-seq")
 
     out: list[tuple[str, str]] = []
     async for slot, value in _runner().stream(
@@ -44,7 +37,7 @@ async def test_command_runner_seq_streams_lines():
 async def test_command_runner_cat_streams_stdin_lines():
     """cat should echo stdin lines as stdout lines in order."""
     ctx = ProcessingContext()
-    node = _Node("n-cat")
+    node = BaseNode("n-cat")
 
     async def stdin_gen():
         for line in ["alpha", "beta", "gamma"]:
@@ -69,7 +62,7 @@ async def test_command_runner_cat_streams_stdin_lines():
 async def test_command_runner_cat_handles_empty_and_flush():
     """When no stdin is provided, cat should not hang and produce no stdout."""
     ctx = ProcessingContext()
-    node = _Node("n-cat-empty")
+    node = BaseNode("n-cat-empty")
 
     out: list[tuple[str, str]] = []
     async for slot, value in _runner().stream(
@@ -84,4 +77,3 @@ async def test_command_runner_cat_handles_empty_and_flush():
     # No stdout lines expected when stdin is not opened
     stdout = [v for s, v in out if s == "stdout"]
     assert stdout == []
-
