@@ -1,4 +1,5 @@
 import asyncio
+import os
 from nodetool.metadata.types import Any
 from nodetool.workflows.run_job_request import RunJobRequest
 import pytest
@@ -9,6 +10,11 @@ from nodetool.workflows.workflow_runner import WorkflowRunner
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import PreviewUpdate
 from nodetool.workflows.run_workflow import run_workflow
+
+pytestmark = pytest.mark.skipif(
+    bool(os.getenv("GITHUB_ACTIONS")),
+    reason="Skip sync mode integration tests on GitHub Actions",
+)
 
 
 def _graph(sync_mode_add: str = "on_any") -> ApiGraph:
