@@ -119,11 +119,39 @@ jobs:
           echo "🔍 Validating wheel with twine:"
           twine check "$WHEEL_FILE"
 
+      - name: Generate PEP 658 sidecar metadata
+        run: |
+          echo "🔧 Generating sidecar metadata (.whl.metadata)"
+          python - << 'PY'
+import glob, os, zipfile
+
+wheel_paths = glob.glob("dist/*.whl")
+if not wheel_paths:
+    raise SystemExit("No wheel found in dist/")
+
+wheel = max(wheel_paths, key=os.path.getmtime)
+with zipfile.ZipFile(wheel) as zf:
+    metas = [n for n in zf.namelist() if n.endswith('.dist-info/METADATA')]
+    if not metas:
+        raise SystemExit("No METADATA found inside wheel")
+    metadata_bytes = zf.read(metas[0])
+
+out_path = wheel + ".metadata"
+with open(out_path, "wb") as f:
+    f.write(metadata_bytes)
+
+print(out_path)
+PY
+          echo "✅ Sidecar generated: $(ls -1 dist/*.whl.metadata)"
+          ls -lh dist/
+
       - name: Upload wheel artifact
         uses: actions/upload-artifact@v4
         with:
           name: wheel-${{ env.PACKAGE_NAME }}-${{ needs.validate.outputs.version }}
-          path: dist/*.whl
+          path: |
+            dist/*.whl
+            dist/*.whl.metadata
           retention-days: 30
 
   create-release:
@@ -182,7 +210,9 @@ jobs:
           tag_name: ${{ needs.validate.outputs.tag-name }}
           name: "${{ env.PACKAGE_NAME }} v${{ needs.validate.outputs.version }}"
           body_path: release_notes.md
-          files: dist/*.whl
+          files: |
+            dist/*.whl
+            dist/*.whl.metadata
           draft: false
           prerelease: ${{ needs.validate.outputs.is-prerelease }}
           generate_release_notes: true
