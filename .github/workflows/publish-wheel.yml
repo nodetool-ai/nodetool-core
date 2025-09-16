@@ -84,22 +84,14 @@ jobs:
         run: |
           curl -fsSL https://raw.githubusercontent.com/nodetool-ai/nodetool-core/main/build.py -o build.py
 
-      - name: Verify version in pyproject.toml
-        run: |
-          python build.py build-wheel --expected-version "${{ needs.validate.outputs.version }}" --skip-validate --skip-sidecar
-
       - name: Build wheel
         run: |
           echo "🏗️ Building wheel for ${{ env.PACKAGE_NAME }}"
-          python build.py build-wheel --skip-validate --skip-sidecar
+          python build.py build-wheel
 
       - name: Validate wheel
         run: |
           python build.py validate-wheel
-
-      - name: Generate PEP 658 sidecar metadata
-        run: |
-          python build.py sidecar
 
       - name: Upload wheel artifact
         uses: actions/upload-artifact@v4
