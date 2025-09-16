@@ -90,7 +90,7 @@ def _graph(sync_mode_add: str = "on_any") -> ApiGraph:
 
 async def _run_and_collect_values(graph: ApiGraph, preview_id: str) -> list[Any]:
     values: list[Any] = []
-    async for msg in run_workflow(RunJobRequest(graph=graph)):
+    async for msg in run_workflow(RunJobRequest(graph=graph), use_thread=False):
         if isinstance(msg, PreviewUpdate) and msg.node_id == preview_id:
             values.append(msg.value)
     return values
