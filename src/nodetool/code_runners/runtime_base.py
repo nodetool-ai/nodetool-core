@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-import asyncio as _asyncio
-import logging as _logging
-import os as _os
-import shlex as _shlex
+import asyncio
+import os
+import shlex
 import socket
-import subprocess as _subprocess
-import threading as _threading
+import subprocess
+import threading
 from typing import Any, AsyncGenerator, AsyncIterator
 
 from nodetool.workflows.base_node import BaseNode
@@ -63,7 +62,7 @@ class StreamRunnerBase:
         self._active_container_id: str | None = None
         self._active_sock: Any | None = None
         self._stopped: bool = False
-        self._lock = _threading.Lock()
+        self._lock = threading.Lock()
 
     # ---- Public API ----
     async def stream(
@@ -72,7 +71,6 @@ class StreamRunnerBase:
         env_locals: dict[str, Any],
         context: ProcessingContext,
         node: BaseNode,
-        allow_dynamic_outputs: bool = True,
         stdin_stream: AsyncIterator[str] | None = None,
     ) -> AsyncGenerator[tuple[str, Any], None]:
         """Run code inside Docker and stream output lines.
@@ -88,8 +86,6 @@ class StreamRunnerBase:
                 container. Subclasses may decide how these are used.
             context: Processing context for posting progress updates.
             node: Workflow node initiating this run.
-            allow_dynamic_outputs: Reserved for future use to permit dynamic
-                output slots. Currently unused by this base class.
             stdin_stream: Optional async iterator of text chunks to forward to
                 the container stdin. Chunks are encoded as UTF-8 and written in
                 order; EOF is signaled by shutting down the write side.
@@ -101,8 +97,8 @@ class StreamRunnerBase:
         Raises:
             RuntimeError: If container execution fails.
         """
-        queue: _asyncio.Queue[dict[str, Any]] = _asyncio.Queue()
-        loop = _asyncio.get_running_loop()
+        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        loop = asyncio.get_running_loop()
         env = {}
 
         log.debug(
@@ -112,7 +108,7 @@ class StreamRunnerBase:
         )
 
         target = self._docker_run if (self.mode == "docker") else self._local_run
-        worker = _threading.Thread(
+        worker = threading.Thread(
             target=target,
             kwargs={
                 "queue": queue,
@@ -122,7 +118,6 @@ class StreamRunnerBase:
                 "env_locals": env_locals,
                 "context": context,
                 "node": node,
-                "allow_dynamic_outputs": allow_dynamic_outputs,
                 "stdin_stream": stdin_stream,
             },
             daemon=True,
@@ -228,14 +223,13 @@ class StreamRunnerBase:
     # ---- Docker execution implementation ----
     def _docker_run(
         self,
-        queue: _asyncio.Queue[dict[str, Any]],
-        loop: _asyncio.AbstractEventLoop,
+        queue: asyncio.Queue[dict[str, Any]],
+        loop: asyncio.AbstractEventLoop,
         user_code: str,
         env: dict[str, Any],
         env_locals: dict[str, Any],
         context: ProcessingContext,
         node: BaseNode,
-        allow_dynamic_outputs: bool,
         stdin_stream: AsyncIterator[str] | None = None,
     ) -> None:
         """Blocking Docker workflow executed in a worker thread.
@@ -251,7 +245,6 @@ class StreamRunnerBase:
             env_locals: Additional locals for subclass-specific behavior.
             context: Processing context for progress messages.
             node: Node associated with the execution.
-            allow_dynamic_outputs: Reserved for future use.
             stdin_stream: Optional async iterator feeding container stdin.
         """
         command_str: str | None = None
@@ -269,7 +262,7 @@ class StreamRunnerBase:
             self._ensure_image(client, image, context, node)
 
             container = None
-            cancel_timer: _threading.Timer | None = None
+            cancel_timer: threading.Timer | None = None
             try:
                 container = self._create_container(
                     client, image, command, environment, context, stdin_stream
@@ -308,8 +301,8 @@ class StreamRunnerBase:
     def _local_run(
         self,
         *,
-        queue: _asyncio.Queue[dict[str, Any]],
-        loop: _asyncio.AbstractEventLoop,
+        queue: asyncio.Queue[dict[str, Any]],
+        loop: asyncio.AbstractEventLoop,
         user_code: str,
         env: dict[str, Any],
         env_locals: dict[str, Any],
@@ -324,47 +317,45 @@ class StreamRunnerBase:
         """
         log.debug("_local_run() begin: code=%s", user_code)
         command_vec: list[str] | None = None
-        proc: _subprocess.Popen[bytes] | None = None
-        cancel_timer: _threading.Timer | None = None
+        proc: subprocess.Popen[bytes] | None = None
+        cancel_timer: threading.Timer | None = None
         try:
             command_vec = self.build_container_command(user_code, env_locals)
             cmd_str = self._format_command_str(command_vec)
 
             # Prepare environment and working directory
-            proc_env = _os.environ.copy()
+            proc_env = os.environ.copy()
             proc_env.update(self.build_container_environment(env))
-            cwd = getattr(context, "workspace_dir", None) or _os.getcwd()
+            cwd = getattr(context, "workspace_dir", None) or os.getcwd()
 
             log.debug("starting local subprocess: cmd=%s cwd=%s", cmd_str, cwd)
-            proc = _subprocess.Popen(
+            proc = subprocess.Popen(
                 command_vec or [],
                 cwd=cwd,
                 env=proc_env,
                 # If no stdin stream is provided, explicitly close stdin so
                 # commands like `cat` see EOF immediately and do not hang.
                 stdin=(
-                    _subprocess.PIPE
-                    if stdin_stream is not None
-                    else _subprocess.DEVNULL
+                    subprocess.PIPE if stdin_stream is not None else subprocess.DEVNULL
                 ),
-                stdout=_subprocess.PIPE,
-                stderr=_subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
                 bufsize=1,  # line-buffered
                 universal_newlines=False,
             )
 
             # Start reader threads
-            stdout_thread: _threading.Thread | None = None
-            stderr_thread: _threading.Thread | None = None
+            stdout_thread: threading.Thread | None = None
+            stderr_thread: threading.Thread | None = None
             if proc.stdout is not None:
-                stdout_thread = _threading.Thread(
+                stdout_thread = threading.Thread(
                     target=self._reader_thread,
                     args=(proc.stdout, "stdout", queue, loop, context, node),
                     daemon=True,
                 )
                 stdout_thread.start()
             if proc.stderr is not None:
-                stderr_thread = _threading.Thread(
+                stderr_thread = threading.Thread(
                     target=self._reader_thread,
                     args=(proc.stderr, "stderr", queue, loop, context, node),
                     daemon=True,
@@ -380,16 +371,16 @@ class StreamRunnerBase:
                             if not data.endswith("\n"):
                                 data = data + "\n"
                             b = data.encode("utf-8")
-                            await _asyncio.to_thread(proc.stdin.write, b)
-                            await _asyncio.to_thread(proc.stdin.flush)
+                            await asyncio.to_thread(proc.stdin.write, b)
+                            await asyncio.to_thread(proc.stdin.flush)
                         try:
-                            await _asyncio.to_thread(proc.stdin.close)
+                            await asyncio.to_thread(proc.stdin.close)
                         except Exception:
                             pass
                     except Exception as e:
                         log.debug("local stdin feeder ended: %s", e)
 
-                _asyncio.run_coroutine_threadsafe(_feed(), loop)
+                asyncio.run_coroutine_threadsafe(_feed(), loop)
 
             # Optional timeout watchdog to terminate long-running local processes
             if self.timeout_seconds and self.timeout_seconds > 0:
@@ -402,7 +393,7 @@ class StreamRunnerBase:
                     except Exception:
                         pass
 
-                cancel_timer = _threading.Timer(self.timeout_seconds, _force_kill)
+                cancel_timer = threading.Timer(self.timeout_seconds, _force_kill)
                 cancel_timer.daemon = True
                 cancel_timer.start()
 
@@ -422,7 +413,7 @@ class StreamRunnerBase:
             if rc != 0:
                 raise RuntimeError(f"Process exited with code {rc}")
 
-            _asyncio.run_coroutine_threadsafe(
+            asyncio.run_coroutine_threadsafe(
                 queue.put({"type": "final", "ok": True}), loop
             )
         except Exception as e:
@@ -430,7 +421,7 @@ class StreamRunnerBase:
                 log.exception("_local_run() error for cmd=%s: %s", command_vec, e)
             except Exception:
                 pass
-            _asyncio.run_coroutine_threadsafe(
+            asyncio.run_coroutine_threadsafe(
                 queue.put({"type": "final", "ok": False, "error": str(e)}), loop
             )
         finally:
@@ -453,8 +444,8 @@ class StreamRunnerBase:
         self,
         pipe,  # IO[bytes]
         slot: str,
-        queue: _asyncio.Queue[dict[str, Any]],
-        loop: _asyncio.AbstractEventLoop,
+        queue: asyncio.Queue[dict[str, Any]],
+        loop: asyncio.AbstractEventLoop,
         context: ProcessingContext,
         node: BaseNode,
     ) -> None:
@@ -505,7 +496,7 @@ class StreamRunnerBase:
             quoting fails, or ``None`` if ``command`` is ``None``.
         """
         try:
-            return " ".join(_shlex.quote(part) for part in (command or []))
+            return " ".join(shlex.quote(part) for part in (command or []))
         except Exception:
             return str(command)
 
@@ -676,7 +667,7 @@ class StreamRunnerBase:
         self,
         sock: Any,
         stdin_stream: AsyncIterator[str] | None,
-        loop: _asyncio.AbstractEventLoop,
+        loop: asyncio.AbstractEventLoop,
     ) -> None:  # type: ignore[no-untyped-def]
         """Start an async task that forwards text chunks to container stdin.
 
@@ -705,11 +696,11 @@ class StreamRunnerBase:
                     bytes_sent += len(payload)
                     log.debug("feeding stdin to container: %s", payload)
                     # Avoid blocking the event loop with a socket send
-                    await _asyncio.to_thread(sock._sock.send, payload)
+                    await asyncio.to_thread(sock._sock.send, payload)
 
                 try:
                     # Shutdown writing side so the container sees EOF on stdin
-                    await _asyncio.to_thread(sock._sock.shutdown, socket.SHUT_WR)
+                    await asyncio.to_thread(sock._sock.shutdown, socket.SHUT_WR)
                 except Exception:
                     pass
 
@@ -721,9 +712,9 @@ class StreamRunnerBase:
                 log.debug("stdin feed error: %s", e)
 
         # Always run on the current loop that owns stream(), per design.
-        _asyncio.run_coroutine_threadsafe(feed_stdin(), loop)
+        asyncio.run_coroutine_threadsafe(feed_stdin(), loop)
 
-    def _start_timeout_timer(self, container: Any) -> _threading.Timer | None:  # type: ignore[no-untyped-def]
+    def _start_timeout_timer(self, container: Any) -> threading.Timer | None:  # type: ignore[no-untyped-def]
         """Start a watchdog timer that force-removes the container on timeout.
 
         Args:
@@ -743,7 +734,7 @@ class StreamRunnerBase:
             except Exception:
                 pass
 
-        cancel_timer = _threading.Timer(self.timeout_seconds, _force_kill)
+        cancel_timer = threading.Timer(self.timeout_seconds, _force_kill)
         cancel_timer.daemon = True
         cancel_timer.start()
         log.debug("timeout timer started: %ss", self.timeout_seconds)
@@ -775,8 +766,8 @@ class StreamRunnerBase:
 
     def _emit_line(
         self,
-        queue: _asyncio.Queue[dict[str, Any]],
-        loop: _asyncio.AbstractEventLoop,
+        queue: asyncio.Queue[dict[str, Any]],
+        loop: asyncio.AbstractEventLoop,
         context: ProcessingContext,
         node: BaseNode,
         slot: str,
@@ -793,7 +784,7 @@ class StreamRunnerBase:
         if not line.endswith("\n"):
             line = f"{line}\n"
         log.debug("emit %s: %s", slot, line)
-        _asyncio.run_coroutine_threadsafe(
+        asyncio.run_coroutine_threadsafe(
             queue.put({"type": "yield", "slot": slot, "value": line}),
             loop,
         )
@@ -814,8 +805,8 @@ class StreamRunnerBase:
     def _stream_hijacked_output(
         self,
         sock: Any,
-        queue: _asyncio.Queue[dict[str, Any]],
-        loop: _asyncio.AbstractEventLoop,
+        queue: asyncio.Queue[dict[str, Any]],
+        loop: asyncio.AbstractEventLoop,
         context: ProcessingContext,
         node: BaseNode,
     ) -> None:
@@ -861,7 +852,7 @@ class StreamRunnerBase:
             self._emit_line(queue, loop, context, node, "stderr", stderr_buf)
 
     def _finalize_success(
-        self, queue: _asyncio.Queue[dict[str, Any]], loop: _asyncio.AbstractEventLoop
+        self, queue: asyncio.Queue[dict[str, Any]], loop: asyncio.AbstractEventLoop
     ) -> None:
         """Signal successful completion to the consumer loop.
 
@@ -869,13 +860,13 @@ class StreamRunnerBase:
             queue: Async queue used by the stream.
             loop: Event loop that owns the queue.
         """
-        _asyncio.run_coroutine_threadsafe(
+        asyncio.run_coroutine_threadsafe(
             queue.put({"type": "final", "ok": True}),
             loop,
         )
 
     def _cleanup_container(
-        self, container: Any | None, cancel_timer: _threading.Timer | None
+        self, container: Any | None, cancel_timer: threading.Timer | None
     ) -> None:
         """Best-effort cleanup of timer and container resources.
 
@@ -901,8 +892,8 @@ class StreamRunnerBase:
         self,
         e: Exception,
         command_str: str | None,
-        queue: _asyncio.Queue[dict[str, Any]],
-        loop: _asyncio.AbstractEventLoop,
+        queue: asyncio.Queue[dict[str, Any]],
+        loop: asyncio.AbstractEventLoop,
     ) -> None:
         """Report an error from the worker thread back to the consumer.
 
@@ -918,7 +909,7 @@ class StreamRunnerBase:
             )
         else:
             log.exception("_docker_run() error: %s", e)
-        _asyncio.run_coroutine_threadsafe(
+        asyncio.run_coroutine_threadsafe(
             queue.put({"type": "final", "ok": False, "error": str(e)}), loop
         )
 
@@ -926,7 +917,7 @@ class StreamRunnerBase:
 # ---- Manual CLI for smoke testing ----
 if __name__ == "__main__":
     import argparse as _argparse
-    import os as _os
+    import os as os
 
     class _BashStreamRunner(StreamRunnerBase):
         def build_container_command(
@@ -941,7 +932,7 @@ if __name__ == "__main__":
             return
         import sys as _sys
 
-        data = await _asyncio.to_thread(_sys.stdin.read)
+        data = await asyncio.to_thread(_sys.stdin.read)
         if data:
             yield data
 
@@ -963,7 +954,7 @@ if __name__ == "__main__":
             "--cpus", type=int, default=1_000_000_000, help="Container CPU in nano CPUs"
         )
         parser.add_argument(
-            "--workspace", default=_os.getcwd(), help="Directory to mount at /workspace"
+            "--workspace", default=os.getcwd(), help="Directory to mount at /workspace"
         )
         parser.add_argument(
             "--stdin", action="store_true", help="Forward stdin to the container"
@@ -991,7 +982,6 @@ if __name__ == "__main__":
             env_locals={},
             context=context,
             node=node,  # type: ignore[arg-type]
-            allow_dynamic_outputs=True,
             stdin_stream=stdin_iter,
         ):
             try:
@@ -1001,4 +991,4 @@ if __name__ == "__main__":
             # Print without adding extra newlines; values already newline-terminated in runner
             print(f"[{slot}] {text}", end="")
 
-    _asyncio.run(_main())
+    asyncio.run(_main())

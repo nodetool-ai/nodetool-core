@@ -65,7 +65,7 @@ if __name__ == "__main__":
                 yield line
                 await asyncio.sleep(0.05)
 
-        async for slot, value in CommandDockerRunner().stream(
+        async for slot, value in CommandDockerRunner(mode="subprocess").stream(
             user_code=user_code,
             env_locals={},
             context=ctx,  # type: ignore[arg-type]
