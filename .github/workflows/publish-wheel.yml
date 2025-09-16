@@ -8,23 +8,23 @@ on:
   # Trigger on version tags
   push:
     tags:
-      - 'v*.*.*'
-      
+      - "v*.*.*"
+
   # Manual trigger for testing
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version to release (e.g., 0.6.0)'
+        description: "Version to release (e.g., 0.6.0)"
         required: true
         type: string
       prerelease:
-        description: 'Mark as prerelease'
+        description: "Mark as prerelease"
         required: false
         default: false
         type: boolean
 
 env:
-  PACKAGE_NAME: ${{ github.event.repository.name }}  # e.g., "nodetool-base"
+  PACKAGE_NAME: ${{ github.event.repository.name }} # e.g., "nodetool-base"
 
 jobs:
   validate:
@@ -46,17 +46,17 @@ jobs:
             VERSION="${TAG_NAME#v}"
             IS_PRERELEASE="false"
           fi
-          
+
           # Validate version format
           if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([a-zA-Z][0-9]*)?$ ]]; then
             echo "❌ Invalid version format: $VERSION"
             exit 1
           fi
-          
+
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "tag-name=$TAG_NAME" >> $GITHUB_OUTPUT
           echo "is-prerelease=$IS_PRERELEASE" >> $GITHUB_OUTPUT
-          
+
           echo "📋 Version: $VERSION"
           echo "🏷️ Tag: $TAG_NAME"
           echo "🔄 Prerelease: $IS_PRERELEASE"
@@ -69,56 +69,56 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ needs.validate.outputs.tag-name }}
-          
+
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.11'
-          
+          python-version: "3.11"
+
       - name: Install build dependencies
         run: |
           pip install --upgrade pip
           pip install build hatchling twine
-          
+
       - name: Verify version in pyproject.toml
         run: |
           EXPECTED_VERSION="${{ needs.validate.outputs.version }}"
           PYPROJECT_VERSION=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")
-          
+
           if [ "$PYPROJECT_VERSION" != "$EXPECTED_VERSION" ]; then
             echo "❌ Version mismatch: pyproject.toml has $PYPROJECT_VERSION, expected $EXPECTED_VERSION"
             exit 1
           fi
-          
+
           echo "✅ Version verified: $PYPROJECT_VERSION"
-          
+
       - name: Build wheel
         run: |
           echo "🏗️ Building wheel for ${{ env.PACKAGE_NAME }}"
           python -m build --wheel
-          
+
           # Verify wheel was created
           WHEEL_FILE=$(find dist/ -name "*.whl" -type f)
           if [ -z "$WHEEL_FILE" ]; then
             echo "❌ No wheel file found in dist/"
             exit 1
           fi
-          
+
           echo "✅ Built wheel: $(basename $WHEEL_FILE)"
           echo "📊 Wheel size: $(du -h $WHEEL_FILE | cut -f1)"
-          
+
       - name: Validate wheel
         run: |
           WHEEL_FILE=$(find dist/ -name "*.whl" -type f)
-          
+
           # Check wheel contents
           echo "🔍 Wheel contents:"
           python -m zipfile -l "$WHEEL_FILE" | head -20
-          
+
           # Validate with twine
           echo "🔍 Validating wheel with twine:"
           twine check "$WHEEL_FILE"
-          
+
       - name: Upload wheel artifact
         uses: actions/upload-artifact@v4
         with:
@@ -136,46 +136,46 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ needs.validate.outputs.tag-name }}
-          
+
       - name: Download wheel artifact
         uses: actions/download-artifact@v4
         with:
           name: wheel-${{ env.PACKAGE_NAME }}-${{ needs.validate.outputs.version }}
           path: dist/
-          
+
       - name: Generate release notes
         id: release-notes
         run: |
           VERSION="${{ needs.validate.outputs.version }}"
           PACKAGE="${{ env.PACKAGE_NAME }}"
-          
+
           # Generate automatic release notes
           cat > release_notes.md << EOF
           ## $PACKAGE v$VERSION
-          
+
           ### 📦 Package Information
           - **Package**: \`$PACKAGE\`
           - **Version**: \`$VERSION\`
           - **Python**: \`>=3.11\`
-          
+
           ### 📥 Installation
           \`\`\`bash
           # From NodeTool registry
           pip install --index-url https://nodetool-ai.github.io/nodetool-registry/simple/ $PACKAGE
-          
+
           # Direct from release
           pip install https://github.com/${{ github.repository }}/releases/download/${{ needs.validate.outputs.tag-name }}/$PACKAGE-$VERSION-py3-none-any.whl
           \`\`\`
-          
+
           ### 🔗 Dependencies
           - \`nodetool-core>=0.6.0,<0.7.0\`
-          
+
           ---
           *This release was automatically generated from tag \`${{ needs.validate.outputs.tag-name }}\`*
           EOF
-          
+
           echo "📄 Generated release notes"
-          
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
@@ -188,7 +188,7 @@ jobs:
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          
+
       - name: Notify registry
         if: success()
         run: |
@@ -207,7 +207,7 @@ jobs:
                 "release_url": "${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ needs.validate.outputs.tag-name }}"
               }
             }' || echo "⚠️ Failed to notify registry (non-fatal)"
-          
+
       - name: Create success summary
         run: |
           echo "## ✅ Release Published Successfully" >> $GITHUB_STEP_SUMMARY
