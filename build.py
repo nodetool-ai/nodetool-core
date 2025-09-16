@@ -37,45 +37,26 @@ import subprocess
 import sys
 import zipfile
 from pathlib import Path
-from typing import Iterable, List, Optional
+from typing import Optional
 
 
 def _echo(message: str) -> None:
     print(message)
 
 
-def _run(cmd: list[str], *, check: bool = True) -> int:
+def _run(cmd: list[str], *, check: bool = True, cwd: Optional[Path] = None) -> int:
     """Run a command, streaming output, returning the exit code.
 
     Raises SystemExit with the exit code when check=True and the command fails.
     """
     _echo(" ".join(cmd))
-    proc = subprocess.run(cmd)
+    proc = subprocess.run(cmd, cwd=str(cwd) if cwd is not None else None)
     if check and proc.returncode != 0:
         raise SystemExit(proc.returncode)
     return proc.returncode
 
 
-def _ensure_modules(modules: Iterable[str]) -> None:
-    """Ensure required Python modules are importable; install via pip if not.
-
-    This function tries to import each module; if it fails, it performs a
-    best-effort installation via pip. If installation fails, we surface the
-    error naturally from pip.
-    """
-    missing: list[str] = []
-    for m in modules:
-        try:
-            __import__(m)
-        except Exception:
-            missing.append(m)
-
-    if missing:
-        _echo(f"Installing missing modules: {', '.join(missing)}")
-        _run([sys.executable, "-m", "pip", "install", *missing])
-
-
-def _find_latest_wheel(dist_dir: Path = Path("dist")) -> Path:
+def _find_latest_wheel(dist_dir: Path) -> Path:
     if not dist_dir.exists():
         raise SystemExit("dist/ does not exist; build a wheel first")
     wheels = sorted(dist_dir.glob("*.whl"), key=lambda p: p.stat().st_mtime)
@@ -116,11 +97,11 @@ def _generate_sidecar(wheel_path: Path) -> Path:
 
 def cmd_build_wheel(args: argparse.Namespace) -> None:
     expected_version: Optional[str] = args.expected_version
-    skip_validate: bool = args.skip_validate
     skip_sidecar: bool = args.skip_sidecar
 
-    # Ensure build frontend is available
-    _ensure_modules(["build"])  # twine only needed when validating
+    # Determine project directory (where this script is executed)
+    project_dir = Path.cwd().resolve()
+    dist_dir = project_dir / "dist"
 
     if expected_version:
         actual = _read_pyproject_version()
@@ -129,14 +110,11 @@ def cmd_build_wheel(args: argparse.Namespace) -> None:
                 f"Version mismatch: pyproject.toml has {actual}, expected {expected_version}"
             )
 
-    _run([sys.executable, "-m", "build", "--wheel"])  # outputs to dist/
-    wheel = _find_latest_wheel(Path("dist"))
+    # Run PEP 517 build in a safe CWD to avoid importing this script as 'build'
+    safe_cwd = project_dir.parent if project_dir.parent != project_dir else Path("/")
+    _run([sys.executable, "-m", "build", "--wheel", str(project_dir)], cwd=safe_cwd)
+    wheel = _find_latest_wheel(dist_dir)
     _echo(f"✅ Built wheel: {wheel.name}")
-
-    if not skip_validate:
-        _ensure_modules(["twine"])  # install if missing
-        _run(["twine", "check", str(wheel)])
-        _echo("✅ Twine validation passed")
 
     if not skip_sidecar:
         sidecar = _generate_sidecar(wheel)
@@ -153,14 +131,13 @@ def cmd_build_wheel(args: argparse.Namespace) -> None:
 
 
 def cmd_validate_wheel(_: argparse.Namespace) -> None:
-    _ensure_modules(["twine"])  # install if missing
-    wheel = _find_latest_wheel(Path("dist"))
+    wheel = _find_latest_wheel(Path.cwd() / "dist")
     _run(["twine", "check", str(wheel)])
     _echo("✅ Twine validation passed")
 
 
 def cmd_sidecar(_: argparse.Namespace) -> None:
-    wheel = _find_latest_wheel(Path("dist"))
+    wheel = _find_latest_wheel(Path.cwd() / "dist")
     sidecar = _generate_sidecar(wheel)
     _echo(f"✅ Sidecar created: {sidecar.name}")
 
@@ -272,11 +249,6 @@ def build_parser() -> argparse.ArgumentParser:
         "build-wheel", help="Build wheel, optionally validate and create sidecar"
     )
     p_build.add_argument("--expected-version", help="Expected version to enforce")
-    p_build.add_argument(
-        "--skip-validate",
-        action="store_true",
-        help="Skip twine validation",
-    )
     p_build.add_argument(
         "--skip-sidecar",
         action="store_true",
