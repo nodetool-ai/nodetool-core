@@ -528,8 +528,6 @@ def package():
     pass
 
 
-
-
 @package.command("list")
 @click.option(
     "--available", "-a", is_flag=True, help="List available packages from the registry"
