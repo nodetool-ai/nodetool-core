@@ -122,26 +122,19 @@ jobs:
       - name: Generate PEP 658 sidecar metadata
         run: |
           echo "🔧 Generating sidecar metadata (.whl.metadata)"
-          python - << 'PY'
-import glob, os, zipfile
-
-wheel_paths = glob.glob("dist/*.whl")
-if not wheel_paths:
-    raise SystemExit("No wheel found in dist/")
-
-wheel = max(wheel_paths, key=os.path.getmtime)
-with zipfile.ZipFile(wheel) as zf:
-    metas = [n for n in zf.namelist() if n.endswith('.dist-info/METADATA')]
-    if not metas:
-        raise SystemExit("No METADATA found inside wheel")
-    metadata_bytes = zf.read(metas[0])
-
-out_path = wheel + ".metadata"
-with open(out_path, "wb") as f:
-    f.write(metadata_bytes)
-
-print(out_path)
-PY
+          set -euo pipefail
+          WHEEL_FILE=$(ls -t dist/*.whl | head -n1)
+          if [ -z "${WHEEL_FILE:-}" ]; then
+            echo "No wheel found in dist/"
+            exit 1
+          fi
+          META_PATH=$(unzip -Z1 "$WHEEL_FILE" | grep -E '\\.dist-info/METADATA$' | head -n1)
+          if [ -z "${META_PATH:-}" ]; then
+            echo "No METADATA found inside wheel"
+            exit 1
+          fi
+          unzip -p "$WHEEL_FILE" "$META_PATH" > "$WHEEL_FILE.metadata"
+          echo "$WHEEL_FILE.metadata"
           echo "✅ Sidecar generated: $(ls -1 dist/*.whl.metadata)"
           ls -lh dist/
 
