@@ -444,36 +444,36 @@ if __name__ == "__main__":
                 )
                 for tc in resp.tool_calls:
                     print(f"  - {tc.name}: {tc.args}")
-                    tool = next((t for t in tools if t.name == tc.name), None)
-                    if not tool:
+                    selected_tool = next((t for t in tools if t.name == tc.name), None)
+                    if selected_tool is None:
                         continue
-                    result = await tool.process(context, tc.args or {})
+
+                    result = await selected_tool.process(context, tc.args or {})
                     print(f"  - Tool result: {result}")
 
-                # Use standard OpenAI approach only
-                print("🔄 Testing standard OpenAI tool calling approach...")
+                    print("🔄 Testing standard OpenAI tool calling approach...")
 
-                try:
-                    messages.append(
-                        Message(
-                            role="tool",
-                            name=tool.name,
-                            tool_call_id=tc.id,
-                            content=json.dumps(result),
+                    try:
+                        messages.append(
+                            Message(
+                                role="tool",
+                                name=selected_tool.name,
+                                tool_call_id=tc.id,
+                                content=json.dumps(result),
+                            )
                         )
-                    )
-                    final = await provider.generate_message(
-                        messages=messages, model=model, tools=tools, max_tokens=64
-                    )
-                    content_str = (
-                        final.content if isinstance(final.content, str) else ""
-                    )
-                    print("✅ OpenAI approach: SUCCESS -", content_str.strip())
-                except Exception as e:
-                    print("❌ OpenAI approach failed:", e)
-                    print(
-                        "Tool execution successful but conversation continuation failed."
-                    )
+                        final = await provider.generate_message(
+                            messages=messages, model=model, tools=tools, max_tokens=64
+                        )
+                        content_str = (
+                            final.content if isinstance(final.content, str) else ""
+                        )
+                        print("✅ OpenAI approach: SUCCESS -", content_str.strip())
+                    except Exception as e:
+                        print("❌ OpenAI approach failed:", e)
+                        print(
+                            "Tool execution successful but conversation continuation failed."
+                        )
             else:
                 content_str = resp.content if isinstance(resp.content, str) else ""
                 print("❌ No tool call returned. Model said:", content_str.strip())

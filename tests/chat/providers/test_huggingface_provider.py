@@ -154,7 +154,9 @@ class TestHuggingFaceProvider(BaseProviderTest):
     def provider_name(self):
         return "huggingface"
 
-    def create_huggingface_response(self, content: str = "Hello, world!") -> Dict[str, Any]:
+    def create_huggingface_response(
+        self, content: str = "Hello, world!"
+    ) -> Dict[str, Any]:
         """Create a realistic HuggingFace TGI API response."""
         return {
             "id": "chatcmpl-123",
@@ -164,21 +166,16 @@ class TestHuggingFaceProvider(BaseProviderTest):
             "choices": [
                 {
                     "index": 0,
-                    "message": {
-                        "role": "assistant",
-                        "content": content
-                    },
-                    "finish_reason": "stop"
+                    "message": {"role": "assistant", "content": content},
+                    "finish_reason": "stop",
                 }
             ],
-            "usage": {
-                "prompt_tokens": 10,
-                "completion_tokens": 15,
-                "total_tokens": 25
-            }
+            "usage": {"prompt_tokens": 10, "completion_tokens": 15, "total_tokens": 25},
         }
 
-    def create_huggingface_streaming_responses(self, text: str = "Hello world!") -> List[str]:
+    def create_huggingface_streaming_responses(
+        self, text: str = "Hello world!"
+    ) -> List[str]:
         """Create realistic HuggingFace TGI streaming response chunks."""
         chunks = []
         words = text.split()
@@ -196,16 +193,16 @@ class TestHuggingFaceProvider(BaseProviderTest):
                     {
                         "index": 0,
                         "delta": {"content": content},
-                        "finish_reason": "stop" if is_last else None
+                        "finish_reason": "stop" if is_last else None,
                     }
-                ]
+                ],
             }
 
             if is_last:
                 chunk["usage"] = {
                     "prompt_tokens": 10,
                     "completion_tokens": len(words),
-                    "total_tokens": 10 + len(words)
+                    "total_tokens": 10 + len(words),
                 }
 
             chunks.append(f"data: {json.dumps(chunk)}")
@@ -219,34 +216,34 @@ class TestHuggingFaceProvider(BaseProviderTest):
             return httpx.HTTPStatusError(
                 message="Model not found",
                 request=MagicMock(),
-                response=MagicMock(status_code=404, text="Model not found")
+                response=MagicMock(status_code=404, text="Model not found"),
             )
         elif error_type == "context_length":
             return httpx.HTTPStatusError(
                 message="Request too large",
                 request=MagicMock(),
-                response=MagicMock(status_code=413, text="Context length exceeded")
+                response=MagicMock(status_code=413, text="Context length exceeded"),
             )
         elif error_type == "token_limit":
             return httpx.HTTPStatusError(
                 message="Request too large",
                 request=MagicMock(),
-                response=MagicMock(status_code=413, text="Context length exceeded")
+                response=MagicMock(status_code=413, text="Context length exceeded"),
             )
         elif error_type == "rate_limit":
             return httpx.HTTPStatusError(
                 message="Rate limit exceeded",
                 request=MagicMock(),
-                response=MagicMock(status_code=429, text="Too many requests")
+                response=MagicMock(status_code=429, text="Too many requests"),
             )
         else:
             return httpx.HTTPStatusError(
                 message="Server error",
                 request=MagicMock(),
-                response=MagicMock(status_code=500, text="Internal server error")
+                response=MagicMock(status_code=500, text="Internal server error"),
             )
 
-    def mock_api_call(self, response_data: Dict[str, Any]):
+    def mock_api_call(self, response_data: Dict[str, Any]) -> MagicMock:
         """Mock HuggingFace chat_completion call on AsyncInferenceClient."""
         content = response_data.get("text", "Hello, world!")
 
@@ -274,7 +271,9 @@ class TestHuggingFaceProvider(BaseProviderTest):
         async def mock_chat_completion(*args, **kwargs):
             return _Completion(content)
 
-        return patch.object(AsyncInferenceClient, "chat_completion", side_effect=mock_chat_completion)
+        return patch.object(
+            AsyncInferenceClient, "chat_completion", side_effect=mock_chat_completion
+        )  # type: ignore[return-value]
 
     def mock_streaming_call(self, chunks: List[Dict[str, Any]]):
         """Mock HuggingFace TGI streaming API call."""
@@ -296,10 +295,12 @@ class TestHuggingFaceProvider(BaseProviderTest):
                 self.choices = [_Choice(content, done)]
                 # Only the last chunk includes usage
                 if is_last:
+
                     class _Usage:
                         prompt_tokens = 10
                         completion_tokens = len(text.split())
                         total_tokens = 10 + len(text.split())
+
                     self.usage = _Usage()
                 else:
                     self.usage = None
@@ -314,7 +315,9 @@ class TestHuggingFaceProvider(BaseProviderTest):
         async def mock_chat_completion(*args, **kwargs):
             return mock_stream()
 
-        return patch.object(AsyncInferenceClient, "chat_completion", side_effect=mock_chat_completion)
+        return patch.object(
+            AsyncInferenceClient, "chat_completion", side_effect=mock_chat_completion
+        )
 
     def mock_error_response(self, error_type: str):
         """Mock HuggingFace API error response."""
@@ -326,10 +329,11 @@ class TestHuggingFaceProvider(BaseProviderTest):
         """Test integration with Text Generation Inference server."""
         provider = self.create_provider()
 
-        with self.mock_api_call(ResponseFixtures.simple_text_response("TGI server response")):
+        with self.mock_api_call(
+            ResponseFixtures.simple_text_response("TGI server response")
+        ):
             response = await provider.generate_message(
-                self.create_simple_messages(),
-                "microsoft/DialoGPT-medium"
+                self.create_simple_messages(), "microsoft/DialoGPT-medium"
             )
 
         assert response.role == "assistant"
@@ -343,14 +347,15 @@ class TestHuggingFaceProvider(BaseProviderTest):
             "microsoft/DialoGPT-medium",
             "EleutherAI/gpt-j-6b",
             "bigscience/bloom-1b7",
-            "huggingface/CodeBERTa-small-v1"
+            "huggingface/CodeBERTa-small-v1",
         ]
 
         for model in models:
-            with self.mock_api_call(ResponseFixtures.simple_text_response(f"Response from {model}")):
+            with self.mock_api_call(
+                ResponseFixtures.simple_text_response(f"Response from {model}")
+            ):
                 response = await provider.generate_message(
-                    self.create_simple_messages(f"Test {model}"),
-                    model
+                    self.create_simple_messages(f"Test {model}"), model
                 )
             assert response.role == "assistant"
 
@@ -359,11 +364,10 @@ class TestHuggingFaceProvider(BaseProviderTest):
         """Test custom generation parameters."""
         provider = self.create_provider()
 
-        with self.mock_api_call(ResponseFixtures.simple_text_response("Custom response")) as mock_call:
-            await provider.generate_message(
-                self.create_simple_messages(),
-                "test-model"
-            )
+        with self.mock_api_call(
+            ResponseFixtures.simple_text_response("Custom response")
+        ) as mock_call:
+            await provider.generate_message(self.create_simple_messages(), "test-model")
 
         # Verify parameters were passed
         mock_call.assert_called_once()
@@ -377,10 +381,17 @@ class TestHuggingFaceProvider(BaseProviderTest):
             with pytest.raises(Exception) as exc_info:
                 very_long_text = "This is a very long message. " * 1000
                 await provider.generate_message(
-                    [Message(role="user", content=[MessageTextContent(text=very_long_text)])],
-                    "test-model"
+                    [
+                        Message(
+                            role="user",
+                            content=[MessageTextContent(text=very_long_text)],
+                        )
+                    ],
+                    "test-model",
                 )
-            assert "413" in str(exc_info.value) or "context" in str(exc_info.value).lower()
+            assert (
+                "413" in str(exc_info.value) or "context" in str(exc_info.value).lower()
+            )
 
     @pytest.mark.asyncio
     async def test_rate_limiting(self):
@@ -390,8 +401,7 @@ class TestHuggingFaceProvider(BaseProviderTest):
         with self.mock_error_response("rate_limit"):
             with pytest.raises(Exception) as exc_info:
                 await provider.generate_message(
-                    self.create_simple_messages(),
-                    "test-model"
+                    self.create_simple_messages(), "test-model"
                 )
             assert "429" in str(exc_info.value) or "rate" in str(exc_info.value).lower()
 
@@ -404,8 +414,7 @@ class TestHuggingFaceProvider(BaseProviderTest):
         with self.mock_error_response("model_not_found"):
             with pytest.raises(Exception):
                 await provider.generate_message(
-                    self.create_simple_messages(),
-                    "nonexistent/model"
+                    self.create_simple_messages(), "nonexistent/model"
                 )
 
     @pytest.mark.asyncio
@@ -413,11 +422,10 @@ class TestHuggingFaceProvider(BaseProviderTest):
         """Test custom stopping sequences."""
         provider = self.create_provider()
 
-        with self.mock_api_call(ResponseFixtures.simple_text_response("Response with stop")) as mock_call:
-            await provider.generate_message(
-                self.create_simple_messages(),
-                "test-model"
-            )
+        with self.mock_api_call(
+            ResponseFixtures.simple_text_response("Response with stop")
+        ) as mock_call:
+            await provider.generate_message(self.create_simple_messages(), "test-model")
 
         mock_call.assert_called_once()
 
@@ -433,9 +441,12 @@ class TestHuggingFaceProvider(BaseProviderTest):
         ]
 
         for model in quantized_models:
-            with self.mock_api_call(ResponseFixtures.simple_text_response(f"Quantized response from {model}")):
+            with self.mock_api_call(
+                ResponseFixtures.simple_text_response(
+                    f"Quantized response from {model}"
+                )
+            ):
                 response = await provider.generate_message(
-                    self.create_simple_messages(),
-                    model
+                    self.create_simple_messages(), model
                 )
             assert response.role == "assistant"

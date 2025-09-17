@@ -381,6 +381,8 @@ class HuggingFaceProvider(ChatProvider):
         base_delay = 1.0
         log.debug(f"Starting API call with max_retries={max_retries}")
 
+        completion: Any | None = None
+
         for attempt in range(max_retries + 1):
             try:
                 log.debug(f"API call attempt {attempt + 1}/{max_retries + 1}")
@@ -410,6 +412,9 @@ class HuggingFaceProvider(ChatProvider):
                     if status is not None:
                         raise Exception(f"{status} {body_text or str(e)}")
                     raise Exception(str(e))
+
+        if completion is None:
+            raise RuntimeError("HuggingFace chat completion did not return a response")
 
         # Update usage statistics if available
         if hasattr(completion, "usage") and completion.usage:
@@ -536,93 +541,101 @@ class HuggingFaceProvider(ChatProvider):
             async for chunk in stream:
                 chunk_count += 1
 
-            # Update usage statistics if available
-            if hasattr(chunk, "usage") and chunk.usage:
-                log.debug("Updating usage stats from streaming chunk")
-                self.usage["prompt_tokens"] = chunk.usage.prompt_tokens or 0
-                self.usage["completion_tokens"] = chunk.usage.completion_tokens or 0
-                self.usage["total_tokens"] = chunk.usage.total_tokens or 0
-                log.debug(f"Updated usage: {self.usage}")
+                if hasattr(chunk, "usage") and getattr(chunk, "usage", None):
+                    log.debug("Updating usage stats from streaming chunk")
+                    usage = chunk.usage  # type: ignore[attr-defined]
+                    self.usage["prompt_tokens"] = getattr(usage, "prompt_tokens", 0) or 0
+                    self.usage["completion_tokens"] = (
+                        getattr(usage, "completion_tokens", 0) or 0
+                    )
+                    self.usage["total_tokens"] = getattr(usage, "total_tokens", 0) or 0
+                    log.debug(f"Updated usage: {self.usage}")
 
-            if not chunk.choices:
-                log.debug("Chunk has no choices, skipping")
-            else:
-                choice = chunk.choices[0]
-                delta = choice.delta
+                choices = getattr(chunk, "choices", None)
+                if not choices:
+                    log.debug("Chunk has no choices, skipping")
+                    continue
+
+                choice = choices[0]
+                delta = getattr(choice, "delta", None)
                 log.debug(f"Processing delta with finish_reason: {choice.finish_reason}")
 
-            # Handle content chunks
-                if hasattr(delta, "content") and delta.content:
+                if delta and getattr(delta, "content", None):
                     yield Chunk(
                         content=delta.content,
                         done=choice.finish_reason == "stop",
                     )
 
-            # Handle tool call deltas
-                if hasattr(delta, "tool_calls") and delta.tool_calls:
+                if delta and getattr(delta, "tool_calls", None):
                     log.debug(f"Processing {len(delta.tool_calls)} tool call deltas")
                     for tool_call_delta in delta.tool_calls:
-                        index = tool_call_delta.index
+                        index = getattr(tool_call_delta, "index", 0)
                         log.debug(f"Processing tool call delta at index {index}")
 
-                    if index not in accumulated_tool_calls:
-                        accumulated_tool_calls[index] = {
-                            "id": tool_call_delta.id or "",
-                            "name": "",
-                            "arguments": "",
-                        }
-                        log.debug(f"Created new tool call at index {index}")
+                        if index not in accumulated_tool_calls:
+                            accumulated_tool_calls[index] = {
+                                "id": tool_call_delta.id or "",
+                                "name": "",
+                                "arguments": "",
+                            }
+                            log.debug(f"Created new tool call at index {index}")
 
-                    # Accumulate tool call data
-                    if tool_call_delta.id:
-                        accumulated_tool_calls[index]["id"] = tool_call_delta.id
-                        log.debug(f"Set tool call ID: {tool_call_delta.id}")
+                        if tool_call_delta.id:
+                            accumulated_tool_calls[index]["id"] = tool_call_delta.id
+                            log.debug(f"Set tool call ID: {tool_call_delta.id}")
 
-                    if tool_call_delta.function:
-                        if tool_call_delta.function.name:
-                            accumulated_tool_calls[index][
-                                "name"
-                            ] = tool_call_delta.function.name
-                            log.debug(
-                                f"Set tool call name: {tool_call_delta.function.name}"
-                            )
-                        if tool_call_delta.function.arguments:
-                            accumulated_tool_calls[index][
-                                "arguments"
-                            ] += tool_call_delta.function.arguments
-                            log.debug(
-                                f"Added arguments to tool call: {len(tool_call_delta.function.arguments)} chars"
-                            )
+                        function_delta = getattr(tool_call_delta, "function", None)
+                        if function_delta:
+                            if getattr(function_delta, "name", None):
+                                accumulated_tool_calls[index]["name"] = (
+                                    function_delta.name or ""
+                                )
+                                log.debug(
+                                    f"Set tool call name: {function_delta.name}"
+                                )
+                            if getattr(function_delta, "arguments", None):
+                                accumulated_tool_calls[index]["arguments"] += (
+                                    function_delta.arguments or ""
+                                )
+                                log.debug(
+                                    "Added arguments to tool call: %s chars",
+                                    len(function_delta.arguments or ""),
+                                )
 
-            # If streaming is complete and we have tool calls, yield them
-            if (chunk.choices and choice.finish_reason == "tool_calls" and accumulated_tool_calls):
-                log.debug(
-                    f"Streaming complete with {len(accumulated_tool_calls)} tool calls"
-                )
-                for tool_call_data in accumulated_tool_calls.values():
-                    try:
-                        args = json.loads(tool_call_data["arguments"])
-                        log.debug(
-                            f"Parsed arguments for tool: {tool_call_data['name']}"
-                        )
-                    except json.JSONDecodeError as e:
-                        log.warning(
-                            f"Failed to parse arguments for tool {tool_call_data['name']}: {e}"
-                        )
-                        args = {}
-
-                    yield ToolCall(
-                        id=tool_call_data["id"],
-                        name=tool_call_data["name"],
-                        args=args,
+                if (
+                    choices
+                    and choice.finish_reason == "tool_calls"
+                    and accumulated_tool_calls
+                ):
+                    log.debug(
+                        "Streaming complete with %d tool calls",
+                        len(accumulated_tool_calls),
                     )
-                log.debug("Yielded all accumulated tool calls")
-            # Some providers may not emit a final stop delta with content.
-            # When finish_reason indicates stop and no more deltas arrive,
-            # downstream expects a terminal done chunk. Emit a synthetic one.
-            if chunk.choices and choice.finish_reason == "stop":
-                log.debug("Finish reason is stop; emitting synthetic done chunk")
-                yield Chunk(content="", done=True)
+                    for tool_call_data in accumulated_tool_calls.values():
+                        try:
+                            args = json.loads(tool_call_data["arguments"])
+                            log.debug(
+                                "Parsed arguments for tool: %s",
+                                tool_call_data["name"],
+                            )
+                        except json.JSONDecodeError as err:
+                            log.warning(
+                                "Failed to parse arguments for tool %s: %s",
+                                tool_call_data["name"],
+                                err,
+                            )
+                            args = {}
+
+                        yield ToolCall(
+                            id=tool_call_data["id"],
+                            name=tool_call_data["name"],
+                            args=args,
+                        )
+                    log.debug("Yielded all accumulated tool calls")
+
+                if choices and choice.finish_reason == "stop":
+                    log.debug("Finish reason is stop; emitting synthetic done chunk")
+                    yield Chunk(content="", done=True)
         except Exception as e:
             status = getattr(getattr(e, "response", None), "status_code", None)
             body_text = getattr(getattr(e, "response", None), "text", None)

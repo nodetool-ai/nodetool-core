@@ -14,27 +14,36 @@ from nodetool.chat.providers.base import ChatProvider
 from nodetool.chat.chat import default_serializer
 from nodetool.metadata.types import Message, ToolCall
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.agents.tools import (
+from nodetool.agents.tools.asset_tools import (
+    ListAssetsDirectoryTool,
+    ReadAssetTool,
+    SaveAssetTool,
+)
+from nodetool.agents.tools.browser_tools import BrowserTool, ScreenshotTool
+from nodetool.agents.tools.email_tools import (
     AddLabelToEmailTool,
     ArchiveEmailTool,
-    BrowserTool,
-    ConvertPDFToMarkdownTool,
-    DownloadFileTool,
-    ExtractPDFTablesTool,
-    ExtractPDFTextTool,
+    SearchEmailTool,
+)
+from nodetool.agents.tools.google_tools import (
     GoogleGroundedSearchTool,
     GoogleImageGenerationTool,
-    GoogleImagesTool,
-    GoogleNewsTool,
-    GoogleSearchTool,
-    ListAssetsDirectoryTool,
+)
+from nodetool.agents.tools.http_tools import DownloadFileTool
+from nodetool.agents.tools.openai_tools import (
     OpenAIImageGenerationTool,
     OpenAITextToSpeechTool,
     OpenAIWebSearchTool,
-    ReadAssetTool,
-    SaveAssetTool,
-    ScreenshotTool,
-    SearchEmailTool,
+)
+from nodetool.agents.tools.pdf_tools import (
+    ConvertPDFToMarkdownTool,
+    ExtractPDFTablesTool,
+    ExtractPDFTextTool,
+)
+from nodetool.agents.tools.serp_tools import (
+    GoogleImagesTool,
+    GoogleNewsTool,
+    GoogleSearchTool,
 )
 from rich.status import Status
 from rich.console import Console

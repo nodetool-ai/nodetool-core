@@ -162,22 +162,20 @@ class Agent(BaseAgent):
 
     async def execute(
         self,
-        processing_context: ProcessingContext,
-    ) -> AsyncGenerator[
-        Union[TaskUpdate, Chunk, ToolCall, PlanningUpdate, SubTaskResult], None
-    ]:
+        context: ProcessingContext,
+    ) -> AsyncGenerator[Any, None]:
         """
         Execute the agent using the task plan.
 
         Args:
-            processing_context (ProcessingContext): The processing context
+            context (ProcessingContext): The processing context
 
         Yields:
             Union[Message, Chunk, ToolCall]: Execution progress
         """
         # Copy input files to the workspace directory if they are not already there
         if self.docker_image:
-            async for item in self._execute_in_docker(processing_context):
+            async for item in self._execute_in_docker(context):
                 yield item
             return
 
@@ -210,7 +208,7 @@ class Agent(BaseAgent):
                 model=self.planning_model,
                 reasoning_model=self.reasoning_model,
                 objective=self.objective,
-                workspace_dir=processing_context.workspace_dir,
+                workspace_dir=context.workspace_dir,
                 execution_tools=tools,
                 inputs=self.inputs,
                 output_schema=self.output_schema,
@@ -221,7 +219,7 @@ class Agent(BaseAgent):
             )
 
             async for chunk in task_planner_instance.create_task(
-                processing_context, self.objective
+                context, self.objective
             ):
                 yield chunk
 
@@ -257,7 +255,7 @@ class Agent(BaseAgent):
             executor = TaskExecutor(
                 provider=self.provider,
                 model=self.model,
-                processing_context=processing_context,
+                processing_context=context,
                 tools=list(self.tools),  # Ensure it's a list of Tool
                 task=self.task,
                 system_prompt=self.system_prompt,
@@ -268,7 +266,7 @@ class Agent(BaseAgent):
             )
 
             # Execute all subtasks within this task and yield results
-            async for item in executor.execute_tasks(processing_context):
+            async for item in executor.execute_tasks(context):
                 # Update tool_calls list if item is a ToolCall
                 if isinstance(item, ToolCall):
                     tool_calls.append(item)
@@ -342,10 +340,10 @@ class Agent(BaseAgent):
 
     async def _execute_in_docker(
         self,
-        processing_context: ProcessingContext,
+        context: ProcessingContext,
     ) -> AsyncGenerator[Chunk, None]:
         """Run the agent inside a Docker container."""
-        workspace = processing_context.workspace_dir
+        workspace = context.workspace_dir
         config = {
             "name": self.name,
             "objective": self.objective,

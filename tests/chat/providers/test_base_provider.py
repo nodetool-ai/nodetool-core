@@ -39,16 +39,16 @@ class MockTool(Tool):
             "type": "object",
             "properties": {
                 "query": {"type": "string"},
-                "count": {"type": "integer", "default": 1}
+                "count": {"type": "integer", "default": 1},
             },
-            "required": ["query"]
+            "required": ["query"],
         }
 
     async def process(self, context: ProcessingContext, params: Dict[str, Any]) -> Any:
         """Process the tool call with mock response."""
         return {
             "result": f"Mock result for: {params.get('query', 'unknown')}",
-            "count": params.get("count", 1)
+            "count": params.get("count", 1),
         }
 
 
@@ -69,88 +69,80 @@ class ResponseFixtures:
         return {
             "text": text,
             "role": "assistant",
-            "usage": {
-                "prompt_tokens": 10,
-                "completion_tokens": 5,
-                "total_tokens": 15
-            }
+            "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
         }
 
     @staticmethod
-    def streaming_response_chunks(text: str = "Hello world!", chunk_size: int = 5) -> List[Dict[str, Any]]:
+    def streaming_response_chunks(
+        text: str = "Hello world!", chunk_size: int = 5
+    ) -> List[Dict[str, Any]]:
         """Generate streaming response chunks."""
         chunks = []
         for i in range(0, len(text), chunk_size):
-            chunk_text = text[i:i + chunk_size]
+            chunk_text = text[i : i + chunk_size]
             is_last = i + chunk_size >= len(text)
-            chunks.append({
-                "content": chunk_text,
-                "done": is_last,
-                "delta": True
-            })
+            chunks.append({"content": chunk_text, "done": is_last, "delta": True})
         return chunks
 
     @staticmethod
-    def tool_call_response(tool_name: str = "search", args: Dict[str, Any] = None) -> Dict[str, Any]:
+    def tool_call_response(
+        tool_name: str = "search", args: Dict[str, Any] | None = None
+    ) -> Dict[str, Any]:
         """Tool call response fixture."""
         if args is None:
             args = {"query": "test query"}
 
         return {
-            "tool_calls": [{
-                "id": "call_123",
-                "name": tool_name,
-                "args": args
-            }],
+            "tool_calls": [{"id": "call_123", "name": tool_name, "args": args}],
             "role": "assistant",
-            "content": None
+            "content": None,
         }
 
     @staticmethod
-    def tool_result_response(result: str = "Tool execution completed") -> Dict[str, Any]:
+    def tool_result_response(
+        result: str = "Tool execution completed",
+    ) -> Dict[str, Any]:
         """Response after tool execution."""
         return {
             "text": result,
             "role": "assistant",
-            "usage": {
-                "prompt_tokens": 25,
-                "completion_tokens": 8,
-                "total_tokens": 33
-            }
+            "usage": {"prompt_tokens": 25, "completion_tokens": 8, "total_tokens": 33},
         }
 
     @staticmethod
-    def error_response(error_type: str = "rate_limit", message: str = "Rate limit exceeded") -> Dict[str, Any]:
+    def error_response(
+        error_type: str = "rate_limit", message: str = "Rate limit exceeded"
+    ) -> Dict[str, Any]:
         """Error response fixtures."""
         error_templates = {
             "rate_limit": {
                 "error": {
                     "type": "rate_limit_error",
                     "message": message,
-                    "code": "rate_limit_exceeded"
+                    "code": "rate_limit_exceeded",
                 }
             },
             "context_length": {
                 "error": {
                     "type": "invalid_request_error",
                     "message": "This model's maximum context length is 4096 tokens",
-                    "code": "context_length_exceeded"
+                    "code": "context_length_exceeded",
                 }
             },
             "invalid_api_key": {
                 "error": {
                     "type": "authentication_error",
                     "message": "Invalid API key provided",
-                    "code": "invalid_api_key"
+                    "code": "invalid_api_key",
                 }
             },
             "timeout": {
                 "error": {
                     "type": "timeout_error",
                     "message": "Request timed out",
-                    "code": "timeout"
+                    "code": "timeout",
                 }
-            }
+            },
         }
         return error_templates.get(error_type, error_templates["rate_limit"])
 
@@ -186,25 +178,41 @@ class BaseProviderTest(ABC):
 
     def create_simple_messages(self, content: str = "Hello") -> List[Message]:
         """Create simple test messages."""
-        return [Message(
-            role="user",
-            content=[MessageTextContent(text=content)]
-        )]
+        return [Message(role="user", content=[MessageTextContent(text=content)])]
 
     def create_conversation_messages(self) -> List[Message]:
         """Create a multi-turn conversation."""
         return [
-            Message(role="user", content=[MessageTextContent(text="What's the weather like?")]),
-            Message(role="assistant", content=[MessageTextContent(text="I don't have access to current weather data.")]),
-            Message(role="user", content=[MessageTextContent(text="Can you suggest what to wear?")])
+            Message(
+                role="user",
+                content=[MessageTextContent(text="What's the weather like?")],
+            ),
+            Message(
+                role="assistant",
+                content=[
+                    MessageTextContent(
+                        text="I don't have access to current weather data."
+                    )
+                ],
+            ),
+            Message(
+                role="user",
+                content=[MessageTextContent(text="Can you suggest what to wear?")],
+            ),
         ]
 
     def create_tool_messages(self) -> List[Message]:
         """Create messages that should trigger tool calls."""
-        return [Message(
-            role="user",
-            content=[MessageTextContent(text="Search for information about Python testing")]
-        )]
+        return [
+            Message(
+                role="user",
+                content=[
+                    MessageTextContent(
+                        text="Search for information about Python testing"
+                    )
+                ],
+            )
+        ]
 
     @pytest.mark.asyncio
     async def test_basic_text_generation(self):
@@ -238,7 +246,9 @@ class BaseProviderTest(ABC):
 
         # Last chunk should be marked as done
         if collected_chunks:
-            last_chunk = next((c for c in reversed(collected_chunks) if isinstance(c, Chunk)), None)
+            last_chunk = next(
+                (c for c in reversed(collected_chunks) if isinstance(c, Chunk)), None
+            )
             if last_chunk:
                 assert last_chunk.done
 
@@ -249,12 +259,16 @@ class BaseProviderTest(ABC):
         messages = self.create_tool_messages()
         tools = [MockTool()]
 
-        tool_response = ResponseFixtures.tool_call_response("mock_tool", {"query": "test"})
+        tool_response = ResponseFixtures.tool_call_response(
+            "mock_tool", {"query": "test"}
+        )
 
         with self.mock_api_call(tool_response):
-            response = await provider.generate_message(messages, "test-model", tools=tools)
+            response = await provider.generate_message(
+                messages, "test-model", tools=tools
+            )
 
-        if hasattr(response, 'tool_calls') and response.tool_calls:
+        if hasattr(response, "tool_calls") and response.tool_calls:
             assert len(response.tool_calls) > 0
             assert response.tool_calls[0].name == "mock_tool"
 
@@ -266,12 +280,16 @@ class BaseProviderTest(ABC):
         tools = [MockTool()]
 
         # First response with tool call
-        tool_response = ResponseFixtures.tool_call_response("mock_tool", {"query": "test"})
+        tool_response = ResponseFixtures.tool_call_response(
+            "mock_tool", {"query": "test"}
+        )
 
         with self.mock_api_call(tool_response):
-            response = await provider.generate_message(messages, "test-model", tools=tools)
+            response = await provider.generate_message(
+                messages, "test-model", tools=tools
+            )
 
-        if hasattr(response, 'tool_calls') and response.tool_calls:
+        if hasattr(response, "tool_calls") and response.tool_calls:
             # Add tool result to conversation
             tool_call = response.tool_calls[0]
             tool = next((t for t in tools if t.name == tool_call.name), None)
@@ -281,18 +299,24 @@ class BaseProviderTest(ABC):
             result = await tool.process(context, tool_call.args or {})
 
             # Add tool result message
-            messages.append(Message(
-                role="tool",
-                name=tool.name,
-                tool_call_id=tool_call.id,
-                content=json.dumps(result)
-            ))
+            messages.append(
+                Message(
+                    role="tool",
+                    name=tool.name,
+                    tool_call_id=tool_call.id,
+                    content=json.dumps(result),
+                )
+            )
 
             # Test continuation
-            continuation_response = ResponseFixtures.tool_result_response("Task completed")
+            continuation_response = ResponseFixtures.tool_result_response(
+                "Task completed"
+            )
 
             with self.mock_api_call(continuation_response):
-                final_response = await provider.generate_message(messages, "test-model", tools=tools)
+                final_response = await provider.generate_message(
+                    messages, "test-model", tools=tools
+                )
 
             assert final_response.role == "assistant"
 
@@ -302,12 +326,12 @@ class BaseProviderTest(ABC):
         provider = self.create_provider()
         messages = self.create_simple_messages()
 
-        initial_usage = provider.get_usage()
+        initial_usage = provider.usage
 
         with self.mock_api_call(ResponseFixtures.simple_text_response()):
             await provider.generate_message(messages, "test-model")
 
-        final_usage = provider.get_usage()
+        final_usage = provider.usage
 
         # Usage should have been updated (exact behavior depends on provider)
         assert isinstance(final_usage, dict)
@@ -357,10 +381,7 @@ class BaseProviderTest(ABC):
 
         with self.mock_api_call(ResponseFixtures.simple_text_response()) as mock_call:
             await provider.generate_message(
-                messages,
-                "test-model",
-                max_tokens=100,
-                temperature=0.7
+                messages, "test-model", max_tokens=100, temperature=0.7
             )
 
         # Verify model parameters were passed (implementation specific)
@@ -377,8 +398,7 @@ class BaseProviderTest(ABC):
         with self.mock_api_call(ResponseFixtures.simple_text_response()):
             # Create multiple concurrent requests
             tasks = [
-                provider.generate_message(messages, f"model-{i}")
-                for i in range(3)
+                provider.generate_message(messages, f"model-{i}") for i in range(3)
             ]
 
             responses = await asyncio.gather(*tasks)
@@ -419,37 +439,42 @@ class BaseProviderTest(ABC):
     # Abstract methods that subclasses must implement for provider-specific mocking
 
     @abstractmethod
-    def mock_api_call(self, response_data: Dict[str, Any]):
+    def mock_api_call(self, response_data: Dict[str, Any]) -> MagicMock:
         """Mock a single API call with the given response data."""
         pass
 
     @abstractmethod
-    def mock_streaming_call(self, chunks: List[Dict[str, Any]]):
+    def mock_streaming_call(self, chunks: List[Dict[str, Any]]) -> MagicMock:
         """Mock a streaming API call with the given chunks."""
         pass
 
     @abstractmethod
-    def mock_error_response(self, error_type: str):
+    def mock_error_response(self, error_type: str) -> MagicMock:
         """Mock an error response of the given type."""
         pass
 
 
 # Utility functions for test data management
 
+
 def create_test_conversation(turns: int = 3) -> List[Message]:
     """Create a multi-turn conversation for testing."""
     messages = []
     for i in range(turns):
         if i % 2 == 0:
-            messages.append(Message(
-                role="user",
-                content=[MessageTextContent(text=f"User message {i//2 + 1}")]
-            ))
+            messages.append(
+                Message(
+                    role="user",
+                    content=[MessageTextContent(text=f"User message {i//2 + 1}")],
+                )
+            )
         else:
-            messages.append(Message(
-                role="assistant",
-                content=[MessageTextContent(text=f"Assistant response {i//2 + 1}")]
-            ))
+            messages.append(
+                Message(
+                    role="assistant",
+                    content=[MessageTextContent(text=f"Assistant response {i//2 + 1}")],
+                )
+            )
     return messages
 
 
@@ -458,13 +483,11 @@ def create_tool_calling_scenario() -> Dict[str, Any]:
     return {
         "initial_message": Message(
             role="user",
-            content=[MessageTextContent(text="Calculate the square root of 16")]
+            content=[MessageTextContent(text="Calculate the square root of 16")],
         ),
         "tool_call": ToolCall(
-            id="call_123",
-            name="calculator",
-            args={"operation": "sqrt", "value": 16}
+            id="call_123", name="calculator", args={"operation": "sqrt", "value": 16}
         ),
         "tool_result": {"result": 4.0, "operation": "sqrt"},
-        "final_response": "The square root of 16 is 4.0"
+        "final_response": "The square root of 16 is 4.0",
     }

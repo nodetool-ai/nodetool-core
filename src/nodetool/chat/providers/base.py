@@ -9,7 +9,7 @@ from abc import ABC, abstractmethod
 from typing import Any, AsyncGenerator, AsyncIterator, Sequence
 
 from nodetool.agents.tools.base import Tool
-from nodetool.metadata.types import Message, Provider, ToolCall
+from nodetool.metadata.types import Message, Provider, ToolCall, MessageFile
 from nodetool.workflows.types import Chunk
 
 import json
@@ -198,7 +198,7 @@ class ChatProvider(ABC):
         context_window: int = 4096,
         response_format: dict | None = None,
         **kwargs,
-    ) -> AsyncIterator[Chunk | ToolCall]:
+    ) -> AsyncIterator[Chunk | ToolCall | MessageFile]:
         """
         Generate message completions from the provider, yielding chunks or tool calls.
         Subclass implementations should declare this method as async.
@@ -216,7 +216,7 @@ class ChatProvider(ABC):
             Async iterator of Chunk objects with content and completion status or ToolCall objects
         """
 
-        pass
+        raise NotImplementedError
 
 
 class MockProvider(ChatProvider):
@@ -256,6 +256,9 @@ class MockProvider(ChatProvider):
         messages: Sequence[Message],
         model: str,
         tools: Sequence[Any] = [],
+        max_tokens: int = 8192,
+        context_window: int = 4096,
+        response_format: dict | None = None,
         **kwargs,
     ) -> Message:
         """
@@ -292,6 +295,9 @@ class MockProvider(ChatProvider):
         messages: Sequence[Message],
         model: str,
         tools: Sequence[Any] = [],
+        max_tokens: int = 8192,
+        context_window: int = 4096,
+        response_format: dict | None = None,
         **kwargs,
     ) -> AsyncGenerator[Chunk | ToolCall, Any]:
         """

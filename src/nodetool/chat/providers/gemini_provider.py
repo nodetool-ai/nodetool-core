@@ -204,7 +204,9 @@ class GeminiProvider(ChatProvider):
 
         return result
 
-    async def _prepare_messages(self, messages: List[Message]) -> ContentListUnion:
+    async def _prepare_messages(
+        self, messages: Sequence[Message]
+    ) -> ContentListUnion:
         """Convert messages to Gemini-compatible format."""
         log.debug(f"Preparing {len(messages)} messages for Gemini API")
         history = []
@@ -230,7 +232,7 @@ class GeminiProvider(ChatProvider):
         log.debug(f"Prepared {len(history)} messages for API call")
         return history
 
-    def _format_tools(self, tools: Sequence[NodeTool]) -> ToolListUnion:
+    def _format_tools(self, tools: Sequence[Any]) -> ToolListUnion:
         """Convert NodeTool objects to Gemini Tool format."""
         log.debug(f"Formatting {len(tools)} tools for Gemini API")
         result = []
@@ -326,12 +328,12 @@ class GeminiProvider(ChatProvider):
 
     async def generate_message(
         self,
-        messages: List[Message],
+        messages: Sequence[Message],
         model: str,
         tools: Sequence[Any] = [],
         max_tokens: int = 16384,
-        response_format: dict | None = None,
         context_window: int = 4096,
+        response_format: dict | None = None,
         **kwargs,
     ) -> Message:
         """Generate response from Gemini for the given messages with code execution support."""
@@ -441,9 +443,9 @@ class GeminiProvider(ChatProvider):
 
     async def generate_messages(
         self,
-        messages: List[Message],
+        messages: Sequence[Message],
         model: str,
-        tools: Sequence[NodeTool] = [],
+        tools: Sequence[Any] = [],
         max_tokens: int = 16384,
         context_window: int = 4096,
         response_format: dict | None = None,
@@ -495,36 +497,56 @@ class GeminiProvider(ChatProvider):
 
             async for chunk in response:  # type: ignore
                 log.debug("Processing streaming chunk")
-                if getattr(chunk, "candidates", None):
-                    candidate = chunk.candidates[0]
-                    if getattr(candidate, "content", None) and candidate.content.parts:
-                        log.debug(
-                            f"Processing {len(candidate.content.parts)} parts in chunk"
-                        )
-                        for part in candidate.content.parts:
-                            part = part  # type: ignore
-                            if getattr(part, "text", None):
-                                text = part.text
-                                if isinstance(text, str):
-                                    yield Chunk(content=text, done=False)
-                            elif getattr(part, "function_call", None):
-                                fc = part.function_call
+                candidates = getattr(chunk, "candidates", None)
+                if candidates:
+                    candidate = candidates[0]
+                    candidate_content = getattr(candidate, "content", None)
+                    parts = (
+                        getattr(candidate_content, "parts", None)
+                        if candidate_content is not None
+                        else None
+                    )
+                    if parts:
+                        log.debug(f"Processing {len(parts)} parts in chunk")
+                        for part in parts:
+                            text_value = getattr(part, "text", None)
+                            if isinstance(text_value, str):
+                                yield Chunk(content=text_value, done=False)
+                                continue
+
+                            function_call = getattr(part, "function_call", None)
+                            if function_call is not None:
                                 yield ToolCall(
-                                    name=getattr(fc, "name", "") or "",
-                                    args=getattr(fc, "args", {}) or {},
+                                    name=getattr(function_call, "name", "") or "",
+                                    args=getattr(function_call, "args", {}) or {},
                                 )
-                            elif getattr(part, "executable_code", None):
-                                code_text = (
-                                    f"```python\n{part.executable_code.code}\n```"
-                                )
-                                yield Chunk(content=code_text, done=False)
-                            elif getattr(part, "code_execution_result", None):
-                                result_text = f"Execution result:\n```\n{part.code_execution_result.output}\n```"
-                                yield Chunk(content=result_text, done=False)
-                            elif getattr(part, "inline_data", None):
+                                continue
+
+                            executable_code = getattr(part, "executable_code", None)
+                            if executable_code is not None:
+                                code_text = getattr(executable_code, "code", None)
+                                if isinstance(code_text, str):
+                                    yield Chunk(
+                                        content=f"```python\n{code_text}\n```",
+                                        done=False,
+                                    )
+                                continue
+
+                            execution_result = getattr(part, "code_execution_result", None)
+                            if execution_result is not None:
+                                output_text = getattr(execution_result, "output", None)
+                                if isinstance(output_text, str):
+                                    yield Chunk(
+                                        content=f"Execution result:\n```\n{output_text}\n```",
+                                        done=False,
+                                    )
+                                continue
+
+                            inline_data = getattr(part, "inline_data", None)
+                            if inline_data is not None:
                                 yield MessageFile(
-                                    content=part.inline_data.data or b"",
-                                    mime_type=part.inline_data.mime_type or "",
+                                    content=getattr(inline_data, "data", None) or b"",
+                                    mime_type=getattr(inline_data, "mime_type", None) or "",
                                 )
                 else:
                     log.debug("Chunk has no candidates")

@@ -20,9 +20,9 @@ class OutNode(OutputNode):
 
 
 def build_graph():
-    n1 = InNode(id="1", name="a", value=1)
-    n2 = AddNode(id="2", a=0, b=0)
-    n3 = OutNode(id="3", name="out")
+    n1 = InNode(id="1", name="a", value=1)  # type: ignore[call-arg]
+    n2 = AddNode(id="2", a=0, b=0)  # type: ignore[call-arg]
+    n3 = OutNode(id="3", name="out")  # type: ignore[call-arg]
     edges = [
         Edge(id="e1", source="1", sourceHandle="output", target="2", targetHandle="a"),
         Edge(

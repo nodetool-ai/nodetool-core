@@ -1,6 +1,5 @@
 from nodetool.agents.tools.node_tool import NodeTool
 from nodetool.agents.tools.workflow_tool import WorkflowTool
-from nodetool.api.workflow import from_model
 from nodetool.metadata.node_metadata import NodeMetadata
 from nodetool.models.workflow import Workflow
 from nodetool.workflows.base_node import get_node_class, sanitize_node_name
@@ -39,6 +38,7 @@ async def resolve_tool_by_name(
     Raises:
         ValueError: If the tool cannot be resolved
     """
+    from nodetool.api.workflow import from_model
 
     if len(_tool_node_registry) == 0:
         load_all_nodes()

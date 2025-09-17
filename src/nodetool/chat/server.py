@@ -316,9 +316,10 @@ from nodetool.types.workflow import Workflow
 console = Console()
 
 
-if platform.system() == "Windows":
-    # Ensure subprocess support in asyncio on Windows
-    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+_windows_policy = getattr(asyncio, "WindowsSelectorEventLoopPolicy", None)
+if platform.system() == "Windows" and _windows_policy is not None:
+    # Ensure subprocess support in asyncio on Windows where the policy exists
+    asyncio.set_event_loop_policy(_windows_policy())
 
 
 def create_chat_server(

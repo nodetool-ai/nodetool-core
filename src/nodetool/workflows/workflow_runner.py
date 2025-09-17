@@ -32,15 +32,12 @@ Example:
 
 import asyncio
 from contextlib import contextmanager
-import gc
 from nodetool.config.logging_config import get_logger
-import random
 import time
 import threading
 from typing import Any, AsyncGenerator, Optional
 from collections import deque
 
-from nodetool.ml.core.model_manager import ModelManager
 from nodetool.types.job import JobUpdate
 from nodetool.workflows.base_node import (
     BaseNode,
@@ -54,24 +51,12 @@ from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.config.environment import Environment
 from nodetool.workflows.graph import Graph
 from nodetool.workflows.inbox import NodeInbox
-
-# Optional dependencies check
-TORCH_AVAILABLE = False
-COMFY_AVAILABLE = False
-try:
-    import torch
-
-    TORCH_AVAILABLE = True
-    try:
-        import comfy  # type: ignore
-        import comfy.utils  # type: ignore
-        import comfy.model_management  # type: ignore
-
-        COMFY_AVAILABLE = True
-    except ImportError:
-        pass
-except ImportError:
-    pass
+from nodetool.workflows.torch_support import (
+    build_torch_support,
+    BaseTorchSupport,
+    TORCH_AVAILABLE,
+    torch,
+)
 
 log = get_logger(__name__)
 # Log level is controlled by env (DEBUG/NODETOOL_LOG_LEVEL)
@@ -115,21 +100,6 @@ def release_gpu_lock():
     """
     log.debug("Releasing GPU lock from node")
     gpu_lock.release()
-
-
-def get_available_vram():
-    """
-    Gets the available VRAM on the primary CUDA device.
-
-    Returns:
-        int: The available VRAM in bytes. Returns 0 if Torch is not available
-             or no CUDA device is present.
-    """
-    if TORCH_AVAILABLE and torch.cuda.is_available():
-        return torch.cuda.get_device_properties(
-            0
-        ).total_memory - torch.cuda.memory_allocated(0)
-    return 0
 
 
 class WorkflowRunner:
@@ -180,6 +150,11 @@ class WorkflowRunner:
         )  # Track nodes currently in an async task
         self.node_inboxes: dict[str, NodeInbox] = {}
         self.disable_caching = disable_caching
+        self._torch_support: BaseTorchSupport = build_torch_support(
+            base_delay=BASE_DELAY,
+            max_delay=MAX_DELAY,
+            max_retries=MAX_RETRIES,
+        )
         if device:
             self.device = device
         else:
@@ -589,7 +564,7 @@ class WorkflowRunner:
                 log.debug(f"Exception caught in WorkflowRunner.run: {e}", exc_info=True)
 
                 # Specific handling for OOM error message, but status is always error
-                if TORCH_AVAILABLE and isinstance(e, torch.cuda.OutOfMemoryError):
+                if self._torch_support.is_cuda_oom_exception(e):
                     error_message_for_job_update = f"VRAM OOM error: {str(e)}. No additional VRAM available after retries."
                     # log.error already done by generic message
 
@@ -637,8 +612,7 @@ class WorkflowRunner:
                                 pass
                 log.debug("Nodes finalized in finally block.")
 
-                if TORCH_AVAILABLE and torch.cuda.is_available():
-                    torch.cuda.empty_cache()
+                self._torch_support.empty_cuda_cache()
                 log.debug("CUDA cache emptied if available.")
 
                 # No legacy generator state to clear in actor mode
@@ -1041,26 +1015,13 @@ class WorkflowRunner:
             message (str, optional): A prefix message to include in the log output.
                                      Defaults to "".
         """
-        if TORCH_AVAILABLE and torch.cuda.is_available():
-            torch.cuda.synchronize()
-            vram = torch.cuda.memory_allocated(0) / 1024 / 1024 / 1024
-            log.info(f"{message} VRAM: {vram:.2f} GB")
+        self._torch_support.log_vram_usage(self, message)
 
     @contextmanager
     def torch_context(self, context: ProcessingContext):
         """
         A context manager for setting up and tearing down the PyTorch/GPU environment
         for a workflow run.
-
-        If `COMFY_AVAILABLE` (ComfyUI) is True:
-        - Sets a global progress bar hook for ComfyUI operations, which posts
-          `NodeProgress` messages using `self.current_node` and the provided `context`.
-
-        If `TORCH_AVAILABLE` and CUDA is available:
-        - Logs VRAM usage before entering the `try` block (`"Before workflow"`).
-        - In the `finally` block (after the `yield`):
-          - Logs VRAM usage again (`"After workflow"`).
-          This helps in monitoring VRAM consumption throughout the workflow.
 
         Args:
             context (ProcessingContext): The processing context, used by the ComfyUI
@@ -1069,31 +1030,8 @@ class WorkflowRunner:
         Yields:
             None: The context manager yields control to the enclosed block of code.
         """
-        if COMFY_AVAILABLE:
-
-            def hook(value, total, preview_image):
-                if TORCH_AVAILABLE and torch.cuda.is_available():
-                    comfy.model_management.throw_exception_if_processing_interrupted()
-                context.post_message(
-                    NodeProgress(
-                        node_id=self.current_node or "",
-                        progress=value,
-                        total=total,
-                    )
-                )
-
-            comfy.utils.set_progress_bar_global_hook(hook)
-
-        if TORCH_AVAILABLE and torch.cuda.is_available():
-            self.log_vram_usage("Before workflow")
-
-        try:
+        with self._torch_support.torch_context(self, context):
             yield
-        finally:
-            if TORCH_AVAILABLE and torch.cuda.is_available():
-                self.log_vram_usage("After workflow")
-
-        log.info("Exiting torch context")
 
     async def process_output_node(
         self,
@@ -1158,71 +1096,4 @@ class WorkflowRunner:
         log.debug(
             f"process_with_gpu called for node: {node.get_title()} ({node._id}), retries: {retries}"
         )
-        if TORCH_AVAILABLE:
-            try:
-                if node._requires_grad:
-                    return await node.process(context)
-                with torch.no_grad():
-                    return await node.process(context)
-            except Exception as e:
-                is_cuda_oom = TORCH_AVAILABLE and isinstance(
-                    e, torch.cuda.OutOfMemoryError
-                )
-
-                if is_cuda_oom:
-                    log.error(
-                        f"VRAM OOM error for node {node.get_title()} ({node._id}): {str(e)}"
-                    )
-                    retries += 1
-
-                    if torch.cuda.is_available():
-                        torch.cuda.synchronize()
-                        vram_before_cleanup = get_available_vram()
-                        log.error(f"VRAM before cleanup: {vram_before_cleanup} GB")
-
-                        ModelManager.clear()
-                        gc.collect()
-
-                        if COMFY_AVAILABLE:
-                            for (
-                                model_loaded
-                            ) in comfy.model_management.current_loaded_models:
-                                model_loaded.model_unload()
-
-                        torch.cuda.empty_cache()
-                        torch.cuda.ipc_collect()  # Force release of CUDA IPC handles
-                        torch.cuda.synchronize()
-                        log.error(f"VRAM after cleanup: {get_available_vram()} GB")
-
-                    if retries >= MAX_RETRIES:
-                        log.error(
-                            f"Max retries ({MAX_RETRIES}) reached for OOM error on node {node.get_title()}. Raising error."
-                        )
-                        raise  # Re-raise the OOM error if max retries are exhausted.
-
-                    delay = min(
-                        BASE_DELAY * (2 ** (retries - 1)) + random.uniform(0, 1),
-                        MAX_DELAY,
-                    )
-                    log.warning(
-                        f"VRAM OOM encountered for node {node._id}. Retrying in {delay:.2f} seconds. (Attempt {retries}/{MAX_RETRIES})"
-                    )
-                    await asyncio.sleep(delay)
-                    return await self.process_with_gpu(
-                        context, node, retries + 1
-                    )  # Recursive call
-                else:
-                    log.debug(
-                        f"Non-OOM error in process_with_gpu for node {node.get_title()}: {e}",
-                        exc_info=True,
-                    )
-                    # For non-OOM errors in non-streaming nodes, process_node_with_inputs handles logging and NodeUpdate.
-                    # It then re-raises, so we just re-raise here to exit the retry loop and propagate.
-                    raise
-        else:
-            # This case implies TORCH_AVAILABLE is False.
-            # Fallback to regular processing if no GPU capability or torch is not there.
-            log.debug(
-                f"Torch not available, falling back to regular process for node: {node.get_title()}"
-            )
-            return await node.process(context)
+        return await self._torch_support.process_with_gpu(self, context, node, retries)

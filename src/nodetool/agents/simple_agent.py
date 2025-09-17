@@ -89,7 +89,7 @@ class SimpleAgent(BaseAgent):
     async def execute(
         self,
         context: ProcessingContext,
-    ) -> AsyncGenerator[Union[TaskUpdate, Chunk, ToolCall], None]:
+    ) -> AsyncGenerator[Any, None]:
         """
         Plans (if needed) and executes the single subtask for the agent's objective.
 

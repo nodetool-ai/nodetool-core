@@ -44,8 +44,9 @@ import mimetypes
 from nodetool.integrations.websocket.websocket_updates import websocket_updates
 from nodetool.api.openai import create_openai_compatible_router
 
-if platform.system() == "Windows":
-    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+_windows_policy = getattr(asyncio, "WindowsSelectorEventLoopPolicy", None)
+if platform.system() == "Windows" and _windows_policy is not None:
+    asyncio.set_event_loop_policy(_windows_policy())
 
 # FIX: Windows: mimetypes.guess_type() returns None for some files
 # See:

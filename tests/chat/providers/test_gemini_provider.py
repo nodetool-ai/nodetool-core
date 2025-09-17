@@ -137,10 +137,10 @@ class TestGeminiProvider(BaseProviderTest):
         return "gemini"
 
     def create_gemini_response(
-        self, content: str = "Hello, world!", function_calls: List[Dict] = None
+        self, content: str = "Hello, world!", function_calls: List[Dict] | None = None
     ) -> Dict[str, Any]:
         """Create a realistic Gemini API response."""
-        parts = [{"text": content}] if content else []
+        parts: list[dict[str, Any]] = [{"text": content}] if content else []
 
         if function_calls:
             for fc in function_calls:
@@ -198,7 +198,7 @@ class TestGeminiProvider(BaseProviderTest):
             is_last = i == len(words) - 1
             content = word + (" " if not is_last else "")
 
-            chunk = {
+            chunk: dict[str, Any] = {
                 "candidates": [
                     {
                         "content": {"parts": [{"text": content}], "role": "model"},
@@ -235,7 +235,7 @@ class TestGeminiProvider(BaseProviderTest):
         if "tool_calls" in response_data:
             # Function calling response
             gemini_response = self.create_gemini_response(
-                content=response_data.get("text"),
+                content=str(response_data.get("text")),
                 function_calls=response_data["tool_calls"],
             )
         else:
@@ -277,14 +277,14 @@ class TestGeminiProvider(BaseProviderTest):
         return patch(
             "google.generativeai.GenerativeModel.generate_content",
             return_value=mock_stream(),
-        )
+        )  # type: ignore[return-value]
 
-    def mock_error_response(self, error_type: str):
+    def mock_error_response(self, error_type: str) -> MagicMock:
         """Mock Gemini API error response."""
         error = self.create_gemini_error(error_type)
         return patch(
             "google.generativeai.GenerativeModel.generate_content", side_effect=error
-        )
+        )  # type: ignore[return-value]
 
     def create_mock_tool(self):
         """Create a mock tool for testing tool calling."""

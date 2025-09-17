@@ -65,13 +65,14 @@ import importlib
 import re
 from types import UnionType
 from weakref import WeakKeyDictionary
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, PrivateAttr
 from pydantic.fields import FieldInfo
 import traceback
 from typing import (
     Any,
     AsyncGenerator,
     Callable,
+    ClassVar,
     Optional,
     Type,
     TypeVar,
@@ -331,18 +332,18 @@ class BaseNode(BaseModel):
         type checking, and node processing.
     """
 
-    _id: str
-    _parent_id: str | None
-    _ui_properties: dict[str, Any]
-    _layout: str = "default"
-    _dynamic_properties: dict[str, Any]
-    _dynamic_outputs: dict[str, TypeMetadata]
-    _is_dynamic: bool = False
-    _requires_grad: bool = False
-    _expose_as_tool: bool = False
-    _supports_dynamic_outputs: bool = False
-    _inbox: "NodeInbox | None"
-    _sync_mode: str
+    _id: str = PrivateAttr(default="")
+    _parent_id: str | None = PrivateAttr(default=None)
+    _ui_properties: dict[str, Any] = PrivateAttr(default_factory=dict)
+    _layout: ClassVar[str | FieldInfo] = "default"
+    _dynamic_properties: dict[str, Any] = PrivateAttr(default_factory=dict)
+    _dynamic_outputs: dict[str, TypeMetadata] = PrivateAttr(default_factory=dict)
+    _is_dynamic: ClassVar[bool | FieldInfo] = False
+    _requires_grad: ClassVar[bool | FieldInfo] = False
+    _expose_as_tool: ClassVar[bool | FieldInfo] = False
+    _supports_dynamic_outputs: ClassVar[bool | FieldInfo] = False
+    _inbox: NodeInbox | None = PrivateAttr(default=None)
+    _sync_mode: str = PrivateAttr(default="on_any")
 
     def __init__(
         self,

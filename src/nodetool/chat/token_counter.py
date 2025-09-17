@@ -44,7 +44,7 @@ def get_default_encoding():
             # Simple approximation: split by whitespace
             if not text:
                 return []
-            return text.split()
+            return [len(token) for token in text.split()]
 
     _ENCODING_CACHE = _FallbackEncoder()
     return _ENCODING_CACHE

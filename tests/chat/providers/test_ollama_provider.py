@@ -121,20 +121,19 @@ class TestOllamaProvider(BaseProviderTest):
         return {
             "model": "test-model",
             "created_at": "2024-01-01T00:00:00Z",
-            "message": {
-                "role": "assistant",
-                "content": content
-            },
+            "message": {"role": "assistant", "content": content},
             "done": True,
             "total_duration": 1000000000,
             "load_duration": 100000000,
             "prompt_eval_count": 10,
             "prompt_eval_duration": 200000000,
             "eval_count": 15,
-            "eval_duration": 700000000
+            "eval_duration": 700000000,
         }
 
-    def create_ollama_streaming_responses(self, text: str = "Hello world!") -> List[Dict[str, Any]]:
+    def create_ollama_streaming_responses(
+        self, text: str = "Hello world!"
+    ) -> List[Dict[str, Any]]:
         """Create realistic Ollama streaming response chunks."""
         chunks = []
         words = text.split()
@@ -143,15 +142,14 @@ class TestOllamaProvider(BaseProviderTest):
             is_last = i == len(words) - 1
             content = word + (" " if not is_last else "")
 
-            chunks.append({
-                "model": "test-model",
-                "created_at": "2024-01-01T00:00:00Z",
-                "message": {
-                    "role": "assistant",
-                    "content": content
-                },
-                "done": is_last
-            })
+            chunks.append(
+                {
+                    "model": "test-model",
+                    "created_at": "2024-01-01T00:00:00Z",
+                    "message": {"role": "assistant", "content": content},
+                    "done": is_last,
+                }
+            )
 
         return chunks
 
@@ -161,13 +159,15 @@ class TestOllamaProvider(BaseProviderTest):
             return httpx.HTTPStatusError(
                 message="model 'test-model' not found",
                 request=MagicMock(),
-                response=MagicMock(status_code=404, text="model 'test-model' not found")
+                response=MagicMock(
+                    status_code=404, text="model 'test-model' not found"
+                ),
             )
         elif error_type == "context_length":
             return httpx.HTTPStatusError(
                 message="Request too large",
                 request=MagicMock(),
-                response=MagicMock(status_code=413, text="Context length exceeded")
+                response=MagicMock(status_code=413, text="Context length exceeded"),
             )
         elif error_type == "server_unavailable":
             return httpx.ConnectError("Connection refused")
@@ -175,10 +175,10 @@ class TestOllamaProvider(BaseProviderTest):
             return httpx.HTTPStatusError(
                 message="Internal server error",
                 request=MagicMock(),
-                response=MagicMock(status_code=500, text="Internal server error")
+                response=MagicMock(status_code=500, text="Internal server error"),
             )
 
-    def mock_api_call(self, response_data: Dict[str, Any]):
+    def mock_api_call(self, response_data: Dict[str, Any]) -> MagicMock:
         """Mock Ollama AsyncClient.chat for non-streaming responses."""
         content = response_data.get("text", "Hello, world!")
 
@@ -200,9 +200,9 @@ class TestOllamaProvider(BaseProviderTest):
         async def mock_chat(**kwargs):
             return _Response(content)
 
-        return patch.object(ollama.AsyncClient, "chat", side_effect=mock_chat)
+        return patch.object(ollama.AsyncClient, "chat", side_effect=mock_chat)  # type: ignore[return-value]
 
-    def mock_streaming_call(self, chunks: List[Dict[str, Any]]):
+    def mock_streaming_call(self, chunks: List[Dict[str, Any]]) -> MagicMock:
         """Mock Ollama streaming API call."""
         text = "".join(chunk.get("content", "") for chunk in chunks)
         ollama_chunks = self.create_ollama_streaming_responses(text)
@@ -227,7 +227,7 @@ class TestOllamaProvider(BaseProviderTest):
                 content = word + (" " if not is_last else "")
                 yield _Chunk(content, is_last)
 
-        return patch.object(ollama.AsyncClient, "chat", side_effect=mock_stream)
+        return patch.object(ollama.AsyncClient, "chat", side_effect=mock_stream)  # type: ignore[return-value]
 
     def mock_error_response(self, error_type: str):
         """Mock Ollama API error response."""
@@ -240,16 +240,20 @@ class TestOllamaProvider(BaseProviderTest):
         provider = self.create_provider()
 
         # Mock model list response
-        with patch('httpx.AsyncClient.get', return_value=MagicMock(
-            json=AsyncMock(return_value={
-                "models": [{"name": "test-model:latest", "size": 1000000}]
-            })
-        )):
+        with patch(
+            "httpx.AsyncClient.get",
+            return_value=MagicMock(
+                json=AsyncMock(
+                    return_value={
+                        "models": [{"name": "test-model:latest", "size": 1000000}]
+                    }
+                )
+            ),
+        ):
             # Should not raise error for available model
             with self.mock_api_call(ResponseFixtures.simple_text_response()):
                 response = await provider.generate_message(
-                    self.create_simple_messages(),
-                    "test-model"
+                    self.create_simple_messages(), "test-model"
                 )
             assert response.role == "assistant"
 
@@ -261,8 +265,7 @@ class TestOllamaProvider(BaseProviderTest):
         with self.mock_error_response("model_not_found"):
             with pytest.raises(Exception):
                 await provider.generate_message(
-                    self.create_simple_messages(),
-                    "unknown-model"
+                    self.create_simple_messages(), "unknown-model"
                 )
 
     @pytest.mark.asyncio
@@ -271,10 +274,7 @@ class TestOllamaProvider(BaseProviderTest):
         provider = self.create_provider()
 
         with self.mock_api_call(ResponseFixtures.simple_text_response()) as mock_call:
-            await provider.generate_message(
-                self.create_simple_messages(),
-                "test-model"
-            )
+            await provider.generate_message(self.create_simple_messages(), "test-model")
 
         # Should include keep_alive in request
         mock_call.assert_called_once()
@@ -310,7 +310,10 @@ class TestOllamaProvider(BaseProviderTest):
             },
         }
 
-        with patch('nodetool.chat.providers.ollama_provider.get_ollama_sync_client', return_value=_SyncClient(model_info)):
+        with patch(
+            "nodetool.chat.providers.ollama_provider.get_ollama_sync_client",
+            return_value=_SyncClient(model_info),
+        ):
             context_length = provider.get_context_length("test-model")
             assert isinstance(context_length, int)
             assert context_length > 0
@@ -322,10 +325,7 @@ class TestOllamaProvider(BaseProviderTest):
 
         # Test with custom parameters
         with self.mock_api_call(ResponseFixtures.simple_text_response()) as mock_call:
-            await provider.generate_message(
-                self.create_simple_messages(),
-                "test-model"
-            )
+            await provider.generate_message(self.create_simple_messages(), "test-model")
 
         # Verify call was made
         mock_call.assert_called_once()

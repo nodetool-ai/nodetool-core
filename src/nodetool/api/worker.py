@@ -5,7 +5,14 @@ from fastapi import FastAPI, WebSocket, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from nodetool.api.model import RepoPath
 from nodetool.api.utils import flatten_models
-from nodetool.integrations.apis.worker_api_client import WorkerAPIClient
+from typing import Any, List, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from nodetool.integrations.apis.worker_api_client import (  # type: ignore[import]
+        WorkerAPIClient,
+    )
+else:  # pragma: no cover - optional dependency
+    WorkerAPIClient = Any
 from nodetool.integrations.huggingface.huggingface_file import (
     HFFileInfo,
     HFFileRequest,
@@ -24,10 +31,10 @@ from nodetool.integrations.huggingface.huggingface_models import (
     read_cached_hf_models,
 )
 from nodetool.metadata.types import HuggingFaceModel
-from typing import List
 
-if platform.system() == "Windows":
-    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+_windows_policy = getattr(asyncio, "WindowsSelectorEventLoopPolicy", None)
+if platform.system() == "Windows" and _windows_policy is not None:
+    asyncio.set_event_loop_policy(_windows_policy())
 
 try:
     from nodes import init_extra_nodes  # type: ignore

@@ -58,6 +58,8 @@ async def test_process(context: ProcessingContext):
         workflow_json=math_json, dynamic_properties={"number1": 1, "number2": 2}  # type: ignore
     )
 
-    output = await workflow_node.process(context)
+    output = {}
+    async for handle, value in workflow_node.gen_process(context):
+        output[handle] = value
 
-    assert output == {"output": [3]}
+    assert output == {"output": 3}

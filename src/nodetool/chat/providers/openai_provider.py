@@ -738,6 +738,7 @@ class OpenAIProvider(ChatProvider):
         top_p: float | None = None,
         presence_penalty: float | None = None,
         frequency_penalty: float | None = None,
+        **kwargs,
     ) -> Message:
         """Generate a non-streaming completion from OpenAI.
 
@@ -759,21 +760,21 @@ class OpenAIProvider(ChatProvider):
         if not messages:
             raise ValueError("messages must not be empty")
 
-        kwargs: dict[str, Any] = {
+        request_kwargs: dict[str, Any] = {
             "max_tokens": max_tokens,
         }
         if response_format is not None:
-            kwargs["response_format"] = response_format
+            request_kwargs["response_format"] = response_format
         # Common sampling params (pass-through if provided via caller)
         if temperature is not None:
-            kwargs["temperature"] = temperature
+            request_kwargs["temperature"] = temperature
         if top_p is not None:
-            kwargs["top_p"] = top_p
+            request_kwargs["top_p"] = top_p
         if presence_penalty is not None:
-            kwargs["presence_penalty"] = presence_penalty
+            request_kwargs["presence_penalty"] = presence_penalty
         if frequency_penalty is not None:
-            kwargs["frequency_penalty"] = frequency_penalty
-        log.debug(f"Request kwargs: {kwargs}")
+            request_kwargs["frequency_penalty"] = frequency_penalty
+        log.debug(f"Request kwargs: {request_kwargs}")
 
         # Convert system messages to user messages for O1/O3 models
         if model.startswith("o1") or model.startswith("o3"):
@@ -796,10 +797,10 @@ class OpenAIProvider(ChatProvider):
                 f"Converted {len(converted_messages)} messages for O-series model"
             )
 
-        self._log_api_request("chat", messages, **kwargs)
+        self._log_api_request("chat", messages, **request_kwargs)
 
         if len(tools) > 0:
-            kwargs["tools"] = self.format_tools(tools)
+            request_kwargs["tools"] = self.format_tools(tools)
             log.debug(f"Added {len(tools)} tools to request")
 
         log.debug(f"Converting {len(messages)} messages to OpenAI format")
@@ -811,7 +812,7 @@ class OpenAIProvider(ChatProvider):
             model=model,
             messages=openai_messages,
             stream=False,
-            **kwargs,
+            **request_kwargs,
         )
         if inspect.isawaitable(create_result):
             completion = await create_result

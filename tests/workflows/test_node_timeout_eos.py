@@ -44,7 +44,7 @@ def test_node_timeout_emits_error_and_drains_edges(event_loop):
     runner.node_inboxes[t_id] = NodeInbox()
     runner.node_inboxes[t_id].add_upstream("in", 1)
 
-    node = _SlowNode(id=s_id)
+    node = _SlowNode(id=s_id)  # type: ignore[call-arg]
     inbox = NodeInbox()
 
     actor = NodeActor(runner, node, ctx, inbox)  # type: ignore[arg-type]
@@ -60,4 +60,3 @@ def test_node_timeout_emits_error_and_drains_edges(event_loop):
 
     drained = any(isinstance(m, EdgeUpdate) and m.edge_id == "eST" and m.status == "drained" for m in msgs)
     assert drained, "Downstream edge should be drained on timeout"
-

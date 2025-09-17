@@ -20,7 +20,7 @@ import os
 import subprocess
 import traceback
 import sys
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Any
 from pathlib import Path
 import shutil  # Add shutil for cp and mv
 import re  # Add re for grep
@@ -46,30 +46,36 @@ from nodetool.chat.providers import get_provider
 from nodetool.chat.regular_chat import process_regular_chat
 from nodetool.metadata.types import Message, ToolCall, LanguageModel
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.agents.tools import (
+from nodetool.agents.tools.browser_tools import BrowserTool, ScreenshotTool
+from nodetool.agents.tools.email_tools import (
     AddLabelToEmailTool,
     ArchiveEmailTool,
-    BrowserTool,
-    ConvertPDFToMarkdownTool,
-    DownloadFileTool,
-    ExtractPDFTablesTool,
-    ExtractPDFTextTool,
+    SearchEmailTool,
+)
+from nodetool.agents.tools.google_tools import (
     GoogleGroundedSearchTool,
     GoogleImageGenerationTool,
-    GoogleImagesTool,
-    GoogleNewsTool,
-    GoogleSearchTool,
+)
+from nodetool.agents.tools.http_tools import DownloadFileTool
+from nodetool.agents.tools.openai_tools import (
     OpenAIImageGenerationTool,
     OpenAITextToSpeechTool,
     OpenAIWebSearchTool,
+)
+from nodetool.agents.tools.pdf_tools import (
+    ConvertPDFToMarkdownTool,
+    ExtractPDFTablesTool,
+    ExtractPDFTextTool,
+)
+from nodetool.agents.tools.serp_tools import (
+    GoogleImagesTool,
+    GoogleNewsTool,
+    GoogleSearchTool,
+)
+from nodetool.agents.tools.workspace_tools import (
     ListDirectoryTool,
     ReadFileTool,
     WriteFileTool,
-    ScreenshotTool,
-    SearchEmailTool,
-    CreateWorkflowTool,
-    EditWorkflowTool,
-    create_workflow_tools,
 )
 from nodetool.workflows.types import Chunk
 
@@ -292,8 +298,6 @@ class ChatCLI:
             ArchiveEmailTool(),
             BrowserTool(),
             ConvertPDFToMarkdownTool(),
-            CreateWorkflowTool(),
-            EditWorkflowTool(),
             DownloadFileTool(),
             ExtractPDFTablesTool(),
             ExtractPDFTextTool(),
@@ -313,10 +317,21 @@ class ChatCLI:
         ]
         
         # Initialize workflow tools
-        workflow_tools = []
-        workflow_tools = create_workflow_tools(self.context.user_id, limit=200)
+        workflow_tools: list[Any] = []
+        try:
+            workflow_tools = await create_workflow_tools(
+                self.context.user_id, limit=200
+            )
+        except Exception as err:
+            self.console.print(
+                f"[bold yellow]Warning:[/bold yellow] Failed to load workflow tools: {err}"
+            )
+            workflow_tools = []
+
         if workflow_tools:
-            self.console.print(f"[bold green]Loaded {len(workflow_tools)} workflow tools[/bold green]")
+            self.console.print(
+                f"[bold green]Loaded {len(workflow_tools)} workflow tools[/bold green]"
+            )
         
         # Initialize node tools
         from nodetool.workflows.base_node import NODE_BY_TYPE

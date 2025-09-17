@@ -1,5 +1,5 @@
 import abc
-from typing import Any, List, Dict, Optional, Union
+from typing import Any, Dict, Optional
 
 # Define a type for error responses
 ErrorResponse = Dict[str, Any]  # Typically {"error": str, "details": Optional[Any]}
@@ -12,7 +12,7 @@ class SerpProvider(abc.ABC):
     """
 
     @abc.abstractmethod
-    async def search(self, keyword: str, num_results: int = 10) -> Dict[str, Any]:
+    async def search(self, keyword: str, num_results: int = 10) -> Any:
         """
         Perform an organic web search.
 
@@ -23,7 +23,7 @@ class SerpProvider(abc.ABC):
         pass
 
     @abc.abstractmethod
-    async def search_news(self, keyword: str, num_results: int = 10) -> Dict[str, Any]:
+    async def search_news(self, keyword: str, num_results: int = 10) -> Any:
         """
         Perform a news search.
 
@@ -40,7 +40,7 @@ class SerpProvider(abc.ABC):
         keyword: Optional[str] = None,
         image_url: Optional[str] = None,
         num_results: int = 10,
-    ) -> Dict[str, Any]:
+    ) -> Any:
         """
         Perform an image search.
         One of 'keyword' or 'image_url' must be provided.
@@ -56,7 +56,7 @@ class SerpProvider(abc.ABC):
     @abc.abstractmethod
     async def search_finance(
         self, query: str, window: Optional[str] = None
-    ) -> Dict[str, Any]:
+    ) -> Any:
         """
         Retrieves financial data.
         """
@@ -65,7 +65,7 @@ class SerpProvider(abc.ABC):
     @abc.abstractmethod
     async def search_jobs(
         self, query: str, location: Optional[str] = None, num_results: int = 10
-    ) -> Dict[str, Any]:
+    ) -> Any:
         """
         Perform a job search.
         """
@@ -73,15 +73,25 @@ class SerpProvider(abc.ABC):
 
     @abc.abstractmethod
     async def search_lens(
-        self, image_url: str, num_results: int = 10
-    ) -> Dict[str, Any]:
+        self,
+        image_url: str,
+        country: Optional[str] = None,
+        num_results: int = 10,
+    ) -> Any:
         """
         Perform a lens search.
         """
         pass
 
     @abc.abstractmethod
-    async def search_maps(self, query: str, num_results: int = 10) -> Dict[str, Any]:
+    async def search_maps(
+        self,
+        query: str,
+        ll: Optional[str] = None,
+        map_type: str = "search",
+        data_id: Optional[str] = None,
+        num_results: int = 10,
+    ) -> Any:
         """
         Perform a maps search.
         """
@@ -91,13 +101,14 @@ class SerpProvider(abc.ABC):
     async def search_shopping(
         self,
         query: str,
-        country: str = "us",
+        country: Optional[str] = None,
+        domain: Optional[str] = None,
         min_price: Optional[int] = None,
         max_price: Optional[int] = None,
         condition: Optional[str] = None,
         sort_by: Optional[str] = None,
         num_results: int = 10,
-    ) -> Dict[str, Any]:
+    ) -> Any:
         """
         Perform a shopping search.
         """

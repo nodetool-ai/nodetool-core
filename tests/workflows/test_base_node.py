@@ -24,19 +24,19 @@ test_file = os.path.join(current_dir, "test.jpg")
 class DummyClass(BaseNode):
     prop: int = 123
 
-    def process(self, context: ProcessingContext) -> int:
+    async def process(self, context: ProcessingContext) -> int:
         return self.prop
 
 
 class StringNode(BaseNode):
     value: str = "test"
 
-    def process(self, context: ProcessingContext) -> str:
+    async def process(self, context: ProcessingContext) -> str:
         return self.value
 
 
 def test_node_creation():
-    node = BaseNode(id="")
+    node = BaseNode(id="")  # type: ignore[call-arg]
     assert node._id == ""
 
 
@@ -88,7 +88,7 @@ def test_node_output_type():
 
 
 def test_string_node_output_type():
-    node = StringNode(_id="")
+    node = StringNode(id="")  # type: ignore[call-arg]
     assert node.outputs() == [OutputSlot(type=TypeMetadata(type="str"), name="output")]
 
 
@@ -236,7 +236,7 @@ def test_base_node_get_json_schema():
 class DataframeNode(BaseNode):
     dataframe: DataframeRef = DataframeRef()
 
-    def process(self, context: ProcessingContext) -> DataframeRef:
+    async def process(self, context: ProcessingContext) -> DataframeRef:
         return self.dataframe
 
 
@@ -261,9 +261,11 @@ def test_node_assign_property_with_dataframe_dict():
     # Verify it was parsed correctly
     assert isinstance(node.dataframe, DataframeRef)
     assert node.dataframe.uri == "test://dataframe.csv"
-    assert len(node.dataframe.columns) == 2
-    assert node.dataframe.columns[0].name == "col1"
-    assert node.dataframe.columns[0].data_type == "int"
+    assert node.dataframe.columns is not None
+    columns = node.dataframe.columns
+    assert len(columns) == 2
+    assert columns[0].name == "col1"
+    assert columns[0].data_type == "int"
     assert node.dataframe.data == [[1, "a"], [2, "b"]]
 
 
@@ -283,6 +285,7 @@ def test_node_set_properties_with_complex_types():
 
     assert isinstance(node.dataframe, DataframeRef)
     assert node.dataframe.uri == "test://df.parquet"
+    assert node.dataframe.columns is not None
     assert node.dataframe.columns[0].name == "id"
 
 
@@ -293,7 +296,7 @@ def test_node_assign_property_uses_from_dict_for_base_types():
     class ImageNode(BaseNode):
         image: ImageRef = ImageRef()
 
-        def process(self, context: ProcessingContext) -> ImageRef:
+        async def process(self, context: ProcessingContext) -> ImageRef:
             return self.image
 
     node = ImageNode()
@@ -342,7 +345,7 @@ def test_node_assign_property_list_of_base_types():
     class MultiImageNode(BaseNode):
         images: list[ImageRef] = []
 
-        def process(self, context: ProcessingContext) -> list[ImageRef]:
+        async def process(self, context: ProcessingContext) -> list[ImageRef]:
             return self.images
 
     node = MultiImageNode()

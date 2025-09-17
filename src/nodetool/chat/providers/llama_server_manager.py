@@ -263,7 +263,7 @@ class _RunningServer:
         stderr_task: Background task forwarding stderr logs, if any.
     """
 
-    process: asyncio.subprocess.Process
+    process: asyncio.subprocess.Process | Any
     base_url: str
     model_key: str
     alias: str

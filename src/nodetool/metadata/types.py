@@ -71,7 +71,7 @@ class BaseType(BaseModel):
     It is used to create a mapping of type names to their corresponding classes.
     """
 
-    type: str
+    type: Any
 
     @classmethod
     def __init_subclass__(cls):
@@ -192,7 +192,7 @@ asset_types = set()
 
 
 class AssetRef(BaseType):
-    type: str = "asset"
+    type: Any = "asset"
     uri: str = ""
     asset_id: str | None = None
     data: Any = None
@@ -518,7 +518,7 @@ class OpenAIModel(BaseType):
 
 
 class HuggingFaceModel(BaseType):
-    type: str = "hf.model"
+    type: Any = "hf.model"
     repo_id: str = ""
     path: str | None = None
     variant: str | None = None
@@ -585,27 +585,27 @@ class HFCheckpointModel(HuggingFaceModel):
 
 
 class HFStableDiffusion(HFCheckpointModel):
-    type: Literal["hf.stable_diffusion"] = "hf.stable_diffusion"
+    type: Literal["hf.stable_diffusion"] = "hf.stable_diffusion"  # type: ignore[override]
 
 
 class HFStableDiffusionXL(HFCheckpointModel):
-    type: Literal["hf.stable_diffusion_xl"] = "hf.stable_diffusion_xl"
+    type: Literal["hf.stable_diffusion_xl"] = "hf.stable_diffusion_xl"  # type: ignore[override]
 
 
 class HFStableDiffusion3(HFCheckpointModel):
-    type: Literal["hf.stable_diffusion_3"] = "hf.stable_diffusion_3"
+    type: Literal["hf.stable_diffusion_3"] = "hf.stable_diffusion_3"  # type: ignore[override]
 
 
 class HFFlux(HFCheckpointModel):
-    type: Literal["hf.flux"] = "hf.flux"
+    type: Literal["hf.flux"] = "hf.flux"  # type: ignore[override]
 
 
 class HFQwenImage(HFCheckpointModel):
-    type: Literal["hf.qwen_image"] = "hf.qwen_image"
+    type: Literal["hf.qwen_image"] = "hf.qwen_image"  # type: ignore[override]
 
 
 class HFLTXV(HFCheckpointModel):
-    type: Literal["hf.ltxv"] = "hf.ltxv"
+    type: Literal["hf.ltxv"] = "hf.ltxv"  # type: ignore[override]
 
 
 class HFControlNet(HuggingFaceModel):

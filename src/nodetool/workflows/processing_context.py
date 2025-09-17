@@ -59,6 +59,14 @@ from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
 from nodetool.workflows.base_node import BaseNode
 from nodetool.workflows.property import Property
+from nodetool.workflows.torch_support import (
+    TORCH_AVAILABLE,
+    detach_tensors_recursively,
+    is_torch_tensor,
+    tensor_from_pil,
+    tensor_to_image_array,
+    torch_tensor_to_metadata,
+)
 from nodetool.integrations.vectorstores.chroma.async_chroma_client import (
     get_async_chroma_client,
 )
@@ -98,14 +106,6 @@ HTTP_HEADERS = {
     "Accept": "*/*",
     "Accept-Language": "en-US,en;q=0.9",
 }
-
-try:
-    import torch
-
-    TORCH_AVAILABLE = True
-except ImportError:
-    TORCH_AVAILABLE = False
-
 
 class ProcessingContext:
     """
@@ -375,16 +375,8 @@ class ProcessingContext:
         if all_cacheable:
             key = self.generate_node_cache_key(node)
 
-            # Move torch tensors to CPU before caching if torch is available
-            if TORCH_AVAILABLE:
-                if isinstance(result, dict):
-                    for k, v in result.items():
-                        if isinstance(v, torch.Tensor):
-                            result[k] = v.cpu().detach()
-                elif isinstance(result, torch.Tensor):
-                    result = result.cpu().detach()
-
-            Environment.get_node_cache().set(key, result, ttl)
+            cache_value = detach_tensors_recursively(result)
+            Environment.get_node_cache().set(key, cache_value, ttl)
 
     async def find_asset(self, asset_id: str):
         """
@@ -955,8 +947,8 @@ class ProcessingContext:
             return AudioRef(uri=memory_uri)
         elif isinstance(obj, np.ndarray):
             return NPArray.from_numpy(obj)
-        elif TORCH_AVAILABLE and isinstance(obj, torch.Tensor):
-            return TorchTensor.from_tensor(obj)
+        elif is_torch_tensor(obj):
+            return torch_tensor_to_metadata(obj)
         else:
             return obj
 
@@ -1245,7 +1237,7 @@ class ProcessingContext:
             raise ImportError("torch is required for image_to_tensor")
 
         image = await self.image_to_pil(image_ref)
-        return torch.tensor(np.array(image)).float() / 255.0
+        return tensor_from_pil(image)
 
     async def image_to_torch_tensor(self, image_ref: ImageRef) -> Any:
         """
@@ -1261,7 +1253,7 @@ class ProcessingContext:
             raise ImportError("torch is required for image_to_torch_tensor")
 
         image = await self.image_to_pil(image_ref)
-        return torch.tensor(np.array(image)).float() / 255.0
+        return tensor_from_pil(image)
 
     async def image_to_base64(self, image_ref: ImageRef) -> str:
         """
@@ -1693,9 +1685,7 @@ class ProcessingContext:
         if not TORCH_AVAILABLE:
             raise ImportError("torch is required for image_from_tensor")
 
-        img = np.clip(255.0 * image_tensor.cpu().detach().numpy(), 0, 255).astype(
-            np.uint8
-        )
+        img = tensor_to_image_array(image_tensor)
         if img.ndim == 5:
             img = img[0]
         if img.shape[0] == 1:

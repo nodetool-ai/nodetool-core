@@ -204,7 +204,7 @@ class TestOpenAIProvider(BaseProviderTest):
                 message="Unknown error", request=MagicMock(), body={}
             )
 
-    def mock_api_call(self, response_data: Dict[str, Any]):
+    def mock_api_call(self, response_data: Dict[str, Any]) -> MagicMock:
         """Mock OpenAI API call with structured response."""
         if "tool_calls" in response_data:
             # Tool calling response
@@ -226,9 +226,9 @@ class TestOpenAIProvider(BaseProviderTest):
             openai.resources.chat.completions.AsyncCompletions,
             "create",
             side_effect=mock_create,
-        )
+        )  # type: ignore[return-value]
 
-    def mock_streaming_call(self, chunks: List[Dict[str, Any]]):
+    def mock_streaming_call(self, chunks: List[Dict[str, Any]]) -> MagicMock:
         """Mock OpenAI streaming API call."""
         # Convert generic chunks to OpenAI format
         text = "".join(chunk.get("content", "") for chunk in chunks)
@@ -246,16 +246,16 @@ class TestOpenAIProvider(BaseProviderTest):
             openai.resources.chat.completions.AsyncCompletions,
             "create",
             side_effect=mock_stream,
-        )
+        )  # type: ignore[return-value]
 
-    def mock_error_response(self, error_type: str):
+    def mock_error_response(self, error_type: str) -> MagicMock:
         """Mock OpenAI API error response."""
         error = self.create_openai_error(error_type)
         return patch.object(
             openai.resources.chat.completions.AsyncCompletions,
             "create",
             side_effect=error,
-        )
+        )  # type: ignore[return-value]
 
     @pytest.mark.asyncio
     async def test_openai_specific_features(self):

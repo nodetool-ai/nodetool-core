@@ -7,7 +7,15 @@ from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.graph import Graph
 from typing import Any
 
-from nodetool.workflows.types import Chunk, NodeProgress
+from nodetool.workflows.types import (
+    Chunk,
+    Error,
+    JobUpdate,
+    LogUpdate,
+    NodeProgress,
+    NodeUpdate,
+    OutputUpdate,
+)
 
 
 class WorkflowNode(BaseNode):
@@ -21,8 +29,13 @@ class WorkflowNode(BaseNode):
     """
 
     _dynamic = True
+    _supports_dynamic_outputs = True
 
     workflow_json: dict = {}
+
+    @classmethod
+    def is_streaming_output(cls):
+        return True
 
     def load_graph(self):
         edges, nodes = read_graph(self.workflow_json)
@@ -37,7 +50,7 @@ class WorkflowNode(BaseNode):
         edges, nodes = read_graph(self.workflow_json)
         return APIGraph(edges=edges, nodes=nodes)
 
-    async def process(self, context: ProcessingContext) -> dict[str, Any]:
+    async def gen_process(self, context: ProcessingContext):
         req = RunJobRequest(
             user_id=context.user_id,
             auth_token=context.auth_token,
@@ -46,44 +59,36 @@ class WorkflowNode(BaseNode):
         )
         output = {}
         async for msg in run_workflow(req):
-            # Convert Pydantic model to dict for uniform access
-            if hasattr(msg, "model_dump"):
-                msg_dict = msg.model_dump()
-            else:
-                msg_dict = msg
-
-            assert "type" in msg_dict
-            if msg_dict["type"] == "error":
-                raise Exception(msg_dict["error"])
-            if msg_dict["type"] == "job_update":
-                if msg_dict["status"] == "completed":
-                    # Prefer the final value per output; reduce lists to last element
-                    result = msg_dict.get("result") or {}
-                    reduced: dict[str, Any] = {}
-                    for k, v in result.items():
-                        if isinstance(v, list) and len(v) > 0:
-                            reduced[k] = [v[-1]]
-                        else:
-                            reduced[k] = v
-                    output = reduced
-            if msg_dict["type"] == "node_progress":
+            if isinstance(msg, Error):
+                raise Exception(msg.error)
+            if isinstance(msg, OutputUpdate):
+                yield msg.output_name, msg.value
+            if isinstance(msg, NodeProgress):
                 context.post_message(
                     NodeProgress(
                         node_id=self._id,
-                        progress=msg_dict["progress"],
-                        total=msg_dict["total"],
+                        progress=msg.progress,
+                        total=msg.total,
                     )
                 )
-            if msg_dict["type"] == "chunk":
-                context.post_message(Chunk(content=msg_dict["content"]))
-            if msg_dict["type"] == "node_update":
-                if msg_dict["status"] == "completed":
+            if isinstance(msg, Chunk):
+                context.post_message(Chunk(content=msg.content))
+            if isinstance(msg, LogUpdate):
+                context.post_message(
+                    LogUpdate(
+                        node_id=self._id,
+                        node_name=msg.node_name,
+                        content=msg.content,
+                        severity=msg.severity,
+                    )
+                )
+            if isinstance(msg, NodeUpdate):
+                if msg.status == "completed":
                     context.post_message(
-                        NodeProgress(
+                        LogUpdate(
                             node_id=self._id,
-                            progress=0,
-                            total=0,
-                            chunk=f"{msg_dict['node_name']} {msg_dict['status']}",
+                            node_name=msg.node_name,
+                            content=f"{msg.node_name} {msg.status}",
+                            severity="error",
                         )
                     )
-        return output

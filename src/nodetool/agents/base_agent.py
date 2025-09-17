@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import AsyncGenerator, List, Sequence, Union, Any, Optional
+from typing import AsyncGenerator, Sequence, Union, Any, Optional
 
 from nodetool.chat.providers import ChatProvider
 from nodetool.agents.tools.base import Tool
@@ -39,8 +39,8 @@ class BaseAgent(ABC):
     @abstractmethod
     async def execute(
         self,
-        processing_context: ProcessingContext,
-    ) -> AsyncGenerator[Union[TaskUpdate, Chunk, ToolCall, PlanningUpdate], None]:
+        context: ProcessingContext,
+    ) -> AsyncGenerator[Any, None]:
         """
         Execute the agent's objective.
 
@@ -48,12 +48,14 @@ class BaseAgent(ABC):
         planning and execution logic.
 
         Args:
-            processing_context (ProcessingContext): The processing context.
+            context (ProcessingContext): The processing context.
 
         Yields:
-            Union[TaskUpdate, Chunk, ToolCall, PlanningUpdate]: Execution progress.
+            Any: Execution progress updates.
         """
-        pass
+        if False:
+            yield None
+        raise NotImplementedError
 
     @abstractmethod
     def get_results(self) -> Any:

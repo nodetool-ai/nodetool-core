@@ -1,4 +1,5 @@
 import pytest
+from typing import AsyncGenerator, Any
 
 from nodetool.agents.base_agent import BaseAgent
 from nodetool.chat.providers.base import ChatProvider
@@ -27,7 +28,9 @@ class DummyProvider(ChatProvider):
 
 
 class DummyAgent(BaseAgent):
-    async def execute(self, processing_context: ProcessingContext):
+    async def execute(
+        self, context: ProcessingContext
+    ) -> AsyncGenerator[Any, None]:
         yield Chunk(content="done")
 
     def get_results(self):
