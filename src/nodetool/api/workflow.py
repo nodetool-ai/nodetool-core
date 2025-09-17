@@ -7,7 +7,7 @@ from fastapi.responses import StreamingResponse
 from nodetool.types.job import JobUpdate
 from nodetool.workflows.types import Error, OutputUpdate
 from pydantic import BaseModel, Field
-from nodetool.types.graph import Edge, Node, remove_connected_slots
+from nodetool.types.graph import Edge, Graph, Node, remove_connected_slots
 from nodetool.types.workflow import (
     WorkflowList,
     Workflow,
@@ -44,8 +44,21 @@ def find_thumbnail(workflow: WorkflowModel) -> str | None:
         return None
 
 
-def from_model(workflow: WorkflowModel):
-    api_graph = workflow.get_api_graph()
+def from_model(
+    workflow: WorkflowModel,
+    *,
+    api_graph: Graph | None = None,
+    input_schema: dict[str, Any] | None = None,
+    output_schema: dict[str, Any] | None = None,
+):
+    if api_graph is None:
+        api_graph = workflow.get_api_graph()
+
+    if input_schema is None:
+        input_schema = get_input_schema(api_graph)
+
+    if output_schema is None:
+        output_schema = get_output_schema(api_graph)
 
     return Workflow(
         id=workflow.id,
@@ -60,11 +73,29 @@ def from_model(workflow: WorkflowModel):
         thumbnail=workflow.thumbnail or "",
         thumbnail_url=find_thumbnail(workflow),
         graph=api_graph,
-        input_schema=get_input_schema(api_graph),
-        output_schema=get_output_schema(api_graph),
+        input_schema=input_schema,
+        output_schema=output_schema,
         settings=workflow.settings,
         run_mode=workflow.run_mode,
     )
+
+
+def _graph_has_string_input_and_image_output(graph: Graph) -> bool:
+    has_string_input = False
+    has_image_output = False
+
+    for node in graph.nodes:
+        node_type = node.type
+
+        if node_type == "nodetool.input.StringInput":
+            has_string_input = True
+        elif node_type == "nodetool.output.ImageOutput":
+            has_image_output = True
+
+        if has_string_input and has_image_output:
+            return True
+
+    return False
 
 
 @router.post("/")
@@ -178,6 +209,61 @@ async def public(
     )
     return WorkflowList(
         workflows=[from_model(workflow) for workflow in workflows], next=cursor
+    )
+
+
+async def _collect_accessible_workflows(user: str) -> list[WorkflowModel]:
+    workflows_by_id: dict[str, WorkflowModel] = {}
+
+    async def collect(user_id: str | None):
+        pagination_cursor: Optional[str] = None
+        while True:
+            batch, pagination_cursor = await WorkflowModel.paginate(
+                user_id=user_id, limit=200, start_key=pagination_cursor
+            )
+            for wf in batch:
+                workflows_by_id[wf.id] = wf
+            if not pagination_cursor:
+                break
+
+    await collect(user)
+    await collect(None)
+
+    return list(workflows_by_id.values())
+
+
+@router.get("/image-generation")
+async def image_generation_workflows(
+    user: str = Depends(current_user),
+) -> WorkflowList:
+    matched: list[tuple[datetime, WorkflowModel, Graph, dict[str, Any], dict[str, Any]]] = []
+
+    for workflow in await _collect_accessible_workflows(user):
+        api_graph = workflow.get_api_graph()
+
+        if not _graph_has_string_input_and_image_output(api_graph):
+            continue
+
+        input_schema = get_input_schema(api_graph)
+        output_schema = get_output_schema(api_graph)
+
+        matched.append(
+            (workflow.updated_at, workflow, api_graph, input_schema, output_schema)
+        )
+
+    matched.sort(key=lambda item: item[0], reverse=True)
+
+    return WorkflowList(
+        workflows=[
+            from_model(
+                wf,
+                api_graph=graph,
+                input_schema=input_schema,
+                output_schema=output_schema,
+            )
+            for _, wf, graph, input_schema, output_schema in matched
+        ],
+        next=None,
     )
 
 
