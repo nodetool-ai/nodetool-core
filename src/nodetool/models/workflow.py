@@ -106,7 +106,7 @@ class Workflow(DBModel):
         )
 
     @classmethod
-    async def create(cls, user_id: str, name: str, graph: dict[str, Any], **kwargs):
+    async def create(cls, user_id: str, name: str, graph: dict[str, Any], **kwargs):  # type: ignore
         """
         Create a new image in the database.
         """
@@ -126,6 +126,7 @@ class Workflow(DBModel):
         limit: int = 100,
         start_key: Optional[str] = None,
         columns: list[str] | None = None,
+        run_mode: Optional[str] = None,
     ) -> tuple[list["Workflow"], str]:
         """Paginate through workflows, optionally filtering by user.
 
@@ -135,7 +136,7 @@ class Workflow(DBModel):
             limit: Maximum number of workflows to return.
             start_key: The ID of the workflow to start pagination after (exclusive).
             columns: Specific columns to select. If None, all columns are selected.
-
+            run_mode: Optional run mode to filter by.
         Returns:
             A tuple containing a list of Workflow objects and the ID of the
             last evaluated workflow (or an empty string if it's the last page).
@@ -177,6 +178,9 @@ class Workflow(DBModel):
 
         if start_key:
             conditions.append(Field("id").greater_than(start_key))
+
+        if run_mode:
+            conditions.append(Field("run_mode").equals(run_mode))
 
         adapter = await cls.adapter()
         results, last_evaluated_key = await adapter.query(

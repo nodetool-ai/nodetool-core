@@ -80,19 +80,19 @@ def from_model(
     )
 
 
-def _graph_has_string_input_and_image_output(graph: Graph) -> bool:
-    has_string_input = False
-    has_image_output = False
+def _graph_has_input_and_output(graph: Graph):
+    has_input = False
+    has_output = False
 
     for node in graph.nodes:
         node_type = node.type
 
-        if node_type == "nodetool.input.StringInput":
-            has_string_input = True
-        elif node_type == "nodetool.output.ImageOutput":
-            has_image_output = True
+        if node_type.startswith("nodetool.input."):
+            has_input = True
+        elif node_type.startswith("nodetool.output."):
+            has_output = True
 
-        if has_string_input and has_image_output:
+        if has_input and has_output:
             return True
 
     return False
@@ -185,11 +185,16 @@ async def index(
     cursor: Optional[str] = None,
     limit: int = 100,
     columns: Optional[str] = None,
+    run_mode: Optional[str] = None,
 ) -> WorkflowList:
     column_list = columns.split(",") if columns else None
 
     workflows, cursor = await WorkflowModel.paginate(
-        user_id=user, limit=limit, start_key=cursor, columns=column_list
+        user_id=user,
+        limit=limit,
+        start_key=cursor,
+        columns=column_list,
+        run_mode=run_mode,
     )
     return WorkflowList(
         workflows=[from_model(workflow) for workflow in workflows], next=cursor
@@ -209,61 +214,6 @@ async def public(
     )
     return WorkflowList(
         workflows=[from_model(workflow) for workflow in workflows], next=cursor
-    )
-
-
-async def _collect_accessible_workflows(user: str) -> list[WorkflowModel]:
-    workflows_by_id: dict[str, WorkflowModel] = {}
-
-    async def collect(user_id: str | None):
-        pagination_cursor: Optional[str] = None
-        while True:
-            batch, pagination_cursor = await WorkflowModel.paginate(
-                user_id=user_id, limit=200, start_key=pagination_cursor
-            )
-            for wf in batch:
-                workflows_by_id[wf.id] = wf
-            if not pagination_cursor:
-                break
-
-    await collect(user)
-    await collect(None)
-
-    return list(workflows_by_id.values())
-
-
-@router.get("/image-generation")
-async def image_generation_workflows(
-    user: str = Depends(current_user),
-) -> WorkflowList:
-    matched: list[tuple[datetime, WorkflowModel, Graph, dict[str, Any], dict[str, Any]]] = []
-
-    for workflow in await _collect_accessible_workflows(user):
-        api_graph = workflow.get_api_graph()
-
-        if not _graph_has_string_input_and_image_output(api_graph):
-            continue
-
-        input_schema = get_input_schema(api_graph)
-        output_schema = get_output_schema(api_graph)
-
-        matched.append(
-            (workflow.updated_at, workflow, api_graph, input_schema, output_schema)
-        )
-
-    matched.sort(key=lambda item: item[0], reverse=True)
-
-    return WorkflowList(
-        workflows=[
-            from_model(
-                wf,
-                api_graph=graph,
-                input_schema=input_schema,
-                output_schema=output_schema,
-            )
-            for _, wf, graph, input_schema, output_schema in matched
-        ],
-        next=None,
     )
 
 
@@ -386,7 +336,7 @@ async def examples() -> WorkflowList:
                 collect_from_value(item, providers, models)
 
     # Load full examples in parallel to speed up detection
-    load_tasks: list[asyncio.Future] = []
+    load_tasks = []
     indices: list[int] = []
     for i, ex in enumerate(examples):
         if ex.package_name and ex.name:
@@ -397,7 +347,7 @@ async def examples() -> WorkflowList:
             )
             indices.append(i)
 
-    loaded_map: dict[int, Workflow | None] = {}
+    loaded_map = {}
     if load_tasks:
         results = await asyncio.gather(*load_tasks, return_exceptions=True)
         for pos, res in enumerate(results):
