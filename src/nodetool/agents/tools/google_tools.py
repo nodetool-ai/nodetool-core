@@ -213,11 +213,15 @@ class GoogleImageGenerationTool(Tool):
         )
         assert response.generated_images, "No images generated"
 
+        image_bytes = None
         for generated_image in response.generated_images:
             assert generated_image.image, "No image"
             assert generated_image.image.image_bytes, "No image bytes"
             image_bytes = generated_image.image.image_bytes
             break
+
+        if image_bytes is None:
+            raise ValueError("No image bytes found in response")
 
         file_path = context.resolve_workspace_path(output_file)
         with open(file_path, "wb") as f:

@@ -456,10 +456,13 @@ class ChatSSERunner(BaseChatRunner):
         Yields:
             SSE-formatted event strings in OpenAI format
         """
+        # Initialize validated_request to None
+        validated_request = None
+        
         try:
             # Validate OpenAI request format first
             log.debug("Validating OpenAI Chat Completions API request format")
-            validated_request: dict = self._validate_openai_request(request_data)
+            validated_request = self._validate_openai_request(request_data)
 
             # Convert to internal format
             log.debug("Converting validated OpenAI request to internal format")
@@ -508,8 +511,9 @@ class ChatSSERunner(BaseChatRunner):
                             await self.current_task
                         except Exception as e:
                             # Send error and break
+                            model_name = validated_request["model"] if validated_request else "unknown"
                             error_chunk = self._create_openai_error_chunk(
-                                str(e), validated_request["model"]
+                                str(e), model_name
                             )
                             yield f"data: {error_chunk.model_dump_json()}\n\n"
                         break
@@ -518,14 +522,16 @@ class ChatSSERunner(BaseChatRunner):
         except asyncio.CancelledError:
             log.info("SSE streaming cancelled")
             # Send cancellation message in OpenAI format
+            model_name = validated_request["model"] if validated_request else "unknown"
             cancel_chunk = self._create_openai_error_chunk(
-                "Generation stopped", validated_request["model"]
+                "Generation stopped", model_name
             )
             yield f"data: {cancel_chunk.model_dump_json()}\n\n"
         except Exception as e:
             log.error(f"Error in SSE streaming: {str(e)}", exc_info=True)
+            model_name = validated_request["model"] if validated_request else "unknown"
             error_chunk = self._create_openai_error_chunk(
-                str(e), validated_request["model"]
+                str(e), model_name
             )
             yield f"data: {error_chunk.model_dump_json()}\n\n"
         finally:

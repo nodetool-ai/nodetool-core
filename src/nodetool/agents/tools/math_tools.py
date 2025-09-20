@@ -303,6 +303,7 @@ class TrigonometryTool(Tool):
             else:
                 input_radians = value
             
+            result = None
             if function == "sin":
                 result = math.sin(input_radians)
             elif function == "cos":
@@ -326,6 +327,9 @@ class TrigonometryTool(Tool):
             elif function == "rad_to_deg":
                 result = math.degrees(value)
             
+            if result is None:
+                raise ValueError(f"Unsupported function: {function}")
+                
             return {
                 "function": function,
                 "input_value": value,

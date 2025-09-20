@@ -101,6 +101,9 @@ class NodeTool(Tool):
         Returns:
             Dict containing the execution result or error information
         """
+        # Initialize node to None
+        node = None
+        
         try:
             # Create node instance with a unique ID and properties
             import uuid
@@ -145,7 +148,7 @@ class NodeTool(Tool):
             }
         finally:
             # Clean up node resources if needed
-            if "node" in locals():
+            if node is not None:
                 await node.finalize(context)
 
     def user_message(self, params: Dict[str, Any]) -> str:

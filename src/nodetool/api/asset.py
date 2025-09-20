@@ -491,6 +491,7 @@ async def create(
             raise HTTPException(status_code=404, detail="Workflow not found")
 
     try:
+        storage = None
         if file:
             file_content = await file.read()
             file_size = len(file_content)  # Calculate actual file size
@@ -514,7 +515,7 @@ async def create(
             duration=duration,
             size=file_size,
         )
-        if file_io:
+        if file_io and storage:
             file_io.seek(0)
             await storage.upload(asset.file_name, file_io)
 
