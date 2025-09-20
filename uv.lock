@@ -2600,6 +2600,55 @@ wheels = [
 ]
 
 [[package]]
+name = "mlx"
+version = "0.29.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "mlx-metal", marker = "sys_platform == 'darwin'" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/fe/ca/258aaef43db68f0cc5489eaf6f09b9b3f5f186cc271d84526c5add8e8c86/mlx-0.29.1-cp311-cp311-macosx_13_0_arm64.whl", hash = "sha256:4da94700d8d19966f56962d16fe12510e41c3a85d3c90c6fb532016a8ab3c6d5", size = 546491, upload-time = "2025-09-12T00:17:42.169Z" },
+    { url = "https://files.pythonhosted.org/packages/35/0e/73e59439ffd9eb03e34a6d8c1c73cf56326f9d561f54cf238ca8b1edbad8/mlx-0.29.1-cp311-cp311-macosx_14_0_arm64.whl", hash = "sha256:0edf6c2c34bdd073741f583ea72ad538bbec26ebf66dc907478bbd68f942b5b8", size = 546489, upload-time = "2025-09-12T00:17:45.024Z" },
+    { url = "https://files.pythonhosted.org/packages/60/db/1448db66bb98dd1453089fcf2b285fa7bad744e549609927fa636d160ae9/mlx-0.29.1-cp311-cp311-macosx_15_0_arm64.whl", hash = "sha256:03dd298a3818ef32a764edbf602b2233739ab8eb3fd095b8a2ff4c994d373cdf", size = 546488, upload-time = "2025-09-12T00:17:30.04Z" },
+    { url = "https://files.pythonhosted.org/packages/25/65/bfc86306088989e07e7795130b4ef527eb02f722b17171c33e572636e7a0/mlx-0.29.1-cp311-cp311-manylinux_2_35_x86_64.whl", hash = "sha256:380f005a5c6889496999358ee7c5e8144a3b5c7c1f54efe1f74cfb073b37f1be", size = 650504, upload-time = "2025-09-12T00:21:43.203Z" },
+    { url = "https://files.pythonhosted.org/packages/4d/89/907e49f4b25c3bc98a3b407ac46c47181f587442840a3b462903c9b2458d/mlx-0.29.1-cp312-cp312-macosx_13_0_arm64.whl", hash = "sha256:1c437c32931ab69e514dfec25d13e319cbe43b2bd524047cbbe103e8be32d903", size = 546945, upload-time = "2025-09-12T00:17:58.841Z" },
+    { url = "https://files.pythonhosted.org/packages/c6/8f/c9a166a5070aeff9b5bd8b7ecc681113c764ceab645d7bfee0da4e6b79c4/mlx-0.29.1-cp312-cp312-macosx_14_0_arm64.whl", hash = "sha256:e0a7b9ac66a8000eef75ec2cb4394a2133a2b7b2290606ade47d7c1a1d05d16e", size = 546939, upload-time = "2025-09-12T00:17:21.042Z" },
+    { url = "https://files.pythonhosted.org/packages/ad/28/5d6a4c3708630550dc35d1de67ddac1011b8112f313004fe98dba559f8c7/mlx-0.29.1-cp312-cp312-macosx_15_0_arm64.whl", hash = "sha256:6b5795655fe1a313bbfa52f16a4b23226bef32e47bfc81d3885e9487ca34e7f7", size = 546936, upload-time = "2025-09-12T00:18:00.329Z" },
+    { url = "https://files.pythonhosted.org/packages/4f/e5/db79a93b3347ca594b8a13ebf0bc00f6c830a57ea0333c6a735cf17621d9/mlx-0.29.1-cp312-cp312-manylinux_2_35_x86_64.whl", hash = "sha256:7d7e15086bf71be3d7c6480816d7988ad91e4c8c3989a251fd12154f2f17f6c4", size = 646112, upload-time = "2025-09-12T00:23:25.959Z" },
+    { url = "https://files.pythonhosted.org/packages/66/62/7691ea664123d6e1fc0626207d5f1a6ed2b92b71059f4be42634e89b479e/mlx-0.29.1-cp313-cp313-macosx_13_0_arm64.whl", hash = "sha256:e86644cef409a00dd46eb9debf0796899623c686d16cc25b6e83078fb5081eba", size = 546904, upload-time = "2025-09-12T00:17:43.197Z" },
+    { url = "https://files.pythonhosted.org/packages/44/b8/1a77cafb6302703fe5576b2298f533cb36b6721fa6d9c41a9d6078c14a89/mlx-0.29.1-cp313-cp313-macosx_14_0_arm64.whl", hash = "sha256:fd27d49f631ecc9d0a766327e65236738e338c74c7be504c22a1e53801eb40d1", size = 546909, upload-time = "2025-09-12T00:17:15.127Z" },
+    { url = "https://files.pythonhosted.org/packages/79/f1/1f4ddf70d1f77993e25f25fb0ab8f5579d81fce6a2a554400c75b447c148/mlx-0.29.1-cp313-cp313-macosx_15_0_arm64.whl", hash = "sha256:aaeacf864163b645ddd58c57e65290bf4c8cd493378e89dd11c00d2c9c42b42d", size = 546904, upload-time = "2025-09-12T00:17:09.691Z" },
+    { url = "https://files.pythonhosted.org/packages/eb/47/7216e859ba3dbda78c840858cf1e120442721b48c974f587ef4e89d5f86f/mlx-0.29.1-cp313-cp313-manylinux_2_35_x86_64.whl", hash = "sha256:e33221c75ebed38dc6bad7fed46cdde8e4dbb47d789401232b4ab2c34305d42d", size = 646103, upload-time = "2025-09-12T00:21:56.544Z" },
+]
+
+[[package]]
+name = "mlx-lm"
+version = "0.28.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "jinja2" },
+    { name = "mlx" },
+    { name = "numpy" },
+    { name = "protobuf" },
+    { name = "pyyaml" },
+    { name = "transformers" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/a5/8d/44e0d873f0859426bfbcde076e63a75e6700f89baad9e91c90fa7fd1d000/mlx_lm-0.28.0.tar.gz", hash = "sha256:42d0304e45a09e68c73a851210c019a6fd3fc61221632c9448cf03b31bc4cac5", size = 203441, upload-time = "2025-09-17T21:27:25.434Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/db/1e/cdae9675b02e5658241abf9ce9372eb5dc1a44a835f6b62c56864b0505fb/mlx_lm-0.28.0-py3-none-any.whl", hash = "sha256:a2002b14a73ac6d88685a5e6ff5c5d86811157288468bf16aff7a94e6c872f3d", size = 277949, upload-time = "2025-09-17T21:27:23.995Z" },
+]
+
+[[package]]
+name = "mlx-metal"
+version = "0.29.1"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/61/b4/c96f54061fff12c2acc06f2cd402aae4a9cba52e40aae51f71ae508ef206/mlx_metal-0.29.1-py3-none-macosx_13_0_arm64.whl", hash = "sha256:b9dadd432948eab196ed110db0dc745795fd516b7124c0d3c4d176fee678a07a", size = 34983555, upload-time = "2025-09-12T00:19:44.815Z" },
+    { url = "https://files.pythonhosted.org/packages/82/3a/45c9ea1b6741a5dc80ad0b57eeee09e544a0d89ca66c7ad6cc55887c00d8/mlx_metal-0.29.1-py3-none-macosx_14_0_arm64.whl", hash = "sha256:824b939b721a964a455aeea4d0e956e4cc945f3333522c1e72a077ae774bca49", size = 34712571, upload-time = "2025-09-12T00:19:26.183Z" },
+    { url = "https://files.pythonhosted.org/packages/64/7f/294c8cac159661d732e5c01f841e07edfd2ea90651d39faca6579b3cdbf4/mlx_metal-0.29.1-py3-none-macosx_15_0_arm64.whl", hash = "sha256:ebd9ba8e83213f929663b92b8065b451a4276c7002ed83eae0fc8dde721c50c5", size = 34704543, upload-time = "2025-09-12T00:18:59.595Z" },
+]
+
+[[package]]
 name = "mmh3"
 version = "5.2.0"
 source = { registry = "https://pypi.org/simple" }
@@ -2953,6 +3002,7 @@ dependencies = [
     { name = "markitdown" },
     { name = "matplotlib" },
     { name = "mcp" },
+    { name = "mlx-lm" },
     { name = "moto" },
     { name = "msgpack" },
     { name = "networkx" },
@@ -2993,6 +3043,7 @@ dependencies = [
     { name = "tomli" },
     { name = "tomlkit" },
     { name = "tqdm" },
+    { name = "transformers" },
     { name = "uvicorn" },
     { name = "websocket-client" },
     { name = "websockets" },
@@ -3044,6 +3095,7 @@ requires-dist = [
     { name = "markitdown" },
     { name = "matplotlib", specifier = "==3.9.2" },
     { name = "mcp" },
+    { name = "mlx-lm", specifier = ">=0.27.1" },
     { name = "moto", specifier = ">=5.1.4" },
     { name = "msgpack", specifier = ">=1.1.0" },
     { name = "networkx", specifier = ">=3.4.2" },
@@ -3085,6 +3137,7 @@ requires-dist = [
     { name = "tomli", specifier = ">=2.2.1" },
     { name = "tomlkit" },
     { name = "tqdm", specifier = ">=4.67.0" },
+    { name = "transformers", git = "https://github.com/huggingface/transformers.git?rev=main" },
     { name = "uvicorn", specifier = ">=0.32.0" },
     { name = "websocket-client", specifier = ">=1.8.0" },
     { name = "websockets", specifier = ">=14.1" },
@@ -4914,6 +4967,28 @@ wheels = [
 ]
 
 [[package]]
+name = "safetensors"
+version = "0.6.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/ac/cc/738f3011628920e027a11754d9cae9abec1aed00f7ae860abbf843755233/safetensors-0.6.2.tar.gz", hash = "sha256:43ff2aa0e6fa2dc3ea5524ac7ad93a9839256b8703761e76e2d0b2a3fa4f15d9", size = 197968, upload-time = "2025-08-08T13:13:58.654Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/4d/b1/3f5fd73c039fc87dba3ff8b5d528bfc5a32b597fea8e7a6a4800343a17c7/safetensors-0.6.2-cp38-abi3-macosx_10_12_x86_64.whl", hash = "sha256:9c85ede8ec58f120bad982ec47746981e210492a6db876882aa021446af8ffba", size = 454797, upload-time = "2025-08-08T13:13:52.066Z" },
+    { url = "https://files.pythonhosted.org/packages/8c/c9/bb114c158540ee17907ec470d01980957fdaf87b4aa07914c24eba87b9c6/safetensors-0.6.2-cp38-abi3-macosx_11_0_arm64.whl", hash = "sha256:d6675cf4b39c98dbd7d940598028f3742e0375a6b4d4277e76beb0c35f4b843b", size = 432206, upload-time = "2025-08-08T13:13:50.931Z" },
+    { url = "https://files.pythonhosted.org/packages/d3/8e/f70c34e47df3110e8e0bb268d90db8d4be8958a54ab0336c9be4fe86dac8/safetensors-0.6.2-cp38-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:1d2d2b3ce1e2509c68932ca03ab8f20570920cd9754b05063d4368ee52833ecd", size = 473261, upload-time = "2025-08-08T13:13:41.259Z" },
+    { url = "https://files.pythonhosted.org/packages/2a/f5/be9c6a7c7ef773e1996dc214e73485286df1836dbd063e8085ee1976f9cb/safetensors-0.6.2-cp38-abi3-manylinux_2_17_armv7l.manylinux2014_armv7l.whl", hash = "sha256:93de35a18f46b0f5a6a1f9e26d91b442094f2df02e9fd7acf224cfec4238821a", size = 485117, upload-time = "2025-08-08T13:13:43.506Z" },
+    { url = "https://files.pythonhosted.org/packages/c9/55/23f2d0a2c96ed8665bf17a30ab4ce5270413f4d74b6d87dd663258b9af31/safetensors-0.6.2-cp38-abi3-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl", hash = "sha256:89a89b505f335640f9120fac65ddeb83e40f1fd081cb8ed88b505bdccec8d0a1", size = 616154, upload-time = "2025-08-08T13:13:45.096Z" },
+    { url = "https://files.pythonhosted.org/packages/98/c6/affb0bd9ce02aa46e7acddbe087912a04d953d7a4d74b708c91b5806ef3f/safetensors-0.6.2-cp38-abi3-manylinux_2_17_s390x.manylinux2014_s390x.whl", hash = "sha256:fc4d0d0b937e04bdf2ae6f70cd3ad51328635fe0e6214aa1fc811f3b576b3bda", size = 520713, upload-time = "2025-08-08T13:13:46.25Z" },
+    { url = "https://files.pythonhosted.org/packages/fe/5d/5a514d7b88e310c8b146e2404e0dc161282e78634d9358975fd56dfd14be/safetensors-0.6.2-cp38-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:8045db2c872db8f4cbe3faa0495932d89c38c899c603f21e9b6486951a5ecb8f", size = 485835, upload-time = "2025-08-08T13:13:49.373Z" },
+    { url = "https://files.pythonhosted.org/packages/7a/7b/4fc3b2ba62c352b2071bea9cfbad330fadda70579f617506ae1a2f129cab/safetensors-0.6.2-cp38-abi3-manylinux_2_5_i686.manylinux1_i686.whl", hash = "sha256:81e67e8bab9878bb568cffbc5f5e655adb38d2418351dc0859ccac158f753e19", size = 521503, upload-time = "2025-08-08T13:13:47.651Z" },
+    { url = "https://files.pythonhosted.org/packages/5a/50/0057e11fe1f3cead9254315a6c106a16dd4b1a19cd247f7cc6414f6b7866/safetensors-0.6.2-cp38-abi3-musllinux_1_2_aarch64.whl", hash = "sha256:b0e4d029ab0a0e0e4fdf142b194514695b1d7d3735503ba700cf36d0fc7136ce", size = 652256, upload-time = "2025-08-08T13:13:53.167Z" },
+    { url = "https://files.pythonhosted.org/packages/e9/29/473f789e4ac242593ac1656fbece6e1ecd860bb289e635e963667807afe3/safetensors-0.6.2-cp38-abi3-musllinux_1_2_armv7l.whl", hash = "sha256:fa48268185c52bfe8771e46325a1e21d317207bcabcb72e65c6e28e9ffeb29c7", size = 747281, upload-time = "2025-08-08T13:13:54.656Z" },
+    { url = "https://files.pythonhosted.org/packages/68/52/f7324aad7f2df99e05525c84d352dc217e0fa637a4f603e9f2eedfbe2c67/safetensors-0.6.2-cp38-abi3-musllinux_1_2_i686.whl", hash = "sha256:d83c20c12c2d2f465997c51b7ecb00e407e5f94d7dec3ea0cc11d86f60d3fde5", size = 692286, upload-time = "2025-08-08T13:13:55.884Z" },
+    { url = "https://files.pythonhosted.org/packages/ad/fe/cad1d9762868c7c5dc70c8620074df28ebb1a8e4c17d4c0cb031889c457e/safetensors-0.6.2-cp38-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:d944cea65fad0ead848b6ec2c37cc0b197194bec228f8020054742190e9312ac", size = 655957, upload-time = "2025-08-08T13:13:57.029Z" },
+    { url = "https://files.pythonhosted.org/packages/59/a7/e2158e17bbe57d104f0abbd95dff60dda916cf277c9f9663b4bf9bad8b6e/safetensors-0.6.2-cp38-abi3-win32.whl", hash = "sha256:cab75ca7c064d3911411461151cb69380c9225798a20e712b102edda2542ddb1", size = 308926, upload-time = "2025-08-08T13:14:01.095Z" },
+    { url = "https://files.pythonhosted.org/packages/2c/c3/c0be1135726618dc1e28d181b8c442403d8dbb9e273fd791de2d4384bcdd/safetensors-0.6.2-cp38-abi3-win_amd64.whl", hash = "sha256:c7b214870df923cbc1593c3faee16bec59ea462758699bd3fee399d00aac072c", size = 320192, upload-time = "2025-08-08T13:13:59.467Z" },
+]
+
+[[package]]
 name = "seaborn"
 version = "0.13.2"
 source = { registry = "https://pypi.org/simple" }
@@ -5381,6 +5456,23 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/65/96/d924c326727dbdcac6043065dba08b1455aaaca4f7ef1e79d4fea889b34d/tqdm_loggable-0.2.tar.gz", hash = "sha256:175abec3e1f63bbd2eac192fa5da075e80c7bb715d7ccf3cd1a29b7ab5af0617", size = 7442, upload-time = "2023-11-26T15:41:51.68Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/12/1f/1acb36a85797beba22934f124be6b51a7c18a4f408ce31443bec073181c7/tqdm_loggable-0.2-py3-none-any.whl", hash = "sha256:9703046302b93a667166487759e6f3f49597e86c89eb132ba1f31caa07bf0941", size = 9264, upload-time = "2023-11-26T15:41:49.917Z" },
+]
+
+[[package]]
+name = "transformers"
+version = "4.57.0.dev0"
+source = { git = "https://github.com/huggingface/transformers.git?rev=main#67097bf34055c55b886dc92014fd628c9a70e168" }
+dependencies = [
+    { name = "filelock" },
+    { name = "huggingface-hub" },
+    { name = "numpy" },
+    { name = "packaging" },
+    { name = "pyyaml" },
+    { name = "regex" },
+    { name = "requests" },
+    { name = "safetensors" },
+    { name = "tokenizers" },
+    { name = "tqdm" },
 ]
 
 [[package]]
