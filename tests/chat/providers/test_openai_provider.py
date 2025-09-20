@@ -281,7 +281,7 @@ class TestOpenAIProvider(BaseProviderTest):
         call_kwargs = mock_call.call_args[1]
         assert call_kwargs["model"] == "gpt-3.5-turbo"
         assert call_kwargs["temperature"] == 0.7
-        assert call_kwargs["max_tokens"] == 150
+        assert call_kwargs["max_completion_tokens"] == 150
 
     @pytest.mark.asyncio
     async def test_function_calling_with_openai_format(self):

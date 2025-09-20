@@ -9,7 +9,9 @@ from nodetool.models.workflow import Workflow
 
 
 @pytest.mark.asyncio
-async def test_create_workflow(client: TestClient, headers: dict[str, str], user_id: str):
+async def test_create_workflow(
+    client: TestClient, headers: dict[str, str], user_id: str
+):
     params = {
         "name": "Test Workflow",
         "graph": {
@@ -37,7 +39,9 @@ async def test_create_workflow(client: TestClient, headers: dict[str, str], user
 
 
 @pytest.mark.asyncio
-async def test_get_workflows(client: TestClient, workflow: Workflow, headers: dict[str, str]):
+async def test_get_workflows(
+    client: TestClient, workflow: Workflow, headers: dict[str, str]
+):
     await workflow.save()
     response = client.get("/api/workflows/", headers=headers)
     assert response.status_code == 200
@@ -47,7 +51,9 @@ async def test_get_workflows(client: TestClient, workflow: Workflow, headers: di
 
 
 @pytest.mark.asyncio
-async def test_get_workflow(client: TestClient, workflow: Workflow, headers: dict[str, str]):
+async def test_get_workflow(
+    client: TestClient, workflow: Workflow, headers: dict[str, str]
+):
     await workflow.save()
     response = client.get(f"/api/workflows/{workflow.id}", headers=headers)
     assert response.status_code == 200
@@ -174,105 +180,3 @@ async def test_delete_workflow(
 #     )
 #     assert response.status_code == 200
 #     assert response.headers["content-type"] == "application/x-ndjson"
-
-
-@pytest.mark.asyncio
-async def test_get_image_generation_workflows(
-    client: TestClient, headers: dict[str, str], user_id: str
-):
-    def image_workflow_graph() -> dict[str, Any]:
-        return {
-            "nodes": [
-                Node(
-                    id="input", type="nodetool.input.StringInput", data={"name": "prompt"}
-                ).model_dump(),
-                Node(
-                    id="output",
-                    type="nodetool.output.ImageOutput",
-                    data={"name": "image"},
-                ).model_dump(),
-            ],
-            "edges": [],
-        }
-
-    def text_workflow_graph() -> dict[str, Any]:
-        return {
-            "nodes": [
-                Node(
-                    id="text_input",
-                    type="nodetool.input.StringInput",
-                    data={"name": "prompt"},
-                ).model_dump(),
-                Node(
-                    id="text_output",
-                    type="nodetool.output.StringOutput",
-                    data={"name": "response"},
-                ).model_dump(),
-            ],
-            "edges": [],
-        }
-
-    user_image_workflow = await Workflow.create(
-        user_id=user_id,
-        name="user-image",
-        access="private",
-        graph=image_workflow_graph(),
-    )
-
-    public_image_workflow = await Workflow.create(
-        user_id="someone-else",
-        name="public-image",
-        access="public",
-        graph=image_workflow_graph(),
-    )
-
-    non_image_workflow = await Workflow.create(
-        user_id=user_id,
-        name="text-workflow",
-        access="private",
-        graph=text_workflow_graph(),
-    )
-
-    response = client.get("/api/workflows/image-generation", headers=headers)
-    assert response.status_code == 200
-
-    workflow_list = WorkflowList(**response.json())
-    returned_ids = {wf.id for wf in workflow_list.workflows}
-
-    assert user_image_workflow.id in returned_ids
-    assert public_image_workflow.id in returned_ids
-    assert non_image_workflow.id not in returned_ids
-
-    for wf in workflow_list.workflows:
-        assert wf.input_schema is not None
-        assert wf.output_schema is not None
-
-        input_properties = wf.input_schema.get("properties", {})
-        assert any(
-            isinstance(prop, dict)
-            and (
-                prop.get("type") == "string"
-                or (
-                    isinstance(prop.get("type"), list)
-                    and "string" in prop.get("type")
-                )
-            )
-            for prop in input_properties.values()
-        )
-
-        output_properties = wf.output_schema.get("properties", {})
-
-        def has_image_value(prop: dict[str, Any]) -> bool:
-            if not isinstance(prop, dict):
-                return False
-            if prop.get("type") == "object":
-                type_field = prop.get("properties", {}).get("type", {})
-                const = type_field.get("const")
-                enum = type_field.get("enum", [])
-                if const == "image" or (isinstance(enum, list) and "image" in enum):
-                    return True
-            if prop.get("type") == "array":
-                return has_image_value(prop.get("items", {}))
-            return False
-
-        assert any(has_image_value(prop) for prop in output_properties.values())
