@@ -63,7 +63,6 @@ dependencies = [
     # AI dependencies
     "anthropic",
     "huggingface_hub",
-    "transformers @ git+https://github.com/huggingface/transformers.git@main",
     "openai>=1.102.0",
     # "fal-client==0.5.6",
     "ollama",
@@ -73,7 +72,6 @@ dependencies = [
     # "replicate==1.0.3",
     "runpod",
     "mcp",
-    "mlx_lm>=0.27.1",
 
     # Media dependencies
     "ffmpeg-python==0.2.0",
