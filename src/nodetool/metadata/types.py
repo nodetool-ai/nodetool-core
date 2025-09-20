@@ -335,6 +335,7 @@ class Provider(str, enum.Enum):
     LlamaCpp = "llama_cpp"
     Gemini = "gemini"
     Empty = "empty"
+    MLX = "mlx"
     # Providers for HuggingFace Inference Providers
     HuggingFaceBlackForestLabs = "huggingface_black_forest_labs"
     HuggingFaceCohere = "huggingface_cohere"

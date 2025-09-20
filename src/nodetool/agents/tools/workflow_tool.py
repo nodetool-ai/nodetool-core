@@ -114,6 +114,7 @@ class GraphTool(Tool):
         from nodetool.workflows.workflow_runner import WorkflowRunner
 
         initial_edges_by_target = {edge.target: edge for edge in self.initial_edges}
+        excluded_source_ids = {edge.source for edge in self.initial_edges}
 
         def properties_for_node(node: BaseNode) -> dict[str, Any]:
             props = node.node_properties()
@@ -136,6 +137,7 @@ class GraphTool(Tool):
                 dynamic_outputs=node.dynamic_outputs,
             )
             for node in self.graph.nodes
+            if node.id not in excluded_source_ids
         ]
 
         # Start with existing edges
@@ -149,6 +151,8 @@ class GraphTool(Tool):
                 ui_properties=edge.ui_properties,
             )
             for edge in self.graph.edges
+            if edge.source not in excluded_source_ids
+            and edge.target not in excluded_source_ids
         ]
 
         # If there is only one node in the graph, automatically add a ToolResult node

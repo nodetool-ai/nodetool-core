@@ -1576,9 +1576,6 @@ class Preview(BaseNode):
         return False
 
     async def process(self, context: Any) -> Any:
-        raise NotImplementedError("Preview node does not support process")
-
-    async def gen_process(self, context: Any):
         """Stream previews from inbound values with fallback to configured value.
 
         Mirrors the stream-first pattern used by `OutputNode`. If no inbound
@@ -1589,7 +1586,6 @@ class Preview(BaseNode):
         async for _handle, value in self.iter_any_input():
             result = await context.embed_assets_in_data(value)
             context.post_message(PreviewUpdate(node_id=self.id, value=result))
-            yield "output", result
 
     @classmethod
     def is_streaming_input(cls) -> bool:  # type: ignore[override]

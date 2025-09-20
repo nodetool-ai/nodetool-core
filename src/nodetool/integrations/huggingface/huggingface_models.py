@@ -454,7 +454,6 @@ async def get_llamacpp_language_models_from_hf_cache() -> List[LanguageModel]:
     for repo in cached:
         for f in repo.cached_files:
             fname = f.file_name
-            print(fname)
             if not fname:
                 continue
             if not fname.lower().endswith(".gguf"):

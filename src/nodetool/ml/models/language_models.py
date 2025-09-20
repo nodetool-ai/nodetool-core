@@ -120,6 +120,20 @@ openai_models = [
     ),
 ]
 
+# Local MLX runtime models (Apple Silicon). Keep a minimal curated list.
+mlx_models = [
+    LanguageModel(
+        id="mlx-community/Llama-3.2-3B-Instruct-4bit",
+        name="Llama 3.2 3B Instruct (MLX 4-bit)",
+        provider=Provider.MLX,
+    ),
+    LanguageModel(
+        id="Qwen/Qwen3-4B-MLX-4bit",
+        name="Qwen3 4B (MLX 4-bit)",
+        provider=Provider.MLX,
+    ),
+]
+
 # Provider mapping for HuggingFace Hub API
 HF_PROVIDER_MAPPING = {
     "black-forest-labs": Provider.HuggingFaceBlackForestLabs,
@@ -504,6 +518,9 @@ async def get_all_language_models() -> List[LanguageModel]:
         models.extend(await get_llamacpp_language_models_from_hf_cache())
     except Exception as e:
         log.debug(f"Skipping local GGUF discovery due to error: {e}")
+
+    # Always include MLX runtime models so users can select them when MLX is available
+    models.extend(mlx_models)
 
     return models
 

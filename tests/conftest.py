@@ -27,6 +27,22 @@ import asyncio
 import pytest
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _silence_aiosqlite_logging():
+    """Reduce noisy aiosqlite logs during tests."""
+    import logging
+
+    for name in (
+        "aiosqlite",
+        "aiosqlite.core",
+        "aiosqlite.cursor",
+        "aiosqlite.connection",
+    ):
+        logger = logging.getLogger(name)
+        logger.setLevel(logging.ERROR)
+        logger.propagate = False
+
+
 @pytest_asyncio.fixture(autouse=True, scope="function")
 async def setup_and_teardown(request):
     if request.node.get_closest_marker("no_setup"):
@@ -42,12 +58,12 @@ async def setup_and_teardown(request):
 
     # Clean up database tables
     await drop_all_tables()
-    
+
     # Close all database connections
     await close_all_database_adapters()
-    
+
     Environment.set_remote_auth(True)
-    
+
     # Avoid manual cancellation of event‑loop tasks here; pytest-asyncio/anyio
     # manages loop lifecycle. Force-cancelling unknown tasks can corrupt the
     # loop state and trigger errors like missing _ssock on loop close.
@@ -61,9 +77,12 @@ def _set_dummy_api_keys(monkeypatch):
     prevents providers from raising ApiKeyMissingError during initialization.
     """
     monkeypatch.setenv("OPENAI_API_KEY", os.getenv("OPENAI_API_KEY", "test-openai-key"))
-    monkeypatch.setenv("ANTHROPIC_API_KEY", os.getenv("ANTHROPIC_API_KEY", "test-anthropic-key"))
+    monkeypatch.setenv(
+        "ANTHROPIC_API_KEY", os.getenv("ANTHROPIC_API_KEY", "test-anthropic-key")
+    )
     monkeypatch.setenv("GEMINI_API_KEY", os.getenv("GEMINI_API_KEY", "test-gemini-key"))
     monkeypatch.setenv("HF_TOKEN", os.getenv("HF_TOKEN", "test-hf-token"))
+
 
 @pytest.fixture(scope="function")
 def event_loop():

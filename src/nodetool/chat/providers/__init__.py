@@ -41,6 +41,7 @@ def get_provider(provider_type: ProviderEnum, **kwargs) -> ChatProvider:
     from nodetool.chat.providers.anthropic_provider import AnthropicProvider
     from nodetool.chat.providers.ollama_provider import OllamaProvider
     from nodetool.chat.providers.llama_provider import LlamaProvider
+    from nodetool.chat.providers.mlx_provider import MLXProvider
 
     if provider_type in _provider_cache:
         return _provider_cache[provider_type]
@@ -91,6 +92,8 @@ def get_provider(provider_type: ProviderEnum, **kwargs) -> ChatProvider:
         provider = HuggingFaceProvider("sambanova", **kwargs)
     elif provider_type == ProviderEnum.HuggingFaceTogether:
         provider = HuggingFaceProvider("together", **kwargs)
+    elif provider_type == ProviderEnum.MLX:
+        provider = MLXProvider(**kwargs)
     else:
         raise ValueError(f"Provider {provider_type} not supported")
 

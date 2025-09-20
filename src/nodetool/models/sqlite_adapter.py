@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional, get_args
 from pydantic.fields import FieldInfo
 
 from nodetool.config.environment import Environment
+from nodetool.config.logging_config import get_logger
 from nodetool.models.condition_builder import (
     Condition,
     ConditionBuilder,
@@ -19,6 +20,8 @@ from typing import Type, Union, get_origin
 import json
 from enum import EnumMeta as EnumType
 from enum import Enum
+
+log = get_logger(__name__)
 
 
 def convert_to_sqlite_format(
@@ -249,8 +252,7 @@ class SQLiteAdapter(DatabaseAdapter):
     ) -> "SQLiteAdapter":
         connection = await aiosqlite.connect(db_path, timeout=30)
         connection.row_factory = aiosqlite.Row
-        if Environment.is_debug():
-            await connection.set_trace_callback(print)
+        await connection.set_trace_callback(log.debug)
         self = cls(db_path, fields, table_schema, indexes, connection)
         if await self.table_exists():
             await self.migrate_table()
@@ -265,9 +267,6 @@ class SQLiteAdapter(DatabaseAdapter):
     @property
     def connection(self) -> aiosqlite.Connection:
         return self._connection
-
-    async def close(self) -> None:
-        await self.connection.close()
 
     async def table_exists(self) -> bool:
         """Checks if the table associated with this adapter exists in the database."""

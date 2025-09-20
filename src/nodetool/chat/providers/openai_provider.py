@@ -551,7 +551,7 @@ class OpenAIProvider(ChatProvider):
         # Convert system messages to user messages for O1/O3 models
         _kwargs: dict[str, Any] = {
             "model": model,
-            "max_tokens": max_tokens,
+            "max_completion_tokens": max_tokens,
             "stream": True,
             "stream_options": {"include_usage": True},
         }
@@ -761,7 +761,7 @@ class OpenAIProvider(ChatProvider):
             raise ValueError("messages must not be empty")
 
         request_kwargs: dict[str, Any] = {
-            "max_tokens": max_tokens,
+            "max_completion_tokens": max_tokens,
         }
         if response_format is not None:
             request_kwargs["response_format"] = response_format
