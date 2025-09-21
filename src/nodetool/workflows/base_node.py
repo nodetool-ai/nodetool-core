@@ -455,9 +455,6 @@ class BaseNode(BaseModel):
         return False
 
     @classmethod
-    # Removed pre_gather_non_streaming_inputs; actor no longer pre-gathers selectively.
-
-    @classmethod
     def expose_as_tool(cls):
         attr = getattr(cls, "_expose_as_tool", False)
         if isinstance(attr, bool):
