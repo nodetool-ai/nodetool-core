@@ -21,13 +21,26 @@ import threading
 from dataclasses import dataclass
 import time
 from typing import Any, AsyncIterator, Callable, Iterable, Sequence
+from io import BytesIO
+from urllib.parse import urlparse, unquote
 
 from nodetool.chat.providers.base import ChatProvider
 from nodetool.agents.tools.base import Tool
 from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
-from nodetool.metadata.types import Message, Provider, ToolCall
+from nodetool.metadata.types import (
+    Message,
+    Provider,
+    ToolCall,
+    MessageContent,
+    MessageTextContent,
+    MessageImageContent,
+    ImageRef,
+)
 from nodetool.workflows.types import Chunk
+from nodetool.io.uri_utils import fetch_uri_bytes_and_mime
+
+import PIL.Image
 
 log = get_logger(__name__)
 
@@ -42,6 +55,16 @@ class _MLXRuntime:
     load: Callable[..., tuple[Any, Any]]
     stream_generate: Callable[..., Iterable[Any]]
     make_sampler: Callable[..., Any] | None = None
+
+
+@dataclass(slots=True)
+class _MLXVLMRuntime:
+    """Container bundling callables we need from mlx-vlm for vision models."""
+
+    load: Callable[..., tuple[Any, Any]]
+    generate: Callable[..., Any]
+    apply_chat_template: Callable[..., str]
+    load_config: Callable[..., Any] | None = None
 
 
 class MLXProvider(ChatProvider):
@@ -60,6 +83,10 @@ class MLXProvider(ChatProvider):
     _CACHE_TTL_SECONDS: int = 300
     _MODEL_CACHE: dict[str, tuple[Any, Any, float]] = {}
     _MODEL_CACHE_LOCK = threading.Lock()
+
+    # Separate cache for VLM models (mlx-vlm)
+    _VLM_MODEL_CACHE: dict[str, tuple[Any, Any, Any, float]] = {}
+    _VLM_MODEL_CACHE_LOCK = threading.Lock()
 
     def __init__(
         self,
@@ -85,6 +112,13 @@ class MLXProvider(ChatProvider):
         self._tokenizer: Any | None = None
         self._model: Any | None = None
         self._load_lock = asyncio.Lock()
+
+        # mlx-vlm runtime + cache holders
+        self._vlm_runtime: _MLXVLMRuntime | None = None
+        self._vlm_model: Any | None = None
+        self._vlm_processor: Any | None = None
+        self._vlm_config: Any | None = None
+        self._vlm_load_lock = asyncio.Lock()
 
     # ------------------------------------------------------------------
     # Public API
@@ -174,6 +208,19 @@ class MLXProvider(ChatProvider):
         extraction of tool calls from the MLX runtime. Yields `Chunk` and
         `ToolCall` items to the caller.
         """
+        # Route to mlx-vlm if the model appears vision-capable and images are present
+        image_parts = self._extract_image_parts(messages)
+        if image_parts and self._is_vision_model(model):
+            async for item in self._stream_vlm_chat(
+                messages,
+                model,
+                image_parts,
+                max_tokens=max_tokens,
+                **kwargs,
+            ):
+                yield item
+            return
+
         await self._ensure_model_loaded(model)
         assert self._tokenizer is not None
         assert self._model is not None
@@ -182,9 +229,6 @@ class MLXProvider(ChatProvider):
             self._convert_message(msg, index) for index, msg in enumerate(messages)
         ]
         tool_defs = self._convert_tools(tools)
-
-        print(converted_messages)
-        print(tool_defs)
 
         prompt = await asyncio.to_thread(
             self._tokenizer.apply_chat_template,
@@ -307,12 +351,259 @@ class MLXProvider(ChatProvider):
                 )
             except Exception as exc:  # pragma: no cover - import failure
                 raise RuntimeError(
-                    "Failed to import mlx_lm. Ensure `mlx-lm` is installed and "
-                    "you are running on a compatible Apple Silicon environment."
+                    "Install the nodetool huggingface pack using the nodetool package manager."
                 ) from exc
 
         self._runtime = await asyncio.to_thread(_import_runtime)
         return self._runtime
+
+    # ------------------------------------------------------------------
+    # mlx-vlm runtime and flow (vision models)
+    # ------------------------------------------------------------------
+    def _cache_key_vlm(self, model: str) -> str:
+        adapter = self.adapter_path or ""
+        lazy_flag = "1" if self.lazy_load else "0"
+        return f"vlm|{model}|{adapter}|lazy={lazy_flag}"
+
+    def _get_cached_vlm_model(self, model: str) -> tuple[Any, Any, Any] | None:
+        key = self._cache_key_vlm(model)
+        now = time.monotonic()
+        with MLXProvider._VLM_MODEL_CACHE_LOCK:
+            entry = MLXProvider._VLM_MODEL_CACHE.get(key)
+            if not entry:
+                return None
+            mdl, proc, cfg, expires_at = entry
+            if expires_at < now:
+                MLXProvider._VLM_MODEL_CACHE.pop(key, None)
+                return None
+            return mdl, proc, cfg
+
+    def _set_cached_vlm_model(self, model: str, mdl: Any, proc: Any, cfg: Any) -> None:
+        key = self._cache_key_vlm(model)
+        expires_at = time.monotonic() + MLXProvider._CACHE_TTL_SECONDS
+        with MLXProvider._VLM_MODEL_CACHE_LOCK:
+            MLXProvider._VLM_MODEL_CACHE[key] = (mdl, proc, cfg, expires_at)
+
+    async def _get_vlm_runtime(self) -> _MLXVLMRuntime:
+        if self._vlm_runtime is not None:
+            return self._vlm_runtime
+
+        def _import_vlm_runtime() -> _MLXVLMRuntime:
+            try:
+                import importlib
+
+                vlm_module = importlib.import_module("mlx_vlm")
+                prompt_utils = importlib.import_module("mlx_vlm.prompt_utils")
+                utils_module = importlib.import_module("mlx_vlm.utils")
+                return _MLXVLMRuntime(
+                    load=getattr(vlm_module, "load"),
+                    generate=getattr(vlm_module, "generate"),
+                    apply_chat_template=getattr(prompt_utils, "apply_chat_template"),
+                    load_config=getattr(utils_module, "load_config", None),
+                )
+            except Exception as exc:  # pragma: no cover - import failure
+                raise RuntimeError(
+                    "Install the nodetool huggingface pack using the nodetool package manager."
+                ) from exc
+
+        self._vlm_runtime = await asyncio.to_thread(_import_vlm_runtime)
+        return self._vlm_runtime
+
+    async def _ensure_vlm_model_loaded(self, model: str) -> None:
+        async with self._vlm_load_lock:
+            cached = self._get_cached_vlm_model(model)
+            if cached is not None:
+                self._vlm_model, self._vlm_processor, self._vlm_config = cached
+                return
+
+            runtime = await self._get_vlm_runtime()
+
+            def _load() -> tuple[Any, Any, Any]:
+                mdl, proc = runtime.load(model)
+                cfg = getattr(mdl, "config", None)
+                if cfg is None and runtime.load_config is not None:
+                    cfg = runtime.load_config(model)
+                proc.image_processor.patch_size = 14
+                return mdl, proc, cfg
+
+            self._vlm_model, self._vlm_processor, self._vlm_config = (
+                await asyncio.to_thread(_load)
+            )
+            self._set_cached_vlm_model(
+                model, self._vlm_model, self._vlm_processor, self._vlm_config
+            )
+            log.info("Loaded MLX-VLM model %s", model)
+
+    def _is_vision_model(self, model: str) -> bool:
+        name = (model or "").lower()
+        keywords = (
+            "qwen2-vl",
+            "qwen2.5-vl",
+            "qwen-vl",
+            "llava",
+            "idefics",
+            "vl-",
+            "gemma-3n",
+        )
+        return any(k in name for k in keywords)
+
+    def _ensure_vlm_processor_ready(self) -> None:
+        """Ensure mlx-vlm processor has necessary attributes set.
+
+        Some processors (e.g., LLaVA) expect a non-None patch_size. If missing,
+        attempt to infer from model config or fall back to a sane default (14).
+        """
+        proc = self._vlm_processor
+        cfg = self._vlm_config
+        if proc is None:
+            return
+        image_proc = getattr(proc, "image_processor", None)
+        if image_proc is None:
+            return
+        patch_size = getattr(image_proc, "patch_size", None)
+        if patch_size is None:
+            inferred = None
+            if cfg is not None:
+                vision_cfg = getattr(cfg, "vision_config", None)
+                inferred = getattr(vision_cfg, "patch_size", None)
+            try:
+                if inferred is None:
+                    inferred = 14
+                setattr(image_proc, "patch_size", int(inferred))
+            except Exception:
+                # Last resort default
+                try:
+                    setattr(image_proc, "patch_size", 14)
+                except Exception:
+                    pass
+
+    def _extract_text_from_content(
+        self, content: str | list[MessageContent] | None
+    ) -> str:
+        if content is None:
+            return ""
+        if isinstance(content, str):
+            return content
+        texts: list[str] = []
+        for part in content:
+            if isinstance(part, MessageTextContent):
+                if part.text:
+                    texts.append(part.text)
+        return "".join(texts)
+
+    def _extract_last_user_prompt(self, messages: Sequence[Message]) -> str:
+        for msg in reversed(messages):
+            if msg.role == "user":
+                text = self._extract_text_from_content(msg.content)
+                if text:
+                    return text
+        # Fallback: concatenate all text parts
+        parts: list[str] = []
+        for msg in messages:
+            t = self._extract_text_from_content(msg.content)
+            if t:
+                parts.append(t)
+        return "\n".join(parts)
+
+    def _extract_image_parts(
+        self, messages: Sequence[Message]
+    ) -> list[MessageImageContent]:
+        images: list[MessageImageContent] = []
+        for msg in messages:
+            if isinstance(msg.content, list):
+                for part in msg.content:
+                    if isinstance(part, MessageImageContent):
+                        images.append(part)
+        return images
+
+    async def _prepare_vlm_images(self, parts: list[MessageImageContent]) -> list[Any]:
+        prepared: list[Any] = []
+        for part in parts:
+            image_ref: ImageRef = part.image
+            uri = image_ref.uri or ""
+            if uri:
+                # Prefer passing remote HTTP(S) URLs directly; convert file/data/memory to PIL.Image
+                if uri.startswith("http://") or uri.startswith("https://"):
+                    prepared.append(uri)
+                    continue
+                # Convert file:// URIs and other URIs to PIL Image via bytes fetch
+                try:
+                    mime, data = await fetch_uri_bytes_and_mime(uri)
+                    img = PIL.Image.open(BytesIO(data))
+                    img = img.convert("RGB")
+                    prepared.append(img.copy())
+                    continue
+                except Exception:
+                    # Try to interpret as local path
+                    try:
+                        parsed = urlparse(uri)
+                        if parsed.scheme == "file":
+                            local_path = unquote(parsed.path)
+                        else:
+                            local_path = uri
+                        prepared.append(local_path)
+                        continue
+                    except Exception:
+                        pass
+            # No usable URI; try raw bytes
+            if image_ref.data:
+                try:
+                    img = PIL.Image.open(BytesIO(image_ref.data))
+                    img = img.convert("RGB")
+                    prepared.append(img.copy())
+                    continue
+                except Exception:
+                    pass
+        return prepared
+
+    async def _stream_vlm_chat(
+        self,
+        messages: Sequence[Message],
+        model: str,
+        image_parts: list[MessageImageContent],
+        max_tokens: int,
+        **kwargs: Any,
+    ) -> AsyncIterator[Chunk | ToolCall]:
+        await self._ensure_vlm_model_loaded(model)
+        assert self._vlm_model is not None
+        assert self._vlm_processor is not None
+        assert self._vlm_config is not None
+
+        prompt_text = self._extract_last_user_prompt(messages)
+        images = await self._prepare_vlm_images(image_parts)
+
+        runtime = await self._get_vlm_runtime()
+
+        # Defensive processor normalization
+        self._ensure_vlm_processor_ready()
+
+        formatted_prompt = await asyncio.to_thread(
+            runtime.apply_chat_template,
+            self._vlm_processor,
+            self._vlm_config,
+            prompt_text,
+            num_images=len(images),
+        )
+
+        def _run_generate() -> str:
+            # Keep params conservative; mlx-vlm's generate may accept more kwargs
+            result = runtime.generate(
+                self._vlm_model,
+                self._vlm_processor,
+                formatted_prompt,
+                image=images,
+                verbose=False,
+                max_tokens=max_tokens,
+            )
+            # Some versions may return objects; coerce to string
+            return result.text
+
+        try:
+            output: str = await asyncio.to_thread(_run_generate)
+        except Exception as exc:
+            raise RuntimeError(f"mlx-vlm generation failed: {exc}")
+
+        yield Chunk(content=output, done=True)
 
     # ------------------------------------------------------------------
     # Caching helpers
