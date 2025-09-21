@@ -84,7 +84,7 @@ dependencies = [
     # Data dependencies
     "numpy>=2.0.0",
     "pandas==2.2.3",
-    "llama-index==0.12.13",
+    "llama-index==0.14.2",
     "llama-index-embeddings-ollama==0.6.0",
     "matplotlib==3.9.2",
     "seaborn==0.13.2",
