@@ -476,6 +476,64 @@ async def get_llamacpp_language_models_from_hf_cache() -> List[LanguageModel]:
     return results
 
 
+async def get_mlx_language_models_from_hf_cache() -> List[LanguageModel]:
+    """
+    Return LanguageModel entries for cached Hugging Face repos that look suitable
+    for MLX runtime (Apple Silicon). We use heuristics:
+
+    - Prefer repos under the "mlx-community" org
+    - Additionally include repos that have tags containing "mlx" in their model info
+
+    Each qualifying repo yields a LanguageModel with id "<repo_id>" (no file suffix),
+    because MLX loaders typically resolve the correct shard/quantization internally.
+
+    Returns:
+        List[LanguageModel]: MLX-compatible models discovered in the HF cache
+    """
+    cached = await read_cached_hf_models(load_model_info=True)
+    results: list[LanguageModel] = []
+    seen: set[str] = set()
+
+    for repo in cached:
+        rid = repo.repo_id
+        if not isinstance(rid, str):
+            continue
+
+        # Heuristic 1: org is mlx-community
+        is_mlx_org = rid.startswith("mlx-community/")
+
+        # Heuristic 2: tags include "mlx"
+        tags: list[str] = []
+        if repo.the_model_info and isinstance(repo.the_model_info.tags, list):
+            try:
+                tags = [
+                    t.lower() for t in repo.the_model_info.tags if isinstance(t, str)
+                ]
+            except Exception:
+                tags = []
+        has_mlx_tag = any("mlx" in t for t in tags)
+
+        if not (is_mlx_org or has_mlx_tag):
+            continue
+
+        if rid in seen:
+            continue
+        seen.add(rid)
+
+        display = rid.split("/")[-1]
+        results.append(
+            LanguageModel(
+                id=rid,
+                name=display,
+                provider=Provider.MLX,
+            )
+        )
+
+    # Stable order
+    results.sort(key=lambda m: m.id)
+    return results
+
+
 async def _fetch_models_by_author(author: str) -> list[dict]:
     """Fetch models list from HF API for a given author.
 
@@ -523,21 +581,9 @@ async def get_gguf_language_models_from_authors(
     seen_repo: set[str] = set()
     for author, author_models in zip(authors, results):
         try:
-            # Filter models with gguf tag
-            gguf_models = []
-            for m in author_models:
-                try:
-                    tags = m.get("tags") or []
-                    if not isinstance(tags, list):
-                        continue
-                    if any(isinstance(t, str) and t.lower() == "gguf" for t in tags):
-                        gguf_models.append(m)
-                except Exception:
-                    continue
-
             # Sort by likes desc; likes may be missing
-            gguf_models.sort(key=lambda x: int(x.get("likes") or 0), reverse=True)
-            top_models = gguf_models[:30]
+            author_models.sort(key=lambda x: int(x.get("likes") or 0), reverse=True)
+            top_models = author_models[:200]
 
             for m in top_models:
                 rid = m.get("id") or m.get("modelId")
@@ -578,6 +624,60 @@ async def get_gguf_language_models_from_authors(
 
     # Sort for stability: repo then filename
     entries.sort(key=lambda m: (m.repo_id, m.path or ""))
+    return entries
+
+
+async def get_mlx_language_models_from_authors(
+    authors: list[str],
+) -> List[HuggingFaceModel]:
+    """
+    Fetch MLX-friendly repos authored by the given authors/orgs and return
+    one LanguageModel per repo id.
+
+    Heuristics:
+    - Prefer orgs like "mlx-community" via the authors parameter
+    - Filter API results to those with a tag containing "mlx"
+    - Per author, take the top 30 repos sorted by likes
+
+    Args:
+        authors: List of HF author/org names (e.g., ["mlx-community"]).
+
+    Returns:
+        List[HuggingFaceModel]: One entry per qualifying repo.
+    """
+    # Fetch authors concurrently
+    results = await asyncio.gather(*(_fetch_models_by_author(a) for a in authors))
+
+    repo_ids: list[str] = []
+    seen_repo: set[str] = set()
+    for author, author_models in zip(authors, results):
+        try:
+            # Sort by likes desc; likes may be missing
+            author_models.sort(key=lambda x: int(x.get("likes") or 0), reverse=True)
+            top_models = author_models[:200]
+
+            for m in top_models:
+                rid = m.get("id") or m.get("modelId")
+                if not isinstance(rid, str):
+                    continue
+                if rid in seen_repo:
+                    continue
+                seen_repo.add(rid)
+                repo_ids.append(rid)
+        except Exception as e:
+            log.warning(f"Failed to fetch HF models for author={author}: {e}")
+            continue
+
+    # Produce one LanguageModel per repo id
+    entries: list[HuggingFaceModel] = []
+    for rid in repo_ids:
+        try:
+            entries.append(HuggingFaceModel(repo_id=rid))
+        except Exception:
+            continue
+
+    # Stable order
+    entries.sort(key=lambda m: m.repo_id)
     return entries
 
 

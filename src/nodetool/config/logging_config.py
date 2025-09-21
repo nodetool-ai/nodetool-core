@@ -24,7 +24,7 @@ def configure_logging(
     fmt: Optional[str] = None,
     datefmt: Optional[str] = None,
     propagate_root: bool = False,
-) -> str:
+) -> Union[str, int]:
     """Configure root logging once with a consistent format.
 
     Environment overrides:
@@ -96,6 +96,8 @@ def configure_logging(
         if isinstance(h, logging.StreamHandler):
             h.setFormatter(_LevelColorFormatter(fmt=fmt, datefmt=datefmt))
     logging.getLogger().propagate = propagate_root
+    # Ensure noisy third-party loggers stay at INFO regardless of root level
+    logging.getLogger("aiosqlite").setLevel(logging.INFO)
     logging.getLogger().info(f"Configuring logging with level: {level}")
     return level
 

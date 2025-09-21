@@ -7,6 +7,7 @@ import aiohttp
 from nodetool.metadata.types import LanguageModel, Provider
 from nodetool.integrations.huggingface.huggingface_models import (
     get_llamacpp_language_models_from_hf_cache,
+    get_mlx_language_models_from_hf_cache,
 )
 from nodetool.config.environment import Environment
 from nodetool.storage.memory_node_cache import MemoryNodeCache
@@ -117,20 +118,6 @@ openai_models = [
         id="gpt-4o-mini",
         name="GPT-4o Mini",
         provider=Provider.OpenAI,
-    ),
-]
-
-# Local MLX runtime models (Apple Silicon). Keep a minimal curated list.
-mlx_models = [
-    LanguageModel(
-        id="mlx-community/Llama-3.2-3B-Instruct-4bit",
-        name="Llama 3.2 3B Instruct (MLX 4-bit)",
-        provider=Provider.MLX,
-    ),
-    LanguageModel(
-        id="Qwen/Qwen3-4B-MLX-4bit",
-        name="Qwen3 4B (MLX 4-bit)",
-        provider=Provider.MLX,
     ),
 ]
 
@@ -514,13 +501,9 @@ async def get_all_language_models() -> List[LanguageModel]:
         models.extend(await get_cached_hf_inference_provider_models())
 
     # Always include locally cached GGUF models for llama.cpp if present
-    try:
-        models.extend(await get_llamacpp_language_models_from_hf_cache())
-    except Exception as e:
-        log.debug(f"Skipping local GGUF discovery due to error: {e}")
-
-    # Always include MLX runtime models so users can select them when MLX is available
-    models.extend(mlx_models)
+    models.extend(await get_llamacpp_language_models_from_hf_cache())
+    # Prefer locally cached MLX repos from HF cache
+    models.extend(await get_mlx_language_models_from_hf_cache())
 
     return models
 

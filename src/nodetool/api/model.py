@@ -26,6 +26,7 @@ from fastapi import APIRouter, Depends, Query
 from nodetool.integrations.huggingface.huggingface_models import (
     CachedModel,
     delete_cached_hf_model,
+    get_mlx_language_models_from_authors,
     read_cached_hf_models,
 )
 from nodetool.workflows.base_node import get_recommended_models
@@ -80,7 +81,9 @@ async def recommended_models(
     # - https://huggingface.co/api/models?author=unsloth
     # - https://huggingface.co/api/models?author=ggml-org
     gguf_models = await get_gguf_language_models_from_authors(["unsloth", "ggml-org"])
+    mlx_models = await get_mlx_language_models_from_authors(["mlx-community"])
     models.extend(gguf_models)
+    models.extend(mlx_models)
     return models
 
 
