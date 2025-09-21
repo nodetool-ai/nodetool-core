@@ -82,7 +82,7 @@ dependencies = [
     "opencv-python-headless==4.11.0.86",
 
     # Data dependencies
-    "numpy==1.26.4",
+    "numpy>=2.0.0",
     "pandas==2.2.3",
     "llama-index==0.12.13",
     "llama-index-embeddings-ollama==0.6.0",
