@@ -186,7 +186,7 @@ By following these steps, you can efficiently construct workflows with the corre
 - **Output nodes**: Receive data through their `"value"` property.
 - **Always check metadata from `search_nodes` results** for exceptions and exact input property names (targetHandles).
 
-USE the ui_auto_layout tool to automatically layout the graph.
+USE the ui_auto_layout: ClassVar[str] tool to automatically layout the graph.
 """
 
 

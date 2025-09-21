@@ -146,7 +146,7 @@ class TorchWorkflowSupport(BaseTorchSupport):
             return await node.process(context)
 
         try:
-            if getattr(node, "_requires_grad", False):
+            if getattr(node, "_requires_grad: ClassVar[bool]", False):
                 return await node.process(context)
             with torch.no_grad():
                 return await node.process(context)
@@ -208,8 +208,10 @@ class TorchWorkflowSupport(BaseTorchSupport):
             return await self.process_with_gpu(runner, context, node, retries + 1)
 
     def is_cuda_oom_exception(self, exc: Exception) -> bool:
-        return TORCH_AVAILABLE and torch is not None and isinstance(
-            exc, torch.cuda.OutOfMemoryError
+        return (
+            TORCH_AVAILABLE
+            and torch is not None
+            and isinstance(exc, torch.cuda.OutOfMemoryError)
         )
 
     def empty_cuda_cache(self) -> None:
@@ -237,7 +239,9 @@ def build_torch_support(
 
 def is_torch_tensor(value: Any) -> bool:
     """Return True when value is a torch tensor and torch is installed."""
-    return bool(TORCH_AVAILABLE and torch is not None and isinstance(value, torch.Tensor))
+    return bool(
+        TORCH_AVAILABLE and torch is not None and isinstance(value, torch.Tensor)
+    )
 
 
 def detach_tensor(value: Any) -> Any:

@@ -321,10 +321,10 @@ class BaseNode(BaseModel):
         _parent_id (str | None): Identifier of the parent node, if any.
         _ui_properties (dict[str, Any]): UI-specific properties for the node.
         _dynamic_properties (dict[str, Any]): Dynamic runtime properties for the node.
-        _layout (str): The layout style for the node in the UI.
-        _requires_grad (bool): Whether the node requires torch backward pass.
+        _layout: ClassVar[str] (str): The layout style for the node in the UI.
+        _requires_grad: ClassVar[bool] (bool): Whether the node requires torch backward pass.
         _expose_as_tool (bool): Whether the node should be exposed as a tool for agents.
-        _supports_dynamic_outputs (bool): Whether the node can declare outputs dynamically at runtime (only for dynamic nodes).
+        _supports_dynamic_outputs: ClassVar[bool]  (bool): Whether the node can declare outputs dynamically at runtime (only for dynamic nodes).
         _sync_mode (str): The input synchronization mode for the node.
 
     Methods:
@@ -335,13 +335,13 @@ class BaseNode(BaseModel):
     _id: str = PrivateAttr(default="")
     _parent_id: str | None = PrivateAttr(default=None)
     _ui_properties: dict[str, Any] = PrivateAttr(default_factory=dict)
-    _layout: ClassVar[str | FieldInfo] = "default"
+    _layout: ClassVar[str] = "default"
     _dynamic_properties: dict[str, Any] = PrivateAttr(default_factory=dict)
     _dynamic_outputs: dict[str, TypeMetadata] = PrivateAttr(default_factory=dict)
-    _is_dynamic: ClassVar[bool | FieldInfo] = False
-    _requires_grad: ClassVar[bool | FieldInfo] = False
-    _expose_as_tool: ClassVar[bool | FieldInfo] = False
-    _supports_dynamic_outputs: ClassVar[bool | FieldInfo] = False
+    _is_dynamic: ClassVar[bool] = False
+    _requires_grad: ClassVar[bool] = False
+    _expose_as_tool: ClassVar[bool] = False
+    _supports_dynamic_outputs: ClassVar[bool] = False
     _inbox: NodeInbox | None = PrivateAttr(default=None)
     _sync_mode: str = PrivateAttr(default="on_any")
 
@@ -464,7 +464,7 @@ class BaseNode(BaseModel):
 
     @classmethod
     def supports_dynamic_outputs(cls):
-        attr = getattr(cls, "_supports_dynamic_outputs", False)
+        attr = getattr(cls, "_supports_dynamic_outputs: ClassVar[bool] ", False)
         if isinstance(attr, bool):
             return attr
         # If it's a Pydantic Field / FieldInfo return its default, else direct.
@@ -477,7 +477,7 @@ class BaseNode(BaseModel):
 
     @classmethod
     def is_dynamic(cls):
-        attr = getattr(cls, "_is_dynamic", False)
+        attr = getattr(cls, "_is_dynamic: ClassVar[bool]", False)
         if isinstance(attr, bool):
             return attr
         # If it's a Pydantic Field / FieldInfo return its default, else direct.
@@ -485,7 +485,7 @@ class BaseNode(BaseModel):
 
     @classmethod
     def layout(cls):
-        attr = getattr(cls, "_layout", "default")
+        attr = getattr(cls, "_layout: ClassVar[str]", "default")
         # If it's a Pydantic Field / FieldInfo return its default, else direct.
         return getattr(attr, "default", attr)  # type: ignore
 
@@ -1422,7 +1422,7 @@ class ToolResultNode(BaseNode):
     A special node type representing a tool result.
     """
 
-    _is_dynamic = True
+    _is_dynamic: ClassVar[bool] = True
 
     @classmethod
     def return_type(cls):

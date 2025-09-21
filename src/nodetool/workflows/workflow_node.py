@@ -5,7 +5,7 @@ from nodetool.workflows.run_workflow import run_workflow
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.graph import Graph
-from typing import Any
+from typing import Any, ClassVar
 
 from nodetool.workflows.types import (
     Chunk,
@@ -29,7 +29,7 @@ class WorkflowNode(BaseNode):
     """
 
     _dynamic = True
-    _supports_dynamic_outputs = True
+    _supports_dynamic_outputs: ClassVar[bool] = True
 
     workflow_json: dict = {}
 

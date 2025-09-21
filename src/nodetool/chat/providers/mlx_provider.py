@@ -231,6 +231,14 @@ class MLXProvider(ChatProvider):
                 yield item
             return
 
+        log.debug(
+            "MLX _stream_chat start | model=%s messages=%d tools=%d kwargs_keys=%s",
+            model,
+            len(messages),
+            len(tools),
+            sorted(list(kwargs.keys())),
+        )
+
         await self._ensure_model_loaded(model)
         assert self._tokenizer is not None
         assert self._model is not None
@@ -258,6 +266,15 @@ class MLXProvider(ChatProvider):
         loop = asyncio.get_running_loop()
 
         def _run_stream() -> None:
+            log.debug(
+                "MLX _run_stream thread start | model=%s max_tokens=%s stream_kwargs=%s",
+                model,
+                max_tokens,
+                {
+                    k: ("<callable>" if callable(v) else v)
+                    for k, v in stream_kwargs.items()
+                },
+            )
             try:
                 for response in runtime.stream_generate(
                     self._model,
@@ -270,10 +287,12 @@ class MLXProvider(ChatProvider):
                         queue.put(("response", response)), loop
                     ).result()
             except Exception as exc:  # pragma: no cover - defensive
+                log.exception("MLX _run_stream thread error: %s", exc)
                 asyncio.run_coroutine_threadsafe(
                     queue.put(("error", exc)), loop
                 ).result()
             finally:
+                log.debug("MLX _run_stream thread done")
                 asyncio.run_coroutine_threadsafe(
                     queue.put(("done", None)), loop
                 ).result()
@@ -287,8 +306,27 @@ class MLXProvider(ChatProvider):
         }
         done_emitted = False
 
+        # Watchdog to log if no items arrive for too long
+        last_activity = time.monotonic()
+        watchdog_seconds = int(os.getenv("MLX_WATCHDOG_SECS", "60"))
+
         while True:
-            kind, payload = await queue.get()
+            try:
+                kind, payload = await asyncio.wait_for(queue.get(), timeout=5.0)
+                last_activity = time.monotonic()
+            except asyncio.TimeoutError:
+                if (
+                    watchdog_seconds > 0
+                    and (time.monotonic() - last_activity) > watchdog_seconds
+                ):
+                    log.warning(
+                        "MLX _stream_chat watchdog tripped | no-activity-for=%ss model=%s in_tool_call=%s",
+                        int(time.monotonic() - last_activity),
+                        model,
+                        tool_state["in_tool_call"],
+                    )
+                    # Continue waiting; we only log to surface the hang
+                continue
             if kind == "response":
                 response = payload
                 is_final = getattr(response, "finish_reason", None) is not None
@@ -299,6 +337,11 @@ class MLXProvider(ChatProvider):
                     response.text, tool_state
                 )
                 for tool_call in parsed_calls:
+                    log.debug(
+                        "MLX parsed tool_call name=%s id=%s",
+                        tool_call.name,
+                        tool_call.id,
+                    )
                     yield tool_call
 
                 for i, segment in enumerate(segments):
@@ -309,19 +352,27 @@ class MLXProvider(ChatProvider):
                         and i == len(segments) - 1
                         and not tool_state["in_tool_call"]
                     )
+                    if done_flag:
+                        log.debug("MLX emitting final chunk (done=True)")
                     yield Chunk(content=segment, done=done_flag)
                     done_emitted = done_emitted or done_flag
 
                 if is_final:
                     if not done_emitted:
+                        log.debug("MLX emitting trailing done chunk")
                         yield Chunk(content="", done=True)
                     break
             elif kind == "error":
+                log.error("MLX _stream_chat received error from thread: %s", payload)
                 raise payload
             elif kind == "done":
                 if not done_emitted:
+                    log.debug(
+                        "MLX done without explicit final token; emitting done chunk"
+                    )
                     yield Chunk(content="", done=True)
                 break
+        log.debug("MLX _stream_chat end | model=%s", model)
 
     async def _ensure_model_loaded(self, model: str) -> None:
         async with self._load_lock:
@@ -638,6 +689,12 @@ class MLXProvider(ChatProvider):
         max_tokens: int,
         **kwargs: Any,
     ) -> AsyncIterator[Chunk | ToolCall]:
+        log.debug(
+            "MLX-VLM _stream_vlm_chat start | model=%s images=%d audios=%d",
+            model,
+            len(image_parts),
+            len(audio_parts),
+        )
         await self._ensure_vlm_model_loaded(model)
         assert self._vlm_model is not None
         assert self._vlm_processor is not None
@@ -646,6 +703,9 @@ class MLXProvider(ChatProvider):
         prompt_text = self._extract_last_user_prompt(messages)
         images = await self._prepare_vlm_images(image_parts)
         audios = await self._prepare_vlm_audio(audio_parts)
+        log.debug(
+            "MLX-VLM prepared assets | images=%d audios=%d", len(images), len(audios)
+        )
 
         runtime = await self._get_vlm_runtime()
 
@@ -659,6 +719,10 @@ class MLXProvider(ChatProvider):
             prompt_text,
             num_images=len(images),
             num_audios=len(audios),
+        )
+        log.debug(
+            "MLX-VLM prompt prepared | prompt_len=%d",
+            len(formatted_prompt) if isinstance(formatted_prompt, str) else -1,
         )
 
         def _run_generate() -> str:
@@ -678,8 +742,13 @@ class MLXProvider(ChatProvider):
         try:
             output: str = await asyncio.to_thread(_run_generate)
         except Exception as exc:
+            log.exception("MLX-VLM generation error: %s", exc)
             raise RuntimeError(f"mlx-vlm generation failed: {exc}")
 
+        log.debug(
+            "MLX-VLM generation ok | output_len=%d",
+            len(output) if isinstance(output, str) else -1,
+        )
         yield Chunk(content=output, done=True)
 
         for audio_path in audios:
@@ -693,6 +762,7 @@ class MLXProvider(ChatProvider):
                 os.remove(image_path)
             except Exception:
                 pass
+        log.debug("MLX-VLM _stream_vlm_chat end | model=%s", model)
 
     # ------------------------------------------------------------------
     # Caching helpers
