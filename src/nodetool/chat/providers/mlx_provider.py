@@ -16,6 +16,7 @@ whenever the tokenizer advertises tool calling support.
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import threading
 from dataclasses import dataclass
@@ -23,6 +24,8 @@ import time
 from typing import Any, AsyncIterator, Callable, Iterable, Sequence
 from io import BytesIO
 from urllib.parse import urlparse, unquote
+import os
+import tempfile
 
 from nodetool.chat.providers.base import ChatProvider
 from nodetool.agents.tools.base import Tool
@@ -35,12 +38,15 @@ from nodetool.metadata.types import (
     MessageContent,
     MessageTextContent,
     MessageImageContent,
+    MessageAudioContent,
     ImageRef,
+    AudioRef,
 )
 from nodetool.workflows.types import Chunk
 from nodetool.io.uri_utils import fetch_uri_bytes_and_mime
 
 import PIL.Image
+from pydub import AudioSegment  # type: ignore
 
 log = get_logger(__name__)
 
@@ -210,11 +216,15 @@ class MLXProvider(ChatProvider):
         """
         # Route to mlx-vlm if the model appears vision-capable and images are present
         image_parts = self._extract_image_parts(messages)
-        if image_parts and self._is_vision_model(model):
+        audio_parts = self._extract_audio_parts(messages)
+        if (image_parts and self._is_vision_model(model)) or (
+            audio_parts and self._is_audio_model(model)
+        ):
             async for item in self._stream_vlm_chat(
                 messages,
                 model,
                 image_parts,
+                audio_parts,
                 max_tokens=max_tokens,
                 **kwargs,
             ):
@@ -395,6 +405,7 @@ class MLXProvider(ChatProvider):
                 vlm_module = importlib.import_module("mlx_vlm")
                 prompt_utils = importlib.import_module("mlx_vlm.prompt_utils")
                 utils_module = importlib.import_module("mlx_vlm.utils")
+
                 return _MLXVLMRuntime(
                     load=getattr(vlm_module, "load"),
                     generate=getattr(vlm_module, "generate"),
@@ -423,7 +434,7 @@ class MLXProvider(ChatProvider):
                 cfg = getattr(mdl, "config", None)
                 if cfg is None and runtime.load_config is not None:
                     cfg = runtime.load_config(model)
-                proc.image_processor.patch_size = 14
+                # proc.image_processor.patch_size = 14
                 return mdl, proc, cfg
 
             self._vlm_model, self._vlm_processor, self._vlm_config = (
@@ -446,6 +457,16 @@ class MLXProvider(ChatProvider):
             "gemma-3n",
         )
         return any(k in name for k in keywords)
+
+    def _is_audio_model(self, model: str) -> bool:
+        name = (model or "").lower()
+        keywords = (
+            "gemma-3n-e2b",
+            "e2b-it",
+            "audio",
+        )
+        # be permissive if both image/audio present and model is vision
+        return any(k in name for k in keywords) or self._is_vision_model(model)
 
     def _ensure_vlm_processor_ready(self) -> None:
         """Ensure mlx-vlm processor has necessary attributes set.
@@ -516,51 +537,104 @@ class MLXProvider(ChatProvider):
                         images.append(part)
         return images
 
-    async def _prepare_vlm_images(self, parts: list[MessageImageContent]) -> list[Any]:
-        prepared: list[Any] = []
+    def _extract_audio_parts(
+        self, messages: Sequence[Message]
+    ) -> list[MessageAudioContent]:
+        audios: list[MessageAudioContent] = []
+        for msg in messages:
+            if isinstance(msg.content, list):
+                for part in msg.content:
+                    if isinstance(part, MessageAudioContent):
+                        audios.append(part)
+        return audios
+
+    async def _prepare_vlm_images(self, parts: list[MessageImageContent]) -> list[str]:
+        """Load images as PIL.Image objects in memory (no temp files)."""
+        prepared_images: list[str] = []
         for part in parts:
             image_ref: ImageRef = part.image
             uri = image_ref.uri or ""
+            data: bytes | None = None
             if uri:
-                # Prefer passing remote HTTP(S) URLs directly; convert file/data/memory to PIL.Image
-                if uri.startswith("http://") or uri.startswith("https://"):
-                    prepared.append(uri)
-                    continue
-                # Convert file:// URIs and other URIs to PIL Image via bytes fetch
                 try:
-                    mime, data = await fetch_uri_bytes_and_mime(uri)
-                    img = PIL.Image.open(BytesIO(data))
-                    img = img.convert("RGB")
-                    prepared.append(img.copy())
-                    continue
+                    _mime, fetched = await fetch_uri_bytes_and_mime(uri)
+                    data = fetched
                 except Exception:
-                    # Try to interpret as local path
                     try:
                         parsed = urlparse(uri)
-                        if parsed.scheme == "file":
-                            local_path = unquote(parsed.path)
-                        else:
-                            local_path = uri
-                        prepared.append(local_path)
-                        continue
+                        local_path = (
+                            unquote(parsed.path) if parsed.scheme == "file" else uri
+                        )
+                        with open(local_path, "rb") as f:
+                            data = f.read()
                     except Exception:
-                        pass
-            # No usable URI; try raw bytes
-            if image_ref.data:
+                        data = None
+            if data is None and image_ref.data:
+                data = image_ref.data
+
+            if data is None:
+                continue
+
+            try:
+                bytes_io = BytesIO()
+                img = PIL.Image.open(BytesIO(data))
+                img = img.convert("RGB")
+                img = img.resize((224, 224))
+                tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
+                img.save(tmp, format="PNG")
+                prepared_images.append(tmp.name)
+            except Exception:
+                pass
+
+        return prepared_images
+
+    async def _prepare_vlm_audio(self, parts: list[MessageAudioContent]) -> list[str]:
+        """Download/convert audios and persist as temporary WAV files.
+
+        Returns (audio_paths, temp_files) where both lists contain filesystem paths.
+        All returned paths in audio_paths are WAV files when possible.
+        """
+        prepared_paths: list[str] = []
+        for part in parts:
+            audio_ref: AudioRef = part.audio
+            uri = audio_ref.uri or ""
+            data: bytes | None = None
+            if uri:
                 try:
-                    img = PIL.Image.open(BytesIO(image_ref.data))
-                    img = img.convert("RGB")
-                    prepared.append(img.copy())
-                    continue
+                    _mime, fetched = await fetch_uri_bytes_and_mime(uri)
+                    data = fetched
                 except Exception:
-                    pass
-        return prepared
+                    try:
+                        parsed = urlparse(uri)
+                        local_path = (
+                            unquote(parsed.path) if parsed.scheme == "file" else uri
+                        )
+                        with open(local_path, "rb") as f:
+                            data = f.read()
+                    except Exception:
+                        data = None
+            if data is None and audio_ref.data:
+                data = audio_ref.data
+
+            if data is None:
+                continue
+
+            audio_seg = AudioSegment.from_file(BytesIO(data))
+            audio_seg = (
+                audio_seg.set_frame_rate(16000).set_channels(1).set_sample_width(2)
+            )
+            tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
+            audio_seg.export(tmp, format="wav")
+            prepared_paths.append(tmp.name)
+
+        return prepared_paths
 
     async def _stream_vlm_chat(
         self,
         messages: Sequence[Message],
         model: str,
         image_parts: list[MessageImageContent],
+        audio_parts: list[MessageAudioContent],
         max_tokens: int,
         **kwargs: Any,
     ) -> AsyncIterator[Chunk | ToolCall]:
@@ -571,6 +645,7 @@ class MLXProvider(ChatProvider):
 
         prompt_text = self._extract_last_user_prompt(messages)
         images = await self._prepare_vlm_images(image_parts)
+        audios = await self._prepare_vlm_audio(audio_parts)
 
         runtime = await self._get_vlm_runtime()
 
@@ -583,6 +658,7 @@ class MLXProvider(ChatProvider):
             self._vlm_config,
             prompt_text,
             num_images=len(images),
+            num_audios=len(audios),
         )
 
         def _run_generate() -> str:
@@ -591,7 +667,8 @@ class MLXProvider(ChatProvider):
                 self._vlm_model,
                 self._vlm_processor,
                 formatted_prompt,
-                image=images,
+                image=images if images else None,
+                audio=audios if audios else None,
                 verbose=False,
                 max_tokens=max_tokens,
             )
@@ -604,6 +681,18 @@ class MLXProvider(ChatProvider):
             raise RuntimeError(f"mlx-vlm generation failed: {exc}")
 
         yield Chunk(content=output, done=True)
+
+        for audio_path in audios:
+            try:
+                os.remove(audio_path)
+            except Exception:
+                pass
+
+        for image_path in images:
+            try:
+                os.remove(image_path)
+            except Exception:
+                pass
 
     # ------------------------------------------------------------------
     # Caching helpers
