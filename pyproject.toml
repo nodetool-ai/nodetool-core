@@ -108,7 +108,7 @@ dependencies = [
 
     # Authentication and security
     "annotated-types==0.7.0",
-    "authlib==1.3.2",
+    "authlib==1.6.4",
     "itsdangerous",
     "PyJWT",
 ]
