@@ -1397,25 +1397,33 @@ def scan_for_package_nodes(verbose: bool = False) -> PackageModel:
     src_path = os.path.abspath("src/nodetool/nodes")
     if os.path.exists(src_path):
         # Discover nodes
+        module_names = []
         for root, _, files in os.walk(src_path):
             for file in files:
                 if file.endswith(".py"):
                     module_path = os.path.join(root, file)
                     rel_path = os.path.relpath(module_path, src_path)
                     module_name = os.path.splitext(rel_path)[0].replace(os.sep, ".")
+                    module_names.append(module_name)
 
-                    if verbose:
-                        click.echo(f"Scanning module: {module_name}")
+        with click.progressbar(
+            length=len(module_names),
+            label="Scanning for nodes",
+            show_eta=True,
+            show_percent=True,
+        ) as bar:
+            for module_name in module_names:
+                bar.update(1)
+                if verbose:
+                    click.echo(f"Scanning module: {module_name}")
 
-                    full_module_name = f"nodetool.nodes.{module_name}"
-                    node_classes = get_node_classes_from_module(
-                        full_module_name, verbose
+                full_module_name = f"nodetool.nodes.{module_name}"
+                node_classes = get_node_classes_from_module(full_module_name, verbose)
+                if node_classes:
+                    assert package.nodes is not None
+                    package.nodes.extend(
+                        node_class.get_metadata() for node_class in node_classes
                     )
-                    if node_classes:
-                        assert package.nodes is not None
-                        package.nodes.extend(
-                            node_class.get_metadata() for node_class in node_classes
-                        )
 
         # Write the single nodes.json file in the root directory
         os.makedirs("src/nodetool/package_metadata", exist_ok=True)

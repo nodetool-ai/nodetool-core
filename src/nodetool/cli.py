@@ -589,22 +589,13 @@ def scan(verbose):
     )
 
     try:
-        with click.progressbar(
-            length=100,
-            label="Scanning for nodes",
-            show_eta=False,
-            show_percent=True,
-        ) as bar:
-            bar.update(10)
-            # Scan for nodes and create package model
-            package = scan_for_package_nodes(verbose=verbose)
-            bar.update(80)
+        # Scan for nodes and create package model
+        package = scan_for_package_nodes(verbose=verbose)
 
-            # Save package metadata
-            save_package_metadata(package, verbose=verbose)
-            # Update pyproject.toml with asset files
-            update_pyproject_include(package, verbose=verbose)
-            bar.update(10)
+        # Save package metadata
+        save_package_metadata(package, verbose=verbose)
+        # Update pyproject.toml with asset files
+        update_pyproject_include(package, verbose=verbose)
 
         node_count = len(package.nodes or [])
         example_count = len(package.examples or [])
@@ -1933,7 +1924,7 @@ def sync_workflow(workflow_id: str, server_url: str):
         try:
             console.print("[bold cyan]🔄 Syncing workflow to remote...[/]")
             # Get local workflow as a dict directly from the adapter
-            workflow = Workflow.get(workflow_id)
+            workflow = await Workflow.get(workflow_id)
             if workflow is None:
                 console.print(f"[red]❌ Workflow not found: {workflow_id}[/]")
                 raise SystemExit(1)
