@@ -15,11 +15,9 @@ The module uses a hybrid caching approach:
 
 import asyncio
 import aiofiles
-from dataclasses import asdict
-from datetime import datetime
 from nodetool.types.model import CachedFileInfo, UnifiedModel
-from huggingface_hub import scan_cache_dir, HfApi, ModelInfo, try_to_load_from_cache
-from typing import Any, List
+from huggingface_hub import scan_cache_dir, HfApi, ModelInfo
+from typing import List
 import os
 import shutil
 import json
@@ -61,10 +59,13 @@ def unified_model(
         except Exception as e:
             log.debug(f"Failed to fetch model info for {model.repo_id}: {e}")
             return None
-    if model_info is None:
-        return None
     # cache_path = try_to_load_from_cache(
     #     model.repo_id, model.path if model.path is not None else "config.json"
+    if size is None:
+        if mode.path:
+            size = model_info.siblings.find(lambda x: x.rfilename == model.path).size
+        else:
+            size = size_on_disk(model_info)
     return UnifiedModel(
         id=model.repo_id,
         repo_id=model.repo_id,
@@ -76,7 +77,7 @@ def unified_model(
         ignore_patterns=model.ignore_patterns,
         description=None,
         readme=None,
-        size_on_disk=size or size_on_disk(model_info),
+        size_on_disk=size,
         downloaded=False,
         pipeline_tag=model_info.pipeline_tag,
         tags=model_info.tags,
