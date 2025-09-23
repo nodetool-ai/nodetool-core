@@ -59,11 +59,15 @@ def unified_model(
         except Exception as e:
             log.debug(f"Failed to fetch model info for {model.repo_id}: {e}")
             return None
+
     # cache_path = try_to_load_from_cache(
     #     model.repo_id, model.path if model.path is not None else "config.json"
+    def find_file(siblings: list, path: str):
+        return next((sib for sib in siblings if sib.rfilename == path), None)
+
     if size is None:
-        if mode.path:
-            size = model_info.siblings.find(lambda x: x.rfilename == model.path).size
+        if model.path:
+            size = find_file(model_info.siblings, model.path).size
         else:
             size = size_on_disk(model_info)
     return UnifiedModel(
