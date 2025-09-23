@@ -254,6 +254,20 @@ class NodeActor:
                     self.runner.log_vram_usage(
                         f"Node {node.get_title()} ({node._id}) VRAM after run completion"
                     )
+                except Exception as e:
+                    self.logger.error(
+                        f"Error running node {node.get_title()} ({node._id}): {e}"
+                    )
+                    ctx.post_message(
+                        NodeUpdate(
+                            node_id=node.id,
+                            node_name=node.get_title(),
+                            node_type=node.get_node_type(),
+                            status="error",
+                            error=str(e),
+                        )
+                    )
+                    raise e
                 finally:
                     await node.move_to_device("cpu")
                     self.runner.log_vram_usage(
