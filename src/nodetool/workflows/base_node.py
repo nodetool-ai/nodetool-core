@@ -76,6 +76,7 @@ from typing import (
     AsyncGenerator,
     Callable,
     ClassVar,
+    Mapping,
     Optional,
     Type,
     TypeVar,
@@ -474,12 +475,12 @@ class BaseNode(BaseModel):
         return bool(getattr(attr, "default", False))
 
     @classmethod
-    def is_visible(cls):
+    def is_visible(cls) -> bool:
         """Return whether the node class should be listed in UIs."""
         return True
 
     @classmethod
-    def is_dynamic(cls):
+    def is_dynamic(cls) -> bool:
         attr = getattr(cls, "_is_dynamic: ClassVar[bool]", False)
         if isinstance(attr, bool):
             return attr
@@ -487,7 +488,7 @@ class BaseNode(BaseModel):
         return bool(getattr(attr, "default", False))
 
     @classmethod
-    def layout(cls):
+    def layout(cls) -> str:
         attr = getattr(cls, "_layout: ClassVar[str]", "default")
         # If it's a Pydantic Field / FieldInfo return its default, else direct.
         return getattr(attr, "default", attr)  # type: ignore
@@ -630,7 +631,14 @@ class BaseNode(BaseModel):
 
     @classmethod
     def unified_recommended_models(cls) -> list[UnifiedModel]:
-        models = [unified_model(model) for model in cls.get_recommended_models()]
+        import concurrent.futures
+
+        recommended_models = cls.get_recommended_models()
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            futures = [
+                executor.submit(unified_model, model) for model in recommended_models
+            ]
+            models = [future.result() for future in futures]
         return [model for model in models if model is not None]
 
     @classmethod
@@ -666,6 +674,7 @@ class BaseNode(BaseModel):
                 supports_dynamic_outputs=cls.supports_dynamic_outputs(),
             )
         except Exception as e:
+            traceback.print_exc()
             raise ValueError(f"Error getting metadata for {cls.__name__}: {e}")
 
     @classmethod
@@ -843,7 +852,7 @@ class BaseNode(BaseModel):
         # Include both class-declared and instance-declared dynamic outputs
         for o in self.outputs_for_instance():
             value = result.get(o.name)
-            if TORCH_AVAILABLE and isinstance(value, torch.Tensor):
+            if TORCH_AVAILABLE and isinstance(value, torch.Tensor):  # type: ignore
                 continue
             elif isinstance(value, ComfyData):
                 res_for_update[o.name] = value.serialize()
@@ -890,7 +899,7 @@ class BaseNode(BaseModel):
         if properties is not None:
             for p in properties:
                 value = self.read_property(p)
-                if TORCH_AVAILABLE and isinstance(value, torch.Tensor):
+                if TORCH_AVAILABLE and isinstance(value, torch.Tensor):  # type: ignore
                     pass
                 elif isinstance(value, ComfyData):
                     pass
@@ -1054,7 +1063,7 @@ class BaseNode(BaseModel):
         return cls.gen_process is not BaseNode.gen_process
 
     @classmethod
-    def return_type(cls) -> Type | dict[str, Type] | None:
+    def return_type(cls) -> Mapping[str, Any]:
         """
         Get the return type of the node's process function.
 
@@ -1069,7 +1078,7 @@ class BaseNode(BaseModel):
             type_hints = getattr(cls.process, "__annotations__", {})
 
         if "return" not in type_hints:
-            return None
+            return {}
 
         return type_hints["return"]
 
@@ -1242,7 +1251,7 @@ class BaseNode(BaseModel):
         else:
             return {"output": output}
 
-    def validate(self, input_edges: list[Edge]):
+    def validate_inputs(self, input_edges: list[Edge]):
         """
         Validate the node's inputs before processing.
 
@@ -1382,7 +1391,7 @@ class BaseNode(BaseModel):
         For training nodes, this method should be overridden.
         """
         if TORCH_AVAILABLE:
-            with torch.no_grad():
+            with torch.no_grad():  # type: ignore
                 return await self.process(context)
         else:
             return await self.process(context)
@@ -1433,7 +1442,7 @@ class ToolResultNode(BaseNode):
     _is_dynamic: ClassVar[bool] = True
 
     @classmethod
-    def return_type(cls):
+    def return_type(cls) -> Mapping[str, Any]:
         return {
             "result": Any,
         }

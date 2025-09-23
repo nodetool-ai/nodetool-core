@@ -682,7 +682,7 @@ class WorkflowRunner:
         for node in graph.nodes:
             input_edges = [edge for edge in graph.edges if edge.target == node.id]
             log.debug("Validating node %s", node.get_title())
-            errors = node.validate(input_edges)
+            errors = node.validate_inputs(input_edges)
             if len(errors) > 0:
                 is_valid = False
                 for e in errors:
