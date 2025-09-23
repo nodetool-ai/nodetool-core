@@ -1,7 +1,9 @@
 import json
 from typing import AsyncGenerator
 from nodetool.config.environment import Environment
+from nodetool.io.file_explorer import get_ollama_models_dir
 from nodetool.metadata.types import LlamaModel
+from nodetool.types.model import UnifiedModel
 from ollama import AsyncClient
 
 # Simple module-level cache
@@ -42,6 +44,33 @@ async def get_ollama_models() -> list[LlamaModel]:
     except Exception as e:
         print(f"Error getting ollama models: {e}")
         return []
+
+
+async def get_ollama_models_unified() -> list[UnifiedModel]:
+    models = await get_ollama_models()
+    return [
+        UnifiedModel(
+            id=model.name,
+            type="llama_model",
+            name=model.name,
+            repo_id=model.name,
+            path=None,
+            cache_path=None,
+            allow_patterns=None,
+            ignore_patterns=None,
+            description=None,
+            readme=None,
+            size_on_disk=model.size,
+            downloaded=True,
+            pipeline_tag=None,
+            tags=None,
+            has_model_index=False,
+            downloads=0,
+            likes=0,
+            trending_score=0,
+        )
+        for model in models
+    ]
 
 
 async def get_ollama_model_info(model_name: str) -> dict | None:

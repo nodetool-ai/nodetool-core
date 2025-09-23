@@ -14,18 +14,16 @@ The module uses a hybrid caching approach:
 """
 
 import asyncio
+import aiofiles
+from dataclasses import asdict
 from datetime import datetime
-import httpx
-from pydantic import Field
-from huggingface_hub import scan_cache_dir
-from typing import Any, List, Optional
-from pydantic import BaseModel
+from nodetool.types.model import CachedFileInfo, UnifiedModel
+from huggingface_hub import scan_cache_dir, HfApi, ModelInfo, try_to_load_from_cache
+from typing import Any, List
 import os
 import shutil
 import json
-import hashlib
 from pathlib import Path
-from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
 from nodetool.metadata.types import (
     CLASSNAME_TO_MODEL_TYPE,
@@ -33,7 +31,7 @@ from nodetool.metadata.types import (
     LanguageModel,
     Provider,
 )
-from nodetool.workflows.base_node import get_recommended_models
+from nodetool.workflows.recommended_models import get_recommended_models
 
 log = get_logger(__name__)
 
@@ -42,209 +40,51 @@ CACHE_VERSION = "1.0"
 CACHE_EXPIRY_DAYS = int(os.environ.get("NODETOOL_CACHE_EXPIRY_DAYS", "7"))
 
 
-def get_model_info_cache_directory() -> Path:
-    """
-    Get system-specific cache directory for nodetool's custom model info cache.
-
-    Returns:
-        Path: System-specific cache directory
-    """
-    try:
-        # Try to use platformdirs if available
-        import platformdirs
-
-        cache_dir = platformdirs.user_cache_dir("nodetool", "nodetool")
-    except ImportError:
-        # Fallback to manual platform detection
-        if os.name == "nt":  # Windows
-            cache_dir = os.path.expandvars(r"%LOCALAPPDATA%\nodetool\Cache")
-        elif os.name == "posix":
-            if os.uname().sysname == "Darwin":  # macOS
-                cache_dir = os.path.expanduser("~/Library/Caches/nodetool")
-            else:  # Linux and other Unix-like
-                cache_dir = os.path.expanduser("~/.cache/nodetool")
-        else:
-            # Fallback for unknown systems
-            cache_dir = os.path.expanduser("~/.nodetool_cache")
-
-    cache_path = Path(cache_dir) / "model_info_cache"
-    cache_path.mkdir(parents=True, exist_ok=True)
-    return cache_path
+def size_on_disk(model_info: ModelInfo) -> int:
+    return sum(sib.size for sib in (model_info.siblings or []) if sib.size is not None)
 
 
-def get_cache_file_path(model_id: str, cache_type: str = "model_info") -> Path:
-    """
-    Get the cache file path for a specific model's metadata.
-
-    Args:
-        model_id (str): The model ID
-        cache_type (str): Type of cache (defaults to 'model_info')
-
-    Returns:
-        Path: Cache file path
-    """
-    # Create a safe filename from model_id
-    safe_model_id = hashlib.md5(model_id.encode()).hexdigest()
-    cache_dir = get_model_info_cache_directory()
-    return cache_dir / f"{safe_model_id}_{cache_type}.json"
+def has_model_index(model_info: ModelInfo) -> bool:
+    return any(
+        sib.rfilename == "model_index.json" for sib in (model_info.siblings or [])
+    )
 
 
-def is_cache_valid(cache_file: Path) -> bool:
-    """
-    Check if cache file is valid (exists and not expired).
-
-    Args:
-        cache_file (Path): Path to cache file
-
-    Returns:
-        bool: True if cache is valid
-    """
-    if not cache_file.exists():
-        return False
-
-    try:
-        # Check if file is older than CACHE_EXPIRY_DAYS
-        file_age = datetime.now().timestamp() - cache_file.stat().st_mtime
-        return file_age < (CACHE_EXPIRY_DAYS * 24 * 3600)
-    except Exception:
-        return False
-
-
-def read_cache_file(cache_file: Path) -> dict[str, Any] | None:
-    """
-    Read and parse cache file.
-
-    Args:
-        cache_file (Path): Path to cache file
-
-    Returns:
-        dict | None: Cached data or None if invalid
-    """
-    try:
-        if not is_cache_valid(cache_file):
+def unified_model(
+    model: HuggingFaceModel,
+    model_info: ModelInfo | None = None,
+    size: int | None = None,
+) -> UnifiedModel | None:
+    if model_info is None or model_info.siblings is None:
+        try:
+            model_info = HfApi().model_info(model.repo_id, files_metadata=True)
+        except Exception as e:
+            log.debug(f"Failed to fetch model info for {model.repo_id}: {e}")
             return None
-
-        with open(cache_file, "r", encoding="utf-8") as f:
-            data = json.load(f)
-
-        # Verify cache version
-        if data.get("version") != CACHE_VERSION:
-            return None
-
-        return data.get("data")  # type: ignore[no-any-return]
-    except Exception as e:
-        log.debug(f"Failed to read cache file {cache_file}: {e}")
+    if model_info is None:
         return None
-
-
-def write_cache_file(cache_file: Path, data: Any) -> None:
-    """
-    Write data to cache file with size verification.
-
-    Args:
-        cache_file (Path): Path to cache file
-        data (Any): Data to cache
-    """
-    try:
-        cache_data = {
-            "version": CACHE_VERSION,
-            "timestamp": datetime.now().isoformat(),
-            "data": data,
-        }
-
-        # Ensure directory exists
-        cache_file.parent.mkdir(parents=True, exist_ok=True)
-
-        # Convert to JSON string first to check size
-        json_str = json.dumps(cache_data, indent=2, default=str)
-        expected_size = len(json_str.encode("utf-8"))
-
-        with open(cache_file, "w", encoding="utf-8") as f:
-            f.write(json_str)
-            f.flush()
-            os.fsync(f.fileno())  # Ensure data is written to disk
-
-        # Verify file was written completely
-        actual_size = cache_file.stat().st_size
-        if actual_size != expected_size:
-            log.warning(
-                f"Cache file size mismatch for {cache_file}: expected {expected_size}, got {actual_size}"
-            )
-            cache_file.unlink()  # Remove potentially corrupted file
-
-    except Exception as e:
-        log.debug(f"Failed to write cache file {cache_file}: {e}")
-
-
-def delete_cache_file(model_id: str, cache_type: str = "model_info") -> None:
-    """
-    Delete cache file for a specific model's metadata.
-
-    Args:
-        model_id (str): The model ID
-        cache_type (str): Type of cache (defaults to 'model_info')
-    """
-    try:
-        cache_file = get_cache_file_path(model_id, cache_type)
-        if cache_file.exists():
-            cache_file.unlink()
-    except Exception as e:
-        log.debug(f"Failed to delete cache file for {model_id}: {e}")
-
-
-def cleanup_expired_cache() -> int:
-    """
-    Clean up expired cache files.
-
-    Returns:
-        int: Number of files removed
-    """
-    removed_count = 0
-    try:
-        cache_dir = get_model_info_cache_directory()
-        if not cache_dir.exists():
-            return 0
-
-        for cache_file in cache_dir.glob("*.json"):
-            if not is_cache_valid(cache_file):
-                try:
-                    cache_file.unlink()
-                    removed_count += 1
-                    log.debug(f"Removed expired cache file: {cache_file}")
-                except Exception as e:
-                    log.debug(f"Failed to remove expired cache file {cache_file}: {e}")
-
-    except Exception as e:
-        log.debug(f"Failed to cleanup expired cache: {e}")
-
-    return removed_count
-
-
-class Sibling(BaseModel):
-    rfilename: str
-
-
-class ModelInfo(BaseModel):
-    _id: str
-    id: str
-    modelId: str
-    author: str
-    sha: str
-    lastModified: datetime
-    private: bool
-    disabled: bool
-    gated: bool | str
-    pipeline_tag: str | None = None
-    tags: List[str]
-    downloads: int
-    library_name: str | None = None
-    likes: int
-    the_model_index: Optional[Any] = Field(None, alias="model-index")
-    config: dict | None = None
-    cardData: dict | None = None
-    siblings: List[Sibling] | None = None
-    spaces: List[str] | None = None
-    createdAt: datetime
+    # cache_path = try_to_load_from_cache(
+    #     model.repo_id, model.path if model.path is not None else "config.json"
+    return UnifiedModel(
+        id=model.repo_id,
+        repo_id=model.repo_id,
+        path=model.path,
+        type=model.type,
+        name=model.repo_id,
+        cache_path=None,
+        allow_patterns=model.allow_patterns,
+        ignore_patterns=model.ignore_patterns,
+        description=None,
+        readme=None,
+        size_on_disk=size or size_on_disk(model_info),
+        downloaded=False,
+        pipeline_tag=model_info.pipeline_tag,
+        tags=model_info.tags,
+        has_model_index=has_model_index(model_info),
+        downloads=model_info.downloads,
+        likes=model_info.likes,
+        trending_score=model_info.trending_score,
+    )
 
 
 async def fetch_model_readme(model_id: str) -> str | None:
@@ -296,7 +136,7 @@ async def fetch_model_readme(model_id: str) -> str | None:
 async def fetch_model_info(model_id: str) -> ModelInfo | None:
     """
     Fetches model info from the Hugging Face API or cache
-    using httpx
+    using the HfApi client
     https://huggingface.co/api/models/{model_id}
 
     Args:
@@ -305,54 +145,21 @@ async def fetch_model_info(model_id: str) -> ModelInfo | None:
     Returns:
         ModelInfo: The model info.
     """
-    cache_file = get_cache_file_path(model_id, "model_info")
-    cached_data = read_cache_file(cache_file)
-    if cached_data is not None:
-        try:
-            # Reconstruct ModelInfo from cached dict
-            return ModelInfo(**cached_data) if isinstance(cached_data, dict) else None
-        except Exception as e:
-            log.debug(f"Failed to deserialize cached model info for {model_id}: {e}")
-            # Invalid cache data, continue to fetch from API
+    # Use HfApi to fetch model info
+    api = HfApi()
+    try:
+        model_info: ModelInfo = await asyncio.get_event_loop().run_in_executor(
+            None, lambda: api.model_info(model_id, files_metadata=True)
+        )
+    except Exception as e:
+        log.debug(f"Failed to fetch model info for {model_id}: {e}")
+        return None
 
-    async with httpx.AsyncClient() as client:
-        try:
-            response = await client.get(f"https://huggingface.co/api/models/{model_id}")
-        except httpx.ConnectError:
-            log.info("Huggingface not reachable")
-            return None
-
-        if response.status_code != 200:
-            write_cache_file(cache_file, None)
-            return None
-
-        response_data = response.json()
-        model_info = ModelInfo(**response_data)
-
-        # Cache the model info as dict for JSON serialization
-        write_cache_file(cache_file, response_data)
-        return model_info
-
-
-class CachedFileInfo(BaseModel):
-    file_name: str
-    size_on_disk: int
-
-
-class CachedModel(BaseModel):
-    repo_id: str
-    repo_type: str
-    path: str
-    size_on_disk: int
-    has_model_index: bool = False
-    the_model_type: Optional[str] = None
-    the_model_info: ModelInfo | None = None
-    readme: str | None = None
-    cached_files: List[CachedFileInfo] = []
+    return model_info
 
 
 def model_type_from_model_info(
-    recommended_models: dict[str, list[HuggingFaceModel]],
+    recommended_models: dict[str, list[UnifiedModel]],
     repo_id: str,
     model_info: ModelInfo | None,
 ) -> str | None:
@@ -372,64 +179,79 @@ def model_type_from_model_info(
     if model_info.pipeline_tag:
         name = model_info.pipeline_tag.replace("-", "_")
         return f"hf.{name}"
+    if model_info.tags:
+        if "mlx" in model_info.tags:
+            return "mlx"
+        if "gguf" in model_info.tags:
+            return "llama_cpp"
     return None
 
 
-async def read_cached_hf_models(
-    load_model_info: bool = True,
-) -> List[CachedModel]:
+async def read_cached_hf_files() -> List[CachedFileInfo]:
     """
     Reads all models from the Hugging Face cache.
 
     Returns:
-        List[CachedModel]: A list of CachedModel objects found in the cache.
+        List[CachedFileInfo]: A list of CachedFileInfo objects found in the cache.
     """
     # Offload scanning HF cache to a thread (filesystem heavy)
     cache_info = await asyncio.to_thread(scan_cache_dir)
     model_repos = [repo for repo in cache_info.repos if repo.repo_type == "model"]
-    recommended_models = get_recommended_models()
-    if load_model_info:
-        model_infos = await asyncio.gather(
-            *[fetch_model_info(repo.repo_id) for repo in model_repos]
-        )
-    else:
-        model_infos = [None] * len(model_repos)
 
-    def has_model_index(model_info: ModelInfo | None) -> bool:
-        if model_info is None:
-            return False
-        if model_info.siblings is None:
-            return False
-        for sibling in model_info.siblings:
-            if sibling.rfilename == "model_index.json":
-                return True
-        return False
-
-    models = []
-    for repo, model_info in zip(model_repos, model_infos):
+    for repo in model_repos:
         # Get cached files from all revisions
         cached_files = []
         for revision in repo.revisions:
             for file_info in revision.files:
                 cached_files.append(
                     CachedFileInfo(
+                        repo_id=repo.repo_id,
                         file_name=file_info.file_name,
                         size_on_disk=file_info.size_on_disk,
                     )
                 )
+    return cached_files
 
+
+async def read_cached_hf_models() -> List[UnifiedModel]:
+    """
+    Reads all models from the Hugging Face cache.
+
+    Returns:
+        List[UnifiedModel]: A list of UnifiedModel objects found in the cache.
+    """
+    # Offload scanning HF cache to a thread (filesystem heavy)
+    cache_info = await asyncio.to_thread(scan_cache_dir)
+    model_repos = [repo for repo in cache_info.repos if repo.repo_type == "model"]
+    recommended_models = get_recommended_models()
+    model_infos = await asyncio.gather(
+        *[fetch_model_info(repo.repo_id) for repo in model_repos]
+    )
+
+    models: list[UnifiedModel] = []
+    for repo, model_info in zip(model_repos, model_infos):
         models.append(
-            CachedModel(
-                repo_id=repo.repo_id,
-                repo_type=repo.repo_type,
-                path=str(repo.repo_path),
-                size_on_disk=repo.size_on_disk,
-                has_model_index=has_model_index(model_info),
-                the_model_info=model_info,
-                the_model_type=model_type_from_model_info(
+            UnifiedModel(
+                id=repo.repo_id,
+                type=model_type_from_model_info(
                     recommended_models, repo.repo_id, model_info
                 ),
-                cached_files=cached_files,
+                name=repo.repo_id,
+                cache_path=str(repo.repo_path),
+                allow_patterns=None,
+                ignore_patterns=None,
+                description=None,
+                readme=None,
+                downloaded=repo.repo_path is not None,
+                pipeline_tag=model_info.pipeline_tag if model_info else None,
+                tags=model_info.tags if model_info else None,
+                has_model_index=has_model_index(model_info) if model_info else False,
+                repo_id=repo.repo_id,
+                path=None,
+                size_on_disk=repo.size_on_disk,
+                downloads=model_info.downloads if model_info else None,
+                likes=model_info.likes if model_info else None,
+                trending_score=model_info.trending_score if model_info else None,
             )
         )
     return models
@@ -447,29 +269,28 @@ async def get_llamacpp_language_models_from_hf_cache() -> List[LanguageModel]:
     Returns:
         List[LanguageModel]: Llama.cpp-compatible models discovered in the HF cache
     """
-    cached = await read_cached_hf_models(load_model_info=False)
+    cached = await read_cached_hf_files()
     seen: set[str] = set()
     results: list[LanguageModel] = []
 
-    for repo in cached:
-        for f in repo.cached_files:
-            fname = f.file_name
-            if not fname:
-                continue
-            if not fname.lower().endswith(".gguf"):
-                continue
-            model_id = f"{repo.repo_id}:{fname}"
-            if model_id in seen:
-                continue
-            seen.add(model_id)
-            display = f"{repo.repo_id.split('/')[-1]} • {fname}"
-            results.append(
-                LanguageModel(
-                    id=model_id,
-                    name=display,
-                    provider=Provider.LlamaCpp,
-                )
+    for f in cached:
+        fname = f.file_name
+        if not fname:
+            continue
+        if not fname.lower().endswith(".gguf"):
+            continue
+        model_id = f"{f.repo_id}:{fname}"
+        if model_id in seen:
+            continue
+        seen.add(model_id)
+        display = f"{f.repo_id.split('/')[-1]} • {fname}"
+        results.append(
+            LanguageModel(
+                id=model_id,
+                name=display,
+                provider=Provider.LlamaCpp,
             )
+        )
 
     # Sort for stability: by repo then filename
     results.sort(key=lambda m: (m.id.split(":", 1)[0], m.id))
@@ -490,77 +311,42 @@ async def get_mlx_language_models_from_hf_cache() -> List[LanguageModel]:
     Returns:
         List[LanguageModel]: MLX-compatible models discovered in the HF cache
     """
-    cached = await read_cached_hf_models(load_model_info=True)
+    cached = await read_cached_hf_models()
     results: list[LanguageModel] = []
-    seen: set[str] = set()
+    result: dict[str, LanguageModel] = {}
 
-    for repo in cached:
-        rid = repo.repo_id
-        if not isinstance(rid, str):
+    for model in cached:
+        has_mlx_tag = any("mlx" in t for t in model.tags or [])
+
+        if not has_mlx_tag or model.repo_id is None:
             continue
 
-        # Heuristic 1: org is mlx-community
-        is_mlx_org = rid.startswith("mlx-community/")
-
-        # Heuristic 2: tags include "mlx"
-        tags: list[str] = []
-        if repo.the_model_info and isinstance(repo.the_model_info.tags, list):
-            try:
-                tags = [
-                    t.lower() for t in repo.the_model_info.tags if isinstance(t, str)
-                ]
-            except Exception:
-                tags = []
-        has_mlx_tag = any("mlx" in t for t in tags)
-
-        if not (is_mlx_org or has_mlx_tag):
-            continue
-
-        if rid in seen:
-            continue
-        seen.add(rid)
-
-        display = rid.split("/")[-1]
-        results.append(
-            LanguageModel(
-                id=rid,
-                name=display,
-                provider=Provider.MLX,
-            )
+        display = model.repo_id.split("/")[-1]
+        result[model.repo_id] = LanguageModel(
+            id=model.repo_id,
+            name=display,
+            provider=Provider.MLX,
         )
 
-    # Stable order
-    results.sort(key=lambda m: m.id)
-    return results
+    return list(result.values())
 
 
-async def _fetch_models_by_author(author: str) -> list[dict]:
-    """Fetch models list from HF API for a given author.
+async def _fetch_models_by_author(**kwargs) -> list[ModelInfo]:
+    """Fetch models list from HF API for a given author using HFAPI.
 
     Returns raw model dicts from the public API.
     """
-    url = "https://huggingface.co/api/models"
-    params = {"author": author, "limit": 1000}
-    try:
-        async with httpx.AsyncClient(timeout=20.0) as client:
-            resp = await client.get(url, params=params)
-            if resp.status_code != 200:
-                log.debug(
-                    f"HF API returned {resp.status_code} for author={author}: {resp.text[:200]}"
-                )
-                return []
-            data = resp.json()
-            if isinstance(data, list):
-                return data
-            return []
-    except Exception as e:
-        log.debug(f"Failed to fetch HF models for author={author}: {e}")
-        return []
+    api = HfApi()
+    # Run the blocking call in a thread executor
+    models = await asyncio.get_event_loop().run_in_executor(
+        None, lambda: api.list_models(**kwargs)
+    )
+    return list(models)
 
 
 async def get_gguf_language_models_from_authors(
     authors: list[str],
-) -> List[HuggingFaceModel]:
+) -> List[UnifiedModel | None]:
     """
     Fetch all HF repos authored by the given authors that include GGUF files/tags.
 
@@ -574,62 +360,48 @@ async def get_gguf_language_models_from_authors(
         List[HuggingFaceModel]: One entry per matching repo.
     """
     # Fetch authors concurrently
-    results = await asyncio.gather(*(_fetch_models_by_author(a) for a in authors))
-
-    # Collect qualifying repo_ids: top 30 per author by likes
-    repo_ids: list[str] = []
-    seen_repo: set[str] = set()
-    for author, author_models in zip(authors, results):
-        try:
-            # Sort by likes desc; likes may be missing
-            author_models.sort(key=lambda x: int(x.get("likes") or 0), reverse=True)
-            top_models = author_models[:200]
-
-            for m in top_models:
-                rid = m.get("id") or m.get("modelId")
-                if not isinstance(rid, str):
-                    continue
-                if rid in seen_repo:
-                    continue
-                seen_repo.add(rid)
-                repo_ids.append(rid)
-        except Exception as e:
-            log.warning(f"Failed to fetch HF models for author={author}: {e}")
-            continue
-
-    # Fetch model info to enumerate GGUF files per repo (quantizations)
-    model_infos = await asyncio.gather(
-        *(fetch_model_info(rid) for rid in repo_ids), return_exceptions=True
+    results = await asyncio.gather(
+        *(
+            _fetch_models_by_author(
+                author=a,
+                limit=200,
+                sort="trending_score",
+                tags="gguf",
+            )
+            for a in authors
+        )
     )
-
-    entries: list[HuggingFaceModel] = []
-    seen_file: set[tuple[str, str]] = set()
-    for rid, info in zip(repo_ids, model_infos):
-        try:
-            if info is None or isinstance(info, BaseException):
-                continue
-            sibs = getattr(info, "siblings", None) or []
-            for sib in sibs:
-                fname = getattr(sib, "rfilename", None)
-                if not isinstance(fname, str) or not fname.lower().endswith(".gguf"):
-                    continue
-                key = (rid, fname)
-                if key in seen_file:
-                    continue
-                seen_file.add(key)
-                entries.append(HuggingFaceModel(repo_id=rid, path=fname))
-        except Exception as e:
-            log.warning(f"Failed to fetch HF models for rid={rid}: {e}")
+    repos = [item for sublist in results for item in sublist]
+    model_infos = await asyncio.gather(*[fetch_model_info(repo.id) for repo in repos])
+    entries: list[UnifiedModel | None] = []
+    seen_file: set[str] = set()
+    for info in model_infos:
+        if info is None:
             continue
+        sibs = info.siblings or []
+        for sib in sibs:
+            fname = getattr(sib, "rfilename", None)
+            if not isinstance(fname, str) or not fname.lower().endswith(".gguf"):
+                continue
+            if fname in seen_file:
+                continue
+            seen_file.add(fname)
+            entries.append(
+                unified_model(
+                    HuggingFaceModel(type="llama_cpp", repo_id=info.id, path=fname),
+                    info,
+                    sib.size,
+                )
+            )
 
     # Sort for stability: repo then filename
-    entries.sort(key=lambda m: (m.repo_id, m.path or ""))
+    entries = [entry for entry in entries if entry is not None]
     return entries
 
 
 async def get_mlx_language_models_from_authors(
     authors: list[str],
-) -> List[HuggingFaceModel]:
+) -> List[UnifiedModel]:
     """
     Fetch MLX-friendly repos authored by the given authors/orgs and return
     one LanguageModel per repo id.
@@ -646,39 +418,25 @@ async def get_mlx_language_models_from_authors(
         List[HuggingFaceModel]: One entry per qualifying repo.
     """
     # Fetch authors concurrently
-    results = await asyncio.gather(*(_fetch_models_by_author(a) for a in authors))
-
-    repo_ids: list[str] = []
-    seen_repo: set[str] = set()
-    for author, author_models in zip(authors, results):
-        try:
-            # Sort by likes desc; likes may be missing
-            author_models.sort(key=lambda x: int(x.get("likes") or 0), reverse=True)
-            top_models = author_models[:200]
-
-            for m in top_models:
-                rid = m.get("id") or m.get("modelId")
-                if not isinstance(rid, str):
-                    continue
-                if rid in seen_repo:
-                    continue
-                seen_repo.add(rid)
-                repo_ids.append(rid)
-        except Exception as e:
-            log.warning(f"Failed to fetch HF models for author={author}: {e}")
-            continue
+    results = await asyncio.gather(
+        *(
+            _fetch_models_by_author(
+                author=a, limit=200, sort="trending_score", tags="mlx"
+            )
+            for a in authors
+        )
+    )
+    model_infos = [item for sublist in results for item in sublist]
 
     # Produce one LanguageModel per repo id
-    entries: list[HuggingFaceModel] = []
-    for rid in repo_ids:
-        try:
-            entries.append(HuggingFaceModel(repo_id=rid))
-        except Exception:
-            continue
+    entries: list[UnifiedModel | None] = []
+    for info in model_infos:
+        entries.append(
+            unified_model(HuggingFaceModel(type="mlx", repo_id=info.id), info)
+        )
 
     # Stable order
-    entries.sort(key=lambda m: m.repo_id)
-    return entries
+    return [entry for entry in entries if entry is not None]
 
 
 def delete_cached_hf_model(model_id: str) -> bool:
@@ -693,18 +451,62 @@ def delete_cached_hf_model(model_id: str) -> bool:
         if repo.repo_type == "model" and repo.repo_id == model_id:
             if os.path.exists(repo.repo_path):
                 shutil.rmtree(repo.repo_path)
-                # Remove model info from our custom disk cache
-                # README files are handled by HF hub cache (deleted above)
-                delete_cache_file(model_id, "model_info")
                 return True
     return False
 
 
+GGUF_AUTHORS = [
+    "unsloth",
+    "ggml-org",
+    # "LiquidAI",
+    # "gabriellarson",
+    # "openbmb",
+    # "zai-org",
+    # "vikhyatk",
+    # "01-ai",
+    # "BAAI",
+    # "Lin-Chen",
+    # "mtgv",
+    # "lm-sys",
+    # "NousResearch",
+]
+MLX_AUTHORS = ["mlx-community"]
+
+
+async def save_gguf_language_models_to_file() -> None:
+    models = await get_gguf_language_models_from_authors(GGUF_AUTHORS)
+    current_dir = Path(__file__).parent
+    cache_file = current_dir / "gguf_language_models.json"
+    with open(cache_file, "w") as f:
+        json.dump(
+            [model.model_dump() for model in models if model is not None], f, indent=2
+        )
+
+
+async def save_mlx_language_models_to_file() -> None:
+    models = await get_mlx_language_models_from_authors(MLX_AUTHORS)
+    current_dir = Path(__file__).parent
+    cache_file = current_dir / "mlx_language_models.json"
+    with open(cache_file, "w") as f:
+        json.dump([model.model_dump() for model in models], f, indent=2)
+
+
+async def load_gguf_language_models_from_file() -> List[UnifiedModel]:
+    current_dir = Path(__file__).parent
+    cache_file = current_dir / "gguf_language_models.json"
+    async with aiofiles.open(cache_file, "r") as f:
+        content = await f.read()
+        return [UnifiedModel(**model) for model in json.loads(content)]
+
+
+async def load_mlx_language_models_from_file() -> List[UnifiedModel]:
+    current_dir = Path(__file__).parent
+    cache_file = current_dir / "mlx_language_models.json"
+    async with aiofiles.open(cache_file, "r") as f:
+        content = await f.read()
+        return [UnifiedModel(**model) for model in json.loads(content)]
+
+
 if __name__ == "__main__":
-
-    async def main() -> None:
-        models = await get_llamacpp_language_models_from_hf_cache()
-        for model in models:
-            print(model)
-
-    asyncio.run(main())
+    asyncio.run(save_gguf_language_models_to_file())
+    asyncio.run(save_mlx_language_models_to_file())

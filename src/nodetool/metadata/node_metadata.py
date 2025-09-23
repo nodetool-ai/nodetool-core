@@ -6,6 +6,7 @@ import pkgutil
 import inspect
 import logging
 from nodetool.config.logging_config import get_logger
+from nodetool.types.model import UnifiedModel
 from pydantic import BaseModel, Field, ConfigDict
 from nodetool.packages.types import AssetInfo
 from nodetool.workflows.property import Property
@@ -54,7 +55,7 @@ class NodeMetadata(BaseModel):
     the_model_info: dict[str, Any] = Field(
         default_factory=dict, description="HF Model info for the node"
     )
-    recommended_models: list[HuggingFaceModel] = Field(
+    recommended_models: list[UnifiedModel] = Field(
         default_factory=list, description="Recommended models for the node"
     )
     basic_fields: list[str] = Field(

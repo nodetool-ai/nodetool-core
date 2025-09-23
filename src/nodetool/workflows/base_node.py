@@ -63,8 +63,11 @@ metadata generation.
 import functools
 import importlib
 import re
+import asyncio
 from types import UnionType
 from weakref import WeakKeyDictionary
+from nodetool.integrations.huggingface.huggingface_models import unified_model
+from nodetool.types.model import UnifiedModel
 from pydantic import BaseModel, Field, PrivateAttr
 from pydantic.fields import FieldInfo
 import traceback
@@ -626,6 +629,11 @@ class BaseNode(BaseModel):
         return []
 
     @classmethod
+    def unified_recommended_models(cls) -> list[UnifiedModel]:
+        models = [unified_model(model) for model in cls.get_recommended_models()]
+        return [model for model in models if model is not None]
+
+    @classmethod
     def get_basic_fields(cls) -> list[str]:
         return [p.name for p in cls.properties()]
 
@@ -651,7 +659,7 @@ class BaseNode(BaseModel):
                 outputs=cls.outputs(),
                 the_model_info=cls.get_model_info(),
                 layout=cls.layout(),
-                recommended_models=cls.get_recommended_models(),
+                recommended_models=cls.unified_recommended_models(),
                 basic_fields=cls.get_basic_fields(),
                 is_dynamic=cls.is_dynamic(),
                 expose_as_tool=cls.expose_as_tool(),
@@ -1774,40 +1782,3 @@ class GroupNode(BaseNode):
     @classmethod
     def is_cacheable(cls):
         return False
-
-
-def get_recommended_models() -> dict[str, list[HuggingFaceModel]]:
-    """Aggregate recommended HuggingFace models from all registered node classes.
-
-    Iterates through all registered and visible node classes, collecting
-    their recommended models. It ensures that each unique model (identified
-    by repository ID and path) is listed only once. The result is a
-    dictionary mapping repository IDs to a list of `HuggingFaceModel`
-    objects from that repository.
-
-    Returns:
-        A dictionary where keys are Hugging Face repository IDs (str) and
-        values are lists of `HuggingFaceModel` instances.
-    """
-    from nodetool.packages.registry import Registry
-
-    registry = Registry()
-    node_metadata_list = registry.get_all_installed_nodes()
-    model_ids = set()
-    models: dict[str, list[HuggingFaceModel]] = {}
-
-    for meta in node_metadata_list:
-        for model in meta.recommended_models:
-            if model is None:
-                continue
-            model_id = (
-                f"{model.repo_id}/{model.path}"
-                if model.path is not None
-                else model.repo_id
-            )
-            if model_id in model_ids:
-                continue
-            model_ids.add(model_id)
-            models.setdefault(model.repo_id, []).append(model)
-
-    return models

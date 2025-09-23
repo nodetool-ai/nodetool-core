@@ -1254,7 +1254,7 @@ class TorchTensor(BaseType):
             "=",
             "|",
         ):  # not native (and not byte-order-less)
-            arr = arr.newbyteorder("=")
+            arr = arr.newbyteorder("=")  # type: ignore
 
         # Reshape and wrap without extra copy if possible
         arr = arr.reshape(self.shape)

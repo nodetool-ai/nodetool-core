@@ -14,7 +14,6 @@ from nodetool.ml.models.language_models import get_all_language_models
 from nodetool.metadata.types import (
     LanguageModel,
     ModelFile,
-    HuggingFaceModel,
     LlamaModel,
     Provider,
     comfy_model_to_folder,
@@ -24,18 +23,17 @@ from huggingface_hub.constants import HF_HUB_CACHE
 from nodetool.api.utils import current_user, flatten_models
 from fastapi import APIRouter, Depends, Query
 from nodetool.integrations.huggingface.huggingface_models import (
-    CachedModel,
     delete_cached_hf_model,
-    get_mlx_language_models_from_authors,
+    load_gguf_language_models_from_file,
+    load_mlx_language_models_from_file,
     read_cached_hf_models,
 )
-from nodetool.workflows.base_node import get_recommended_models
-from nodetool.integrations.huggingface.huggingface_models import (
-    get_gguf_language_models_from_authors,
-)
+from nodetool.types.model import CachedRepo, RepoPath, UnifiedModel
+from nodetool.workflows.recommended_models import get_recommended_models
 from pydantic import BaseModel
 from nodetool.chat.ollama_service import (
     get_ollama_models,
+    get_ollama_models_unified,
     get_ollama_model_info,
     stream_ollama_model_pull,
     delete_ollama_model as _delete_ollama_model,
@@ -52,49 +50,63 @@ log = get_logger(__name__)
 router = APIRouter(prefix="/api/models", tags=["models"])
 
 
-"""Helper logic moved to nodetool.io.file_explorer"""
-
-
-# Explorer roots and opening logic moved to nodetool.io.file_explorer
-
-
-class RepoPath(BaseModel):
-    repo_id: str
-    path: str
-    downloaded: bool = False
-
-
-class CachedRepo(BaseModel):
-    repo_id: str
-    downloaded: bool = False
-
-
-@router.get("/recommended_models")
+@router.get("/recommended")
 async def recommended_models(
     user: str = Depends(current_user),
-) -> list[HuggingFaceModel]:
-    recommended = get_recommended_models()
-    # Flatten node-derived recommendations
-    models = flatten_models(list(recommended.values()))
-    # Add all GGUF repos from selected HF authors (unsloth and ggml-org)
-    # Reference endpoints:
-    # - https://huggingface.co/api/models?author=unsloth
-    # - https://huggingface.co/api/models?author=ggml-org
-    gguf_models = await get_gguf_language_models_from_authors(["unsloth", "ggml-org"])
-    mlx_models = await get_mlx_language_models_from_authors(["mlx-community"])
+) -> list[UnifiedModel]:
+    models = [
+        model
+        for model_list in get_recommended_models().values()
+        for model in model_list
+    ]
+    gguf_models = await load_gguf_language_models_from_file()
+    mlx_models = await load_mlx_language_models_from_file()
     models.extend(gguf_models)
     models.extend(mlx_models)
-    return models
+    return [model for model in models if model is not None]
 
 
-@router.get("/huggingface_models")
+def dedupe_models(models: list[UnifiedModel]) -> list[UnifiedModel]:
+    seen_ids = set()
+    deduped_models = []
+    for model in models:
+        model_id = (model.repo_id, model.path or "")
+        if model_id not in seen_ids:
+            seen_ids.add(model_id)
+            deduped_models.append(model)
+    return deduped_models
+
+
+@router.get("/all")
+async def get_all_models(
+    user: str = Depends(current_user),
+) -> list[UnifiedModel]:
+    reco_models = [
+        model
+        for model_list in get_recommended_models().values()
+        for model in model_list
+    ]
+    gguf_models = await load_gguf_language_models_from_file()
+    mlx_models = await load_mlx_language_models_from_file()
+    hf_models = await read_cached_hf_models()
+    ollama_models_unified = await get_ollama_models_unified()
+
+    # order matters: cached models should be first to have correct downloaded status
+    all_models = (
+        hf_models + ollama_models_unified + reco_models + gguf_models + mlx_models
+    )
+    deduped_models = dedupe_models(all_models)
+    return deduped_models
+
+
+@router.get("/huggingface")
 async def get_huggingface_models(
     user: str = Depends(current_user),
-) -> list[CachedModel]:
+) -> list[UnifiedModel]:
     return await read_cached_hf_models()
 
 
-@router.delete("/huggingface_model")
+@router.delete("/huggingface")
 async def delete_huggingface_model(repo_id: str) -> bool:
     if Environment.is_production():
         log.warning("Cannot delete models in production")
@@ -102,14 +114,14 @@ async def delete_huggingface_model(repo_id: str) -> bool:
     return delete_cached_hf_model(repo_id)
 
 
-@router.get("/ollama_models")
+@router.get("/ollama")
 async def get_ollama_models_endpoint(
     user: str = Depends(current_user),
 ) -> list[LlamaModel]:
     return await get_ollama_models()
 
 
-@router.delete("/ollama_model")
+@router.delete("/ollama")
 async def delete_ollama_model_endpoint(model_name: str) -> bool:
     if Environment.is_production():
         log.warning("Cannot delete ollama models in production")
@@ -130,7 +142,7 @@ async def get_language_models() -> list[LanguageModel]:
     return models
 
 
-@router.get("/language_models")
+@router.get("/llm")
 async def get_language_models_endpoint(
     user: str = Depends(current_user),
 ) -> list[LanguageModel]:
