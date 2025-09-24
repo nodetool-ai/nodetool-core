@@ -13,7 +13,7 @@ import httpx
 
 from huggingface_hub import AsyncInferenceClient
 
-from nodetool.chat.providers.base import ChatProvider
+from nodetool.chat.providers.base import ChatProvider, register_chat_provider
 from nodetool.agents.tools.base import Tool
 from nodetool.config.logging_config import get_logger
 import base64
@@ -54,6 +54,30 @@ PROVIDER_T = Literal[
 ]
 
 
+@register_chat_provider(Provider.HuggingFaceGroq, inference_provider="groq")
+@register_chat_provider(Provider.HuggingFaceCerebras, inference_provider="cerebras")
+@register_chat_provider(Provider.HuggingFaceCohere, inference_provider="cohere")
+@register_chat_provider(Provider.HuggingFaceFalAI, inference_provider="fal-ai")
+@register_chat_provider(
+    Provider.HuggingFaceFeatherlessAI, inference_provider="featherless-ai"
+)
+@register_chat_provider(
+    Provider.HuggingFaceFireworksAI, inference_provider="fireworks-ai"
+)
+@register_chat_provider(
+    Provider.HuggingFaceBlackForestLabs, inference_provider="black-forest-labs"
+)
+@register_chat_provider(
+    Provider.HuggingFaceHFInference, inference_provider="hf-inference"
+)
+@register_chat_provider(Provider.HuggingFaceHyperbolic, inference_provider="hyperbolic")
+@register_chat_provider(Provider.HuggingFaceNebius, inference_provider="nebius")
+@register_chat_provider(Provider.HuggingFaceNovita, inference_provider="novita")
+@register_chat_provider(Provider.HuggingFaceNscale, inference_provider="nscale")
+@register_chat_provider(Provider.HuggingFaceOpenAI, inference_provider="openai")
+@register_chat_provider(Provider.HuggingFaceReplicate, inference_provider="replicate")
+@register_chat_provider(Provider.HuggingFaceSambanova, inference_provider="sambanova")
+@register_chat_provider(Provider.HuggingFaceTogether, inference_provider="together")
 class HuggingFaceProvider(ChatProvider):
     """
     HuggingFace implementation of the ChatProvider interface.
@@ -66,6 +90,7 @@ class HuggingFaceProvider(ChatProvider):
 
     1. Message Format:
        - Each message is a dict with "role" and "content" fields
+
        - Role can be: "system", "user", "assistant", or "tool"
        - Content contains the message text (string) or content blocks (for multimodal)
 
@@ -83,7 +108,7 @@ class HuggingFaceProvider(ChatProvider):
     For more details, see: https://huggingface.co/docs/hugs/en/guides/function-calling#using-tools-function-definitions
     """
 
-    provider: Provider = Provider.HuggingFace
+    provider_name: str = "huggingface"
 
     def __init__(self, inference_provider: PROVIDER_T | None = None):
         """Initialize the HuggingFace provider with AsyncInferenceClient."""
@@ -91,6 +116,7 @@ class HuggingFaceProvider(ChatProvider):
         env = Environment.get_environment()
         self.api_key = env.get("HF_TOKEN")
         self.inference_provider = inference_provider
+        self.provider_name = f"huggingface_{inference_provider}"
 
         if not self.api_key:
             log.error("HF_TOKEN or HUGGINGFACE_API_KEY is not set")
@@ -544,7 +570,9 @@ class HuggingFaceProvider(ChatProvider):
                 if hasattr(chunk, "usage") and getattr(chunk, "usage", None):
                     log.debug("Updating usage stats from streaming chunk")
                     usage = chunk.usage  # type: ignore[attr-defined]
-                    self.usage["prompt_tokens"] = getattr(usage, "prompt_tokens", 0) or 0
+                    self.usage["prompt_tokens"] = (
+                        getattr(usage, "prompt_tokens", 0) or 0
+                    )
                     self.usage["completion_tokens"] = (
                         getattr(usage, "completion_tokens", 0) or 0
                     )
@@ -558,7 +586,9 @@ class HuggingFaceProvider(ChatProvider):
 
                 choice = choices[0]
                 delta = getattr(choice, "delta", None)
-                log.debug(f"Processing delta with finish_reason: {choice.finish_reason}")
+                log.debug(
+                    f"Processing delta with finish_reason: {choice.finish_reason}"
+                )
 
                 if delta and getattr(delta, "content", None):
                     yield Chunk(
@@ -590,9 +620,7 @@ class HuggingFaceProvider(ChatProvider):
                                 accumulated_tool_calls[index]["name"] = (
                                     function_delta.name or ""
                                 )
-                                log.debug(
-                                    f"Set tool call name: {function_delta.name}"
-                                )
+                                log.debug(f"Set tool call name: {function_delta.name}")
                             if getattr(function_delta, "arguments", None):
                                 accumulated_tool_calls[index]["arguments"] += (
                                     function_delta.arguments or ""
@@ -674,156 +702,3 @@ class HuggingFaceProvider(ChatProvider):
         )
         log.debug(f"Checking if error is context length error: {is_context_error}")
         return is_context_error
-
-
-async def main():
-    """
-    Test function for the HuggingFaceProvider.
-
-    This function demonstrates how to use the HuggingFaceProvider for both
-    non-streaming and streaming completions with various models.
-    """
-    import os
-
-    try:
-        # Use async context manager to properly handle client cleanup
-        async with HuggingFaceProvider() as provider:
-            print("🚀 Initializing HuggingFace Provider...")
-            print(
-                f"✅ Provider initialized with {'custom' if provider.inference_provider else 'default'} provider"
-            )
-
-            # Test models - use models that are more likely to support tool calling
-            test_models = [
-                # "HuggingFaceTB/SmolLM3-3B",
-                "deepseek-ai/DeepSeek-V3-0324"
-            ]
-
-            # Create test messages
-            messages = [
-                Message(
-                    role="system",
-                    content="You are a helpful assistant. Be concise and friendly.",
-                ),
-                Message(
-                    role="user",
-                    content="What is the capital of France? Answer in one sentence.",
-                ),
-            ]
-
-            for model in test_models:
-                print(f"\n🔍 Testing model: {model}")
-                print("-" * 50)
-
-                try:
-                    # Test 1: Non-streaming completion
-                    print("📝 Testing non-streaming completion...")
-
-                    response = await provider.generate_message(
-                        messages=messages,
-                        model=model,
-                        max_tokens=100,
-                        temperature=0.7,
-                    )
-
-                    print(f"✅ Response: {response.content}")
-                    print(f"📊 Usage: {provider.get_usage()}")
-
-                    # Reset usage for next test
-                    provider.reset_usage()
-
-                    # Test 2: Streaming completion
-                    print("\n🌊 Testing streaming completion...")
-                    print("📝 Streaming response: ", end="", flush=True)
-
-                    chunks = []
-                    async for chunk in provider.generate_messages(
-                        messages=messages,
-                        model=model,
-                        max_tokens=100,
-                        temperature=0.7,
-                    ):
-                        if isinstance(chunk, Chunk):
-                            print(chunk.content, end="", flush=True)
-                            chunks.append(chunk.content)
-                        elif isinstance(chunk, ToolCall):
-                            print(f"\n🔧 Tool call: {chunk.name}({chunk.args})")
-
-                    print(f"\n✅ Streaming complete. Total chunks: {len(chunks)}")
-                    print(f"📊 Usage: {provider.get_usage()}")
-
-                    # Reset for next model
-                    provider.reset_usage()
-
-                except Exception as e:
-                    print(f"❌ Error testing {model}: {str(e)}")
-
-            # Test 3: Tool calling example (following HF docs exactly)
-            print(f"\n🔧 Testing tool calling with {test_models[0]}...")
-            print("-" * 50)
-
-            try:
-                # Create a simple test tool following HF docs format exactly
-                class TestTool(Tool):
-                    name = "get_weather"
-                    description = "Get the current weather for a location"
-                    input_schema = {
-                        "type": "object",
-                        "properties": {
-                            "location": {
-                                "type": "string",
-                                "description": "The city and state, e.g. San Francisco, CA",
-                            },
-                            "format": {
-                                "type": "string",
-                                "enum": ["celsius", "fahrenheit"],
-                                "description": "The temperature unit to use",
-                            },
-                        },
-                        "required": ["location", "format"],
-                    }
-
-                tool = TestTool()
-
-                tool_messages = [
-                    Message(
-                        role="system",
-                        content="Don't make assumptions about values. Ask for clarification if needed.",
-                    ),
-                    Message(
-                        role="user",
-                        content="What's the weather like in Tokyo, Japan in celsius?",
-                    ),
-                ]
-
-                response = await provider.generate_message(
-                    messages=tool_messages,
-                    model=test_models[0],
-                    tools=[tool],
-                    max_tokens=150,
-                )
-
-                if response.tool_calls:
-                    print(f"🔧 Tool calls detected: {len(response.tool_calls)}")
-                    for tool_call in response.tool_calls:
-                        print(f"   - {tool_call.name}: {tool_call.args}")
-                else:
-                    print(f"💬 Regular response: {response.content}")
-
-                print(f"📊 Usage: {provider.get_usage()}")
-
-            except Exception as e:
-                print(f"⚠️  Tool calling test failed: {str(e)}")
-
-            print("\n🎉 All tests completed!")
-
-    except Exception as e:
-        print(f"❌ Failed to initialize provider: {str(e)}")
-        print("Make sure HF_TOKEN is set and you have huggingface_hub installed:")
-        print("pip install huggingface_hub")
-
-
-if __name__ == "__main__":
-    import asyncio
-
-    asyncio.run(main())

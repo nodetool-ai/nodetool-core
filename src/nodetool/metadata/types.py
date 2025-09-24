@@ -328,7 +328,6 @@ class Provider(str, enum.Enum):
     OpenAI = "openai"
     Anthropic = "anthropic"
     Replicate = "replicate"
-    HuggingFace = "huggingface"
     Ollama = "ollama"
     Comfy = "comfy"
     Local = "local"

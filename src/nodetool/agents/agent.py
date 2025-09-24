@@ -347,7 +347,7 @@ class Agent(BaseAgent):
         config = {
             "name": self.name,
             "objective": self.objective,
-            "provider": self.provider.provider.name,
+            "provider": self.provider.provider_name,
             "model": self.model,
             "planning_model": self.planning_model,
             "reasoning_model": self.reasoning_model,

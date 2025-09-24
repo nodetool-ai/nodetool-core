@@ -1,6 +1,29 @@
 import importlib
+import sys
+import types
 import pytest
 from nodetool.system import system_stats
+
+
+class DummyNvml:
+    class NVMLError(Exception):
+        pass
+
+    @classmethod
+    def nvmlInit(cls):
+        return None
+
+    @classmethod
+    def nvmlShutdown(cls):
+        return None
+
+    @classmethod
+    def nvmlDeviceGetHandleByIndex(cls, index):
+        return f"handle-{index}"
+
+    @classmethod
+    def nvmlDeviceGetMemoryInfo(cls, handle):
+        return DummyInfo
 
 
 class DummyMem:
@@ -16,24 +39,23 @@ class DummyInfo:
 
 @pytest.mark.parametrize("has_gpu", [True, False])
 def test_get_system_stats(monkeypatch, has_gpu):
-    monkeypatch.setattr(system_stats.psutil, "cpu_percent", lambda interval=1: 42.0)
+    monkeypatch.setattr(system_stats.psutil, "cpu_percent", lambda interval=0.0: 42.0)
     monkeypatch.setattr(system_stats.psutil, "virtual_memory", lambda: DummyMem)
 
-    monkeypatch.setattr(system_stats.pynvml, "nvmlInit", lambda: None)
-    monkeypatch.setattr(
-        system_stats.pynvml, "nvmlDeviceGetHandleByIndex", lambda idx: "h"
-    )
     if has_gpu:
-        monkeypatch.setattr(
-            system_stats.pynvml, "nvmlDeviceGetMemoryInfo", lambda h: DummyInfo
-        )
+        nvml_impl = DummyNvml
     else:
 
-        def raise_err(h):
-            raise system_stats.pynvml.NVMLError(1)
+        class DummyNvmlNoGpu(DummyNvml):
+            @classmethod
+            def nvmlDeviceGetMemoryInfo(cls, handle):
+                raise cls.NVMLError(1)
 
-        monkeypatch.setattr(system_stats.pynvml, "nvmlDeviceGetMemoryInfo", raise_err)
-    monkeypatch.setattr(system_stats.pynvml, "nvmlShutdown", lambda: None)
+        nvml_impl = DummyNvmlNoGpu
+
+    dummy_module = types.ModuleType("nvidia")
+    dummy_module.nvml = nvml_impl
+    monkeypatch.setitem(sys.modules, "nvidia", dummy_module)
 
     importlib.reload(system_stats)
     stats = system_stats.get_system_stats()

@@ -37,13 +37,9 @@ from nodetool.metadata.types import (
     MessageTextContent,
     MessageAudioContent,
 )
+from pydub import AudioSegment
 
 log = get_logger(__name__)
-
-try:
-    from pydub import AudioSegment  # type: ignore
-except Exception:  # pragma: no cover - optional dependency
-    AudioSegment = None  # type: ignore
 
 
 class OpenAICompat:

@@ -172,9 +172,12 @@ async def fetch_models_from_hf_provider(provider: str) -> List[LanguageModel]:
                             )
 
                             # Get the appropriate provider enum value
-                            provider_enum = HF_PROVIDER_MAPPING.get(
-                                provider, Provider.HuggingFace
-                            )
+                            provider_enum = HF_PROVIDER_MAPPING.get(provider)
+                            if provider_enum is None:
+                                log.warning(
+                                    f"Unknown provider: {provider}, skipping model: {model_id}"
+                                )
+                                continue
 
                             models.append(
                                 LanguageModel(

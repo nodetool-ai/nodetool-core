@@ -51,7 +51,7 @@ class FakeProvider(ChatProvider):
     on the fly. Perfect for unit tests that need predictable behavior.
     """
 
-    provider: Provider = Provider.Empty
+    provider_name: str = "fake"
 
     def __init__(
         self,

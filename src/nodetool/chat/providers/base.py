@@ -6,7 +6,7 @@ a common interface that all providers must implement for streaming completions a
 """
 
 from abc import ABC, abstractmethod
-from typing import Any, AsyncGenerator, AsyncIterator, Sequence
+from typing import Any, AsyncGenerator, AsyncIterator, Callable, Sequence, Type
 
 from nodetool.agents.tools.base import Tool
 from nodetool.metadata.types import Message, Provider, ToolCall, MessageFile
@@ -14,6 +14,33 @@ from nodetool.workflows.types import Chunk
 
 import json
 import datetime
+
+
+_CHAT_PROVIDER_REGISTRY: dict[Provider, tuple[Type["ChatProvider"], dict[str, Any]]] = (
+    {}
+)
+
+
+def register_chat_provider(
+    provider: Provider,
+    **kwargs,
+) -> Callable[[Type["ChatProvider"]], Type["ChatProvider"]]:
+    """Decorator to register a ChatProvider implementation."""
+
+    def decorator(cls: Type["ChatProvider"]) -> Type["ChatProvider"]:
+        _CHAT_PROVIDER_REGISTRY[provider] = (cls, kwargs)
+        return cls
+
+    return decorator
+
+
+def get_registered_provider(
+    provider: Provider,
+) -> tuple[Type["ChatProvider"], dict[str, Any]]:
+    provider_cls, kwargs = _CHAT_PROVIDER_REGISTRY.get(provider, (None, {}))
+    if provider_cls is None:
+        raise ValueError(f"Provider {provider} is not installed")
+    return provider_cls, kwargs
 
 
 class ChatProvider(ABC):
@@ -28,7 +55,7 @@ class ChatProvider(ABC):
     log_file: str | None = None
     cost: float = 0.0
     usage: dict[str, int] = {}
-    provider: Provider = Provider.Empty
+    provider_name: str = ""
 
     def __init__(self):
         self.usage = {

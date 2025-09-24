@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field
 
 from nodetool.config.settings import get_system_data_path, load_settings
 from nodetool.models.workflow import Workflow as WorkflowModel
-from nodetool.system.system_stats import get_system_stats
+from nodetool.system import system_stats
 
 
 router = APIRouter(prefix="/api/debug", tags=["debug"])
@@ -212,22 +212,31 @@ def _get_nodetool_version() -> str:
 
 
 def _get_gpu_name() -> Optional[str]:
-    try:
-        import pynvml
+    nvml = system_stats.nvml
+    if nvml is None:
+        return None
 
-        pynvml.nvmlInit()
-        handle = pynvml.nvmlDeviceGetHandleByIndex(0)
-        name = pynvml.nvmlDeviceGetName(handle)
-        pynvml.nvmlShutdown()
+    did_init = False
+    try:
+        nvml.nvmlInit()
+        did_init = True
+        handle = nvml.nvmlDeviceGetHandleByIndex(0)
+        name = nvml.nvmlDeviceGetName(handle)
         if isinstance(name, bytes):
-            return name.decode("utf-8", errors="ignore")
+            name = name.decode("utf-8", errors="ignore")
         return str(name)
     except Exception:
         return None
+    finally:
+        if did_init:
+            try:
+                nvml.nvmlShutdown()
+            except Exception:
+                pass
 
 
 def _collect_env_info() -> Dict[str, Any]:
-    stats = get_system_stats()
+    stats = system_stats.get_system_stats()
     import shutil as _shutil
 
     disk = _shutil.disk_usage(str(Path.home()))

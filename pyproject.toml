@@ -39,7 +39,7 @@ dependencies = [
     "jsonpath-ng>=1.7.0",
     "jsonschema",
     "psutil>=6.1.0",
-    "pynvml>=12.0.0",
+    "nvidia-ml-py>=13.580.65",
     "python-dateutil>=2.9.0.post0",
     "python-dotenv>=1.0.0",
     "prompt_toolkit>=3.0.50",
@@ -88,14 +88,14 @@ dependencies = [
     "llama-index-embeddings-ollama>=0.6.0",
     "matplotlib==3.9.2",
     "seaborn>=0.13.2",
-    "pypandoc==1.14.0",
+    "pypandoc>=1.14.0",
 
     # Database and storage
     "chromadb>=1.0.20",
     "aiofiles>=24.1.0",
     "aiosqlite>=0.20.0",
     "boto3>=1.35.63",
-    "pymemcache==4.0.0",
+    "pymemcache>=4.0.0",
     "protobuf<=3.20.3",
     "moto>=5.1.4",
 

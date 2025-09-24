@@ -3,7 +3,7 @@ System Statistics Module
 
 This module provides functionality to collect and report system resource usage statistics,
 including CPU, memory, and GPU VRAM (if available). It uses psutil for CPU and memory metrics
-and pynvml for NVIDIA GPU metrics.
+and the NVIDIA Management Library bindings from nvidia-ml-py for GPU metrics.
 
 The module exposes:
 - SystemStats: A Pydantic model representing system resource usage
@@ -17,7 +17,11 @@ Example:
 
 from pydantic import BaseModel, Field
 import psutil
-import pynvml
+
+try:  # nvidia-ml-py
+    from nvidia import nvml  # type: ignore[attr-defined]
+except Exception:  # pragma: no cover - optional dependency
+    nvml = None  # type: ignore[assignment]
 
 
 class SystemStats(BaseModel):
@@ -43,17 +47,27 @@ def get_system_stats() -> SystemStats:
 
     # VRAM usage (if GPU is available)
     vram_total = vram_used = vram_percent = None
-    try:
-        pynvml.nvmlInit()
-        handle = pynvml.nvmlDeviceGetHandleByIndex(0)  # First GPU
-        info = pynvml.nvmlDeviceGetMemoryInfo(handle)
+    if nvml is not None:
+        did_init = False
+        try:
+            nvml.nvmlInit()
+            did_init = True
+            handle = nvml.nvmlDeviceGetHandleByIndex(0)  # First GPU
+            info = nvml.nvmlDeviceGetMemoryInfo(handle)
 
-        vram_total = float(info.total) / (1024**3)  # Convert to GB
-        vram_used = float(info.used) / (1024**3)
-        vram_percent = (vram_used / vram_total) * 100
-        pynvml.nvmlShutdown()
-    except pynvml.NVMLError:
-        pass  # No NVIDIA GPU available or driver issues
+            vram_total = float(info.total) / (1024**3)  # Convert to GB
+            vram_used = float(info.used) / (1024**3)
+            vram_percent = (vram_used / vram_total) * 100 if vram_total else None
+        except nvml.NVMLError:  # type: ignore[attr-defined]
+            pass  # No NVIDIA GPU available or driver issues
+        except Exception:
+            pass  # Unexpected NVML issues should not break stats collection
+        finally:
+            if did_init:
+                try:
+                    nvml.nvmlShutdown()
+                except Exception:
+                    pass
 
     return SystemStats(
         cpu_percent=cpu_percent,

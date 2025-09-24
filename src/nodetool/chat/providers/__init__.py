@@ -6,7 +6,11 @@ to interact with various LLM APIs including OpenAI, Anthropic, and Ollama.
 """
 
 # Base provider class and testing utilities
-from nodetool.chat.providers.base import ChatProvider, MockProvider
+from nodetool.chat.providers.base import (
+    ChatProvider,
+    MockProvider,
+    get_registered_provider,
+)
 from nodetool.chat.providers.fake_provider import (
     FakeProvider,
     create_fake_tool_call,
@@ -35,67 +39,35 @@ def get_provider(provider_type: ProviderEnum, **kwargs) -> ChatProvider:
     Raises:
         ValueError: If the provider type is not supported
     """
-    from nodetool.chat.providers.huggingface_provider import HuggingFaceProvider
-    from nodetool.chat.providers.openai_provider import OpenAIProvider
-    from nodetool.chat.providers.gemini_provider import GeminiProvider
-    from nodetool.chat.providers.anthropic_provider import AnthropicProvider
-    from nodetool.chat.providers.ollama_provider import OllamaProvider
-    from nodetool.chat.providers.llama_provider import LlamaProvider
-    from nodetool.chat.providers.mlx_provider import MLXProvider
-
     if provider_type in _provider_cache:
         return _provider_cache[provider_type]
 
-    provider: ChatProvider
-    # Lazy-import providers to avoid importing optional dependencies at module import time
-    if provider_type == ProviderEnum.OpenAI:
-        provider = OpenAIProvider(**kwargs)
-    elif provider_type == ProviderEnum.Gemini:
-        provider = GeminiProvider(**kwargs)
-    elif provider_type == ProviderEnum.Anthropic:
-        provider = AnthropicProvider(**kwargs)
-    elif provider_type == ProviderEnum.Ollama:
-        provider = OllamaProvider(**kwargs)
-    elif provider_type == ProviderEnum.LlamaCpp:
-        provider = LlamaProvider(**kwargs)
-    elif provider_type == ProviderEnum.HuggingFace:
-        provider = HuggingFaceProvider(**kwargs)
-    elif provider_type == ProviderEnum.HuggingFaceGroq:
-        provider = HuggingFaceProvider("groq", **kwargs)
-    elif provider_type == ProviderEnum.HuggingFaceCerebras:
-        provider = HuggingFaceProvider("cerebras", **kwargs)
-    elif provider_type == ProviderEnum.HuggingFaceCohere:
-        provider = HuggingFaceProvider("cohere", **kwargs)
-    elif provider_type == ProviderEnum.HuggingFaceFalAI:
-        provider = HuggingFaceProvider("fal-ai", **kwargs)
-    elif provider_type == ProviderEnum.HuggingFaceFeatherlessAI:
-        provider = HuggingFaceProvider("featherless-ai", **kwargs)
-    elif provider_type == ProviderEnum.HuggingFaceFireworksAI:
-        provider = HuggingFaceProvider("fireworks-ai", **kwargs)
-    elif provider_type == ProviderEnum.HuggingFaceBlackForestLabs:
-        provider = HuggingFaceProvider("black-forest-labs", **kwargs)
-    elif provider_type == ProviderEnum.HuggingFaceHFInference:
-        provider = HuggingFaceProvider("hf-inference", **kwargs)
-    elif provider_type == ProviderEnum.HuggingFaceHyperbolic:
-        provider = HuggingFaceProvider("hyperbolic", **kwargs)
-    elif provider_type == ProviderEnum.HuggingFaceNebius:
-        provider = HuggingFaceProvider("nebius", **kwargs)
-    elif provider_type == ProviderEnum.HuggingFaceNovita:
-        provider = HuggingFaceProvider("novita", **kwargs)
-    elif provider_type == ProviderEnum.HuggingFaceNscale:
-        provider = HuggingFaceProvider("nscale", **kwargs)
-    elif provider_type == ProviderEnum.HuggingFaceOpenAI:
-        provider = HuggingFaceProvider("openai", **kwargs)
-    elif provider_type == ProviderEnum.HuggingFaceReplicate:
-        provider = HuggingFaceProvider("replicate", **kwargs)
-    elif provider_type == ProviderEnum.HuggingFaceSambanova:
-        provider = HuggingFaceProvider("sambanova", **kwargs)
-    elif provider_type == ProviderEnum.HuggingFaceTogether:
-        provider = HuggingFaceProvider("together", **kwargs)
-    elif provider_type == ProviderEnum.MLX:
-        provider = MLXProvider(**kwargs)
-    else:
-        raise ValueError(f"Provider {provider_type} not supported")
+    # import providers to ensure they are registered
+    from nodetool.chat.providers import anthropic_provider
+    from nodetool.chat.providers import gemini_provider
+    from nodetool.chat.providers import huggingface_provider
+    from nodetool.chat.providers import llama_provider
+    from nodetool.chat.providers import ollama_provider
+    from nodetool.chat.providers import openai_provider
+    from nodetool.chat.providers import fake_provider
+    from nodetool.chat.providers import gemini_provider
+    from nodetool.chat.providers import huggingface_provider
+    from nodetool.chat.providers import llama_provider
+    from nodetool.chat.providers import ollama_provider
+    from nodetool.chat.providers import openai_provider
+
+    try:
+        import nodetool.mlx.mlx_provider  # type: ignore
+    except ImportError:
+        pass
+
+    provider_cls, kwargs = get_registered_provider(provider_type)
+    if provider_cls is None:
+        raise ValueError(
+            f"Provider {provider_type.value} is not available. Install the corresponding package via nodetool's package manager."
+        )
+
+    provider: ChatProvider = provider_cls(**kwargs)
 
     _provider_cache[provider_type] = provider
     return provider

@@ -21,7 +21,7 @@ from google.genai.types import (
 from nodetool.workflows.base_node import ApiKeyMissingError
 from pydantic import BaseModel
 
-from nodetool.chat.providers.base import ChatProvider
+from nodetool.chat.providers.base import ChatProvider, register_chat_provider
 from nodetool.agents.tools.base import Tool as NodeTool
 from nodetool.config.environment import Environment
 from nodetool.metadata.types import (
@@ -36,10 +36,6 @@ from nodetool.metadata.types import (
 )
 from nodetool.workflows.types import Chunk
 from nodetool.config.logging_config import get_logger
-from nodetool.media.image.image_utils import (
-    numpy_to_pil_image,
-    pil_to_png_bytes,
-)
 from nodetool.io.uri_utils import fetch_uri_bytes_and_mime
 
 log = get_logger(__name__)
@@ -55,8 +51,9 @@ def get_genai_client() -> AsyncClient:
     return Client(api_key=api_key).aio
 
 
+@register_chat_provider(Provider.Gemini)
 class GeminiProvider(ChatProvider):
-    provider: Provider = Provider.Gemini
+    provider_name: str = "gemini"
 
     def __init__(self):
         super().__init__()
@@ -204,9 +201,7 @@ class GeminiProvider(ChatProvider):
 
         return result
 
-    async def _prepare_messages(
-        self, messages: Sequence[Message]
-    ) -> ContentListUnion:
+    async def _prepare_messages(self, messages: Sequence[Message]) -> ContentListUnion:
         """Convert messages to Gemini-compatible format."""
         log.debug(f"Preparing {len(messages)} messages for Gemini API")
         history = []
@@ -532,7 +527,9 @@ class GeminiProvider(ChatProvider):
                                     )
                                 continue
 
-                            execution_result = getattr(part, "code_execution_result", None)
+                            execution_result = getattr(
+                                part, "code_execution_result", None
+                            )
                             if execution_result is not None:
                                 output_text = getattr(execution_result, "output", None)
                                 if isinstance(output_text, str):
@@ -546,7 +543,8 @@ class GeminiProvider(ChatProvider):
                             if inline_data is not None:
                                 yield MessageFile(
                                     content=getattr(inline_data, "data", None) or b"",
-                                    mime_type=getattr(inline_data, "mime_type", None) or "",
+                                    mime_type=getattr(inline_data, "mime_type", None)
+                                    or "",
                                 )
                 else:
                     log.debug("Chunk has no candidates")

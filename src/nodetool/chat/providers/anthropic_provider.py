@@ -15,7 +15,7 @@ from anthropic.types.image_block_param import ImageBlockParam
 from anthropic.types.url_image_source_param import URLImageSourceParam
 from anthropic.types.base64_image_source_param import Base64ImageSourceParam
 from anthropic.types.tool_param import ToolParam
-from nodetool.chat.providers.base import ChatProvider
+from nodetool.chat.providers.base import ChatProvider, register_chat_provider
 from nodetool.io.media_fetch import fetch_uri_bytes_and_mime_sync
 from nodetool.chat.providers.openai_prediction import calculate_chat_cost
 from nodetool.config.logging_config import get_logger
@@ -66,6 +66,7 @@ class JsonOutputTool(Tool):
 # Note: This tool will be automatically registered due to __init_subclass__ in the base Tool class.
 
 
+@register_chat_provider(Provider.Anthropic)
 class AnthropicProvider(ChatProvider):
     """
     Anthropic implementation of the ChatProvider interface.
@@ -104,7 +105,7 @@ class AnthropicProvider(ChatProvider):
     For more details, see: https://docs.anthropic.com/claude/reference/messages_post
     """
 
-    provider: Provider = Provider.Anthropic
+    provider_name: str = "anthropic"
 
     def __init__(self):
         """Initialize the Anthropic provider with client credentials."""

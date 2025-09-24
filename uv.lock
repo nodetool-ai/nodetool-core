@@ -2957,6 +2957,7 @@ dependencies = [
     { name = "msgpack" },
     { name = "networkx" },
     { name = "numpy" },
+    { name = "nvidia-ml-py" },
     { name = "ollama" },
     { name = "openai" },
     { name = "openapi-pydantic" },
@@ -2976,7 +2977,6 @@ dependencies = [
     { name = "pymupdf" },
     { name = "pymupdf4llm" },
     { name = "pyngrok" },
-    { name = "pynvml" },
     { name = "pypandoc" },
     { name = "python-dateutil" },
     { name = "python-dotenv" },
@@ -3007,30 +3007,30 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "aioconsole" },
-    { name = "aiofiles", specifier = "==24.1.0" },
+    { name = "aiofiles", specifier = ">=24.1.0" },
     { name = "aiohttp", specifier = ">=3.11.2" },
     { name = "aioresponses", marker = "extra == 'dev'", specifier = ">=0.7.8" },
     { name = "aiosqlite", specifier = ">=0.20.0" },
-    { name = "annotated-types", specifier = "==0.7.0" },
+    { name = "annotated-types", specifier = ">=0.7.0" },
     { name = "anthropic" },
-    { name = "authlib", specifier = "==1.3.2" },
+    { name = "authlib", specifier = ">=1.3.2" },
     { name = "black", specifier = ">=24.10.0" },
-    { name = "boto3", specifier = "==1.35.63" },
+    { name = "boto3", specifier = ">=1.35.63" },
     { name = "bs4", specifier = "==0.0.2" },
     { name = "chromadb", specifier = ">=1.0.20" },
     { name = "click", specifier = ">=8.1.7" },
     { name = "docker", specifier = "==7.1.0" },
     { name = "fastapi", specifier = ">=0.115.5" },
     { name = "feedparser" },
-    { name = "ffmpeg-python", specifier = "==0.2.0" },
+    { name = "ffmpeg-python", specifier = ">=0.2.0" },
     { name = "ftfy", specifier = ">=6.3.1" },
     { name = "google-genai", specifier = ">=1.34.0" },
     { name = "hf-xet", specifier = ">=0.0.1" },
     { name = "html2text" },
     { name = "httpx", specifier = ">=0.27.2" },
     { name = "huggingface-hub" },
-    { name = "imageio", specifier = "==2.37.0" },
-    { name = "imageio-ffmpeg", specifier = "==0.6.0" },
+    { name = "imageio", specifier = ">=2.37.0" },
+    { name = "imageio-ffmpeg", specifier = ">=0.6.0" },
     { name = "importlib-metadata" },
     { name = "importlib-resources" },
     { name = "itsdangerous" },
@@ -3039,8 +3039,8 @@ requires-dist = [
     { name = "jsonpath-ng", specifier = ">=1.7.0" },
     { name = "jsonschema" },
     { name = "langchain-text-splitters", specifier = "==0.3.11" },
-    { name = "llama-index", specifier = "==0.12.13" },
-    { name = "llama-index-embeddings-ollama", specifier = "==0.6.0" },
+    { name = "llama-index", specifier = ">=0.12.13" },
+    { name = "llama-index-embeddings-ollama", specifier = ">=0.6.0" },
     { name = "markitdown" },
     { name = "matplotlib", specifier = "==3.9.2" },
     { name = "mcp" },
@@ -3048,12 +3048,13 @@ requires-dist = [
     { name = "msgpack", specifier = ">=1.1.0" },
     { name = "networkx", specifier = ">=3.4.2" },
     { name = "numpy", specifier = ">=2.0.0" },
+    { name = "nvidia-ml-py", specifier = ">=13.580.65" },
     { name = "ollama" },
     { name = "openai", specifier = ">=1.102.0" },
     { name = "openapi-pydantic" },
-    { name = "opencv-python-headless", specifier = "==4.11.0.86" },
-    { name = "pandas", specifier = "==2.2.3" },
-    { name = "pillow", specifier = "==11.2.1" },
+    { name = "opencv-python-headless", specifier = ">=4.11.0.86" },
+    { name = "pandas", specifier = ">=2.2.3" },
+    { name = "pillow", specifier = ">=11.0.0" },
     { name = "playwright", specifier = ">=1.40.0" },
     { name = "prompt-toolkit", specifier = ">=3.0.50" },
     { name = "protobuf", specifier = "<=3.20.3" },
@@ -3061,14 +3062,13 @@ requires-dist = [
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2.9" },
     { name = "psycopg-pool", specifier = ">=3.2.6" },
     { name = "pydantic", specifier = ">=2.11.2" },
-    { name = "pydub", specifier = "==0.25.1" },
+    { name = "pydub", specifier = ">=0.25.1" },
     { name = "pyjwt" },
-    { name = "pymemcache", specifier = "==4.0.0" },
+    { name = "pymemcache", specifier = ">=4.0.0" },
     { name = "pymupdf", specifier = "==1.25.2" },
     { name = "pymupdf4llm", specifier = "==0.0.17" },
     { name = "pyngrok", specifier = ">=7.2.8" },
-    { name = "pynvml", specifier = ">=12.0.0" },
-    { name = "pypandoc", specifier = "==1.14.0" },
+    { name = "pypandoc", specifier = ">=1.14.0" },
     { name = "pytest-timeout", marker = "extra == 'dev'", specifier = ">=2.3.1" },
     { name = "python-dateutil", specifier = ">=2.9.0.post0" },
     { name = "python-dotenv", specifier = ">=1.0.0" },
@@ -3076,7 +3076,7 @@ requires-dist = [
     { name = "pyyaml", specifier = ">=6.0.2" },
     { name = "rich", specifier = ">=13.9.4" },
     { name = "runpod" },
-    { name = "seaborn", specifier = "==0.13.2" },
+    { name = "seaborn", specifier = ">=0.13.2" },
     { name = "sentencepiece" },
     { name = "setuptools", specifier = ">=80.8.0" },
     { name = "supabase", specifier = ">=2.15.0" },
@@ -4364,18 +4364,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/7b/64/e5646daaa4a84ecb368c09d42753f1c6e1a41b38579a36fda8ffe5716d9f/pyngrok-7.3.0.tar.gz", hash = "sha256:f2240e49b9dec9b27eba00f1444cd3cce7ac45d1bcc493a9b76ee63c2da9882c", size = 44266, upload-time = "2025-08-04T16:08:07.015Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/ac/6b/664772910199399db3706243488eb3a986bd8435583caef9cf8359eecfaa/pyngrok-7.3.0-py3-none-any.whl", hash = "sha256:708c48276d3a887d4263f0f4bc8171e22d66df6cfa74a4857625c83160603166", size = 25394, upload-time = "2025-08-04T16:08:05.368Z" },
-]
-
-[[package]]
-name = "pynvml"
-version = "13.0.1"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "nvidia-ml-py" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/5c/57/da7dc63a79f59e082e26a66ac02d87d69ea316b35b35b7a00d82f3ce3d2f/pynvml-13.0.1.tar.gz", hash = "sha256:1245991d9db786b4d2f277ce66869bd58f38ac654e38c9397d18f243c8f6e48f", size = 35226, upload-time = "2025-09-05T20:33:25.377Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/d7/4a/cac76c174bb439a0c46c9a4413fcbea5c6cabfb01879f7bbdb9fdfaed76c/pynvml-13.0.1-py3-none-any.whl", hash = "sha256:e2b20e0a501eeec951e2455b7ab444759cf048e0e13a57b08049fa2775266aa8", size = 28810, upload-time = "2025-09-05T20:33:24.13Z" },
 ]
 
 [[package]]

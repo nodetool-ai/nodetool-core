@@ -32,7 +32,7 @@ from pydantic import BaseModel
 from pydub import AudioSegment
 from urllib.parse import unquote_to_bytes
 
-from nodetool.chat.providers.base import ChatProvider
+from nodetool.chat.providers.base import ChatProvider, register_chat_provider
 from nodetool.agents.tools.base import Tool
 from nodetool.chat.providers.openai_prediction import calculate_chat_cost
 from nodetool.config.logging_config import get_logger
@@ -53,6 +53,7 @@ from nodetool.media.image.image_utils import image_data_to_base64_jpeg
 log = get_logger(__name__)
 
 
+@register_chat_provider(Provider.OpenAI)
 class OpenAIProvider(ChatProvider):
     """OpenAI implementation of the ChatProvider interface.
 

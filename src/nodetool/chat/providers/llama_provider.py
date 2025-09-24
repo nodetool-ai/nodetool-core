@@ -18,7 +18,7 @@ from openai.types.chat import ChatCompletionChunk
 from huggingface_hub import hf_hub_download
 
 from nodetool.agents.tools.base import Tool
-from nodetool.chat.providers.base import ChatProvider
+from nodetool.chat.providers.base import ChatProvider, register_chat_provider
 from nodetool.chat.providers.openai_compat import OpenAICompat
 from nodetool.chat.providers.llama_server_manager import LlamaServerManager
 from nodetool.config.logging_config import get_logger
@@ -29,6 +29,7 @@ from nodetool.workflows.processing_context import ProcessingContext
 log = get_logger(__name__)
 
 
+@register_chat_provider(Provider.LlamaCpp)
 class LlamaProvider(ChatProvider, OpenAICompat):
     """OpenAI-compatible chat provider backed by a local llama.cpp server.
 
@@ -41,7 +42,7 @@ class LlamaProvider(ChatProvider, OpenAICompat):
         provider: Provider identifier used by the application.
     """
 
-    provider: Provider = Provider.LlamaCpp
+    provider_name: str = "llama_cpp"
 
     def __init__(self, ttl_seconds: int = 300):
         """Initialize the provider and its server manager.
@@ -408,7 +409,7 @@ if __name__ == "__main__":
         hf_hub_download(
             "Qwen/Qwen2.5-7B-Instruct-GGUF", filename="qwen2.5-7b-instruct-q2_k.gguf"
         )
-        provider = LlamaProvider(ttl_seconds=120)
+        provider = LlamaProvider()
         model = "Qwen/Qwen2.5-7B-Instruct-GGUF"
         tools: list[Tool] = [EchoTool()]
         context = ProcessingContext()
