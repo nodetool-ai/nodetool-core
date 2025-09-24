@@ -37,6 +37,9 @@ log = get_logger(__name__)
 CACHE_VERSION = "1.0"
 CACHE_EXPIRY_DAYS = int(os.environ.get("NODETOOL_CACHE_EXPIRY_DAYS", "7"))
 
+GGUF_MODELS_FILE = Path(__file__).parent / "gguf_models.json"
+MLX_MODELS_FILE = Path(__file__).parent / "mlx_models.json"
+
 
 def size_on_disk(model_info: ModelInfo) -> int:
     return sum(sib.size for sib in (model_info.siblings or []) if sib.size is not None)
@@ -62,12 +65,19 @@ def unified_model(
 
     # cache_path = try_to_load_from_cache(
     #     model.repo_id, model.path if model.path is not None else "config.json"
-    def find_file(siblings: list, path: str):
-        return next((sib for sib in siblings if sib.rfilename == path), None)
 
     if size is None:
         if model.path:
-            size = find_file(model_info.siblings, model.path).size
+            size = next(
+                (
+                    sib.size
+                    for sib in (model_info.siblings or [])
+                    if sib.rfilename == model.path
+                ),
+                None,
+            )
+            if size is None:
+                size = size_on_disk(model_info)
         else:
             size = size_on_disk(model_info)
     return UnifiedModel(
@@ -192,7 +202,7 @@ def model_type_from_model_info(
     return None
 
 
-async def read_cached_hf_files() -> List[CachedFileInfo]:
+async def read_cached_hf_files(tags: list[str] = []) -> List[CachedFileInfo]:
     """
     Reads all models from the Hugging Face cache.
 
@@ -202,10 +212,16 @@ async def read_cached_hf_files() -> List[CachedFileInfo]:
     # Offload scanning HF cache to a thread (filesystem heavy)
     cache_info = await asyncio.to_thread(scan_cache_dir)
     model_repos = [repo for repo in cache_info.repos if repo.repo_type == "model"]
-
-    for repo in model_repos:
+    cached_files = []
+    model_infos = await asyncio.gather(
+        *[fetch_model_info(repo.repo_id) for repo in model_repos]
+    )
+    for repo, model_info in zip(model_repos, model_infos):
         # Get cached files from all revisions
-        cached_files = []
+        if model_info is None:
+            continue
+        if tags and not all(tag in (model_info.tags or []) for tag in tags):
+            continue
         for revision in repo.revisions:
             for file_info in revision.files:
                 cached_files.append(
@@ -274,7 +290,7 @@ async def get_llamacpp_language_models_from_hf_cache() -> List[LanguageModel]:
     Returns:
         List[LanguageModel]: Llama.cpp-compatible models discovered in the HF cache
     """
-    cached = await read_cached_hf_files()
+    cached = await read_cached_hf_files(tags=["gguf", "text-generation"])
     seen: set[str] = set()
     results: list[LanguageModel] = []
 
@@ -316,16 +332,10 @@ async def get_mlx_language_models_from_hf_cache() -> List[LanguageModel]:
     Returns:
         List[LanguageModel]: MLX-compatible models discovered in the HF cache
     """
-    cached = await read_cached_hf_models()
-    results: list[LanguageModel] = []
+    cached = await read_cached_hf_files(tags=["mlx", "text-generation"])
     result: dict[str, LanguageModel] = {}
 
     for model in cached:
-        has_mlx_tag = any("mlx" in t for t in model.tags or [])
-
-        if not has_mlx_tag or model.repo_id is None:
-            continue
-
         display = model.repo_id.split("/")[-1]
         result[model.repo_id] = LanguageModel(
             id=model.repo_id,
@@ -478,40 +488,32 @@ GGUF_AUTHORS = [
 MLX_AUTHORS = ["mlx-community"]
 
 
-async def save_gguf_language_models_to_file() -> None:
+async def save_gguf_models_to_file() -> None:
     models = await get_gguf_language_models_from_authors(GGUF_AUTHORS)
-    current_dir = Path(__file__).parent
-    cache_file = current_dir / "gguf_language_models.json"
-    with open(cache_file, "w") as f:
+    with open(GGUF_MODELS_FILE, "w") as f:
         json.dump(
             [model.model_dump() for model in models if model is not None], f, indent=2
         )
 
 
-async def save_mlx_language_models_to_file() -> None:
+async def save_mlx_models_to_file() -> None:
     models = await get_mlx_language_models_from_authors(MLX_AUTHORS)
-    current_dir = Path(__file__).parent
-    cache_file = current_dir / "mlx_language_models.json"
-    with open(cache_file, "w") as f:
+    with open(MLX_MODELS_FILE, "w") as f:
         json.dump([model.model_dump() for model in models], f, indent=2)
 
 
-async def load_gguf_language_models_from_file() -> List[UnifiedModel]:
-    current_dir = Path(__file__).parent
-    cache_file = current_dir / "gguf_language_models.json"
-    async with aiofiles.open(cache_file, "r") as f:
+async def load_gguf_models_from_file() -> List[UnifiedModel]:
+    async with aiofiles.open(GGUF_MODELS_FILE, "r") as f:
         content = await f.read()
         return [UnifiedModel(**model) for model in json.loads(content)]
 
 
-async def load_mlx_language_models_from_file() -> List[UnifiedModel]:
-    current_dir = Path(__file__).parent
-    cache_file = current_dir / "mlx_language_models.json"
-    async with aiofiles.open(cache_file, "r") as f:
+async def load_mlx_models_from_file() -> List[UnifiedModel]:
+    async with aiofiles.open(MLX_MODELS_FILE, "r") as f:
         content = await f.read()
         return [UnifiedModel(**model) for model in json.loads(content)]
 
 
 if __name__ == "__main__":
-    asyncio.run(save_gguf_language_models_to_file())
-    asyncio.run(save_mlx_language_models_to_file())
+    asyncio.run(save_gguf_models_to_file())
+    asyncio.run(save_mlx_models_to_file())

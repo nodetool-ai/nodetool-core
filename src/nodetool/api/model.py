@@ -24,8 +24,8 @@ from nodetool.api.utils import current_user, flatten_models
 from fastapi import APIRouter, Depends, Query
 from nodetool.integrations.huggingface.huggingface_models import (
     delete_cached_hf_model,
-    load_gguf_language_models_from_file,
-    load_mlx_language_models_from_file,
+    load_gguf_models_from_file,
+    load_mlx_models_from_file,
     read_cached_hf_models,
 )
 from nodetool.types.model import CachedRepo, RepoPath, UnifiedModel
@@ -59,8 +59,8 @@ async def recommended_models(
         for model_list in get_recommended_models().values()
         for model in model_list
     ]
-    gguf_models = await load_gguf_language_models_from_file()
-    mlx_models = await load_mlx_language_models_from_file()
+    gguf_models = await load_gguf_models_from_file()
+    mlx_models = await load_mlx_models_from_file()
     models.extend(gguf_models)
     models.extend(mlx_models)
     return [model for model in models if model is not None]
@@ -86,8 +86,8 @@ async def get_all_models(
         for model_list in get_recommended_models().values()
         for model in model_list
     ]
-    gguf_models = await load_gguf_language_models_from_file()
-    mlx_models = await load_mlx_language_models_from_file()
+    gguf_models = await load_gguf_models_from_file()
+    mlx_models = await load_mlx_models_from_file()
     hf_models = await read_cached_hf_models()
     ollama_models_unified = await get_ollama_models_unified()
 
