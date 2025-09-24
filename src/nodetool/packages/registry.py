@@ -1422,7 +1422,9 @@ def scan_for_package_nodes(verbose: bool = False) -> PackageModel:
                 if node_classes:
                     assert package.nodes is not None
                     package.nodes.extend(
-                        node_class.get_metadata() for node_class in node_classes
+                        node_class.get_metadata()
+                        for node_class in node_classes
+                        if node_class.is_visible()
                     )
 
         # Write the single nodes.json file in the root directory
