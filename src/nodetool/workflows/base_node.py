@@ -1731,7 +1731,10 @@ def get_node_class(node_type: str) -> type[BaseNode] | None:
     module_prefix = "nodetool.nodes." + ".".join(parts[:-1])
 
     # Attempt under the standard nodes namespace
-    importlib.import_module(module_prefix)
+    try:
+        importlib.import_module(module_prefix)
+    except ModuleNotFoundError:
+        return None
     if node_type in NODE_BY_TYPE:
         return NODE_BY_TYPE[node_type]
 

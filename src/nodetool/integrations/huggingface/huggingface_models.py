@@ -16,7 +16,7 @@ The module uses a hybrid caching approach:
 import asyncio
 import aiofiles
 from nodetool.types.model import CachedFileInfo, UnifiedModel
-from huggingface_hub import scan_cache_dir, HfApi, ModelInfo
+from huggingface_hub import CacheNotFound, scan_cache_dir, HfApi, ModelInfo
 from typing import List
 import os
 import shutil
@@ -210,7 +210,11 @@ async def read_cached_hf_files(tags: list[str] = []) -> List[CachedFileInfo]:
         List[CachedFileInfo]: A list of CachedFileInfo objects found in the cache.
     """
     # Offload scanning HF cache to a thread (filesystem heavy)
-    cache_info = await asyncio.to_thread(scan_cache_dir)
+    try:
+        cache_info = await asyncio.to_thread(scan_cache_dir)
+    except CacheNotFound:
+        log.debug("Hugging Face cache directory not found; returning empty list")
+        return []
     model_repos = [repo for repo in cache_info.repos if repo.repo_type == "model"]
     cached_files = []
     model_infos = await asyncio.gather(
@@ -242,7 +246,11 @@ async def read_cached_hf_models() -> List[UnifiedModel]:
         List[UnifiedModel]: A list of UnifiedModel objects found in the cache.
     """
     # Offload scanning HF cache to a thread (filesystem heavy)
-    cache_info = await asyncio.to_thread(scan_cache_dir)
+    try:
+        cache_info = await asyncio.to_thread(scan_cache_dir)
+    except CacheNotFound:
+        log.debug("Hugging Face cache directory not found; returning empty model list")
+        return []
     model_repos = [repo for repo in cache_info.repos if repo.repo_type == "model"]
     recommended_models = get_recommended_models()
     model_infos = await asyncio.gather(
