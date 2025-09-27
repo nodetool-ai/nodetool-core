@@ -87,6 +87,9 @@ from nodetool.metadata.types import (
     InferenceProviderTextGenerationModel,
     InferenceProviderImageToImageModel,
     InferenceProviderImageSegmentationModel,
+    HFDepthGeneration,
+    HFReduxGeneration,
+    HFKontextGeneration,
 )
 from nodetool.workflows.base_node import ToolResultNode, get_node_class
 from nodetool.config.environment import Environment
@@ -186,6 +189,9 @@ UnionType = (
     | InferenceProviderImageSegmentationModel
     | ProcessingMessage
     | RunJobRequest
+    | HFDepthGeneration
+    | HFReduxGeneration
+    | HFKontextGeneration
 )
 
 

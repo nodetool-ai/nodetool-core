@@ -357,6 +357,9 @@ class WorkflowRunner:
             source_node = graph.find_node(edge.source)
             target_node = graph.find_node(edge.target)
             if source_node is None or target_node is None:
+                log.warning(
+                    f"Edge {edge.id} has a source or target node that does not exist"
+                )
                 removed.append(edge.id or "<unknown>")
                 continue
 
@@ -365,6 +368,7 @@ class WorkflowRunner:
 
             # 3 – source handle must be an output on the *source* node (instance-aware)
             if source_node.find_output_instance(edge.sourceHandle) is None:  # type: ignore
+                log.warning(f"Edge {edge.id} has a source handle that does not exist")
                 removed.append(edge.id or "<unknown>")
                 continue
 
@@ -373,6 +377,7 @@ class WorkflowRunner:
                 not target_cls.is_dynamic()
                 and target_node.find_property(edge.targetHandle) is None
             ):
+                log.warning(f"Edge {edge.id} has a target handle that does not exist")
                 removed.append(edge.id or "<unknown>")
                 continue
 
@@ -380,17 +385,7 @@ class WorkflowRunner:
             valid_edges.append(edge)
 
         # Save removed edge IDs for potential teardown notifications
-        try:
-            self._removed_edge_ids = removed
-        except Exception:
-            pass
-
-        if removed:
-            log.warning(
-                "Filtering %d invalid edge(s) from workflow: %s",
-                len(removed),
-                ", ".join(removed),
-            )
+        self._removed_edge_ids = removed
 
         # Replace edges in the graph with the validated list
         graph.edges = valid_edges
