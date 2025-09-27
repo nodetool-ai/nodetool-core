@@ -82,6 +82,8 @@ from typing import (
     TypeVar,
     AsyncIterator,
     TYPE_CHECKING,
+    TypedDict,
+    get_args,
     get_type_hints,
 )
 
@@ -103,10 +105,11 @@ from nodetool.metadata.typecheck import (
 )
 from nodetool.metadata.types import (
     OutputSlot,
-    is_output_type,
 )
 
 from nodetool.metadata.utils import (
+    async_generator_item_type,
+    get_return_annotation,
     is_dict_type,
     is_enum_type,
     is_list_type,
@@ -216,11 +219,16 @@ def add_node_type(node_class: type["BaseNode"]) -> None:
 
     NODE_BY_TYPE[node_type] = node_class
 
+    if node_type.endswith("Node"):
+        NODE_BY_TYPE[node_type[:-4]] = node_class
+
     if node_type.startswith("comfy."):
         add_comfy_classname(node_class)
 
 
-def type_metadata(python_type: Type | UnionType) -> TypeMetadata:
+def type_metadata(
+    python_type: Type | UnionType, allow_optional: bool = True
+) -> TypeMetadata:
     """Generate `TypeMetadata` for a given Python type.
 
     Supports basic types, lists, tuples, dicts, optional types, unions,
@@ -228,6 +236,7 @@ def type_metadata(python_type: Type | UnionType) -> TypeMetadata:
 
     Args:
         python_type: The Python type to generate metadata for.
+        allow_optional: Whether to allow optional types.
 
     Returns:
         A `TypeMetadata` object describing the structure and properties
@@ -240,6 +249,8 @@ def type_metadata(python_type: Type | UnionType) -> TypeMetadata:
     # if type is unkonwn, return the type as a string
     if python_type in TypeToName:
         return TypeMetadata(type=TypeToName[python_type])
+    elif python_type is Any:
+        return TypeMetadata(type="any")
     elif is_list_type(python_type):
         return TypeMetadata(
             type="list",
@@ -258,7 +269,8 @@ def type_metadata(python_type: Type | UnionType) -> TypeMetadata:
     # check optional type before union type as optional is a union of None and the type
     elif is_optional_type(python_type):
         res = type_metadata(python_type.__args__[0])
-        res.optional = True
+        if allow_optional:
+            res.optional = True
         return res
     elif is_union_type(python_type):
         return TypeMetadata(
@@ -378,6 +390,10 @@ class BaseNode(BaseModel):
         """Attach a streaming input inbox to this node (runner-managed)."""
         self._inbox = inbox
 
+    async def handle_eos(self) -> None:
+        """Handle the end-of-stream event for this node."""
+        pass
+
     def get_sync_mode(self) -> str:
         """Return the input synchronization mode for this node.
 
@@ -468,7 +484,7 @@ class BaseNode(BaseModel):
 
     @classmethod
     def supports_dynamic_outputs(cls):
-        attr = getattr(cls, "_supports_dynamic_outputs: ClassVar[bool] ", False)
+        attr = getattr(cls, "_supports_dynamic_outputs", False)
         if isinstance(attr, bool):
             return attr
         # If it's a Pydantic Field / FieldInfo return its default, else direct.
@@ -481,7 +497,7 @@ class BaseNode(BaseModel):
 
     @classmethod
     def is_dynamic(cls) -> bool:
-        attr = getattr(cls, "_is_dynamic: ClassVar[bool]", False)
+        attr = getattr(cls, "_is_dynamic", False)
         if isinstance(attr, bool):
             return attr
         # If it's a Pydantic Field / FieldInfo return its default, else direct.
@@ -489,7 +505,7 @@ class BaseNode(BaseModel):
 
     @classmethod
     def layout(cls) -> str:
-        attr = getattr(cls, "_layout: ClassVar[str]", "default")
+        attr = getattr(cls, "_layout", "default")
         # If it's a Pydantic Field / FieldInfo return its default, else direct.
         return getattr(attr, "default", attr)  # type: ignore
 
@@ -1034,7 +1050,7 @@ class BaseNode(BaseModel):
         """
         if name in self._dynamic_outputs:
             return OutputSlot(type=self._dynamic_outputs[name], name=name)
-        return self.__class__.find_output(name)
+        return self.find_output(name)
 
     @classmethod
     def find_output_by_index(cls, index: int) -> OutputSlot:
@@ -1063,24 +1079,31 @@ class BaseNode(BaseModel):
         return cls.gen_process is not BaseNode.gen_process
 
     @classmethod
-    def return_type(cls) -> Mapping[str, Any]:
+    def return_type(cls) -> Type | None:
         """
         Get the return type of the node's process function.
 
         Returns:
-            Type | dict[str, Type] | None: The return type annotation of the process function,
+            Type | None: The return type annotation of the process function,
             or None if no return type is specified.
         """
-        # Use get_type_hints to normalize annotations across modules
-        try:
-            type_hints = get_type_hints(cls.process)
-        except Exception:
-            type_hints = getattr(cls.process, "__annotations__", {})
+        if hasattr(cls, "OutputType"):
+            return getattr(cls, "OutputType")
 
-        if "return" not in type_hints:
-            return {}
+        if cls.gen_process is not BaseNode.gen_process:
+            gen_return = get_return_annotation(cls.gen_process)
+            if gen_return is not None:
+                item_type = async_generator_item_type(gen_return)
+                if item_type is None:
+                    return gen_return
+                return item_type
 
-        return type_hints["return"]
+        if cls.process is not BaseNode.process:
+            process_return = get_return_annotation(cls.process)
+            if process_return is not None:
+                return process_return
+
+        return None
 
     @classmethod
     def outputs(cls):
@@ -1103,28 +1126,18 @@ class BaseNode(BaseModel):
             return []
 
         try:
-            if type(return_type) is dict:
+            # if return_type is a TypedDict, return an OutputSlot for each field
+            if getattr(return_type, "__annotations__", None) and not issubclass(
+                return_type, BaseModel
+            ):
                 return [
                     OutputSlot(
-                        type=type_metadata(field_type),
+                        type=type_metadata(field_type, allow_optional=False),
                         name=field,
                     )
-                    for field, field_type in return_type.items()
+                    for field, field_type in return_type.__annotations__.items()
                 ]
-            elif is_output_type(return_type):
-                try:
-                    types = get_type_hints(return_type)
-                except Exception:
-                    types = getattr(return_type, "__annotations__", {})
-                return [
-                    OutputSlot(
-                        type=type_metadata(types[field]),
-                        name=field,
-                    )
-                    for field in return_type.model_fields  # type: ignore
-                ]
-            else:
-                return [OutputSlot(type=type_metadata(return_type), name="output")]  # type: ignore
+            return [OutputSlot(type=type_metadata(return_type), name="output")]  # type: ignore
         except ValueError as e:
             raise ValueError(
                 f"Invalid return type for node {cls.__name__}: {return_type} ({e})"
@@ -1241,15 +1254,15 @@ class BaseNode(BaseModel):
         }
 
     async def convert_output(self, context: Any, output: Any) -> Any:
-        # If node is dynamic and returns a dict, treat keys as output handles
-        if self.is_dynamic() and isinstance(output, dict):
-            return output
-        if type(self.return_type()) is dict:
-            return output
-        elif is_output_type(self.return_type()):
-            return output.model_dump()
-        else:
+        return_type = self.return_type()
+
+        if return_type and (
+            not getattr(return_type, "__annotations__", None)
+            or issubclass(return_type, BaseModel)
+        ):
             return {"output": output}
+        else:
+            return output
 
     def validate_inputs(self, input_edges: list[Edge]):
         """
@@ -1324,7 +1337,7 @@ class BaseNode(BaseModel):
         """
         pass
 
-    async def gen_process(self, context: Any) -> AsyncGenerator[tuple[str, Any], None]:
+    async def gen_process(self, context: Any) -> AsyncGenerator[Any, None]:
         """
         Generate output messages for streaming.
 
@@ -1337,7 +1350,7 @@ class BaseNode(BaseModel):
         # This construct ensures this is a generator function template.
         # It will not yield anything unless overridden by a subclass.
         if False:
-            yield "", None  # type: ignore
+            yield None  # type: ignore
 
     def get_timeout_seconds(self) -> float | None:
         """Return a per-node timeout in seconds, if any.
@@ -1368,15 +1381,18 @@ class BaseNode(BaseModel):
             agen = self.gen_process(context)
             # Iterate yielded items and forward to outputs
             async for item in agen:
-                if isinstance(item, tuple):
-                    if not (len(item) == 2 and isinstance(item[0], str)):
-                        raise ValueError(
-                            f"Streaming node {self.get_title()} ({self._id}) yielded item with invalid format"
+                if not isinstance(item, dict):
+                    raise TypeError(
+                        "Streaming nodes must yield dictionaries mapping output names to values."
+                    )
+
+                for slot_name, value in item.items():
+                    if not isinstance(slot_name, str):
+                        raise TypeError(
+                            "Streaming nodes must use string keys for output names."
                         )
-                    slot_name, value = item
-                    await outputs.emit(slot_name, value)
-                else:
-                    await outputs.default(item)
+                    if value is not None:
+                        await outputs.emit(slot_name, value)
         else:
             # Buffered path: single call to process() and emit converted outputs
             result = await self.process(context)
@@ -1441,23 +1457,20 @@ class ToolResultNode(BaseNode):
 
     _is_dynamic: ClassVar[bool] = True
 
-    @classmethod
-    def return_type(cls) -> Mapping[str, Any]:
-        return {
-            "result": Any,
-        }
+    class OutputType(TypedDict):
+        result: Any
 
-    async def gen_process(self, context: Any):
+    async def gen_process(self, context: Any) -> AsyncGenerator[OutputType, None]:
         from nodetool.workflows.types import ToolResultUpdate
 
         if self.has_input():
             async for handle, value in self.iter_any_input():
-                yield "result", {handle: value}
+                yield {"result": {handle: value}}
                 context.post_message(
                     ToolResultUpdate(node_id=self.id, result={handle: value})
                 )
         else:
-            yield "result", self._dynamic_properties
+            yield {"result": self._dynamic_properties}
             context.post_message(
                 ToolResultUpdate(node_id=self.id, result=self._dynamic_properties)
             )
@@ -1487,13 +1500,10 @@ class OutputNode(BaseNode):
     def get_basic_fields(cls):
         return ["name", "value"]
 
-    @classmethod
-    def return_type(cls):
-        return {
-            "output": Any,
-        }
+    class OutputType(TypedDict):
+        output: Any
 
-    async def gen_process(self, context: Any):
+    async def gen_process(self, context: Any) -> AsyncGenerator[OutputType, None]:
         """Stream-first sink semantics with fallback.
 
         - If there are inbound sources (registered via the inbox), consume the
@@ -1523,7 +1533,7 @@ class OutputNode(BaseNode):
                     value=value,
                 )
             )
-            yield "output", value
+            yield {"output": value}
 
         if not yielded:
             # No inbound sources or no items arrived before EOS -> fallback to property
@@ -1536,7 +1546,7 @@ class OutputNode(BaseNode):
                     value=self.value,
                 )
             )
-            yield "output", self.value
+            yield {"output": self.value}
 
     @classmethod
     def is_streaming_input(cls) -> bool:  # type: ignore[override]
@@ -1691,91 +1701,39 @@ def get_comfy_class_by_name(class_name: str) -> type[BaseNode] | None:
 def get_node_class(node_type: str) -> type[BaseNode] | None:
     """Resolve a node class by its unique node type identifier.
 
-    Node type resolution follows a multi-step strategy to be resilient to
-    missing imports and variations in naming:
-
     1) Registry lookup: Check the in-memory `NODE_BY_TYPE` mapping for an
-       exact match on the provided type and a normalized variant that drops
-       or adds a trailing "Node" suffix in the class part.
+       exact match on the provided type
     2) Dynamic import: If not found, try importing modules inferred from the
-       type namespace (e.g. `foo.Bar` → import `nodetool.nodes.foo` then `foo`).
+       type namespace (e.g. `foo.Bar` → import `nodetool.nodes.foo`).
        After import, consult the registry again.
-    3) Package registry fallback: If still unresolved, consult the installed
-       packages registry to see if the node is provided externally and becomes
-       available upon import.
-    4) Class-name fallback: Finally, attempt a best-effort match by comparing
-       only the last identifier (class name), ignoring an optional trailing
-       "Node" suffix.
 
     This behavior allows `Graph.from_dict` and other loaders to accept graphs
-    that reference node types by fully-qualified name, by short class name, or
-    from installed packages, without requiring callers to pre-import all node
-    modules.
+    that reference node types by fully-qualified name, without requiring callers
+    to pre-import all node modules.
 
     Args:
         node_type: The unique type identifier of the node (e.g.,
-            "namespace.ClassName").
+            "nodetool.nodes.foo.Bar").
 
     Returns:
         The `BaseNode` subclass corresponding to `node_type` if found,
         otherwise `None`.
     """
-    # Prepare candidate type strings, normalizing optional trailing "Node" suffix
-    parts = node_type.split(".")
-    class_part = parts[-1] if parts else node_type
-    candidates: list[str] = [node_type]
-    if class_part.endswith("Node"):
-        # Prefer lookup without the Node suffix since registry keys omit it
-        without = ".".join([*parts[:-1], class_part[:-4]])
-        candidates.append(without)
-    else:
-        with_node = (
-            ".".join([*parts[:-1], class_part + "Node"])
-            if parts
-            else class_part + "Node"
-        )
-        candidates.append(with_node)
+    if node_type in NODE_BY_TYPE:
+        return NODE_BY_TYPE[node_type]
 
-    for cand in candidates:
-        if cand in NODE_BY_TYPE:
-            return NODE_BY_TYPE[cand]
+    parts = node_type.split(".")
+
+    if len(parts) == 1:
+        return None
 
     # Try to load the module if node type not found
-    module_prefix = ".".join(parts[:-1])
+    module_prefix = "nodetool.nodes." + ".".join(parts[:-1])
 
-    # 1) Attempt under the standard nodes namespace
-    module_paths_to_try: list[str] = []
-    if module_prefix:
-        module_paths_to_try.append(f"nodetool.nodes.{module_prefix}")
-        module_paths_to_try.append(module_prefix)
-    else:
-        module_paths_to_try.append("nodetool.nodes")
-
-    for mod in module_paths_to_try:
-        try:
-            importlib.import_module(mod)
-            for cand in candidates:
-                if cand in NODE_BY_TYPE:
-                    return NODE_BY_TYPE[cand]
-        except Exception as e:
-            log.debug(f"Could not import module {mod}: {e}")
-
-    # 2) Fall back to importing the raw module path from node_type
-    #    This supports core types like 'nodetool.workflows.base_node.OutputNode'
-    # 3) Fallback: match by class name ignoring optional trailing Node suffix
-    #    Compare the last identifier of registered keys
-    try:
-        target_names = (
-            {class_part, class_part[:-4]}
-            if class_part.endswith("Node")
-            else {class_part, class_part + "Node"}
-        )
-        for key, cls in NODE_BY_TYPE.items():
-            last = key.split(".")[-1]
-            if last in target_names:
-                return cls
-    except Exception:
-        pass
+    # Attempt under the standard nodes namespace
+    importlib.import_module(module_prefix)
+    if node_type in NODE_BY_TYPE:
+        return NODE_BY_TYPE[node_type]
 
     return None
 

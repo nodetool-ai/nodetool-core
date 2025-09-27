@@ -1,5 +1,5 @@
 import asyncio
-from typing import Any, AsyncGenerator
+from typing import Any, AsyncGenerator, TypedDict
 
 import pytest
 
@@ -26,13 +26,14 @@ async def test_streaming_producer_to_streaming_consumer():
         def get_node_type(cls) -> str:
             return "test.inbox.StreamingProducer"
 
-        @classmethod
-        def return_type(cls):
-            return {"out": int}
+        class OutputType(TypedDict):
+            out: int
 
-        async def gen_process(self, context: ProcessingContext) -> AsyncGenerator[tuple[str, Any], None]:
+        async def gen_process(
+            self, context: ProcessingContext
+        ) -> AsyncGenerator[OutputType, None]:
             for i in range(3):
-                yield "out", i
+                yield {"out": i}
                 await asyncio.sleep(0.01)
 
     class StreamingConsumer(BaseNode):
@@ -44,16 +45,17 @@ async def test_streaming_producer_to_streaming_consumer():
             return "test.inbox.StreamingConsumer"
 
         @classmethod
-        def is_streaming_input(cls) -> bool:  # type: ignore[override]
+        def is_streaming_input(cls) -> bool:
             return True
 
-        @classmethod
-        def return_type(cls):
-            return {"out": str}
+        class OutputType(TypedDict):
+            out: str
 
-        async def gen_process(self, context: ProcessingContext) -> AsyncGenerator[tuple[str, Any], None]:
+        async def gen_process(
+            self, context: ProcessingContext
+        ) -> AsyncGenerator[OutputType, None]:
             async for item in self.iter_input("in_a"):
-                yield "out", f"got:{item}"
+                yield {"out": f"got:{item}"}
 
     prod = {"id": "p", "type": StreamingProducer.get_node_type()}
     cons = {"id": "c", "type": StreamingConsumer.get_node_type()}
@@ -61,18 +63,40 @@ async def test_streaming_producer_to_streaming_consumer():
 
     nodes = [prod, cons, out]
     edges = [
-        {"id": "e1", "source": "p", "target": "c", "sourceHandle": "out", "targetHandle": "in_a", "ui_properties": {}},
-        {"id": "e2", "source": "c", "target": "o", "sourceHandle": "out", "targetHandle": "value", "ui_properties": {}},
+        {
+            "id": "e1",
+            "source": "p",
+            "target": "c",
+            "sourceHandle": "out",
+            "targetHandle": "in_a",
+            "ui_properties": {},
+        },
+        {
+            "id": "e2",
+            "source": "c",
+            "target": "o",
+            "sourceHandle": "out",
+            "targetHandle": "value",
+            "ui_properties": {},
+        },
     ]
 
-    graph = APIGraph(nodes=[APINode(**n) for n in nodes], edges=[Edge(**e) for e in edges])
-    req = RunJobRequest(user_id="u", workflow_id="wf", job_type="t", params={}, graph=graph)
+    graph = APIGraph(
+        nodes=[APINode(**n) for n in nodes], edges=[Edge(**e) for e in edges]
+    )
+    req = RunJobRequest(
+        user_id="u", workflow_id="wf", job_type="t", params={}, graph=graph
+    )
     ctx = ProcessingContext(user_id="u", auth_token="token")
     runner = WorkflowRunner(job_id="job_stream_in_1")
 
     await runner.run(req, ctx)
 
-    assert runner.outputs["sink"] == ["got:0", "got:1", "got:2"]
+    assert runner.outputs["sink"] == [
+        "got:0",
+        "got:1",
+        "got:2",
+    ]
 
 
 @pytest.mark.asyncio
@@ -86,13 +110,14 @@ async def test_streaming_multi_input_fanin_iter_any():
         def get_node_type(cls) -> str:
             return f"test.inbox.{cls.__name__}"
 
-        @classmethod
-        def return_type(cls):
-            return {"out": str}
+        class OutputType(TypedDict):
+            out: str
 
-        async def gen_process(self, context: ProcessingContext) -> AsyncGenerator[tuple[str, Any], None]:
+        async def gen_process(
+            self, context: ProcessingContext
+        ) -> AsyncGenerator[OutputType, None]:
             for i in range(2):
-                yield "out", f"{self.name}{i}"
+                yield {"out": f"{self.name}{i}"}
                 await asyncio.sleep(0.01)
 
     class FanIn(BaseNode):
@@ -107,13 +132,14 @@ async def test_streaming_multi_input_fanin_iter_any():
         def is_streaming_input(cls) -> bool:  # type: ignore[override]
             return True
 
-        @classmethod
-        def return_type(cls):
-            return {"out": str}
+        class OutputType(TypedDict):
+            out: str
 
-        async def gen_process(self, context: ProcessingContext) -> AsyncGenerator[tuple[str, Any], None]:
+        async def gen_process(
+            self, context: ProcessingContext
+        ) -> AsyncGenerator[OutputType, None]:
             async for handle, item in self.iter_any_input():
-                yield "out", f"{handle}:{item}"
+                yield {"out": f"{handle}:{item}"}
 
     p1 = {"id": "p1", "type": P.get_node_type(), "data": {"name": "a"}}
     p2 = {"id": "p2", "type": P.get_node_type(), "data": {"name": "b"}}
@@ -122,13 +148,38 @@ async def test_streaming_multi_input_fanin_iter_any():
 
     nodes = [p1, p2, fan, out]
     edges = [
-        {"id": "e1", "source": "p1", "target": "f", "sourceHandle": "out", "targetHandle": "a", "ui_properties": {}},
-        {"id": "e2", "source": "p2", "target": "f", "sourceHandle": "out", "targetHandle": "b", "ui_properties": {}},
-        {"id": "e3", "source": "f", "target": "o", "sourceHandle": "out", "targetHandle": "value", "ui_properties": {}},
+        {
+            "id": "e1",
+            "source": "p1",
+            "target": "f",
+            "sourceHandle": "out",
+            "targetHandle": "a",
+            "ui_properties": {},
+        },
+        {
+            "id": "e2",
+            "source": "p2",
+            "target": "f",
+            "sourceHandle": "out",
+            "targetHandle": "b",
+            "ui_properties": {},
+        },
+        {
+            "id": "e3",
+            "source": "f",
+            "target": "o",
+            "sourceHandle": "out",
+            "targetHandle": "value",
+            "ui_properties": {},
+        },
     ]
 
-    graph = APIGraph(nodes=[APINode(**n) for n in nodes], edges=[Edge(**e) for e in edges])
-    req = RunJobRequest(user_id="u", workflow_id="wf", job_type="t", params={}, graph=graph)
+    graph = APIGraph(
+        nodes=[APINode(**n) for n in nodes], edges=[Edge(**e) for e in edges]
+    )
+    req = RunJobRequest(
+        user_id="u", workflow_id="wf", job_type="t", params={}, graph=graph
+    )
     ctx = ProcessingContext(user_id="u", auth_token="token")
     runner = WorkflowRunner(job_id="job_stream_in_2")
 
@@ -136,8 +187,6 @@ async def test_streaming_multi_input_fanin_iter_any():
 
     # Arrival order interleaves p1 and p2
     assert runner.outputs["merged"] == ["a:a0", "b:b0", "a:a1", "b:b1"]
-
-
 
 
 @pytest.mark.asyncio
@@ -159,11 +208,22 @@ async def test_non_streaming_node_unchanged_edge_queue_path():
 
     nodes = [src, out]
     edges = [
-        {"id": "e1", "source": "s", "target": "o", "sourceHandle": "output", "targetHandle": "value", "ui_properties": {}},
+        {
+            "id": "e1",
+            "source": "s",
+            "target": "o",
+            "sourceHandle": "output",
+            "targetHandle": "value",
+            "ui_properties": {},
+        },
     ]
 
-    graph = APIGraph(nodes=[APINode(**n) for n in nodes], edges=[Edge(**e) for e in edges])
-    req = RunJobRequest(user_id="u", workflow_id="wf", job_type="t", params={}, graph=graph)
+    graph = APIGraph(
+        nodes=[APINode(**n) for n in nodes], edges=[Edge(**e) for e in edges]
+    )
+    req = RunJobRequest(
+        user_id="u", workflow_id="wf", job_type="t", params={}, graph=graph
+    )
     ctx = ProcessingContext(user_id="u", auth_token="token")
     runner = WorkflowRunner(job_id="job_stream_in_4")
 

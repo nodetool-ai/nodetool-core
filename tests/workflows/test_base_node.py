@@ -1,6 +1,7 @@
+import asyncio
 import enum
 import os
-from typing import Optional, Union
+from typing import AsyncGenerator, ClassVar, Optional, Union, TypedDict
 import pytest
 from nodetool.metadata.node_metadata import NodeMetadata
 from nodetool.workflows.processing_context import ProcessingContext
@@ -14,7 +15,8 @@ from nodetool.workflows.base_node import (
     get_node_class,
     type_metadata,
 )
-from nodetool.metadata.types import OutputSlot, DataframeRef, ColumnDef
+from nodetool.metadata.types import OutputSlot, DataframeRef, ColumnDef, ImageRef
+from nodetool.workflows.inbox import NodeInbox
 
 
 current_dir = os.path.dirname(os.path.realpath(__file__))
@@ -33,6 +35,81 @@ class StringNode(BaseNode):
 
     async def process(self, context: ProcessingContext) -> str:
         return self.value
+
+
+class ImageReturnNode(BaseNode):
+    image: ImageRef = ImageRef()
+
+    async def process(self, context: ProcessingContext) -> ImageRef:
+        return self.image
+
+
+class DictReturnNode(BaseNode):
+    async def process(self, context: ProcessingContext) -> dict[str, int]:
+        return {"value": 1}
+
+
+class TypedDictProcessNode(BaseNode):
+    class OutputType(TypedDict):
+        text: str
+        count: int
+
+    async def process(
+        self, context: ProcessingContext
+    ) -> "TypedDictProcessNode.OutputType":
+        return {"text": "hello", "count": 0}
+
+
+class TypedDictStreamNode(BaseNode):
+    class OutputType(TypedDict):
+        text: str
+        count: int
+
+    async def gen_process(
+        self, context: ProcessingContext
+    ) -> AsyncGenerator["TypedDictStreamNode.OutputType", None]:
+        yield {"text": "hello", "count": 0}
+
+
+class StreamNode(BaseNode):
+    class OutputType(TypedDict):
+        stream: int
+
+    async def gen_process(
+        self, context: ProcessingContext
+    ) -> AsyncGenerator[OutputType, None]:
+        yield {"stream": 1}
+
+
+class ConfigurableDynamicNode(BaseNode):
+    _expose_as_tool: ClassVar[bool] = True
+    _supports_dynamic_outputs: ClassVar[bool] = True
+    _is_dynamic: ClassVar[bool] = True
+    _layout: ClassVar[str] = "custom"
+
+    value: int = 0
+
+    async def process(self, context: ProcessingContext) -> int:
+        return 0
+
+
+class StreamingInputNode(BaseNode):
+    calls: list[str] = []
+
+    @classmethod
+    def is_streaming_input(cls) -> bool:
+        return True
+
+    async def process(self, context: ProcessingContext) -> int:
+        self.calls.append("process")
+        return 1
+
+
+class CustomRoutingNode(BaseNode):
+    suppressed_outputs: set[str] = {"meta"}
+
+    def should_route_output(self, output_name: str) -> bool:
+        return output_name not in self.suppressed_outputs
 
 
 def test_node_creation():
@@ -90,6 +167,60 @@ def test_node_output_type():
 def test_string_node_output_type():
     node = StringNode(id="")  # type: ignore[call-arg]
     assert node.outputs() == [OutputSlot(type=TypeMetadata(type="str"), name="output")]
+
+
+def test_image_return_node_outputs():
+    node = ImageReturnNode()
+    assert node.outputs() == [
+        OutputSlot(type=TypeMetadata(type="image"), name="output")
+    ]
+
+
+def test_dict_return_node_outputs():
+    node = DictReturnNode()
+    assert node.outputs() == [
+        OutputSlot(
+            type=TypeMetadata(
+                type="dict",
+                type_args=[TypeMetadata(type="str"), TypeMetadata(type="int")],
+            ),
+            name="output",
+        )
+    ]
+
+
+def test_typed_dict_process_node_outputs():
+    node = TypedDictProcessNode()
+    assert node.outputs() == [
+        OutputSlot(type=TypeMetadata(type="str"), name="text"),
+        OutputSlot(type=TypeMetadata(type="int"), name="count"),
+    ]
+
+
+def test_typed_dict_stream_node_outputs():
+    node = TypedDictStreamNode()
+    assert node.outputs() == [
+        OutputSlot(type=TypeMetadata(type="str"), name="text"),
+        OutputSlot(type=TypeMetadata(type="int"), name="count"),
+    ]
+
+
+def test_return_type_streaming_node():
+    assert StreamNode.return_type() == StreamNode.OutputType
+
+
+def test_return_type_process_variants():
+    assert DummyClass.return_type() == int
+    assert ImageReturnNode.return_type() is ImageRef
+    assert DictReturnNode.return_type() == dict[str, int]
+
+
+def test_return_type_typed_dict_process():
+    assert TypedDictProcessNode.return_type() is TypedDictProcessNode.OutputType
+
+
+def test_return_type_typed_dict_async_generator():
+    assert TypedDictStreamNode.return_type() is TypedDictStreamNode.OutputType
 
 
 def test_node_set_node_properties():
@@ -363,3 +494,206 @@ def test_node_assign_property_list_of_base_types():
     assert all(isinstance(img, ImageRef) for img in node.images)
     assert node.images[0].uri == "test://img1.png"
     assert node.images[1].uri == "test://img2.png"
+
+
+def test_configurable_dynamic_node_flags():
+    node = ConfigurableDynamicNode()
+    assert node.expose_as_tool() is True
+    assert node.supports_dynamic_outputs() is True
+    assert node.is_dynamic() is True
+    assert node.layout() == "custom"
+
+
+def test_configurable_dynamic_node_id_parent_helpers():
+    node = ConfigurableDynamicNode(id="abc", parent_id="parent")
+    assert node.id == "abc"
+    assert node.parent_id == "parent"
+    assert node.has_parent() is True
+    as_dict = node.to_dict()
+    assert as_dict["id"] == "abc"
+    assert as_dict["parent_id"] == "parent"
+    assert as_dict["type"] == ConfigurableDynamicNode.get_node_type()
+
+
+def test_configurable_dynamic_node_dynamic_outputs_management():
+    node = ConfigurableDynamicNode(value=42)
+    assert node.get_dynamic_output_slots() == []
+    node.add_output("summary", int)
+    outputs = node.get_dynamic_output_slots()
+    assert outputs == [OutputSlot(type=TypeMetadata(type="int"), name="summary")]
+    node.add_output("raw")
+    assert len(node.get_dynamic_output_slots()) == 2
+    node.remove_output("raw")
+    assert len(node.get_dynamic_output_slots()) == 1
+
+
+def test_configurable_dynamic_node_properties_and_dynamic_values():
+    node = ConfigurableDynamicNode()
+    node.assign_property("value", 3)
+    assert node.value == 3
+    error = node.assign_property("missing", 1)
+    assert error is None  # dynamic property stored
+    assert node.read_property("missing") == 1
+    with pytest.raises(ValueError):
+        node.read_property("nonexistent")
+    assert node.properties_for_client() == {}
+
+
+def test_configurable_dynamic_node_outputs_for_instance():
+    node = ConfigurableDynamicNode()
+    class_outputs = node.outputs_for_instance()
+    assert OutputSlot(type=TypeMetadata(type="int"), name="output") in class_outputs
+    node.add_output("extra", str)
+    instance_outputs = node.outputs_for_instance()
+    assert any(o.name == "extra" for o in instance_outputs)
+
+
+def test_should_route_output_custom_node():
+    node = CustomRoutingNode()
+    assert node.should_route_output("output") is True
+    assert node.should_route_output("meta") is False
+
+
+@pytest.mark.asyncio
+async def test_has_input_iter_and_recv():
+    inbox = NodeInbox()
+    inbox.add_upstream("input", 1)
+    node = DummyClass()
+    node.attach_inbox(inbox)
+    assert node.has_input() is False
+    inbox.put("input", 7)
+    await asyncio.sleep(0)
+    assert node.has_input() is True
+    assert await node.recv("input") == 7
+
+
+@pytest.mark.asyncio
+async def test_iter_input_consumes_all_values():
+    inbox = NodeInbox()
+    inbox.add_upstream("stream", 1)
+    node = DummyClass()
+    node.attach_inbox(inbox)
+    inbox.put("stream", 1)
+    inbox.put("stream", 2)
+    inbox.mark_source_done("stream")
+    collected = []
+    async for item in node.iter_input("stream"):
+        collected.append(item)
+    assert collected == [1, 2]
+
+
+@pytest.mark.asyncio
+async def test_iter_any_input_respects_order():
+    inbox = NodeInbox()
+    inbox.add_upstream("a", 1)
+    inbox.add_upstream("b", 1)
+    node = DummyClass()
+    node.attach_inbox(inbox)
+    inbox.put("a", 1)
+    inbox.put("b", 2)
+    inbox.mark_source_done("a")
+    inbox.mark_source_done("b")
+    collected = []
+    async for name, item in node.iter_any_input():
+        collected.append((name, item))
+    assert collected == [("a", 1), ("b", 2)]
+
+
+@pytest.mark.asyncio
+async def test_recv_without_inbox_raises():
+    node = DummyClass()
+    with pytest.raises(RuntimeError):
+        await node.recv("missing")
+
+
+@pytest.mark.asyncio
+async def test_iter_input_without_inbox_raises():
+    node = DummyClass()
+    with pytest.raises(RuntimeError):
+        async for _ in node.iter_input("missing"):
+            pass
+
+
+@pytest.mark.asyncio
+async def test_iter_any_without_inbox_raises():
+    node = DummyClass()
+    with pytest.raises(RuntimeError):
+        async for _ in node.iter_any_input():
+            pass
+
+
+@pytest.mark.asyncio
+async def test_recv_handles_end_of_stream():
+    inbox = NodeInbox()
+    inbox.add_upstream("input", 1)
+    node = DummyClass()
+    node.attach_inbox(inbox)
+    inbox.mark_source_done("input")
+    with pytest.raises(StopAsyncIteration):
+        await node.recv("input")
+
+
+@pytest.mark.asyncio
+async def test_iter_input_handles_end_of_stream():
+    inbox = NodeInbox()
+    inbox.add_upstream("stream", 1)
+    node = DummyClass()
+    node.attach_inbox(inbox)
+    inbox.mark_source_done("stream")
+    collected = [item async for item in node.iter_input("stream")]
+    assert collected == []
+
+
+@pytest.mark.asyncio
+async def test_iter_any_handles_end_of_stream():
+    inbox = NodeInbox()
+    inbox.add_upstream("stream", 1)
+    node = DummyClass()
+    node.attach_inbox(inbox)
+    inbox.mark_source_done("stream")
+    collected = [item async for item in node.iter_any_input()]
+    assert collected == []
+
+
+def test_required_inputs_default():
+    assert DummyClass().required_inputs() == []
+
+
+def test_expose_visibility_helpers():
+    assert ConfigurableDynamicNode.expose_as_tool() is True
+    assert ConfigurableDynamicNode.supports_dynamic_outputs() is True
+    assert ConfigurableDynamicNode.is_visible() is True
+
+
+def test_layout_and_namespace_helpers():
+    assert ConfigurableDynamicNode.layout() == "custom"
+    assert ConfigurableDynamicNode.get_namespace() == ConfigurableDynamicNode.__module__
+    assert ConfigurableDynamicNode.get_title() == "Configurable Dynamic"
+
+
+def test_properties_and_fields_helpers():
+    props = ConfigurableDynamicNode.properties()
+    names = [p.name for p in props]
+    assert "value" in names
+    props_dict = ConfigurableDynamicNode.properties_dict()
+    assert "value" in props_dict
+    fields = ConfigurableDynamicNode.field_types()
+    assert "value" in fields
+    inherited = ConfigurableDynamicNode.inherited_fields()
+    assert "value" in inherited
+
+
+def test_node_properties_collection_and_dynamic_state():
+    node = ConfigurableDynamicNode(value=5)
+    assert node.node_properties()["value"] == 5
+    node.add_output("extra")
+    node_outputs = node.outputs_for_instance()
+    assert any(o.name == "extra" for o in node_outputs)
+
+
+def test_dynamic_properties_read_and_assignment():
+    node = ConfigurableDynamicNode()
+    node.assign_property("new_prop", 10)
+    assert node.read_property("new_prop") == 10
+    with pytest.raises(ValueError):
+        _ = DummyClass().read_property("missing")

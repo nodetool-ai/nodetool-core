@@ -103,8 +103,13 @@ class NodeOutputs:
             capture_only: If True, collect outputs without routing them downstream.
         """
         # Lazy imports to avoid cycles
-        from .workflow_runner import WorkflowRunner  # noqa: F401
-        from .base_node import BaseNode  # noqa: F401
+        from .workflow_runner import WorkflowRunner
+        from .processing_context import ProcessingContext
+        from .base_node import BaseNode
+
+        assert isinstance(runner, WorkflowRunner)
+        assert isinstance(node, BaseNode)
+        assert isinstance(context, ProcessingContext)
 
         self.runner = runner
         self.node = node
@@ -127,6 +132,11 @@ class NodeOutputs:
         """
         if slot == "" or slot is None:
             slot = "output"
+
+        from .base_node import BaseNode
+
+        assert isinstance(self.node, BaseNode)
+
         # Allow node to suppress routing for this slot
         if not self.node.should_route_output(slot):
             return
@@ -147,6 +157,14 @@ class NodeOutputs:
         Args:
             slot: Output slot name to close.
         """
+        from .base_node import BaseNode
+        from .processing_context import ProcessingContext
+        from .workflow_runner import WorkflowRunner
+
+        assert isinstance(self.node, BaseNode)
+        assert isinstance(self.context, ProcessingContext)
+        assert isinstance(self.runner, WorkflowRunner)
+
         if self.capture_only:
             return
         graph = self.context.graph
@@ -173,6 +191,10 @@ class NodeOutputs:
         Args:
             value: Value to emit.
         """
+        from .base_node import BaseNode
+
+        assert isinstance(self.node, BaseNode)
+
         outputs = self.node.outputs_for_instance()
         slot = "output"
         if any(o.name == "output" for o in outputs):

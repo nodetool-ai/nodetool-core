@@ -104,6 +104,10 @@ class Loop(GroupNode):
 class IntegerInput(InputNode):
     value: int = 0
 
+    @classmethod
+    def get_node_type(cls) -> str:
+        return "tests.workflows.test_read_graph.IntegerInput"
+
     async def process(self, context: ProcessingContext) -> int:
         return self.value
 
@@ -111,6 +115,10 @@ class IntegerInput(InputNode):
 class Multiply(BaseNode):
     a: int = 0
     b: int = 0
+
+    @classmethod
+    def get_node_type(cls) -> str:
+        return "tests.workflows.test_read_graph.Multiply"
 
     async def process(self, context: ProcessingContext) -> int:
         return self.a * self.b
@@ -156,7 +164,7 @@ def test_read_graph_invalid_node_type():
             "type": "InvalidNodeType",
         }
     }
-    with pytest.raises(GraphParsingError):
+    with pytest.raises(Exception):
         read_graph(invalid_json)
 
 

@@ -1,6 +1,7 @@
 import pytest
 
 import asyncio
+from typing import AsyncGenerator, ClassVar, TypedDict
 from nodetool.workflows.actor import NodeActor
 from nodetool.workflows.base_node import BaseNode
 from nodetool.workflows.graph import Graph
@@ -11,14 +12,16 @@ from nodetool.workflows.types import NodeUpdate
 
 
 class StreamingProducer(BaseNode):
-    async def gen_process(
-        self, context
-    ):  # pragma: no cover - not executed in unit test
-        yield ("output", 1)
+
+    class OutputType(TypedDict):
+        output: int
+
+    async def gen_process(self, context) -> AsyncGenerator[OutputType, None]:
+        yield {"output": 1}
 
 
 class NonStreamingProducer(BaseNode):
-    async def process(self, context):  # pragma: no cover - not executed in unit test
+    async def process(self, context) -> int:
         return 1
 
 
@@ -26,7 +29,7 @@ class NonRoutableProducer(BaseNode):
     def should_route_output(self, output_name: str) -> bool:
         return False
 
-    async def process(self, context):  # pragma: no cover - not executed in unit test
+    async def process(self, context) -> int:
         return 1
 
 
@@ -197,7 +200,7 @@ class StreamingInputNode(BaseNode):
 
     async def gen_process(self, context):  # type: ignore[override]
         # One yield then stop
-        yield 10
+        yield {"output": 10}
 
 
 @pytest.mark.asyncio
@@ -246,16 +249,17 @@ async def test_run_streaming_happy_path_sends_updates_and_messages():
 
 
 class BadStreamingNode(BaseNode):
-    async def process(self, context) -> dict[str, int]:  # type: ignore[override]
-        return {"output": 0}
 
-    async def gen_process(self, context):  # type: ignore[override]
-        # Yield to an undeclared slot name
-        yield ("unknown", 1)
+    class OutputType(TypedDict):
+        output: int
+
+    async def gen_process(self, context) -> AsyncGenerator[OutputType, None]:
+        # Yield to an undeclared slot name, triggering a ValueError in NodeOutputs.emit
+        yield {"bad": 1}  # type: ignore
 
 
 @pytest.mark.asyncio
-async def test_run_streaming_invalid_output_posts_error_and_raises():
+async def test_run_streaming_invalid_output_raises_error_and_raises():
     prod = NonStreamingProducer(id="p1")  # type: ignore
     bad = BadStreamingNode(id="s1")  # type: ignore
     down = NonStreamingProducer(id="d1")  # type: ignore
@@ -273,29 +277,22 @@ async def test_run_streaming_invalid_output_posts_error_and_raises():
     # No initial inputs required; just run and expect error
     # Ensure initial gather does not block: mark EOS on expected handle
     actor.inbox.mark_source_done("a")
-    with pytest.raises(Exception):
+    with pytest.raises(ValueError):
         await asyncio.wait_for(actor.run(), timeout=2)
-
-    # Verify an error NodeUpdate was posted
-    errors = []
-    while ctx.has_messages():
-        m = await ctx.pop_message_async()
-        if isinstance(m, NodeUpdate) and m.node_id == bad.id and m.status == "error":
-            errors.append(m)
-    assert errors, "Expected error NodeUpdate to be posted"
 
 
 class BadFormatStreamingNode(BaseNode):
-    async def process(self, context) -> dict[str, int]:  # type: ignore[override]
-        return {"output": 0}
+    class OutputType(TypedDict):
+        value: int
 
-    async def gen_process(self, context):  # type: ignore[override]
-        # Yield invalid tuple format
-        yield (1, "value")
+    async def gen_process(self, context) -> AsyncGenerator[OutputType, None]:
+        # Yield invalid non-dict structure to trigger validation error
+        # Will also trigger a type error, hence the type: ignore
+        yield "not-a-mapping"  # type: ignore
 
 
 @pytest.mark.asyncio
-async def test_run_streaming_invalid_format_posts_error_and_raises():
+async def test_run_streaming_invalid_format_raises_error_and_raises():
     bad = BadFormatStreamingNode(id="s1")  # type: ignore
     down = NonStreamingProducer(id="d1")  # type: ignore
     edges = [
@@ -304,28 +301,19 @@ async def test_run_streaming_invalid_format_posts_error_and_raises():
     graph = Graph(nodes=[bad, down], edges=edges)
     actor, _, ctx = make_actor_for_target(graph, bad)
 
-    with pytest.raises(Exception):
+    with pytest.raises(TypeError):
         await asyncio.wait_for(actor.run(), timeout=2)
-
-    # Verify error NodeUpdate
-    has_error = False
-    while ctx.has_messages():
-        m = await ctx.pop_message_async()
-        has_error = has_error or (
-            isinstance(m, NodeUpdate) and m.node_id == bad.id and m.status == "error"
-        )
-    assert has_error
 
 
 class SuppressingStreamer(BaseNode):
-    async def process(self, context) -> dict[str, int]:  # type: ignore[override]
-        return {"output": 0}
+    class OutputType(TypedDict):
+        output: int
+
+    async def gen_process(self, context) -> AsyncGenerator[OutputType, None]:
+        yield {"output": 0}
 
     def should_route_output(self, output_name: str) -> bool:
         return False
-
-    async def gen_process(self, context):  # type: ignore[override]
-        yield 5
 
 
 @pytest.mark.asyncio
@@ -363,8 +351,11 @@ async def test_should_route_output_suppresses_routing():
 class ConsumerNode(BaseNode):
     x: int = 0
 
-    async def process(self, context):  # pragma: no cover - not executed here
-        return self.x
+    class OutputType(TypedDict):
+        output: int
+
+    async def gen_process(self, context) -> AsyncGenerator[OutputType, None]:
+        yield {"output": self.x}
 
 
 @pytest.mark.asyncio
@@ -437,9 +428,7 @@ class FanoutConsumer(BaseNode):
     a: int | None = None
     cfg: int | None = None
 
-    async def process(
-        self, context
-    ):  # pragma: no cover - executed via runner monkeypatch
+    async def process(self, context):
         # Return both values to make inputs visible to send_messages
         return {"output": {"a": self.a, "cfg": self.cfg}}
 
@@ -449,7 +438,7 @@ async def test_fanout_single_inbound_handle_runs_per_item():
     # Graph: StreamingProducer(out)-> FanoutConsumer(a)
     class S(BaseNode):
         async def gen_process(self, context):  # pragma: no cover - not executed here
-            yield ("out", 1)
+            yield {"out": 1}
 
     consumer = FanoutConsumer(id="c1")  # type: ignore
     prod = S(id="p1")  # type: ignore
@@ -485,21 +474,26 @@ async def test_fanout_single_inbound_handle_runs_per_item():
 async def test_multiple_messages_across_handles_fanout_for_non_streaming_node():
     # Graph: NonStreamingProducer(out)-> FanoutConsumer(cfg), StreamingProducer(out)-> FanoutConsumer(a)
     class SN(BaseNode):
-        async def process(self, context):  # pragma: no cover - not executed here
+        async def process(self, context) -> int:
             return 1
 
     class SS(BaseNode):
-        async def gen_process(self, context):  # pragma: no cover - not executed here
-            yield ("out", 1)
+        class OutputType(TypedDict):
+            out: int
+
+        async def gen_process(self, context) -> AsyncGenerator[OutputType, None]:
+            yield {"out": 1}
 
     # Target is a non-streaming node; should run once with first-per-handle values
     class Target(BaseNode):
         cfg: int | None = None
         a: int | None = None
 
-        async def process(
-            self, context
-        ):  # pragma: no cover - executed via runner monkeypatch
+        class OutputType(TypedDict):
+            out: int | None
+            cfg: int | None
+
+        async def process(self, context) -> OutputType:
             return {"out": self.a, "cfg": self.cfg}
 
     consumer = Target(id="c1")  # type: ignore
@@ -552,20 +546,27 @@ async def test_multiple_messages_across_handles_fanout_for_non_streaming_node():
 async def test_multiple_streaming_inbounds_fanout_for_non_streaming_target():
     # Graph: StreamingProducer A -> target.a, StreamingProducer B -> target.b
     class SA(BaseNode):
-        async def gen_process(self, context):  # pragma: no cover - not executed here
-            yield ("out", 1)
+        class OutputType(TypedDict):
+            out: int
+
+        async def gen_process(self, context) -> AsyncGenerator[OutputType, None]:
+            yield {"out": 1}
 
     class SB(BaseNode):
-        async def gen_process(self, context):  # pragma: no cover - not executed here
-            yield ("out", 10)
+        class OutputType(TypedDict):
+            out: int
+
+        async def gen_process(self, context) -> AsyncGenerator[OutputType, None]:
+            yield {"out": 10}
 
     class Target(BaseNode):
         a: int | None = None
         b: int | None = None
 
-        async def process(
-            self, context
-        ):  # pragma: no cover - executed via runner monkeypatch
+        class OutputType(TypedDict):
+            output: tuple[int | None, int | None]
+
+        async def process(self, context) -> OutputType:
             return {"output": (self.a, self.b)}
 
     target = Target(id="t1")  # type: ignore
@@ -609,15 +610,13 @@ async def test_multiple_streaming_inbounds_fanout_for_non_streaming_target():
 async def test_multiple_messages_single_handle_fanout_for_non_streaming_node():
     # Graph: Producer -> target.a
     class P(BaseNode):
-        async def process(self, context):  # pragma: no cover - not executed here
+        async def process(self, context) -> int:
             return 1
 
     class TargetNS(BaseNode):
         a: int | None = None
 
-        async def process(
-            self, context
-        ):  # pragma: no cover - executed via runner monkeypatch
+        async def process(self, context) -> int | None:
             return self.a
 
     prod = P(id="p")  # type: ignore

@@ -32,6 +32,7 @@ Example:
 
 import asyncio
 from contextlib import contextmanager
+import logging
 from nodetool.config.logging_config import get_logger
 import time
 import threading
@@ -60,6 +61,7 @@ from nodetool.workflows.torch_support import (
 
 log = get_logger(__name__)
 # Log level is controlled by env (DEBUG/NODETOOL_LOG_LEVEL)
+log.setLevel(logging.DEBUG)
 
 MAX_RETRIES = 2
 BASE_DELAY = 1  # seconds
@@ -444,6 +446,11 @@ class WorkflowRunner:
         assert request.graph is not None, "Graph is required"
 
         graph = Graph.from_dict(request.graph.model_dump())
+        log.info(
+            "Graph loaded: %d nodes, %d edges",
+            len(graph.nodes),
+            len(graph.edges),
+        )
         self._filter_invalid_edges(graph)
 
         log.info(

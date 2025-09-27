@@ -1,8 +1,26 @@
 from enum import EnumMeta
 import inspect
-from typing import Any, Sequence, Union, get_args, get_origin
+from typing import Any, Callable, Sequence, Union, get_args, get_origin, get_type_hints
 from types import UnionType
-from collections.abc import Generator, AsyncGenerator
+from collections.abc import Generator, AsyncGenerator, AsyncIterator
+
+
+def get_return_annotation(func: Callable[..., Any]) -> Any | None:
+    try:
+        hints = get_type_hints(func)
+    except Exception:
+        hints = getattr(func, "__annotations__", {})
+    return hints.get("return")
+
+
+def async_generator_item_type(annotation: Any) -> Any | None:
+    origin = get_origin(annotation)
+    if origin not in {AsyncGenerator, AsyncIterator}:
+        return None
+    args = get_args(annotation)
+    if args:
+        return args[0]
+    return None
 
 
 def is_generator_type(t):
@@ -28,7 +46,7 @@ def is_async_generator_type(t):
     Returns:
         True if the type is an async generator, False otherwise.
     """
-    return get_origin(t) is AsyncGenerator
+    return get_origin(t) in {AsyncGenerator, AsyncIterator}
 
 
 def is_optional_type(t):

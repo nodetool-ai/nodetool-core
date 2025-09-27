@@ -1,20 +1,76 @@
-import asyncio
 import os
+from typing import AsyncGenerator, TypedDict
 from nodetool.metadata.types import Any
+from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.run_job_request import RunJobRequest
 import pytest
 
 from nodetool.types.graph import Graph as ApiGraph, Edge, Node
-from nodetool.workflows.graph import Graph
-from nodetool.workflows.workflow_runner import WorkflowRunner
-from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import PreviewUpdate
 from nodetool.workflows.run_workflow import run_workflow
+from nodetool.workflows.base_node import BaseNode, Preview
 
 pytestmark = pytest.mark.skipif(
     bool(os.getenv("GITHUB_ACTIONS")),
     reason="Skip sync mode integration tests on GitHub Actions",
 )
+
+
+class Add(BaseNode):
+    """
+    Adds two numbers.
+    math, add, sum
+    """
+
+    @classmethod
+    def get_node_type(cls) -> str:
+        return "test.Add"
+
+    a: int = 0
+    b: int = 0
+
+    async def process(self, context: ProcessingContext) -> int:
+        return self.a + self.b
+
+
+class Negate(BaseNode):
+    """
+    Negates a number.
+    math, negate, subtract
+    """
+
+    @classmethod
+    def get_node_type(cls) -> str:
+        return "test.Negate"
+
+    input: int = 0
+
+    async def process(self, context: ProcessingContext) -> int:
+        return -self.input
+
+
+class GenerateSequence(BaseNode):
+    """
+    Iterates over a sequence of numbers.
+    list, range, sequence, numbers
+    """
+
+    start: int = 0
+    stop: int = 0
+    step: int = 1
+
+    @classmethod
+    def get_node_type(cls) -> str:
+        return "test.GenerateSequence"
+
+    class OutputType(TypedDict):
+        output: int
+
+    async def gen_process(
+        self, context: ProcessingContext
+    ) -> AsyncGenerator[OutputType, None]:
+        for i in range(self.start, self.stop, self.step):
+            yield {"output": i}
 
 
 def _graph(sync_mode_add: str = "on_any") -> ApiGraph:
@@ -56,7 +112,7 @@ def _graph(sync_mode_add: str = "on_any") -> ApiGraph:
         nodes=[
             Node(
                 id="seq",
-                type="nodetool.list.SequenceIterator",
+                type=GenerateSequence.get_node_type(),
                 data={"start": 0, "stop": 16, "step": 1},
                 ui_properties={"position": {"x": 0, "y": 0}},
                 dynamic_properties={},
@@ -65,7 +121,7 @@ def _graph(sync_mode_add: str = "on_any") -> ApiGraph:
             ),
             Node(
                 id="add",
-                type="lib.math.Add",
+                type=Add.get_node_type(),
                 data={},
                 ui_properties={"position": {"x": 0, "y": 0}},
                 dynamic_properties={},
@@ -74,8 +130,8 @@ def _graph(sync_mode_add: str = "on_any") -> ApiGraph:
             ),
             Node(
                 id="neg",
-                type="lib.math.MathFunction",
-                data={"operation": "negate"},
+                type=Negate.get_node_type(),
+                data={},
                 ui_properties={"position": {"x": 0, "y": 0}},
                 dynamic_properties={},
                 dynamic_outputs={},
@@ -83,7 +139,7 @@ def _graph(sync_mode_add: str = "on_any") -> ApiGraph:
             ),
             Node(
                 id="prev",
-                type="nodetool.workflows.base_node.Preview",
+                type=Preview.get_node_type(),
                 data={},
                 ui_properties={"position": {"x": 0, "y": 0}},
                 dynamic_properties={},
@@ -185,7 +241,7 @@ async def test_on_any_mode_with_deeper_a_path():
         nodes=[
             Node(
                 id="seq",
-                type="nodetool.list.SequenceIterator",
+                type=GenerateSequence.get_node_type(),
                 data={"start": 0, "stop": 16, "step": 1},
                 ui_properties={"position": {"x": 0, "y": 0}},
                 dynamic_properties={},
@@ -194,8 +250,8 @@ async def test_on_any_mode_with_deeper_a_path():
             ),
             Node(
                 id="neg1",
-                type="lib.math.MathFunction",
-                data={"operation": "negate"},
+                type=Negate.get_node_type(),
+                data={},
                 ui_properties={"position": {"x": 0, "y": 0}},
                 dynamic_properties={},
                 dynamic_outputs={},
@@ -203,8 +259,8 @@ async def test_on_any_mode_with_deeper_a_path():
             ),
             Node(
                 id="neg2",
-                type="lib.math.MathFunction",
-                data={"operation": "negate"},
+                type=Negate.get_node_type(),
+                data={},
                 ui_properties={"position": {"x": 0, "y": 0}},
                 dynamic_properties={},
                 dynamic_outputs={},
@@ -212,7 +268,7 @@ async def test_on_any_mode_with_deeper_a_path():
             ),
             Node(
                 id="add",
-                type="lib.math.Add",
+                type=Add.get_node_type(),
                 data={},
                 ui_properties={"position": {"x": 0, "y": 0}},
                 dynamic_properties={},
@@ -221,7 +277,7 @@ async def test_on_any_mode_with_deeper_a_path():
             ),
             Node(
                 id="prev",
-                type="nodetool.workflows.base_node.Preview",
+                type=Preview.get_node_type(),
                 data={},
                 ui_properties={"position": {"x": 0, "y": 0}},
                 dynamic_properties={},
@@ -246,7 +302,7 @@ async def test_zip_all_mode_with_deeper_a_path_aligns_indexed_pairs():
         nodes=[
             Node(
                 id="seq",
-                type="nodetool.list.SequenceIterator",
+                type=GenerateSequence.get_node_type(),
                 data={"start": 0, "stop": 16, "step": 1},
                 ui_properties={"position": {"x": 0, "y": 0}},
                 dynamic_properties={},
@@ -255,8 +311,8 @@ async def test_zip_all_mode_with_deeper_a_path_aligns_indexed_pairs():
             ),
             Node(
                 id="neg1",
-                type="lib.math.MathFunction",
-                data={"operation": "negate"},
+                type=Negate.get_node_type(),
+                data={},
                 ui_properties={"position": {"x": 0, "y": 0}},
                 dynamic_properties={},
                 dynamic_outputs={},
@@ -264,8 +320,8 @@ async def test_zip_all_mode_with_deeper_a_path_aligns_indexed_pairs():
             ),
             Node(
                 id="neg2",
-                type="lib.math.MathFunction",
-                data={"operation": "negate"},
+                type=Negate.get_node_type(),
+                data={},
                 ui_properties={"position": {"x": 0, "y": 0}},
                 dynamic_properties={},
                 dynamic_outputs={},
@@ -273,7 +329,7 @@ async def test_zip_all_mode_with_deeper_a_path_aligns_indexed_pairs():
             ),
             Node(
                 id="add",
-                type="lib.math.Add",
+                type=Add.get_node_type(),
                 data={},
                 ui_properties={"position": {"x": 0, "y": 0}},
                 dynamic_properties={},
@@ -282,7 +338,7 @@ async def test_zip_all_mode_with_deeper_a_path_aligns_indexed_pairs():
             ),
             Node(
                 id="prev",
-                type="nodetool.workflows.base_node.Preview",
+                type=Preview.get_node_type(),
                 data={},
                 ui_properties={"position": {"x": 0, "y": 0}},
                 dynamic_properties={},

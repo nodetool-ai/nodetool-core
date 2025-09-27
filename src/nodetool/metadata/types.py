@@ -632,6 +632,10 @@ class HFLoraSDXL(HuggingFaceModel):
     type: Literal["hf.lora_sdxl"] = "hf.lora_sdxl"
 
 
+class HFLoraQwenImage(HuggingFaceModel):
+    type: Literal["hf.lora_qwen_image"] = "hf.lora_qwen_image"
+
+
 class HFStableDiffusionXLTurbo(HuggingFaceModel):
     type: Literal["hf.stable_diffusion_xl_turbo"] = "hf.stable_diffusion_xl_turbo"
 
@@ -1059,17 +1063,6 @@ class OutputType(BaseModel):
     pass
 
 
-class ChatConversation(OutputType):
-    """
-    The result of a chat conversation.
-    """
-
-    messages: list[str] = Field(
-        default_factory=list, description="The messages in the conversation"
-    )
-    response: str = Field(default="", description="The response from the chat system")
-
-
 class ToolName(BaseType):
     """
     A name for an LLM tool.
@@ -1424,15 +1417,6 @@ class ObjectDetectionResult(BaseType):
     box: BoundingBox
 
 
-class Dataset(OutputType):
-    """
-    This class represents a dataset, which includes a dataframe of features and a dataframe of targets.
-    """
-
-    data: DataframeRef = DataframeRef()
-    target: DataframeRef = DataframeRef()
-
-
 class JSONRef(AssetRef):
     type: Literal["json"] = "json"
     data: str | None = None
@@ -1443,13 +1427,6 @@ class SVGRef(AssetRef):
 
     type: Literal["svg"] = "svg"
     data: bytes | None = None
-
-
-def is_output_type(type):
-    try:
-        return issubclass(type, OutputType)
-    except Exception:
-        return False
 
 
 class OutputSlot(BaseModel):

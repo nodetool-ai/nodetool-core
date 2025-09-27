@@ -359,8 +359,6 @@ class WebSocketRunner:
         if not Environment.is_production():
             ModelManager.clear()
             gc.collect()
-            if TORCH_AVAILABLE and torch.cuda.is_available():
-                torch.cuda.empty_cache()
             return {"message": "Unused models cleared"}
         return {"message": "Model clearing is disabled in production"}
 

@@ -282,6 +282,7 @@ class NodeActor:
 
             await node.send_update(ctx, "completed", result={"status": "completed"})
         finally:
+            await node.handle_eos()
             await self._mark_downstream_eos()
 
     async def _run_non_streaming(self) -> None:
@@ -314,15 +315,9 @@ class NodeActor:
                     not src.is_streaming_output()
                 )
 
-            sync_mode = getattr(node, "get_sync_mode", None)
-            sync_mode_value = "on_any"
-            if callable(sync_mode):
-                try:
-                    sync_mode_value = sync_mode()
-                except Exception:
-                    sync_mode_value = "on_any"
+            sync_mode = node.get_sync_mode()
 
-            if sync_mode_value == "zip_all":
+            if sync_mode == "zip_all":
                 # Align across all inbound handles: emit only when we have at least
                 # one value buffered for each handle; consume one from each per call.
                 from collections import deque
@@ -376,6 +371,7 @@ class NodeActor:
                     # prevent indefinite waiting for EOS in isolated actor tests.
                     if upstream_all_non_streaming.get(handle, False):
                         self.inbox.mark_source_done(handle)
+        await node.handle_eos()
         await self._mark_downstream_eos()
 
     async def _run_output_node(self) -> None:

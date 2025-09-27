@@ -44,6 +44,12 @@ class LlamaProvider(ChatProvider, OpenAICompat):
 
     provider_name: str = "llama_cpp"
 
+    @classmethod
+    def get_llama_server_manager(cls) -> LlamaServerManager:
+        if not hasattr(cls, "_manager"):
+            cls._manager = LlamaServerManager()
+        return cls._manager
+
     def __init__(self, ttl_seconds: int = 300):
         """Initialize the provider and its server manager.
 
@@ -51,7 +57,7 @@ class LlamaProvider(ChatProvider, OpenAICompat):
             ttl_seconds: Inactivity time-to-live for each managed llama-server.
         """
         super().__init__()
-        self._manager = LlamaServerManager(ttl_seconds=ttl_seconds)
+        self._manager = self.get_llama_server_manager()
         self._usage = {
             "prompt_tokens": 0,
             "completion_tokens": 0,

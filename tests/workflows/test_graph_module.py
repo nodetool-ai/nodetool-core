@@ -4,19 +4,27 @@ from nodetool.workflows.base_node import BaseNode, InputNode, OutputNode
 
 
 class InNode(InputNode):
-    pass
+    @classmethod
+    def get_node_type(cls) -> str:
+        return "tests.workflows.test_graph_module.InNode"
 
 
 class AddNode(BaseNode):
     a: int = 0
     b: int = 0
 
+    @classmethod
+    def get_node_type(cls) -> str:
+        return "tests.workflows.test_graph_module.AddNode"
+
     async def process(self, context):
         return self.a + self.b
 
 
 class OutNode(OutputNode):
-    pass
+    @classmethod
+    def get_node_type(cls) -> str:
+        return "tests.workflows.test_graph_module.OutNode"
 
 
 def build_graph():
