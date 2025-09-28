@@ -835,7 +835,6 @@ class WorkflowRunner:
             context (ProcessingContext): The processing context, containing the graph
                                      to find target nodes and edges.
         """
-        log.debug(f"Sending messages from {node.get_title()} ({node.id})")
         for key, value_to_send in result.items():
             if not node.should_route_output(key):
                 log.debug(

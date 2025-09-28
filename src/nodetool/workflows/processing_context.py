@@ -107,6 +107,7 @@ HTTP_HEADERS = {
     "Accept-Language": "en-US,en;q=0.9",
 }
 
+
 class ProcessingContext:
     """
     The processing context is the workflow's interface to the outside world.
@@ -185,21 +186,15 @@ class ProcessingContext:
         memory URI cache. Local per-instance memory is avoided for portability
         across processes.
         """
-        try:
-            return Environment.get_memory_uri_cache().get(key)
-        except Exception:
-            return None
+        return Environment.get_memory_uri_cache().get(key)
 
     def _memory_set(self, key: str, value: Any) -> None:
         """
         Store an object under a URI (e.g., memory://<id>) in the global memory
-        URI cache. Entries expire after the cache TTL (default 5 minutes).
+        URI cache.
         """
-        try:
-            # Use cache default TTL (5 minutes)
-            Environment.get_memory_uri_cache().set(key, value)
-        except Exception:
-            pass
+        log.info(f"Setting memory URI cache: {key}")
+        Environment.get_memory_uri_cache().set(key, value)
 
     def get_http_client(self):
         if not hasattr(self, "_http_client"):

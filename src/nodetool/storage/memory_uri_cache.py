@@ -13,7 +13,7 @@ class MemoryUriCache(AbstractNodeCache):
     - Values can be arbitrary Python objects (e.g., PIL.Image, bytes, numpy arrays)
     """
 
-    def __init__(self, default_ttl: int = 300):
+    def __init__(self, default_ttl: int = 3600):
         self._cache: dict[str, tuple[Any, float]] = {}
         self._default_ttl = int(default_ttl) if default_ttl and default_ttl > 0 else 300
 
@@ -58,4 +58,3 @@ class MemoryUriCache(AbstractNodeCache):
 
     def clear(self):
         self._cache.clear()
-
