@@ -32,6 +32,7 @@ class Property(BaseModel):
     description: Optional[str] = None
     min: Optional[float] = None
     max: Optional[float] = None
+    json_schema_extra: Optional[dict[str, Any]] = None
 
     def __repr__(self) -> str:
         """
@@ -61,6 +62,8 @@ class Property(BaseModel):
             attrs.append(f"min={repr(self.min)}")
         if self.max is not None:
             attrs.append(f"max={repr(self.max)}")
+        if self.json_schema_extra:
+            attrs.append(f"json_schema_extra={repr(self.json_schema_extra)}")
 
         return f"Property({', '.join(attrs)})"
 
@@ -116,4 +119,5 @@ class Property(BaseModel):
             description=field.description,
             min=ge.ge if ge is not None else None,
             max=le.le if le is not None else None,
+            json_schema_extra=field.json_schema_extra,  # type: ignore
         )

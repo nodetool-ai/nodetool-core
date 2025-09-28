@@ -385,105 +385,59 @@ class AnthropicProvider(ChatProvider):
             if kwargs.get(key) is not None:
                 request_kwargs[key] = kwargs[key]
 
-        # First try patched AsyncMessages.stream (used in base tests)
-        stream_obj = self.client.messages.stream(**request_kwargs)
-        # If it's a real SDK async context manager (has __aenter__), some tests patch the
-        # sync Messages.stream instead. Fallback to that so patches apply.
-        if hasattr(stream_obj, "__aenter__"):
-            try:
-                from anthropic import Anthropic
-
-                sync_client = Anthropic(api_key=self.api_key)
-                stream_obj = sync_client.messages.stream(**request_kwargs)
-            except Exception:
-                # Use the real async context manager when no sync patch is present
-                async with self.client.messages.stream(**request_kwargs) as ctx_stream:  # type: ignore
-                    log.debug("Streaming response initialized (async context)")
-                    async for event in ctx_stream:
-                        # Process events
-                        if getattr(event, "type", "") == "content_block_delta":
-                            delta = getattr(event, "delta", None)
-                            text = getattr(delta, "text", None)
-                            thinking = getattr(delta, "thinking", None)
-                            if text is not None:
-                                yield Chunk(content=text, done=False)
-                            elif thinking is not None:
-                                yield Chunk(content=thinking, done=False)
-                        elif getattr(event, "type", "") == "message_start":
-                            msg = getattr(event, "message", None)
-                            usage = getattr(msg, "usage", None)
-                            if usage is not None:
-                                self.usage["input_tokens"] += (
-                                    getattr(usage, "input_tokens", 0) or 0
-                                )
-                                self.usage["output_tokens"] += (
-                                    getattr(usage, "output_tokens", 0) or 0
-                                )
-                                self.usage["cache_creation_input_tokens"] += (
-                                    getattr(usage, "cache_creation_input_tokens", 0)
-                                    or 0
-                                )
-                                self.usage["cache_read_input_tokens"] += (
-                                    getattr(usage, "cache_read_input_tokens", 0) or 0
-                                )
-                                self.usage["total_tokens"] = self.usage.get(
-                                    "input_tokens", 0
-                                ) + self.usage.get("output_tokens", 0)
-                        elif getattr(event, "type", "") == "message_stop":
-                            yield Chunk(content="", done=True)
-                return
-
-        # At this point, stream_obj should be an async iterator (from patched tests)
         log.debug("Streaming response initialized")
-        async for event in stream_obj:  # type: ignore
-            etype = getattr(event, "type", "")
-            if etype == "content_block_delta":
-                delta = getattr(event, "delta", None)
-                # Prefer text; fall back to partial_json/thinking if present
-                text = getattr(delta, "text", None)
-                partial_json = getattr(delta, "partial_json", None)
-                thinking = getattr(delta, "thinking", None)
-                if isinstance(text, str):
-                    yield Chunk(content=text, done=False)
-                elif isinstance(partial_json, str):
-                    yield Chunk(content=partial_json, done=False)
-                elif isinstance(thinking, str):
-                    yield Chunk(content=thinking, done=False)
-            elif etype == "message_start":
-                msg = getattr(event, "message", None)
-                usage = getattr(msg, "usage", None)
-                if usage is not None:
-                    self.usage["input_tokens"] += getattr(usage, "input_tokens", 0) or 0
-                    self.usage["output_tokens"] += (
-                        getattr(usage, "output_tokens", 0) or 0
-                    )
-                    self.usage["cache_creation_input_tokens"] += (
-                        getattr(usage, "cache_creation_input_tokens", 0) or 0
-                    )
-                    self.usage["cache_read_input_tokens"] += (
-                        getattr(usage, "cache_read_input_tokens", 0) or 0
-                    )
-                    self.usage["total_tokens"] = self.usage.get(
-                        "input_tokens", 0
-                    ) + self.usage.get("output_tokens", 0)
-            elif etype == "content_block_stop":
-                # Tool use may appear here in real SDK; tests often omit attributes
-                content_block = getattr(event, "content_block", None)
-                if (
-                    content_block is not None
-                    and getattr(content_block, "type", "") == "tool_use"
-                ):
-                    tool_call = ToolCall(
-                        id=str(getattr(content_block, "id", "")),
-                        name=getattr(content_block, "name", ""),
-                        args=getattr(content_block, "input", {}) or {},  # type: ignore
-                    )
-                    if tool_call.name == "json_output":
-                        yield Chunk(content=json.dumps(tool_call.args), done=False)
-                    else:
-                        yield tool_call
-            elif etype == "message_stop":
-                yield Chunk(content="", done=True)
+        async with self.client.messages.stream(**request_kwargs) as ctx_stream:  # type: ignore
+            async for event in ctx_stream:  # type: ignore
+                etype = getattr(event, "type", "")
+                if etype == "content_block_delta":
+                    delta = getattr(event, "delta", None)
+                    # Prefer text; fall back to partial_json/thinking if present
+                    text = getattr(delta, "text", None)
+                    partial_json = getattr(delta, "partial_json", None)
+                    thinking = getattr(delta, "thinking", None)
+                    if isinstance(text, str):
+                        yield Chunk(content=text, done=False)
+                    elif isinstance(partial_json, str):
+                        yield Chunk(content=partial_json, done=False)
+                    elif isinstance(thinking, str):
+                        yield Chunk(content=thinking, done=False)
+                elif etype == "message_start":
+                    msg = getattr(event, "message", None)
+                    usage = getattr(msg, "usage", None)
+                    if usage is not None:
+                        self.usage["input_tokens"] += (
+                            getattr(usage, "input_tokens", 0) or 0
+                        )
+                        self.usage["output_tokens"] += (
+                            getattr(usage, "output_tokens", 0) or 0
+                        )
+                        self.usage["cache_creation_input_tokens"] += (
+                            getattr(usage, "cache_creation_input_tokens", 0) or 0
+                        )
+                        self.usage["cache_read_input_tokens"] += (
+                            getattr(usage, "cache_read_input_tokens", 0) or 0
+                        )
+                        self.usage["total_tokens"] = self.usage.get(
+                            "input_tokens", 0
+                        ) + self.usage.get("output_tokens", 0)
+                elif etype == "content_block_stop":
+                    # Tool use may appear here in real SDK; tests often omit attributes
+                    content_block = getattr(event, "content_block", None)
+                    if (
+                        content_block is not None
+                        and getattr(content_block, "type", "") == "tool_use"
+                    ):
+                        tool_call = ToolCall(
+                            id=str(getattr(content_block, "id", "")),
+                            name=getattr(content_block, "name", ""),
+                            args=getattr(content_block, "input", {}) or {},  # type: ignore
+                        )
+                        if tool_call.name == "json_output":
+                            yield Chunk(content=json.dumps(tool_call.args), done=False)
+                        else:
+                            yield tool_call
+                elif etype == "message_stop":
+                    yield Chunk(content="", done=True)
 
     async def generate_message(
         self,
