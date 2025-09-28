@@ -10,19 +10,32 @@ from nodetool.workflows.workflow_runner import WorkflowRunner
 from nodetool.types.graph import Edge
 from nodetool.workflows.types import NodeUpdate
 
+ASYNC_TEST_TIMEOUT = 2.0
+
 
 class StreamingProducer(BaseNode):
+    values: list[int] = []
 
     class OutputType(TypedDict):
         output: int
 
     async def gen_process(self, context) -> AsyncGenerator[OutputType, None]:
-        yield {"output": 1}
+        for value in self.values:
+            yield {"output": value}
 
 
 class NonStreamingProducer(BaseNode):
     async def process(self, context) -> int:
         return 1
+
+
+class SingleShotProducer(BaseNode):
+    value: ClassVar[int | None] = None
+
+    async def process(
+        self, context
+    ) -> int | None:  # pragma: no cover - executed via runner
+        return self.value
 
 
 class NonRoutableProducer(BaseNode):
@@ -38,12 +51,16 @@ class TargetNode(BaseNode):
     a: int = 0
     b: int = 0
 
+    async def process(self, context) -> dict[str, int]:  # type: ignore[override]
+        return {"output": self.a}
+
 
 def make_actor_for_target(
     graph: Graph, target: BaseNode
 ) -> tuple[NodeActor, WorkflowRunner, ProcessingContext]:
     ctx = ProcessingContext(user_id="u", auth_token="t", graph=graph)
     runner = WorkflowRunner(job_id="job-test")
+    runner._analyze_streaming(graph)
     runner._initialize_inboxes(ctx, graph)
     inbox = runner.node_inboxes[target._id]
     actor = NodeActor(runner, target, ctx, inbox)
@@ -183,7 +200,7 @@ async def test_gather_initial_inputs_collects_first_items_and_skips_eos():
     inbox.mark_source_done("ghost")
 
     res = await asyncio.wait_for(
-        actor._gather_initial_inputs({"a", "ghost"}), timeout=2
+        actor._gather_initial_inputs({"a", "ghost"}), timeout=ASYNC_TEST_TIMEOUT
     )
     assert res == {"a": 42}
 
@@ -232,7 +249,7 @@ async def test_run_streaming_happy_path_sends_updates_and_messages():
 
     runner.send_messages = capture_send  # type: ignore
 
-    await asyncio.wait_for(actor.run(), timeout=2)
+    await asyncio.wait_for(actor.run(), timeout=ASYNC_TEST_TIMEOUT)
 
     # Ensure running and completed updates were posted
     msgs = []
@@ -278,7 +295,7 @@ async def test_run_streaming_invalid_output_raises_error_and_raises():
     # Ensure initial gather does not block: mark EOS on expected handle
     actor.inbox.mark_source_done("a")
     with pytest.raises(ValueError):
-        await asyncio.wait_for(actor.run(), timeout=2)
+        await asyncio.wait_for(actor.run(), timeout=ASYNC_TEST_TIMEOUT)
 
 
 class BadFormatStreamingNode(BaseNode):
@@ -302,7 +319,7 @@ async def test_run_streaming_invalid_format_raises_error_and_raises():
     actor, _, ctx = make_actor_for_target(graph, bad)
 
     with pytest.raises(TypeError):
-        await asyncio.wait_for(actor.run(), timeout=2)
+        await asyncio.wait_for(actor.run(), timeout=ASYNC_TEST_TIMEOUT)
 
 
 class SuppressingStreamer(BaseNode):
@@ -341,7 +358,7 @@ async def test_should_route_output_suppresses_routing():
 
     runner.send_messages = capture  # type: ignore
 
-    await asyncio.wait_for(actor.run(), timeout=2)
+    await asyncio.wait_for(actor.run(), timeout=ASYNC_TEST_TIMEOUT)
 
     assert (
         routed["count"] == 0
@@ -380,12 +397,15 @@ async def test_run_non_streaming_calls_runner_with_inputs_and_marks_eos():
 
     called = {}
 
-    async def capture(context, node, inputs):
+    original_process = actor.process_node_with_inputs
+
+    async def capture(inputs):
         called["inputs"] = inputs
+        await original_process(inputs)
 
-    runner.process_node_with_inputs = capture  # type: ignore
+    actor.process_node_with_inputs = capture  # type: ignore
 
-    await asyncio.wait_for(actor.run(), timeout=2)
+    await asyncio.wait_for(actor.run(), timeout=ASYNC_TEST_TIMEOUT)
 
     assert called.get("inputs") == {"a": 99}
 
@@ -410,12 +430,12 @@ async def test_run_skips_when_only_nonroutable_upstreams():
     # Monkeypatch runner method to detect if it would be called (it should not)
     called = {"ran": False}
 
-    async def capture(context, node, inputs):
+    async def capture(inputs):
         called["ran"] = True
 
-    runner.process_node_with_inputs = capture  # type: ignore
+    actor.process_node_with_inputs = capture  # type: ignore
 
-    await asyncio.wait_for(actor.run(), timeout=2)
+    await asyncio.wait_for(actor.run(), timeout=ASYNC_TEST_TIMEOUT)
 
     assert called["ran"] is False
 
@@ -436,12 +456,9 @@ class FanoutConsumer(BaseNode):
 @pytest.mark.asyncio
 async def test_fanout_single_inbound_handle_runs_per_item():
     # Graph: StreamingProducer(out)-> FanoutConsumer(a)
-    class S(BaseNode):
-        async def gen_process(self, context):  # pragma: no cover - not executed here
-            yield {"out": 1}
 
     consumer = FanoutConsumer(id="c1")  # type: ignore
-    prod = S(id="p1")  # type: ignore
+    prod = StreamingProducer(id="p1")  # type: ignore
 
     edges = [
         Edge(
@@ -458,13 +475,13 @@ async def test_fanout_single_inbound_handle_runs_per_item():
 
     calls: list[dict[str, int]] = []
 
-    async def capture(context, node, inputs):
+    async def capture(inputs):
         # Ensure we capture the inputs used for each fanout iteration
         calls.append(inputs)
 
-    runner.process_node_with_inputs = capture  # type: ignore
+    actor.process_node_with_inputs = capture  # type: ignore
 
-    await asyncio.wait_for(actor.run(), timeout=2)
+    await asyncio.wait_for(actor.run(), timeout=ASYNC_TEST_TIMEOUT)
 
     # Fanout: non-streaming consumer runs once per item on single inbound handle
     assert [c["a"] for c in calls] == [10, 11, 12]
@@ -529,12 +546,15 @@ async def test_multiple_messages_across_handles_fanout_for_non_streaming_node():
 
     calls: list[dict[str, int]] = []
 
-    async def capture(context, node, inputs):
+    original_process = actor.process_node_with_inputs
+
+    async def capture(inputs):
         calls.append(inputs)
+        await original_process(inputs)
 
-    runner.process_node_with_inputs = capture  # type: ignore
+    actor.process_node_with_inputs = capture  # type: ignore
 
-    await asyncio.wait_for(actor.run(), timeout=2)
+    await asyncio.wait_for(actor.run(), timeout=ASYNC_TEST_TIMEOUT)
 
     # New semantics: first wait until all handles have one value, then fire per arrival
     assert len(calls) == 3
@@ -593,12 +613,15 @@ async def test_multiple_streaming_inbounds_fanout_for_non_streaming_target():
 
     calls: list[dict[str, int]] = []
 
-    async def capture(context, node, inputs):
+    original_process = actor.process_node_with_inputs
+
+    async def capture(inputs):
         calls.append(inputs)
+        await original_process(inputs)
 
-    runner.process_node_with_inputs = capture  # type: ignore
+    actor.process_node_with_inputs = capture  # type: ignore
 
-    await asyncio.wait_for(actor.run(), timeout=2)
+    await asyncio.wait_for(actor.run(), timeout=ASYNC_TEST_TIMEOUT)
 
     # New semantics: wait until both handles have values, then fire on subsequent arrivals
     assert len(calls) == 2
@@ -634,12 +657,15 @@ async def test_multiple_messages_single_handle_fanout_for_non_streaming_node():
 
     calls: list[dict[str, int]] = []
 
-    async def capture(context, node, inputs):
+    original_process = actor.process_node_with_inputs
+
+    async def capture(inputs):
         calls.append(inputs)
+        await original_process(inputs)
 
-    runner.process_node_with_inputs = capture  # type: ignore
+    actor.process_node_with_inputs = capture  # type: ignore
 
-    await asyncio.wait_for(actor.run(), timeout=2)
+    await asyncio.wait_for(actor.run(), timeout=ASYNC_TEST_TIMEOUT)
 
     assert len(calls) == 2 and [c.get("a") for c in calls] == [101, 202]
 
@@ -651,17 +677,15 @@ class ZipTargetNode(BaseNode):
     a: int | None = None
     b: int | None = None
 
-    async def process(
-        self, context
-    ):  # pragma: no cover - executed via runner monkeypatch
-        return {"pair": (self.a, self.b)}
+    async def process(self, context) -> dict[str, tuple[int | None, int | None]]:
+        return {"output": (self.a, self.b)}
 
 
 @pytest.mark.asyncio
 async def test_zip_all_pairs_items_across_two_handles_in_order():
     # Graph: two producers feed a and b of target
-    pa = NonStreamingProducer(id="pa")  # type: ignore
-    pb = NonStreamingProducer(id="pb")  # type: ignore
+    pa = StreamingProducer(id="pa")  # type: ignore
+    pb = StreamingProducer(id="pb")  # type: ignore
     target = ZipTargetNode(id="tz1")  # type: ignore
     target.set_sync_mode("zip_all")
 
@@ -686,12 +710,15 @@ async def test_zip_all_pairs_items_across_two_handles_in_order():
 
     calls: list[dict[str, int]] = []
 
-    async def capture(context, node, inputs):
+    original_process = actor.process_node_with_inputs
+
+    async def capture(inputs):
         calls.append(inputs)
+        await original_process(inputs)
 
-    runner.process_node_with_inputs = capture  # type: ignore
+    actor.process_node_with_inputs = capture  # type: ignore
 
-    await asyncio.wait_for(actor.run(), timeout=2)
+    await asyncio.wait_for(actor.run(), timeout=ASYNC_TEST_TIMEOUT)
 
     assert len(calls) == 2
     assert calls[0].get("a") == 1 and calls[0].get("b") == 10
@@ -699,8 +726,106 @@ async def test_zip_all_pairs_items_across_two_handles_in_order():
 
 
 @pytest.mark.asyncio
+async def test_zip_all_pairs_items_with_different_lengths():
+    # Graph: two producers feed a and b of target
+    pa = StreamingProducer(id="pa")  # type: ignore
+    pb = StreamingProducer(id="pb")  # type: ignore
+    target = ZipTargetNode(id="tz1")  # type: ignore
+    target.set_sync_mode("zip_all")
+
+    edges = [
+        Edge(
+            id="e1", source="pa", target="tz1", sourceHandle="output", targetHandle="a"
+        ),
+        Edge(
+            id="e2", source="pb", target="tz1", sourceHandle="output", targetHandle="b"
+        ),
+    ]
+    graph = Graph(nodes=[pa, pb, target], edges=edges)
+    actor, runner, _ = make_actor_for_target(graph, target)
+
+    # Interleave arrivals: a1, b1, a2, b2
+    actor.inbox.put("a", 1)
+    actor.inbox.put("b", 10)
+    actor.inbox.put("a", 2)
+    actor.inbox.put("b", 20)
+    actor.inbox.put("b", 30)
+    actor.inbox.mark_source_done("a")
+    actor.inbox.mark_source_done("b")
+
+    calls: list[dict[str, int]] = []
+
+    original_process = actor.process_node_with_inputs
+
+    async def capture(inputs):
+        calls.append(inputs)
+        await original_process(inputs)
+
+    actor.process_node_with_inputs = capture  # type: ignore
+
+    await asyncio.wait_for(actor.run(), timeout=ASYNC_TEST_TIMEOUT)
+
+    assert len(calls) == 2
+    assert calls[0].get("a") == 1 and calls[0].get("b") == 10
+    assert calls[1].get("a") == 2 and calls[1].get("b") == 20
+
+
+@pytest.mark.asyncio
+async def test_zip_all_reuses_non_streaming_handle_value():
+    class SingleShotProducerInstance(SingleShotProducer):
+        value = 101
+
+    pa = SingleShotProducerInstance(id="pa_ns")  # type: ignore
+    pb_stream = StreamingProducer(id="pb_stream")  # type: ignore
+    target = ZipTargetNode(id="tz_ns_zip")  # type: ignore
+    target.set_sync_mode("zip_all")
+
+    edges = [
+        Edge(
+            id="e1",
+            source="pa_ns",
+            target="tz_ns_zip",
+            sourceHandle="output",
+            targetHandle="a",
+        ),
+        Edge(
+            id="e2",
+            source="pb_stream",
+            target="tz_ns_zip",
+            sourceHandle="output",
+            targetHandle="b",
+        ),
+    ]
+    graph = Graph(nodes=[pa, pb_stream, target], edges=edges)
+    actor, runner, _ = make_actor_for_target(graph, target)
+
+    actor.inbox.put("a", 101)
+    actor.inbox.mark_source_done("a")
+
+    for value in [1, 2, 3]:
+        actor.inbox.put("b", value)
+    actor.inbox.mark_source_done("b")
+
+    calls: list[dict[str, int]] = []
+
+    original_process = actor.process_node_with_inputs
+
+    async def capture(inputs):
+        calls.append(inputs)
+        await original_process(inputs)
+
+    actor.process_node_with_inputs = capture  # type: ignore
+
+    await asyncio.wait_for(actor.run(), timeout=ASYNC_TEST_TIMEOUT)
+
+    assert len(calls) == 3
+    assert [c.get("a") for c in calls] == [101, 101, 101]
+    assert [c.get("b") for c in calls] == [1, 2, 3]
+
+
+@pytest.mark.asyncio
 async def test_zip_all_ignores_incomplete_tail_when_stream_ends():
-    pa = NonStreamingProducer(id="pa2")  # type: ignore
+    pa = StreamingProducer(id="pa2")  # type: ignore
     pb = NonStreamingProducer(id="pb2")  # type: ignore
     target = ZipTargetNode(id="tz2")  # type: ignore
     target.set_sync_mode("zip_all")
@@ -725,12 +850,12 @@ async def test_zip_all_ignores_incomplete_tail_when_stream_ends():
 
     calls: list[dict[str, int]] = []
 
-    async def capture(context, node, inputs):
+    async def capture(inputs):
         calls.append(inputs)
 
-    runner.process_node_with_inputs = capture  # type: ignore
+    actor.process_node_with_inputs = capture  # type: ignore
 
-    await asyncio.wait_for(actor.run(), timeout=2)
+    await asyncio.wait_for(actor.run(), timeout=ASYNC_TEST_TIMEOUT)
 
-    assert len(calls) == 1
+    assert len(calls) == 2
     assert calls[0].get("a") == 1 and calls[0].get("b") == 10

@@ -270,6 +270,12 @@ class TestAnthropicProvider(BaseProviderTest):
 
                 return mock_event
 
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
         return patch.object(
             anthropic.resources.messages.AsyncMessages,
             "stream",
@@ -472,8 +478,14 @@ class TestAnthropicProvider(BaseProviderTest):
 
                 return mock_event
 
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
         with patch.object(
-            anthropic.resources.messages.Messages,
+            anthropic.resources.messages.AsyncMessages,
             "stream",
             return_value=MockToolStream(),
         ):

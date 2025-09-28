@@ -17,7 +17,7 @@ Lifecycle:
   1. Gather initial inputs and assign properties (only valid names)
   2. Call ``pre_process`` and send a "running" update
   3. Drive processing: streaming via ``node.run`` with input/output wrappers; or
-     non-streaming via ``runner.process_node_with_inputs`` per arrival (fan-out)
+     non-streaming via ``process_node_with_inputs`` per arrival (fan-out)
   4. On completion or error, mark downstream EOS
 
 Notes:
@@ -31,7 +31,7 @@ from __future__ import annotations
 
 import asyncio
 from nodetool.config.logging_config import get_logger
-from typing import Any, AsyncGenerator
+from typing import Any
 
 from nodetool.workflows.base_node import BaseNode, OutputNode
 from nodetool.workflows.processing_context import ProcessingContext
@@ -115,10 +115,6 @@ class NodeActor:
                 handles.add(e.targetHandle)
         return handles
 
-    def _has_streaming_upstream(self) -> bool:
-        """Delegates to graph to determine if any upstream produces a stream."""
-        return self.context.graph.has_streaming_upstream(self.node._id)
-
     def _only_nonroutable_upstreams(self) -> bool:
         """Return True if there are inbound edges and none are effectively routable."""
         # If there are no inbound edges, there's nothing to suppress
@@ -178,6 +174,132 @@ class NodeActor:
             except Exception:
                 # Best-effort notification; never block EOS on update errors
                 pass
+
+    async def process_node_with_inputs(
+        self,
+        inputs: dict[str, Any],
+    ) -> None:
+        """Process a non-streaming node instance with resolved inputs.
+
+        Mirrors the lifecycle previously hosted on ``WorkflowRunner``:
+
+        1. Assign inputs to node properties.
+        2. ``pre_process`` the node.
+        3. Check and leverage cache when enabled.
+        4. Execute the node (with GPU coordination when required).
+        5. Cache results when appropriate.
+        6. Emit completion updates and route outputs downstream.
+        """
+
+        context = self.context
+        node = self.node
+
+        self.logger.debug(
+            "process_node_with_inputs for %s (%s) with inputs: %s",
+            node.get_title(),
+            node._id,
+            list(inputs.keys()),
+        )
+
+        for name, value in inputs.items():
+            try:
+                error = node.assign_property(name, value)
+                if error:
+                    self.logger.error(
+                        "Error assigning property %s to node %s: %s",
+                        name,
+                        node.id,
+                        error,
+                    )
+            except Exception as exc:
+                self.logger.error(
+                    "Error assigning property %s to node %s", name, node.id
+                )
+                raise ValueError(f"Error assigning property {name}: {exc}") from exc
+
+        await node.pre_process(context)
+
+        cached_result: dict[str, Any] | None = None
+        if node.is_cacheable() and not self.runner.disable_caching:
+            cached_result = context.get_cached_result(node)
+
+        if cached_result is not None:
+            self.logger.info(
+                "Using cached result for node: %s (%s)",
+                node.get_title(),
+                node._id,
+            )
+            result = cached_result
+        else:
+            requires_gpu = node.requires_gpu()
+            driven_by_stream = context.graph.has_streaming_upstream(node._id)
+
+            if requires_gpu and self.runner.device == "cpu":
+                error_msg = (
+                    f"Node {node.get_title()} ({node._id}) requires a GPU,"
+                    " but no GPU is available."
+                )
+                self.logger.error(error_msg)
+                raise RuntimeError(error_msg)
+
+            await node.send_update(context, "running", result=None)
+
+            inbox = self.runner.node_inboxes.get(node._id)
+            outputs_collector = NodeOutputs(
+                self.runner, node, context, capture_only=True
+            )
+            node_inputs = NodeInputs(inbox) if inbox is not None else None
+
+            if requires_gpu and self.runner.device != "cpu":
+                from nodetool.workflows.workflow_runner import (
+                    acquire_gpu_lock,
+                    release_gpu_lock,
+                )
+
+                await acquire_gpu_lock(node, context)
+                try:
+                    self.runner.log_vram_usage(
+                        f"Node {node.get_title()} ({node._id}) VRAM before GPU processing"
+                    )
+                    await node.preload_model(context)
+                    self.runner.log_vram_usage(
+                        f"Node {node.get_title()} ({node._id}) VRAM after preload_model"
+                    )
+                    await node.move_to_device(self.runner.device)
+                    self.runner.log_vram_usage(
+                        f"Node {node.get_title()} ({node._id}) VRAM after move to {self.runner.device}"
+                    )
+
+                    await node.run(context, node_inputs, outputs_collector)  # type: ignore[arg-type]
+                    self.runner.log_vram_usage(
+                        f"Node {node.get_title()} ({node._id}) VRAM after run completion"
+                    )
+                finally:
+                    await node.move_to_device("cpu")
+                    self.runner.log_vram_usage(
+                        f"Node {node.get_title()} ({node._id}) VRAM after move to cpu"
+                    )
+                    release_gpu_lock()
+            else:
+                await node.preload_model(context)
+                await node.run(context, node_inputs, outputs_collector)  # type: ignore[arg-type]
+
+            result = outputs_collector.collected()
+
+            if (
+                node.is_cacheable()
+                and not self.runner.disable_caching
+                and not driven_by_stream
+            ):
+                self.logger.debug(
+                    "Caching result for node: %s (%s)",
+                    node.get_title(),
+                    node._id,
+                )
+                context.cache_result(node, result)
+
+        await node.send_update(context, "completed", result=result)
+        self.runner.send_messages(node, result, context)
 
     async def _run_streaming(self) -> None:
         """Run a node that exposes streaming outputs.
@@ -299,43 +421,77 @@ class NodeActor:
         handles = self._effective_inbound_handles()
         if not handles:
             # No inbound inputs – single run
-            await self.runner.process_node_with_inputs(ctx, node, {})
+            await self.process_node_with_inputs({})
         else:
             # Determine per-handle upstream streaming characteristics
-            upstream_all_non_streaming: dict[str, bool] = {}
-            for e in self.context.graph.edges:
-                if e.target != node._id:
-                    continue
-                handle = e.targetHandle
-                src = self.context.graph.find_node(e.source)
-                if src is None:
-                    continue
-                prev = upstream_all_non_streaming.get(handle, True)
-                upstream_all_non_streaming[handle] = prev and (
-                    not src.is_streaming_output()
+            handle_streaming: dict[str, bool] = {}
+            for handle in handles:
+                edge = next(
+                    (
+                        e
+                        for e in self.context.graph.edges
+                        if e.target == node._id and e.targetHandle == handle
+                    ),
+                    None,
+                )
+                handle_streaming[handle] = (
+                    self.runner.edge_streams(edge) if edge is not None else False
                 )
 
             sync_mode = node.get_sync_mode()
 
-            if sync_mode == "zip_all":
+            if sync_mode == "zip_all" and any(handle_streaming.values()):
                 # Align across all inbound handles: emit only when we have at least
                 # one value buffered for each handle; consume one from each per call.
                 from collections import deque
 
                 buffers: dict[str, deque[Any]] = {h: deque() for h in handles}
+                sticky_values: dict[str, Any] = {}
+                is_sticky: dict[str, bool] = {
+                    h: not handle_streaming.get(h, False) for h in handles
+                }
+                seen_counts: dict[str, int] = {h: 0 for h in handles}
+
+                def ready_to_zip() -> bool:
+                    for handle in handles:
+                        if is_sticky.get(handle, False):
+                            if handle not in sticky_values and not buffers[handle]:
+                                return False
+                        elif not buffers[handle]:
+                            return False
+                    return True
 
                 async for handle, item in self.inbox.iter_any():
                     if handle not in buffers:
                         continue
+
                     buffers[handle].append(item)
-                    # While a full set is available, pop and run
-                    while all(len(q) > 0 for q in buffers.values()):
-                        batch = {h: buffers[h].popleft() for h in buffers.keys()}
-                        await self.runner.process_node_with_inputs(ctx, node, batch)
-                        # For non-streaming upstreams we still mark one as done to
-                        # keep tests deterministic in absence of EOS senders
+                    seen_counts[handle] = seen_counts.get(handle, 0) + 1
+
+                    if is_sticky.get(handle, False) and seen_counts[handle] > 1:
+                        is_sticky[handle] = False
+                        sticky_values.pop(handle, None)
+
+                    if is_sticky.get(handle, False):
+                        sticky_values[handle] = item
+                        while len(buffers[handle]) > 1:
+                            buffers[handle].popleft()
+
+                    while ready_to_zip():
+                        batch: dict[str, Any] = {}
+                        for h in handles:
+                            if is_sticky.get(h, False):
+                                if h not in sticky_values and buffers[h]:
+                                    sticky_values[h] = buffers[h].popleft()
+                                batch[h] = sticky_values[h]
+                                buffers[h].clear()
+                            else:
+                                batch[h] = buffers[h].popleft()
+
+                        await self.process_node_with_inputs(batch)
+
                         for h in list(batch.keys()):
-                            if upstream_all_non_streaming.get(h, False):
+                            if is_sticky.get(h, False):
                                 self.inbox.mark_source_done(h)
             else:
                 # Default behavior: wait until all inbound handles have at least one
@@ -356,20 +512,16 @@ class NodeActor:
                             # Not all inputs have arrived yet; keep accumulating
                             continue
                         # All initial inputs are available – process once
-                        await self.runner.process_node_with_inputs(
-                            ctx, node, dict(current)
-                        )
+                        await self.process_node_with_inputs(dict(current))
                         initial_fired = True
                     else:
                         # After initial evaluation, fire on any subsequent arrival
-                        await self.runner.process_node_with_inputs(
-                            ctx, node, dict(current)
-                        )
+                        await self.process_node_with_inputs(dict(current))
 
                     # If all upstreams for this handle are non-streaming producers,
                     # they produce at most one item each. Mark one source as done to
                     # prevent indefinite waiting for EOS in isolated actor tests.
-                    if upstream_all_non_streaming.get(handle, False):
+                    if not handle_streaming.get(handle, False):
                         self.inbox.mark_source_done(handle)
         await node.handle_eos()
         await self._mark_downstream_eos()
@@ -407,11 +559,6 @@ class NodeActor:
             elif node.is_streaming_output() or node.is_streaming_input():
                 run_coro = self._run_streaming()
             else:
-                # Dynamic streaming: if any upstream is streaming, we still use the
-                # non-streaming fan-out path which already processes per arrival and
-                # propagates EOS appropriately. The explicit check is kept for clarity
-                # and future hooks.
-                _ = self._has_streaming_upstream()
                 run_coro = self._run_non_streaming()
 
             timeout = node.get_timeout_seconds() or 0.0

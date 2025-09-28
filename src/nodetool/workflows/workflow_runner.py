@@ -37,9 +37,10 @@ from nodetool.config.logging_config import get_logger
 import time
 import threading
 from typing import Any, AsyncGenerator, Optional
-from collections import deque
+from collections import defaultdict, deque
 
 from nodetool.types.job import JobUpdate
+from nodetool.types.graph import Edge
 from nodetool.workflows.base_node import (
     BaseNode,
     InputNode,
@@ -178,6 +179,61 @@ class WorkflowRunner:
         self._input_task: asyncio.Task | None = None
         # Event loop where the runner is executing; used for thread-safe enqueues
         self._runner_loop: asyncio.AbstractEventLoop | None = None
+        self._streaming_edges: dict[str, bool] = {}
+
+    def _edge_key(self, edge: Edge) -> str:
+        return edge.id or (
+            f"{edge.source}:{edge.sourceHandle}->{edge.target}:{edge.targetHandle}"
+        )
+
+    def edge_streams(self, edge: Edge) -> bool:
+        """Return True if the given edge is marked as streaming."""
+
+        return self._streaming_edges.get(self._edge_key(edge), False)
+
+    def _analyze_streaming(self, graph: Graph) -> None:
+        """Populate ``_streaming_edges`` with streaming propagation info.
+
+        Any node that reports streaming outputs (``is_streaming_output()``) seeds a
+        simple breadth-first walk across the graph. Every edge reachable from those
+        sources is marked as streaming, and the streaming flag propagates through
+        intermediate nodes regardless of their own streaming capabilities. Edges not
+        reachable from a streaming source are marked as non-streaming.
+        """
+
+        self._streaming_edges.clear()
+
+        if not graph.edges:
+            return
+
+        adjacency: dict[str, list[Edge]] = defaultdict(list)
+        for edge in graph.edges:
+            adjacency[edge.source].append(edge)
+            self._streaming_edges[self._edge_key(edge)] = False
+
+        queue: deque[str] = deque()
+        visited: set[str] = set()
+
+        for node in graph.nodes:
+            try:
+                node_id = getattr(node, "_id", getattr(node, "id", None))
+                if node_id is None:
+                    continue
+                if node.is_streaming_output():
+                    queue.append(node_id)
+                    visited.add(node_id)
+            except Exception:
+                # Best-effort streaming detection; ignore misbehaving nodes
+                continue
+
+        while queue:
+            current = queue.popleft()
+            for edge in adjacency.get(current, []):
+                self._streaming_edges[self._edge_key(edge)] = True
+                target_id = edge.target
+                if target_id not in visited:
+                    visited.add(target_id)
+                    queue.append(target_id)
 
     # --- Streaming Input support for InputNode(is_streaming=True) ---
     def _enqueue_input_event(self, event: dict[str, Any]) -> None:
@@ -455,6 +511,7 @@ class WorkflowRunner:
         )
 
         context.graph = graph
+        self._analyze_streaming(graph)
         self._initialize_inboxes(context, graph)
         self.context = context
         context.device = self.device
@@ -893,136 +950,6 @@ class WorkflowRunner:
                 first_error = r
         if first_error is not None:
             raise first_error
-
-    async def process_node_with_inputs(
-        self, context: ProcessingContext, node: BaseNode, inputs: dict[str, Any]
-    ):
-        """
-        Processes a regular `BaseNode` (i.e., not an `OutputNode`)
-        with its resolved inputs.
-
-        This method handles the core execution lifecycle for a standard node:
-        1. Assigns input values to the node's properties.
-        2. Calls `node.pre_process(context)`.
-        3. Checks for cached results if `node.is_cacheable()`.
-        4. Determines if GPU is required (`node.requires_gpu()`).
-        5. Caches the result if `node.is_cacheable()`.
-        6. Sends a "completed" `NodeUpdate` with the result.
-        7. Calls `self.send_messages` to propagate the result to downstream nodes.
-
-        Args:
-            context (ProcessingContext): The processing context.
-            node (BaseNode): The node to process.
-            inputs (dict[str, Any]): The input values for the node, keyed by input slot names.
-
-        Raises:
-            ValueError: If there's an error assigning an input property to the node.
-            RuntimeError: If the node requires GPU but no GPU is available on the runner.
-            Exception: Any other exception from the node's processing methods, which is
-                       logged and re-raised after posting a `NodeUpdate` with error status.
-        """
-        log.debug(
-            f"process_node_with_inputs called for node: {node.get_title()} ({node._id}), inputs: {list(inputs.keys())}"
-        )
-
-        # Assign input values to node properties
-        for name, value in inputs.items():
-            try:
-                error = node.assign_property(name, value)
-                if error:
-                    log.error(
-                        f"Error assigning property {name} to node {node.id}: {error}"
-                    )
-            except Exception as e:
-                log.error(f"Error assigning property {name} to node {node.id}")
-                raise ValueError(f"Error assigning property {name}: {str(e)}")
-
-        # Preprocess the node
-        log.debug(f"Pre-processing node: {node.get_title()} ({node._id})")
-        await node.pre_process(context)
-
-        # Check if the node is cacheable
-        if node.is_cacheable() and not self.disable_caching:
-            log.debug(f"Checking cache for node: {node.get_title()} ({node._id})")
-            cached_result = context.get_cached_result(node)
-        else:
-            cached_result = None
-
-        if cached_result is not None:
-            log.info(f"Using cached result for node: {node.get_title()} ({node._id})")
-            result = cached_result
-        else:
-            # Determine if the node requires GPU processing
-            requires_gpu = node.requires_gpu()
-
-            # Dynamic streaming: if upstream is streaming, treat this node as stream-driven
-            # and avoid caching side-effects during the run path.
-            driven_by_stream = context.graph.has_streaming_upstream(node._id)
-
-            if requires_gpu and self.device == "cpu":
-                error_msg = f"Node {node.get_title()} ({node._id}) requires a GPU, but no GPU is available."
-                log.error(error_msg)
-                raise RuntimeError(error_msg)
-
-            await node.send_update(
-                context,
-                "running",
-                result=None,
-            )
-
-            # Prepare unified I/O wrappers
-            inbox = self.node_inboxes.get(node._id)
-            from nodetool.workflows.io import NodeInputs, NodeOutputs
-
-            outputs_collector = NodeOutputs(self, node, context, capture_only=True)
-            node_inputs = NodeInputs(inbox) if inbox is not None else None
-
-            if requires_gpu and self.device != "cpu":
-                await acquire_gpu_lock(node, context)
-                try:
-                    self.log_vram_usage(
-                        f"Node {node.get_title()} ({node._id}) VRAM before GPU processing"
-                    )
-                    await node.preload_model(context)
-                    self.log_vram_usage(
-                        f"Node {node.get_title()} ({node._id}) VRAM after preload_model"
-                    )
-                    await node.move_to_device(self.device)
-                    self.log_vram_usage(
-                        f"Node {node.get_title()} ({node._id}) VRAM after move to {self.device}"
-                    )
-
-                    await node.run(context, node_inputs, outputs_collector)  # type: ignore[arg-type]
-                    self.log_vram_usage(
-                        f"Node {node.get_title()} ({node._id}) VRAM after run completion"
-                    )
-                finally:
-                    await node.move_to_device("cpu")
-                    self.log_vram_usage(
-                        f"Node {node.get_title()} ({node._id}) VRAM after move to cpu"
-                    )
-                    release_gpu_lock()
-            else:
-                await node.preload_model(context)
-                await node.run(context, node_inputs, outputs_collector)  # type: ignore[arg-type]
-
-            result = outputs_collector.collected()
-
-            # Cache the result if the node is cacheable
-            if (
-                node.is_cacheable()
-                and not self.disable_caching
-                and not driven_by_stream
-            ):
-                log.debug(f"Caching result for node: {node.get_title()} ({node._id})")
-                context.cache_result(node, result)
-
-        # Send completion update and route collected outputs downstream
-        await node.send_update(context, "completed", result=result)
-        self.send_messages(node, result, context)
-        # log.info(
-        #     f"{node.get_title()} ({node._id}) processing time: {datetime.now() - started_at}"
-        # )
 
     def log_vram_usage(self, message=""):
         """

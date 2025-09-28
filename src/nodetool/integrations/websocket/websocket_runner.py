@@ -90,8 +90,6 @@ async def process_message(context: ProcessingContext, explicit_types: bool = Fal
         if explicit_types and "result" in msg_dict:
             msg_dict["result"] = wrap_primitive_types(msg_dict["result"])
 
-        log.debug(f"Processing workflow message: {msg_dict.get('type', msg_dict)}")
-
         yield msg_dict
 
 
@@ -308,10 +306,8 @@ class WebSocketRunner:
             if self.mode == WebSocketMode.BINARY:
                 packed_message = msgpack.packb(message, use_bin_type=True)
                 await self.websocket.send_bytes(packed_message)  # type: ignore
-                log.debug(f"Sent binary message: {message.get('type', message)}")
             else:
                 await self.websocket.send_text(json.dumps(message))
-                log.debug(f"Sent text message: {message.get('type', message)}")
         except Exception as e:
             log.error(f"Error sending message: {e}")
 
