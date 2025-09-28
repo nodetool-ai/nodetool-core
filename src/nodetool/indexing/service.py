@@ -6,7 +6,9 @@ from __future__ import annotations
 
 from typing import Optional
 
-from nodetool.integrations.vectorstores.chroma.async_chroma_client import get_async_collection
+from nodetool.integrations.vectorstores.chroma.async_chroma_client import (
+    get_async_collection,
+)
 from nodetool.indexing.ingestion import default_ingestion_workflow, find_input_nodes
 from nodetool.metadata.types import Collection, FilePath
 from nodetool.types.job import JobUpdate
@@ -50,7 +52,8 @@ async def index_file_to_collection(
             auth_token=token,
         )
         workflow = await processing_context.get_workflow(workflow_id)
-        req.graph = workflow.graph
+        assert workflow is not None, "Workflow not found"
+        req.graph = workflow.get_api_graph()
         req.params = {}
 
         collection_input, file_input = find_input_nodes(req.graph.model_dump())
