@@ -574,11 +574,9 @@ class WorkflowRunner:
                             raise ValueError(f"No input node found for param: {key}")
                         node = input_nodes[key]
                         # Determine the correct output handle name for this InputNode
-                        try:
-                            outputs = node.outputs_for_instance()
-                            handle_name = outputs[0].name if outputs else "output"
-                        except Exception:
-                            handle_name = "output"
+                        outputs = node.outputs_for_instance()
+                        handle_name = outputs[0].name if outputs else "output"
+
                         # push value on the node's declared output handle; end stream if not streaming
                         self.push_input_value(
                             input_name=getattr(node, "name", key),
@@ -733,7 +731,6 @@ class WorkflowRunner:
         log.info(
             "Validating graph – %d nodes, %d edges", len(graph.nodes), len(graph.edges)
         )
-        log.debug(f"validate_graph called with graph: {graph}")
         is_valid = True
         all_errors = []
 

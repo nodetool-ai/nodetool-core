@@ -4,34 +4,42 @@ This module implements the actor responsible for running a single node in an
 async task. It integrates with ``NodeInbox`` for inputs and the
 ``WorkflowRunner`` for routing outputs.
 
-Overview:
-  - One actor per node: owns the node's lifecycle while running
-  - Message-driven I/O: pulls inputs from ``NodeInbox`` and forwards outputs via
-    ``WorkflowRunner.send_messages``
-  - Streaming-first design: calls ``BaseNode.run``; streaming nodes yield items,
-    non-streaming nodes are invoked once unless the actor fans out per arrival
-  - Failure isolation: reports errors via ``NodeUpdate(status="error")`` and
-    marks downstream EOS
+Planned execution matrix
+========================
 
-Lifecycle:
-  1. Gather initial inputs and assign properties (only valid names)
-  2. Call ``pre_process`` and send a "running" update
-  3. Drive processing: streaming via ``node.run`` with input/output wrappers; or
-     non-streaming via ``process_node_with_inputs`` per arrival (fan-out)
-  4. On completion or error, mark downstream EOS
+To clarify the upcoming refactor, we document how nodes are expected to behave
+depending on their streaming declarations:
 
-Notes:
-  - Ordering: preserves per-handle order; no cross-handle guarantees beyond
-    arrival order
-  - Cancellation: runs in an ``asyncio.Task`` and cooperates with cancellation
-  - Dynamic outputs: supported; undeclared yields raise errors early
+=====================  =====================  ======================================
+ streaming_input flag    streaming_output flag   Actor responsibility
+=====================  =====================  ======================================
+ ``False``               ``False``              Current buffered path: actor gathers
+                                               up to one value per handle (subject
+                                               to ``sync_mode``) and calls
+                                               ``process()`` once.
+ ``False``               ``True``               Planned change: actor still handles
+                                               batching (respecting ``sync_mode``)
+                                               but will invoke ``gen_process``
+                                               **per batch** so streaming outputs
+                                               pair with batched inputs.
+ ``True``                ``False``              Discouraged pattern (node would have
+                                               to drain inbox but only emit once).
+ ``True``                ``True``               Existing streaming behaviour: actor
+                                               calls ``node.run`` once and the node
+                                               drains the inbox on its own using
+                                               ``iter_input``/``iter_any``.
+=====================  =====================  ======================================
+
+Only nodes that explicitly opt into ``is_streaming_input()`` will receive a live
+inbox; everyone else relies on the actor for alignment. This table serves as the
+rationale for the changes that will follow.
 """
 
 from __future__ import annotations
 
 import asyncio
 from nodetool.config.logging_config import get_logger
-from typing import Any
+from typing import Any, Awaitable, Callable
 
 from nodetool.workflows.base_node import BaseNode, OutputNode
 from nodetool.workflows.processing_context import ProcessingContext
@@ -301,46 +309,271 @@ class NodeActor:
         await node.send_update(context, "completed", result=result)
         self.runner.send_messages(node, result, context)
 
-    async def _run_streaming(self) -> None:
-        """Run a node that exposes streaming outputs.
+    async def process_streaming_node_with_inputs(
+        self,
+        inputs: dict[str, Any],
+    ) -> None:
+        """Process a streaming-output node for one aligned batch of inputs.
 
-        Manages initial property assignment, updates, and drives ``node.run``
-        with ``NodeInputs`` and ``NodeOutputs`` wrappers.
+        This mirrors ``process_node_with_inputs`` but keeps ``NodeOutputs`` live so
+        values are routed downstream as they are produced. It assumes the node does
+        **not** consume the inbox itself (``is_streaming_input()`` is False).
         """
+
+        context = self.context
+        node = self.node
+
+        self.logger.debug(
+            "process_streaming_node_with_inputs for %s (%s) with inputs: %s",
+            node.get_title(),
+            node._id,
+            list(inputs.keys()),
+        )
+
+        for name, value in inputs.items():
+            try:
+                error = node.assign_property(name, value)
+                if error:
+                    self.logger.error(
+                        "Error assigning property %s to node %s: %s",
+                        name,
+                        node.id,
+                        error,
+                    )
+            except Exception as exc:
+                self.logger.error(
+                    "Error assigning property %s to node %s", name, node.id
+                )
+                raise ValueError(f"Error assigning property {name}: {exc}") from exc
+
+        await node.pre_process(context)
+
+        safe_properties = [
+            name for name in inputs.keys() if node.find_property(name) is not None
+        ]
+        await node.send_update(context, "running", properties=safe_properties)
+
+        requires_gpu = node.requires_gpu()
+        node_inputs = NodeInputs(self.inbox) if self.inbox is not None else None
+        outputs = NodeOutputs(self.runner, node, context)
+
+        completed_successfully = False
+        try:
+            if requires_gpu and self.runner.device == "cpu":
+                error_msg = (
+                    f"Node {node.get_title()} ({node._id}) requires a GPU,"
+                    " but no GPU is available."
+                )
+                self.logger.error(error_msg)
+                raise RuntimeError(error_msg)
+
+            if requires_gpu and self.runner.device != "cpu":
+                from nodetool.workflows.workflow_runner import (
+                    acquire_gpu_lock,
+                    release_gpu_lock,
+                )
+
+                await acquire_gpu_lock(node, context)
+                try:
+                    self.runner.log_vram_usage(
+                        f"Node {node.get_title()} ({node._id}) VRAM before GPU processing"
+                    )
+                    await node.preload_model(context)
+                    self.runner.log_vram_usage(
+                        f"Node {node.get_title()} ({node._id}) VRAM after preload_model"
+                    )
+                    await node.move_to_device(self.runner.device)
+                    self.runner.log_vram_usage(
+                        f"Node {node.get_title()} ({node._id}) VRAM after move to {self.runner.device}"
+                    )
+
+                    await node.run(context, node_inputs, outputs)  # type: ignore[arg-type]
+                    self.runner.log_vram_usage(
+                        f"Node {node.get_title()} ({node._id}) VRAM after run completion"
+                    )
+                except Exception as e:
+                    self.logger.error(
+                        f"Error running node {node.get_title()} ({node._id}): {e}"
+                    )
+                    context.post_message(
+                        NodeUpdate(
+                            node_id=node.id,
+                            node_name=node.get_title(),
+                            node_type=node.get_node_type(),
+                            status="error",
+                            error=str(e),
+                        )
+                    )
+                    raise
+                finally:
+                    await node.move_to_device("cpu")
+                    self.runner.log_vram_usage(
+                        f"Node {node.get_title()} ({node._id}) VRAM after move to cpu"
+                    )
+                    release_gpu_lock()
+            else:
+                await node.preload_model(context)
+                await node.run(context, node_inputs, outputs)  # type: ignore[arg-type]
+
+            completed_successfully = True
+        finally:
+            if completed_successfully:
+                await node.send_update(
+                    context, "completed", result={"status": "completed"}
+                )
+
+    async def _run_buffered_node(self) -> None:
+        """Legacy buffered node execution (no streaming output)."""
+        await self._run_non_streaming_internal(None)
+
+    async def _run_streaming_output_batched_node(self) -> None:
+        """Streaming-output node without streaming-input: batch inputs respecting sync mode."""
+        await self._run_non_streaming_internal(
+            processor_override=self.process_streaming_node_with_inputs,
+        )
+
+    async def _run_non_streaming_internal(
+        self,
+        processor_override: Callable[[dict[str, Any]], Awaitable[None]] | None,
+    ) -> None:
+        """Run a non-streaming-input node with fan-out per arriving input message."""
         node = self.node
         ctx = self.context
-        self.logger.debug(f"Running streaming node {node.get_title()} ({node._id})")
 
-        # If this node is only fed by non-routable upstreams, skip running
+        self.logger.debug(f"Running batched node {node.get_title()} ({node._id})")
         if self._only_nonroutable_upstreams():
             await self._mark_downstream_eos()
             return
 
-        # Assign initial properties as needed before starting the generator
-        initial_inputs: dict[str, Any] = {}
-        if node.__class__.is_streaming_input():
-            # Do not pre-gather for streaming-input nodes; they consume exclusively via inbox.
-            initial_inputs = {}
+        handles = self._effective_inbound_handles()
+        streaming_output = (
+            node.__class__.is_streaming_output()
+            and not node.__class__.is_streaming_input()
+        )
+        processor = processor_override or (
+            self.process_streaming_node_with_inputs
+            if streaming_output
+            else self.process_node_with_inputs
+        )
+
+        if not handles:
+            await processor({})
         else:
-            # For non-streaming-input nodes, gather one per inbound handle
-            initial_inputs = await self._gather_initial_inputs()
+            handle_streaming: dict[str, bool] = {}
+            for handle in handles:
+                edge = next(
+                    (
+                        e
+                        for e in self.context.graph.edges
+                        if e.target == node._id and e.targetHandle == handle
+                    ),
+                    None,
+                )
+                handle_streaming[handle] = (
+                    self.runner.edge_streams(edge) if edge is not None else False
+                )
 
-        # self.logger.debug(f"Initial inputs: {initial_inputs}")
+            sync_mode = node.get_sync_mode()
 
-        for name, value in initial_inputs.items():
-            node.assign_property(name, value)
+            if sync_mode == "zip_all" and any(handle_streaming.values()):
+                from collections import deque
 
-        # Pre-process and send running update
+                buffers: dict[str, deque[Any]] = {h: deque() for h in handles}
+                sticky_values: dict[str, Any] = {}
+                is_sticky: dict[str, bool] = {
+                    h: not handle_streaming.get(h, False) for h in handles
+                }
+                seen_counts: dict[str, int] = {h: 0 for h in handles}
+
+                def ready_to_zip() -> bool:
+                    for handle in handles:
+                        if is_sticky.get(handle, False):
+                            if handle not in sticky_values and not buffers[handle]:
+                                return False
+                        elif not buffers[handle]:
+                            return False
+                    return True
+
+                async for handle, item in self.inbox.iter_any():
+                    if handle not in buffers:
+                        continue
+
+                    buffers[handle].append(item)
+                    seen_counts[handle] = seen_counts.get(handle, 0) + 1
+
+                    if is_sticky.get(handle, False):
+                        sticky_values[handle] = item
+
+                    while ready_to_zip():
+                        batch: dict[str, Any] = {}
+                        for h in handles:
+                            if is_sticky.get(h, False):
+                                if buffers[h]:
+                                    sticky_values[h] = buffers[h].popleft()
+                                batch[h] = sticky_values[h]
+                                # Restore the sticky value for future batches
+                                if sticky_values[h] is not None:
+                                    buffers[h].appendleft(sticky_values[h])
+                            else:
+                                batch[h] = buffers[h].popleft()
+
+                        await processor(dict(batch))
+
+                        for h in handles:
+                            if is_sticky.get(h, False) and sticky_values.get(h) is None:
+                                sticky_values.pop(h, None)
+            else:
+                current: dict[str, Any] = {}
+                pending_handles: set[str] = set(handles)
+                initial_fired: bool = False
+
+                async for handle, item in self.inbox.iter_any():
+                    if handle not in handles:
+                        continue
+                    current[handle] = item
+                    if not initial_fired:
+                        pending_handles.discard(handle)
+                        if pending_handles:
+                            continue
+                        await processor(dict(current))
+                        initial_fired = True
+                    else:
+                        await processor(dict(current))
+
+                    if not handle_streaming.get(handle, False):
+                        self.inbox.mark_source_done(handle)
+        await node.handle_eos()
+        await self._mark_downstream_eos()
+
+    async def _run_output_node(self) -> None:
+        """Run an OutputNode by forwarding each arriving input to runner outputs.
+
+        Output nodes should capture every incoming value. We iterate over any
+        arriving inputs across all handles in arrival order and call the
+        runner's dedicated `process_output_node` for each item.
+        """
+        node = self.node
+        ctx = self.context
+
+        # If fed only by non-routable upstreams, nothing to capture
+        if self._only_nonroutable_upstreams():
+            await self._mark_downstream_eos()
+            return
+
+        # Drain inputs in arrival order and capture via runner
+        async for handle, item in self.inbox.iter_any():
+            await self.runner.process_output_node(ctx, node, {handle: item})  # type: ignore[arg-type]
+
+        # Upstream completed – mark downstream EOS
+        await self._mark_downstream_eos()
+
+    async def _run_streaming_input_node(self) -> None:
+        node = self.node
+        ctx = self.context
+
+        # Assign initial properties as needed before starting the generator (not pre-gathered)
         await node.pre_process(ctx)
-        # Only include valid property names in the running update (regression expectation)
-        safe_properties = [
-            name
-            for name in initial_inputs.keys()
-            if node.find_property(name) is not None
-        ]
-        await node.send_update(ctx, "running", properties=safe_properties)
-
-        # Apply GPU lifecycle management for streaming nodes (same as non-streaming)
+        await node.send_update(ctx, "running", properties=[])
         requires_gpu = node.requires_gpu()
 
         if requires_gpu and self.runner.device == "cpu":
@@ -348,7 +581,6 @@ class NodeActor:
             self.logger.error(error_msg)
             raise RuntimeError(error_msg)
 
-        # Drive the unified run() method (bridges to gen_process by default)
         try:
             if requires_gpu and self.runner.device != "cpu":
                 from nodetool.workflows.workflow_runner import (
@@ -405,147 +637,6 @@ class NodeActor:
             await node.send_update(ctx, "completed", result={"status": "completed"})
         finally:
             await node.handle_eos()
-            await self._mark_downstream_eos()
-
-    async def _run_non_streaming(self) -> None:
-        """Run a non-streaming node with fan-out per arriving input message."""
-        node = self.node
-        ctx = self.context
-
-        self.logger.debug(f"Running non-streaming node {node.get_title()} ({node._id})")
-        # If this node is only fed by non-routable upstreams, skip running
-        if self._only_nonroutable_upstreams():
-            await self._mark_downstream_eos()
-            return
-        # Fanout for any inbound messages across handles: run once per arriving item.
-        handles = self._effective_inbound_handles()
-        if not handles:
-            # No inbound inputs – single run
-            await self.process_node_with_inputs({})
-        else:
-            # Determine per-handle upstream streaming characteristics
-            handle_streaming: dict[str, bool] = {}
-            for handle in handles:
-                edge = next(
-                    (
-                        e
-                        for e in self.context.graph.edges
-                        if e.target == node._id and e.targetHandle == handle
-                    ),
-                    None,
-                )
-                handle_streaming[handle] = (
-                    self.runner.edge_streams(edge) if edge is not None else False
-                )
-
-            sync_mode = node.get_sync_mode()
-
-            if sync_mode == "zip_all" and any(handle_streaming.values()):
-                # Align across all inbound handles: emit only when we have at least
-                # one value buffered for each handle; consume one from each per call.
-                from collections import deque
-
-                buffers: dict[str, deque[Any]] = {h: deque() for h in handles}
-                sticky_values: dict[str, Any] = {}
-                is_sticky: dict[str, bool] = {
-                    h: not handle_streaming.get(h, False) for h in handles
-                }
-                seen_counts: dict[str, int] = {h: 0 for h in handles}
-
-                def ready_to_zip() -> bool:
-                    for handle in handles:
-                        if is_sticky.get(handle, False):
-                            if handle not in sticky_values and not buffers[handle]:
-                                return False
-                        elif not buffers[handle]:
-                            return False
-                    return True
-
-                async for handle, item in self.inbox.iter_any():
-                    if handle not in buffers:
-                        continue
-
-                    buffers[handle].append(item)
-                    seen_counts[handle] = seen_counts.get(handle, 0) + 1
-
-                    if is_sticky.get(handle, False) and seen_counts[handle] > 1:
-                        is_sticky[handle] = False
-                        sticky_values.pop(handle, None)
-
-                    if is_sticky.get(handle, False):
-                        sticky_values[handle] = item
-                        while len(buffers[handle]) > 1:
-                            buffers[handle].popleft()
-
-                    while ready_to_zip():
-                        batch: dict[str, Any] = {}
-                        for h in handles:
-                            if is_sticky.get(h, False):
-                                if h not in sticky_values and buffers[h]:
-                                    sticky_values[h] = buffers[h].popleft()
-                                batch[h] = sticky_values[h]
-                                buffers[h].clear()
-                            else:
-                                batch[h] = buffers[h].popleft()
-
-                        await self.process_node_with_inputs(batch)
-
-                        for h in list(batch.keys()):
-                            if is_sticky.get(h, False):
-                                self.inbox.mark_source_done(h)
-            else:
-                # Default behavior: wait until all inbound handles have at least one
-                # value available, then fire on any subsequent arrival with the latest
-                # values. This avoids emitting partial results for non-streaming nodes.
-                current: dict[str, Any] = {}
-                pending_handles: set[str] = set(handles)
-                initial_fired: bool = False
-
-                async for handle, item in self.inbox.iter_any():
-                    if handle not in handles:
-                        # Ignore unexpected handles
-                        continue
-                    current[handle] = item
-                    if not initial_fired:
-                        pending_handles.discard(handle)
-                        if pending_handles:
-                            # Not all inputs have arrived yet; keep accumulating
-                            continue
-                        # All initial inputs are available – process once
-                        await self.process_node_with_inputs(dict(current))
-                        initial_fired = True
-                    else:
-                        # After initial evaluation, fire on any subsequent arrival
-                        await self.process_node_with_inputs(dict(current))
-
-                    # If all upstreams for this handle are non-streaming producers,
-                    # they produce at most one item each. Mark one source as done to
-                    # prevent indefinite waiting for EOS in isolated actor tests.
-                    if not handle_streaming.get(handle, False):
-                        self.inbox.mark_source_done(handle)
-        await node.handle_eos()
-        await self._mark_downstream_eos()
-
-    async def _run_output_node(self) -> None:
-        """Run an OutputNode by forwarding each arriving input to runner outputs.
-
-        Output nodes should capture every incoming value. We iterate over any
-        arriving inputs across all handles in arrival order and call the
-        runner's dedicated `process_output_node` for each item.
-        """
-        node = self.node
-        ctx = self.context
-
-        # If fed only by non-routable upstreams, nothing to capture
-        if self._only_nonroutable_upstreams():
-            await self._mark_downstream_eos()
-            return
-
-        # Drain inputs in arrival order and capture via runner
-        async for handle, item in self.inbox.iter_any():
-            await self.runner.process_output_node(ctx, node, {handle: item})  # type: ignore[arg-type]
-
-        # Upstream completed – mark downstream EOS
         await self._mark_downstream_eos()
 
     async def run(self) -> None:
@@ -553,34 +644,19 @@ class NodeActor:
         node = self.node
         ctx = self.context
         try:
-            # Select the appropriate runner coroutine for this node
-            if isinstance(node, OutputNode):
-                run_coro = self._run_output_node()
-            elif node.is_streaming_output() or node.is_streaming_input():
-                run_coro = self._run_streaming()
-            else:
-                run_coro = self._run_non_streaming()
+            streaming_input = node.__class__.is_streaming_input()
+            streaming_output = node.__class__.is_streaming_output()
 
-            timeout = node.get_timeout_seconds() or 0.0
-            if timeout > 0:
-                try:
-                    await asyncio.wait_for(run_coro, timeout=timeout)
-                except asyncio.TimeoutError:
-                    try:
-                        ctx.post_message(
-                            NodeUpdate(
-                                node_id=node.id,
-                                node_name=node.get_title(),
-                                node_type=node.get_node_type(),
-                                status="error",
-                                error=f"Node timed out after {timeout:.2f}s",
-                            )
-                        )
-                    finally:
-                        await self._mark_downstream_eos()
-                    raise
-            else:
-                await run_coro
+            if streaming_input:
+                await self._run_streaming_input_node()
+                return
+
+            if streaming_output:
+                await self._run_streaming_output_batched_node()
+                return
+
+            await self._run_buffered_node()
+
         except asyncio.CancelledError:
             # Ensure downstream EOS is marked on cooperative cancellation
             try:

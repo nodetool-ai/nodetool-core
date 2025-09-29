@@ -45,6 +45,33 @@ Unified Input/Streaming Model
   nodes simple but is best for pure map-like behavior. The recommended pattern
   is the explicit ForEach/Map node for clarity and composition.
 
+Upcoming execution matrix
+-------------------------
+
+The streaming refactor differentiates nodes by their declarations:
+
+=====================  =====================  ======================================
+ `is_streaming_input`   `is_streaming_output`  Expected behaviour for node authors
+=====================  =====================  ======================================
+ ``False``               ``False``              Buffered node. Actor batches (using
+                                               `sync_mode`) and invokes
+                                               `process()` exactly once.
+ ``False``               ``True``               Streaming producer without inbox
+                                               handling. Actor will batch inputs
+                                               (respecting `sync_mode`) and call
+                                               `gen_process` **per batch**.
+ ``True``                ``False``              Discouraged – node would drain inbox
+                                               but emit once. Prefer avoiding this
+                                               combination.
+ ``True``                ``True``               Full streaming node. Actor hands over
+                                               the `NodeInputs` inbox and expects
+                                               the node to iterate it manually via
+                                               `iter_input` / `iter_any`.
+=====================  =====================  ======================================
+
+Only declare `is_streaming_input()` when the node actively reads from the inbox.
+Otherwise leave it `False` so the actor can continue to align inputs for you.
+
 Authoring Guidelines
 --------------------
 - Single-run nodes: implement `process(context)` and use standard fields.
@@ -102,6 +129,7 @@ from nodetool.metadata.types import (
 )
 from nodetool.metadata.typecheck import (
     is_assignable,
+    is_empty,
 )
 from nodetool.metadata.types import (
     OutputSlot,
@@ -736,8 +764,11 @@ class BaseNode(BaseModel):
         python_type = prop.type.get_python_type()
         type_args = prop.type.type_args
 
+        if is_empty(value):
+            return None
+
         if not is_assignable(prop.type, value):
-            return f"[{self.__class__.__name__}] Invalid value for property `{name}`: {type(value)} (expected {prop.type})"
+            return f"[{self.__class__.__name__}] Invalid value for property `{name}`: {type(value)} {value} (expected {prop.type})"
 
         try:
             if prop.type.is_enum_type():

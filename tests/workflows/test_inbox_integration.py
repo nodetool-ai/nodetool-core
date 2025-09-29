@@ -90,9 +90,22 @@ async def test_streaming_producer_to_streaming_consumer():
     ctx = ProcessingContext(user_id="u", auth_token="token")
     runner = WorkflowRunner(job_id="job_stream_in_1")
 
+    routed: list[tuple[str, Any]] = []
+
+    original_send = runner.send_messages
+
+    def capture_send(node, result, context):
+        for key, value in result.items():
+            for edge in context.graph.find_edges(node.id, key):
+                routed.append((edge.targetHandle, value))
+        original_send(node, result, context)
+
+    runner.send_messages = capture_send  # type: ignore
+
     await runner.run(req, ctx)
 
-    assert runner.outputs["sink"] == [
+    sink_values = [value for handle, value in routed if handle == "value"]
+    assert sink_values == [
         "got:0",
         "got:1",
         "got:2",
@@ -183,10 +196,22 @@ async def test_streaming_multi_input_fanin_iter_any():
     ctx = ProcessingContext(user_id="u", auth_token="token")
     runner = WorkflowRunner(job_id="job_stream_in_2")
 
+    routed: list[tuple[str, Any]] = []
+
+    original_send = runner.send_messages
+
+    def capture_send(node, result, context):
+        for key, value in result.items():
+            for edge in context.graph.find_edges(node.id, key):
+                routed.append((edge.targetHandle, value))
+        original_send(node, result, context)
+
+    runner.send_messages = capture_send  # type: ignore
+
     await runner.run(req, ctx)
 
-    # Arrival order interleaves p1 and p2
-    assert runner.outputs["merged"] == ["a:a0", "b:b0", "a:a1", "b:b1"]
+    merged_values = [value for handle, value in routed if handle == "value"]
+    assert merged_values == ["a:a0", "b:b0", "a:a1", "b:b1"]
 
 
 @pytest.mark.asyncio
@@ -227,6 +252,19 @@ async def test_non_streaming_node_unchanged_edge_queue_path():
     ctx = ProcessingContext(user_id="u", auth_token="token")
     runner = WorkflowRunner(job_id="job_stream_in_4")
 
+    routed: list[tuple[str, Any]] = []
+
+    original_send = runner.send_messages
+
+    def capture_send(node, result, context):
+        for key, value in result.items():
+            for edge in context.graph.find_edges(node.id, key):
+                routed.append((edge.targetHandle, value))
+        original_send(node, result, context)
+
+    runner.send_messages = capture_send  # type: ignore
+
     await runner.run(req, ctx)
 
-    assert runner.outputs["sink"] == ["hello"]
+    sink_values = [value for handle, value in routed if handle == "value"]
+    assert sink_values == ["hello"]

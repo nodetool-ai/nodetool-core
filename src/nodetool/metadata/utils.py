@@ -59,9 +59,11 @@ def is_optional_type(t):
     Returns:
         True if the type is an optional type, False otherwise.
     """
-    return (
-        get_origin(t) is Union and len(get_args(t)) == 2 and type(None) in get_args(t)
-    )
+    if not is_union_type(t):
+        return False
+
+    args = get_args(t)
+    return len(args) == 2 and type(None) in args
 
 
 def is_enum_type(t):
@@ -87,7 +89,8 @@ def is_union_type(t):
     Returns:
         True if the type is a union, False otherwise.
     """
-    return get_origin(t) is Union or isinstance(t, UnionType)
+    origin = get_origin(t)
+    return origin in {Union, UnionType} or isinstance(t, UnionType)
 
 
 def is_list_type(t):
@@ -129,23 +132,6 @@ def is_dict_type(t):
         True if the type is a dictionary, False otherwise.
     """
     return t is dict or get_origin(t) is dict
-
-
-def is_number_type(t):
-    """
-    Check if a type is a number.
-
-    Args:
-        t: The type to check.
-
-    Returns:
-        True if the type is a number, False otherwise.
-    """
-    from nodetool.metadata.types import NPArray
-
-    return is_union_type(t) and all(
-        [arg in [int, float, NPArray] for arg in get_args(t)]
-    )
 
 
 def is_class(obj: Any) -> bool:

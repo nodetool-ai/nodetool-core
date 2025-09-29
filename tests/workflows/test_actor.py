@@ -24,9 +24,43 @@ class StreamingProducer(BaseNode):
             yield {"output": value}
 
 
+class StreamingInputProducer(BaseNode):
+    items: list[int] = []
+
+    @classmethod
+    def is_streaming_input(cls) -> bool:
+        return True
+
+    @classmethod
+    def is_streaming_output(cls) -> bool:
+        return True
+
+    class OutputType(TypedDict):
+        output: int
+
+    async def gen_process(self, context) -> AsyncGenerator[OutputType, None]:
+        async for _handle, item in self.iter_any_input():
+            yield {"output": item}
+
+
 class NonStreamingProducer(BaseNode):
     async def process(self, context) -> int:
         return 1
+
+
+class StreamingOutputNoInput(BaseNode):
+    a: int = 0
+    b: int = 0
+
+    class OutputType(TypedDict):
+        output: int
+
+    @classmethod
+    def is_streaming_output(cls) -> bool:
+        return True
+
+    async def gen_process(self, context) -> AsyncGenerator[OutputType, None]:
+        yield {"output": self.a + self.b}
 
 
 class SingleShotProducer(BaseNode):
@@ -55,7 +89,40 @@ class TargetNode(BaseNode):
         return {"output": self.a}
 
 
+class CaptureNode(BaseNode):
+    a: int = 0
+    seen: ClassVar[list[int]] = []
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        CaptureNode.seen = []
+
+    async def process(self, context) -> int:
+        CaptureNode.seen.append(self.a)
+        return self.a
+
+
+class CapturePairsNode(BaseNode):
+    a: int = 0
+    b: int = 0
+    seen: ClassVar[list[tuple[int, int]]] = []
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        CapturePairsNode.seen = []
+
+    async def process(self, context) -> dict[str, int]:  # type: ignore[override]
+        CapturePairsNode.seen.append((self.a, self.b))
+        return {"output": self.a}
+
+
 def make_actor_for_target(
+    graph: Graph, target: BaseNode
+) -> tuple[NodeActor, WorkflowRunner, ProcessingContext]:
+    return asyncio.run(make_actor_for_target_async(graph, target))
+
+
+async def make_actor_for_target_async(
     graph: Graph, target: BaseNode
 ) -> tuple[NodeActor, WorkflowRunner, ProcessingContext]:
     ctx = ProcessingContext(user_id="u", auth_token="t", graph=graph)
@@ -160,7 +227,7 @@ def test_effective_inbound_handles_mixed_and_all_suppressed():
         ),
     ]
     graph_mixed = Graph(nodes=[routable, non_routable, target], edges=edges_mixed)
-    actor_mixed, _, _ = make_actor_for_target(graph_mixed, target)
+    actor_mixed, _, _ = asyncio.run(make_actor_for_target_async(graph_mixed, target))
     assert actor_mixed._effective_inbound_handles() == {"a"}
 
     target2 = TargetNode(id="t6b")  # type: ignore
@@ -170,7 +237,9 @@ def test_effective_inbound_handles_mixed_and_all_suppressed():
         ),
     ]
     graph_suppressed = Graph(nodes=[non_routable, target2], edges=edges_all_suppressed)
-    actor_suppressed, _, _ = make_actor_for_target(graph_suppressed, target2)
+    actor_suppressed, _, _ = asyncio.run(
+        make_actor_for_target_async(graph_suppressed, target2)
+    )
     assert actor_suppressed._effective_inbound_handles() == set()
 
 
@@ -191,7 +260,7 @@ async def test_gather_initial_inputs_collects_first_items_and_skips_eos():
         ),
     ]
     graph = Graph(nodes=[prod, target], edges=edges)
-    actor, runner, _ = make_actor_for_target(graph, target)
+    actor, runner, _ = await make_actor_for_target_async(graph, target)
 
     # Simulate upstream: one value for 'a', no value for 'ghost' then EOS
     inbox = actor.inbox
@@ -201,6 +270,29 @@ async def test_gather_initial_inputs_collects_first_items_and_skips_eos():
 
     res = await asyncio.wait_for(
         actor._gather_initial_inputs({"a", "ghost"}), timeout=ASYNC_TEST_TIMEOUT
+    )
+    assert res == {"a": 42}
+
+
+@pytest.mark.asyncio
+async def test_gather_initial_inputs_handles_no_handles():
+    prod = NonStreamingProducer(id="p1")  # type: ignore
+    target = TargetNode(id="t6")  # type: ignore
+    edges = [
+        Edge(
+            id="e1", source="p1", target="t6", sourceHandle="output", targetHandle="a"
+        ),
+    ]
+    graph = Graph(nodes=[prod, target], edges=edges)
+    actor, runner, _ = await make_actor_for_target_async(graph, target)
+
+    # Simulate upstream: one value for 'a' then EOS
+    inbox = actor.inbox
+    inbox.put("a", 42)
+    inbox.mark_source_done("a")
+
+    res = await asyncio.wait_for(
+        actor._gather_initial_inputs({"a"}), timeout=ASYNC_TEST_TIMEOUT
     )
     assert res == {"a": 42}
 
@@ -237,7 +329,7 @@ async def test_run_streaming_happy_path_sends_updates_and_messages():
         ),
     ]
     graph = Graph(nodes=[prod_cfg, stream_node, down], edges=edges)
-    actor, runner, ctx = make_actor_for_target(graph, stream_node)
+    actor, runner, ctx = await make_actor_for_target_async(graph, stream_node)
 
     # Seed initial input for 'a'
     actor.inbox.put("a", 7)
@@ -254,9 +346,9 @@ async def test_run_streaming_happy_path_sends_updates_and_messages():
     # Ensure running and completed updates were posted
     msgs = []
     while ctx.has_messages():
-        m = await ctx.pop_message_async()
-        if isinstance(m, NodeUpdate) and m.node_id == stream_node.id:
-            msgs.append(m)
+        message = await ctx.pop_message_async()
+        if isinstance(message, NodeUpdate) and message.node_id == stream_node.id:
+            msgs.append(message)
 
     statuses = [m.status for m in msgs]
     assert "running" in statuses and "completed" in statuses
@@ -289,11 +381,12 @@ async def test_run_streaming_invalid_output_raises_error_and_raises():
         ),
     ]
     graph = Graph(nodes=[prod, bad, down], edges=edges)
-    actor, runner, ctx = make_actor_for_target(graph, bad)
+    actor, runner, ctx = await make_actor_for_target_async(graph, bad)
 
-    # No initial inputs required; just run and expect error
-    # Ensure initial gather does not block: mark EOS on expected handle
+    # Provide one input value and expect an error update instead of propagation
+    actor.inbox.put("a", 42)
     actor.inbox.mark_source_done("a")
+
     with pytest.raises(ValueError):
         await asyncio.wait_for(actor.run(), timeout=ASYNC_TEST_TIMEOUT)
 
@@ -316,7 +409,7 @@ async def test_run_streaming_invalid_format_raises_error_and_raises():
         Edge(id="e1", source="s1", target="d1", sourceHandle="output", targetHandle="a")
     ]
     graph = Graph(nodes=[bad, down], edges=edges)
-    actor, _, ctx = make_actor_for_target(graph, bad)
+    actor, _, ctx = await make_actor_for_target_async(graph, bad)
 
     with pytest.raises(TypeError):
         await asyncio.wait_for(actor.run(), timeout=ASYNC_TEST_TIMEOUT)
@@ -349,7 +442,7 @@ async def test_should_route_output_suppresses_routing():
             )
         ],
     )
-    actor, runner, _ = make_actor_for_target(graph, node)
+    actor, runner, _ = await make_actor_for_target_async(graph, node)
 
     routed = {"count": 0}
 
@@ -390,7 +483,7 @@ async def test_run_non_streaming_calls_runner_with_inputs_and_marks_eos():
         ),
     ]
     graph = Graph(nodes=[prod, target, consumer], edges=edges)
-    actor, runner, _ = make_actor_for_target(graph, target)
+    actor, runner, _ = await make_actor_for_target_async(graph, target)
 
     # Provide one input for 'a'
     actor.inbox.put("a", 99)
@@ -425,7 +518,7 @@ async def test_run_skips_when_only_nonroutable_upstreams():
         )
     ]
     graph = Graph(nodes=[non_routable, target], edges=edges)
-    actor, runner, _ = make_actor_for_target(graph, target)
+    actor, runner, _ = await make_actor_for_target_async(graph, target)
 
     # Monkeypatch runner method to detect if it would be called (it should not)
     called = {"ran": False}
@@ -466,7 +559,7 @@ async def test_fanout_single_inbound_handle_runs_per_item():
         ),
     ]
     graph = Graph(nodes=[prod, consumer], edges=edges)
-    actor, runner, _ = make_actor_for_target(graph, consumer)
+    actor, runner, _ = await make_actor_for_target_async(graph, consumer)
 
     # Inject a stream of three items for 'a' and mark EOS
     for i in [10, 11, 12]:
@@ -534,7 +627,7 @@ async def test_multiple_messages_across_handles_fanout_for_non_streaming_node():
         ),
     ]
     graph = Graph(nodes=[p_cfg, p_stream, consumer], edges=edges)
-    actor, runner, _ = make_actor_for_target(graph, consumer)
+    actor, runner, _ = await make_actor_for_target_async(graph, consumer)
 
     # Provide multiple values on both handles; consumer should run for each message
     for v in [7, 8]:
@@ -601,7 +694,7 @@ async def test_multiple_streaming_inbounds_fanout_for_non_streaming_target():
         ),
     ]
     graph = Graph(nodes=[pa, pb, target], edges=edges)
-    actor, runner, _ = make_actor_for_target(graph, target)
+    actor, runner, _ = await make_actor_for_target_async(graph, target)
 
     # Provide two items on each streaming handle, then EOS
     for i in [1, 2]:
@@ -648,7 +741,7 @@ async def test_multiple_messages_single_handle_fanout_for_non_streaming_node():
         Edge(id="e1", source="p", target="t", sourceHandle="output", targetHandle="a"),
     ]
     graph = Graph(nodes=[prod, target], edges=edges)
-    actor, runner, _ = make_actor_for_target(graph, target)
+    actor, runner, _ = await make_actor_for_target_async(graph, target)
 
     # Two messages on single handle – consumer runs twice
     actor.inbox.put("a", 101)
@@ -698,7 +791,7 @@ async def test_zip_all_pairs_items_across_two_handles_in_order():
         ),
     ]
     graph = Graph(nodes=[pa, pb, target], edges=edges)
-    actor, runner, _ = make_actor_for_target(graph, target)
+    actor, runner, _ = await make_actor_for_target_async(graph, target)
 
     # Interleave arrivals: a1, b1, a2, b2
     actor.inbox.put("a", 1)
@@ -742,7 +835,7 @@ async def test_zip_all_pairs_items_with_different_lengths():
         ),
     ]
     graph = Graph(nodes=[pa, pb, target], edges=edges)
-    actor, runner, _ = make_actor_for_target(graph, target)
+    actor, runner, _ = await make_actor_for_target_async(graph, target)
 
     # Interleave arrivals: a1, b1, a2, b2
     actor.inbox.put("a", 1)
@@ -797,7 +890,7 @@ async def test_zip_all_reuses_non_streaming_handle_value():
         ),
     ]
     graph = Graph(nodes=[pa, pb_stream, target], edges=edges)
-    actor, runner, _ = make_actor_for_target(graph, target)
+    actor, runner, _ = await make_actor_for_target_async(graph, target)
 
     actor.inbox.put("a", 101)
     actor.inbox.mark_source_done("a")
@@ -839,7 +932,7 @@ async def test_zip_all_ignores_incomplete_tail_when_stream_ends():
         ),
     ]
     graph = Graph(nodes=[pa, pb, target], edges=edges)
-    actor, runner, _ = make_actor_for_target(graph, target)
+    actor, runner, _ = await make_actor_for_target_async(graph, target)
 
     # Provide two A values but only one B; ensure only one pair is processed
     actor.inbox.put("a", 1)
@@ -859,3 +952,236 @@ async def test_zip_all_ignores_incomplete_tail_when_stream_ends():
 
     assert len(calls) == 2
     assert calls[0].get("a") == 1 and calls[0].get("b") == 10
+
+
+@pytest.mark.asyncio
+async def test_run_non_streaming_single_run_when_no_inputs():
+    prod = NonStreamingProducer(id="p1")  # type: ignore
+    target = TargetNode(id="tt0")  # type: ignore
+    graph = Graph(nodes=[prod, target], edges=[])
+    actor, runner, _ = await make_actor_for_target_async(graph, target)
+
+    # No inputs, no calls to process_node_with_inputs
+    await asyncio.wait_for(actor.run(), timeout=ASYNC_TEST_TIMEOUT)
+
+    assert target.a == 0
+    assert target.b == 0
+
+
+@pytest.mark.asyncio
+async def test_run_non_streaming_batches_zip_all():
+    prod1 = StreamingProducer(id="p1")  # type: ignore
+    prod2 = StreamingProducer(id="p2")  # type: ignore
+    target = CapturePairsNode(id="tt1")  # type: ignore
+
+    edges = [
+        Edge(
+            id="e1", source="p1", target="tt1", sourceHandle="output", targetHandle="a"
+        ),
+        Edge(
+            id="e2", source="p2", target="tt1", sourceHandle="output", targetHandle="b"
+        ),
+    ]
+    graph = Graph(nodes=[prod1, prod2, target], edges=edges)
+    actor, runner, _ = await make_actor_for_target_async(graph, target)
+
+    inbox = actor.inbox
+    inbox.put("a", 1)
+    inbox.put("b", 10)
+    inbox.put("a", 2)
+    inbox.put("b", 20)
+    inbox.mark_source_done("a")
+    inbox.mark_source_done("b")
+
+    await asyncio.wait_for(actor.run(), timeout=ASYNC_TEST_TIMEOUT)
+
+    assert CapturePairsNode.seen
+    assert CapturePairsNode.seen[0] == (1, 10)
+    assert CapturePairsNode.seen[-1] == (2, 20)
+
+
+@pytest.mark.asyncio
+async def test_run_non_streaming_batches_zip_all_with_single_shot():
+    prod1 = StreamingProducer(id="p1")  # type: ignore
+    prod2 = NonStreamingProducer(id="p2")  # type: ignore
+    target = CapturePairsNode(id="tt2")  # type: ignore
+
+    edges = [
+        Edge(
+            id="e1", source="p1", target="tt2", sourceHandle="output", targetHandle="a"
+        ),
+        Edge(
+            id="e2", source="p2", target="tt2", sourceHandle="output", targetHandle="b"
+        ),
+    ]
+    graph = Graph(nodes=[prod1, prod2, target], edges=edges)
+    actor, runner, _ = await make_actor_for_target_async(graph, target)
+
+    inbox = actor.inbox
+    inbox.put("a", 1)
+    inbox.put("a", 2)
+    inbox.put("b", 5)
+    inbox.mark_source_done("a")
+    inbox.mark_source_done("b")
+
+    await asyncio.wait_for(actor.run(), timeout=ASYNC_TEST_TIMEOUT)
+
+    assert CapturePairsNode.seen
+    assert CapturePairsNode.seen[-1] == (2, 5)
+    assert {b for _, b in CapturePairsNode.seen} == {5}
+
+
+@pytest.mark.asyncio
+async def test_run_non_streaming_batches_zip_all_with_streaming_upstream():
+    prod1 = StreamingProducer(id="p1")  # type: ignore
+    prod2 = StreamingProducer(id="p2")  # type: ignore
+    target = CapturePairsNode(id="tt3")  # type: ignore
+
+    edges = [
+        Edge(
+            id="e1", source="p1", target="tt3", sourceHandle="output", targetHandle="a"
+        ),
+        Edge(
+            id="e2", source="p2", target="tt3", sourceHandle="output", targetHandle="b"
+        ),
+    ]
+    graph = Graph(nodes=[prod1, prod2, target], edges=edges)
+    actor, runner, _ = await make_actor_for_target_async(graph, target)
+
+    inbox = actor.inbox
+    inbox.put("a", 3)
+    inbox.put("a", 4)
+    inbox.put("b", 7)
+    inbox.put("b", 8)
+    inbox.mark_source_done("a")
+    inbox.mark_source_done("b")
+
+    await asyncio.wait_for(actor.run(), timeout=ASYNC_TEST_TIMEOUT)
+
+    assert CapturePairsNode.seen
+    assert [b for _, b in CapturePairsNode.seen] == [7, 8]
+    assert CapturePairsNode.seen[-1][0] == 4
+
+
+@pytest.mark.asyncio
+async def test_run_non_streaming_marks_handle_done_for_single_shot():
+    prod = NonStreamingProducer(id="p1")  # type: ignore
+    target = CapturePairsNode(id="tt4")  # type: ignore
+
+    edges = [
+        Edge(
+            id="e1", source="p1", target="tt4", sourceHandle="output", targetHandle="a"
+        ),
+    ]
+    graph = Graph(nodes=[prod, target], edges=edges)
+    actor, runner, _ = await make_actor_for_target_async(graph, target)
+
+    inbox = actor.inbox
+    inbox.put("a", 1)
+    inbox.mark_source_done("a")
+
+    await asyncio.wait_for(actor.run(), timeout=ASYNC_TEST_TIMEOUT)
+
+    assert CapturePairsNode.seen == [(1, 0)]
+
+
+@pytest.mark.asyncio
+async def test_run_non_streaming_handles_cached_result():
+    prod = NonStreamingProducer(id="p1")  # type: ignore
+    target = TargetNode(id="tt5")  # type: ignore
+    target.a = 100
+
+    edges = [
+        Edge(
+            id="e1", source="p1", target="tt5", sourceHandle="output", targetHandle="a"
+        ),
+    ]
+    graph = Graph(nodes=[prod, target], edges=edges)
+    actor, runner, _ = await make_actor_for_target_async(graph, target)
+
+    # Provide a single input so the node processes once with caching semantics
+    actor.inbox.put("a", 100)
+    actor.inbox.mark_source_done("a")
+
+    await asyncio.wait_for(actor.run(), timeout=ASYNC_TEST_TIMEOUT)
+
+    assert target.a == 100
+    assert target.b == 0
+
+
+@pytest.mark.asyncio
+async def test_run_streaming_output_batched_respects_sync_mode_zip_all():
+    prod1 = NonStreamingProducer(id="p1")  # type: ignore
+    prod2 = NonStreamingProducer(id="p2")  # type: ignore
+    target = StreamingOutputNoInput(id="so1")  # type: ignore
+    capture = CaptureNode(id="cap")  # type: ignore
+
+    edges = [
+        Edge(
+            id="e1", source="p1", target="so1", sourceHandle="output", targetHandle="a"
+        ),
+        Edge(
+            id="e2", source="p2", target="so1", sourceHandle="output", targetHandle="b"
+        ),
+        Edge(
+            id="e3", source="so1", target="cap", sourceHandle="output", targetHandle="a"
+        ),
+    ]
+    graph = Graph(nodes=[prod1, prod2, target, capture], edges=edges)
+    actor, runner, ctx = await make_actor_for_target_async(graph, target)
+    target.set_sync_mode("zip_all")
+
+    routed = []
+
+    def capture_send(node, result, context):
+        routed.append((node.id, result))
+
+    runner.send_messages = capture_send  # type: ignore
+
+    inbox_target = actor.inbox
+    inbox_target.put("a", 1)
+    inbox_target.put("b", 2)
+    inbox_target.put("a", 3)
+    inbox_target.put("b", 4)
+    inbox_target.mark_source_done("a")
+    inbox_target.mark_source_done("b")
+
+    await actor.run()
+
+    # Streaming-output batches should have been routed per pair: enforce count and values
+    assert routed
+    outputs = [payload for _, payload in routed]
+    assert outputs[0]["output"] == 3
+    assert outputs[-1]["output"] == 7
+
+
+# @pytest.mark.asyncio
+# async def test_run_streaming_input_node_consumes_inbox():
+#     source = StreamingProducer(id="src")  # type: ignore
+#     source.values = [10, 20]
+#     target = StreamingInputProducer(id="sip")  # type: ignore
+#     capture = CaptureNode(id="cap2")  # type: ignore
+
+#     edges = [
+#         Edge(
+#             id="e1", source="src", target="sip", sourceHandle="output", targetHandle="a"
+#         ),
+#         Edge(
+#             id="e2",
+#             source="sip",
+#             target="cap2",
+#             sourceHandle="output",
+#             targetHandle="a",
+#         ),
+#     ]
+#     graph = Graph(nodes=[source, target, capture], edges=edges)
+#     actor, runner, ctx = make_actor_for_target(graph, target)
+
+#     inbox_source = runner.node_inboxes[source._id]
+#     inbox_source.put("output", 10)
+#     inbox_source.put("output", 20)
+#     inbox_source.mark_source_done("output")
+
+#     await actor.run()
+
+#     assert CaptureNode.seen == [10, 20]

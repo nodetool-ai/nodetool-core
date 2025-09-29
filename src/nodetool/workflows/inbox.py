@@ -3,6 +3,16 @@
 This module provides the ``NodeInbox`` primitive used by the workflow runner to
 deliver input values to nodes that opt into input streaming.
 
+Context for upcoming streaming refactor
+=======================================
+
+Only nodes that return ``True`` from ``is_streaming_input()`` are expected to
+drain the inbox manually via ``iter_input`` / ``iter_any``. Nodes that leave the
+flag at ``False`` will continue to rely on the actor for batching (according to
+``sync_mode``) even if they produce streaming outputs. The inbox API itself does
+not change – the documentation here simply records the planned division of
+responsibilities so future edits remain consistent.
+
 Features:
   - Per-handle FIFO buffers
   - Global arrival queue for cross-handle arrival order
@@ -23,6 +33,9 @@ from typing import Any, AsyncIterator
 from nodetool.config.logging_config import get_logger
 
 
+log = get_logger(__name__)
+
+
 class NodeInbox:
     """Per-node input inbox with per-handle buffers and EOS tracking.
 
@@ -41,15 +54,9 @@ class NodeInbox:
         # Condition to coordinate producers/consumers
         self._cond: asyncio.Condition = asyncio.Condition()
         # Event loop where this inbox/condition were created (runner loop)
-        try:
-            self._loop = asyncio.get_running_loop()
-        except RuntimeError:
-            self._loop = None
+        self._loop = asyncio.get_running_loop()
         self._closed: bool = False
-        try:
-            self._log = get_logger(__name__)
-        except Exception:
-            self._log = None
+        assert self._loop is not None, "Event loop is not running"
 
     def add_upstream(self, handle: str, count: int = 1) -> None:
         """Declare upstream producers for a given handle.
@@ -76,13 +83,9 @@ class NodeInbox:
         self._buffers.setdefault(handle, deque()).append(item)
         # Record arrival for multiplexed consumption preserving cross-handle order
         self._arrival.append(handle)
-        try:
-            if self._log:
-                self._log.debug(
-                    f"Inbox[{id(self)}] put: handle={handle} size={len(self._buffers.get(handle, []))}"
-                )
-        except Exception:
-            pass
+        # log.debug(
+        #     f"Inbox[{id(self)}] put: handle={handle} size={len(self._buffers.get(handle, []))}"
+        # )
 
         # Notify waiters on the inbox's owning loop (runner loop) if available
         async def _notify() -> None:
@@ -106,23 +109,15 @@ class NodeInbox:
         if new_val < 0:
             new_val = 0
         self._open_counts[handle] = new_val
-        try:
-            if self._log:
-                self._log.debug(
-                    f"Inbox[{id(self)}] eos: handle={handle} open={self._open_counts.get(handle,0)}"
-                )
-        except Exception:
-            pass
+        # log.debug(
+        #     f"Inbox[{id(self)}] eos: handle={handle} open={self._open_counts.get(handle,0)}"
+        # )
 
         async def _notify() -> None:
             async with self._cond:
                 self._cond.notify_all()
 
-        if self._loop is not None:
-            try:
-                self._loop.call_soon_threadsafe(lambda: asyncio.create_task(_notify()))
-            except Exception:
-                pass
+        self._loop.call_soon_threadsafe(lambda: asyncio.create_task(_notify()))
 
     def has_any(self) -> bool:
         """Return True if any handle currently has buffered items.

@@ -1,7 +1,12 @@
 from typing import Any, Optional
 import time
+import weakref
+
+from nodetool.config.logging_config import get_logger
 
 from .abstract_node_cache import AbstractNodeCache
+
+log = get_logger(__name__)
 
 
 class MemoryUriCache(AbstractNodeCache):
@@ -13,7 +18,7 @@ class MemoryUriCache(AbstractNodeCache):
     - Values can be arbitrary Python objects (e.g., PIL.Image, bytes, numpy arrays)
     """
 
-    def __init__(self, default_ttl: int = 3600):
+    def __init__(self, default_ttl: int = 1800):
         self._cache: dict[str, tuple[Any, float]] = {}
         self._default_ttl = int(default_ttl) if default_ttl and default_ttl > 0 else 300
 
@@ -27,10 +32,13 @@ class MemoryUriCache(AbstractNodeCache):
         # Remove expired entries; avoid modifying dict during iteration
         to_delete: list[str] = []
         now = self._now()
-        for key, (_, expiry) in self._cache.items():
+        log.debug("Cleaning up expired entries: %s", self._cache)
+        for key, (stored_value, expiry) in self._cache.items():
             if now >= expiry:
                 to_delete.append(key)
+                continue
         for key in to_delete:
+            log.debug("Deleting expired entry: %s", key)
             self._cache.pop(key, None)
 
     def get(self, key: str) -> Any:
@@ -39,12 +47,12 @@ class MemoryUriCache(AbstractNodeCache):
         item = self._cache.get(key)
         if item is None:
             return None
-        value, expiry = item
+        stored_value, expiry = item
         if self._is_expired(expiry):
             # Evict and miss
             self._cache.pop(key, None)
             return None
-        return value
+        return stored_value
 
     def set(self, key: str, value: Any, ttl: Optional[int] = None):
         if not key:
@@ -52,6 +60,7 @@ class MemoryUriCache(AbstractNodeCache):
         # Enforce TTL with default 5 minutes even when ttl is 0/None
         ttl_seconds = self._default_ttl if not ttl or ttl <= 0 else int(ttl)
         expiry_time = self._now() + ttl_seconds
+
         self._cache[key] = (value, expiry_time)
         # Opportunistically clean up to keep memory bounded over time
         self._cleanup_expired()

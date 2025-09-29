@@ -42,10 +42,12 @@ def typecheck(type1: TypeMetadata, type2: TypeMetadata) -> bool:
 
     # Handle union types - check both type1 and type2 cases
     if type1.type == "union" and type2.type == "union":
-        # For union subtyping: type1 is a subtype of type2 if every member of type1 
+        # For union subtyping: type1 is a subtype of type2 if every member of type1
         # is a subtype of at least one member of type2
-        return all(any(typecheck(t1, t2) for t2 in type2.type_args) for t1 in type1.type_args)
-    
+        return all(
+            any(typecheck(t1, t2) for t2 in type2.type_args) for t1 in type1.type_args
+        )
+
     # Handle union types in type2 - type1 is a subtype if it's a subtype of any member
     if type2.type == "union":
         return any(typecheck(type1, t2) for t2 in type2.type_args)
@@ -114,6 +116,11 @@ TYPE_ENUM_TO_ASSET_TYPE = {
 }
 
 
+def is_empty(value: Any) -> bool:
+    """Checks if a value is empty."""
+    return value is None or (isinstance(value, (list, dict)) and len(value) == 0)
+
+
 def is_assignable(type_meta: TypeMetadata, value: Any) -> bool:
     """Checks if a value is assignable to a given type metadata.
 
@@ -178,14 +185,16 @@ def is_assignable(type_meta: TypeMetadata, value: Any) -> bool:
     ):
         return True
     # Handle tensor types (NPArray) - must come before asset type check
-    if (type_meta.type == "tensor" or type_meta.type == "np_array") and python_type == NPArray:
+    if (
+        type_meta.type == "tensor" or type_meta.type == "np_array"
+    ) and python_type == NPArray:
         t = (
             type_meta.type_args[0]
             if len(type_meta.type_args) > 0
             else TypeMetadata(type="any")
         )  # Use TypeMetadata for consistency
         # Convert NPArray to list to check element types
-        data = value.to_list() if hasattr(value, 'to_list') else list(value)
+        data = value.to_list() if hasattr(value, "to_list") else list(value)
         return all(is_assignable(t, v) for v in data)
     # Handle asset types defined in TYPE_ENUM_TO_ASSET_TYPE.
     if type_meta.type in TYPE_ENUM_TO_ASSET_TYPE:
@@ -193,7 +202,7 @@ def is_assignable(type_meta: TypeMetadata, value: Any) -> bool:
         # Special case for file type which maps to text
         if type_meta.type == "file" and type_meta.type not in NameToType:
             python_class = NameToType.get("text")
-        # Special case for tensor which maps to np_array  
+        # Special case for tensor which maps to np_array
         elif type_meta.type == "tensor" and type_meta.type not in NameToType:
             python_class = NameToType.get("np_array", NPArray)
         # Special case for model which maps to model_ref
@@ -201,17 +210,21 @@ def is_assignable(type_meta: TypeMetadata, value: Any) -> bool:
             python_class = NameToType.get("model_ref")
         else:
             python_class = NameToType.get(type_meta.type)
-        
+
         if python_class is None:
             return False
-            
+
         if isinstance(value, dict):
             # Check if the dictionary represents the correct asset type.
             return "type" in value and value["type"] == asset_type
         else:
             # Check if the value is an instance of the expected asset class.
             # Special case for ModelRef which has type "model_ref" but maps to "model"
-            if hasattr(value, 'type') and type_meta.type == "model" and value.type == "model_ref":
+            if (
+                hasattr(value, "type")
+                and type_meta.type == "model"
+                and value.type == "model_ref"
+            ):
                 return isinstance(value, python_class)
             return isinstance(value, python_class)
     # Handle union types.
