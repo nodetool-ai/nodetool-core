@@ -275,9 +275,14 @@ def type_metadata(
             not derive from `BaseType` or is not a recognized compound type).
     """
     # if type is unkonwn, return the type as a string
-    if python_type in TypeToName:
-        return TypeMetadata(type=TypeToName[python_type])
-    elif python_type is Any:
+    try:
+        if python_type in TypeToName:
+            return TypeMetadata(type=TypeToName[python_type])
+    except Exception as e:
+        log.error(f"Error getting type name for {python_type}: {e}")
+        raise ValueError(f"Error getting type name for {python_type}: {e}")
+
+    if python_type is Any:
         return TypeMetadata(type="any")
     elif is_list_type(python_type):
         return TypeMetadata(
@@ -1153,6 +1158,9 @@ class BaseNode(BaseModel):
         """
         return_type = cls.return_type()
 
+        if cls._supports_dynamic_outputs and is_dict_type(return_type):
+            return []
+
         if return_type is None:
             return []
 
@@ -1285,6 +1293,9 @@ class BaseNode(BaseModel):
         }
 
     async def convert_output(self, context: Any, output: Any) -> Any:
+        if self._supports_dynamic_outputs:
+            return output
+
         return_type = self.return_type()
 
         if return_type and (
@@ -1427,9 +1438,10 @@ class BaseNode(BaseModel):
         else:
             # Buffered path: single call to process() and emit converted outputs
             result = await self.process(context)
-            converted = await self.convert_output(context, result)
-            for k, v in converted.items():
-                await outputs.emit(k, v)
+            if result is not None:
+                converted = await self.convert_output(context, result)
+                for k, v in converted.items():
+                    await outputs.emit(k, v)
 
     async def process_with_gpu(self, context: Any, max_retries: int = 3) -> Any:
         """
