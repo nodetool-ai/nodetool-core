@@ -496,7 +496,9 @@ class WorkflowRunner:
 
         assert request.graph is not None, "Graph is required"
 
-        graph = Graph.from_dict(request.graph.model_dump())
+        # Load graph with skip_errors=False to ensure node loading failures are raised
+        # rather than silently dropping nodes
+        graph = Graph.from_dict(request.graph.model_dump(), skip_errors=False)
         log.info(
             "Graph loaded: %d nodes, %d edges",
             len(graph.nodes),
@@ -857,7 +859,6 @@ class WorkflowRunner:
                         status="message_sent",
                     )
                 )
-        log.debug(f"send_messages finished for node: {node.get_title()} ({node.id})")
 
     def _initialize_inboxes(self, context: ProcessingContext, graph: Graph) -> None:
         """Build and attach `NodeInbox` instances for each node based on graph topology."""
