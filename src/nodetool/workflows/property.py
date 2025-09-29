@@ -1,7 +1,7 @@
 from nodetool.metadata.type_metadata import TypeMetadata
 
 import annotated_types
-from pydantic import BaseModel
+from pydantic import BaseModel, field_serializer
 from pydantic.fields import FieldInfo
 
 from typing import Any, Optional
@@ -33,6 +33,34 @@ class Property(BaseModel):
     min: Optional[float] = None
     max: Optional[float] = None
     json_schema_extra: Optional[dict[str, Any]] = None
+
+    @field_serializer("default")
+    def serialize_default(self, value: Any) -> Any:
+        """
+        Serialize the default value, ensuring BaseType instances include their type field.
+
+        Args:
+            value: The default value to serialize
+
+        Returns:
+            The serialized default value
+        """
+        if value is None:
+            return None
+
+        # Import here to avoid circular imports
+        from nodetool.metadata.types import BaseType
+
+        # If it's a BaseType instance, use model_dump to properly serialize it
+        if isinstance(value, BaseType):
+            return value.model_dump()
+
+        # For other BaseModel instances
+        if isinstance(value, BaseModel):
+            return value.model_dump()
+
+        # For other types, return as-is
+        return value
 
     def __repr__(self) -> str:
         """
