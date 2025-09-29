@@ -133,7 +133,7 @@ class NodeOutputs:
         if slot == "" or slot is None:
             slot = "output"
 
-        from .base_node import BaseNode
+        from .base_node import BaseNode, OutputNode
 
         assert isinstance(self.node, BaseNode)
 
@@ -146,6 +146,19 @@ class NodeOutputs:
             )
         # Always collect the last value per slot
         self._collected[slot] = value
+
+        # Capture outputs from OutputNode instances into runner.outputs
+        if isinstance(self.node, OutputNode):
+            node_name = self.node.name
+            if node_name in self.runner.outputs:
+                if (
+                    not self.runner.outputs[node_name]
+                    or self.runner.outputs[node_name][-1] != value
+                ):
+                    self.runner.outputs[node_name].append(value)
+            else:
+                self.runner.outputs[node_name] = [value]
+
         if not self.capture_only:
             self.runner.send_messages(self.node, {slot: value}, self.context)
 
