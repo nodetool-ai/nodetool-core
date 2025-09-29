@@ -1,5 +1,6 @@
 import asyncio
 import queue
+import pytest
 
 from nodetool.workflows.actor import NodeActor
 from nodetool.workflows.base_node import BaseNode
@@ -26,11 +27,14 @@ async def _run_actor_and_catch(actor: NodeActor):
         pass
 
 
-def test_node_timeout_emits_error_and_drains_edges(event_loop):
+@pytest.mark.asyncio
+async def test_node_timeout_emits_error_and_drains_edges():
     # Build graph with one outbound edge from node S -> T
     s_id = "S"
     t_id = "T"
-    edge = Edge(id="eST", source=s_id, sourceHandle="output", target=t_id, targetHandle="in")
+    edge = Edge(
+        id="eST", source=s_id, sourceHandle="output", target=t_id, targetHandle="in"
+    )
     graph = Graph(nodes=[], edges=[edge])
 
     ctx = ProcessingContext(graph=graph, message_queue=queue.Queue())
@@ -48,7 +52,7 @@ def test_node_timeout_emits_error_and_drains_edges(event_loop):
     inbox = NodeInbox()
 
     actor = NodeActor(runner, node, ctx, inbox)  # type: ignore[arg-type]
-    event_loop.run_until_complete(_run_actor_and_catch(actor))
+    await _run_actor_and_catch(actor)
 
     # Collect messages
     msgs = []
@@ -58,5 +62,8 @@ def test_node_timeout_emits_error_and_drains_edges(event_loop):
     statuses = [m.status for m in msgs if isinstance(m, NodeUpdate)]
     assert "error" in statuses  # timeout posted as error
 
-    drained = any(isinstance(m, EdgeUpdate) and m.edge_id == "eST" and m.status == "drained" for m in msgs)
+    drained = any(
+        isinstance(m, EdgeUpdate) and m.edge_id == "eST" and m.status == "drained"
+        for m in msgs
+    )
     assert drained, "Downstream edge should be drained on timeout"
