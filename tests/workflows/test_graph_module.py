@@ -27,6 +27,20 @@ class OutNode(OutputNode):
         return "tests.workflows.test_graph_module.OutNode"
 
 
+class RequiredPropsNode(BaseNode):
+    """Node with required properties for testing allow_missing_properties"""
+
+    required_prop: str  # Required - no default
+    optional_prop: str = "default"  # Optional - has default
+
+    @classmethod
+    def get_node_type(cls) -> str:
+        return "tests.workflows.test_graph_module.RequiredPropsNode"
+
+    async def process(self, context):
+        return f"{self.required_prop}-{self.optional_prop}"
+
+
 def build_graph():
     n1 = InNode(id="1", name="a", value=1)  # type: ignore[call-arg]
     n2 = AddNode(id="2", a=0, b=0)  # type: ignore[call-arg]
@@ -206,3 +220,102 @@ def test_from_dict_mixed_valid_invalid():
     assert graph.find_node("4") is not None
     # Valid edges between resolved nodes are retained: e1 and e3
     assert len(graph.edges) == 2
+
+
+def test_from_dict_allow_missing_properties_true():
+    """Test that allow_missing_properties=True allows missing required properties"""
+    data = {
+        "nodes": [
+            {
+                "id": "1",
+                "type": "tests.workflows.test_graph_module.RequiredPropsNode",
+                "data": {
+                    # Missing required_prop intentionally
+                    "optional_prop": "custom"
+                },
+            }
+        ],
+        "edges": [],
+    }
+    # Should not raise an error with allow_missing_properties=True (default)
+    graph = Graph.from_dict(data, skip_errors=False, allow_missing_properties=True)
+    assert len(graph.nodes) == 1
+
+
+def test_from_dict_allow_missing_properties_false():
+    """Test that allow_missing_properties=False validates required properties"""
+    import pytest
+
+    data = {
+        "nodes": [
+            {
+                "id": "1",
+                "type": "tests.workflows.test_graph_module.RequiredPropsNode",
+                "data": {
+                    # Missing required_prop intentionally
+                    "optional_prop": "custom"
+                },
+            }
+        ],
+        "edges": [],
+    }
+    # Should raise an error with allow_missing_properties=False
+    with pytest.raises(
+        ValueError, match="Required property 'required_prop' is missing"
+    ):
+        Graph.from_dict(data, skip_errors=False, allow_missing_properties=False)
+
+
+def test_from_dict_allow_missing_properties_with_edges():
+    """Test that properties connected via edges are not validated as missing"""
+    data = {
+        "nodes": [
+            {
+                "id": "1",
+                "type": "tests.workflows.test_graph_module.InNode",
+                "data": {"name": "source", "value": "test_value"},
+            },
+            {
+                "id": "2",
+                "type": "tests.workflows.test_graph_module.RequiredPropsNode",
+                "data": {
+                    # Missing required_prop but it will come from an edge
+                    "optional_prop": "custom"
+                },
+            },
+        ],
+        "edges": [
+            {
+                "id": "e1",
+                "source": "1",
+                "sourceHandle": "output",
+                "target": "2",
+                "targetHandle": "required_prop",
+            }
+        ],
+    }
+    # Should not raise even with allow_missing_properties=False
+    # because required_prop is connected via edge
+    graph = Graph.from_dict(data, skip_errors=False, allow_missing_properties=False)
+    assert len(graph.nodes) == 2
+    assert len(graph.edges) == 1
+
+
+def test_from_dict_allow_missing_with_skip_errors():
+    """Test that allow_missing_properties works with skip_errors=True"""
+    data = {
+        "nodes": [
+            {
+                "id": "1",
+                "type": "tests.workflows.test_graph_module.RequiredPropsNode",
+                "data": {
+                    # Missing required_prop intentionally
+                },
+            }
+        ],
+        "edges": [],
+    }
+    # With skip_errors=True, should skip the invalid node
+    graph = Graph.from_dict(data, skip_errors=True, allow_missing_properties=False)
+    # Node should be skipped due to validation error
+    assert len(graph.nodes) == 0
