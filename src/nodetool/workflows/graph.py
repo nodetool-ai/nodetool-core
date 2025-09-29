@@ -1,5 +1,6 @@
 from typing import Any, List, Sequence
 from collections import deque
+import logging
 
 from nodetool.metadata.typecheck import typecheck
 from pydantic import BaseModel, Field
@@ -10,6 +11,8 @@ from nodetool.workflows.base_node import (
     BaseNode,
     OutputNode,
 )
+
+log = logging.getLogger(__name__)
 
 
 class Graph(BaseModel):
@@ -119,6 +122,7 @@ class Graph(BaseModel):
             try:
                 # Filter out properties that have incoming edges
                 node_id = node_data.get("id")
+                node_type = node_data.get("type", "<unknown>")
                 filtered_node_data = node_data.copy()
                 if node_id in properties_with_edges:
                     data = filtered_node_data.get("data", {})
@@ -132,10 +136,29 @@ class Graph(BaseModel):
                 if result is not None and result[0] is not None:
                     valid_nodes.append(result[0])
                     valid_node_ids.add(result[0].id)
+                elif skip_errors:
+                    log.warning(
+                        f"Skipping node {node_id} (type: {node_type}) - failed to instantiate"
+                    )
             except ValueError as e:
                 if not skip_errors:
-                    raise
-                # If skip_errors is True, skip this node
+                    raise ValueError(
+                        f"Failed to load node {node_id} (type: {node_type}): {str(e)}"
+                    ) from e
+                # If skip_errors is True, log and skip this node
+                log.warning(
+                    f"Skipping node {node_id} (type: {node_type}) due to error: {str(e)}"
+                )
+            except Exception as e:
+                if not skip_errors:
+                    raise RuntimeError(
+                        f"Failed to load node {node_id} (type: {node_type}): {str(e)}"
+                    ) from e
+                # If skip_errors is True, log and skip this node
+                log.error(
+                    f"Skipping node {node_id} (type: {node_type}) due to unexpected error: {str(e)}",
+                    exc_info=True,
+                )
 
         # Process edges, filtering out invalid ones
         valid_edges = []
