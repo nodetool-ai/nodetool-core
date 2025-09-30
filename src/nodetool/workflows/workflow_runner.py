@@ -494,6 +494,9 @@ class WorkflowRunner:
 
         Environment.load_settings()
 
+        # Set up shared memory cache for cross-thread access during workflow execution
+        Environment.set_thread_memory_cache(context.memory_uri_cache)
+
         assert request.graph is not None, "Graph is required"
 
         # Load graph with skip_errors=False to ensure node loading failures are raised
@@ -693,6 +696,9 @@ class WorkflowRunner:
 
                 self._torch_support.empty_cuda_cache()
                 log.debug("CUDA cache emptied if available.")
+
+                # Clear the thread memory cache override to prevent cross-workflow leaks
+                Environment.clear_thread_memory_cache()
 
                 # No legacy generator state to clear in actor mode
 

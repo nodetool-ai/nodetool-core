@@ -311,6 +311,19 @@ class Environment(object):
         setattr(cls._tls(), "memory_uri_cache", uri_cache)
 
     @classmethod
+    def set_thread_memory_cache(cls, cache: dict):
+        """Set a specific dictionary to be used as the memory cache for the current thread."""
+        if not hasattr(cls._tls(), "memory_uri_cache_override"):
+            cls._tls().memory_uri_cache_override = {}
+        cls._tls().memory_uri_cache_override = cache
+
+    @classmethod
+    def clear_thread_memory_cache(cls):
+        """Clear the thread-specific memory cache override."""
+        if hasattr(cls._tls(), "memory_uri_cache_override"):
+            delattr(cls._tls(), "memory_uri_cache_override")
+
+    @classmethod
     def get_memory_uri_cache(cls) -> AbstractNodeCache:
         """
         Global cache for objects addressed by URIs.
@@ -318,6 +331,15 @@ class Environment(object):
         - Used for memory:// objects and downloaded http(s) blobs
         - Defaults to a simple in-memory TTL cache (5 minutes)
         """
+        if hasattr(cls._tls(), "memory_uri_cache_override"):
+            # If an override is set for this thread, wrap it in a compatible AbstractNodeCache interface.
+            # This allows ProcessingContext's shared dict to be used wherever
+            # Environment.get_memory_uri_cache() is called.
+            from nodetool.storage.memory_uri_cache import MemoryUriCache
+
+            cache_dict = getattr(cls._tls(), "memory_uri_cache_override")
+            return MemoryUriCache(initial_data=cache_dict, default_ttl=300)
+
         if not hasattr(cls._tls(), "memory_uri_cache"):
             # Lazy import to avoid import cycles
             from nodetool.storage.memory_uri_cache import MemoryUriCache

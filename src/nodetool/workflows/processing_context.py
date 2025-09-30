@@ -152,6 +152,7 @@ class ProcessingContext:
         tool_bridge: Any | None = None,
         ui_tool_names: set[str] | None = None,
         client_tools_manifest: dict[str, dict] | None = None,
+        memory_uri_cache: dict[str, Any] | None = None,
     ):
         self.user_id = user_id or "1"
         self.auth_token = auth_token or "local_token"
@@ -175,6 +176,7 @@ class ProcessingContext:
         self.ui_tool_names = ui_tool_names or set()
         self.client_tools_manifest = client_tools_manifest or {}
         # Use global node_cache for memory:// storage to enable portability
+        self.memory_uri_cache = memory_uri_cache if memory_uri_cache is not None else {}
 
     def _numpy_to_pil_image(self, arr: np.ndarray) -> PIL.Image.Image:
         """Delegate to shared numpy_to_pil_image utility for consistent behavior."""
@@ -186,15 +188,24 @@ class ProcessingContext:
         memory URI cache. Local per-instance memory is avoided for portability
         across processes.
         """
-        return Environment.get_memory_uri_cache().get(key)
+        import threading
+        thread_id = threading.get_ident()
+        value = self.memory_uri_cache.get(key)
+        if value is not None and isinstance(value, tuple) and len(value) == 2:
+            # Extract actual value from (value, expiry) tuple stored by MemoryUriCache
+            value = value[0]
+        log.debug(f"Memory GET '{key}' on thread {thread_id}: {'HIT' if value is not None else 'MISS'}")
+        return value
 
     def _memory_set(self, key: str, value: Any) -> None:
         """
         Store an object under a URI (e.g., memory://<id>) in the global memory
         URI cache.
         """
-        log.info(f"Setting memory URI cache: {key}")
-        Environment.get_memory_uri_cache().set(key, value)
+        import threading
+        thread_id = threading.get_ident()
+        log.info(f"Setting memory URI cache: {key} on thread {thread_id}")
+        self.memory_uri_cache[key] = value
 
     def get_http_client(self):
         if not hasattr(self, "_http_client"):
@@ -261,6 +272,7 @@ class ProcessingContext:
             client_tools_manifest=(
                 self.client_tools_manifest.copy() if self.client_tools_manifest else {}
             ),
+            memory_uri_cache=self.memory_uri_cache,
         )
 
     def get(self, key: str, default: Any = None) -> Any:
