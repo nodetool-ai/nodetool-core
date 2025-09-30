@@ -134,6 +134,7 @@ class WorkflowRunner:
         job_id: str,
         device: str | None = None,
         disable_caching: bool = False,
+        buffer_limit: int | None = 3,
     ):
         """
         Initializes a new WorkflowRunner instance.
@@ -142,6 +143,10 @@ class WorkflowRunner:
             job_id (str): Unique identifier for this workflow execution.
             device (Optional[str]): The specific device ("cpu", "cuda", "mps") to run the workflow on.
                                     If None, it auto-detects based on Torch availability (CUDA, then MPS, then CPU).
+            disable_caching (bool): Whether to disable result caching for cacheable nodes.
+            buffer_limit (Optional[int]): Maximum number of items allowed in each per-handle inbox buffer.
+                                         When a buffer reaches this limit, producers will block until consumers
+                                         drain the buffer, implementing backpressure. None means unlimited.
         """
         self.job_id = job_id
         self.status = "running"
@@ -153,6 +158,7 @@ class WorkflowRunner:
         )  # Track nodes currently in an async task
         self.node_inboxes: dict[str, NodeInbox] = {}
         self.disable_caching = disable_caching
+        self.buffer_limit = buffer_limit
         self._torch_support: BaseTorchSupport = build_torch_support(
             base_delay=BASE_DELAY,
             max_delay=MAX_DELAY,
@@ -356,7 +362,7 @@ class WorkflowRunner:
                     for edge in graph.find_edges(node_id, handle):
                         inbox = self.node_inboxes.get(edge.target)
                         if inbox is not None:
-                            inbox.put(edge.targetHandle, value)
+                            await inbox.put(edge.targetHandle, value)
                             context.post_message(
                                 EdgeUpdate(edge_id=edge.id or "", status="message_sent")
                             )
@@ -829,7 +835,7 @@ class WorkflowRunner:
         log.debug(f"Edges: {graph.edges}")
         log.debug("Graph initialization completed")
 
-    def send_messages(
+    async def send_messages(
         self, node: BaseNode, result: dict[str, Any], context: ProcessingContext
     ):
         """
@@ -860,7 +866,7 @@ class WorkflowRunner:
                 # Deliver to inboxes for streaming-input consumers
                 inbox = self.node_inboxes.get(edge.target)
                 if inbox is not None:
-                    inbox.put(edge.targetHandle, value_to_send)
+                    await inbox.put(edge.targetHandle, value_to_send)
                 context.post_message(
                     EdgeUpdate(
                         edge_id=edge.id or "",
@@ -878,7 +884,7 @@ class WorkflowRunner:
             upstream_counts[key] = upstream_counts.get(key, 0) + 1
 
         for node in graph.nodes:
-            inbox = NodeInbox()
+            inbox = NodeInbox(buffer_limit=self.buffer_limit)
             # Attach per-handle upstream counts
             # Only handles with at least one upstream are registered; others remain implicit
             for (target_id, handle), count in upstream_counts.items():

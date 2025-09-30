@@ -160,7 +160,7 @@ class NodeOutputs:
                 self.runner.outputs[node_name] = [value]
 
         if not self.capture_only:
-            self.runner.send_messages(self.node, {slot: value}, self.context)
+            await self.runner.send_messages(self.node, {slot: value}, self.context)
 
     def complete(self, slot: str) -> None:
         """Mark early end-of-stream for a specific output slot.

@@ -307,7 +307,7 @@ class NodeActor:
                 context.cache_result(node, result)
 
         await node.send_update(context, "completed", result=result)
-        self.runner.send_messages(node, result, context)
+        await self.runner.send_messages(node, result, context)
 
     async def process_streaming_node_with_inputs(
         self,

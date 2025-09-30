@@ -18,11 +18,12 @@ Features:
   - Global arrival queue for cross-handle arrival order
   - Upstream source counting to determine end-of-stream (EOS) per handle
   - Async iteration helpers that block until data arrives or EOS is reached
+  - Configurable backpressure to prevent fast producers from overwhelming consumers
 
 Notes:
   - Everything is a stream; a scalar input is delivered as a one-item stream.
   - ``iter_any()`` preserves cross-handle arrival order and does not align streams.
-  - Backpressure is currently unbounded; policies can be added later.
+  - Backpressure is implemented via a configurable buffer limit per handle.
 """
 
 from __future__ import annotations
@@ -42,9 +43,14 @@ class NodeInbox:
     Methods are safe to call from multiple producer tasks. Consumers use the
     async iterators :meth:`iter_input` and :meth:`iter_any` to receive values
     as they arrive.
+
+    Args:
+        buffer_limit: Maximum number of items allowed in each per-handle buffer.
+                     When a buffer reaches this limit, producers will block until
+                     space becomes available. None means unlimited (default).
     """
 
-    def __init__(self) -> None:
+    def __init__(self, buffer_limit: int | None = None) -> None:
         # Per-handle FIFO buffers
         self._buffers: dict[str, deque[Any]] = {}
         # Number of still-open upstream producers per handle
@@ -56,6 +62,8 @@ class NodeInbox:
         # Event loop where this inbox/condition were created (runner loop)
         self._loop = asyncio.get_running_loop()
         self._closed: bool = False
+        # Buffer limit for backpressure (None = unlimited)
+        self._buffer_limit: int | None = buffer_limit
         assert self._loop is not None, "Event loop is not running"
 
     def add_upstream(self, handle: str, count: int = 1) -> None:
@@ -71,8 +79,11 @@ class NodeInbox:
         # Ensure buffer exists
         self._buffers.setdefault(handle, deque())
 
-    def put(self, handle: str, item: Any) -> None:
+    async def put(self, handle: str, item: Any) -> None:
         """Enqueue an item for a handle and notify any waiters.
+
+        If buffer_limit is set and the handle's buffer is full, this method
+        will block until space becomes available.
 
         Args:
             handle: Input handle name.
@@ -80,6 +91,20 @@ class NodeInbox:
         """
         if self._closed:
             return
+
+        # Wait if buffer is full (backpressure)
+        if self._buffer_limit is not None:
+            async with self._cond:
+                while (
+                    not self._closed
+                    and len(self._buffers.get(handle, [])) >= self._buffer_limit
+                ):
+                    # Block producer until consumer drains the buffer
+                    await self._cond.wait()
+
+        if self._closed:
+            return
+
         self._buffers.setdefault(handle, deque()).append(item)
         # Record arrival for multiplexed consumption preserving cross-handle order
         self._arrival.append(handle)
@@ -87,16 +112,9 @@ class NodeInbox:
         #     f"Inbox[{id(self)}] put: handle={handle} size={len(self._buffers.get(handle, []))}"
         # )
 
-        # Notify waiters on the inbox's owning loop (runner loop) if available
-        async def _notify() -> None:
-            async with self._cond:
-                self._cond.notify_all()
-
-        if self._loop is not None:
-            try:
-                self._loop.call_soon_threadsafe(lambda: asyncio.create_task(_notify()))
-            except Exception:
-                pass
+        # Notify waiters
+        async with self._cond:
+            self._cond.notify_all()
 
     def mark_source_done(self, handle: str) -> None:
         """Mark one upstream source for a handle as completed and notify waiters.
@@ -148,7 +166,11 @@ class NodeInbox:
         while True:
             # Drain any available items without waiting
             while self._buffers[handle]:
-                yield self._buffers[handle].popleft()
+                item = self._buffers[handle].popleft()
+                # Notify producers that space is available (backpressure release)
+                async with self._cond:
+                    self._cond.notify_all()
+                yield item
             # If no producers remain and buffer is empty -> EOS
             if self._closed or self._open_counts.get(handle, 0) == 0:
                 return
@@ -171,7 +193,11 @@ class NodeInbox:
                 handle = self._arrival.popleft()
                 buf = self._buffers.get(handle)
                 if buf:
-                    yield handle, buf.popleft()
+                    item = buf.popleft()
+                    # Notify producers that space is available (backpressure release)
+                    async with self._cond:
+                        self._cond.notify_all()
+                    yield handle, item
                 continue
 
             # Check termination: no arrivals, no buffered items, all sources done
@@ -226,5 +252,20 @@ class NodeInbox:
         handle = self._arrival.popleft()
         buf = self._buffers.get(handle)
         if buf and len(buf) > 0:
-            return handle, buf.popleft()
+            item = buf.popleft()
+            # Notify producers that space is available (backpressure release)
+            # Note: This is synchronous, so we schedule notification without blocking
+            if self._loop is not None:
+                try:
+
+                    async def _notify() -> None:
+                        async with self._cond:
+                            self._cond.notify_all()
+
+                    self._loop.call_soon_threadsafe(
+                        lambda: asyncio.create_task(_notify())
+                    )
+                except Exception:
+                    pass
+            return handle, item
         return None
