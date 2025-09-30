@@ -117,13 +117,13 @@ async def test_workflow_runner_with_buffer_limit():
         nodes=[
             APINode(
                 id="input1",
-                type="nodetool.workflows.base_node.InputNode",
-                data={"name": "input1", "value": 42},
+                type="tests.workflows.test_graph_module.InNode",
+                data={},
             ),
             APINode(
                 id="output1",
-                type="nodetool.workflows.base_node.OutputNode",
-                data={"name": "output1"},
+                type="tests.workflows.test_graph_module.OutNode",
+                data={},
             ),
         ],
         edges=[

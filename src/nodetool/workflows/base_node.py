@@ -583,7 +583,7 @@ class BaseNode(BaseModel):
     def from_dict(
         node: dict[str, Any],
         skip_errors: bool = False,
-        allow_missing_properties: bool = True,
+        allow_undefined_properties: bool = True,
     ) -> tuple[Optional["BaseNode"], list[str]]:
         """
         Create a Node object from a dictionary representation.
@@ -592,8 +592,9 @@ class BaseNode(BaseModel):
             node (dict[str, Any]): The dictionary representing the Node.
             skip_errors (bool): If True, property assignment errors are collected and returned,
                                 not logged directly or raised immediately.
-            allow_missing_properties (bool): If True, properties without defaults can be missing from the data.
-                                           If False, missing required properties will cause validation errors.
+            allow_undefined_properties (bool): If True, properties that are not defined in the node class are ignored.
+                                              This is used for backward compatibility to skip deprecated properties.
+                                              If False, undefined properties will cause validation errors.
 
         Returns:
             tuple[BaseNode, list[str]]: The created Node object and a list of property assignment error messages.
@@ -631,7 +632,7 @@ class BaseNode(BaseModel):
         property_errors = n.set_node_properties(
             data,
             skip_errors=skip_errors,
-            allow_missing_properties=allow_missing_properties,
+            allow_undefined_properties=allow_undefined_properties,
         )
         return n, property_errors
 
@@ -752,7 +753,7 @@ class BaseNode(BaseModel):
             return {}
 
     def assign_property(
-        self, name: str, value: Any, allow_missing_properties: bool = True
+        self, name: str, value: Any, allow_undefined_properties: bool = True
     ):
         """
         Assign a value to a node property, performing type checking and conversion.
@@ -762,7 +763,8 @@ class BaseNode(BaseModel):
         Args:
             name (str): The name of the property to assign.
             value (Any): The value to assign to the property.
-            allow_missing_properties (bool): If True, allows non-existing properties
+            allow_undefined_properties (bool): If True, allows properties not defined in the node class.
+                                              Used for backward compatibility to ignore deprecated properties.
 
         Returns:
             Optional[str]: An error message string if assignment fails, None otherwise.
@@ -777,7 +779,7 @@ class BaseNode(BaseModel):
                 self._dynamic_properties[name] = value
                 return None
             else:
-                if allow_missing_properties:
+                if allow_undefined_properties:
                     return None
                 else:
                     return f"[{self.__class__.__name__}] Property {name} does not exist"
@@ -857,7 +859,7 @@ class BaseNode(BaseModel):
         self,
         properties: dict[str, Any],
         skip_errors: bool = False,
-        allow_missing_properties: bool = True,
+        allow_undefined_properties: bool = True,
     ) -> list[str]:
         """
         Set multiple node properties at once.
@@ -866,8 +868,9 @@ class BaseNode(BaseModel):
             properties (dict[str, Any]): A dictionary of property names and their values.
             skip_errors (bool, optional): If True, continue setting properties even if an error occurs.
                                         If False, an error is raised on the first property assignment failure.
-            allow_missing_properties (bool, optional): If True, properties without defaults can be missing.
-                                                     If False, missing required properties cause validation errors.
+            allow_undefined_properties (bool, optional): If True, properties not defined in the node class are ignored.
+                                                        Used for backward compatibility to skip deprecated properties.
+                                                        If False, undefined properties cause validation errors.
 
         Returns:
             list[str]: A list of error messages encountered during property assignment.
@@ -882,7 +885,7 @@ class BaseNode(BaseModel):
 
         # Then set the provided properties
         for name, value in properties.items():
-            error_msg = self.assign_property(name, value, allow_missing_properties)
+            error_msg = self.assign_property(name, value, allow_undefined_properties)
             if error_msg:
                 if not skip_errors:
                     raise ValueError(

@@ -2,6 +2,9 @@ from typing import Optional
 from datetime import datetime
 from nodetool.models.base_model import DBModel, DBField, create_time_ordered_uuid
 from nodetool.models.condition_builder import Field
+from nodetool.config.logging_config import get_logger
+
+log = get_logger(__name__)
 
 
 class Job(DBModel):
@@ -17,6 +20,7 @@ class Job(DBModel):
     started_at: datetime = DBField(default_factory=datetime.now)
     finished_at: datetime | None = DBField(default=None)
     graph: dict = DBField(default_factory=dict)
+    params: dict = DBField(default_factory=dict)
     error: str | None = DBField(default=None)
     cost: float | None = DBField(default=None)
 
@@ -31,7 +35,7 @@ class Job(DBModel):
             id=create_time_ordered_uuid(),
             workflow_id=workflow_id,
             user_id=user_id,
-            **kwargs
+            **kwargs,
         )
 
     @classmethod
@@ -43,18 +47,20 @@ class Job(DBModel):
         start_key: Optional[str] = None,
     ):
         if workflow_id:
-            return await cls.query(
+            items, key = await cls.query(
                 Field("workflow_id")
                 .equals(workflow_id)
                 .and_(Field("id").greater_than(start_key or "")),
                 limit=limit,
             )
+            return items, key
         elif user_id:
-            return await cls.query(
+            items, key = await cls.query(
                 Field("user_id")
                 .equals(user_id)
                 .and_(Field("id").greater_than(start_key or "")),
                 limit=limit,
             )
+            return items, key
         else:
             raise ValueError("Must provide either user_id or workflow_id")

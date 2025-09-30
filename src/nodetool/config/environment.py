@@ -353,7 +353,8 @@ class Environment(object):
         The database url is the url of the database.
         """
         if cls.is_test():
-            return "/tmp/nodetool_test.db"
+            # Use shared in-memory database for multi-threaded test env
+            return "file::memory:?cache=shared"
         else:
             return cls.get("DB_PATH")
 
@@ -427,8 +428,10 @@ class Environment(object):
         elif cls.get_db_path() is not None:
             from nodetool.models.sqlite_adapter import SQLiteAdapter  # type: ignore
 
-            if cls.get_db_path() != ":memory:":
-                os.makedirs(os.path.dirname(cls.get_db_path()), exist_ok=True)
+            db_path = cls.get_db_path()
+            # Only create directories for file paths, not URIs or :memory:
+            if db_path != ":memory:" and not db_path.startswith("file:"):
+                os.makedirs(os.path.dirname(db_path), exist_ok=True)
 
             return await SQLiteAdapter.create(
                 db_path=cls.get_db_path(),

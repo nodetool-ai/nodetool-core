@@ -1,12 +1,19 @@
 from nodetool.types.graph import Edge
 from nodetool.workflows.graph import Graph
 from nodetool.workflows.base_node import BaseNode, InputNode, OutputNode
+from typing import Any
 
 
-class InNode(InputNode):
+class InNode(BaseNode):
+    name: str | None = None
+    value: int | str = 0
+
     @classmethod
     def get_node_type(cls) -> str:
         return "tests.workflows.test_graph_module.InNode"
+
+    async def process(self, context):
+        return {"output": self.value}
 
 
 class AddNode(BaseNode):
@@ -21,24 +28,30 @@ class AddNode(BaseNode):
         return self.a + self.b
 
 
-class OutNode(OutputNode):
+class OutNode(BaseNode):
+    name: str | None = None
+    value: int = 0
+
     @classmethod
     def get_node_type(cls) -> str:
         return "tests.workflows.test_graph_module.OutNode"
 
+    async def process(self, context):
+        return {"value": self.value}
+
 
 class RequiredPropsNode(BaseNode):
-    """Node with required properties for testing allow_missing_properties"""
+    """Node with properties for testing allow_undefined_properties"""
 
-    required_prop: str  # Required - no default
-    optional_prop: str = "default"  # Optional - has default
+    some_prop: str = "default_value"
+    optional_prop: str = "default"
 
     @classmethod
     def get_node_type(cls) -> str:
         return "tests.workflows.test_graph_module.RequiredPropsNode"
 
     async def process(self, context):
-        return f"{self.required_prop}-{self.optional_prop}"
+        return f"{self.some_prop}-{self.optional_prop}"
 
 
 def build_graph():
@@ -222,28 +235,32 @@ def test_from_dict_mixed_valid_invalid():
     assert len(graph.edges) == 2
 
 
-def test_from_dict_allow_missing_properties_true():
-    """Test that allow_missing_properties=True allows missing required properties"""
+def test_from_dict_allow_undefined_properties_true():
+    """Test that allow_undefined_properties=True allows undefined properties to be ignored"""
     data = {
         "nodes": [
             {
                 "id": "1",
                 "type": "tests.workflows.test_graph_module.RequiredPropsNode",
                 "data": {
-                    # Missing required_prop intentionally
-                    "optional_prop": "custom"
+                    "some_prop": "value",
+                    "optional_prop": "custom",
+                    "deprecated_prop": "should_be_ignored",  # This property doesn't exist in the node class
                 },
             }
         ],
         "edges": [],
     }
-    # Should not raise an error with allow_missing_properties=True (default)
-    graph = Graph.from_dict(data, skip_errors=False, allow_missing_properties=True)
+    # Should not raise an error with allow_undefined_properties=True (default)
+    # The deprecated_prop should be silently ignored
+    graph = Graph.from_dict(data, skip_errors=False, allow_undefined_properties=True)
     assert len(graph.nodes) == 1
+    assert graph.nodes[0].some_prop == "value"
+    assert graph.nodes[0].optional_prop == "custom"
 
 
-def test_from_dict_allow_missing_properties_false():
-    """Test that allow_missing_properties=False validates required properties"""
+def test_from_dict_allow_undefined_properties_false():
+    """Test that allow_undefined_properties=False validates undefined properties"""
     import pytest
 
     data = {
@@ -252,22 +269,22 @@ def test_from_dict_allow_missing_properties_false():
                 "id": "1",
                 "type": "tests.workflows.test_graph_module.RequiredPropsNode",
                 "data": {
-                    # Missing required_prop intentionally
-                    "optional_prop": "custom"
+                    "some_prop": "value",
+                    "optional_prop": "custom",
+                    "deprecated_prop": "should_cause_error",  # This property doesn't exist in the node class
                 },
             }
         ],
         "edges": [],
     }
-    # Should raise an error with allow_missing_properties=False
-    with pytest.raises(
-        ValueError, match="Required property 'required_prop' is missing"
-    ):
-        Graph.from_dict(data, skip_errors=False, allow_missing_properties=False)
+    # Should raise an error with allow_undefined_properties=False
+    # because deprecated_prop doesn't exist in the node class
+    with pytest.raises(ValueError, match="Property deprecated_prop does not exist"):
+        Graph.from_dict(data, skip_errors=False, allow_undefined_properties=False)
 
 
-def test_from_dict_allow_missing_properties_with_edges():
-    """Test that properties connected via edges are not validated as missing"""
+def test_from_dict_allow_undefined_properties_with_edges():
+    """Test that undefined properties connected via edges are filtered out before validation"""
     data = {
         "nodes": [
             {
@@ -279,8 +296,9 @@ def test_from_dict_allow_missing_properties_with_edges():
                 "id": "2",
                 "type": "tests.workflows.test_graph_module.RequiredPropsNode",
                 "data": {
-                    # Missing required_prop but it will come from an edge
-                    "optional_prop": "custom"
+                    "some_prop": "will_be_replaced_by_edge",
+                    "optional_prop": "custom",
+                    "deprecated_prop": "ignored",  # This will be in data but not in node definition
                 },
             },
         ],
@@ -290,32 +308,38 @@ def test_from_dict_allow_missing_properties_with_edges():
                 "source": "1",
                 "sourceHandle": "output",
                 "target": "2",
-                "targetHandle": "required_prop",
+                "targetHandle": "some_prop",
             }
         ],
     }
-    # Should not raise even with allow_missing_properties=False
-    # because required_prop is connected via edge
-    graph = Graph.from_dict(data, skip_errors=False, allow_missing_properties=False)
+    # Should not raise because deprecated_prop is allowed with allow_undefined_properties=True
+    # and some_prop is connected via edge so it's filtered out from the data
+    graph = Graph.from_dict(data, skip_errors=False, allow_undefined_properties=True)
     assert len(graph.nodes) == 2
     assert len(graph.edges) == 1
 
 
-def test_from_dict_allow_missing_with_skip_errors():
-    """Test that allow_missing_properties works with skip_errors=True"""
+def test_from_dict_allow_undefined_with_skip_errors():
+    """Test that allow_undefined_properties works with skip_errors=True"""
     data = {
         "nodes": [
             {
                 "id": "1",
                 "type": "tests.workflows.test_graph_module.RequiredPropsNode",
                 "data": {
-                    # Missing required_prop intentionally
+                    "some_prop": "value",
+                    "deprecated_prop": "should_be_ignored_with_skip_errors",  # Undefined property
                 },
             }
         ],
         "edges": [],
     }
-    # With skip_errors=True, should skip the invalid node
-    graph = Graph.from_dict(data, skip_errors=True, allow_missing_properties=False)
-    # Node should be skipped due to validation error
-    assert len(graph.nodes) == 0
+    # With skip_errors=True and allow_undefined_properties=False,
+    # the error from the undefined property is collected but the node is still created
+    # The invalid property just won't be set on the node
+    graph = Graph.from_dict(data, skip_errors=True, allow_undefined_properties=False)
+    # Node should be created successfully with the valid property
+    assert len(graph.nodes) == 1
+    assert graph.nodes[0].some_prop == "value"
+    # The deprecated property should not exist on the node
+    assert not hasattr(graph.nodes[0], "deprecated_prop")

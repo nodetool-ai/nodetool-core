@@ -177,6 +177,9 @@ class ProcessingContext:
         self.client_tools_manifest = client_tools_manifest or {}
         # Use global node_cache for memory:// storage to enable portability
         self.memory_uri_cache = memory_uri_cache if memory_uri_cache is not None else {}
+        # Store current status for each node and edge for reconnection
+        self.node_statuses: dict[str, ProcessingMessage] = {}
+        self.edge_statuses: dict[str, ProcessingMessage] = {}
 
     def _numpy_to_pil_image(self, arr: np.ndarray) -> PIL.Image.Image:
         """Delegate to shared numpy_to_pil_image utility for consistent behavior."""
@@ -189,12 +192,15 @@ class ProcessingContext:
         across processes.
         """
         import threading
+
         thread_id = threading.get_ident()
         value = self.memory_uri_cache.get(key)
         if value is not None and isinstance(value, tuple) and len(value) == 2:
             # Extract actual value from (value, expiry) tuple stored by MemoryUriCache
             value = value[0]
-        log.debug(f"Memory GET '{key}' on thread {thread_id}: {'HIT' if value is not None else 'MISS'}")
+        log.debug(
+            f"Memory GET '{key}' on thread {thread_id}: {'HIT' if value is not None else 'MISS'}"
+        )
         return value
 
     def _memory_set(self, key: str, value: Any) -> None:
@@ -203,6 +209,7 @@ class ProcessingContext:
         URI cache.
         """
         import threading
+
         thread_id = threading.get_ident()
         log.info(f"Setting memory URI cache: {key} on thread {thread_id}")
         self.memory_uri_cache[key] = value
@@ -328,6 +335,14 @@ class ProcessingContext:
             message (ProcessingMessage): The message to be posted.
         """
         self.message_queue.put_nowait(message)
+
+        # Store latest status for each node and edge for reconnection replay
+        from nodetool.workflows.types import NodeUpdate, EdgeUpdate
+
+        if isinstance(message, NodeUpdate):
+            self.node_statuses[message.node_id] = message
+        elif isinstance(message, EdgeUpdate):
+            self.edge_statuses[message.edge_id] = message
 
     def has_messages(self) -> bool:
         """

@@ -10,8 +10,8 @@ async def test_iter_input_basic_flow():
     inbox.add_upstream("a", 1)
 
     # Producer: push a couple items, then mark EOS
-    inbox.put("a", 1)
-    inbox.put("a", 2)
+    await inbox.put("a", 1)
+    await inbox.put("a", 2)
     inbox.mark_source_done("a")
 
     received = []
@@ -28,11 +28,11 @@ async def test_iter_any_multiplexing_order():
     inbox.add_upstream("b", 1)
 
     # Interleave puts on different handles
-    inbox.put("a", "a1")
-    inbox.put("b", "b1")
-    inbox.put("a", "a2")
+    await inbox.put("a", "a1")
+    await inbox.put("b", "b1")
+    await inbox.put("a", "a2")
     inbox.mark_source_done("a")
-    inbox.put("b", "b2")
+    await inbox.put("b", "b2")
     inbox.mark_source_done("b")
 
     items = []
@@ -61,4 +61,3 @@ async def test_close_all_unblocks_waiters():
 
     # No items expected; just verify it didn't hang
     assert collected == []
-

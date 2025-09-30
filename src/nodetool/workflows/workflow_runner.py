@@ -508,7 +508,9 @@ class WorkflowRunner:
         # Load graph with skip_errors=False to ensure node loading failures are raised
         # rather than silently dropping nodes
         graph = Graph.from_dict(
-            request.graph.model_dump(), skip_errors=False, allow_missing_properties=True
+            request.graph.model_dump(),
+            skip_errors=False,
+            allow_undefined_properties=True,
         )
         log.info(
             "Graph loaded: %d nodes, %d edges",

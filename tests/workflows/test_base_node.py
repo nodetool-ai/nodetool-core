@@ -561,7 +561,7 @@ async def test_has_input_iter_and_recv():
     node = DummyClass()
     node.attach_inbox(inbox)
     assert node.has_input() is False
-    inbox.put("input", 7)
+    await inbox.put("input", 7)
     await asyncio.sleep(0)
     assert node.has_input() is True
     assert await node.recv("input") == 7
@@ -573,8 +573,8 @@ async def test_iter_input_consumes_all_values():
     inbox.add_upstream("stream", 1)
     node = DummyClass()
     node.attach_inbox(inbox)
-    inbox.put("stream", 1)
-    inbox.put("stream", 2)
+    await inbox.put("stream", 1)
+    await inbox.put("stream", 2)
     inbox.mark_source_done("stream")
     collected = []
     async for item in node.iter_input("stream"):
@@ -589,8 +589,8 @@ async def test_iter_any_input_respects_order():
     inbox.add_upstream("b", 1)
     node = DummyClass()
     node.attach_inbox(inbox)
-    inbox.put("a", 1)
-    inbox.put("b", 2)
+    await inbox.put("a", 1)
+    await inbox.put("b", 2)
     inbox.mark_source_done("a")
     inbox.mark_source_done("b")
     collected = []

@@ -29,10 +29,12 @@ async def test_image_memory_uri_roundtrip_png_and_jpeg():
         assert out_img.size == (10, 6)
         assert out_img.format == "PNG"
 
+    # Set thread memory cache for synchronous access
+    Environment.set_thread_memory_cache(ctx.memory_uri_cache)
+
     # Convert via image_utils (JPEG path) and ensure it loads
     b64_jpeg = image_ref_to_base64_jpeg(image_ref, max_size=(64, 64))
     jpeg_bytes = base64.b64decode(b64_jpeg)
     with PIL.Image.open(io.BytesIO(jpeg_bytes)) as out_jpeg:
         assert out_jpeg.size[0] > 0 and out_jpeg.size[1] > 0
         assert out_jpeg.format == "JPEG"
-

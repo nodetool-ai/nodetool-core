@@ -265,7 +265,7 @@ async def test_gather_initial_inputs_collects_first_items_and_skips_eos():
     # Simulate upstream: one value for 'a', no value for 'ghost' then EOS
     inbox = actor.inbox
     # Upstream counts are initialized by the runner via graph edges
-    inbox.put("a", 42)
+    await inbox.put("a", 42)
     inbox.mark_source_done("ghost")
 
     res = await asyncio.wait_for(
@@ -288,7 +288,7 @@ async def test_gather_initial_inputs_handles_no_handles():
 
     # Simulate upstream: one value for 'a' then EOS
     inbox = actor.inbox
-    inbox.put("a", 42)
+    await inbox.put("a", 42)
     inbox.mark_source_done("a")
 
     res = await asyncio.wait_for(
@@ -332,14 +332,17 @@ async def test_run_streaming_happy_path_sends_updates_and_messages():
     actor, runner, ctx = await make_actor_for_target_async(graph, stream_node)
 
     # Seed initial input for 'a'
-    actor.inbox.put("a", 7)
+    await actor.inbox.put("a", 7)
 
     sent = []
 
     def capture_send(node, result, context):
         sent.append((node.id, result))
 
-    runner.send_messages = capture_send  # type: ignore
+    async def capture_send_async(node, result, context):
+        capture_send(node, result, context)
+
+    runner.send_messages = capture_send_async  # type: ignore
 
     await asyncio.wait_for(actor.run(), timeout=ASYNC_TEST_TIMEOUT)
 
@@ -384,7 +387,7 @@ async def test_run_streaming_invalid_output_raises_error_and_raises():
     actor, runner, ctx = await make_actor_for_target_async(graph, bad)
 
     # Provide one input value and expect an error update instead of propagation
-    actor.inbox.put("a", 42)
+    await actor.inbox.put("a", 42)
     actor.inbox.mark_source_done("a")
 
     with pytest.raises(ValueError):
@@ -486,7 +489,7 @@ async def test_run_non_streaming_calls_runner_with_inputs_and_marks_eos():
     actor, runner, _ = await make_actor_for_target_async(graph, target)
 
     # Provide one input for 'a'
-    actor.inbox.put("a", 99)
+    await actor.inbox.put("a", 99)
 
     called = {}
 
@@ -563,7 +566,7 @@ async def test_fanout_single_inbound_handle_runs_per_item():
 
     # Inject a stream of three items for 'a' and mark EOS
     for i in [10, 11, 12]:
-        actor.inbox.put("a", i)
+        await actor.inbox.put("a", i)
     actor.inbox.mark_source_done("a")
 
     calls: list[dict[str, int]] = []
@@ -631,10 +634,10 @@ async def test_multiple_messages_across_handles_fanout_for_non_streaming_node():
 
     # Provide multiple values on both handles; consumer should run for each message
     for v in [7, 8]:
-        actor.inbox.put("cfg", v)
+        await actor.inbox.put("cfg", v)
     actor.inbox.mark_source_done("cfg")
     for i in [1, 2, 3]:
-        actor.inbox.put("a", i)
+        await actor.inbox.put("a", i)
     actor.inbox.mark_source_done("a")
 
     calls: list[dict[str, int]] = []
@@ -698,10 +701,10 @@ async def test_multiple_streaming_inbounds_fanout_for_non_streaming_target():
 
     # Provide two items on each streaming handle, then EOS
     for i in [1, 2]:
-        actor.inbox.put("a", i)
+        await actor.inbox.put("a", i)
     actor.inbox.mark_source_done("a")
     for i in [10, 20]:
-        actor.inbox.put("b", i)
+        await actor.inbox.put("b", i)
     actor.inbox.mark_source_done("b")
 
     calls: list[dict[str, int]] = []
@@ -744,8 +747,8 @@ async def test_multiple_messages_single_handle_fanout_for_non_streaming_node():
     actor, runner, _ = await make_actor_for_target_async(graph, target)
 
     # Two messages on single handle – consumer runs twice
-    actor.inbox.put("a", 101)
-    actor.inbox.put("a", 202)
+    await actor.inbox.put("a", 101)
+    await actor.inbox.put("a", 202)
     actor.inbox.mark_source_done("a")
 
     calls: list[dict[str, int]] = []
@@ -794,10 +797,10 @@ async def test_zip_all_pairs_items_across_two_handles_in_order():
     actor, runner, _ = await make_actor_for_target_async(graph, target)
 
     # Interleave arrivals: a1, b1, a2, b2
-    actor.inbox.put("a", 1)
-    actor.inbox.put("b", 10)
-    actor.inbox.put("a", 2)
-    actor.inbox.put("b", 20)
+    await actor.inbox.put("a", 1)
+    await actor.inbox.put("b", 10)
+    await actor.inbox.put("a", 2)
+    await actor.inbox.put("b", 20)
     actor.inbox.mark_source_done("a")
     actor.inbox.mark_source_done("b")
 
@@ -838,11 +841,11 @@ async def test_zip_all_pairs_items_with_different_lengths():
     actor, runner, _ = await make_actor_for_target_async(graph, target)
 
     # Interleave arrivals: a1, b1, a2, b2
-    actor.inbox.put("a", 1)
-    actor.inbox.put("b", 10)
-    actor.inbox.put("a", 2)
-    actor.inbox.put("b", 20)
-    actor.inbox.put("b", 30)
+    await actor.inbox.put("a", 1)
+    await actor.inbox.put("b", 10)
+    await actor.inbox.put("a", 2)
+    await actor.inbox.put("b", 20)
+    await actor.inbox.put("b", 30)
     actor.inbox.mark_source_done("a")
     actor.inbox.mark_source_done("b")
 
@@ -892,11 +895,11 @@ async def test_zip_all_reuses_non_streaming_handle_value():
     graph = Graph(nodes=[pa, pb_stream, target], edges=edges)
     actor, runner, _ = await make_actor_for_target_async(graph, target)
 
-    actor.inbox.put("a", 101)
+    await actor.inbox.put("a", 101)
     actor.inbox.mark_source_done("a")
 
     for value in [1, 2, 3]:
-        actor.inbox.put("b", value)
+        await actor.inbox.put("b", value)
     actor.inbox.mark_source_done("b")
 
     calls: list[dict[str, int]] = []
@@ -935,9 +938,9 @@ async def test_zip_all_ignores_incomplete_tail_when_stream_ends():
     actor, runner, _ = await make_actor_for_target_async(graph, target)
 
     # Provide two A values but only one B; ensure only one pair is processed
-    actor.inbox.put("a", 1)
-    actor.inbox.put("a", 2)
-    actor.inbox.put("b", 10)
+    await actor.inbox.put("a", 1)
+    await actor.inbox.put("a", 2)
+    await actor.inbox.put("b", 10)
     actor.inbox.mark_source_done("a")
     actor.inbox.mark_source_done("b")
 
@@ -986,10 +989,10 @@ async def test_run_non_streaming_batches_zip_all():
     actor, runner, _ = await make_actor_for_target_async(graph, target)
 
     inbox = actor.inbox
-    inbox.put("a", 1)
-    inbox.put("b", 10)
-    inbox.put("a", 2)
-    inbox.put("b", 20)
+    await inbox.put("a", 1)
+    await inbox.put("b", 10)
+    await inbox.put("a", 2)
+    await inbox.put("b", 20)
     inbox.mark_source_done("a")
     inbox.mark_source_done("b")
 
@@ -1018,9 +1021,9 @@ async def test_run_non_streaming_batches_zip_all_with_single_shot():
     actor, runner, _ = await make_actor_for_target_async(graph, target)
 
     inbox = actor.inbox
-    inbox.put("a", 1)
-    inbox.put("a", 2)
-    inbox.put("b", 5)
+    await inbox.put("a", 1)
+    await inbox.put("a", 2)
+    await inbox.put("b", 5)
     inbox.mark_source_done("a")
     inbox.mark_source_done("b")
 
@@ -1049,10 +1052,10 @@ async def test_run_non_streaming_batches_zip_all_with_streaming_upstream():
     actor, runner, _ = await make_actor_for_target_async(graph, target)
 
     inbox = actor.inbox
-    inbox.put("a", 3)
-    inbox.put("a", 4)
-    inbox.put("b", 7)
-    inbox.put("b", 8)
+    await inbox.put("a", 3)
+    await inbox.put("a", 4)
+    await inbox.put("b", 7)
+    await inbox.put("b", 8)
     inbox.mark_source_done("a")
     inbox.mark_source_done("b")
 
@@ -1077,7 +1080,7 @@ async def test_run_non_streaming_marks_handle_done_for_single_shot():
     actor, runner, _ = await make_actor_for_target_async(graph, target)
 
     inbox = actor.inbox
-    inbox.put("a", 1)
+    await inbox.put("a", 1)
     inbox.mark_source_done("a")
 
     await asyncio.wait_for(actor.run(), timeout=ASYNC_TEST_TIMEOUT)
@@ -1100,7 +1103,7 @@ async def test_run_non_streaming_handles_cached_result():
     actor, runner, _ = await make_actor_for_target_async(graph, target)
 
     # Provide a single input so the node processes once with caching semantics
-    actor.inbox.put("a", 100)
+    await actor.inbox.put("a", 100)
     actor.inbox.mark_source_done("a")
 
     await asyncio.wait_for(actor.run(), timeout=ASYNC_TEST_TIMEOUT)
@@ -1136,13 +1139,16 @@ async def test_run_streaming_output_batched_respects_sync_mode_zip_all():
     def capture_send(node, result, context):
         routed.append((node.id, result))
 
-    runner.send_messages = capture_send  # type: ignore
+    async def capture_send_async(node, result, context):
+        capture_send(node, result, context)
+
+    runner.send_messages = capture_send_async  # type: ignore
 
     inbox_target = actor.inbox
-    inbox_target.put("a", 1)
-    inbox_target.put("b", 2)
-    inbox_target.put("a", 3)
-    inbox_target.put("b", 4)
+    await inbox_target.put("a", 1)
+    await inbox_target.put("b", 2)
+    await inbox_target.put("a", 3)
+    await inbox_target.put("b", 4)
     inbox_target.mark_source_done("a")
     inbox_target.mark_source_done("b")
 

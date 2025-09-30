@@ -8,6 +8,7 @@ NodeOutputs: convenience helpers that validate and route outputs via WorkflowRun
 from __future__ import annotations
 
 from typing import Any, AsyncIterator
+import inspect
 
 from .inbox import NodeInbox
 from .types import EdgeUpdate
@@ -160,7 +161,11 @@ class NodeOutputs:
                 self.runner.outputs[node_name] = [value]
 
         if not self.capture_only:
-            await self.runner.send_messages(self.node, {slot: value}, self.context)
+            send_messages = self.runner.send_messages
+            if inspect.iscoroutinefunction(send_messages):
+                await send_messages(self.node, {slot: value}, self.context)
+            else:
+                send_messages(self.node, {slot: value}, self.context)
 
     def complete(self, slot: str) -> None:
         """Mark early end-of-stream for a specific output slot.

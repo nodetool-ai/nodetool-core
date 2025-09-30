@@ -80,7 +80,7 @@ class Graph(BaseModel):
         cls,
         graph: dict[str, Any],
         skip_errors: bool = True,
-        allow_missing_properties: bool = True,
+        allow_undefined_properties: bool = True,
     ):
         """
         Create a Graph object from a dictionary representation.
@@ -106,7 +106,8 @@ class Graph(BaseModel):
             graph (dict[str, Any]): The dictionary representing the Graph.
             skip_errors (bool): If True, property assignment errors are collected and returned,
                                 not logged directly or raised immediately.
-            allow_missing_properties (bool): If True, properties that are not connected to any edges are allowed to be missing.
+            allow_undefined_properties (bool): If True, properties not defined in the node class are ignored.
+                                              Used for backward compatibility to skip deprecated properties.
 
         Returns:
             Graph: An instance of the Graph, potentially with fewer nodes/edges than specified
@@ -143,7 +144,7 @@ class Graph(BaseModel):
                 result = BaseNode.from_dict(
                     filtered_node_data,
                     skip_errors=skip_errors,
-                    allow_missing_properties=allow_missing_properties,
+                    allow_undefined_properties=allow_undefined_properties,
                 )
                 if result is not None and result[0] is not None:
                     valid_nodes.append(result[0])

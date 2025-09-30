@@ -38,6 +38,7 @@ from . import (
     model,
     settings,
     thread,
+    job,
 )
 import mimetypes
 
@@ -115,6 +116,7 @@ DEFAULT_ROUTERS = [
     storage.temp_router,
     font.router,
     debug.router,
+    job.router,
 ]
 
 
@@ -152,6 +154,18 @@ def create_app(
         except Exception as e:
             log.warning(f"Storage pre-initialization failed: {e}")
 
+        # Start background job manager cleanup task
+        try:
+            from nodetool.workflows.background_job_manager import (
+                BackgroundJobManager,
+            )
+
+            job_manager = BackgroundJobManager.get_instance()
+            await job_manager.start_cleanup_task()
+            log.info("BackgroundJobManager cleanup task started")
+        except Exception as e:
+            log.error(f"Error starting BackgroundJobManager: {e}")
+
         # Hand control back to the app
         yield
 
@@ -168,6 +182,18 @@ def create_app(
             log.info("WebSocket updates shutdown complete")
         except Exception as e:
             log.error(f"Error during websocket updates shutdown: {e}")
+
+        # Shutdown background job manager
+        try:
+            from nodetool.workflows.background_job_manager import (
+                BackgroundJobManager,
+            )
+
+            job_manager = BackgroundJobManager.get_instance()
+            await job_manager.shutdown()
+            log.info("BackgroundJobManager shutdown complete")
+        except Exception as e:
+            log.error(f"Error during BackgroundJobManager shutdown: {e}")
 
         # Give a moment for cleanup to complete
         await asyncio.sleep(0.1)
