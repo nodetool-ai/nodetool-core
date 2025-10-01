@@ -28,6 +28,7 @@ DEFAULT_ENV = {
     "CHROMA_URL": None,
     "CHROMA_PATH": str(get_system_data_path("chroma")),
     "COMFY_FOLDER": None,
+    "EXECUTION_STRATEGY": "threaded",
     "MEMCACHE_HOST": None,
     "MEMCACHE_PORT": None,
     "DB_PATH": str(get_system_file_path("nodetool.sqlite3")),
@@ -283,6 +284,13 @@ class Environment(object):
     @classmethod
     def set_node_cache(cls, node_cache: AbstractNodeCache):
         setattr(cls._tls(), "node_cache", node_cache)
+
+    @classmethod
+    def get_execution_strategy(cls):
+        """
+        The execution strategy is the strategy that we use to execute the workflow.
+        """
+        return cls.get("EXECUTION_STRATEGY")
 
     @classmethod
     def get_node_cache(cls) -> AbstractNodeCache:

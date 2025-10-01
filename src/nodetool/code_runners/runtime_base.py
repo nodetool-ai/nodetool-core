@@ -1,6 +1,5 @@
-from __future__ import annotations
-
 import asyncio
+import logging
 import os
 import shlex
 import socket
@@ -280,11 +279,13 @@ class StreamRunnerBase:
 
                 self._stream_hijacked_output(sock, queue, loop, context, node)
                 # Ensure the container process has exited before finalizing
-                try:
-                    self._wait_for_container_exit(container)
-                except Exception:
-                    # Best-effort: streaming already finished; cleanup will force-remove
-                    pass
+                exit_code = self._wait_for_container_exit(container)
+
+                # Check exit code and fail if non-zero
+                if exit_code != 0:
+                    raise RuntimeError(
+                        f"Container exited with non-zero status: {exit_code}"
+                    )
 
                 self._finalize_success(queue, loop)
                 log.debug("_docker_run() completed successfully")
@@ -366,17 +367,15 @@ class StreamRunnerBase:
             if stdin_stream is not None and proc.stdin is not None:
 
                 async def _feed() -> None:
+                    assert proc.stdin is not None
+                    assert stdin_stream is not None
                     try:
                         async for data in stdin_stream:
                             if not data.endswith("\n"):
                                 data = data + "\n"
                             b = data.encode("utf-8")
-                            await asyncio.to_thread(proc.stdin.write, b)
-                            await asyncio.to_thread(proc.stdin.flush)
-                        try:
-                            await asyncio.to_thread(proc.stdin.close)
-                        except Exception:
-                            pass
+                            proc.stdin.write(b)
+                        proc.stdin.close()
                     except Exception as e:
                         log.debug("local stdin feeder ended: %s", e)
 
@@ -696,13 +695,9 @@ class StreamRunnerBase:
                     bytes_sent += len(payload)
                     log.debug("feeding stdin to container: %s", payload)
                     # Avoid blocking the event loop with a socket send
-                    await asyncio.to_thread(sock._sock.send, payload)
+                    sock._sock.sendall(payload)
 
-                try:
-                    # Shutdown writing side so the container sees EOF on stdin
-                    await asyncio.to_thread(sock._sock.shutdown, socket.SHUT_WR)
-                except Exception:
-                    pass
+                sock._sock.shutdown(socket.SHUT_WR)
 
                 log.debug(
                     "fed stdin (hijack): %d bytes and closed stdin",
@@ -912,83 +907,3 @@ class StreamRunnerBase:
         asyncio.run_coroutine_threadsafe(
             queue.put({"type": "final", "ok": False, "error": str(e)}), loop
         )
-
-
-# ---- Manual CLI for smoke testing ----
-if __name__ == "__main__":
-    import argparse as _argparse
-    import os as os
-
-    class _BashStreamRunner(StreamRunnerBase):
-        def build_container_command(
-            self, user_code: str, env_locals: dict[str, Any]
-        ) -> list[str]:
-            return ["bash", "-lc", user_code]
-
-    async def _stdin_all_stream(enabled: bool) -> AsyncIterator[str]:
-        if not enabled:
-            if False:
-                yield ""  # satisfy type checker in some editors
-            return
-        import sys as _sys
-
-        data = await asyncio.to_thread(_sys.stdin.read)
-        if data:
-            yield data
-
-    async def _main() -> None:
-        parser = _argparse.ArgumentParser(
-            description="Smoke-test StreamRunnerBase with a bash command inside Docker"
-        )
-        parser.add_argument(
-            "code", nargs=_argparse.REMAINDER, help="Shell command to run (bash -lc)"
-        )
-        parser.add_argument("--image", default="bash:5.2", help="Docker image to use")
-        parser.add_argument(
-            "--timeout", type=int, default=10, help="Timeout seconds before force-kill"
-        )
-        parser.add_argument(
-            "--mem", default="256m", help="Container memory limit (e.g. 256m, 1g)"
-        )
-        parser.add_argument(
-            "--cpus", type=int, default=1_000_000_000, help="Container CPU in nano CPUs"
-        )
-        parser.add_argument(
-            "--workspace", default=os.getcwd(), help="Directory to mount at /workspace"
-        )
-        parser.add_argument(
-            "--stdin", action="store_true", help="Forward stdin to the container"
-        )
-
-        args = parser.parse_args()
-        code_str = " ".join(args.code).strip() or "echo 'hello from container'"
-
-        runner = _BashStreamRunner(
-            timeout_seconds=args.timeout,
-            image=args.image,
-            mem_limit=args.mem,
-            nano_cpus=args.cpus,
-        )
-
-        context = ProcessingContext(workspace_dir=args.workspace)
-        node = type("_DummyNode", (), {"id": "manual-run"})()
-
-        stdin_iter: AsyncIterator[str] | None = _stdin_all_stream(args.stdin)
-        if not args.stdin:
-            stdin_iter = None
-
-        async for slot, value in runner.stream(
-            user_code=code_str,
-            env_locals={},
-            context=context,
-            node=node,  # type: ignore[arg-type]
-            stdin_stream=stdin_iter,
-        ):
-            try:
-                text = str(value)
-            except Exception:
-                text = "<unrepr>"
-            # Print without adding extra newlines; values already newline-terminated in runner
-            print(f"[{slot}] {text}", end="")
-
-    asyncio.run(_main())

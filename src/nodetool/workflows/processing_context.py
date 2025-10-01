@@ -351,7 +351,7 @@ class ProcessingContext:
         Returns:
             bool: True if the message queue is not empty, False otherwise.
         """
-        return not self.message_queue.empty()
+        return not self.message_queue.qsize() == 0
 
     def asset_storage_url(self, key: str) -> str:
         """

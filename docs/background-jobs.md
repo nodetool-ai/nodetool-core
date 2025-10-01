@@ -1,14 +1,14 @@
-# Background Job System
+# Job Execution System
 
 ## Overview
 
-The background job system provides robust, resilient workflow execution that survives WebSocket disconnections and network interruptions. Jobs run in dedicated background threads managed by the `BackgroundJobManager`, allowing clients to disconnect and reconnect without losing job progress.
+The job execution system provides robust, resilient workflow execution that survives WebSocket disconnections and network interruptions. Jobs run in dedicated execution environments managed by the `JobExecutionManager`, allowing clients to disconnect and reconnect without losing job progress.
 
 ## Key Features
 
 - **Persistent Execution**: Jobs continue running even when clients disconnect
 - **Job Recovery**: Clients can reconnect to running jobs using job IDs
-- **Thread Management**: Each job runs in a dedicated thread with its own event loop
+- **Multiple Execution Strategies**: Support for threaded, subprocess, and Docker-based execution
 - **Automatic Cleanup**: Completed jobs are automatically cleaned up after a configurable timeout
 - **Job Persistence**: All jobs are saved to the database for monitoring and recovery
 
@@ -16,18 +16,21 @@ The background job system provides robust, resilient workflow execution that sur
 
 ### Components
 
-1. **BackgroundJobManager** (`workflows/background_job_manager.py`)
+1. **JobExecutionManager** (`workflows/job_execution_manager.py`)
 
-   - Singleton manager for all background jobs
+   - Singleton manager for all job executions
    - Handles job lifecycle (start, cancel, cleanup)
    - Maintains in-memory registry of running jobs
    - Automatic cleanup of completed jobs
 
-2. **BackgroundJob** Class
+2. **JobExecution** Abstract Base Class
 
-   - Represents a single running job
-   - Contains runner, context, event loop, and metadata
-   - Provides status and completion checks
+   - Defines the interface for job execution strategies
+   - Common behavior for status tracking and state finalization
+   - Subclasses implement specific execution methods:
+     - `ThreadedJobExecution`: Runs in a dedicated thread with event loop
+     - `SubprocessJobExecution`: Runs in a separate process (planned)
+     - `DockerJobExecution`: Runs in Docker container (planned)
 
 3. **WebSocketRunner** Updates
 
@@ -52,10 +55,10 @@ The background job system provides robust, resilient workflow execution that sur
 
 #### Starting a Job
 
-Jobs are automatically started via the WebSocket `RUN_JOB` command and managed by `BackgroundJobManager`:
+Jobs are automatically started via the WebSocket `RUN_JOB` command and managed by `JobExecutionManager`:
 
 ```python
-from nodetool.workflows.background_job_manager import BackgroundJobManager
+from nodetool.workflows.job_execution_manager import JobExecutionManager
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.processing_context import ProcessingContext
 
@@ -74,11 +77,11 @@ context = ProcessingContext(
     workflow_id=request.workflow_id,
 )
 
-# Start job in background
-job_manager = BackgroundJobManager.get_instance()
-bg_job = await job_manager.start_job(request, context)
+# Start job execution
+job_manager = JobExecutionManager.get_instance()
+job = await job_manager.start_job(request, context)
 
-print(f"Job started: {bg_job.job_id}")
+print(f"Job started: {job.job_id}")
 ```
 
 #### Reconnecting to a Job
@@ -318,7 +321,7 @@ Jobs persist in the database with their status, allowing recovery and monitoring
 
 ### Cleanup Settings
 
-Configure automatic cleanup in `BackgroundJobManager`:
+Configure automatic cleanup in `JobExecutionManager`:
 
 ```python
 # Start cleanup task with custom settings
@@ -334,13 +337,13 @@ await job_manager.cleanup_completed_jobs(
 
 ### Server Integration
 
-The background job manager is automatically initialized on server startup and shutdown:
+The job execution manager is automatically initialized on server startup and shutdown:
 
 ```python
 # In server.py lifespan
 async def lifespan(app: FastAPI):
     # Startup
-    job_manager = BackgroundJobManager.get_instance()
+    job_manager = JobExecutionManager.get_instance()
     await job_manager.start_cleanup_task()
 
     yield

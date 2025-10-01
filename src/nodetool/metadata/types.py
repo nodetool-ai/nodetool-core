@@ -2087,13 +2087,5 @@ class Source(BaseType):
     url: str = ""
 
 
-class LeannSearchResult(BaseType):
-    type: Literal["leann_search_result"] = "leann_search_result"
-    id: str
-    score: float
-    text: str
-    metadata: dict[str, Any]
-
-
 class HFKontextGeneration(HuggingFaceModel):
     type: Literal["hf.kontext_generation"] = "hf.kontext_generation"

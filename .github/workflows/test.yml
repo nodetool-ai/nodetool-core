@@ -1,47 +1,71 @@
-name: Tests
+name: Test nodetool-core
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
   pull_request:
-    branches: [main]
-  workflow_dispatch:
+    branches: [main, develop]
+  workflow_dispatch: # Manual trigger
 
 jobs:
   test:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      - name: Download packaged Conda environment
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Cache Docker layers
+        uses: actions/cache@v3
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
         run: |
-          set -e
-          URL="https://github.com/nodetool-ai/nodetool/releases/download/v0.6.0/conda-env-linux-x64.tar.gz"
-          echo "Downloading Conda env from ${URL}"
-          curl -L -o conda_env.tgz "$URL"
+          python -m pip install --upgrade pip
+          pip install -e .
+          pip install -r requirements-dev.txt
 
-          mkdir -p conda_env
-          tar -xzf conda_env.tgz -C conda_env
-
-          chmod +x conda_env/bin/conda-unpack
-          ./conda_env/bin/conda-unpack
-          rm conda_env/bin/git
-
-          echo "CONDA_ENV_BIN=$(pwd)/conda_env/bin" >> $GITHUB_ENV
-
-      - name: Add Conda env to PATH
-        run: echo "$CONDA_ENV_BIN" >> $GITHUB_PATH
-
-      - name: Install project and test dependencies
+      - name: Build Docker image for tests
         run: |
-          uv pip install -e . --system
-          uv pip install -r requirements-dev.txt --system
+          # Build from the nodetool-core directory with caching
+          docker buildx build \
+            --cache-from type=local,src=/tmp/.buildx-cache \
+            --cache-to type=local,dest=/tmp/.buildx-cache-new,mode=max \
+            --load \
+            -t nodetool \
+            -f Dockerfile \
+            .
 
-      - name: Run Tests
+          # Move cache to avoid growing indefinitely
+          rm -rf /tmp/.buildx-cache
+          mv /tmp/.buildx-cache-new /tmp/.buildx-cache
+
+          # Verify the image was built
+          docker images | grep nodetool
+
+          # Test that the nodetool CLI works with --jsonl flag
+          docker run --rm --entrypoint nodetool nodetool run --help | grep -q jsonl || \
+            (echo "ERROR: Built image does not have --jsonl flag!" && exit 1)
+
+      - name: Run tests (excluding Docker tests)
+        run: |
+          pytest -v --ignore=tests/workflows/test_docker_job_execution.py
+
+      - name: Run Docker-dependent tests
+        run: |
+          pytest -v tests/workflows/test_docker_job_execution.py
         env:
-          # Provide dummy keys to satisfy constructors; tests mock network
-          OPENAI_API_KEY: test-openai-key
-          ANTHROPIC_API_KEY: test-anthropic-key
-          GEMINI_API_KEY: test-gemini-key
-          HF_TOKEN: test-hf-token
-        run: pytest tests/
+          # Ensure tests use the freshly built image
+          DOCKER_IMAGE: nodetool

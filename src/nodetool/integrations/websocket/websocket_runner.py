@@ -4,7 +4,7 @@ from enum import Enum
 import json
 from fastapi.websockets import WebSocketState
 import msgpack
-from typing import AsyncGenerator, Dict
+from typing import AsyncGenerator, Dict, Optional
 from nodetool.types.wrap_primitive_types import wrap_primitive_types
 from pydantic import BaseModel
 from fastapi import WebSocket, WebSocketDisconnect
@@ -13,12 +13,12 @@ from nodetool.config.logging_config import get_logger
 from nodetool.ml.core.model_manager import ModelManager
 from nodetool.types.job import JobUpdate
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.workflows.run_job_request import RunJobRequest
+from nodetool.workflows.run_job_request import ExecutionStrategy, RunJobRequest
 from nodetool.workflows.workflow_runner import WorkflowRunner
 from nodetool.workflows.types import Chunk, Error
-from nodetool.workflows.background_job_manager import (
-    BackgroundJobManager,
-    BackgroundJob,
+from nodetool.workflows.job_execution_manager import (
+    JobExecutionManager,
+    JobExecution,
 )
 from nodetool.models.job import Job
 import gc
@@ -81,7 +81,11 @@ async def process_message(context: ProcessingContext, explicit_types: bool = Fal
     if isinstance(msg, Error):
         raise Exception(msg.error)
     else:
-        msg_dict = msg.model_dump()
+
+        if isinstance(msg, dict):
+            msg_dict = msg
+        else:
+            msg_dict = msg.model_dump()
 
         if explicit_types and "result" in msg_dict:
             msg_dict["result"] = wrap_primitive_types(msg_dict["result"])
@@ -90,8 +94,7 @@ async def process_message(context: ProcessingContext, explicit_types: bool = Fal
 
 
 async def process_workflow_messages(
-    context: ProcessingContext,
-    runner: WorkflowRunner,
+    job_execution: JobExecution,
     sleep_interval: float = 0.01,
     explicit_types: bool = False,
 ) -> AsyncGenerator[dict, None]:
@@ -107,16 +110,16 @@ async def process_workflow_messages(
     """
     try:
         log.debug("Starting workflow message processing")
-        while runner.is_running():
-            if context.has_messages():
-                async for msg in process_message(context, explicit_types):
+        while job_execution.is_running():
+            if job_execution.context.has_messages():
+                async for msg in process_message(job_execution.context, explicit_types):
                     yield msg
             else:
                 await asyncio.sleep(sleep_interval)
 
         # Process remaining messages
-        while context.has_messages():
-            async for msg in process_message(context, explicit_types):
+        while job_execution.context.has_messages():
+            async for msg in process_message(job_execution.context, explicit_types):
                 yield msg
 
         log.debug("Finished processing workflow messages")
@@ -156,10 +159,10 @@ async def execute_workflow(
 class JobStreamContext:
     """Context for streaming a specific job's messages"""
 
-    def __init__(self, job_id: str, workflow_id: str, background_job: BackgroundJob):
+    def __init__(self, job_id: str, workflow_id: str, job_execution: JobExecution):
         self.job_id = job_id
         self.workflow_id = workflow_id
-        self.background_job = background_job
+        self.job_execution = job_execution
         self.streaming_task: asyncio.Task | None = None
 
 
@@ -201,7 +204,7 @@ class WebSocketRunner:
     async def disconnect(self):
         """
         Closes the WebSocket connection.
-        Note: Jobs continue running in the background via BackgroundJobManager.
+        Note: Jobs continue running in the background via JobExecutionManager.
         """
         log.info("WebSocketRunner: Disconnecting")
 
@@ -252,10 +255,10 @@ class WebSocketRunner:
                 encode_assets_as_base64=self.mode == WebSocketMode.TEXT,
             )
 
-            # Start job in background via BackgroundJobManager
-            job_manager = BackgroundJobManager.get_instance()
-            background_job = await job_manager.start_job(req, context)
-            job_id = background_job.job_id
+            # Start job in background via JobExecutionManager
+            job_manager = JobExecutionManager.get_instance()
+            job_execution = await job_manager.start_job(req, context)
+            job_id = job_execution.job_id
 
             log.info(
                 "WebSocketRunner.run_job job info",
@@ -268,7 +271,7 @@ class WebSocketRunner:
             )
 
             # Create streaming context
-            job_ctx = JobStreamContext(job_id, req.workflow_id, background_job)
+            job_ctx = JobStreamContext(job_id, req.workflow_id, job_execution)
             self.active_jobs[job_id] = job_ctx
 
             # Start streaming task
@@ -301,11 +304,10 @@ class WebSocketRunner:
                 ).model_dump()
             )
 
-            # Stream messages from the background job
+            # Stream messages from the job execution
             try:
                 async for msg in process_workflow_messages(
-                    context=job_ctx.background_job.context,
-                    runner=job_ctx.background_job.runner,
+                    job_execution=job_ctx.job_execution,
                     explicit_types=explicit_types,
                 ):
                     # Add job_id and workflow_id to all messages
@@ -341,8 +343,8 @@ class WebSocketRunner:
                 )
 
             # Check final job status
-            if job_ctx.background_job.is_completed():
-                final_status = job_ctx.background_job.status
+            if job_ctx.job_execution.is_completed():
+                final_status = job_ctx.job_execution.status
                 if final_status == "cancelled":
                     await self.send_message(
                         JobUpdate(
@@ -374,7 +376,7 @@ class WebSocketRunner:
             # Clean up
             self.active_jobs.pop(job_ctx.job_id, None)
 
-    async def reconnect_job(self, job_id: str, workflow_id: str):
+    async def reconnect_job(self, job_id: str, workflow_id: Optional[str] = None):
         """Reconnect to an existing background job and stream remaining messages."""
         try:
             if not self.websocket:
@@ -382,11 +384,11 @@ class WebSocketRunner:
 
             log.info(f"WebSocketRunner: Reconnecting to job: {job_id}")
 
-            # Get the background job from the manager
-            job_manager = BackgroundJobManager.get_instance()
-            background_job = job_manager.get_job(job_id)
+            # Get the job execution from the manager
+            job_manager = JobExecutionManager.get_instance()
+            job_execution = job_manager.get_job(job_id)
 
-            if background_job is None:
+            if job_execution is None:
                 db_job = await Job.get(job_id)
                 if db_job and db_job.status in {"running", "starting", "queued"}:
                     log.warning(
@@ -405,32 +407,32 @@ class WebSocketRunner:
                 raise ValueError(f"Job {job_id} not found")
 
             log.info(
-                "WebSocketRunner.reconnect_job obtained background job",
+                "WebSocketRunner.reconnect_job obtained job execution",
                 extra={
                     "job_id": job_id,
-                    "workflow_id": background_job.request.workflow_id,
-                    "user_id": background_job.request.user_id,
-                    "status": background_job.status,
-                    "is_running": background_job.is_running(),
-                    "is_completed": background_job.is_completed(),
+                    "workflow_id": job_execution.request.workflow_id,
+                    "user_id": job_execution.request.user_id,
+                    "status": job_execution.status,
+                    "is_running": job_execution.is_running(),
+                    "is_completed": job_execution.is_completed(),
                 },
             )
 
-            # Use workflow_id from the background job if not provided
+            # Use workflow_id from the job execution if not provided
             if not workflow_id:
-                workflow_id = background_job.request.workflow_id
+                workflow_id = job_execution.request.workflow_id
 
-            if not background_job.is_running():
-                final_status = background_job.status
+            if not job_execution.is_running():
+                final_status = job_execution.status
                 try:
                     # Ensure job model reflects final state if still marked running
-                    await background_job.job_model.reload()
-                    if background_job.job_model.status in {
+                    await job_execution.job_model.reload()
+                    if job_execution.job_model.status in {
                         "running",
                         "starting",
                         "queued",
                     }:
-                        await background_job.job_model.update(
+                        await job_execution.job_model.update(
                             status=final_status,
                             finished_at=datetime.now(),
                         )
@@ -454,13 +456,13 @@ class WebSocketRunner:
                 return
 
             # Create streaming context
-            job_ctx = JobStreamContext(job_id, workflow_id, background_job)
+            job_ctx = JobStreamContext(job_id, workflow_id, job_execution)
             self.active_jobs[job_id] = job_ctx
 
             # Send current job status
             await self.send_message(
                 JobUpdate(
-                    status=background_job.status,
+                    status=job_execution.status,
                     job_id=job_id,
                     workflow_id=workflow_id,
                 ).model_dump()
@@ -469,23 +471,23 @@ class WebSocketRunner:
             # Only replay statuses if job is actually running
             # If it's about to complete, we don't want to replay edge statuses
             # that would be immediately cleared
-            if background_job.is_running():
+            if job_execution.is_running():
                 # Replay current status for all nodes and edges
-                node_count = len(background_job.context.node_statuses)
-                edge_count = len(background_job.context.edge_statuses)
+                node_count = len(job_execution.context.node_statuses)
+                edge_count = len(job_execution.context.edge_statuses)
                 log.info(
                     f"Replaying status for {node_count} nodes and {edge_count} edges for job {job_id}"
                 )
 
                 # Replay node statuses
-                for node_status in background_job.context.node_statuses.values():
+                for node_status in job_execution.context.node_statuses.values():
                     msg_dict = node_status.model_dump()
                     msg_dict["job_id"] = job_id
                     msg_dict["workflow_id"] = workflow_id
                     await self.send_message(msg_dict)
 
                 # Replay edge statuses
-                for edge_status in background_job.context.edge_statuses.values():
+                for edge_status in job_execution.context.edge_statuses.values():
                     msg_dict = edge_status.model_dump()
                     msg_dict["job_id"] = job_id
                     msg_dict["workflow_id"] = workflow_id
@@ -509,7 +511,7 @@ class WebSocketRunner:
                     status="failed",
                     error=str(e),
                     job_id=job_id,
-                    workflow_id=workflow_id,
+                    workflow_id=workflow_id or "",
                 ).model_dump()
             )
 
@@ -534,7 +536,7 @@ class WebSocketRunner:
         except Exception as e:
             log.error(f"Error sending message: {e}")
 
-    async def cancel_job(self, job_id: str, workflow_id: str):
+    async def cancel_job(self, job_id: str, workflow_id: Optional[str] = None):
         """
         Cancels the specified job.
 
@@ -546,7 +548,7 @@ class WebSocketRunner:
             return {"error": "No job_id provided"}
 
         log.info(f"Attempting to cancel job: {job_id}")
-        job_manager = BackgroundJobManager.get_instance()
+        job_manager = JobExecutionManager.get_instance()
         cancelled = await job_manager.cancel_job(job_id)
 
         # Stop streaming task if active
@@ -559,13 +561,13 @@ class WebSocketRunner:
             return {
                 "message": "Job cancellation requested",
                 "job_id": job_id,
-                "workflow_id": workflow_id,
+                "workflow_id": workflow_id or "",
             }
         else:
             return {
                 "error": "Job not found or already completed",
                 "job_id": job_id,
-                "workflow_id": workflow_id,
+                "workflow_id": workflow_id or "",
             }
 
     def get_status(self, job_id: str | None = None):
@@ -579,7 +581,7 @@ class WebSocketRunner:
             job_ctx = self.active_jobs.get(job_id)
             if job_ctx:
                 return {
-                    "status": job_ctx.background_job.status,
+                    "status": job_ctx.job_execution.status,
                     "job_id": job_id,
                     "workflow_id": job_ctx.workflow_id,
                 }
@@ -591,7 +593,7 @@ class WebSocketRunner:
                     {
                         "job_id": ctx.job_id,
                         "workflow_id": ctx.workflow_id,
-                        "status": ctx.background_job.status,
+                        "status": ctx.job_execution.status,
                     }
                     for ctx in self.active_jobs.values()
                 ]
@@ -627,6 +629,10 @@ class WebSocketRunner:
             return await self.clear_models()
         elif command.command == CommandType.RUN_JOB:
             req = RunJobRequest(**command.data)
+            if Environment.get_execution_strategy() == ExecutionStrategy.DOCKER:
+                req.execution_strategy = ExecutionStrategy.DOCKER
+            else:
+                req.execution_strategy = ExecutionStrategy.THREADED
             log.info(f"Starting workflow: {req.workflow_id}")
             asyncio.create_task(self.run_job(req))
             log.debug("Run job command scheduled")
@@ -662,7 +668,7 @@ class WebSocketRunner:
                         done=value["done"],
                         content_type=value["content_type"],
                     )
-                job_ctx.background_job.runner.push_input_value(input_name=input_name, value=value, source_handle=handle)  # type: ignore[arg-type]
+                job_ctx.job_execution.push_input_value(input_name=input_name, value=value, source_handle=handle)  # type: ignore[arg-type]
                 log.debug("STREAM_INPUT enqueued to runner input queue")
                 return {
                     "message": "Input item streamed",
@@ -686,7 +692,8 @@ class WebSocketRunner:
                 log.debug(
                     f"END_INPUT_STREAM received: input={input_name} handle={handle}"
                 )
-                job_ctx.background_job.runner.finish_input_stream(
+                assert job_ctx.job_execution.runner, "Runner is not set"
+                job_ctx.job_execution.runner.finish_input_stream(
                     input_name=input_name, source_handle=handle
                 )
                 log.debug("END_INPUT_STREAM enqueued to runner input queue")

@@ -6,7 +6,7 @@ from nodetool.integrations.websocket.websocket_runner import (
     JobStreamContext,
 )
 from nodetool.workflows.run_job_request import RunJobRequest
-from nodetool.workflows.background_job_manager import BackgroundJobManager
+from nodetool.workflows.job_execution_manager import JobExecutionManager
 from nodetool.types.graph import Graph
 from nodetool.models.workflow import Workflow
 
@@ -51,13 +51,15 @@ async def simple_workflow():
 async def cleanup_jobs():
     """Cleanup jobs after each test."""
     yield
-    manager = BackgroundJobManager.get_instance()
+    manager = JobExecutionManager.get_instance()
     for job_id, job in list(manager._jobs.items()):
         try:
-            if job.future and not job.future.done():
-                job.future.cancel()
-            if job.event_loop and job.event_loop.is_running:
-                job.event_loop.stop()
+            # Use the cleanup_resources method
+            job.cleanup_resources()
+
+            # Cancel if not completed
+            if not job.is_completed():
+                job.cancel()
         except Exception as e:
             print(f"Error cleaning up job {job_id}: {e}")
     manager._jobs.clear()
@@ -142,7 +144,7 @@ async def test_websocket_runner_job_streaming_context():
 
     assert ctx.job_id == "test-job"
     assert ctx.workflow_id == "test-workflow"
-    assert ctx.background_job is bg_job
+    assert ctx.job_execution is bg_job
     assert ctx.streaming_task is None
 
 

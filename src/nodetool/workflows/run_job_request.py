@@ -6,6 +6,15 @@ from pydantic import BaseModel
 
 
 from typing import Any, Literal
+from enum import Enum
+
+
+class ExecutionStrategy(str, Enum):
+    """Execution strategy for workflow jobs."""
+
+    THREADED = "threaded"
+    SUBPROCESS = "subprocess"
+    DOCKER = "docker"
 
 
 class RunJobRequest(BaseModel):
@@ -15,6 +24,7 @@ class RunJobRequest(BaseModel):
     Attributes:
         type: The type of request, always "run_job_request".
         job_type: The type of job to run, defaults to "workflow".
+        execution_strategy: Strategy for executing the job (threaded, subprocess, docker).
         params: Optional parameters for the job.
         messages: Optional list of messages associated with the job.
         workflow_id: The ID of the workflow to run.
@@ -28,6 +38,7 @@ class RunJobRequest(BaseModel):
 
     type: Literal["run_job_request"] = "run_job_request"
     job_type: str = "workflow"
+    execution_strategy: ExecutionStrategy = ExecutionStrategy.THREADED
     params: Any | None = None
     messages: list[Message] | None = None
     workflow_id: str = ""

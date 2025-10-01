@@ -150,68 +150,242 @@ def serve(
 
 
 @cli.command()
-@click.argument("workflow", type=str)
-def run(workflow: str):
-    """Run a workflow by ID or from a local JSON definition file."""
+@click.argument("workflow", required=False, type=str)
+@click.option(
+    "--jsonl",
+    is_flag=True,
+    help="Output raw JSONL format instead of pretty-printed messages (for subprocess/automation use)",
+)
+@click.option(
+    "--stdin",
+    is_flag=True,
+    help="Read full RunJobRequest JSON from stdin (for subprocess/automation use)",
+)
+@click.option(
+    "--user-id",
+    default="1",
+    help="User ID for workflow execution (default: 1)",
+)
+@click.option(
+    "--auth-token",
+    default="local_token",
+    help="Authentication token for workflow execution (default: local_token)",
+)
+def run(
+    workflow: str | None,
+    jsonl: bool,
+    stdin: bool,
+    user_id: str,
+    auth_token: str,
+):
+    """Run a workflow by ID, file path, or RunJobRequest JSON.
+
+    Interactive mode (default):
+      Runs a workflow and displays pretty-printed status updates.
+      Specify a workflow ID or path to a workflow JSON file.
+
+    JSONL mode (--jsonl):
+      Outputs raw JSONL (JSON Lines) format for subprocess/automation use.
+      Each line is a valid JSON object representing workflow progress.
+
+    Stdin mode (--stdin):
+      Reads a complete RunJobRequest JSON from stdin.
+      Useful for programmatic workflow execution.
+
+    Examples:
+      # Interactive: Run workflow by ID
+      nodetool run workflow_abc123
+
+      # Interactive: Run workflow from file
+      nodetool run workflow.json
+
+      # JSONL: Stream workflow progress as JSONL
+      nodetool run workflow_abc123 --jsonl
+
+      # Stdin: Read RunJobRequest from stdin (JSONL output)
+      echo '{"workflow_id":"abc","user_id":"1","auth_token":"token","params":{}}' | nodetool run --stdin --jsonl
+
+      # Stdin: Read RunJobRequest from file
+      cat request.json | nodetool run --stdin --jsonl
+    """
     import asyncio
     import json
     import os
     import sys
+    import base64
     import traceback
+    from typing import Any
 
+    from nodetool.workflows.processing_context import ProcessingContext
     from nodetool.workflows.run_job_request import RunJobRequest
     from nodetool.workflows.run_workflow import run_workflow
     from nodetool.types.graph import Graph
 
-    # Determine whether the provided argument is a file path or an ID
-    is_file = os.path.isfile(workflow)
-
-    try:
-        if is_file:
-            with open(workflow, "r", encoding="utf-8") as f:
-                workflow_json = json.load(f)
-
-            assert "graph" in workflow_json, "Graph not found in workflow JSON"
-            graph = Graph(**workflow_json["graph"])
-
-            request = RunJobRequest(
-                user_id="1",
-                auth_token="local_token",
-                graph=graph,
-            )
-        else:
-            # Treat the argument as a workflow ID
-            request = RunJobRequest(
-                workflow_id=workflow,
-                user_id="1",
-                auth_token="local_token",
-            )
-    except Exception as e:
-        console.print(Panel.fit(f"Failed to prepare workflow: {e}", style="bold red"))
-        traceback.print_exc()
-        sys.exit(1)
-
-    async def run_workflow_async():
-        console.print(Panel.fit(f"Running workflow {workflow}...", style="blue"))
+    def _default(obj: Any) -> Any:
+        """JSON serializer for objects not serializable by default json code."""
         try:
-            async for message in run_workflow(request):
-                print(message)
-                # Pretty-print each message coming from the runner
-                if isinstance(message, JobUpdate) and message.status == "error":
-                    console.print(
-                        Panel.fit(f"Error: {message.error}", style="bold red")
-                    )
-                    sys.exit(1)
-                else:
-                    msg_type = Text(message.type, style="bold cyan")
-                    console.print(f"{msg_type}: {message.model_dump_json()}")
-            console.print(Panel.fit("Workflow finished successfully", style="green"))
+            if hasattr(obj, "model_dump") and callable(obj.model_dump):
+                return obj.model_dump()
+        except Exception:
+            pass
+
+        if isinstance(obj, (bytes, bytearray)):
+            return {
+                "__type__": "bytes",
+                "base64": base64.b64encode(bytes(obj)).decode("utf-8"),
+            }
+
+        return str(obj)
+
+    def _parse_workflow_arg(value: str) -> RunJobRequest:
+        """Parse workflow argument as ID, file path, or RunJobRequest JSON."""
+        # Check if it's a file
+        if os.path.isfile(value):
+            with open(value, "r", encoding="utf-8") as f:
+                data = json.load(f)
+
+            # Check if it's a full RunJobRequest or just a workflow definition
+            if "graph" in data and "user_id" not in data:
+                # It's a workflow definition file
+                graph = Graph(**data["graph"])
+                return RunJobRequest(
+                    user_id=user_id,
+                    auth_token=auth_token,
+                    graph=graph,
+                )
+            else:
+                # It's a RunJobRequest JSON file
+                if isinstance(data.get("graph"), dict):
+                    data["graph"] = Graph(**data["graph"])
+                return RunJobRequest(**data)
+
+        # Try to parse as inline JSON
+        try:
+            data = json.loads(value)
+            if isinstance(data.get("graph"), dict):
+                data["graph"] = Graph(**data["graph"])
+            return RunJobRequest(**data)
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+        # Treat as workflow ID
+        return RunJobRequest(
+            workflow_id=value,
+            user_id=user_id,
+            auth_token=auth_token,
+        )
+
+    def _read_stdin_request() -> RunJobRequest:
+        """Read RunJobRequest JSON from stdin."""
+        stdin_data = sys.stdin.read()
+        if not stdin_data.strip():
+            print("Error: No request JSON provided via stdin", file=sys.stderr)
+            sys.exit(1)
+        try:
+            req_dict = json.loads(stdin_data)
+            if isinstance(req_dict.get("graph"), dict):
+                req_dict["graph"] = Graph(**req_dict["graph"])
+            return RunJobRequest(**req_dict)
+        except json.JSONDecodeError as e:
+            print(f"Error: Invalid JSON from stdin: {e}", file=sys.stderr)
+            sys.exit(1)
         except Exception as e:
-            console.print(Panel.fit(f"Error running workflow: {e}", style="bold red"))
-            traceback.print_exc()
+            print(f"Error: Invalid RunJobRequest: {e}", file=sys.stderr)
             sys.exit(1)
 
-    asyncio.run(run_workflow_async())
+    # Determine the request source
+    if stdin:
+        request = _read_stdin_request()
+    elif workflow:
+        try:
+            request = _parse_workflow_arg(workflow)
+        except Exception as e:
+            if jsonl:
+                err = {"type": "error", "error": str(e)}
+                sys.stdout.write(json.dumps(err) + "\n")
+                sys.stdout.flush()
+                sys.exit(1)
+            else:
+                console.print(
+                    Panel.fit(f"Failed to prepare workflow: {e}", style="bold red")
+                )
+                traceback.print_exc()
+                sys.exit(1)
+    else:
+        if jsonl:
+            print("Error: Workflow argument required (or use --stdin)", file=sys.stderr)
+        else:
+            console.print("[red]Error: Workflow argument required (or use --stdin)[/]")
+        sys.exit(1)
+
+    from nodetool.config.logging_config import configure_logging
+
+    configure_logging(level="DEBUG")
+
+    # Execute the workflow
+    if jsonl:
+        # JSONL output mode (for subprocess/automation)
+        async def run_jsonl() -> int:
+            context = ProcessingContext(
+                user_id=request.user_id,
+                auth_token=request.auth_token,
+                workflow_id=request.workflow_id,
+                job_id=None,
+            )
+
+            try:
+                async for msg in run_workflow(
+                    request,
+                    context=context,
+                    use_thread=False,
+                    send_job_updates=True,
+                    initialize_graph=True,
+                    validate_graph=True,
+                ):
+                    line = json.dumps(
+                        msg if isinstance(msg, dict) else _default(msg),
+                        default=_default,
+                    )
+                    sys.stdout.write(line + "\n")
+                    sys.stdout.flush()
+                return 0
+            except Exception as e:
+                err = {"type": "error", "error": str(e)}
+                sys.stdout.write(json.dumps(err) + "\n")
+                sys.stdout.flush()
+                return 1
+
+        exit_code = asyncio.run(run_jsonl())
+        sys.exit(exit_code)
+    else:
+        # Interactive pretty-printed mode
+        async def run_interactive():
+            workflow_desc = workflow or "stdin"
+            console.print(
+                Panel.fit(f"Running workflow {workflow_desc}...", style="blue")
+            )
+            try:
+                async for message in run_workflow(request):
+                    # Pretty-print each message coming from the runner
+                    if isinstance(message, JobUpdate) and message.status == "error":
+                        console.print(
+                            Panel.fit(f"Error: {message.error}", style="bold red")
+                        )
+                        sys.exit(1)
+                    else:
+                        msg_type = Text(message.type, style="bold cyan")
+                        console.print(f"{msg_type}: {message.model_dump_json()}")
+                console.print(
+                    Panel.fit("Workflow finished successfully", style="green")
+                )
+            except Exception as e:
+                console.print(
+                    Panel.fit(f"Error running workflow: {e}", style="bold red")
+                )
+                traceback.print_exc()
+                sys.exit(1)
+
+        asyncio.run(run_interactive())
 
 
 @cli.command()
