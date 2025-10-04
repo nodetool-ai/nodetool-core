@@ -9,6 +9,27 @@ from typing import Any, Literal
 from enum import Enum
 
 
+class ResourceLimits(BaseModel):
+    """
+    Resource limits for subprocess execution.
+
+    Attributes:
+        cpu_percent: CPU usage limit as percentage (1-100), requires cpulimit
+        memory_mb: Memory limit in megabytes, uses ulimit -v
+        time_seconds: CPU time limit in seconds, uses ulimit -t
+        file_size_mb: File size limit in megabytes, uses ulimit -f
+        open_files: Maximum number of open file descriptors, uses ulimit -n
+        max_processes: Maximum number of processes, uses ulimit -u
+    """
+
+    cpu_percent: int | None = None
+    memory_mb: int | None = None
+    time_seconds: int | None = None
+    file_size_mb: int | None = None
+    open_files: int | None = None
+    max_processes: int | None = None
+
+
 class ExecutionStrategy(str, Enum):
     """Execution strategy for workflow jobs."""
 
@@ -48,3 +69,4 @@ class RunJobRequest(BaseModel):
     env: dict[str, Any] | None = None
     graph: Graph | None = None
     explicit_types: bool | None = False
+    resource_limits: ResourceLimits | None = None

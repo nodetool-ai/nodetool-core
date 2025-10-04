@@ -11,6 +11,8 @@ from google.genai.types import (
     Blob,
     FunctionDeclaration,
     GenerateContentConfig,
+    GenerateImagesConfig,
+    FinishReason,
     Part,
     FunctionCall,
     Content,
@@ -21,7 +23,11 @@ from google.genai.types import (
 from nodetool.workflows.base_node import ApiKeyMissingError
 from pydantic import BaseModel
 
-from nodetool.chat.providers.base import ChatProvider, register_chat_provider
+from nodetool.chat.providers.base import (
+    ChatProvider,
+    ProviderCapability,
+    register_chat_provider,
+)
 from nodetool.agents.tools.base import Tool as NodeTool
 from nodetool.config.environment import Environment
 from nodetool.metadata.types import (
@@ -33,7 +39,10 @@ from nodetool.metadata.types import (
     Provider,
     ToolCall,
     MessageFile,
+    LanguageModel,
+    ImageModel,
 )
+from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import Chunk
 from nodetool.config.logging_config import get_logger
 from nodetool.io.uri_utils import fetch_uri_bytes_and_mime
@@ -63,6 +72,15 @@ class GeminiProvider(ChatProvider):
         self.cost = 0.0
         log.debug(f"GeminiProvider initialized. API key present: {bool(self.api_key)}")
 
+    def get_capabilities(self) -> set[ProviderCapability]:
+        """Gemini provider supports all capabilities: chat and image generation."""
+        return {
+            ProviderCapability.GENERATE_MESSAGE,
+            ProviderCapability.GENERATE_MESSAGES,
+            ProviderCapability.TEXT_TO_IMAGE,
+            ProviderCapability.IMAGE_TO_IMAGE,
+        }
+
     def get_client(self) -> AsyncClient:
         """Return an async Gemini client. Extracted for ease of testing/mocking."""
         return get_genai_client()
@@ -76,6 +94,119 @@ class GeminiProvider(ChatProvider):
         """Get the maximum token limit for a given model."""
         log.debug(f"Getting context length for model: {model}")
         return 1000000
+
+    def has_tool_support(self, model: str) -> bool:
+        """Return True if the given model supports tools/function calling.
+
+        All Gemini models support function calling.
+
+        Args:
+            model: Model identifier string.
+
+        Returns:
+            True for all Gemini models as they all support function calling.
+        """
+        log.debug(f"Checking tool support for model: {model}")
+        log.debug(f"Model {model} supports tool calling (all Gemini models do)")
+        return True
+
+    async def get_available_language_models(self) -> List[LanguageModel]:
+        """
+        Get available Gemini language models.
+
+        Fetches models dynamically from the Gemini API if an API key is available.
+        Returns an empty list if no API key is configured or if the fetch fails.
+
+        Returns:
+            List of LanguageModel instances for Gemini
+        """
+        if not self.api_key:
+            log.debug("No Gemini API key configured, returning empty model list")
+            return []
+
+        try:
+            timeout = aiohttp.ClientTimeout(total=3)
+            # API permits key either as header or query parameter; use query to avoid header nuances
+            url = f"https://generativelanguage.googleapis.com/v1/models?key={self.api_key}"
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.get(url) as response:
+                    if response.status != 200:
+                        log.warning(
+                            f"Failed to fetch Gemini models: HTTP {response.status}"
+                        )
+                        return []
+                    payload = await response.json()
+                    items = payload.get("models") or payload.get("data") or []
+
+                    models: List[LanguageModel] = []
+                    for item in items:
+                        # Typical id format is name: "models/gemini-1.5-flash"; strip prefix
+                        raw_name: str | None = item.get("name")
+                        if not raw_name:
+                            continue
+                        model_id = raw_name.split("/")[-1]
+                        display_name = item.get("displayName") or model_id
+                        models.append(
+                            LanguageModel(
+                                id=model_id,
+                                name=display_name,
+                                provider=Provider.Gemini,
+                            )
+                        )
+                    log.debug(f"Fetched {len(models)} Gemini models")
+                    return models
+        except Exception as e:
+            log.error(f"Error fetching Gemini models: {e}")
+            return []
+
+    async def get_available_image_models(self) -> List[ImageModel]:
+        """
+        Get available Gemini image models.
+
+        Returns models only if GEMINI_API_KEY is configured.
+
+        Returns:
+            List of ImageModel instances for Gemini
+        """
+        if not self.api_key:
+            return []
+
+        models = [
+            # Gemini image-capable models (support both text-to-image and image-to-image)
+            ImageModel(
+                id="gemini-2.0-flash-preview-image-generation",
+                name="Gemini 2.0 Flash Preview (Image Gen)",
+                provider=Provider.Gemini,
+            ),
+            ImageModel(
+                id="gemini-2.5-flash-image-preview",
+                name="Gemini 2.5 Flash (Image Preview)",
+                provider=Provider.Gemini,
+            ),
+            # Imagen models (text-to-image only)
+            ImageModel(
+                id="imagen-3.0-generate-001",
+                name="Imagen 3.0 Generate 001",
+                provider=Provider.Gemini,
+            ),
+            ImageModel(
+                id="imagen-3.0-generate-002",
+                name="Imagen 3.0 Generate 002",
+                provider=Provider.Gemini,
+            ),
+            ImageModel(
+                id="imagen-4.0-generate-preview-06-06",
+                name="Imagen 4.0 Preview",
+                provider=Provider.Gemini,
+            ),
+            ImageModel(
+                id="imagen-4.0-ultra-generate-preview-06-06",
+                name="Imagen 4.0 Ultra Preview",
+                provider=Provider.Gemini,
+            ),
+        ]
+
+        return models
 
     async def _uri_to_blob(self, uri: str) -> Blob:
         """Fetch data from URI and return a Gemini Blob using shared utility."""
@@ -579,6 +710,202 @@ class GeminiProvider(ChatProvider):
         """Reset the usage counters to zero."""
         log.debug("Resetting usage counters")
         self.usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+
+    async def text_to_image(
+        self,
+        params: Any,  # TextToImageParams
+        timeout_s: int | None = None,
+        context: ProcessingContext | None = None,
+    ) -> bytes:
+        """Generate an image from a text prompt using Gemini models.
+
+        Args:
+            params: Text-to-image generation parameters
+            timeout_s: Optional timeout in seconds
+            context: Processing context for asset handling
+
+        Returns:
+            Raw image bytes as PNG
+
+        Raises:
+            ValueError: If required parameters are missing
+            RuntimeError: If generation fails
+        """
+        if not params.prompt:
+            raise ValueError("The input prompt cannot be empty.")
+
+        self._log_api_request("text_to_image", params=params)
+
+        try:
+            model_id = params.model.id
+
+            # If a Gemini image-capable model is selected, use the generate_content API
+            if model_id.startswith("gemini-"):
+                log.info(f"Using Gemini image-capable model: {model_id}")
+
+                response = await self.get_client().models.generate_content(
+                    model=model_id,
+                    contents=params.prompt,
+                    config=GenerateContentConfig(
+                        response_modalities=["IMAGE", "TEXT"],
+                    ),
+                )
+
+                log.debug(f"Gemini API response: {response}")
+
+                # Extract first inline image from response parts
+                if not response or not response.candidates:
+                    log.error("No response received from Gemini API")
+                    raise RuntimeError("No response received from Gemini API")
+
+                candidate = response.candidates[0]
+
+                if candidate.finish_reason == FinishReason.PROHIBITED_CONTENT:
+                    log.error("Prohibited content in the input prompt")
+                    raise ValueError("Prohibited content in the input prompt")
+
+                if (
+                    not candidate
+                    or not candidate.content
+                    or not candidate.content.parts
+                ):
+                    log.error("Invalid response format from Gemini API")
+                    raise RuntimeError("Invalid response format from Gemini API")
+
+                image_bytes = None
+                for part in candidate.content.parts:
+                    inline_data = getattr(part, "inline_data", None)
+                    if inline_data and getattr(inline_data, "data", None):
+                        image_bytes = inline_data.data
+                        break
+
+                if not image_bytes:
+                    raise RuntimeError("No image bytes returned in response")
+
+                self.usage["total_requests"] = self.usage.get("total_requests", 0) + 1
+                self.usage["total_images"] = self.usage.get("total_images", 0) + 1
+                self._log_api_response("text_to_image", image_count=1)
+
+                return image_bytes
+
+            # Otherwise, use the images generation API (Imagen models)
+            config = GenerateImagesConfig(
+                number_of_images=1,
+            )
+
+            response = await self.get_client().models.generate_images(
+                model=model_id,
+                prompt=params.prompt,
+                config=config,
+            )
+
+            if not response.generated_images:
+                raise RuntimeError("No images generated")
+
+            image = response.generated_images[0].image
+            if not image or not image.image_bytes:
+                raise RuntimeError("No image bytes in response")
+
+            self.usage["total_requests"] = self.usage.get("total_requests", 0) + 1
+            self.usage["total_images"] = self.usage.get("total_images", 0) + 1
+            self._log_api_response("text_to_image", image_count=1)
+
+            return image.image_bytes
+
+        except Exception as e:
+            log.error(f"Gemini text-to-image generation failed: {e}")
+            raise RuntimeError(f"Gemini text-to-image generation failed: {e}")
+
+    async def image_to_image(
+        self,
+        image: bytes,
+        params: Any,  # ImageToImageParams
+        timeout_s: int | None = None,
+        context: ProcessingContext | None = None,
+    ) -> bytes:
+        """Transform an image based on a text prompt using Gemini models.
+
+        Args:
+            image: Input image as bytes
+            params: Image-to-image generation parameters
+            timeout_s: Optional timeout in seconds
+            context: Processing context for asset handling
+
+        Returns:
+            Raw image bytes as PNG
+
+        Raises:
+            ValueError: If required parameters are missing
+            RuntimeError: If generation fails
+        """
+        if not params.prompt:
+            raise ValueError("The input prompt cannot be empty.")
+
+        self._log_api_request("image_to_image", params=params)
+
+        try:
+            model_id = params.model.id
+
+            # Only Gemini image-capable models support image-to-image
+            if not model_id.startswith("gemini-"):
+                raise ValueError(
+                    f"Model {model_id} does not support image-to-image generation. "
+                    "Only Gemini models (gemini-*) support this feature."
+                )
+
+            log.info(f"Using Gemini image-capable model for image-to-image: {model_id}")
+
+            # Convert image bytes to PIL Image
+            from PIL import Image
+            pil_image = Image.open(BytesIO(image))
+
+            # Build contents with both prompt and image
+            contents = [params.prompt, pil_image]
+
+            response = await self.get_client().models.generate_content(
+                model=model_id,
+                contents=contents,
+                config=GenerateContentConfig(
+                    response_modalities=["IMAGE", "TEXT"],
+                ),
+            )
+
+            log.debug(f"Gemini API response: {response}")
+
+            # Extract first inline image from response parts
+            if not response or not response.candidates:
+                log.error("No response received from Gemini API")
+                raise RuntimeError("No response received from Gemini API")
+
+            candidate = response.candidates[0]
+
+            if candidate.finish_reason == FinishReason.PROHIBITED_CONTENT:
+                log.error("Prohibited content in the input prompt or image")
+                raise ValueError("Prohibited content in the input prompt or image")
+
+            if not candidate or not candidate.content or not candidate.content.parts:
+                log.error("Invalid response format from Gemini API")
+                raise RuntimeError("Invalid response format from Gemini API")
+
+            image_bytes = None
+            for part in candidate.content.parts:
+                inline_data = getattr(part, "inline_data", None)
+                if inline_data and getattr(inline_data, "data", None):
+                    image_bytes = inline_data.data
+                    break
+
+            if not image_bytes:
+                raise RuntimeError("No image bytes returned in response")
+
+            self.usage["total_requests"] = self.usage.get("total_requests", 0) + 1
+            self.usage["total_images"] = self.usage.get("total_images", 0) + 1
+            self._log_api_response("image_to_image", image_count=1)
+
+            return image_bytes
+
+        except Exception as e:
+            log.error(f"Gemini image-to-image generation failed: {e}")
+            raise RuntimeError(f"Gemini image-to-image generation failed: {e}")
 
     def is_context_length_error(self, error: Exception) -> bool:
         msg = str(error).lower()

@@ -6,11 +6,8 @@ from typing import List, Dict, Any
 import aiohttp
 from nodetool.metadata.types import LanguageModel, Provider
 from nodetool.integrations.huggingface.huggingface_models import (
-    get_llamacpp_language_models_from_hf_cache,
     get_mlx_language_models_from_hf_cache,
 )
-from nodetool.config.environment import Environment
-from nodetool.storage.memory_node_cache import MemoryNodeCache
 
 log = get_logger(__name__)
 
@@ -48,78 +45,6 @@ class LanguageModelCache:
 
 # Dedicated in-memory cache for language models
 _language_model_cache = LanguageModelCache()
-
-# Hardcoded models for providers that don't support HF Hub API
-anthropic_models = [
-    LanguageModel(
-        id="claude-3-5-haiku-latest",
-        name="Claude 3.5 Haiku",
-        provider=Provider.Anthropic,
-    ),
-    LanguageModel(
-        id="claude-3-5-sonnet-latest",
-        name="Claude 3.5 Sonnet",
-        provider=Provider.Anthropic,
-    ),
-    LanguageModel(
-        id="claude-3-7-sonnet-latest",
-        name="Claude 3.7 Sonnet",
-        provider=Provider.Anthropic,
-    ),
-    LanguageModel(
-        id="claude-sonnet-4-20250514",
-        name="Claude Sonnet 4",
-        provider=Provider.Anthropic,
-    ),
-    LanguageModel(
-        id="claude-opus-4-20250514",
-        name="Claude Opus 4",
-        provider=Provider.Anthropic,
-    ),
-]
-
-gemini_models = [
-    LanguageModel(
-        id="gemini-2.5-pro-exp-03-25",
-        name="Gemini 2.5 Pro Experimental",
-        provider=Provider.Gemini,
-    ),
-    LanguageModel(
-        id="gemini-2.5-flash-preview-04-17",
-        name="Gemini 2.5 Flash",
-        provider=Provider.Gemini,
-    ),
-    LanguageModel(
-        id="gemini-2.0-flash",
-        name="Gemini 2.0 Flash",
-        provider=Provider.Gemini,
-    ),
-    LanguageModel(
-        id="gemini-2.0-flash-lite",
-        name="Gemini 2.0 Flash Lite",
-        provider=Provider.Gemini,
-    ),
-    LanguageModel(
-        id="gemini-2.0-flash-exp-image-generation",
-        name="Gemini 2.0 Flash Exp Image Generation",
-        provider=Provider.Gemini,
-    ),
-]
-
-# Keep a small static OpenAI list for compatibility (tests import this symbol),
-# but runtime aggregation uses dynamic fetching when OPENAI_API_KEY is set.
-openai_models = [
-    LanguageModel(
-        id="gpt-4o",
-        name="GPT-4o",
-        provider=Provider.OpenAI,
-    ),
-    LanguageModel(
-        id="gpt-4o-mini",
-        name="GPT-4o Mini",
-        provider=Provider.OpenAI,
-    ),
-]
 
 # Provider mapping for HuggingFace Hub API
 HF_PROVIDER_MAPPING = {
@@ -203,311 +128,53 @@ async def fetch_models_from_hf_provider(provider: str) -> List[LanguageModel]:
         return []
 
 
-async def get_cached_hf_inference_provider_models() -> List[LanguageModel]:
-    """
-    Get HuggingFace models from in-memory cache or fetch them dynamically.
-
-    Returns:
-        List of LanguageModel instances from HuggingFace providers
-    """
-    cache_key = "hf_language_models"
-
-    # Try to get from cache first
-    cached_models = _language_model_cache.get(cache_key)
-    if cached_models is not None:
-        log.debug("Using cached HuggingFace models")
-        return cached_models
-
-    log.debug("Fetching HuggingFace models from API")
-
-    # List of providers to fetch from
-    providers = [
-        "black-forest-labs",
-        "cerebras",
-        "cohere",
-        "fal-ai",
-        "featherless-ai",
-        "fireworks-ai",
-        "groq",
-        "hf-inference",
-        "hyperbolic",
-        "nebius",
-        "novita",
-        "nscale",
-        "replicate",
-        "sambanova",
-        "together",
-    ]
-
-    # Fetch models from all providers concurrently
-    tasks = [fetch_models_from_hf_provider(provider) for provider in providers]
-    provider_results = await asyncio.gather(*tasks, return_exceptions=True)
-
-    # Combine all models
-    all_models = []
-    for i, result in enumerate(provider_results):
-        if isinstance(result, Exception):
-            log.error(f"Error fetching models for provider {providers[i]}: {result}")
-        elif isinstance(result, list):
-            all_models.extend(result)
-
-    # Cache the results in memory
-    _language_model_cache.set(cache_key, all_models, ttl=CACHE_TTL)
-    log.info(f"Cached {len(all_models)} HuggingFace models in memory")
-
-    return all_models
-
-
-async def fetch_openai_language_models() -> List[LanguageModel]:
-    """
-    Fetch available OpenAI models using the OpenAI REST API.
-
-    Returns:
-        A list of LanguageModel entries with provider set to Provider.OpenAI.
-
-    Notes:
-        - Only runs if OPENAI_API_KEY is available in the environment.
-        - Uses a short timeout to avoid blocking if the network is unavailable.
-    """
-    env = Environment.get_environment()
-    api_key = env.get("OPENAI_API_KEY")
-    if not api_key:
-        return []
-
-    try:
-        timeout = aiohttp.ClientTimeout(total=3)
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-        }
-        async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
-            async with session.get("https://api.openai.com/v1/models") as response:
-                if response.status != 200:
-                    log.warning(
-                        f"Failed to fetch OpenAI models: HTTP {response.status}"
-                    )
-                    return []
-                payload: Dict[str, Any] = await response.json()
-                data = payload.get("data", [])
-
-                models: List[LanguageModel] = []
-                for item in data:
-                    model_id = item.get("id")
-                    if not model_id:
-                        continue
-                    models.append(
-                        LanguageModel(
-                            id=model_id,
-                            name=model_id,
-                            provider=Provider.OpenAI,
-                        )
-                    )
-                log.debug(f"Fetched {len(models)} OpenAI models")
-                return models
-    except Exception as e:
-        log.error(f"Error fetching OpenAI models: {e}")
-        return []
-
-
-async def get_cached_openai_models() -> List[LanguageModel]:
-    """
-    Get OpenAI models from in-memory cache or fetch them dynamically.
-
-    Returns:
-        List of LanguageModel instances for OpenAI
-    """
-    cache_key = "openai_language_models"
-
-    cached_models = _language_model_cache.get(cache_key)
-    if cached_models is not None:
-        log.debug("Using cached OpenAI models")
-        return cached_models
-
-    log.debug("Fetching OpenAI models from API")
-    models = await fetch_openai_language_models()
-    # Only cache non-empty results to allow retries if API was temporarily unavailable
-    if models:
-        _language_model_cache.set(cache_key, models, ttl=CACHE_TTL)
-        log.info(f"Cached {len(models)} OpenAI models in memory")
-
-    return models
-
-
-async def fetch_gemini_language_models() -> List[LanguageModel]:
-    """
-    Fetch available Gemini models using the Google Generative Language REST API.
-
-    Returns:
-        A list of LanguageModel entries with provider set to Provider.Gemini.
-
-    Notes:
-        - Only runs if GEMINI_API_KEY is available in the environment.
-        - Uses a short timeout to avoid blocking if the network is unavailable.
-    """
-    env = Environment.get_environment()
-    api_key = env.get("GEMINI_API_KEY")
-    if not api_key:
-        return []
-
-    try:
-        timeout = aiohttp.ClientTimeout(total=3)
-        # API permits key either as header or query parameter; use query to avoid header nuances
-        url = f"https://generativelanguage.googleapis.com/v1/models?key={api_key}"
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.get(url) as response:
-                if response.status != 200:
-                    log.warning(
-                        f"Failed to fetch Gemini models: HTTP {response.status}"
-                    )
-                    return []
-                payload: Dict[str, Any] = await response.json()
-                items = payload.get("models") or payload.get("data") or []
-
-                models: List[LanguageModel] = []
-                for item in items:
-                    # Typical id format is name: "models/gemini-1.5-flash"; strip prefix
-                    raw_name: str | None = item.get("name")
-                    if not raw_name:
-                        continue
-                    model_id = raw_name.split("/")[-1]
-                    display_name = item.get("displayName") or model_id
-                    models.append(
-                        LanguageModel(
-                            id=model_id,
-                            name=display_name,
-                            provider=Provider.Gemini,
-                        )
-                    )
-                log.debug(f"Fetched {len(models)} Gemini models")
-                return models
-    except Exception as e:
-        log.error(f"Error fetching Gemini models: {e}")
-        return []
-
-
-async def get_cached_gemini_models() -> List[LanguageModel]:
-    """
-    Get Gemini models from in-memory cache or fetch them dynamically.
-
-    Returns:
-        List of LanguageModel instances for Gemini
-    """
-    cache_key = "gemini_language_models"
-
-    cached_models = _language_model_cache.get(cache_key)
-    if cached_models is not None:
-        log.debug("Using cached Gemini models")
-        return cached_models
-
-    log.debug("Fetching Gemini models from API")
-    models = await fetch_gemini_language_models()
-    if models:
-        _language_model_cache.set(cache_key, models, ttl=CACHE_TTL)
-        log.info(f"Cached {len(models)} Gemini models in memory")
-
-    return models
-
-
-async def fetch_anthropic_language_models() -> List[LanguageModel]:
-    """
-    Fetch available Anthropic models using the Anthropic REST API.
-
-    Returns:
-        A list of LanguageModel entries with provider set to Provider.Anthropic.
-
-    Notes:
-        - Only runs if ANTHROPIC_API_KEY is available in the environment.
-        - Uses a short timeout to avoid blocking if the network is unavailable.
-        - Anthropic requires the 'anthropic-version' header.
-    """
-    env = Environment.get_environment()
-    api_key = env.get("ANTHROPIC_API_KEY")
-    if not api_key:
-        return []
-
-    try:
-        timeout = aiohttp.ClientTimeout(total=3)
-        headers = {
-            "x-api-key": api_key,
-            "anthropic-version": "2023-06-01",
-        }
-        async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
-            async with session.get("https://api.anthropic.com/v1/models") as response:
-                if response.status != 200:
-                    log.warning(
-                        f"Failed to fetch Anthropic models: HTTP {response.status}"
-                    )
-                    return []
-                payload: Dict[str, Any] = await response.json()
-                data = payload.get("data", [])
-
-                models: List[LanguageModel] = []
-                for item in data:
-                    model_id = item.get("id") or item.get("name")
-                    if not model_id:
-                        continue
-                    models.append(
-                        LanguageModel(
-                            id=model_id,
-                            name=model_id,
-                            provider=Provider.Anthropic,
-                        )
-                    )
-                log.debug(f"Fetched {len(models)} Anthropic models")
-                return models
-    except Exception as e:
-        log.error(f"Error fetching Anthropic models: {e}")
-        return []
-
-
-async def get_cached_anthropic_models() -> List[LanguageModel]:
-    """
-    Get Anthropic models from in-memory cache or fetch them dynamically.
-
-    Returns:
-        List of LanguageModel instances for Anthropic
-    """
-    cache_key = "anthropic_language_models"
-
-    cached_models = _language_model_cache.get(cache_key)
-    if cached_models is not None:
-        log.debug("Using cached Anthropic models")
-        return cached_models
-
-    log.debug("Fetching Anthropic models from API")
-    models = await fetch_anthropic_language_models()
-    if models:
-        _language_model_cache.set(cache_key, models, ttl=CACHE_TTL)
-        log.info(f"Cached {len(models)} Anthropic models in memory")
-
-    return models
-
-
 async def get_all_language_models() -> List[LanguageModel]:
     """
-    Get all language models from all providers, including dynamically fetched HF models
-    and locally cached GGUF models for llama.cpp.
+    Get all language models from all registered chat providers.
+
+    This function discovers models by calling each registered chat provider's
+    get_available_models() method. Each provider is responsible for
+    checking API keys and returning appropriate models.
 
     Returns:
-        List of all available LanguageModel instances
+        List of all available LanguageModel instances from all providers
     """
-    env = Environment.get_environment()
+    from nodetool.chat.providers.base import (
+        _CHAT_PROVIDER_REGISTRY,
+        get_registered_provider,
+    )
+
     models = []
 
-    # Add static models based on API keys
-    if "ANTHROPIC_API_KEY" in env:
-        models.extend(await get_cached_anthropic_models())
-    if "GEMINI_API_KEY" in env:
-        models.extend(await get_cached_gemini_models())
-    if "OPENAI_API_KEY" in env:
-        models.extend(await get_cached_openai_models())
-    if "HF_TOKEN" in env or "HUGGINGFACE_API_KEY" in env:
-        models.extend(await get_cached_hf_inference_provider_models())
+    # Load all chat providers to ensure they're registered
+    # This triggers the @register_chat_provider decorators
+    from nodetool.chat.providers import import_providers
 
-    # Always include locally cached GGUF models for llama.cpp if present
-    models.extend(await get_llamacpp_language_models_from_hf_cache())
-    # Prefer locally cached MLX repos from HF cache
-    models.extend(await get_mlx_language_models_from_hf_cache())
+    import_providers()
 
+    # Get models from each registered chat provider
+    provider_enums = list(_CHAT_PROVIDER_REGISTRY.keys())
+    log.debug(
+        f"Discovering models from {len(provider_enums)} chat providers: {provider_enums}"
+    )
+
+    for provider_enum in provider_enums:
+        try:
+            provider_cls, kwargs = get_registered_provider(provider_enum)
+            provider = provider_cls(**kwargs)
+            provider_models = await provider.get_available_language_models()
+            models.extend(provider_models)
+            log.debug(
+                f"Provider '{provider_enum}' returned {len(provider_models)} models"
+            )
+        except Exception as e:
+            # Don't fail if one provider fails - just log and continue
+            log.warning(f"Failed to get models from provider '{provider_enum}': {e}")
+            continue
+
+    log.info(
+        f"Discovered {len(models)} total language models from {len(provider_enums)} providers"
+    )
     return models
 
 
@@ -519,3 +186,7 @@ def clear_language_model_cache() -> None:
     """
     _language_model_cache.clear()
     log.info("Language model cache cleared")
+
+
+if __name__ == "__main__":
+    print(asyncio.run(get_all_language_models()))

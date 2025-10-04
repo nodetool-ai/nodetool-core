@@ -10,8 +10,9 @@ import base64
 import inspect
 import json
 import io
-from typing import Any, AsyncGenerator, AsyncIterator, Sequence
+from typing import Any, AsyncGenerator, AsyncIterator, List, Sequence
 
+import aiohttp
 import httpx
 import openai
 from openai.types.chat import (
@@ -32,7 +33,11 @@ from pydantic import BaseModel
 from pydub import AudioSegment
 from urllib.parse import unquote_to_bytes
 
-from nodetool.chat.providers.base import ChatProvider, register_chat_provider
+from nodetool.chat.providers.base import (
+    ChatProvider,
+    ProviderCapability,
+    register_chat_provider,
+)
 from nodetool.agents.tools.base import Tool
 from nodetool.chat.providers.openai_prediction import calculate_chat_cost
 from nodetool.config.logging_config import get_logger
@@ -44,6 +49,7 @@ from nodetool.metadata.types import (
     MessageImageContent,
     MessageTextContent,
     MessageAudioContent,
+    LanguageModel,
 )
 from nodetool.config.environment import Environment
 from nodetool.workflows.types import Chunk
@@ -106,6 +112,13 @@ class OpenAIProvider(ChatProvider):
             "reasoning_tokens": 0,
         }
         log.debug("OpenAIProvider initialized. API key present: True")
+
+    def get_capabilities(self) -> set[ProviderCapability]:
+        """OpenAI provider supports message generation capabilities."""
+        return {
+            ProviderCapability.GENERATE_MESSAGE,
+            ProviderCapability.GENERATE_MESSAGES,
+        }
 
     def get_container_env(self) -> dict[str, str]:
         """Return environment variables required for containerized execution.
@@ -178,6 +191,78 @@ class OpenAIProvider(ChatProvider):
         # Fallback for unknown models
         log.debug("Unknown model; returning conservative default context length: 4096")
         return 4096
+
+    def has_tool_support(self, model: str) -> bool:
+        """Return True if the given model supports tools/function calling.
+
+        Most OpenAI models support function calling, with the notable exception
+        of the O1 and O3 reasoning models which do not support tools.
+
+        Args:
+            model: Model identifier string.
+
+        Returns:
+            True if the model supports function calling, False otherwise.
+        """
+        log.debug(f"Checking tool support for model: {model}")
+
+        # O1 and O3 series reasoning models do not support tools
+        if model.startswith("o1") or model.startswith("o3"):
+            log.debug(f"Model {model} is a reasoning model without tool support")
+            return False
+
+        # All other modern OpenAI models support tools (GPT-3.5-turbo, GPT-4, GPT-4o, GPT-5, etc.)
+        log.debug(f"Model {model} supports tool calling")
+        return True
+
+    async def get_available_language_models(self) -> List[LanguageModel]:
+        """
+        Get available OpenAI models.
+
+        Fetches models dynamically from the OpenAI API if an API key is available.
+        Returns an empty list if no API key is configured or if the fetch fails.
+
+        Returns:
+            List of LanguageModel instances for OpenAI
+        """
+        if not self.api_key:
+            log.debug("No OpenAI API key configured, returning empty model list")
+            return []
+
+        try:
+            timeout = aiohttp.ClientTimeout(total=3)
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+            }
+            async with aiohttp.ClientSession(
+                timeout=timeout, headers=headers
+            ) as session:
+                async with session.get("https://api.openai.com/v1/models") as response:
+                    if response.status != 200:
+                        log.warning(
+                            f"Failed to fetch OpenAI models: HTTP {response.status}"
+                        )
+                        return []
+                    payload = await response.json()
+                    data = payload.get("data", [])
+
+                    models: List[LanguageModel] = []
+                    for item in data:
+                        model_id = item.get("id")
+                        if not model_id:
+                            continue
+                        models.append(
+                            LanguageModel(
+                                id=model_id,
+                                name=model_id,
+                                provider=Provider.OpenAI,
+                            )
+                        )
+                    log.debug(f"Fetched {len(models)} OpenAI models")
+                    return models
+        except Exception as e:
+            log.error(f"Error fetching OpenAI models: {e}")
+            return []
 
     async def uri_to_base64(self, uri: str) -> str:
         """Convert a URI to a base64-encoded ``data:`` URI string.

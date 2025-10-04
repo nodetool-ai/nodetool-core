@@ -29,15 +29,16 @@ Example usage:
         # test code here
 """
 
-from typing import Any, AsyncGenerator, Sequence, Callable, Union
+from typing import Any, AsyncGenerator, List, Sequence, Callable, Union
 import uuid
 
-from nodetool.chat.providers.base import ChatProvider
+from nodetool.chat.providers.base import ChatProvider, ProviderCapability
 from nodetool.metadata.types import (
     Message,
     Provider,
     ToolCall,
     MessageTextContent,
+    LanguageModel,
 )
 from nodetool.workflows.types import Chunk
 
@@ -86,6 +87,13 @@ class FakeProvider(ChatProvider):
         self.last_tools: Sequence[Any] = []
         self.last_kwargs: dict[str, Any] = {}
 
+    def get_capabilities(self) -> set[ProviderCapability]:
+        """Fake provider supports message generation capabilities."""
+        return {
+            ProviderCapability.GENERATE_MESSAGE,
+            ProviderCapability.GENERATE_MESSAGES,
+        }
+
     def get_response(
         self, messages: Sequence[Message], model: str
     ) -> Union[str, list[ToolCall]]:
@@ -100,6 +108,10 @@ class FakeProvider(ChatProvider):
     def reset_call_count(self) -> None:
         """Reset the call count to 0."""
         self.call_count = 0
+
+    async def get_available_language_models(self) -> List[LanguageModel]:
+        """Fake provider has no models."""
+        return []
 
     async def generate_message(
         self,

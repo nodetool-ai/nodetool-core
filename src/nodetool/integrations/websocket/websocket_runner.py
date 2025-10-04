@@ -2,6 +2,7 @@ import asyncio
 from datetime import datetime
 from enum import Enum
 import json
+import platform
 from fastapi.websockets import WebSocketState
 import msgpack
 from typing import AsyncGenerator, Dict, Optional
@@ -304,6 +305,9 @@ class WebSocketRunner:
                 ).model_dump()
             )
 
+            # Track if we received a terminal job_update during streaming
+            received_terminal_update = False
+
             # Stream messages from the job execution
             try:
                 async for msg in process_workflow_messages(
@@ -314,6 +318,12 @@ class WebSocketRunner:
                     msg["job_id"] = job_ctx.job_id
                     msg["workflow_id"] = job_ctx.workflow_id
                     await self.send_message(msg)
+
+                    # Track if we received a terminal status update
+                    if msg.get("type") == "job_update":
+                        status = msg.get("status")
+                        if status in ("completed", "failed", "cancelled", "error"):
+                            received_terminal_update = True
 
                     if (
                         not self.websocket
@@ -341,10 +351,15 @@ class WebSocketRunner:
                         workflow_id=job_ctx.workflow_id,
                     ).model_dump()
                 )
+                received_terminal_update = True
 
-            # Check final job status
-            if job_ctx.job_execution.is_completed():
+            # Only send terminal status if we didn't already receive one during streaming
+            # This fallback is for older execution modes that don't send proper JobUpdates
+            if not received_terminal_update and job_ctx.job_execution.is_completed():
                 final_status = job_ctx.job_execution.status
+                log.info(
+                    f"Sending fallback terminal status for job {job_ctx.job_id}: {final_status}"
+                )
                 if final_status == "cancelled":
                     await self.send_message(
                         JobUpdate(
@@ -629,11 +644,10 @@ class WebSocketRunner:
             return await self.clear_models()
         elif command.command == CommandType.RUN_JOB:
             req = RunJobRequest(**command.data)
-            if Environment.get_execution_strategy() == ExecutionStrategy.DOCKER:
-                req.execution_strategy = ExecutionStrategy.DOCKER
-            else:
-                req.execution_strategy = ExecutionStrategy.THREADED
-            log.info(f"Starting workflow: {req.workflow_id}")
+            req.execution_strategy = Environment.get_default_execution_strategy()
+            log.info(
+                f"Starting workflow: {req.workflow_id} with strategy: {req.execution_strategy}"
+            )
             asyncio.create_task(self.run_job(req))
             log.debug("Run job command scheduled")
             return {"message": "Job started", "workflow_id": req.workflow_id}

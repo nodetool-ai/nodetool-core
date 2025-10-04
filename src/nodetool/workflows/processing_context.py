@@ -1078,7 +1078,7 @@ class ProcessingContext:
                     return BytesIO(data)
                 elif isinstance(data, PIL.Image.Image):
                     buf = BytesIO()
-                    PIL.ImageOps.exif_transpose(data).convert("RGB").save(
+                    PIL.ImageOps.exif_transpose(data).convert("RGB").save(  # type: ignore
                         buf, format="PNG"
                     )
                     buf.seek(0)
@@ -1134,15 +1134,12 @@ class ProcessingContext:
                     return BytesIO(data.encode("utf-8"))
                 else:
                     raise ValueError(f"Unsupported TextRef data type {type(data)}")
-            # Video and generic assets: assume data is already encoded bytes
             elif isinstance(data, bytes):
                 return BytesIO(data)
             elif isinstance(data, str):
                 return BytesIO(data.encode("utf-8"))
             elif isinstance(data, list):
-                raise ValueError(
-                    "Batched data must be converted to list using BatchToList node"
-                )
+                raise ValueError("Unexpected list data type")
             else:
                 raise ValueError(f"Unsupported data type {type(data)}")
         # Asset ID takes precedence over URI as the URI could be expired
@@ -2004,6 +2001,8 @@ class ProcessingContext:
         Recursively embeds any memory:// assets in the given value.
         """
         if isinstance(value, AssetRef):
+            if isinstance(value, DataframeRef):
+                return value
             if value.uri.startswith("memory://") or value.data is not None:
                 data_bytes = await self.asset_to_bytes(value)
                 return value.model_copy(update={"uri": None, "data": data_bytes})

@@ -8,6 +8,7 @@ OpenAI endpoints).
 
 from __future__ import annotations
 
+import ast
 import base64
 import io
 import json
@@ -36,6 +37,7 @@ from nodetool.metadata.types import (
     MessageImageContent,
     MessageTextContent,
     MessageAudioContent,
+    ToolCall,
 )
 from pydub import AudioSegment
 
@@ -242,3 +244,235 @@ class OpenAICompat:
                     }
                 )
         return formatted_tools
+
+    def _format_tools_as_python(self, tools: Sequence[Tool]) -> str:
+        """Format tools as Python function definitions for emulation.
+
+        Args:
+            tools: Sequence of tools to format.
+
+        Returns:
+            String containing Python function definitions with usage examples.
+        """
+        log.debug(f"Formatting {len(tools)} tools as Python functions for emulation")
+
+        function_defs = []
+        for tool in tools:
+            tool_param = tool.tool_param()
+            func = tool_param.get("function", {})
+            name = func.get("name", "unknown")
+            description = func.get("description", "")
+            parameters = func.get("parameters", {})
+
+            # Build parameter list with better formatting
+            params = []
+            param_examples = []
+            if "properties" in parameters:
+                for param_name, param_info in parameters["properties"].items():
+                    param_type = param_info.get("type", "any")
+                    param_desc = param_info.get("description", "")
+                    params.append(f"{param_name}")
+
+                    # Create example value based on type
+                    if param_type == "string":
+                        example = f'"{param_name}_value"'
+                    elif param_type == "number" or param_type == "integer":
+                        example = "123"
+                    elif param_type == "boolean":
+                        example = "True"
+                    else:
+                        example = f'"{param_name}_value"'
+                    param_examples.append(f"{param_name}={example}")
+
+            param_str = ", ".join(params) if params else ""
+            example_call = (
+                f"{name}({', '.join(param_examples)})"
+                if param_examples
+                else f"{name}()"
+            )
+
+            func_def = f"# {name}({param_str})\n"
+            func_def += f"# {description}\n"
+            func_def += f"# Example: {example_call}\n"
+            function_defs.append(func_def)
+
+        result = "\n".join(function_defs)
+        log.debug(f"Generated Python function definitions:\n{result}")
+        return result
+
+    def _parse_function_calls(
+        self, text: str, tools: Sequence[Tool] | None = None
+    ) -> list[ToolCall]:
+        """Parse Python function calls from text using AST parsing.
+
+        Args:
+            text: Text potentially containing function calls.
+            tools: Optional tools for parameter name mapping.
+
+        Returns:
+            List of extracted ToolCall objects.
+        """
+        import re
+
+        log.debug(f"Parsing function calls from text: {text[:200]}...")
+        tool_calls = []
+
+        # Extract code blocks that might contain function calls
+        lines = text.split("\n")
+        code_candidates = []
+
+        for line in lines:
+            line = line.strip()
+            # Skip empty lines, markdown formatting, and common text patterns
+            if not line or line.startswith("#") or line.startswith("```"):
+                continue
+            # Look for patterns that might be function calls
+            if re.match(r"^\w+\(", line):
+                code_candidates.append(line)
+
+        log.debug(f"Found {len(code_candidates)} potential function call lines")
+
+        for code_line in code_candidates:
+            try:
+                # Try to parse as Python expression
+                tree = ast.parse(code_line, mode="eval")
+
+                # Walk the AST to find function calls
+                for node in ast.walk(tree):
+                    if isinstance(node, ast.Call):
+                        # Get function name
+                        if isinstance(node.func, ast.Name):
+                            func_name = node.func.id
+                        elif isinstance(node.func, ast.Attribute):
+                            # Handle method calls like obj.method()
+                            func_name = node.func.attr
+                        else:
+                            continue
+
+                        # Skip common Python built-ins
+                        if func_name in {
+                            "print",
+                            "len",
+                            "str",
+                            "int",
+                            "float",
+                            "bool",
+                            "list",
+                            "dict",
+                            "set",
+                            "tuple",
+                            "range",
+                        }:
+                            continue
+
+                        log.debug(f"Found function call: {func_name}")
+
+                        # Extract arguments
+                        args = {}
+
+                        # Handle keyword arguments
+                        for keyword in node.keywords:
+                            arg_name = keyword.arg
+                            arg_value = self._ast_to_value(keyword.value)
+                            args[arg_name] = arg_value
+                            log.debug(f"  Keyword arg: {arg_name}={arg_value}")
+
+                        # Handle positional arguments - map to parameter names if possible
+                        if node.args:
+                            # Try to find the tool schema to get parameter names
+                            param_names = []
+                            if tools:
+                                for tool in tools:
+                                    tool_param = tool.tool_param()
+                                    if (
+                                        tool_param.get("function", {}).get("name")
+                                        == func_name
+                                    ):
+                                        params = tool_param.get("function", {}).get(
+                                            "parameters", {}
+                                        )
+                                        if "properties" in params:
+                                            param_names = list(
+                                                params["properties"].keys()
+                                            )
+                                        break
+
+                            for i, arg in enumerate(node.args):
+                                arg_value = self._ast_to_value(arg)
+                                # Use parameter name from schema if available
+                                if i < len(param_names):
+                                    arg_name = param_names[i]
+                                    log.debug(
+                                        f"  Positional arg {i} mapped to {arg_name}: {arg_value}"
+                                    )
+                                else:
+                                    arg_name = f"arg{i}"
+                                    log.debug(f"  Positional arg {i}: {arg_value}")
+                                args[arg_name] = arg_value
+
+                        tool_call = ToolCall(
+                            id=f"call_{len(tool_calls)}", name=func_name, args=args
+                        )
+                        tool_calls.append(tool_call)
+                        log.debug(f"Parsed tool call: {tool_call}")
+
+            except SyntaxError as e:
+                log.debug(f"Not valid Python expression: {code_line[:50]}... ({e})")
+                continue
+            except Exception as e:
+                log.warning(f"Error parsing potential function call: {e}")
+                continue
+
+        log.debug(f"Parsed {len(tool_calls)} tool calls")
+        return tool_calls
+
+    def _ast_to_value(self, node: Any) -> Any:
+        """Convert an AST node to a Python value.
+
+        Args:
+            node: AST node to convert.
+
+        Returns:
+            Python value extracted from the node.
+        """
+        # Handle literals (strings, numbers, booleans, None)
+        if isinstance(node, ast.Constant):
+            return node.value
+        # Handle strings (Python < 3.8)
+        elif isinstance(node, ast.Str):
+            return node.s
+        # Handle numbers (Python < 3.8)
+        elif isinstance(node, ast.Num):
+            return node.n
+        # Handle booleans and None (Python < 3.8)
+        elif isinstance(node, ast.NameConstant):
+            return node.value
+        # Handle lists
+        elif isinstance(node, ast.List):
+            return [self._ast_to_value(elem) for elem in node.elts]
+        # Handle tuples
+        elif isinstance(node, ast.Tuple):
+            return tuple(self._ast_to_value(elem) for elem in node.elts)
+        # Handle dicts
+        elif isinstance(node, ast.Dict):
+            return {
+                self._ast_to_value(k): self._ast_to_value(v)
+                for k, v in zip(node.keys, node.values)
+            }
+        # Handle sets
+        elif isinstance(node, ast.Set):
+            return {self._ast_to_value(elem) for elem in node.elts}
+        # Handle names (variables - just return the name as string)
+        elif isinstance(node, ast.Name):
+            return node.id
+        # Handle unary operations (e.g., -5)
+        elif isinstance(node, ast.UnaryOp):
+            if isinstance(node.op, ast.USub):
+                return -self._ast_to_value(node.operand)
+            elif isinstance(node.op, ast.UAdd):
+                return +self._ast_to_value(node.operand)
+        # For anything else, return string representation
+        else:
+            return str(node)
+
+        return None

@@ -122,7 +122,7 @@ class TestAssetConversion:
         """Test converting AssetRef with batched data raises error."""
         asset_ref = AssetRef(data=[b"data1", b"data2"])
 
-        with pytest.raises(ValueError, match="Batched data must be converted"):
+        with pytest.raises(ValueError, match="Unexpected list data type"):
             await context.asset_to_io(asset_ref)
 
     @pytest.mark.asyncio

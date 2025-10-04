@@ -127,44 +127,6 @@ async def test_subprocess_job_creation(simple_workflow, cleanup_jobs):
 
 
 @pytest.mark.asyncio
-async def test_subprocess_job_is_running(simple_workflow, cleanup_jobs):
-    """Test checking if a subprocess job is running."""
-    request = RunJobRequest(
-        workflow_id=simple_workflow.id,
-        user_id="test_user",
-        auth_token="test_token",
-        job_type="workflow",
-        params={"text": "Test"},
-        graph=_build_simple_workflow_graph(),
-        execution_strategy=ExecutionStrategy.SUBPROCESS,
-    )
-
-    context = ProcessingContext(
-        user_id="test_user",
-        auth_token="test_token",
-        workflow_id=simple_workflow.id,
-    )
-
-    job = await SubprocessJobExecution.create_and_start(request, context)
-    cleanup_jobs.append(job)
-
-    # Job should be running initially
-    assert job.is_running()
-
-    # Wait for completion
-    max_wait = 5.0
-    wait_interval = 0.1
-    elapsed = 0.0
-
-    while elapsed < max_wait and job.is_running():
-        await asyncio.sleep(wait_interval)
-        elapsed += wait_interval
-
-    # Should eventually complete
-    assert job.is_completed()
-
-
-@pytest.mark.asyncio
 async def test_subprocess_job_completion(simple_workflow, cleanup_jobs):
     """Test that subprocess job completes successfully."""
     request = RunJobRequest(

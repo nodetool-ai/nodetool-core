@@ -344,12 +344,25 @@ class DockerJobExecution(JobExecution):
                 elif slot == "stderr":
                     log.debug(f"Container stderr: {line.strip()}")
 
-            # If we get here without errors, mark as completed if not already
+            # Container finished streaming
+            # The container already sent JobUpdate messages which updated the status
+            # Only update if still in running state (container didn't send completion update)
             if self._status == "running":
+                log.warning(
+                    f"Container finished but status still 'running' - marking as completed"
+                )
                 self._status = "completed"
                 if self._job_model:
                     self._job_model.status = "completed"
                     await self._job_model.save()
+                # Also send the completion update since container didn't
+                self._context.post_message(
+                    JobUpdate(
+                        job_id=self.job_id,
+                        status="completed",
+                        workflow_id=self._job_model.workflow_id,
+                    )
+                )
 
         except Exception as e:
             log.error(f"Docker execution error: {e}")

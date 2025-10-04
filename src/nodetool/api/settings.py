@@ -15,6 +15,7 @@ class SettingWithValue(BaseModel):
     group: str
     description: str
     is_secret: bool
+    enum: Optional[List[str]] = None
     value: Optional[Any] = None
 
 
@@ -36,7 +37,7 @@ async def get_settings() -> SettingsResponse:
 
     settings_registry = get_settings_registry()
     current_settings, current_secrets = load_settings()
-    
+
     settings_with_values = []
     for setting in settings_registry:
         value = None
@@ -50,7 +51,7 @@ async def get_settings() -> SettingsResponse:
         else:
             # For non-secrets, return the actual value
             value = current_settings.get(setting.env_var)
-        
+
         settings_with_values.append(
             SettingWithValue(
                 package_name=setting.package_name,
@@ -58,7 +59,8 @@ async def get_settings() -> SettingsResponse:
                 group=setting.group,
                 description=setting.description,
                 is_secret=setting.is_secret,
-                value=value
+                value=value,
+                enum=setting.enum,
             )
         )
 
@@ -78,10 +80,10 @@ async def update_settings(
 
     # Update settings (non-secrets)
     settings.update(req.settings)
-    
+
     # Update secrets, but skip if the value is all asterisks (placeholder)
     for key, value in req.secrets.items():
-        if value and isinstance(value, str) and all(c == '*' for c in value):
+        if value and isinstance(value, str) and all(c == "*" for c in value):
             # Skip placeholder values - don't update the secret
             continue
         secrets[key] = value

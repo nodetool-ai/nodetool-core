@@ -8,9 +8,9 @@ with a TTL.
 
 from __future__ import annotations
 
-import json
-from typing import Any, AsyncIterator, Sequence
 import asyncio
+import json
+from typing import Any, AsyncIterator, List, Sequence
 
 import httpx
 import openai
@@ -18,11 +18,15 @@ from openai.types.chat import ChatCompletionChunk
 from huggingface_hub import hf_hub_download
 
 from nodetool.agents.tools.base import Tool
-from nodetool.chat.providers.base import ChatProvider, register_chat_provider
+from nodetool.chat.providers.base import (
+    ChatProvider,
+    ProviderCapability,
+    register_chat_provider,
+)
 from nodetool.chat.providers.openai_compat import OpenAICompat
 from nodetool.chat.providers.llama_server_manager import LlamaServerManager
 from nodetool.config.logging_config import get_logger
-from nodetool.metadata.types import Message, Provider, ToolCall
+from nodetool.metadata.types import Message, Provider, ToolCall, LanguageModel
 from nodetool.workflows.types import Chunk
 from nodetool.workflows.processing_context import ProcessingContext
 
@@ -66,8 +70,18 @@ class LlamaProvider(ChatProvider, OpenAICompat):
             "reasoning_tokens": 0,
         }
 
+    def get_capabilities(self) -> set[ProviderCapability]:
+        """Llama provider supports message generation capabilities."""
+        return {
+            ProviderCapability.GENERATE_MESSAGE,
+            ProviderCapability.GENERATE_MESSAGES,
+        }
+
     def _normalize_messages_for_llama(
-        self, messages: Sequence[Message]
+        self,
+        messages: Sequence[Message],
+        tools: Sequence[Tool] = [],
+        use_tool_emulation: bool = False,
     ) -> list[Message]:
         """Normalize messages to satisfy llama.cpp alternation constraints.
 
@@ -79,9 +93,12 @@ class LlamaProvider(ChatProvider, OpenAICompat):
         - Merge multiple system messages into a single system message
         - Convert tool messages into user messages that embed tool output
         - Insert blank turns as necessary to maintain alternation
+        - For tool emulation: add tool definitions to system message
 
         Args:
             messages: Original message sequence.
+            tools: Optional tools for emulation.
+            use_tool_emulation: Whether to use tool calling emulation.
 
         Returns:
             A list of messages compatible with llama.cpp chat templates.
@@ -89,6 +106,30 @@ class LlamaProvider(ChatProvider, OpenAICompat):
 
         system_parts: list[str] = []
         normalized: list[Message] = []
+
+        # Add tool definitions for emulation
+        if use_tool_emulation and tools:
+            tool_definitions = self._format_tools_as_python(tools)
+            tool_instruction = (
+                "\n\n=== AVAILABLE FUNCTIONS ===\n"
+                "You can call these functions by writing a function call on a single line.\n"
+                "DO NOT write function definitions - only write function CALLS.\n\n"
+                f"{tool_definitions}\n\n"
+                "=== INSTRUCTIONS ===\n"
+                "When you need to use a function:\n"
+                "1. Write ONLY the function call, nothing else\n"
+                "2. Use this exact format: function_name(param='value')\n"
+                "3. Do NOT write 'def', 'return', or any other Python keywords\n"
+                "4. After calling a function, wait for the result\n"
+                "5. Once you receive a function result, use it in your final answer\n"
+                "6. Do NOT call the same function twice\n\n"
+                "Example conversation:\n"
+                "User: What is 5 + 3?\n"
+                "You: calculator(expression='5 + 3')\n"
+                "[System returns: {'result': 8}]\n"
+                "You: The answer is 8."
+            )
+            system_parts.append(tool_instruction)
 
         for msg in messages:
             if msg.role == "system":
@@ -115,12 +156,26 @@ class LlamaProvider(ChatProvider, OpenAICompat):
                     # Skip adding empty assistant message - let Gemma handle it naturally
                     pass
 
-                prefix = (
-                    f"Tool {msg.name or ''} result:\n" if msg.name else "Tool result:\n"
-                )
-                normalized.append(
-                    Message(role="user", content=f"{prefix}{content_str}")
-                )
+                # Use emulation-friendly format if needed
+                if use_tool_emulation:
+                    # Ensure content is a plain string for strict chat templates
+                    emulated_content = (
+                        f"The function {msg.name}() returned the following result:\n{content_str}\n\n"
+                        f"Use this result to answer the user's question. Do NOT call the function again."
+                    )
+                    # Explicitly create a message with string content only
+                    normalized.append(
+                        Message(role="user", content=str(emulated_content))
+                    )
+                else:
+                    prefix = (
+                        f"Tool {msg.name or ''} result:\n"
+                        if msg.name
+                        else "Tool result:\n"
+                    )
+                    normalized.append(
+                        Message(role="user", content=str(f"{prefix}{content_str}"))
+                    )
                 continue
             normalized.append(msg)
 
@@ -204,6 +259,53 @@ class LlamaProvider(ChatProvider, OpenAICompat):
         # Defer to server; commonly 4k-128k. Return a safe default.
         return 128000
 
+    def has_tool_support(self, model: str) -> bool:
+        """Return True if the given model supports tools/function calling.
+
+        The server manager queries model capabilities after server startup
+        and caches them. This method simply checks if "tools" is in the
+        cached capabilities list.
+
+        Args:
+            model: Model identifier passed to llama.cpp.
+
+        Returns:
+            True if the model has "tools" in its capabilities, False otherwise.
+            Returns False if capabilities have not been queried yet (server not started).
+        """
+        log.debug(f"Checking tool support for model: {model}")
+
+        capabilities = self._manager.get_model_capabilities(model)
+        has_tools = "tools" in capabilities
+
+        log.debug(
+            f"Model {model} capabilities: {capabilities}, tools support: {has_tools}"
+        )
+        return has_tools
+
+    async def get_available_language_models(self) -> List[LanguageModel]:
+        """
+        Get available Llama.cpp models.
+
+        Returns GGUF models available in the local HuggingFace cache.
+        Always returns models (doesn't check if llama.cpp is available).
+
+        Returns:
+            List of LanguageModel instances for Llama.cpp
+        """
+        try:
+            # Import the function to get locally cached GGUF models
+            from nodetool.integrations.huggingface.huggingface_models import (
+                get_llamacpp_language_models_from_hf_cache,
+            )
+
+            models = await get_llamacpp_language_models_from_hf_cache()
+            log.debug(f"Found {len(models)} Llama.cpp (GGUF) models in HF cache")
+            return models
+        except Exception as e:
+            log.error(f"Error getting Llama.cpp models: {e}")
+            return []
+
     async def generate_messages(
         self,
         messages: Sequence[Message],
@@ -229,6 +331,11 @@ class LlamaProvider(ChatProvider, OpenAICompat):
             ``Chunk`` objects for text deltas and ``ToolCall`` entries when
             the model requests tool execution.
         """
+        # Determine if we need tool emulation
+        use_tool_emulation = len(tools) > 0 and not self.has_tool_support(model)
+        if use_tool_emulation:
+            log.info(f"Using tool emulation for model {model}")
+
         base_url = await self._manager.ensure_server(model)
         _kwargs: dict[str, Any] = {
             "model": model,
@@ -237,11 +344,14 @@ class LlamaProvider(ChatProvider, OpenAICompat):
         }
         if response_format is not None:
             _kwargs["response_format"] = response_format
-        if len(tools) > 0:
+        # Only add tools if native support is available
+        if len(tools) > 0 and not use_tool_emulation:
             _kwargs["tools"] = self.format_tools(tools)
 
         # Normalize messages to satisfy llama.cpp alternation constraints
-        messages_normalized = self._normalize_messages_for_llama(messages)
+        messages_normalized = self._normalize_messages_for_llama(
+            messages, tools, use_tool_emulation
+        )
         # llama.cpp is sensitive to unsupported fields; pass only necessary ones
         openai_messages = [await self.convert_message(m) for m in messages_normalized]
 
@@ -254,6 +364,7 @@ class LlamaProvider(ChatProvider, OpenAICompat):
 
         delta_tool_calls: dict[int, dict[str, Any]] = {}
         current_chunk = ""
+        accumulated_content = ""  # For tool emulation parsing
 
         async for chunk in completion:
             chunk = chunk  # type: ignore
@@ -266,14 +377,29 @@ class LlamaProvider(ChatProvider, OpenAICompat):
                 getattr(delta, "content", None)
                 or chunk.choices[0].finish_reason == "stop"
             ):
-                current_chunk += delta.content or ""
+                content = delta.content or ""
+                current_chunk += content
+                # Accumulate content for emulation parsing
+                if use_tool_emulation:
+                    accumulated_content += content
+
                 finish_reason = chunk.choices[0].finish_reason
                 if finish_reason == "stop":
                     self._log_api_response(
                         "chat_stream",
                         Message(role="assistant", content=current_chunk),
                     )
-                yield Chunk(content=delta.content or "", done=finish_reason == "stop")
+                    # Parse emulated tool calls from accumulated content
+                    if use_tool_emulation and accumulated_content:
+                        log.debug("Parsing emulated tool calls from streaming response")
+                        emulated_calls = self._parse_function_calls(
+                            accumulated_content, tools
+                        )
+                        for tool_call in emulated_calls:
+                            log.debug(f"Yielding emulated tool call: {tool_call.name}")
+                            yield tool_call
+
+                yield Chunk(content=content, done=finish_reason == "stop")
 
             if chunk.choices[0].finish_reason == "tool_calls":
                 if delta_tool_calls:
@@ -325,6 +451,11 @@ class LlamaProvider(ChatProvider, OpenAICompat):
         Returns:
             Final assistant ``Message`` with optional ``tool_calls``.
         """
+        # Determine if we need tool emulation
+        use_tool_emulation = len(tools) > 0 and not self.has_tool_support(model)
+        if use_tool_emulation:
+            log.info(f"Using tool emulation for model {model}")
+
         base_url = await self._manager.ensure_server(model)
         _kwargs: dict[str, Any] = {
             "max_tokens": max_tokens,
@@ -332,13 +463,16 @@ class LlamaProvider(ChatProvider, OpenAICompat):
         }
         if response_format is not None:
             _kwargs["response_format"] = response_format
-        if len(tools) > 0:
+        # Only add tools if native support is available
+        if len(tools) > 0 and not use_tool_emulation:
             _kwargs["tools"] = self.format_tools(tools)
         # Pass through additional sampling/params
         if kwargs:
             _kwargs.update(kwargs)
 
-        messages_normalized = self._normalize_messages_for_llama(messages)
+        messages_normalized = self._normalize_messages_for_llama(
+            messages, tools, use_tool_emulation
+        )
         openai_messages = [await self.convert_message(m) for m in messages_normalized]
 
         # Debug: print the processed messages
@@ -363,6 +497,7 @@ class LlamaProvider(ChatProvider, OpenAICompat):
                 return {}
 
         tool_calls = None
+        # Check for native tool calls
         if response_message.tool_calls:
             tool_calls = [
                 ToolCall(
@@ -372,6 +507,13 @@ class LlamaProvider(ChatProvider, OpenAICompat):
                 )
                 for tool_call in response_message.tool_calls
             ]
+        # Parse emulated tool calls if needed
+        elif use_tool_emulation and response_message.content:
+            log.debug("Parsing emulated tool calls from response")
+            emulated_calls = self._parse_function_calls(response_message.content, tools)
+            if emulated_calls:
+                tool_calls = emulated_calls
+                log.debug(f"Parsed {len(emulated_calls)} emulated tool calls")
 
         message = Message(
             role="assistant", content=response_message.content, tool_calls=tool_calls
@@ -397,8 +539,17 @@ class LlamaProvider(ChatProvider, OpenAICompat):
 if __name__ == "__main__":
 
     async def _run_all():
-        # Tool call test
-        print("--- Tool call test ---")
+        from nodetool.agents.tools.math_tools import CalculatorTool
+
+        provider = LlamaProvider()
+        context = ProcessingContext()
+
+        # =====================================================================
+        # TEST 1: Qwen model with native tool support
+        # =====================================================================
+        print("\n" + "=" * 60)
+        print("TEST 1: Qwen Model (Native Tool Support)")
+        print("=" * 60 + "\n")
 
         class EchoTool(Tool):
             name = "echo"
@@ -412,13 +563,14 @@ if __name__ == "__main__":
             async def process(self, context: ProcessingContext, params: dict[str, Any]) -> Any:  # type: ignore[override]
                 return {"echo": params.get("text", "")}
 
-        hf_hub_download(
-            "Qwen/Qwen2.5-7B-Instruct-GGUF", filename="qwen2.5-7b-instruct-q2_k.gguf"
-        )
-        provider = LlamaProvider()
-        model = "Qwen/Qwen2.5-7B-Instruct-GGUF"
+        model = "ggml-org/Qwen2.5-Coder-0.5B-Q8_0-GGUF"
         tools: list[Tool] = [EchoTool()]
-        context = ProcessingContext()
+
+        # Check if the model supports native tools or will use emulation
+        has_tools = provider.has_tool_support(model)
+        print(f"Model: {model}")
+        print(f"Native tool support: {has_tools}")
+        print(f"Using tool emulation: {not has_tools}\n")
 
         # First try without tools to confirm basic functionality
         messages = [
@@ -486,5 +638,92 @@ if __name__ == "__main__":
                 print("❌ No tool call returned. Model said:", content_str.strip())
         except Exception as e:
             print("Tool call test failed:", e)
+
+        # =====================================================================
+        # TEST 2: Gemma model with tool emulation
+        # =====================================================================
+        print("\n" + "=" * 60)
+        print("TEST 2: Gemma Model (Tool Emulation)")
+        print("=" * 60 + "\n")
+
+        # Download Gemma model
+        hf_hub_download(
+            "ggml-org/gemma-3-1b-it-GGUF", filename="gemma-3-1b-it-Q4_K_M.gguf"
+        )
+        gemma_model = "ggml-org/gemma-3-1b-it-GGUF"
+        calculator_tools: list[Tool] = [CalculatorTool()]
+
+        # Check if model supports native tool calling
+        has_native_tools = provider.has_tool_support(gemma_model)
+        print(f"Model: {gemma_model}")
+        print(f"Native tool support: {has_native_tools}")
+        print(f"Using tool emulation: {not has_native_tools}\n")
+
+        messages_calc: list[Message] = [
+            Message(
+                role="system",
+                content="You are a helpful assistant. Use tools when calculations are needed.",
+            ),
+            Message(
+                role="user",
+                content="Please compute 12.3 * (7 - 5) + 10 / 2 and provide the numeric result.",
+            ),
+        ]
+
+        response = await provider.generate_message(
+            messages=messages_calc,
+            model=gemma_model,
+            tools=calculator_tools,
+            max_tokens=512,
+        )
+        print(f"--- Initial Response ---")
+        print(f"Content: {response.content}")
+        print(f"Tool calls: {response.tool_calls}\n")
+
+        iteration = 1
+        max_iterations = 5
+        while response.tool_calls and iteration <= max_iterations:
+            print(f"--- Tool Execution (Iteration {iteration}/{max_iterations}) ---")
+            for tool_call in response.tool_calls:
+                print(f"Tool: {tool_call.name}")
+                print(f"Args: {tool_call.args}")
+
+                matching_tool = next(
+                    (t for t in calculator_tools if t.name == tool_call.name), None
+                )
+                if matching_tool is None:
+                    print(f"Warning: Tool {tool_call.name} not found")
+                    continue
+
+                tool_result = await matching_tool.process(context, tool_call.args or {})
+                print(f"Result: {tool_result}")
+
+                messages_calc.append(
+                    Message(
+                        role="user",
+                        name=matching_tool.name,
+                        content=json.dumps(tool_result),
+                    )
+                )
+
+            response = await provider.generate_message(
+                messages=messages_calc,
+                model=gemma_model,
+                tools=calculator_tools,
+                max_tokens=512,
+            )
+            print(f"\n--- Response After Tool Call ---")
+            print(f"Content: {response.content}")
+            print(f"Tool calls: {response.tool_calls}")
+            iteration += 1
+
+        if iteration > max_iterations:
+            print(
+                f"\n⚠️  WARNING: Reached max iterations ({max_iterations}). Stopping.\n"
+            )
+
+        print(f"\n{'='*60}")
+        print(f"Final Answer: {response.content}")
+        print(f"{'='*60}\n")
 
     asyncio.run(_run_all())

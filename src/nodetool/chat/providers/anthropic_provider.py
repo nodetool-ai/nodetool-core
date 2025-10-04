@@ -7,15 +7,20 @@ handling message conversion, streaming, and tool integration.
 
 import json
 import base64
-from typing import cast
+from typing import cast, Dict, List
 from typing import Any, AsyncGenerator, AsyncIterator, Sequence
+import aiohttp
 import anthropic
 from anthropic.types.message_param import MessageParam
 from anthropic.types.image_block_param import ImageBlockParam
 from anthropic.types.url_image_source_param import URLImageSourceParam
 from anthropic.types.base64_image_source_param import Base64ImageSourceParam
 from anthropic.types.tool_param import ToolParam
-from nodetool.chat.providers.base import ChatProvider, register_chat_provider
+from nodetool.chat.providers.base import (
+    ChatProvider,
+    ProviderCapability,
+    register_chat_provider,
+)
 from nodetool.io.media_fetch import fetch_uri_bytes_and_mime_sync
 from nodetool.chat.providers.openai_prediction import calculate_chat_cost
 from nodetool.config.logging_config import get_logger
@@ -25,6 +30,7 @@ from nodetool.metadata.types import (
     ToolCall,
     MessageImageContent,
     MessageTextContent,
+    LanguageModel,
 )
 from nodetool.config.environment import Environment
 from nodetool.workflows.base_node import ApiKeyMissingError
@@ -132,6 +138,13 @@ class AnthropicProvider(ChatProvider):
         self.cost = 0.0
         log.debug("AnthropicProvider initialized with usage tracking")
 
+    def get_capabilities(self) -> set[ProviderCapability]:
+        """Anthropic provider supports message generation capabilities."""
+        return {
+            ProviderCapability.GENERATE_MESSAGE,
+            ProviderCapability.GENERATE_MESSAGES,
+        }
+
     def get_container_env(self) -> dict[str, str]:
         env_vars = {"ANTHROPIC_API_KEY": self.api_key} if self.api_key else {}
         log.debug(f"Container environment variables: {list(env_vars.keys())}")
@@ -142,6 +155,73 @@ class AnthropicProvider(ChatProvider):
         log.debug(f"Getting context length for model: {model}")
         log.debug("Using context length: 200000 (Anthropic default)")
         return 200000
+
+    def has_tool_support(self, model: str) -> bool:
+        """Return True if the given model supports tools/function calling.
+
+        All Anthropic Claude models support function calling.
+
+        Args:
+            model: Model identifier string.
+
+        Returns:
+            True for all Claude models as they all support function calling.
+        """
+        log.debug(f"Checking tool support for model: {model}")
+        log.debug(f"Model {model} supports tool calling (all Claude models do)")
+        return True
+
+    async def get_available_language_models(self) -> List[LanguageModel]:
+        """
+        Get available Anthropic models.
+
+        Fetches models dynamically from the Anthropic API if an API key is available.
+        Returns an empty list if no API key is configured or if the fetch fails.
+
+        Returns:
+            List of LanguageModel instances for Anthropic
+        """
+        if not self.api_key:
+            log.debug("No Anthropic API key configured, returning empty model list")
+            return []
+
+        try:
+            timeout = aiohttp.ClientTimeout(total=3)
+            headers = {
+                "x-api-key": self.api_key,
+                "anthropic-version": "2023-06-01",
+            }
+            async with aiohttp.ClientSession(
+                timeout=timeout, headers=headers
+            ) as session:
+                async with session.get(
+                    "https://api.anthropic.com/v1/models"
+                ) as response:
+                    if response.status != 200:
+                        log.warning(
+                            f"Failed to fetch Anthropic models: HTTP {response.status}"
+                        )
+                        return []
+                    payload: Dict[str, Any] = await response.json()
+                    data = payload.get("data", [])
+
+                    models: List[LanguageModel] = []
+                    for item in data:
+                        model_id = item.get("id") or item.get("name")
+                        if not model_id:
+                            continue
+                        models.append(
+                            LanguageModel(
+                                id=model_id,
+                                name=model_id,
+                                provider=Provider.Anthropic,
+                            )
+                        )
+                    log.debug(f"Fetched {len(models)} Anthropic models")
+                    return models
+        except Exception as e:
+            log.error(f"Error fetching Anthropic models: {e}")
+            return []
 
     def convert_message(self, message: Message) -> MessageParam | None:
         """Convert an internal message to Anthropic's format."""

@@ -2,6 +2,7 @@ import logging
 import os
 import logging
 import threading
+import tempfile
 from pathlib import Path
 from nodetool.config.logging_config import configure_logging, get_logger
 from typing import Any, Optional, Dict
@@ -19,6 +20,8 @@ from nodetool.config.settings import (
 # Global test storage instances to avoid thread-local issues in tests
 _test_asset_storage = None
 _test_temp_storage = None
+_test_db_path = None
+_test_db_file = None
 
 DEFAULT_ENV = {
     "ASSET_BUCKET": "images",
@@ -286,11 +289,11 @@ class Environment(object):
         setattr(cls._tls(), "node_cache", node_cache)
 
     @classmethod
-    def get_execution_strategy(cls):
+    def get_default_execution_strategy(cls):
         """
         The execution strategy is the strategy that we use to execute the workflow.
         """
-        return cls.get("EXECUTION_STRATEGY")
+        return cls.get("DEFAULT_EXECUTION_STRATEGY")
 
     @classmethod
     def get_node_cache(cls) -> AbstractNodeCache:
@@ -361,8 +364,15 @@ class Environment(object):
         The database url is the url of the database.
         """
         if cls.is_test():
-            # Use shared in-memory database for multi-threaded test env
-            return "file::memory:?cache=shared"
+            # Use a temporary file-based database for tests
+            global _test_db_path, _test_db_file
+            if _test_db_path is None:
+                _test_db_file = tempfile.NamedTemporaryFile(
+                    suffix=".db", prefix="nodetool_test_", delete=False
+                )
+                _test_db_path = _test_db_file.name
+                _test_db_file.close()
+            return _test_db_path
         else:
             return cls.get("DB_PATH")
 
@@ -648,10 +658,24 @@ class Environment(object):
 
     @classmethod
     def clear_test_storage(cls):
-        """Clear global test storage instances."""
-        global _test_asset_storage, _test_temp_storage
+        """Clear global test storage instances and clean up test database."""
+        global _test_asset_storage, _test_temp_storage, _test_db_path, _test_db_file
         _test_asset_storage = None
         _test_temp_storage = None
+
+        # Clean up test database file
+        if _test_db_path is not None:
+            try:
+                if os.path.exists(_test_db_path):
+                    os.unlink(_test_db_path)
+            except Exception as e:
+                # Log but don't fail - file might be locked or already deleted
+                logger = cls.get_logger()
+                logger.debug(
+                    f"Could not delete test database file {_test_db_path}: {e}"
+                )
+            _test_db_path = None
+            _test_db_file = None
 
     @classmethod
     def get_logger(cls):

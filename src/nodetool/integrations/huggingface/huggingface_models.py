@@ -51,17 +51,25 @@ def has_model_index(model_info: ModelInfo) -> bool:
     )
 
 
-def unified_model(
+async def unified_model(
     model: HuggingFaceModel,
     model_info: ModelInfo | None = None,
     size: int | None = None,
 ) -> UnifiedModel | None:
+    print(model.repo_id)
     if model_info is None or model_info.siblings is None:
         try:
-            model_info = HfApi().model_info(model.repo_id, files_metadata=True)
+            # Run blocking HfApi call in thread executor
+            model_info = await asyncio.get_event_loop().run_in_executor(
+                None, lambda: HfApi().model_info(model.repo_id, files_metadata=True)
+            )
         except Exception as e:
             log.debug(f"Failed to fetch model info for {model.repo_id}: {e}")
             return None
+
+    # After this point, model_info is guaranteed to be not None
+    if model_info is None:
+        return None
 
     # cache_path = try_to_load_from_cache(
     #     model.repo_id, model.path if model.path is not None else "config.json"
@@ -369,7 +377,10 @@ async def _fetch_models_by_author(**kwargs) -> list[ModelInfo]:
 
 async def get_gguf_language_models_from_authors(
     authors: list[str],
-) -> List[UnifiedModel | None]:
+    limit: int = 200,
+    sort: str = "downloads",
+    tags: str = "gguf",
+) -> List[UnifiedModel]:
     """
     Fetch all HF repos authored by the given authors that include GGUF files/tags.
 
@@ -387,16 +398,18 @@ async def get_gguf_language_models_from_authors(
         *(
             _fetch_models_by_author(
                 author=a,
-                limit=200,
-                sort="trending_score",
-                tags="gguf",
+                limit=limit,
+                sort=sort,
+                tags=tags,
             )
             for a in authors
         )
     )
     repos = [item for sublist in results for item in sublist]
     model_infos = await asyncio.gather(*[fetch_model_info(repo.id) for repo in repos])
-    entries: list[UnifiedModel | None] = []
+
+    # Collect all unified_model tasks
+    tasks: list[tuple[HuggingFaceModel, ModelInfo, int | None]] = []
     seen_file: set[str] = set()
     for info in model_infos:
         if info is None:
@@ -409,13 +422,18 @@ async def get_gguf_language_models_from_authors(
             if fname in seen_file:
                 continue
             seen_file.add(fname)
-            entries.append(
-                unified_model(
+            tasks.append(
+                (
                     HuggingFaceModel(type="llama_cpp", repo_id=info.id, path=fname),
                     info,
                     sib.size,
                 )
             )
+
+    # Execute all unified_model calls in parallel
+    entries = await asyncio.gather(
+        *[unified_model(model, info, size) for model, info, size in tasks]
+    )
 
     # Sort for stability: repo then filename
     entries = [entry for entry in entries if entry is not None]
@@ -424,6 +442,9 @@ async def get_gguf_language_models_from_authors(
 
 async def get_mlx_language_models_from_authors(
     authors: list[str],
+    limit: int = 200,
+    sort: str = "trending_score",
+    tags: str = "mlx",
 ) -> List[UnifiedModel]:
     """
     Fetch MLX-friendly repos authored by the given authors/orgs and return
@@ -443,20 +464,19 @@ async def get_mlx_language_models_from_authors(
     # Fetch authors concurrently
     results = await asyncio.gather(
         *(
-            _fetch_models_by_author(
-                author=a, limit=200, sort="trending_score", tags="mlx"
-            )
+            _fetch_models_by_author(author=a, limit=limit, sort=sort, tags=tags)
             for a in authors
         )
     )
     model_infos = [item for sublist in results for item in sublist]
 
-    # Produce one LanguageModel per repo id
-    entries: list[UnifiedModel | None] = []
-    for info in model_infos:
-        entries.append(
+    # Execute all unified_model calls in parallel
+    entries = await asyncio.gather(
+        *[
             unified_model(HuggingFaceModel(type="mlx", repo_id=info.id), info)
-        )
+            for info in model_infos
+        ]
+    )
 
     # Stable order
     return [entry for entry in entries if entry is not None]
@@ -497,7 +517,9 @@ MLX_AUTHORS = ["mlx-community"]
 
 
 async def save_gguf_models_to_file() -> None:
-    models = await get_gguf_language_models_from_authors(GGUF_AUTHORS)
+    models = await get_gguf_language_models_from_authors(
+        GGUF_AUTHORS, limit=500, sort="downloads", tags="gguf"
+    )
     with open(GGUF_MODELS_FILE, "w") as f:
         json.dump(
             [model.model_dump() for model in models if model is not None], f, indent=2
@@ -505,7 +527,9 @@ async def save_gguf_models_to_file() -> None:
 
 
 async def save_mlx_models_to_file() -> None:
-    models = await get_mlx_language_models_from_authors(MLX_AUTHORS)
+    models = await get_mlx_language_models_from_authors(
+        MLX_AUTHORS, limit=1000, sort="downloads", tags="mlx"
+    )
     with open(MLX_MODELS_FILE, "w") as f:
         json.dump([model.model_dump() for model in models], f, indent=2)
 

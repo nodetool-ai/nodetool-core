@@ -312,7 +312,7 @@ def type_metadata(
         )
     elif is_enum_type(python_type):
         assert not isinstance(python_type, UnionType)
-        type_name = f"{python_type.__module__}.{python_type.__name__}"
+        type_name = f"{python_type.__module__}.{python_type.__qualname__}"
         return TypeMetadata(
             type="enum",
             type_name=type_name,
@@ -576,7 +576,7 @@ class BaseNode(BaseModel):
             resolved_annotations = getattr(cls, "__annotations__", {}) or {}
         for field_type in resolved_annotations.values():
             if is_enum_type(field_type):
-                name = f"{field_type.__module__}.{field_type.__name__}"
+                name = f"{field_type.__module__}.{field_type.__qualname__}"
                 NameToType[name] = field_type
 
     @staticmethod
@@ -1642,7 +1642,7 @@ class Comment(BaseNode):
     """
 
     headline: str = Field("", description="The headline for this comment.")
-    comment: list[Any] = Field(default=[""], description="The comment for this node.")
+    comment: Any = Field(default={}, description="The comment for this node.")
     comment_color: str = Field(
         default="#f0f0f0", description="The color for the comment."
     )

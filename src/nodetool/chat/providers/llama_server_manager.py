@@ -389,6 +389,7 @@ class LlamaServerManager:
         self._api_key = Environment.get("LLAMA_API_KEY")
 
         self._servers: Dict[str, _RunningServer] = {}
+        self._model_capabilities: Dict[str, list[str]] = {}
         self._lock = asyncio.Lock()
         self._pruner_task: asyncio.Task | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
@@ -607,6 +608,9 @@ class LlamaServerManager:
                     pass
                 raise RuntimeError("llama-server did not become ready in time")
 
+            # Query model capabilities after server is ready
+            await self._query_capabilities(base_url, model_key)
+
             inst = _RunningServer(
                 process=proc,
                 base_url=base_url,
@@ -643,6 +647,53 @@ class LlamaServerManager:
                     pass
                 await asyncio.sleep(0.5)
         return False
+
+    async def _query_capabilities(self, base_url: str, model_key: str) -> None:
+        """Query and cache model capabilities from the server.
+
+        Args:
+            base_url: Base URL of the server.
+            model_key: Model key to use for caching.
+        """
+        try:
+            models_url = f"{base_url}/v1/models"
+            log.debug(f"Querying model capabilities: {models_url}")
+
+            async with httpx.AsyncClient(
+                timeout=5.0, verify=False
+            ) as client:  # nosec B501
+                response = await client.get(models_url)
+                response.raise_for_status()
+                data = response.json()
+
+            # Look for capabilities in the models list
+            if "models" in data and len(data["models"]) > 0:
+                model_info = data["models"][0]
+                if "capabilities" in model_info:
+                    capabilities = model_info["capabilities"]
+                    self._model_capabilities[model_key] = capabilities
+                    log.info(f"Model {model_key} capabilities: {capabilities}")
+                    return
+
+            # If no capabilities found, default to empty list
+            log.debug(f"No capabilities found for model {model_key}")
+            self._model_capabilities[model_key] = []
+
+        except Exception as e:
+            log.warning(f"Failed to query capabilities for {model_key}: {e}")
+            self._model_capabilities[model_key] = []
+
+    def get_model_capabilities(self, model: str) -> list[str]:
+        """Get cached model capabilities.
+
+        Args:
+            model: Model key to look up.
+
+        Returns:
+            List of capability strings (e.g., ["completion", "tools"]).
+            Returns empty list if capabilities are not yet cached.
+        """
+        return self._model_capabilities.get(model, [])
 
     def _ensure_pruner(self) -> None:
         """Start the background pruning task if not already running."""

@@ -335,6 +335,8 @@ class Provider(str, enum.Enum):
     Gemini = "gemini"
     Empty = "empty"
     MLX = "mlx"
+    FalAI = "fal_ai"
+    HuggingFace = "huggingface"  # local hf models
     # Providers for HuggingFace Inference Providers
     HuggingFaceBlackForestLabs = "huggingface_black_forest_labs"
     HuggingFaceCohere = "huggingface_cohere"
@@ -486,6 +488,13 @@ class OpenAIEmbeddingModel(str, enum.Enum):
 
 class LanguageModel(BaseType):
     type: Literal["language_model"] = "language_model"
+    provider: Provider = Provider.Empty
+    id: str = ""
+    name: str = ""
+
+
+class ImageModel(BaseType):
+    type: Literal["image_model"] = "image_model"
     provider: Provider = Provider.Empty
     id: str = ""
     name: str = ""

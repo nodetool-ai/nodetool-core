@@ -7,15 +7,21 @@ handling message conversion, streaming, and tool integration.
 
 import asyncio
 import json
+import logging
 import re
-from typing import Any, AsyncGenerator, AsyncIterator, Sequence, Dict
+from typing import Any, AsyncGenerator, AsyncIterator, List, Sequence, Dict
 from contextlib import asynccontextmanager
 
 from ollama import AsyncClient, Client
 from pydantic import BaseModel
 import tiktoken
 
-from nodetool.chat.providers.base import ChatProvider, register_chat_provider
+from nodetool.chat.providers.base import (
+    ChatProvider,
+    ProviderCapability,
+    register_chat_provider,
+)
+from nodetool.chat.providers.openai_compat import OpenAICompat
 from nodetool.chat.token_counter import count_messages_tokens
 from nodetool.agents.tools.base import Tool
 from nodetool.config.environment import Environment
@@ -30,10 +36,12 @@ from nodetool.metadata.types import (
     MessageImageContent,
     MessageTextContent,
     ImageRef,
+    LanguageModel,
 )
 from nodetool.workflows.types import Chunk
 
 log = get_logger(__name__)
+log.setLevel(logging.DEBUG)
 
 
 def get_ollama_sync_client() -> Client:
@@ -61,7 +69,7 @@ async def get_ollama_client() -> AsyncGenerator[AsyncClient, None]:
 
 
 @register_chat_provider(Provider.Ollama)
-class OllamaProvider(ChatProvider):
+class OllamaProvider(ChatProvider, OpenAICompat):
     """
     Ollama implementation of the ChatProvider interface.
 
@@ -120,9 +128,17 @@ class OllamaProvider(ChatProvider):
         }
         self.encoding = tiktoken.get_encoding("cl100k_base")
         self.log_file = log_file
+        self._model_info_cache: Dict[str, Any] = {}
         log.debug(
             f"OllamaProvider initialized. API URL present: {bool(self.api_url)}, log_file: {log_file}"
         )
+
+    def get_capabilities(self) -> set[ProviderCapability]:
+        """Ollama provider supports message generation capabilities."""
+        return {
+            ProviderCapability.GENERATE_MESSAGE,
+            ProviderCapability.GENERATE_MESSAGES,
+        }
 
     def get_container_env(self) -> dict[str, str]:
         env_vars = {}
@@ -131,15 +147,38 @@ class OllamaProvider(ChatProvider):
         log.debug(f"Container environment variables: {list(env_vars.keys())}")
         return env_vars
 
+    def _get_model_info(self, model: str) -> Any:
+        """Get model info from cache or fetch it from Ollama API.
+
+        Args:
+            model: Model identifier string.
+
+        Returns:
+            Model info object from Ollama API.
+
+        Raises:
+            Exception: If model info cannot be fetched.
+        """
+        # Check cache first
+        if model in self._model_info_cache:
+            log.debug(f"Using cached model info for: {model}")
+            return self._model_info_cache[model]
+
+        # Fetch and cache
+        log.debug(f"Fetching model info for: {model}")
+        client = get_ollama_sync_client()
+        model_info = client.show(model=model)
+        self._model_info_cache[model] = model_info
+        log.debug(f"Cached model info for: {model}")
+        return model_info
+
     def get_context_length(self, model: str) -> int:
         """Get the maximum token limit for a given model."""
         log.debug(f"Getting context length for model: {model}")
         try:
-            client = get_ollama_sync_client()
-            log.debug(f"Fetching model info for: {model}")
-
-            # Construct the URL for the show endpoint
-            model_info = client.show(model=model).modelinfo
+            # Use cached model info
+            model_response = self._get_model_info(model)
+            model_info = model_response.modelinfo
             if model_info is None:
                 log.debug("Model info is None, using default context length: 4096")
                 return 4096
@@ -171,18 +210,86 @@ class OllamaProvider(ChatProvider):
             # Fallback to a reasonable default
             return 4096
 
+    def has_tool_support(self, model: str) -> bool:
+        """Return True if the given model supports tools/function calling.
+
+        Checks the model's capabilities to determine if it supports tools.
+
+        Args:
+            model: Model identifier string.
+
+        Returns:
+            True if the model has "tools" in its capabilities, False otherwise.
+            Falls back to True if capabilities cannot be determined.
+        """
+        log.debug(f"Checking tool support for model: {model}")
+        try:
+            # Use cached model info
+            model_info = self._get_model_info(model)
+
+            # Check if capabilities field exists and contains "tools"
+            if hasattr(model_info, "capabilities") and model_info.capabilities:
+                has_tools = "tools" in model_info.capabilities
+                log.debug(
+                    f"Model {model} capabilities: {model_info.capabilities}, tools support: {has_tools}"
+                )
+                return has_tools
+
+            # If capabilities field doesn't exist, assume tools are supported for backward compatibility
+            log.debug(f"Model {model} has no capabilities field, assuming tool support")
+            return True
+
+        except Exception as e:
+            log.warning(f"Error checking tool support for model {model}: {e}")
+            # Default to True for backward compatibility
+            log.debug(f"Defaulting to True for model {model} due to error")
+            return True
+
+    async def get_available_language_models(self) -> List[LanguageModel]:
+        """
+        Get available Ollama models.
+
+        Returns models available in the local Ollama installation.
+        Returns an empty list if Ollama is not available.
+
+        Returns:
+            List of LanguageModel instances for Ollama
+        """
+        try:
+            async with get_ollama_client() as client:
+                models_response = await client.list()
+                models: List[LanguageModel] = []
+                for model in models_response.get("models", []):
+                    model_name = model.get("name")
+                    if model_name:
+                        models.append(
+                            LanguageModel(
+                                id=model_name,
+                                name=model_name,
+                                provider=Provider.Ollama,
+                            )
+                        )
+                log.debug(f"Fetched {len(models)} Ollama models")
+                return models
+        except Exception as e:
+            log.error(f"Error fetching Ollama models: {e}")
+            return []
+
     def _count_tokens(self, messages: Sequence[Message]) -> int:
         """Estimate token count for a sequence of messages."""
         token_count = count_messages_tokens(messages, encoding=self.encoding)
         log.debug(f"Estimated token count for {len(messages)} messages: {token_count}")
         return token_count
 
-    def convert_message(self, message: Message) -> Dict[str, Any]:
+    def convert_message(
+        self, message: Message, use_tool_emulation: bool = False
+    ) -> Dict[str, Any]:
         """
         Convert an internal message to Ollama's format.
 
         Args:
             message: The message to convert
+            use_tool_emulation: Whether to convert tool messages for emulation
         """
         log.debug(f"Converting message with role: {message.role}")
 
@@ -199,7 +306,17 @@ class OllamaProvider(ChatProvider):
             else:
                 content = json.dumps(message.content)
             log.debug(f"Tool message content type: {type(message.content)}")
-            return {"role": "tool", "content": content, "name": message.name}
+
+            # For tool emulation, convert to user message with clear explanation
+            if use_tool_emulation:
+                emulated_content = (
+                    f"The function {message.name}() returned the following result:\n{content}\n\n"
+                    f"Use this result to answer the user's question. Do NOT call the function again."
+                )
+                log.debug("Converting tool message to user message for emulation")
+                return {"role": "user", "content": emulated_content}
+            else:
+                return {"role": "tool", "content": content, "name": message.name}
         elif message.role == "system":
             log.debug("Converting system message")
             # Handle system message content conversion
@@ -322,8 +439,73 @@ class OllamaProvider(ChatProvider):
             f"Preparing request params for model: {model}, {len(messages)} messages, {len(tools)} tools"
         )
 
-        # Regular message conversion only
-        ollama_messages = [self.convert_message(m) for m in messages]
+        # Check if model supports native tool calling
+        use_tool_emulation = False
+        if len(tools) > 0 and not self.has_tool_support(model):
+            log.info(
+                f"Model {model} does not support native tool calling, using emulation"
+            )
+            use_tool_emulation = True
+
+        # Prepare messages
+        ollama_messages = []
+        if use_tool_emulation and len(tools) > 0:
+            # Add tool definitions to system message
+            tool_definitions = self._format_tools_as_python(tools)
+            tool_instruction = (
+                "\n\n=== AVAILABLE FUNCTIONS ===\n"
+                "You can call these functions by writing a function call on a single line.\n"
+                "DO NOT write function definitions - only write function CALLS.\n\n"
+                f"{tool_definitions}\n\n"
+                "=== INSTRUCTIONS ===\n"
+                "When you need to use a function:\n"
+                "1. Write ONLY the function call, nothing else\n"
+                "2. Use this exact format: function_name(param='value')\n"
+                "3. Do NOT write 'def', 'return', or any other Python keywords\n"
+                "4. After calling a function, wait for the result\n"
+                "5. Once you receive a function result, use it in your final answer\n"
+                "6. Do NOT call the same function twice\n\n"
+                "Example conversation:\n"
+                "User: What is 5 + 3?\n"
+                "You: calculator(expression='5 + 3')\n"
+                "[System returns: {'result': 8}]\n"
+                "You: The answer is 8."
+            )
+
+            # Find or create system message
+            modified_messages = list(messages)
+            has_system = any(m.role == "system" for m in modified_messages)
+
+            if has_system:
+                # Append to existing system message
+                for i, msg in enumerate(modified_messages):
+                    if msg.role == "system":
+                        existing_content = (
+                            msg.content
+                            if isinstance(msg.content, str)
+                            else str(msg.content)
+                        )
+                        modified_messages[i] = Message(
+                            role="system", content=existing_content + tool_instruction
+                        )
+                        break
+            else:
+                # Prepend new system message
+                modified_messages = [
+                    Message(role="system", content=tool_instruction.strip())
+                ] + modified_messages
+
+            ollama_messages = [
+                self.convert_message(m, use_tool_emulation=True)
+                for m in modified_messages
+            ]
+            log.debug(f"Using tool emulation: added tool definitions to system message")
+        else:
+            # Regular message conversion
+            ollama_messages = [
+                self.convert_message(m, use_tool_emulation=False) for m in messages
+            ]
+
         log.debug(f"Converted to {len(ollama_messages)} Ollama messages")
 
         params = {
@@ -336,9 +518,10 @@ class OllamaProvider(ChatProvider):
         }
         log.debug(f"Set options: num_predict={max_tokens}, num_ctx={context_window}")
 
-        if len(tools) > 0:
+        # Add tools only if native support is available
+        if len(tools) > 0 and not use_tool_emulation:
             params["tools"] = self.format_tools(tools)
-            log.debug(f"Added {len(tools)} tools to request")
+            log.debug(f"Added {len(tools)} tools to request (native support)")
 
         if response_format:
             log.debug(f"Processing response format: {response_format.get('type')}")
@@ -405,6 +588,11 @@ class OllamaProvider(ChatProvider):
             "chat_stream", messages, model=model, tools=tools, **kwargs
         )
 
+        # Determine if we're using tool emulation
+        use_tool_emulation = len(tools) > 0 and not self.has_tool_support(model)
+        if use_tool_emulation:
+            log.info(f"Using tool emulation for model {model}")
+
         async with get_ollama_client() as client:
             params = self._prepare_request_params(
                 messages,
@@ -422,6 +610,7 @@ class OllamaProvider(ChatProvider):
 
             chunk_count = 0
             tool_call_count = 0
+            accumulated_content = ""  # For tool emulation parsing
 
             async for response in completion:
                 chunk_count += 1
@@ -431,6 +620,7 @@ class OllamaProvider(ChatProvider):
                     log.debug("Final chunk received, updating usage stats")
                     self._update_usage_stats(response)
 
+                # Handle native tool calls
                 if response.message.tool_calls is not None:
                     log.debug(
                         f"Chunk contains {len(response.message.tool_calls)} tool calls"
@@ -447,12 +637,27 @@ class OllamaProvider(ChatProvider):
 
                 content = response.message.content or ""
 
+                # Accumulate content for emulation parsing
+                if use_tool_emulation:
+                    accumulated_content += content
+
                 yield Chunk(
                     content=content,
                     done=response.done or False,
                 )
 
                 if response.done:
+                    # Parse emulated tool calls from accumulated content
+                    if use_tool_emulation and accumulated_content:
+                        log.debug("Parsing emulated tool calls from response")
+                        emulated_calls = self._parse_function_calls(
+                            accumulated_content, tools
+                        )
+                        for tool_call in emulated_calls:
+                            tool_call_count += 1
+                            log.debug(f"Yielding emulated tool call: {tool_call.name}")
+                            yield tool_call
+
                     log.debug(
                         f"Streaming completed. Total chunks: {chunk_count}, tool calls: {tool_call_count}"
                     )
@@ -485,6 +690,11 @@ class OllamaProvider(ChatProvider):
         log.debug(f"Non-streaming with {len(messages)} messages, {len(tools)} tools")
         self._log_api_request("chat", messages, model=model, tools=tools, **kwargs)
 
+        # Determine if we're using tool emulation
+        use_tool_emulation = len(tools) > 0 and not self.has_tool_support(model)
+        if use_tool_emulation:
+            log.info(f"Using tool emulation for model {model}")
+
         async with get_ollama_client() as client:
             params = self._prepare_request_params(
                 messages,
@@ -504,6 +714,8 @@ class OllamaProvider(ChatProvider):
             log.debug(f"Response content length: {len(content)}")
 
             tool_calls = None
+
+            # Handle native tool calls
             if response.message.tool_calls:
                 tool_calls = [
                     ToolCall(
@@ -512,7 +724,18 @@ class OllamaProvider(ChatProvider):
                     )
                     for tool_call in response.message.tool_calls
                 ]
-                log.debug(f"Response contains {len(tool_calls)} tool calls")
+                log.debug(f"Response contains {len(tool_calls)} native tool calls")
+            # Handle emulated tool calls
+            elif use_tool_emulation and content:
+                log.debug("Parsing emulated tool calls from response")
+                emulated_calls = self._parse_function_calls(content, tools)
+                if emulated_calls:
+                    tool_calls = emulated_calls
+                    log.debug(
+                        f"Response contains {len(tool_calls)} emulated tool calls"
+                    )
+                else:
+                    log.debug("Response contains no tool calls")
             else:
                 log.debug("Response contains no tool calls")
 
@@ -590,6 +813,18 @@ async def main():
     tools = [CalculatorTool()]
     context = ProcessingContext()
 
+    # Using gemma3:4b which doesn't support native tool calling
+    # This will automatically use tool calling emulation
+    model_name = "gemma3:4b"
+
+    # Check if model supports native tool calling
+    has_native_tools = provider.has_tool_support(model_name)
+    print(f"\n{'='*60}")
+    print(f"Model: {model_name}")
+    print(f"Native tool support: {has_native_tools}")
+    print(f"Using tool emulation: {not has_native_tools}")
+    print(f"{'='*60}\n")
+
     messages: list[Message] = [
         Message(
             role="system",
@@ -605,22 +840,31 @@ async def main():
         ),
     ]
 
-    model_name = "gpt-oss:20b"
-
     response = await provider.generate_message(
         messages=messages,
         model=model_name,
         tools=tools,
     )
-    print(response.content)
+    print(f"\n--- Initial Response ---")
+    print(f"Content: {response.content}")
+    print(f"Tool calls: {response.tool_calls}\n")
 
-    while response.tool_calls:
-        print(response.tool_calls)
+    iteration = 1
+    max_iterations = 10
+    while response.tool_calls and iteration <= max_iterations:
+        print(f"\n--- Tool Execution (Iteration {iteration}/{max_iterations}) ---")
         for tool_call in response.tool_calls:
+            print(f"Tool: {tool_call.name}")
+            print(f"Args: {tool_call.args}")
+
             matching_tool = next((t for t in tools if t.name == tool_call.name), None)
             if matching_tool is None:
+                print(f"Warning: Tool {tool_call.name} not found")
                 continue
+
             tool_result = await matching_tool.process(context, tool_call.args or {})
+            print(f"Result: {tool_result}")
+
             messages.append(
                 Message(
                     role="tool",
@@ -634,7 +878,79 @@ async def main():
             model=model_name,
             tools=tools,
         )
-        print(response.content)
+        print(f"\n--- Response After Tool Call ---")
+        print(f"Content: {response.content}")
+        print(f"Tool calls: {response.tool_calls}")
+        iteration += 1
+
+    if iteration > max_iterations:
+        print(f"\n⚠️  WARNING: Reached max iterations ({max_iterations}). Stopping.\n")
+
+    print(f"\n{'='*60}")
+    print(f"Final Answer: {response.content}")
+    print(f"{'='*60}\n")
+
+    # Test 2: Response format (structured output)
+    print(f"\n{'='*60}")
+    print(f"TEST 2: Response Format (Structured Output)")
+    print(f"{'='*60}\n")
+
+    # Define a JSON schema for structured output
+    response_format = {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "calculation_result",
+            "schema": {
+                "type": "object",
+                "properties": {
+                    "calculation": {"type": "string"},
+                    "result": {"type": "number"},
+                    "explanation": {"type": "string"},
+                },
+                "required": ["calculation", "result", "explanation"],
+            },
+        },
+    }
+
+    messages_json = [
+        Message(
+            role="system",
+            content="You are a helpful math assistant. Always respond with valid JSON.",
+        ),
+        Message(
+            role="user",
+            content="Calculate the area of a circle with radius 5. Explain your work.",
+        ),
+    ]
+
+    print(f"Using response_format: {response_format['json_schema']['name']}")
+    print(f"Schema: {json.dumps(response_format['json_schema']['schema'], indent=2)}\n")
+
+    response_json = await provider.generate_message(
+        messages=messages_json,
+        model=model_name,
+        response_format=response_format,
+    )
+
+    print(f"--- Structured Response ---")
+    print(f"Content:\n{response_json.content}\n")
+
+    # Try to parse the JSON
+    try:
+        content_str = (
+            response_json.content
+            if isinstance(response_json.content, str)
+            else str(response_json.content)
+        )
+        parsed = json.loads(content_str)
+        print(f"✅ Valid JSON!")
+        print(f"Calculation: {parsed.get('calculation')}")
+        print(f"Result: {parsed.get('result')}")
+        print(f"Explanation: {parsed.get('explanation')}")
+    except json.JSONDecodeError as e:
+        print(f"❌ JSON parsing failed: {e}")
+
+    print(f"\n{'='*60}\n")
 
 
 if __name__ == "__main__":

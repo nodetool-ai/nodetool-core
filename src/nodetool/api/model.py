@@ -11,8 +11,10 @@ from nodetool.integrations.huggingface.huggingface_file import (
 from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
 from nodetool.ml.models.language_models import get_all_language_models
+from nodetool.ml.models.image_models import get_all_image_models
 from nodetool.metadata.types import (
     LanguageModel,
+    ImageModel,
     ModelFile,
     LlamaModel,
     Provider,
@@ -20,7 +22,7 @@ from nodetool.metadata.types import (
 )
 from huggingface_hub import try_to_load_from_cache
 from huggingface_hub.constants import HF_HUB_CACHE
-from nodetool.api.utils import current_user, flatten_models
+from nodetool.api.utils import current_user
 from fastapi import APIRouter, Depends, Query
 from nodetool.integrations.huggingface.huggingface_models import (
     delete_cached_hf_model,
@@ -147,6 +149,16 @@ async def get_language_models_endpoint(
     user: str = Depends(current_user),
 ) -> list[LanguageModel]:
     return await get_language_models()
+
+
+@router.get("/image")
+async def get_image_models_endpoint(
+    user: str = Depends(current_user),
+) -> list[ImageModel]:
+    """
+    Get all available image generation models from all providers.
+    """
+    return await get_all_image_models()
 
 
 @router.get("/ollama_model_info")

@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 from typing import Any, Dict, Tuple
 
+from nodetool.workflows.run_job_request import ExecutionStrategy
 import yaml
 
 from nodetool.config.configuration import register_setting
@@ -18,6 +19,15 @@ NOT_GIVEN = object()
 
 # Built-in settings and secrets are registered here so that other packages can
 # extend the configuration system via :func:`register_setting`.
+
+register_setting(
+    package_name="nodetool",
+    env_var="DEFAULT_EXECUTION_STRATEGY",
+    group="Execution",
+    description="Default execution strategy for workflows",
+    is_secret=False,
+    enum=[strategy.value for strategy in ExecutionStrategy],
+)
 
 # Settings
 register_setting(
@@ -53,6 +63,7 @@ register_setting(
     ),
     is_secret=False,
 )
+
 
 # Secrets
 register_setting(

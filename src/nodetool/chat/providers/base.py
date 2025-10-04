@@ -1,55 +1,112 @@
 """
-Base provider class for chat completion services.
+Base provider class for AI service providers.
 
-This module provides the foundation for all chat provider implementations, defining
-a common interface that all providers must implement for streaming completions and tool handling.
+This module provides the foundation for all provider implementations, defining
+a common interface that providers must implement for chat completions, image generation,
+and other AI capabilities. Providers declare their capabilities at runtime.
 """
 
 from abc import ABC, abstractmethod
-from typing import Any, AsyncGenerator, AsyncIterator, Callable, Sequence, Type
+from enum import Enum
+from typing import Any, AsyncGenerator, AsyncIterator, Callable, List, Sequence, Set, Type
 
 from nodetool.agents.tools.base import Tool
-from nodetool.metadata.types import Message, Provider, ToolCall, MessageFile
+from nodetool.metadata.types import (
+    Message,
+    Provider as ProviderEnum,
+    ToolCall,
+    MessageFile,
+    LanguageModel,
+    ImageModel,
+)
 from nodetool.workflows.types import Chunk
 
 import json
 import datetime
 
 
-_CHAT_PROVIDER_REGISTRY: dict[Provider, tuple[Type["ChatProvider"], dict[str, Any]]] = (
+class ProviderCapability(str, Enum):
+    """Capabilities that a provider can support.
+
+    Providers declare which capabilities they support via get_capabilities().
+    This allows runtime discovery of provider features and enables multi-modal
+    providers (like Gemini) to expose all their features through a single interface.
+    """
+    GENERATE_MESSAGE = "generate_message"           # Single message generation
+    GENERATE_MESSAGES = "generate_messages"         # Streaming message generation
+    TEXT_TO_IMAGE = "text_to_image"                 # Text → Image generation
+    IMAGE_TO_IMAGE = "image_to_image"               # Image transformation
+
+
+_PROVIDER_REGISTRY: dict[ProviderEnum, tuple[Type["BaseProvider"], dict[str, Any]]] = (
     {}
 )
 
 
-def register_chat_provider(
-    provider: Provider,
-    **kwargs,
-) -> Callable[[Type["ChatProvider"]], Type["ChatProvider"]]:
-    """Decorator to register a ChatProvider implementation."""
+def register_provider(
+    provider: ProviderEnum,
+    **kwargs: Any,
+) -> Callable[[Type["BaseProvider"]], Type["BaseProvider"]]:
+    """Decorator to register a Provider implementation.
 
-    def decorator(cls: Type["ChatProvider"]) -> Type["ChatProvider"]:
-        _CHAT_PROVIDER_REGISTRY[provider] = (cls, kwargs)
+    Args:
+        provider: The provider enum value to register
+        **kwargs: Additional provider-specific configuration
+
+    Returns:
+        Decorator function for registering the provider class
+    """
+
+    def decorator(cls: Type["BaseProvider"]) -> Type["BaseProvider"]:
+        _PROVIDER_REGISTRY[provider] = (cls, kwargs)
         return cls
 
     return decorator
 
 
 def get_registered_provider(
-    provider: Provider,
-) -> tuple[Type["ChatProvider"], dict[str, Any]]:
-    provider_cls, kwargs = _CHAT_PROVIDER_REGISTRY.get(provider, (None, {}))
+    provider: ProviderEnum,
+) -> tuple[Type["BaseProvider"], dict[str, Any]]:
+    """Get a registered provider class and its configuration.
+
+    Args:
+        provider: The provider enum value to look up
+
+    Returns:
+        Tuple of (provider_class, configuration_dict)
+
+    Raises:
+        ValueError: If the provider is not registered
+    """
+    provider_cls, kwargs = _PROVIDER_REGISTRY.get(provider, (None, {}))
     if provider_cls is None:
         raise ValueError(f"Provider {provider} is not installed")
     return provider_cls, kwargs
 
 
-class ChatProvider(ABC):
-    """
-    Abstract base class for chat completion providers (OpenAI, Anthropic, Ollama, etc.).
+# Backwards compatibility aliases
+register_chat_provider = register_provider
+_CHAT_PROVIDER_REGISTRY = _PROVIDER_REGISTRY
 
-    Defines a common interface for different chat providers, allowing the chat module
-    to work with any supported provider interchangeably. Subclasses must implement
-    the generate_messages method to define provider-specific behavior.
+
+class BaseProvider(ABC):
+    """
+    Abstract base class for AI service providers.
+
+    Defines a common interface for different providers (OpenAI, Anthropic, Gemini, FAL, etc.),
+    allowing the system to work with any supported provider interchangeably. Providers declare
+    their capabilities and implement the corresponding methods.
+
+    Capabilities are queried via get_capabilities() and can include:
+    - GENERATE_MESSAGE: Single message generation
+    - GENERATE_MESSAGES: Streaming message generation
+    - TEXT_TO_IMAGE: Text-to-image generation
+    - IMAGE_TO_IMAGE: Image transformation
+
+    Subclasses must implement:
+    - get_capabilities(): Return set of supported capabilities
+    - Methods corresponding to their declared capabilities
+    - get_available_language_models() and/or get_available_image_models()
     """
 
     log_file: str | None = None
@@ -57,26 +114,104 @@ class ChatProvider(ABC):
     usage: dict[str, int] = {}
     provider_name: str = ""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.usage = {
             "prompt_tokens": 0,
             "completion_tokens": 0,
             "total_tokens": 0,
             "cached_prompt_tokens": 0,
             "reasoning_tokens": 0,
+            "total_requests": 0,
+            "total_images": 0,
         }
+
+    @abstractmethod
+    def get_capabilities(self) -> Set[ProviderCapability]:
+        """Return the set of capabilities this provider supports.
+
+        This method allows runtime discovery of what features a provider offers.
+        Providers should return a set of ProviderCapability enum values.
+
+        Returns:
+            Set of ProviderCapability values this provider supports
+
+        Example:
+            return {
+                ProviderCapability.GENERATE_MESSAGE,
+                ProviderCapability.GENERATE_MESSAGES,
+            }
+        """
+        pass
 
     def get_container_env(self) -> dict[str, str]:
         """Return environment variables needed when running inside Docker."""
         return {}
 
     def get_context_length(self, model: str) -> int:
-        """Get the context length for a given model."""
+        """Get the context length for a given model.
+
+        Only relevant for providers with GENERATE_MESSAGE or GENERATE_MESSAGES capability.
+        """
         return 4096
+
+    def has_tool_support(self, model: str) -> bool:
+        """Return True if the given model supports tools.
+
+        Only relevant for providers with GENERATE_MESSAGE or GENERATE_MESSAGES capability.
+        """
+        return False
+
+    async def get_available_language_models(self) -> List[LanguageModel]:
+        """Get a list of available language models for this provider.
+
+        This method should return all language models that are available for use with this provider.
+        The implementation may check for API keys, fetch from external APIs, check local
+        cache, or use static model lists.
+
+        Returns:
+            List of LanguageModel instances available for this provider.
+            Returns empty list if provider doesn't support language models.
+
+        Raises:
+            Exception: If model discovery fails (should be caught and return empty list)
+        """
+        return []
+
+    async def get_available_image_models(self) -> List[ImageModel]:
+        """Get a list of available image models for this provider.
+
+        This method should return all image models that are available for use with this provider.
+        The implementation may check for API keys, local cache, or other requirements.
+
+        Returns:
+            List of ImageModel instances available for this provider.
+            Returns empty list if provider doesn't support image models.
+
+        Raises:
+            Exception: If model discovery fails (should be caught and return empty list)
+        """
+        return []
+
+    async def get_available_models(self) -> List[LanguageModel | ImageModel]:
+        """Get a list of all available models for this provider.
+
+        Returns both language and image models combined. Use get_available_language_models()
+        or get_available_image_models() to filter to specific model types.
+
+        Returns:
+            List containing both LanguageModel and ImageModel instances
+
+        Raises:
+            Exception: If model discovery fails (should be caught and return empty list)
+        """
+        language_models = await self.get_available_language_models()
+        image_models = await self.get_available_image_models()
+        return language_models + image_models  # type: ignore
 
     def is_context_length_error(self, error: Exception) -> bool:
         """Return True if the given error indicates a context window overflow.
 
+        Only relevant for providers with GENERATE_MESSAGE or GENERATE_MESSAGES capability.
         Subclasses can override this method for provider specific logic.
         The default implementation checks for common substrings in the error
         message that typically appear when the prompt exceeds the model's
@@ -92,17 +227,37 @@ class ChatProvider(ABC):
         ]
         return any(k in msg for k in keywords)
 
+    def is_rate_limit_error(self, error: Exception) -> bool:
+        """Return True if the given error indicates a rate limit.
+
+        Subclasses can override this method for provider specific logic.
+        """
+        msg = str(error).lower()
+        keywords = ["rate limit", "too many requests", "quota exceeded"]
+        return any(k in msg for k in keywords)
+
+    def is_auth_error(self, error: Exception) -> bool:
+        """Return True if the given error indicates an authentication failure.
+
+        Subclasses can override this method for provider specific logic.
+        """
+        msg = str(error).lower()
+        keywords = ["unauthorized", "authentication", "api key", "invalid token"]
+        return any(k in msg for k in keywords)
+
     def _log_api_request(
         self,
         method: str,
-        messages: Sequence[Message],
-        **kwargs,
+        messages: Sequence[Message] | None = None,
+        params: Any = None,
+        **kwargs: Any,
     ) -> None:
         """Log an API request to the specified log file.
 
         Args:
             method: The API method being called
-            messages: The conversation history
+            messages: The conversation history (for chat methods)
+            params: The generation parameters (for image methods)
             **kwargs: Additional parameters to pass to the API
         """
         if not self.log_file:
@@ -111,13 +266,23 @@ class ChatProvider(ABC):
         try:
             with open(self.log_file, "a") as f:
                 timestamp = datetime.datetime.now().isoformat()
-                log_entry = {
+                log_entry: dict[str, Any] = {
                     "timestamp": timestamp,
                     "type": "request",
                     "method": method,
-                    "messages": [msg.model_dump() for msg in messages],
-                    **kwargs,
                 }
+
+                if messages is not None:
+                    log_entry["messages"] = [msg.model_dump() for msg in messages]
+
+                if params is not None:
+                    # Handle both dict and Pydantic model params
+                    if hasattr(params, "model_dump"):
+                        log_entry["params"] = params.model_dump()
+                    else:
+                        log_entry["params"] = params
+
+                log_entry.update(kwargs)
                 f.write(json.dumps(log_entry) + "\n")
         except Exception as e:
             print(f"Error logging API request: {e}")
@@ -144,53 +309,67 @@ class ChatProvider(ABC):
         except Exception as e:
             print(f"Error logging tool call: {e}")
 
-    def _log_api_response(self, method: str, response: Message) -> None:
+    def _log_api_response(
+        self,
+        method: str,
+        response: Message | None = None,
+        image_count: int | None = None,
+        **kwargs: Any,
+    ) -> None:
         """Log an API response to the specified log file.
 
         Args:
             method: The API method that was called
-            response: The response from the API
+            response: The Message response (for chat methods)
+            image_count: Number of images generated (for image methods)
+            **kwargs: Additional response metadata
         """
         if not self.log_file:
             return
 
         try:
-            # Convert response to serializable dict
-            response_dict = {
-                "role": response.role,
-                "content": response.content,
+            log_entry: dict[str, Any] = {
+                "timestamp": datetime.datetime.now().isoformat(),
+                "type": "response",
+                "method": method,
             }
 
-            # Add tool calls if present
-            if response.tool_calls:
-                response_dict["tool_calls"] = [
-                    {
-                        "function": {
-                            "name": tc.name,
-                            "arguments": tc.args,
-                        }
-                    }
-                    for tc in response.tool_calls
-                ]
+            # Handle chat response
+            if response is not None:
+                response_dict = {
+                    "role": response.role,
+                    "content": response.content,
+                }
 
-            # Log each tool call as a separate entry
-            if response.tool_calls:
-                for tool_call in response.tool_calls:
-                    self._log_tool_call(tool_call)
+                # Add tool calls if present
+                if response.tool_calls:
+                    response_dict["tool_calls"] = [
+                        {
+                            "function": {
+                                "name": tc.name,
+                                "arguments": tc.args,
+                            }
+                        }
+                        for tc in response.tool_calls
+                    ]
+
+                    # Log each tool call as a separate entry
+                    for tool_call in response.tool_calls:
+                        self._log_tool_call(tool_call)
+
+                log_entry["response"] = response_dict
+
+            # Handle image response
+            if image_count is not None:
+                log_entry["image_count"] = image_count
+
+            log_entry.update(kwargs)
 
             with open(self.log_file, "a") as f:
-                timestamp = datetime.datetime.now().isoformat()
-                log_entry = {
-                    "timestamp": timestamp,
-                    "type": "response",
-                    "method": method,
-                    "response": response_dict,
-                }
                 f.write(json.dumps(log_entry) + "\n")
         except Exception as e:
             print(f"Error logging API response: {e}")
 
-    @abstractmethod
     async def generate_message(
         self,
         messages: Sequence[Message],
@@ -199,23 +378,31 @@ class ChatProvider(ABC):
         max_tokens: int = 8192,
         context_window: int = 4096,
         response_format: dict | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> Message:
-        """
-        Generate a single message completion from the provider.
+        """Generate a single message completion from the provider.
+
+        Only implemented by providers with GENERATE_MESSAGE capability.
 
         Args:
             messages: Sequence of Message objects representing the conversation
             model: str containing model information
             tools: Available tools for the model to use
+            max_tokens: Maximum number of tokens to generate
+            context_window: Maximum number of tokens to keep in context
+            response_format: Format of the response
             **kwargs: Additional provider-specific parameters
 
         Returns:
-            A message returned by the provider.
-        """
-        pass
+            A message returned by the provider
 
-    @abstractmethod
+        Raises:
+            NotImplementedError: If provider doesn't support GENERATE_MESSAGE capability
+        """
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not support GENERATE_MESSAGE capability"
+        )
+
     def generate_messages(
         self,
         messages: Sequence[Message],
@@ -224,10 +411,11 @@ class ChatProvider(ABC):
         max_tokens: int = 8192,
         context_window: int = 4096,
         response_format: dict | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> AsyncIterator[Chunk | ToolCall | MessageFile]:
-        """
-        Generate message completions from the provider, yielding chunks or tool calls.
+        """Generate message completions from the provider, yielding chunks or tool calls.
+
+        Only implemented by providers with GENERATE_MESSAGES capability.
         Subclass implementations should declare this method as async.
 
         Args:
@@ -241,12 +429,76 @@ class ChatProvider(ABC):
 
         Yields:
             Async iterator of Chunk objects with content and completion status or ToolCall objects
+
+        Raises:
+            NotImplementedError: If provider doesn't support GENERATE_MESSAGES capability
         """
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not support GENERATE_MESSAGES capability"
+        )
 
-        raise NotImplementedError
+    async def text_to_image(
+        self,
+        params: Any,  # TextToImageParams, but imported later to avoid circular deps
+        timeout_s: int | None = None,
+        context: Any = None,  # ProcessingContext, but imported later
+    ) -> bytes:
+        """Generate an image from a text prompt.
+
+        Only implemented by providers with TEXT_TO_IMAGE capability.
+
+        Args:
+            params: Text-to-image generation parameters
+            timeout_s: Optional timeout in seconds
+            context: Optional processing context
+
+        Returns:
+            Raw image bytes (PNG, JPEG, etc.)
+
+        Raises:
+            NotImplementedError: If provider doesn't support TEXT_TO_IMAGE capability
+            ValueError: If required parameters are missing or invalid
+            RuntimeError: If generation fails
+        """
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not support TEXT_TO_IMAGE capability"
+        )
+
+    async def image_to_image(
+        self,
+        image: bytes,
+        params: Any,  # ImageToImageParams, but imported later to avoid circular deps
+        timeout_s: int | None = None,
+        context: Any = None,  # ProcessingContext, but imported later
+    ) -> bytes:
+        """Transform an image based on a text prompt.
+
+        Only implemented by providers with IMAGE_TO_IMAGE capability.
+
+        Args:
+            image: Input image as bytes
+            params: Image-to-image generation parameters
+            timeout_s: Optional timeout in seconds
+            context: Optional processing context
+
+        Returns:
+            Raw image bytes (PNG, JPEG, etc.)
+
+        Raises:
+            NotImplementedError: If provider doesn't support IMAGE_TO_IMAGE capability
+            ValueError: If required parameters are missing or invalid
+            RuntimeError: If generation fails
+        """
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not support IMAGE_TO_IMAGE capability"
+        )
 
 
-class MockProvider(ChatProvider):
+# Backwards compatibility alias
+ChatProvider = BaseProvider
+
+
+class MockProvider(BaseProvider):
     """
     A mock chat provider for testing purposes.
 
@@ -265,9 +517,16 @@ class MockProvider(ChatProvider):
         """
         super().__init__()
         self.responses = list(responses)  # Store responses
-        self.call_log = []  # Log calls made to the provider
+        self.call_log: list[dict[str, Any]] = []  # Log calls made to the provider
         self.response_index = 0
         self.log_file = log_file
+
+    def get_capabilities(self) -> Set[ProviderCapability]:
+        """Mock provider supports both message generation capabilities."""
+        return {
+            ProviderCapability.GENERATE_MESSAGE,
+            ProviderCapability.GENERATE_MESSAGES,
+        }
 
     def _get_next_response(self) -> Message:
         """Returns the next predefined response or raises an error if exhausted."""
@@ -278,6 +537,10 @@ class MockProvider(ChatProvider):
         else:
             raise IndexError("MockProvider has run out of predefined responses.")
 
+    async def get_available_models(self) -> List[LanguageModel]:
+        """Mock provider has no models."""
+        return []
+
     async def generate_message(
         self,
         messages: Sequence[Message],
@@ -286,7 +549,7 @@ class MockProvider(ChatProvider):
         max_tokens: int = 8192,
         context_window: int = 4096,
         response_format: dict | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> Message:
         """
         Simulates generating a single message.
@@ -294,7 +557,7 @@ class MockProvider(ChatProvider):
         Logs the call and returns the next predefined response.
         """
         self._log_api_request(
-            "generate_message", messages, model=model, tools=tools, **kwargs
+            "generate_message", messages=messages, model=model, tools=tools, **kwargs
         )
         self.call_log.append(
             {
@@ -325,7 +588,7 @@ class MockProvider(ChatProvider):
         max_tokens: int = 8192,
         context_window: int = 4096,
         response_format: dict | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> AsyncGenerator[Chunk | ToolCall, Any]:
         """
         Simulates generating messages, yielding chunks or tool calls.
@@ -334,7 +597,7 @@ class MockProvider(ChatProvider):
         to yield individual chunks/tool calls if needed for more granular testing.
         """
         self._log_api_request(
-            "generate_messages", messages, model=model, tools=tools, **kwargs
+            "generate_messages", messages=messages, model=model, tools=tools, **kwargs
         )
         self.call_log.append(
             {
@@ -347,7 +610,7 @@ class MockProvider(ChatProvider):
         )
         response = self._get_next_response()
         self._log_api_response(
-            "generate_messages", response
+            "generate_messages", response=response
         )  # Log the full conceptual response
 
         # Simulate streaming behavior

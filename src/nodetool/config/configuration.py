@@ -8,6 +8,7 @@ class Setting:
     env_var: str
     group: str
     description: str
+    enum: List[str] | None
     is_secret: bool
 
 
@@ -20,6 +21,7 @@ def register_setting(
     group: str,
     description: str,
     is_secret: bool,
+    enum: List[str] | None = None,
 ) -> List[Setting]:
     """Register a new setting.
 
@@ -35,13 +37,22 @@ def register_setting(
         Human readable description of the setting.
     is_secret: bool
         Flag indicating if the setting contains secrets.
+    enum: List[str] | None
+        List of possible values for the setting.
 
     Returns
     -------
     List[Setting]
         The list of all registered settings.
     """
-    setting = Setting(package_name, env_var, group, description, is_secret)
+    setting = Setting(
+        package_name=package_name,
+        env_var=env_var,
+        group=group,
+        description=description,
+        enum=enum,
+        is_secret=is_secret,
+    )
     _registry.append(setting)
     return list(_registry)
 

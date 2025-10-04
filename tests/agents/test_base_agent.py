@@ -1,10 +1,11 @@
 import pytest
-from typing import AsyncGenerator, Any
+from typing import AsyncGenerator, Any, List, Set
 
 from nodetool.agents.base_agent import BaseAgent
-from nodetool.chat.providers.base import ChatProvider
+from nodetool.chat.providers.base import ChatProvider, ProviderCapability
 from nodetool.workflows.types import Chunk
 from nodetool.workflows.processing_context import ProcessingContext
+from nodetool.metadata.types import LanguageModel
 
 
 class DummyProvider(ChatProvider):
@@ -12,9 +13,20 @@ class DummyProvider(ChatProvider):
         super().__init__()
         self.calls = 0
 
+    def get_capabilities(self) -> Set[ProviderCapability]:
+        """Dummy provider supports message generation."""
+        return {
+            ProviderCapability.GENERATE_MESSAGE,
+            ProviderCapability.GENERATE_MESSAGES,
+        }
+
     def get_context_length(self, model: str) -> int:  # type: ignore[override]
         self.calls += 1
         return 42
+
+    async def get_available_models(self) -> List[LanguageModel]:
+        """Return empty list for testing."""
+        return []
 
     async def generate_message(self, messages, model, tools=None, **kwargs):  # type: ignore[override]
         return None
@@ -28,14 +40,11 @@ class DummyProvider(ChatProvider):
 
 
 class DummyAgent(BaseAgent):
-    async def execute(
-        self, context: ProcessingContext
-    ) -> AsyncGenerator[Any, None]:
+    async def execute(self, context: ProcessingContext) -> AsyncGenerator[Any, None]:
         yield Chunk(content="done")
 
     def get_results(self):
         return "result"
-
 
 
 def test_initialization_defaults():

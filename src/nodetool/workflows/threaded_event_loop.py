@@ -119,10 +119,10 @@ class ThreadedEventLoop:
         ]
 
         if not tasks_to_cancel:
-            log.debug("ThreadedEventLoop: No tasks to cancel.")
+            log.debug("No tasks to cancel.")
             return
 
-        log.debug(f"ThreadedEventLoop: Cancelling {len(tasks_to_cancel)} task(s).")
+        log.debug(f"Cancelling {len(tasks_to_cancel)} task(s).")
         for task in tasks_to_cancel:
             task.cancel()
 
@@ -133,16 +133,14 @@ class ThreadedEventLoop:
             await asyncio.wait_for(
                 asyncio.gather(*tasks_to_cancel, return_exceptions=True), timeout=5.0
             )
-            log.debug(
-                "ThreadedEventLoop: All cancellable tasks finished after cancellation signal."
-            )
+            log.debug("All cancellable tasks finished after cancellation signal.")
         except asyncio.TimeoutError:
             log.warning(
-                "ThreadedEventLoop: Timeout waiting for tasks to finish during shutdown. Some tasks may not have exited cleanly."
+                "Timeout waiting for tasks to finish during shutdown. Some tasks may not have exited cleanly."
             )
         except Exception as e:
             log.error(
-                f"ThreadedEventLoop: Error waiting for tasks during shutdown: {e}",
+                f"Error waiting for tasks during shutdown: {e}",
                 exc_info=True,
             )
 
@@ -154,19 +152,19 @@ class ThreadedEventLoop:
             # Avoid multiple shutdown attempts if called rapidly
             return
         self._stop_initiated = True
-        log.debug("ThreadedEventLoop: Starting shutdown sequence in event loop thread.")
+        log.debug("Starting shutdown sequence in event loop thread.")
 
         # Ensure the task cancellation logic runs to completion before stopping the loop.
         # We create a task for _cancel_all_tasks_and_wait, and then ensure_future
         # will schedule it. After it completes, we stop the loop.
         async def shutdown_sequence_coro():
             await self._cancel_all_tasks_and_wait()
-            log.debug("ThreadedEventLoop: Task cancellation complete, stopping loop.")
+            log.debug("Task cancellation complete, stopping loop.")
             if self._loop and self._loop.is_running():  # Check again before stopping
                 self._loop.stop()
             else:
                 log.debug(
-                    "ThreadedEventLoop: Loop was already stopped before explicit stop in shutdown_sequence."
+                    "Loop was already stopped before explicit stop in shutdown_sequence."
                 )
 
         asyncio.ensure_future(shutdown_sequence_coro(), loop=self._loop)
@@ -177,41 +175,37 @@ class ThreadedEventLoop:
             if self._stop_initiated and self._thread and not self._thread.is_alive():
                 # If stop was initiated and thread is dead, we might be in a re-entrant call after cleanup
                 log.debug(
-                    "ThreadedEventLoop: Stop called but shutdown already completed or thread is dead."
+                    "Stop called but shutdown already completed or thread is dead."
                 )
                 return
             if not self._running and not self._thread:
                 log.debug(
-                    "ThreadedEventLoop: Stop called but loop was not running or thread doesn't exist."
+                    "Stop called but loop was not running or thread doesn't exist."
                 )
                 return
             # If only _stop_initiated is true, but thread is alive, let join handle it.
-            # log.debug(f"ThreadedEventLoop: Stop called, _running={self._running}, _thread_exists={bool(self._thread)}, _stop_initiated={self._stop_initiated}")
+            # log.debug(f"Stop called, _running={self._running}, _thread_exists={bool(self._thread)}, _stop_initiated={self._stop_initiated}")
 
         log.debug(
-            f"ThreadedEventLoop: Initiating stop. Current thread: {threading.get_ident()}, Loop thread: {self._thread.ident if self._thread else 'N/A'}"
+            f"Initiating stop. Current thread: {threading.get_ident()}, Loop thread: {self._thread.ident if self._thread else 'N/A'}"
         )
         self._running = False  # Signal that no new work should be accepted / loop should stop running tasks
 
         if self._loop and self._loop.is_running():
-            log.debug(
-                "ThreadedEventLoop: Scheduling _shutdown_loop via call_soon_threadsafe."
-            )
+            log.debug("Scheduling _shutdown_loop via call_soon_threadsafe.")
             self._loop.call_soon_threadsafe(self._shutdown_loop)
         else:
             # If loop is not running, but thread exists, it implies _run_event_loop might have exited prematurely
             # or was never properly started. Forcing a stop on a non-running loop is mostly a no-op for stop itself.
             log.warning(
-                "ThreadedEventLoop: Stop called, but internal loop was not reported as running. Cleanup will proceed."
+                "Stop called, but internal loop was not reported as running. Cleanup will proceed."
             )
 
         current_thread_id = threading.get_ident()
         target_thread_id = self._thread.ident if self._thread else None
 
         if self._thread and current_thread_id != target_thread_id:
-            log.debug(
-                f"ThreadedEventLoop: Waiting for event loop thread {target_thread_id} to join."
-            )
+            log.debug(f"Waiting for event loop thread {target_thread_id} to join.")
             # Use shorter timeout on Windows to prevent hanging
             import platform
 
@@ -219,11 +213,11 @@ class ThreadedEventLoop:
             self._thread.join(timeout=timeout)
             if self._thread.is_alive():
                 log.warning(
-                    f"ThreadedEventLoop: Thread did not join in time ({timeout}s) after stop. Loop might be stuck or tasks are non-cooperative."
+                    f"Thread did not join in time ({timeout}s) after stop. Loop might be stuck or tasks are non-cooperative."
                 )
         elif self._thread and current_thread_id == target_thread_id:
             log.warning(
-                "ThreadedEventLoop: Stop called from within the event loop thread. Join will be skipped. Loop should stop via _shutdown_loop."
+                "Stop called from within the event loop thread. Join will be skipped. Loop should stop via _shutdown_loop."
             )
 
         # After attempting to join, decide whether it's safe to close the loop here.
@@ -236,7 +230,7 @@ class ThreadedEventLoop:
             # own finally block inside _run_event_loop. Closing here would raise
             # "Cannot close a running event loop".
             log.warning(
-                "ThreadedEventLoop: Event loop thread still alive after join attempt; skipping loop.close() here."
+                "Event loop thread still alive after join attempt; skipping loop.close() here."
             )
             return
 
@@ -249,20 +243,18 @@ class ThreadedEventLoop:
                 if self._loop.is_running():
                     # Extra guard; should not happen if thread is dead, but be safe.
                     log.warning(
-                        "ThreadedEventLoop: Internal loop reports running but thread is not alive; skipping close()."
+                        "Internal loop reports running but thread is not alive; skipping close()."
                     )
                     return
                 if not self._loop.is_closed():
                     self._loop.close()
             finally:
                 self._loop = None
-        log.debug("ThreadedEventLoop: Stop method finished.")
+        log.debug("Stop method finished.")
 
     def _run_event_loop(self) -> None:
         """Set the event loop for this thread and run it."""
-        log.debug(
-            f"ThreadedEventLoop: Event loop thread {threading.get_ident()} started."
-        )
+        log.debug(f"Event loop thread {threading.get_ident()} started.")
         if self._loop is None:
             # Should not happen; guard to avoid AttributeError in rare cases
             self._loop = asyncio.new_event_loop()
@@ -271,7 +263,7 @@ class ThreadedEventLoop:
             self._loop.run_forever()
         finally:
             log.debug(
-                "ThreadedEventLoop: run_forever completed. Starting final cleanup in event loop thread."
+                "run_forever completed. Starting final cleanup in event loop thread."
             )
             # This part runs after run_forever() returns (i.e., after loop.stop() is processed from _shutdown_loop)
             # _shutdown_loop should have handled cancellation of tasks. This is a final sweep.
@@ -285,76 +277,66 @@ class ThreadedEventLoop:
 
                 if tasks_to_gather_final:
                     log.debug(
-                        f"ThreadedEventLoop: _run_event_loop finally: {len(tasks_to_gather_final)} tasks found. Gathering before close."
+                        f"_run_event_loop finally: {len(tasks_to_gather_final)} tasks found. Gathering before close."
                     )
                     # This gather is to ensure any final exceptions/cancellations are processed by tasks
                     # before the loop is hard closed.
                     self._loop.run_until_complete(
                         asyncio.gather(*tasks_to_gather_final, return_exceptions=True)
                     )
-                    log.debug(
-                        "ThreadedEventLoop: _run_event_loop finally: Final gather completed."
-                    )
+                    log.debug("_run_event_loop finally: Final gather completed.")
             except RuntimeError as e:
                 if (
                     "cannot call run_until_complete() event loop is already running"
                     in str(e)
                 ):
                     log.warning(
-                        "ThreadedEventLoop: _run_event_loop finally: Loop was unexpectedly still running during final cleanup sweep."
+                        "_run_event_loop finally: Loop was unexpectedly still running during final cleanup sweep."
                     )
                 elif "Event loop is closed" in str(e):
                     log.debug(
-                        "ThreadedEventLoop: _run_event_loop finally: Loop was already closed during final task cleanup."
+                        "_run_event_loop finally: Loop was already closed during final task cleanup."
                     )
                 else:
                     log.error(
-                        f"ThreadedEventLoop: _run_event_loop finally: RuntimeError during final task cleanup: {e}",
+                        f"_run_event_loop finally: RuntimeError during final task cleanup: {e}",
                         exc_info=True,
                     )
             except Exception as e:
                 log.error(
-                    f"ThreadedEventLoop: _run_event_loop finally: Exception during final task cleanup: {e}",
+                    f"_run_event_loop finally: Exception during final task cleanup: {e}",
                     exc_info=True,
                 )
 
             # Clear per-thread caches now that the loop is stopping, to avoid cross-workflow leaks
             try:
                 # Environment.clear_thread_caches()
-                log.debug(
-                    "ThreadedEventLoop: Cleared thread-local caches via Environment."
-                )
+                log.debug("Cleared thread-local caches via Environment.")
             except Exception as e:
                 log.warning(
-                    f"ThreadedEventLoop: Failed to clear thread-local caches: {e}",
+                    f"Failed to clear thread-local caches: {e}",
                 )
 
             if self._loop and not self._loop.is_closed():
-                log.debug("ThreadedEventLoop: Closing event loop.")
+                log.debug("Closing event loop.")
                 self._loop.close()
-                log.debug("ThreadedEventLoop: Event loop closed.")
+                log.debug("Event loop closed.")
             else:
                 log.debug(
-                    "ThreadedEventLoop: Event loop was already closed before explicit close call in _run_event_loop."
+                    "Event loop was already closed before explicit close call in _run_event_loop."
                 )
-            log.debug(
-                f"ThreadedEventLoop: Event loop thread {threading.get_ident()} finished."
-            )
+            log.debug(f"Event loop thread {threading.get_ident()} finished.")
 
     def run_coroutine(self, coro: Coroutine[Any, Any, T]) -> Future[T]:
         """Schedule a coroutine to run in this event loop."""
         if self._loop is None:
-            raise RuntimeError(
-                "ThreadedEventLoop not started. Use start() or context manager."
-            )
+            raise RuntimeError("Not started. Use start() or context manager.")
         return asyncio.run_coroutine_threadsafe(coro, self._loop)  # type: ignore
 
     def run_in_executor(self, func: Callable[..., T], *args: Any) -> asyncio.Future[T]:
         """Run a synchronous function in the default executor of this event loop."""
         if self._loop is None:
-            raise RuntimeError(
-                "ThreadedEventLoop not started. Use start() or context manager."
-            )
+            raise RuntimeError("Not started. Use start() or context manager.")
         return self._loop.run_in_executor(None, func, *args)
 
     @property

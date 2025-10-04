@@ -152,7 +152,7 @@ def get_output_schema(graph: Graph):
                 node_schema = {"type": "number"}
             elif output_type == "BooleanOutput":
                 node_schema = {"type": "boolean"}
-            elif output_type in ["StringOutput", "TextOutput"]:
+            elif output_type in ["StringOutput"]:
                 node_schema = {"type": "string"}
             elif output_type in [
                 "ImageOutput",
