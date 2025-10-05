@@ -240,6 +240,13 @@ class Registry:
     is stored in nodes.json files within each package.
     """
 
+    _instance = None
+    @classmethod
+    def get_instance(cls):
+        if cls._instance is None:
+            cls._instance = Registry()
+        return cls._instance
+
     def __init__(self):
         self.pkg_mgr = get_package_manager_command()
         self._node_cache = None  # Cache for node metadata

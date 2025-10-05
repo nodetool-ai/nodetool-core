@@ -26,6 +26,7 @@ import base64
 from nodetool.media.image.image_utils import image_data_to_base64_jpeg
 from nodetool.io.media_fetch import fetch_uri_bytes_and_mime_sync
 from nodetool.metadata.types import (
+    InferenceProvider,
     Message,
     Provider,
     ToolCall,
@@ -34,6 +35,7 @@ from nodetool.metadata.types import (
     MessageTextContent,
     LanguageModel,
     TTSModel,
+    ImageModel,
 )
 from nodetool.config.environment import Environment
 from nodetool.workflows.base_node import ApiKeyMissingError
@@ -90,7 +92,6 @@ _language_model_cache = LanguageModelCache()
 
 # Provider mapping for HuggingFace Hub API
 HF_PROVIDER_MAPPING = {
-    "black-forest-labs": Provider.HuggingFaceBlackForestLabs,
     "cerebras": Provider.HuggingFaceCerebras,
     "cohere": Provider.HuggingFaceCohere,
     "fal-ai": Provider.HuggingFaceFalAI,
@@ -104,15 +105,79 @@ HF_PROVIDER_MAPPING = {
     "nscale": Provider.HuggingFaceNscale,
     "openai": Provider.HuggingFaceOpenAI,
     "replicate": Provider.HuggingFaceReplicate,
+    "scaleway": Provider.HuggingFaceScaleway,
     "sambanova": Provider.HuggingFaceSambanova,
     "together": Provider.HuggingFaceTogether,
+    "zai-org": Provider.HuggingFaceZAI,
 }
 
 
-# HuggingFace provider mapping for TTS
-HF_TTS_PROVIDER_MAPPING = {
-    "hf-inference": Provider.HuggingFaceHFInference,
-}
+async def fetch_image_models_from_hf_provider(
+    provider: str, pipeline_tag: str, token: str | None = None
+) -> List[ImageModel]:
+    """
+    Fetch image models from HuggingFace Hub API for a specific provider.
+
+    Args:
+        provider: The provider value (e.g., "fal-ai", "replicate", etc.)
+        pipeline_tag: The pipeline tag value (e.g., "text-to-image")
+        token: HuggingFace API token for authentication
+
+    Returns:
+        List of ImageModel instances
+    """
+    try:
+        from huggingface_hub import HfApi
+        
+        api = HfApi(token=token)
+        
+        # List models with the specified pipeline tag and inference provider
+        # Note: HfApi.list_models doesn't support filtering by inference_provider directly
+        # So we use the API endpoint directly but with proper authentication
+        models_iterator = api.list_models(
+            filter=pipeline_tag,
+            limit=1000,
+            sort="downloads",
+            direction=-1,
+        )
+        
+        models = []
+        for model_info in models_iterator:
+            # Check if model has the right inference provider in its tags or config
+            model_id = model_info.id
+            if model_id:
+                # Use the model name from the ID
+                model_name = (
+                    model_id.split("/")[-1] if "/" in model_id else model_id
+                )
+
+                # Get the appropriate provider enum value
+                provider_enum = HF_PROVIDER_MAPPING.get(provider)
+                if provider_enum is None:
+                    log.warning(
+                        f"Unknown image provider: {provider}, skipping model: {model_id}"
+                    )
+                    continue
+
+                # For now, add all models - we may need to filter by provider later
+                # if HF API provides that capability
+                models.append(
+                    ImageModel(
+                        id=model_id,
+                        name=model_name,
+                        provider=provider_enum,
+                    )
+                )
+
+        log.debug(
+            f"Fetched {len(models)} image models from HF provider: {provider}"
+        )
+        return models
+
+    except Exception as e:
+        log.error(f"Error fetching image models for provider {provider}: {e}")
+        return []
+
 
 async def fetch_tts_models_from_hf_provider(
     provider: str, pipeline_tag: str
@@ -147,7 +212,7 @@ async def fetch_tts_models_from_hf_provider(
                             )
 
                             # Get the appropriate provider enum value
-                            provider_enum = HF_TTS_PROVIDER_MAPPING.get(provider)
+                            provider_enum = HF_PROVIDER_MAPPING.get(provider)
                             if provider_enum is None:
                                 log.warning(
                                     f"Unknown TTS provider: {provider}, skipping model: {model_id}"
@@ -252,9 +317,6 @@ async def fetch_models_from_hf_provider(
     Provider.HuggingFaceFeatherlessAI, inference_provider="featherless-ai"
 )
 @register_provider(Provider.HuggingFaceFireworksAI, inference_provider="fireworks-ai")
-@register_provider(
-    Provider.HuggingFaceBlackForestLabs, inference_provider="black-forest-labs"
-)
 @register_provider(Provider.HuggingFaceHFInference, inference_provider="hf-inference")
 @register_provider(Provider.HuggingFaceHyperbolic, inference_provider="hyperbolic")
 @register_provider(Provider.HuggingFaceNebius, inference_provider="nebius")
@@ -264,6 +326,8 @@ async def fetch_models_from_hf_provider(
 @register_provider(Provider.HuggingFaceReplicate, inference_provider="replicate")
 @register_provider(Provider.HuggingFaceSambanova, inference_provider="sambanova")
 @register_provider(Provider.HuggingFaceTogether, inference_provider="together")
+@register_provider(Provider.HuggingFaceScaleway, inference_provider="scaleway")
+@register_provider(Provider.HuggingFaceZAI, inference_provider="zai")
 class HuggingFaceProvider(BaseProvider):
     """
     HuggingFace implementation of the Provider interface.
@@ -352,6 +416,8 @@ class HuggingFaceProvider(BaseProvider):
             ProviderCapability.GENERATE_MESSAGE,
             ProviderCapability.GENERATE_MESSAGES,
             ProviderCapability.TEXT_TO_SPEECH,
+            ProviderCapability.TEXT_TO_IMAGE,
+            ProviderCapability.IMAGE_TO_IMAGE,
         }
 
     def get_container_env(self) -> dict[str, str]:
@@ -1020,10 +1086,40 @@ class HuggingFaceProvider(BaseProvider):
             )
             return []
 
+    async def get_available_image_models(self) -> List[ImageModel]:
+        """
+        Get available HuggingFace image generation models for this inference provider.
+
+        Fetches models from the HuggingFace API based on the inference provider.
+        Returns an empty list if no API key is configured or if the fetch fails.
+
+        Returns:
+            List of ImageModel instances for HuggingFace
+        """
+        if not self.api_key:
+            log.debug("No HuggingFace API key configured, returning empty image model list")
+            return []
+
+        try:
+            assert self.inference_provider is not None, "Inference provider is not set"
+            models = await fetch_image_models_from_hf_provider(
+                self.inference_provider, "text-to-image", self.api_key
+            )
+            log.debug(
+                f"Fetched {len(models)} image models for HF inference provider: {self.inference_provider}"
+            )
+            return models
+        except Exception as e:
+            log.error(
+                f"Error fetching HuggingFace image models for provider {self.inference_provider}: {e}"
+            )
+            return []
+
 async def main():
-    provider = HuggingFaceProvider("groq") # type: ignore
-    models = await provider.get_available_language_models()
-    print(models)
+    for provider in InferenceProvider.__members__.values():
+        provider = HuggingFaceProvider(provider) # type: ignore
+        models = await provider.get_available_image_models()
+        print(provider)
 
 
 if __name__ == "__main__":

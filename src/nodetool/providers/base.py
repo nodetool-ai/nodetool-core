@@ -20,6 +20,7 @@ from nodetool.metadata.types import (
     LanguageModel,
     ImageModel,
     TTSModel,
+    ASRModel,
 )
 from nodetool.workflows.types import Chunk
 
@@ -42,6 +43,7 @@ class ProviderCapability(str, Enum):
     TEXT_TO_IMAGE = "text_to_image"                 # Text → Image generation
     IMAGE_TO_IMAGE = "image_to_image"               # Image transformation
     TEXT_TO_SPEECH = "text_to_speech"               # Text → Speech/Audio generation
+    AUTOMATIC_SPEECH_RECOGNITION = "automatic_speech_recognition"  # Speech → Text transcription
 
 
 _PROVIDER_REGISTRY: dict[ProviderEnum, tuple[Type["BaseProvider"], dict[str, Any]]] = (
@@ -203,14 +205,30 @@ class BaseProvider(ABC):
         """
         return []
 
-    async def get_available_models(self) -> List[LanguageModel | ImageModel | TTSModel]:
-        """Get a list of all available models for this provider.
+    async def get_available_asr_models(self) -> List[ASRModel]:
+        """Get a list of available automatic speech recognition models for this provider.
 
-        Returns language, image, and TTS models combined. Use get_available_language_models(),
-        get_available_image_models(), or get_available_tts_models() to filter to specific model types.
+        This method should return all ASR models that are available for use with this provider.
+        The implementation may check for API keys, supported languages, or other requirements.
 
         Returns:
-            List containing LanguageModel, ImageModel, and TTSModel instances
+            List of ASRModel instances available for this provider.
+            Returns empty list if provider doesn't support ASR.
+
+        Raises:
+            Exception: If model discovery fails (should be caught and return empty list)
+        """
+        return []
+
+    async def get_available_models(self) -> List[LanguageModel | ImageModel | TTSModel | ASRModel]:
+        """Get a list of all available models for this provider.
+
+        Returns language, image, TTS, and ASR models combined. Use get_available_language_models(),
+        get_available_image_models(), get_available_tts_models(), or get_available_asr_models()
+        to filter to specific model types.
+
+        Returns:
+            List containing LanguageModel, ImageModel, TTSModel, and ASRModel instances
 
         Raises:
             Exception: If model discovery fails (should be caught and return empty list)
@@ -218,7 +236,8 @@ class BaseProvider(ABC):
         language_models = await self.get_available_language_models()
         image_models = await self.get_available_image_models()
         tts_models = await self.get_available_tts_models()
-        return language_models + image_models + tts_models  # type: ignore
+        asr_models = await self.get_available_asr_models()
+        return language_models + image_models + tts_models + asr_models  # type: ignore
 
     def is_context_length_error(self, error: Exception) -> bool:
         """Return True if the given error indicates a context window overflow.
@@ -514,7 +533,7 @@ class BaseProvider(ABC):
         timeout_s: int | None = None,
         context: Any = None,  # ProcessingContext, but imported later
         **kwargs: Any,
-    ) -> AsyncGenerator[np.ndarray[Any, np.dtype[np.int16]], None]: 
+    ) -> AsyncGenerator[np.ndarray[Any, np.dtype[np.int16]], None]:
         """Generate speech audio from text as a streaming generator.
 
         Only implemented by providers with TEXT_TO_SPEECH capability.
@@ -542,6 +561,43 @@ class BaseProvider(ABC):
         """
         raise NotImplementedError(
             f"{self.__class__.__name__} does not support TEXT_TO_SPEECH capability"
+        )
+
+    async def automatic_speech_recognition(
+        self,
+        audio: bytes,
+        model: str,
+        language: str | None = None,
+        prompt: str | None = None,
+        temperature: float = 0.0,
+        timeout_s: int | None = None,
+        context: Any = None,  # ProcessingContext, but imported later
+        **kwargs: Any,
+    ) -> str:
+        """Transcribe audio to text using automatic speech recognition.
+
+        Only implemented by providers with AUTOMATIC_SPEECH_RECOGNITION capability.
+
+        Args:
+            audio: Input audio as bytes (various formats supported: mp3, mp4, mpeg, mpga, m4a, wav, webm)
+            model: Model identifier for ASR (e.g., "whisper-1")
+            language: Optional ISO-639-1 language code to improve accuracy and latency
+            prompt: Optional text to guide the model's style or continue a previous segment
+            temperature: Sampling temperature between 0 and 1 (default 0)
+            timeout_s: Optional timeout in seconds
+            context: Optional processing context
+            **kwargs: Additional provider-specific parameters
+
+        Returns:
+            str: Transcribed text from the audio
+
+        Raises:
+            NotImplementedError: If provider doesn't support AUTOMATIC_SPEECH_RECOGNITION capability
+            ValueError: If required parameters are missing or invalid
+            RuntimeError: If transcription fails
+        """
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not support AUTOMATIC_SPEECH_RECOGNITION capability"
         )
 
 

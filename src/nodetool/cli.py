@@ -82,6 +82,13 @@ def cli():
     pass
 
 
+@cli.command("mcp")
+def mcp():
+    """Start a nodetool MCP server."""
+    from nodetool.api.mcp_server import mcp
+    mcp.run()
+
+
 @cli.command("serve")
 @click.option("--host", default="127.0.0.1", help="Host address to serve on.")
 @click.option("--port", default=8000, help="Port to serve on.", type=int)

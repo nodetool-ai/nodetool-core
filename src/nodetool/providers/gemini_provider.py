@@ -45,6 +45,7 @@ from nodetool.metadata.types import (
     LanguageModel,
     ImageModel,
     TTSModel,
+    ASRModel,
 )
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import Chunk
@@ -77,13 +78,14 @@ class GeminiProvider(BaseProvider):
         log.debug(f"GeminiProvider initialized. API key present: {bool(self.api_key)}")
 
     def get_capabilities(self) -> set[ProviderCapability]:
-        """Gemini provider supports chat, image generation, and text-to-speech."""
+        """Gemini provider supports chat, image generation, text-to-speech, and ASR."""
         return {
             ProviderCapability.GENERATE_MESSAGE,
             ProviderCapability.GENERATE_MESSAGES,
             ProviderCapability.TEXT_TO_IMAGE,
             ProviderCapability.IMAGE_TO_IMAGE,
             ProviderCapability.TEXT_TO_SPEECH,
+            ProviderCapability.AUTOMATIC_SPEECH_RECOGNITION,
         }
 
     def get_client(self) -> AsyncClient:
@@ -1051,6 +1053,167 @@ class GeminiProvider(BaseProvider):
 
         log.debug(f"Returning {len(models)} Gemini TTS models")
         return models
+
+    async def get_available_asr_models(self) -> List[ASRModel]:
+        """Get available Gemini ASR models.
+
+        According to Gemini API docs, all Gemini models support audio input natively.
+        Returns an empty list if no API key is configured.
+
+        Returns:
+            List of ASRModel instances for Gemini ASR
+        """
+        if not self.api_key:
+            log.debug("No Gemini API key configured, returning empty ASR model list")
+            return []
+
+        # Gemini models with native audio understanding
+        # Source: https://ai.google.dev/gemini-api/docs/audio
+        models = [
+            ASRModel(
+                id="gemini-1.5-flash",
+                name="Gemini 1.5 Flash",
+                provider=Provider.Gemini,
+            ),
+            ASRModel(
+                id="gemini-1.5-pro",
+                name="Gemini 1.5 Pro",
+                provider=Provider.Gemini,
+            ),
+            ASRModel(
+                id="gemini-2.0-flash-exp",
+                name="Gemini 2.0 Flash (Experimental)",
+                provider=Provider.Gemini,
+            ),
+        ]
+
+        log.debug(f"Returning {len(models)} Gemini ASR models")
+        return models
+
+    async def automatic_speech_recognition(
+        self,
+        audio: bytes,
+        model: str,
+        language: str | None = None,
+        prompt: str | None = None,
+        temperature: float = 0.0,
+        timeout_s: int | None = None,
+        context: Any = None,
+        **kwargs: Any,
+    ) -> str:
+        """Transcribe audio to text using Gemini's native audio understanding.
+
+        Unlike traditional ASR APIs, Gemini processes audio natively through its
+        multimodal models. The audio is sent as inline data in a content part,
+        and you can provide a prompt to guide transcription.
+
+        Args:
+            audio: Input audio as bytes (supports various formats: wav, mp3, aiff, aac, ogg, flac)
+            model: Model identifier (e.g., "gemini-1.5-flash", "gemini-1.5-pro")
+            language: Optional language hint (not directly supported by Gemini, added to prompt)
+            prompt: Optional prompt to guide transcription (e.g., "Transcribe this audio")
+            temperature: Sampling temperature (0.0-2.0)
+            timeout_s: Optional timeout in seconds
+            context: Optional processing context
+            **kwargs: Additional Gemini parameters
+
+        Returns:
+            str: Transcribed text from the audio
+
+        Raises:
+            ValueError: If required parameters are missing
+            RuntimeError: If transcription fails
+        """
+        log.debug(
+            f"Transcribing audio with model: {model}, language: {language}, temperature: {temperature}"
+        )
+
+        if not audio:
+            raise ValueError("audio must not be empty")
+
+        if not self.api_key:
+            raise ApiKeyMissingError(
+                "GEMINI_API_KEY is required for audio transcription"
+            )
+
+        try:
+            client = self.get_client()
+
+            # Detect MIME type from audio bytes
+            # Try to infer from audio header
+            mime_type = "audio/wav"  # Default
+            if audio[:4] == b"RIFF":
+                mime_type = "audio/wav"
+            elif audio[:3] == b"ID3" or audio[:2] == b"\xff\xfb" or audio[:2] == b"\xff\xf3":
+                mime_type = "audio/mp3"
+            elif audio[:4] == b"fLaC":
+                mime_type = "audio/flac"
+            elif audio[:4] == b"OggS":
+                mime_type = "audio/ogg"
+            elif audio[:4] == b"FORM":
+                mime_type = "audio/aiff"
+
+            log.debug(f"Detected audio MIME type: {mime_type}")
+
+            # Create audio blob
+            audio_blob = Blob(mime_type=mime_type, data=audio)
+
+            # Build the prompt for transcription
+            if not prompt:
+                prompt = "Transcribe this audio to text."
+
+            # Add language hint if provided
+            if language:
+                prompt = f"{prompt} The audio is in {language}."
+
+            # Build content with audio and prompt
+            contents = [
+                Part(inline_data=audio_blob),
+                Part(text=prompt),
+            ]
+
+            # Generate response
+            log.debug(f"Making ASR API call with model={model}")
+
+            config = GenerateContentConfig(
+                temperature=temperature,
+            )
+
+            response = await client.models.generate_content(
+                model=model,
+                contents=contents,
+                config=config,
+            )
+
+            # Extract text from response
+            if not response or not response.candidates:
+                log.error("No response received from Gemini API")
+                raise RuntimeError("No response received from Gemini API")
+
+            candidate = response.candidates[0]
+
+            if not candidate or not candidate.content or not candidate.content.parts:
+                log.error("Invalid response format from Gemini API")
+                raise RuntimeError("Invalid response format from Gemini API")
+
+            # Extract text from parts
+            transcribed_text = ""
+            for part in candidate.content.parts:
+                if part.text:
+                    transcribed_text += part.text
+
+            if not transcribed_text:
+                log.warning("No text found in Gemini ASR response")
+                transcribed_text = ""
+
+            log.debug(f"ASR transcription completed, length: {len(transcribed_text)}")
+            self._log_api_response("automatic_speech_recognition")
+
+            return transcribed_text
+
+        except Exception as e:
+            log.error(f"Gemini ASR transcription failed: {e}")
+            raise RuntimeError(f"Gemini ASR transcription failed: {str(e)}")
 
     def is_context_length_error(self, error: Exception) -> bool:
         msg = str(error).lower()

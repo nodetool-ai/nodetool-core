@@ -44,6 +44,7 @@ import mimetypes
 
 from nodetool.integrations.websocket.websocket_updates import websocket_updates
 from nodetool.api.openai import create_openai_compatible_router
+from nodetool.api.mcp_server import create_mcp_app
 
 _windows_policy = getattr(asyncio, "WindowsSelectorEventLoopPolicy", None)
 if platform.system() == "Windows" and _windows_policy is not None:
@@ -217,6 +218,15 @@ def create_app(
             provider=Provider.Ollama.value,
         )
     )
+
+    # Mount FastMCP server
+    try:
+        mcp_app = create_mcp_app()
+        # Mount MCP at /mcp prefix
+        app.mount("/mcp", mcp_app.get_asgi_app())
+        log.info("FastMCP server mounted at /mcp")
+    except Exception as e:
+        log.warning(f"Could not mount FastMCP server: {e}")
 
     for router in routers:
         app.include_router(router)

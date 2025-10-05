@@ -338,7 +338,6 @@ class Provider(str, enum.Enum):
     FalAI = "fal_ai"
     HuggingFace = "huggingface"  # local hf models
     # Providers for HuggingFace Inference Providers
-    HuggingFaceBlackForestLabs = "huggingface_black_forest_labs"
     HuggingFaceCohere = "huggingface_cohere"
     HuggingFaceFalAI = "huggingface_fal_ai"
     HuggingFaceFeatherlessAI = "huggingface_featherless_ai"
@@ -353,12 +352,12 @@ class Provider(str, enum.Enum):
     HuggingFaceOpenAI = "huggingface_openai"
     HuggingFaceReplicate = "huggingface_replicate"
     HuggingFaceSambanova = "huggingface_sambanova"
+    HuggingFaceScaleway = "huggingface_scaleway"
     HuggingFaceTogether = "huggingface_together"
+    HuggingFaceZAI = "huggingface_zai"
 
 
 class InferenceProvider(str, Enum):
-    none = ""
-    black_forest_labs = "black-forest-labs"
     cerebras = "cerebras"
     cohere = "cohere"
     fal_ai = "fal-ai"
@@ -373,7 +372,9 @@ class InferenceProvider(str, Enum):
     openai = "openai"
     replicate = "replicate"
     sambanova = "sambanova"
+    scaleway = "scaleway"
     together = "together"
+    zai = "zai-org"
 
 
 class InferenceProviderAudioClassificationModel(BaseType):
@@ -506,7 +507,13 @@ class TTSModel(BaseType):
     id: str = ""
     name: str = ""
     voices: list[str] = Field(default_factory=list)
-    selected_voice: str = ""
+
+
+class ASRModel(BaseType):
+    type: Literal["asr_model"] = "asr_model"
+    provider: Provider = Provider.Empty
+    id: str = ""
+    name: str = ""
 
 
 class LlamaModel(BaseType):

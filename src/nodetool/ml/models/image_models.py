@@ -43,3 +43,8 @@ async def get_all_image_models() -> List[ImageModel]:
         f"Discovered {len(models)} total image models from {len(providers)} providers"
     )
     return models
+
+if __name__ == "__main__":
+    import asyncio
+    models = asyncio.run(get_all_image_models())
+    print(models)

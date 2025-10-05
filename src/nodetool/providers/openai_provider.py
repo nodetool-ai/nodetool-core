@@ -52,6 +52,7 @@ from nodetool.metadata.types import (
     MessageAudioContent,
     LanguageModel,
     TTSModel,
+    ASRModel,
 )
 from nodetool.config.environment import Environment
 from nodetool.workflows.types import Chunk
@@ -116,11 +117,12 @@ class OpenAIProvider(BaseProvider):
         log.debug("OpenAIProvider initialized. API key present: True")
 
     def get_capabilities(self) -> set[ProviderCapability]:
-        """OpenAI provider supports message generation and text-to-speech capabilities."""
+        """OpenAI provider supports message generation, text-to-speech, and ASR capabilities."""
         return {
             ProviderCapability.GENERATE_MESSAGE,
             ProviderCapability.GENERATE_MESSAGES,
             ProviderCapability.TEXT_TO_SPEECH,
+            ProviderCapability.AUTOMATIC_SPEECH_RECOGNITION,
         }
 
     def get_container_env(self) -> dict[str, str]:
@@ -308,6 +310,42 @@ class OpenAIProvider(BaseProvider):
             )
 
         log.debug(f"Returning {len(models)} OpenAI TTS models")
+        return models
+
+    async def get_available_asr_models(self) -> List[ASRModel]:
+        """
+        Get available OpenAI ASR models.
+
+        Returns ASR models (Whisper variants).
+        Returns an empty list if no API key is configured.
+
+        Returns:
+            List of ASRModel instances for OpenAI ASR
+        """
+        if not self.api_key:
+            log.debug("No OpenAI API key configured, returning empty ASR model list")
+            return []
+
+        # OpenAI ASR models
+        # Source: https://platform.openai.com/docs/guides/speech-to-text
+        asr_models_config = [
+            {
+                "id": "whisper-1",
+                "name": "Whisper",
+            },
+        ]
+
+        models: List[ASRModel] = []
+        for config in asr_models_config:
+            models.append(
+                ASRModel(
+                    id=config["id"],
+                    name=config["name"],
+                    provider=Provider.OpenAI,
+                )
+            )
+
+        log.debug(f"Returning {len(models)} OpenAI ASR models")
         return models
 
     async def uri_to_base64(self, uri: str) -> str:
@@ -1074,6 +1112,87 @@ class OpenAIProvider(BaseProvider):
         except Exception as e:
             log.error(f"OpenAI TTS streaming failed: {e}")
             raise RuntimeError(f"OpenAI TTS generation failed: {str(e)}")
+
+    async def automatic_speech_recognition(
+        self,
+        audio: bytes,
+        model: str,
+        language: str | None = None,
+        prompt: str | None = None,
+        temperature: float = 0.0,
+        timeout_s: int | None = None,
+        context: Any = None,
+        **kwargs: Any,
+    ) -> str:
+        """Transcribe audio to text using OpenAI's Whisper ASR.
+
+        Uses OpenAI's Whisper API to transcribe audio to text. Supports various
+        audio formats including mp3, mp4, mpeg, mpga, m4a, wav, and webm.
+
+        Args:
+            audio: Input audio as bytes
+            model: Model identifier (e.g., "whisper-1")
+            language: Optional ISO-639-1 language code (e.g., "en", "es") to improve accuracy
+            prompt: Optional text to guide the model's style or continue a previous segment
+            temperature: Sampling temperature between 0 and 1 (default 0)
+            timeout_s: Optional timeout in seconds
+            context: Optional processing context
+            **kwargs: Additional OpenAI parameters
+
+        Returns:
+            str: Transcribed text from the audio
+
+        Raises:
+            ValueError: If required parameters are missing
+            RuntimeError: If transcription fails
+        """
+        log.debug(
+            f"Transcribing audio with model: {model}, language: {language}, temperature: {temperature}"
+        )
+
+        if not audio:
+            raise ValueError("audio must not be empty")
+
+        # Clamp temperature to OpenAI's supported range
+        temperature = max(0.0, min(1.0, temperature))
+
+        try:
+            # Create a file-like object from bytes
+            # OpenAI requires a file name with extension for format detection
+            from io import BytesIO
+
+            audio_file = BytesIO(audio)
+            audio_file.name = "audio.mp3"  # Default to mp3, OpenAI will detect format
+
+            # Build API parameters
+            api_params: dict[str, Any] = {
+                "file": audio_file,
+                "model": model,
+                "temperature": temperature,
+            }
+
+            if language:
+                api_params["language"] = language
+
+            if prompt:
+                api_params["prompt"] = prompt
+
+            log.debug(f"Making ASR API call with model={model}")
+
+            # Call OpenAI Whisper API
+            client = self.get_client()
+            transcription = await client.audio.transcriptions.create(**api_params)
+
+            result_text = transcription.text
+            log.debug(f"ASR transcription completed, length: {len(result_text)}")
+
+            self._log_api_response("automatic_speech_recognition")
+
+            return result_text
+
+        except Exception as e:
+            log.error(f"OpenAI ASR transcription failed: {e}")
+            raise RuntimeError(f"OpenAI ASR transcription failed: {str(e)}")
 
     def get_usage(self) -> dict:
         """Return the current accumulated token usage statistics.

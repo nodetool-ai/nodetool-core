@@ -713,7 +713,7 @@ class BaseNode(BaseModel):
             asyncio.create_task(run_and_set_result())
             return future.result()
         except RuntimeError:
-            return asyncio.run(fetch_all_models())
+            return asyncio.run(fetch_all_models()) # type: ignore
 
 
     @classmethod

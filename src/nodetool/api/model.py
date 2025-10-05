@@ -13,10 +13,12 @@ from nodetool.config.logging_config import get_logger
 from nodetool.ml.models.language_models import get_all_language_models
 from nodetool.ml.models.image_models import get_all_image_models
 from nodetool.ml.models.tts_models import get_all_tts_models
+from nodetool.ml.models.asr_models import get_all_asr_models
 from nodetool.metadata.types import (
     LanguageModel,
     ImageModel,
     TTSModel,
+    ASRModel,
     ModelFile,
     LlamaModel,
     Provider,
@@ -171,6 +173,16 @@ async def get_tts_models_endpoint(
     Get all available text-to-speech models from all providers.
     """
     return await get_all_tts_models()
+
+
+@router.get("/asr")
+async def get_asr_models_endpoint(
+    user: str = Depends(current_user),
+) -> list[ASRModel]:
+    """
+    Get all available automatic speech recognition models from all providers.
+    """
+    return await get_all_asr_models()
 
 
 @router.get("/ollama_model_info")

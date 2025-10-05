@@ -8,7 +8,7 @@ version = "0.6.0"
 description = "Nodetool Core is the core library for Nodetool, providing the necessary functionality for building and running AI workflows."
 readme = "README.md"
 authors = [{ name = "Matthias Georgi", email = "matti.georgi@gmail.com" }]
-requires-python = ">=3.11"
+requires-python = ">=3.10.13"
 
 dependencies = [
 
