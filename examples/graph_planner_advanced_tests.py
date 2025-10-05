@@ -5,8 +5,8 @@ import tempfile
 from typing import Any
 
 from nodetool.agents.graph_planner import GraphPlanner, print_visual_graph
-from nodetool.chat.providers.anthropic_provider import AnthropicProvider
-from nodetool.chat.providers.openai_provider import OpenAIProvider
+from nodetool.providers.anthropic_provider import AnthropicProvider
+from nodetool.providers.openai_provider import OpenAIProvider
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.run_workflow import run_workflow

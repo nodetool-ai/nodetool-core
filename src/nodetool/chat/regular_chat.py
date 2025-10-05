@@ -10,7 +10,7 @@ from typing import List, Sequence
 
 from nodetool.agents.tools.base import Tool
 from nodetool.workflows.types import Chunk
-from nodetool.chat.providers.base import ChatProvider
+from nodetool.providers.base import BaseProvider
 from nodetool.chat.chat import default_serializer
 from nodetool.metadata.types import Message, ToolCall
 from nodetool.workflows.processing_context import ProcessingContext
@@ -98,7 +98,7 @@ async def process_regular_chat(
     user_input: str,
     messages: List[Message],
     model: str,
-    provider: ChatProvider,
+    provider: BaseProvider,
     status: Status,
     context: ProcessingContext,
     console: Console,

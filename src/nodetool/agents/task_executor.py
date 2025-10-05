@@ -1,7 +1,7 @@
 from nodetool.agents.wrap_generators_parallel import (
     wrap_generators_parallel,
 )
-from nodetool.chat.providers import ChatProvider
+from nodetool.providers import BaseProvider
 from nodetool.agents.sub_task_context import (
     SubTaskContext,
     TaskUpdate,
@@ -38,7 +38,7 @@ class TaskExecutor:
 
     def __init__(
         self,
-        provider: ChatProvider,
+        provider: BaseProvider,
         model: str,
         processing_context: ProcessingContext,
         tools: Sequence[Tool],

@@ -9,6 +9,7 @@ and other AI capabilities. Providers declare their capabilities at runtime.
 from abc import ABC, abstractmethod
 from enum import Enum
 from typing import Any, AsyncGenerator, AsyncIterator, Callable, List, Sequence, Set, Type
+import numpy as np
 
 from nodetool.agents.tools.base import Tool
 from nodetool.metadata.types import (
@@ -18,11 +19,15 @@ from nodetool.metadata.types import (
     MessageFile,
     LanguageModel,
     ImageModel,
+    TTSModel,
 )
 from nodetool.workflows.types import Chunk
 
 import json
 import datetime
+from nodetool.config.logging_config import get_logger
+
+log = get_logger(__name__)
 
 
 class ProviderCapability(str, Enum):
@@ -36,12 +41,12 @@ class ProviderCapability(str, Enum):
     GENERATE_MESSAGES = "generate_messages"         # Streaming message generation
     TEXT_TO_IMAGE = "text_to_image"                 # Text → Image generation
     IMAGE_TO_IMAGE = "image_to_image"               # Image transformation
+    TEXT_TO_SPEECH = "text_to_speech"               # Text → Speech/Audio generation
 
 
 _PROVIDER_REGISTRY: dict[ProviderEnum, tuple[Type["BaseProvider"], dict[str, Any]]] = (
     {}
 )
-
 
 def register_provider(
     provider: ProviderEnum,
@@ -84,9 +89,6 @@ def get_registered_provider(
     return provider_cls, kwargs
 
 
-# Backwards compatibility aliases
-register_chat_provider = register_provider
-_CHAT_PROVIDER_REGISTRY = _PROVIDER_REGISTRY
 
 
 class BaseProvider(ABC):
@@ -102,6 +104,7 @@ class BaseProvider(ABC):
     - GENERATE_MESSAGES: Streaming message generation
     - TEXT_TO_IMAGE: Text-to-image generation
     - IMAGE_TO_IMAGE: Image transformation
+    - TEXT_TO_SPEECH: Text-to-speech/audio generation
 
     Subclasses must implement:
     - get_capabilities(): Return set of supported capabilities
@@ -154,13 +157,6 @@ class BaseProvider(ABC):
         """
         return 4096
 
-    def has_tool_support(self, model: str) -> bool:
-        """Return True if the given model supports tools.
-
-        Only relevant for providers with GENERATE_MESSAGE or GENERATE_MESSAGES capability.
-        """
-        return False
-
     async def get_available_language_models(self) -> List[LanguageModel]:
         """Get a list of available language models for this provider.
 
@@ -192,21 +188,37 @@ class BaseProvider(ABC):
         """
         return []
 
-    async def get_available_models(self) -> List[LanguageModel | ImageModel]:
-        """Get a list of all available models for this provider.
+    async def get_available_tts_models(self) -> List[TTSModel]:
+        """Get a list of available text-to-speech models for this provider.
 
-        Returns both language and image models combined. Use get_available_language_models()
-        or get_available_image_models() to filter to specific model types.
+        This method should return all TTS models that are available for use with this provider.
+        The implementation may check for API keys, supported voices, or other requirements.
 
         Returns:
-            List containing both LanguageModel and ImageModel instances
+            List of TTSModel instances available for this provider.
+            Returns empty list if provider doesn't support TTS.
+
+        Raises:
+            Exception: If model discovery fails (should be caught and return empty list)
+        """
+        return []
+
+    async def get_available_models(self) -> List[LanguageModel | ImageModel | TTSModel]:
+        """Get a list of all available models for this provider.
+
+        Returns language, image, and TTS models combined. Use get_available_language_models(),
+        get_available_image_models(), or get_available_tts_models() to filter to specific model types.
+
+        Returns:
+            List containing LanguageModel, ImageModel, and TTSModel instances
 
         Raises:
             Exception: If model discovery fails (should be caught and return empty list)
         """
         language_models = await self.get_available_language_models()
         image_models = await self.get_available_image_models()
-        return language_models + image_models  # type: ignore
+        tts_models = await self.get_available_tts_models()
+        return language_models + image_models + tts_models  # type: ignore
 
     def is_context_length_error(self, error: Exception) -> bool:
         """Return True if the given error indicates a context window overflow.
@@ -493,9 +505,44 @@ class BaseProvider(ABC):
             f"{self.__class__.__name__} does not support IMAGE_TO_IMAGE capability"
         )
 
+    def text_to_speech(
+        self,
+        text: str,
+        model: str,
+        voice: str | None = None,
+        speed: float = 1.0,
+        timeout_s: int | None = None,
+        context: Any = None,  # ProcessingContext, but imported later
+        **kwargs: Any,
+    ) -> AsyncGenerator[np.ndarray[Any, np.dtype[np.int16]], None]: 
+        """Generate speech audio from text as a streaming generator.
 
-# Backwards compatibility alias
-ChatProvider = BaseProvider
+        Only implemented by providers with TEXT_TO_SPEECH capability.
+
+        This method yields audio chunks as numpy int16 arrays at 24kHz mono.
+        Providers that don't support true streaming should yield a single chunk.
+
+        Args:
+            text: Input text to convert to speech
+            model: Model identifier for TTS
+            voice: Voice identifier/name (provider-specific)
+            speed: Speech speed multiplier (typically 0.25 to 4.0)
+            timeout_s: Optional timeout in seconds
+            context: Optional processing context
+            **kwargs: Additional provider-specific parameters
+
+        Yields:
+            numpy.ndarray: Int16 audio chunks at 24kHz mono.
+                          Each chunk is a 1D numpy array with dtype=int16.
+
+        Raises:
+            NotImplementedError: If provider doesn't support TEXT_TO_SPEECH capability
+            ValueError: If required parameters are missing or invalid
+            RuntimeError: If generation fails
+        """
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not support TEXT_TO_SPEECH capability"
+        )
 
 
 class MockProvider(BaseProvider):

@@ -17,13 +17,9 @@ Usage:
 """
 
 import asyncio
-import json
-import tempfile
-from pathlib import Path
-from typing import Any, Dict, List
 
 from nodetool.agents.graph_planner import GraphPlanner
-from nodetool.chat.providers import get_provider
+from nodetool.providers import get_provider
 from nodetool.metadata.types import Provider
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.run_job_request import RunJobRequest
@@ -32,11 +28,14 @@ from nodetool.workflows.types import Chunk, PlanningUpdate
 
 # List of websites to scrape - demonstrating batch processing
 WEBSITES_TO_SCRAPE = [
-    "https://techcrunch.com",
-    "https://www.theverge.com",
-    "https://arstechnica.com",
-    "https://www.wired.com",
-    "https://hackernews.com",
+    "https://huggingface.co/docs/transformers/en/index",
+    "https://huggingface.co/docs/datasets/en/index",
+    "https://huggingface.co/docs/accelerate/en/index",
+    "https://huggingface.co/docs/peft/en/index",
+    "https://huggingface.co/docs/trl/en/index",
+    "https://huggingface.co/docs/optimum/en/index",
+    "https://huggingface.co/docs/timm/en/index",
+    "https://huggingface.co/docs/evaluate/en/index",
 ]
 
 
@@ -138,7 +137,11 @@ async def main():
     # Test configurations - you can uncomment different providers
     test_configs = [
         # OpenAI - Good for general web scraping
-        {"provider": Provider.OpenAI, "model": "o4-mini", "batch_size": 4},
+        {
+            "provider": Provider.HuggingFaceCerebras,
+            "model": "openai/gpt-oss-120b",
+            "batch_size": 4
+        },
         # Anthropic - Excellent context handling
         # {
         #     "provider": Provider.Anthropic,

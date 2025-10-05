@@ -15,19 +15,17 @@ import asyncio
 # import json # Retained if complex JSON manipulation were needed later
 
 from nodetool.agents.agent import Agent
-from nodetool.chat.providers import get_provider
+from nodetool.providers import get_provider
 from nodetool.agents.tools import BrowserTool, GoogleSearchTool
-from nodetool.chat.providers.base import ChatProvider
+from nodetool.providers.base import BaseProvider
 from nodetool.metadata.types import Provider
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.workflows.types import Chunk
+from nodetool.ui.console import AgentConsole
 
 
 async def test_product_hunt_ai_extractor_agent(
-    provider: ChatProvider,
+    provider: BaseProvider,
     model: str,
-    reasoning_model: str,
-    planning_model: str,
     product_hunt_archive_url: str,
 ):
     """
@@ -36,8 +34,6 @@ async def test_product_hunt_ai_extractor_agent(
     Args:
         provider: The chat provider (e.g., OpenAI, Gemini).
         model: The primary model for generation.
-        reasoning_model: The model used for reasoning tasks.
-        planning_model: The model used for planning tasks.
         product_hunt_archive_url: The URL of the Product Hunt monthly leaderboard to scan.
     """
     context = ProcessingContext()
@@ -89,15 +85,13 @@ async def test_product_hunt_ai_extractor_agent(
         """,
         provider=provider,
         model=model,
-        reasoning_model=reasoning_model,
-        planning_model=planning_model,
         enable_analysis_phase=True,
         enable_data_contracts_phase=True,  # Crucial for structured output
+        display_manager=AgentConsole(),
         tools=[
             GoogleSearchTool(),
             BrowserTool(),
         ],
-        output_type="markdown",
     )
 
     print(f"Starting agent: {ai_product_extractor_agent.name}")
@@ -106,8 +100,7 @@ async def test_product_hunt_ai_extractor_agent(
 
     # Stream the output as it's generated
     async for item in ai_product_extractor_agent.execute(context):
-        if isinstance(item, Chunk):
-            print(item.content, end="", flush=True)
+        pass
 
     print(ai_product_extractor_agent.get_results())
 
@@ -136,11 +129,9 @@ if __name__ == "__main__":
     asyncio.run(
         test_product_hunt_ai_extractor_agent(
             provider=get_provider(
-                Provider.OpenAI
+                Provider.HuggingFaceCerebras  # pyright: ignore[reportCallIssue]
             ),  # Specify your provider: Provider.OpenAI, Provider.Gemini, Provider.Anthropic
-            model="gpt-4o-mini",
-            planning_model="o4-mini",
-            reasoning_model="o4-mini",
+            model="openai/gpt-oss-120b",
             product_hunt_archive_url=target_ph_url,
         )
     )

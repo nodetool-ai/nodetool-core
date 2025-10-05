@@ -1,8 +1,8 @@
 import asyncio
-from nodetool.chat.providers import get_provider
+from nodetool.providers import get_provider
 
 # Assuming ReasoningTool is available alongside other standard tools
-from nodetool.chat.providers.base import ChatProvider
+from nodetool.providers.base import BaseProvider
 from nodetool.metadata.types import Provider, Task, SubTask, ToolCall
 from nodetool.agents.sub_task_context import SubTaskContext
 from nodetool.workflows.processing_context import ProcessingContext
@@ -12,7 +12,7 @@ from pathlib import Path
 
 
 async def test_logical_puzzle_task(
-    provider: ChatProvider,
+    provider: BaseProvider,
     model: str,
 ):
     # 1. Set up workspace directory

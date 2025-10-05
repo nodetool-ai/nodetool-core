@@ -14,9 +14,9 @@ This example shows how to:
 
 import asyncio
 from nodetool.agents.agent import Agent
-from nodetool.chat.providers import get_provider
+from nodetool.providers import get_provider
 from nodetool.agents.tools import GoogleSearchTool, BrowserTool
-from nodetool.chat.providers.base import ChatProvider
+from nodetool.providers.base import BaseProvider
 from nodetool.metadata.types import Provider
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import Chunk
@@ -26,7 +26,7 @@ import dotenv
 dotenv.load_dotenv()
 
 
-async def test_google_agent(provider: ChatProvider, model: str):
+async def test_google_agent(provider: BaseProvider, model: str):
     context = ProcessingContext()
 
     retrieval_tools = [
@@ -103,7 +103,7 @@ if __name__ == "__main__":
     #     )
     # )
     asyncio.run(
-        test_google_agent(provider=get_provider(Provider.OpenAI), model="gpt-4o-mini")
+        test_google_agent(provider=get_provider(Provider.HuggingFaceCerebras), model="openai/gpt-oss-120b")
     )
     # asyncio.run(
     #     test_google_agent(

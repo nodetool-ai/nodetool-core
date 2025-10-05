@@ -56,16 +56,11 @@ async def unified_model(
     model_info: ModelInfo | None = None,
     size: int | None = None,
 ) -> UnifiedModel | None:
-    print(model.repo_id)
     if model_info is None or model_info.siblings is None:
-        try:
-            # Run blocking HfApi call in thread executor
-            model_info = await asyncio.get_event_loop().run_in_executor(
-                None, lambda: HfApi().model_info(model.repo_id, files_metadata=True)
-            )
-        except Exception as e:
-            log.debug(f"Failed to fetch model info for {model.repo_id}: {e}")
-            return None
+        # Run blocking HfApi call in thread executor
+        model_info = await asyncio.get_event_loop().run_in_executor(
+            None, lambda: HfApi().model_info(model.repo_id, files_metadata=True)
+        )
 
     # After this point, model_info is guaranteed to be not None
     if model_info is None:

@@ -12,16 +12,17 @@ import os
 
 from nodetool.agents.agent import Agent
 from nodetool.agents.tools.workspace_tools import WriteFileTool
-from nodetool.chat.providers import get_provider
-from nodetool.agents.tools import OpenAIImageGenerationTool
-from nodetool.chat.providers.base import ChatProvider
+from nodetool.providers import get_provider
+from nodetool.agents.tools.openai_tools import OpenAIImageGenerationTool
+from nodetool.providers.base import BaseProvider
 from nodetool.metadata.types import Provider
+from nodetool.ui.console import AgentConsole
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import Chunk
 
 
 async def test_openai_image_generation_agent(
-    provider: ChatProvider,
+    provider: BaseProvider,
     model: str,
     image_prompt: str,
 ):
@@ -52,6 +53,7 @@ async def test_openai_image_generation_agent(
             OpenAIImageGenerationTool(),
             WriteFileTool(),
         ],
+        display_manager=AgentConsole(),
         output_schema={
             "type": "object",
             "properties": {
@@ -66,9 +68,8 @@ async def test_openai_image_generation_agent(
     print(f"Starting agent: {image_agent.name}")
     print(f"Task: Generate an image for prompt: '{image_prompt}'")
 
-    async for item in image_agent.execute(processing_context=context):
-        if isinstance(item, Chunk):
-            print(f"Agent Stream Output: {item.content}", end="", flush=True)
+    async for item in image_agent.execute(context):
+        pass
 
     print("\n\n--- Agent execution finished ---")
 
@@ -84,8 +85,8 @@ if __name__ == "__main__":
 
     asyncio.run(
         test_openai_image_generation_agent(
-            provider=get_provider(Provider.OpenAI),
-            model="gpt-4o-mini",
+            provider=get_provider(Provider.HuggingFaceCerebras),
+            model="openai/gpt-oss-120b",
             image_prompt=IMAGE_PROMPT,
         )
     )

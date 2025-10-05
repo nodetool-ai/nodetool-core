@@ -10,6 +10,7 @@ import base64
 import inspect
 import json
 import io
+import numpy as np
 from typing import Any, AsyncGenerator, AsyncIterator, List, Sequence
 
 import aiohttp
@@ -33,13 +34,13 @@ from pydantic import BaseModel
 from pydub import AudioSegment
 from urllib.parse import unquote_to_bytes
 
-from nodetool.chat.providers.base import (
-    ChatProvider,
+from nodetool.providers.base import (
+    BaseProvider,
     ProviderCapability,
-    register_chat_provider,
+    register_provider,
 )
 from nodetool.agents.tools.base import Tool
-from nodetool.chat.providers.openai_prediction import calculate_chat_cost
+from nodetool.providers.openai_prediction import calculate_chat_cost
 from nodetool.config.logging_config import get_logger
 from nodetool.metadata.types import (
     Message,
@@ -50,6 +51,7 @@ from nodetool.metadata.types import (
     MessageTextContent,
     MessageAudioContent,
     LanguageModel,
+    TTSModel,
 )
 from nodetool.config.environment import Environment
 from nodetool.workflows.types import Chunk
@@ -59,8 +61,8 @@ from nodetool.media.image.image_utils import image_data_to_base64_jpeg
 log = get_logger(__name__)
 
 
-@register_chat_provider(Provider.OpenAI)
-class OpenAIProvider(ChatProvider):
+@register_provider(Provider.OpenAI)
+class OpenAIProvider(BaseProvider):
     """OpenAI implementation of the ChatProvider interface.
 
     Handles conversion between internal message format and OpenAI's API format,
@@ -114,10 +116,11 @@ class OpenAIProvider(ChatProvider):
         log.debug("OpenAIProvider initialized. API key present: True")
 
     def get_capabilities(self) -> set[ProviderCapability]:
-        """OpenAI provider supports message generation capabilities."""
+        """OpenAI provider supports message generation and text-to-speech capabilities."""
         return {
             ProviderCapability.GENERATE_MESSAGE,
             ProviderCapability.GENERATE_MESSAGES,
+            ProviderCapability.TEXT_TO_SPEECH,
         }
 
     def get_container_env(self) -> dict[str, str]:
@@ -263,6 +266,49 @@ class OpenAIProvider(ChatProvider):
         except Exception as e:
             log.error(f"Error fetching OpenAI models: {e}")
             return []
+
+    async def get_available_tts_models(self) -> List[TTSModel]:
+        """
+        Get available OpenAI TTS models.
+
+        Returns TTS models with their supported voices.
+        Returns an empty list if no API key is configured.
+
+        Returns:
+            List of TTSModel instances for OpenAI TTS
+        """
+        if not self.api_key:
+            log.debug("No OpenAI API key configured, returning empty TTS model list")
+            return []
+
+        # OpenAI TTS models and their voices
+        # Source: https://platform.openai.com/docs/guides/text-to-speech
+        tts_models_config = [
+            {
+                "id": "tts-1",
+                "name": "TTS 1",
+                "voices": ["alloy", "echo", "fable", "onyx", "nova", "shimmer"],
+            },
+            {
+                "id": "tts-1-hd",
+                "name": "TTS 1 HD",
+                "voices": ["alloy", "echo", "fable", "onyx", "nova", "shimmer"],
+            },
+        ]
+
+        models: List[TTSModel] = []
+        for config in tts_models_config:
+            models.append(
+                TTSModel(
+                    id=config["id"],
+                    name=config["name"],
+                    provider=Provider.OpenAI,
+                    voices=config["voices"],
+                )
+            )
+
+        log.debug(f"Returning {len(models)} OpenAI TTS models")
+        return models
 
     async def uri_to_base64(self, uri: str) -> str:
         """Convert a URI to a base64-encoded ``data:`` URI string.
@@ -957,6 +1003,77 @@ class OpenAIProvider(ChatProvider):
         log.debug("Returning generated message")
 
         return message
+
+    async def text_to_speech(
+        self,
+        text: str,
+        model: str,
+        voice: str | None = None,
+        speed: float = 1.0,
+        timeout_s: int | None = None,
+        context: Any = None,
+        **kwargs: Any,
+    ) -> AsyncGenerator[np.ndarray[Any, np.dtype[np.int16]], None]:
+        """Generate speech audio from text using OpenAI TTS with streaming.
+
+        Uses OpenAI's streaming TTS API to yield audio chunks as they're generated,
+        enabling real-time playback.
+
+        Args:
+            text: Input text to convert to speech
+            model: Model identifier (e.g., "tts-1", "tts-1-hd", "gpt-4o-mini-tts")
+            voice: Voice identifier (e.g., "alloy", "echo", "fable", "onyx", "nova", "shimmer")
+            speed: Speech speed multiplier (0.25 to 4.0)
+            timeout_s: Optional timeout in seconds
+            context: Optional processing context
+            **kwargs: Additional OpenAI parameters
+
+        Yields:
+            numpy.ndarray: Int16 audio chunks at 24kHz mono
+
+        Raises:
+            ValueError: If required parameters are missing
+            RuntimeError: If generation fails
+        """
+        log.debug(
+            f"Generating streaming speech for model: {model}, voice: {voice}, speed: {speed}"
+        )
+
+        if not text:
+            raise ValueError("text must not be empty")
+
+        # Default voice to "alloy" if not specified
+        voice = voice or "alloy"
+
+        # Clamp speed to OpenAI's supported range
+        speed = max(0.25, min(4.0, speed))
+        log.debug(
+            f"Making streaming TTS API call with model={model}, voice={voice}, speed={speed}"
+        )
+
+        try:
+
+            # Use streaming response
+            async with self.get_client().audio.speech.with_streaming_response.create(
+                model=model,
+                input=text,
+                voice=voice,  # type: ignore
+                speed=speed,
+                response_format="pcm",
+            ) as response:
+                log.debug("TTS streaming API call started")
+
+                # Collect all chunks first (OpenAI sends complete MP3)
+                async for chunk in response.iter_bytes(chunk_size=4096):
+                    yield np.frombuffer(chunk, dtype=np.int16)
+
+                log.debug(f"TTS streaming completed")
+
+            self._log_api_response("text_to_speech")
+
+        except Exception as e:
+            log.error(f"OpenAI TTS streaming failed: {e}")
+            raise RuntimeError(f"OpenAI TTS generation failed: {str(e)}")
 
     def get_usage(self) -> dict:
         """Return the current accumulated token usage statistics.

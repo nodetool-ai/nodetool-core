@@ -129,7 +129,7 @@ Here's a quick example of how you might use NodeTool:
 
 ```python
 from nodetool.agents.agent import Agent
-from nodetool.chat.providers import get_provider, Provider
+from nodetool.providers import get_provider, Provider
 from nodetool.agents.tools import (
     GoogleSearchTool,
     BrowserTool,

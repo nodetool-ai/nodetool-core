@@ -9,7 +9,7 @@ import tempfile
 from typing import Any
 
 from nodetool.agents.graph_planner import GraphInput, GraphOutput, GraphPlanner
-from nodetool.chat.providers.openai_provider import OpenAIProvider
+from nodetool.providers.openai_provider import OpenAIProvider
 from nodetool.metadata.type_metadata import TypeMetadata
 from nodetool.metadata.types import ColumnDef, DataframeRef
 from nodetool.workflows.processing_context import ProcessingContext

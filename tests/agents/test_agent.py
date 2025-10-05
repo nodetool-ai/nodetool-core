@@ -2,7 +2,7 @@ import json
 import pytest
 
 from nodetool.agents.agent import Agent
-from nodetool.chat.providers.base import MockProvider
+from nodetool.providers.base import MockProvider
 from nodetool.metadata.types import SubTask, Task, TaskPlan, ToolCall
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import (
@@ -155,4 +155,3 @@ async def test_agent_execute_with_initial_task(monkeypatch, tmp_path):
         for i in items
     )
     assert agent.get_results() == "done"
-

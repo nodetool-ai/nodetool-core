@@ -6,7 +6,7 @@ Test script for Multi-Agent Coordination focused on Hacker News content.
 import asyncio
 import json
 from nodetool.agents.agent import Agent
-from nodetool.chat.providers import get_provider
+from nodetool.providers import get_provider
 from nodetool.agents.tools.browser_tools import BrowserTool
 from nodetool.metadata.types import Provider
 from nodetool.workflows.processing_context import ProcessingContext

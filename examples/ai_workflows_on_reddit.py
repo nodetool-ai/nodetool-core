@@ -13,28 +13,31 @@ This script creates a Reddit agent that:
 import asyncio
 
 from nodetool.agents.agent import Agent
-from nodetool.chat.providers import get_provider
+from nodetool.providers import get_provider
 from nodetool.agents.tools import BrowserTool, GoogleSearchTool
-from nodetool.chat.providers.base import ChatProvider
+from nodetool.providers.base import BaseProvider
 from nodetool.metadata.types import Provider
+from nodetool.ui.console import AgentConsole
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.workflows.types import Chunk
 
 objective = """
 Find example for AI workflows on Reddit.
 
 Tasks:
 1. Use Google Search to find examples of AI workflows on Reddit.
-2. For each relevant post, extract the following details:
-   - Title
-   - URL
-   - Comments
-3. Output results as a JSON object with the following structure
+2. For each url, append .json to the url and use the BrowserTool to fetch the content
+3. Output results as a markdown file
+
+Report structure:
+## Workflow: [Workflow Name]
+Url: [Workflow URL]
+Summary: [Summary of the Workflow]
+Comments: [Key Comments from the Workflow]
 """
 
 
 async def test_reddit_journey_deconstructor_agent(  # Renamed for clarity
-    provider: ChatProvider,
+    provider: BaseProvider,
     model: str,
 ):
     context = ProcessingContext()
@@ -44,51 +47,33 @@ async def test_reddit_journey_deconstructor_agent(  # Renamed for clarity
         provider=provider,
         model=model,
         enable_analysis_phase=False,
-        enable_data_contracts_phase=False,
+        enable_data_contracts_phase=True,
         tools=[
             GoogleSearchTool(),
             BrowserTool(),
         ],
-        output_schema={
-            "type": "object",
-            "properties": {
-                "products": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "title": {"type": "string"},
-                            "problem": {"type": "string"},
-                            "solution": {"type": "string"},
-                            "comments": {"type": "array", "items": {"type": "string"}},
-                            "url": {"type": "string", "format": "uri"},
-                        },
-                        "required": ["title", "problem", "solution", "comments", "url"],
-                    },
-                }
-            },
-        },
+        display_manager=AgentConsole(),
     )
 
     # Execute each task in the plan
     print(f"Starting agent: {search_agent.name}\nObjective: {search_agent.objective}\n")
     async for item in search_agent.execute(context):
-        if isinstance(item, Chunk):
-            # Assuming item.content is part of the Markdown report
-            print(item.content, end="", flush=True)
+        pass
 
     final_report = search_agent.get_results()
     if final_report:
         print("\n\n--- FINAL COMPILED REPORT ---")
         print(final_report)
 
+    print(f"\nWorkspace: {context.workspace_dir}")
+
 
 if __name__ == "__main__":
     asyncio.run(
         test_reddit_journey_deconstructor_agent(
             provider=get_provider(
-                Provider.Ollama
-            ),  # Or Provider.Gemini, Provider.Anthropic
-            model="gpt-oss:20b",
+                Provider.HuggingFaceCerebras
+            ),
+            model="openai/gpt-oss-120b",
         )
     )

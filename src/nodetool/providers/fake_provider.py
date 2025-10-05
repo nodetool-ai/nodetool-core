@@ -32,7 +32,7 @@ Example usage:
 from typing import Any, AsyncGenerator, List, Sequence, Callable, Union
 import uuid
 
-from nodetool.chat.providers.base import ChatProvider, ProviderCapability
+from nodetool.providers.base import BaseProvider, ProviderCapability
 from nodetool.metadata.types import (
     Message,
     Provider,
@@ -43,7 +43,7 @@ from nodetool.metadata.types import (
 from nodetool.workflows.types import Chunk
 
 
-class FakeProvider(ChatProvider):
+class FakeProvider(BaseProvider):
     """
     A simplified fake chat provider for testing.
 

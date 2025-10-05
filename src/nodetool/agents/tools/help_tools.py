@@ -111,30 +111,23 @@ class SearchNodesTool(Tool):
             n_results=n_results,
             exclude_namespaces=exclude_namespaces,
         )
-        node_types: list[type[BaseNode]] = []
-        for result in results:
-            # Import node class to import necessary types
-            node_type = get_node_class(result.node_type)
-            assert node_type is not None, f"Node type {result.node_type} not found"
-            node_types.append(node_type)
 
         return [
             {
-                "type": node_type.get_node_type(),
-                "title": node_type.get_title(),
-                "description": node_type.get_description(),
+                "node_type": node_type.node_type,
+                "title": node_type.title,
+                "description": node_type.description,
                 "properties": {
                     prop.name: prop.type.get_json_schema()
-                    for prop in node_type.properties()
+                    for prop in node_type.properties
                 },
                 "outputs": {
-                    out.name: out.type.get_json_schema() for out in node_type.outputs()
+                    out.name: out.type.get_json_schema() for out in node_type.outputs
                 },
-                "is_dynamic": node_type.is_dynamic(),
-                "is_streaming_output": node_type.is_streaming_output(),
-                "is_streaming_input": node_type.is_streaming_input(),
+                "is_dynamic": node_type.is_dynamic,
+                "is_streaming_output": node_type.is_streaming_output,
             }
-            for node_type in node_types
+            for node_type in results
         ]
 
 

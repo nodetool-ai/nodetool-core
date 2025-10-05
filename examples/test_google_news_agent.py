@@ -15,9 +15,9 @@ This example shows how to:
 import asyncio
 import json
 from nodetool.agents.agent import Agent
-from nodetool.chat.providers import get_provider
+from nodetool.providers import get_provider
 from nodetool.agents.tools import GoogleNewsTool
-from nodetool.chat.providers.base import ChatProvider
+from nodetool.providers.base import BaseProvider
 from nodetool.metadata.types import Provider
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import Chunk
@@ -27,7 +27,7 @@ import dotenv
 dotenv.load_dotenv()
 
 
-async def test_google_news_agent(provider: ChatProvider, model: str):
+async def test_google_news_agent(provider: BaseProvider, model: str):
     """
     Tests the Agent's ability to use GoogleNewsTool.
 

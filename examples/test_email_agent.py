@@ -8,9 +8,11 @@ It demonstrates how to set up an agent for email processing and summarization.
 """
 
 import asyncio
+from nodetool.providers.huggingface_provider import HuggingFaceProvider
 from nodetool.agents.agent import Agent
-from nodetool.chat.providers import get_provider
+from nodetool.providers import get_provider
 from nodetool.metadata.types import Provider
+from nodetool.ui.console import AgentConsole
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.agents.tools.email_tools import SearchEmailTool
 from nodetool.workflows.types import Chunk
@@ -19,8 +21,8 @@ from nodetool.workflows.types import Chunk
 async def main():
     context = ProcessingContext()
 
-    provider = get_provider(Provider.OpenAI)
-    model = "gpt-4o-mini"
+    provider = get_provider(Provider.HuggingFaceCerebras)
+    model = "openai/gpt-oss-120b"
     email_tools = [
         SearchEmailTool(),
     ]
@@ -28,19 +30,18 @@ async def main():
     retrieval_agent = Agent(
         name="Email Retriever",
         objective="""
-        Search for emails with AI in subject from last 7 days.
+        Search for emails with AI in subject from last 2 days.
         Summarize the content of the emails in a markdown format.
         """,
         provider=provider,
         model=model,
         tools=email_tools,
+        display_manager=AgentConsole(),
         enable_data_contracts_phase=False,
-        output_type="markdown",
     )
 
     async for item in retrieval_agent.execute(context):
-        if isinstance(item, Chunk):
-            print(item.content, end="", flush=True)
+        pass
 
     print(f"\nResults: {retrieval_agent.results}")
     print(f"\nWorkspace: {context.workspace_dir}")

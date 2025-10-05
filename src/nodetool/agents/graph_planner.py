@@ -106,7 +106,7 @@ import json
 from nodetool.config.logging_config import get_logger
 from typing import Any, AsyncGenerator, Dict, List, Optional, cast
 import traceback
-from nodetool.chat.providers.anthropic_provider import AnthropicProvider
+from nodetool.providers.anthropic_provider import AnthropicProvider
 from nodetool.metadata.type_metadata import TypeMetadata
 from nodetool.metadata.typecheck import typecheck
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -115,7 +115,7 @@ from jinja2 import Environment, BaseLoader
 
 from nodetool.agents.tools.help_tools import SearchNodesTool
 from nodetool.agents.tools.base import Tool
-from nodetool.chat.providers import ChatProvider
+from nodetool.providers import BaseProvider
 from nodetool.metadata.types import (
     Message,
     ToolCall,
@@ -133,11 +133,11 @@ from nodetool.workflows.types import Chunk, PlanningUpdate
 from nodetool.types.graph import Graph as APIGraph
 from nodetool.workflows.graph import Graph
 
+import logging
+
 # Set up logger for this module
 logger = get_logger(__name__)
-# Log level is controlled by env (DEBUG/NODETOOL_LOG_LEVEL)
-
-# Pydantic models for type safety
+logger.setLevel(logging.DEBUG)
 
 
 class NodeSpecification(BaseModel):
@@ -506,13 +506,14 @@ When using the `search_nodes` tool:
 1. **Create ALL nodes including Input and Output nodes.** For Input and Output nodes, use the exact node types from the system prompt mappings (do NOT search for them). Only search for intermediate processing nodes.
    - For each item in the Input Schema, create a corresponding Input node with a `name` matching the schema's `name`.
    - For each item in the Output Schema, create a corresponding Output node with a `name` matching the schema's `name`.
-   
+
 2. **Search for intermediate processing nodes using `search_nodes`**. Be strategic with searches - use specific, targeted queries to find the most appropriate nodes. Prefer fewer, more powerful nodes over many simple ones to improve efficiency.
+   - **CRITICAL**: When you receive search results, use the EXACT `node_type` value from the results in your node specifications. For example, if the search returns `{"node_type": "lib.browser.WebFetch", ...}`, you MUST use "lib.browser.WebFetch" as the `node_type` in your node specification.
    - **For dataframe operations**: Search with relevant keywords (e.g., "GroupBy", "Aggregate", "Filter", "Transform", "dataframe"). Many dataframe nodes are in the `nodetool.data` namespace.
    - **For list operations**: Search with `input_type="list"` or `output_type="list"` and relevant keywords.
    - **For text operations**: Search with `input_type="str"` or `output_type="str"` (e.g., "concatenate", "regex", "template").
    - **For agents**: Search "agent". Verify their input/output types by inspecting their metadata from the search results before use.
-   
+
 3. **Type conversion patterns** (use keyword-based searches):
    - dataframe → array: Search "dataframe to array" or "to_numpy"
    - dataframe → string: Search "dataframe to string" or "to_csv"
@@ -521,17 +522,29 @@ When using the `search_nodes` tool:
    - item → list: Use collector node
 
 ## Configuration Guidelines
-- **For nodes found via `search_nodes`**: Check their metadata for required fields and create appropriate property entries.
+- **CRITICAL - Node Specification Format**: When creating node specifications, you MUST use these exact field names:
+  - `node_id`: A unique identifier for the node (e.g., "input_1", "fetch_1")
+  - `node_type`: The EXACT value from the `node_type` field in search_nodes results (e.g., "lib.browser.WebFetch", NOT just the class name)
+  - `purpose`: Brief description of what this node does
+  - `properties`: JSON string containing the node's configuration
+
+- **For nodes found via `search_nodes`**:
+  - Copy the EXACT `node_type` value from the search results into your node specification
+  - Check their metadata for required fields and create appropriate property entries
+
 - **Dynamic Properties**: If a node has `is_dynamic=true` in its metadata, you can set ANY property name on that node, not just the predefined ones. Dynamic nodes will handle arbitrary properties at runtime.
   - For dynamic nodes: You can create custom property names based on your workflow needs
   - Example: `{"custom_field": "value", "another_field": {"type": "edge", "source": "input_1", "sourceHandle": "output"}}`
   - Still include any required properties from the metadata, but feel free to add additional ones
- - **Non-dynamic nodes**: Only use properties that exist in the node's metadata. Do not invent properties for non-dynamic nodes.
+
+- **Non-dynamic nodes**: Only use properties that exist in the node's metadata. Do not invent properties for non-dynamic nodes.
+
 - **Edge connections**: `{"type": "edge", "source": "source_node_id", "sourceHandle": "output_name"}`
+
 - **Encode properties as a JSON string**
 - Example for constant value: `{"property_name": "property_value"}`
 - Example for edge connection: `{"property_name": {"type": "edge", "source": "source_node_id", "sourceHandle": "output_name"}}`
- - Do not include explanatory prose alongside JSON specifications.
+- Do not include explanatory prose alongside JSON specifications.
 
 ## Important Handle Conventions
 - **Most nodes have a single output**: The default output handle is often named "output". Always verify with `search_nodes` if unsure.
@@ -542,6 +555,18 @@ When using the `search_nodes` tool:
 Example connections:
 - From an Input node: `{"type": "edge", "source": "input_id", "sourceHandle": "output"}`
 - To an Output node: Connect your final node to the output using a `value` property in your node specifications
+
+## Example Node Specification (FOLLOW THIS FORMAT EXACTLY)
+```json
+{
+  "node_id": "fetch_1",
+  "node_type": "lib.browser.WebFetch",
+  "purpose": "Fetch webpage content from URL",
+  "properties": "{\"url\": {\"type\": \"edge\", \"source\": \"input_url\", \"sourceHandle\": \"output\"}}"
+}
+```
+
+Note: The `node_type` field uses the EXACT string from search_nodes results (e.g., "lib.browser.WebFetch"), NOT "type".
 
 ## Instructions - Dataflow Design & Edge Creation
 4. **MANDATORY: Create ALL required edge connections.** Every processing node must have its input properties connected to appropriate source nodes via edges:
@@ -578,15 +603,16 @@ Example connections:
 ## FINAL VALIDATION CHECKLIST
 Before submitting your node specifications, verify:
 
-1. **Complete Data Flow:** Every node that needs input has edge connections defined in its properties
-2. **Template Variables:** If using template nodes, ALL variables in the template string have corresponding edge connections
-3. **Output Connectivity:** All Output nodes receive data via their "value" property connection
-4. **No Orphaned Nodes:** Every node participates in the data flow from inputs to outputs
-5. **Proper Node Types:** All intermediate nodes use valid types found via `search_nodes`
- 6. **Determinism:** No extraneous text; output only the structured node specifications via the tool.
- 7. **Schema Mapping:** There is a one-to-one mapping between schema items and created Input/Output nodes with matching `name` properties.
- 8. **Unique IDs:** All `node_id` values are unique and consistently referenced by edges.
- 9. **Non-Dynamic Props:** Non-dynamic nodes only use properties present in their metadata.
+1. **CRITICAL - Correct Field Names:** Every node specification MUST use `node_type` (NOT "type") with the EXACT value from search_nodes results
+2. **Complete Data Flow:** Every node that needs input has edge connections defined in its properties
+3. **Template Variables:** If using template nodes, ALL variables in the template string have corresponding edge connections
+4. **Output Connectivity:** All Output nodes receive data via their "value" property connection
+5. **No Orphaned Nodes:** Every node participates in the data flow from inputs to outputs
+6. **Proper Node Types:** All intermediate nodes use valid types found via `search_nodes`
+7. **Determinism:** No extraneous text; output only the structured node specifications via the tool
+8. **Schema Mapping:** There is a one-to-one mapping between schema items and created Input/Output nodes with matching `name` properties
+9. **Unique IDs:** All `node_id` values are unique and consistently referenced by edges
+10. **Non-Dynamic Props:** Non-dynamic nodes only use properties present in their metadata
 
 **REMEMBER:** The evaluation showed that many workflows fail due to missing edge connections. Your graph must have COMPLETE data flow connectivity to pass validation.
 
@@ -631,7 +657,7 @@ class GraphPlanner:
 
     def __init__(
         self,
-        provider: ChatProvider,
+        provider: BaseProvider,
         model: str,
         objective: str,
         input_schema: list[GraphInput] = [],

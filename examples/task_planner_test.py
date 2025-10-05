@@ -1,9 +1,10 @@
 import asyncio
-from nodetool.chat.providers.openai_provider import OpenAIProvider
+from nodetool.providers.huggingface_provider import HuggingFaceProvider
+from nodetool.providers.openai_provider import OpenAIProvider
 from rich.console import Console
 
-from nodetool.chat.providers.base import ChatProvider
-from nodetool.chat.providers.ollama_provider import OllamaProvider
+from nodetool.providers.base import BaseProvider
+from nodetool.providers.ollama_provider import OllamaProvider
 from nodetool.agents.task_planner import TaskPlanner
 from nodetool.agents.tools import (
     BrowserTool,
@@ -19,7 +20,7 @@ dotenv.load_dotenv()
 console = Console()
 
 
-async def test_task_planner(provider: ChatProvider, model: str):
+async def test_task_planner(provider: BaseProvider, model: str):
     # Sample objective
     objective = "Search for the best recipes for chicken wings and extract the ingredients and instructions for each recipe"
 
@@ -43,7 +44,6 @@ async def test_task_planner(provider: ChatProvider, model: str):
         objective=objective,
         workspace_dir=context.workspace_dir,
         execution_tools=tools,
-        use_structured_output=True,
         verbose=True,
         output_schema={
             "type": "object",
@@ -97,7 +97,7 @@ async def test_task_planner(provider: ChatProvider, model: str):
 
 # Run the test
 if __name__ == "__main__":
-    asyncio.run(test_task_planner(provider=OllamaProvider(), model="qwen3:0.6b"))
+    asyncio.run(test_task_planner(provider=HuggingFaceProvider("cerebras"), model="openai/gpt-oss-120b"))  # pyright: ignore[reportCallIssue]
     # asyncio.run(test_task_planner(provider=OpenAIProvider(), model="gpt-4o-mini"))
     # asyncio.run(
     #     test_task_planner(

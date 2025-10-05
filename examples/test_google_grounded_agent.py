@@ -15,7 +15,7 @@ This example shows how to:
 
 import asyncio
 from nodetool.agents.agent import Agent
-from nodetool.chat.providers import get_provider
+from nodetool.providers import get_provider
 from nodetool.agents.tools import BrowserTool, GoogleGroundedSearchTool
 from nodetool.metadata.types import Provider
 from nodetool.workflows.processing_context import ProcessingContext

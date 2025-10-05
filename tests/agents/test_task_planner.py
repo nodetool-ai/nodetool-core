@@ -4,7 +4,7 @@ from rich.text import Text
 from nodetool.agents.task_planner import (
     TaskPlanner,
 )
-from nodetool.chat.providers.base import MockProvider
+from nodetool.providers.base import MockProvider
 from nodetool.metadata.types import Message, ToolCall, SubTask
 
 
@@ -21,8 +21,6 @@ def make_planner(tmp_path):
         execution_tools=[],
         verbose=False,
     )
-
-
 
 
 def test_remove_think_tags(tmp_path):

@@ -7,7 +7,7 @@ from rich.syntax import Syntax
 from rich.panel import Panel
 from .base import Command
 from nodetool.agents.graph_planner import GraphPlanner
-from nodetool.chat.providers import get_provider
+from nodetool.providers import get_provider
 from nodetool.workflows.types import PlanningUpdate, Chunk
 from nodetool.models.workflow import Workflow
 from nodetool.agents.graph_planner import print_visual_graph

@@ -500,6 +500,15 @@ class ImageModel(BaseType):
     name: str = ""
 
 
+class TTSModel(BaseType):
+    type: Literal["tts_model"] = "tts_model"
+    provider: Provider = Provider.Empty
+    id: str = ""
+    name: str = ""
+    voices: list[str] = Field(default_factory=list)
+    selected_voice: str = ""
+
+
 class LlamaModel(BaseType):
     type: Literal["llama_model"] = "llama_model"
     name: str = ""
@@ -1123,16 +1132,8 @@ class SubTask(BaseType):
         description="Unique identifier for the subtask",
     )
 
-    model: str | None = Field(
-        default=None,
-        description="The model to use for the subtask",
-    )
     content: str = Field(description="Instructions for the subtask")
     logs: list[LogEntry] = Field(default=[], description="The logs of the subtask")
-    max_iterations: int = Field(
-        default=10,
-        description="The maximum number of iterations for the subtask",
-    )
     max_tool_calls: int = Field(
         default=10,
         description="The maximum number of tool calls for the subtask",
@@ -1154,10 +1155,6 @@ class SubTask(BaseType):
     output_schema: str = Field(
         default="",
         description="The JSON schema of the output of the subtask",
-    )
-    is_intermediate_result: bool = Field(
-        default=False,
-        description="Whether the subtask is an intermediate result of a task",
     )
 
     def to_markdown(self) -> str:
@@ -2098,3 +2095,132 @@ class Source(BaseType):
 
 class HFKontextGeneration(HuggingFaceModel):
     type: Literal["hf.kontext_generation"] = "hf.kontext_generation"
+
+
+#######################
+# Search Result Types
+#######################
+# Types for handling search engine results (SERP)
+
+
+class OrganicResult(BaseType):
+    """Search engine organic result"""
+
+    type: Literal["organic_result"] = "organic_result"
+    position: int
+    title: str
+    link: str
+    redirect_link: Optional[str] = None
+    displayed_link: str
+    date: Optional[str] = None
+    snippet: str
+    snippet_highlighted_words: Optional[list[str]] = None
+    thumbnail: Optional[str] = None
+
+
+class NewsResult(BaseType):
+    """News search result"""
+
+    type: Literal["news_result"] = "news_result"
+    position: int
+    title: str | None = None
+    link: str
+    thumbnail: str | None = None
+    date: str
+
+
+class ImageResult(BaseType):
+    """Image search result"""
+
+    type: Literal["image_result"] = "image_result"
+    position: int
+    thumbnail: str
+    original: str
+    original_width: int
+    original_height: int
+    is_product: bool
+    source: str
+    title: str
+    link: str
+
+
+class JobResult(BaseType):
+    """Job listing search result"""
+
+    type: Literal["job_result"] = "job_result"
+    title: str | None = None
+    company_name: str | None = None
+    location: str | None = None
+    via: str | None = None
+    share_link: str | None = None
+    thumbnail: str | None = None
+    extensions: list[str] | None = None
+
+
+class VisualMatchResult(BaseType):
+    """Visual/image match result"""
+
+    type: Literal["visual_match_result"] = "visual_match_result"
+    position: int
+    title: str | None = None
+    link: str | None = None
+    thumbnail: str | None = None
+    thumbnail_width: int | None = None
+    thumbnail_height: int | None = None
+    image: str | None = None
+    image_width: int | None = None
+    image_height: int | None = None
+
+
+class LocalResult(BaseType):
+    """Local/maps search result"""
+
+    type: Literal["local_result"] = "local_result"
+    position: int
+    title: str | None = None
+    place_id: str | None = None
+    data_id: str | None = None
+    data_cid: str | None = None
+    reviews_link: str | None = None
+    photos_link: str | None = None
+    gps_coordinates: dict[str, float] | None = None
+    place_id_search: str | None = None
+    provider_id: str | None = None
+    rating: float | None = None
+    reviews: int | None = None
+    price: str | None = None
+    types: list[str] | None = None
+    address: str | None = None
+    open_state: str | None = None
+    hours: str | None = None
+    operating_hours: dict[str, str] | None = None
+    phone: str | None = None
+    website: str | None = None
+    description: str | None = None
+    thumbnail: str | None = None
+
+
+class ShoppingResult(BaseType):
+    """Shopping/product search result"""
+
+    type: Literal["shopping_result"] = "shopping_result"
+    position: int
+    title: str | None = None
+    link: str | None = None
+    product_link: str | None = None
+    product_id: str | None = None
+    source: str | None = None
+    source_icon: str | None = None
+    extensions: list[str] | None = None
+    badge: str | None = None
+    thumbnail: str | None = None
+    tag: str | None = None
+    delivery: str | None = None
+    price: str | None = None
+    extracted_price: float | None = None
+    old_price: str | None = None
+    extracted_old_price: float | None = None
+    rating: float | None = None
+    reviews: int | None = None
+    store_rating: float | None = None
+    store_reviews: int | None = None

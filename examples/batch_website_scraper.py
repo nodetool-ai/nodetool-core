@@ -20,9 +20,9 @@ Usage:
 import asyncio
 import json
 from pathlib import Path
-from nodetool.chat.providers import get_provider
+from nodetool.providers import get_provider
 from nodetool.agents.tools import BrowserTool
-from nodetool.chat.providers.base import ChatProvider
+from nodetool.providers.base import BaseProvider
 from nodetool.metadata.types import Provider, Task, SubTask
 from nodetool.agents.sub_task_context import SubTaskContext
 from nodetool.workflows.processing_context import ProcessingContext
@@ -31,12 +31,6 @@ from nodetool.workflows.types import Chunk, TaskUpdate, TaskUpdateEvent
 
 # List of websites to scrape - demonstrating batch processing
 WEBSITES_TO_SCRAPE = [
-    # Tech news sites
-    "https://techcrunch.com",
-    "https://www.theverge.com",
-    "https://arstechnica.com",
-    "https://www.wired.com",
-    "https://hackernews.com",
     # AI/ML focused sites
     "https://openai.com/blog",
     "https://www.anthropic.com/news",
@@ -56,7 +50,7 @@ WEBSITES_TO_SCRAPE = [
 
 
 async def test_batch_website_scraper(
-    provider: ChatProvider,
+    provider: BaseProvider,
     model: str,
 ):
     """Test batch processing of website scraping with SubTaskContext."""
@@ -182,7 +176,7 @@ async def main():
     # You can test with different providers and models
     test_configs = [
         # OpenAI - Good for general web scraping
-        {"provider": Provider.OpenAI, "model": "gpt-4o-mini"},
+        {"provider": Provider.HuggingFaceCerebras, "model": "openai/gpt-oss-120b"},
         # Anthropic - Excellent context handling
         # {
         #     "provider": Provider.Anthropic,

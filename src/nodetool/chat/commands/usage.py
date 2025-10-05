@@ -5,7 +5,7 @@ from typing import List
 from nodetool.chat.chat_cli import ChatCLI
 from rich.syntax import Syntax
 from .base import Command
-from nodetool.chat.providers import get_provider
+from nodetool.providers import get_provider
 
 
 class UsageCommand(Command):

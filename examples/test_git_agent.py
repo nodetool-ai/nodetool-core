@@ -17,45 +17,39 @@ This example shows how to:
 
 import asyncio
 from nodetool.agents.agent import Agent
-from nodetool.agents.tools.git_tools import GitCommitTool, GitDiffTool
-from nodetool.chat.providers.base import ChatProvider
-from nodetool.chat.providers.openai_provider import OpenAIProvider
+from nodetool.agents.tools.git_tools import GitCommitTool, GitCheckoutTool
+from nodetool.providers.base import BaseProvider
+from nodetool.providers.huggingface_provider import HuggingFaceProvider
+from nodetool.providers.openai_provider import OpenAIProvider
+from nodetool.ui.console import AgentConsole
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import Chunk
 
 
 async def test_git_agent(
-    provider: ChatProvider,
+    provider: BaseProvider,
     model: str,
 ):
     context = ProcessingContext()
 
     git_tools = [
-        GitDiffTool(repo_path="."),
-        GitCommitTool(repo_path="."),
+        GitCommitTool(repo_path=context.workspace_dir),
+        GitCheckoutTool(repo_path=context.workspace_dir),
     ]
 
     agent = Agent(
-        name="Git Commit Proposer Agent",
+        name="Git Agent",
         objective="""
-        You are an expert Git assistant. Your task is to analyze the current Git repository's status, group coherent changes, and propose a separate commit for each group.
-
-        Specifically, you need to:
-        1. Use the 'git_diff' tool to get a detailed list of all changes.
-        2. Group them into coherent changes.
-        3. For each group of coherent changes:
-            a. Identify all file paths belonging to this group.
-            b. Generate a concise and descriptive commit message that accurately summarizes ONLY the changes within this specific group.
-            c. Use the 'git_commit' tool. The 'files' parameter should be the list of file paths for THIS group. The 'message' parameter should be the commit message you generated for THIS group.
-            d. CRUCIALLY, ensure the 'dry_run' parameter is set to true for each commit, so no actual commits are made.
-        4. You may need to call the 'git_commit' tool multiple times, once for each distinct group of changes you identify.
+        Checkout the repo https://github.com/nodetool-ai/nodetool
+        Improve the CLAUDE.md file.
+        Commit the changes.
         """,
         enable_analysis_phase=False,
         enable_data_contracts_phase=False,
         provider=provider,
         model=model,
         tools=git_tools,
-        output_type="markdown",  # Or text, depending on desired output format
+        display_manager=AgentConsole(),
     )
 
     print(f"Starting Git Agent execution in workspace: {context.workspace_dir}")
@@ -63,14 +57,10 @@ async def test_git_agent(
     print("-" * 50)
 
     async for item in agent.execute(context):
-        if isinstance(item, Chunk):
-            print(item.content, end="", flush=True)
+        pass
 
     print("\n" + "=" * 50)
     print("Git Agent Final Results/Summary:")
-    # The agent's results might contain a summary or the final proposed command/message.
-    # Depending on the agent's internal logic and output handling.
-    # For now, we'll print the raw results if any.
     if agent.results:
         print(agent.results)
     else:
@@ -79,15 +69,12 @@ async def test_git_agent(
         )
 
     print(f"\nWorkspace used by the agent: {context.workspace_dir}")
-    print(
-        "Note: The agent was instructed to perform a DRY-RUN commit. No actual changes were committed to your Git repository."
-    )
 
 
 if __name__ == "__main__":
     asyncio.run(
         test_git_agent(
-            provider=OpenAIProvider(),
-            model="gpt-4o-mini",
+            provider=HuggingFaceProvider("cerebras"),  # pyright: ignore[reportCallIssue]
+            model="openai/gpt-oss-120b",
         )
     )

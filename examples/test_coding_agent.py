@@ -29,8 +29,8 @@ import asyncio
 from nodetool.agents.agent import Agent
 from nodetool.agents.tools.code_tools import ExecutePythonTool
 from nodetool.agents.tools.http_tools import DownloadFileTool
-from nodetool.chat.providers.base import ChatProvider
-from nodetool.chat.providers import get_provider
+from nodetool.providers.base import BaseProvider
+from nodetool.providers import get_provider
 from nodetool.metadata.types import Provider
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import Chunk
@@ -43,10 +43,8 @@ dotenv.load_dotenv()
 
 
 async def run_data_analysis_agent(
-    provider: ChatProvider,
+    provider: BaseProvider,
     model: str,
-    planning_model: str,
-    reasoning_model: str,
     analysis_type: str = "comprehensive",
     docker_image: str | None = None,
 ):
@@ -169,10 +167,7 @@ async def run_data_analysis_agent(
         enable_data_contracts_phase=True,
         provider=provider,
         model=model,
-        planning_model=planning_model,
-        reasoning_model=reasoning_model,
         tools=code_tools,
-        output_type="markdown",
         docker_image=docker_image,
         output_schema={
             "type": "string",
@@ -254,10 +249,8 @@ if __name__ == "__main__":
     try:
         asyncio.run(
             run_data_analysis_agent(
-                provider=get_provider(Provider.OpenAI),
-                model="gpt-4o-mini",
-                planning_model="o4-mini",
-                reasoning_model="o4-mini",
+                provider=get_provider(Provider.HuggingFaceCerebras),
+                model="openai/gpt-oss-120b",
                 analysis_type=args.analysis_type,
                 docker_image=args.docker_image,
             )

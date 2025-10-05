@@ -3,7 +3,7 @@ import aiohttp
 from io import BytesIO
 import PIL.Image
 import numpy as np
-from typing import Any, AsyncIterator, List, Sequence
+from typing import Any, AsyncGenerator, AsyncIterator, List, Sequence
 from google.genai import Client
 from google.genai.client import AsyncClient
 from google.genai.types import (
@@ -19,14 +19,17 @@ from google.genai.types import (
     ToolListUnion,
     ContentListUnion,
     FunctionResponse,
+    SpeechConfig,
+    VoiceConfig,
+    PrebuiltVoiceConfig,
 )
 from nodetool.workflows.base_node import ApiKeyMissingError
 from pydantic import BaseModel
 
-from nodetool.chat.providers.base import (
-    ChatProvider,
+from nodetool.providers.base import (
+    BaseProvider,
     ProviderCapability,
-    register_chat_provider,
+    register_provider,
 )
 from nodetool.agents.tools.base import Tool as NodeTool
 from nodetool.config.environment import Environment
@@ -41,6 +44,7 @@ from nodetool.metadata.types import (
     MessageFile,
     LanguageModel,
     ImageModel,
+    TTSModel,
 )
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import Chunk
@@ -60,8 +64,8 @@ def get_genai_client() -> AsyncClient:
     return Client(api_key=api_key).aio
 
 
-@register_chat_provider(Provider.Gemini)
-class GeminiProvider(ChatProvider):
+@register_provider(Provider.Gemini)
+class GeminiProvider(BaseProvider):
     provider_name: str = "gemini"
 
     def __init__(self):
@@ -73,12 +77,13 @@ class GeminiProvider(ChatProvider):
         log.debug(f"GeminiProvider initialized. API key present: {bool(self.api_key)}")
 
     def get_capabilities(self) -> set[ProviderCapability]:
-        """Gemini provider supports all capabilities: chat and image generation."""
+        """Gemini provider supports chat, image generation, and text-to-speech."""
         return {
             ProviderCapability.GENERATE_MESSAGE,
             ProviderCapability.GENERATE_MESSAGES,
             ProviderCapability.TEXT_TO_IMAGE,
             ProviderCapability.IMAGE_TO_IMAGE,
+            ProviderCapability.TEXT_TO_SPEECH,
         }
 
     def get_client(self) -> AsyncClient:
@@ -857,6 +862,7 @@ class GeminiProvider(ChatProvider):
 
             # Convert image bytes to PIL Image
             from PIL import Image
+
             pil_image = Image.open(BytesIO(image))
 
             # Build contents with both prompt and image
@@ -906,6 +912,145 @@ class GeminiProvider(ChatProvider):
         except Exception as e:
             log.error(f"Gemini image-to-image generation failed: {e}")
             raise RuntimeError(f"Gemini image-to-image generation failed: {e}")
+
+    async def text_to_speech(
+        self,
+        text: str,
+        model: str,
+        voice: str | None = None,
+        speed: float = 1.0,
+        timeout_s: int | None = None,
+        context: Any = None,
+        **kwargs: Any,
+    ) -> AsyncGenerator[np.ndarray[Any, np.dtype[np.int16]], None]:
+        """Generate speech audio from text using Gemini TTS.
+
+        Gemini does not support streaming TTS, so this yields a single chunk
+        with all audio bytes.
+
+        Args:
+            text: Text to convert to speech
+            model: Model ID (e.g., "gemini-2.5-flash-preview-tts")
+            voice: Voice name (e.g., "Zephyr", "Puck", "Charon")
+            speed: Speech speed (not directly supported by Gemini TTS API)
+            timeout_s: Request timeout
+            context: Processing context
+            **kwargs: Additional arguments
+
+        Yields:
+            numpy.ndarray: Int16 audio chunks at 24kHz mono
+        """
+        if not self.api_key:
+            raise ApiKeyMissingError(
+                "GEMINI_API_KEY is required for text-to-speech generation"
+            )
+
+        try:
+            client = self.get_client()
+
+            # Use default voice if none specified
+            if not voice:
+                voice = "Puck"  # Default to Puck voice
+
+            # Create speech config
+            speech_config = SpeechConfig(
+                voice_config=VoiceConfig(
+                    prebuilt_voice_config=PrebuiltVoiceConfig(voice_name=voice)
+                )
+            )
+
+            # Create generation config
+            config = GenerateContentConfig(
+                response_modalities=["AUDIO"],
+                speech_config=speech_config,
+            )
+
+            # Generate audio
+            log.debug(f"Generating speech with model={model}, voice={voice}")
+            response = await client.models.generate_content(
+                model=model,
+                contents=text,
+                config=config,
+            )
+
+            # Extract audio from response
+            # The response should contain audio data in the parts
+            audio_bytes = b""
+            if hasattr(response, "candidates") and response.candidates:
+                for candidate in response.candidates:
+                    if hasattr(candidate, "content") and candidate.content:
+                        if hasattr(candidate.content, "parts") and candidate.content.parts:
+                            for part in candidate.content.parts:
+                                if hasattr(part, "inline_data") and part.inline_data:
+                                    if part.inline_data.data:
+                                        yield np.frombuffer(part.inline_data.data, dtype=np.int16)
+
+            log.debug(f"Gemini text-to-speech completed")
+        except Exception as e:
+            log.error(f"Gemini text-to-speech failed: {e}")
+            raise RuntimeError(f"Gemini text-to-speech generation failed: {e}")
+
+    async def get_available_tts_models(self) -> List[TTSModel]:
+        """Get available Gemini TTS models.
+
+        Returns:
+            List of TTSModel instances for Gemini TTS
+        """
+        if not self.api_key:
+            log.debug("No Gemini API key configured, returning empty TTS model list")
+            return []
+
+        # All 30 Gemini voices
+        gemini_voices = [
+            "Zephyr",
+            "Puck",
+            "Charon",
+            "Kore",
+            "Fenrir",
+            "Leda",
+            "Orus",
+            "Aoede",
+            "Callirrhoe",
+            "Autonoe",
+            "Enceladus",
+            "Iapetus",
+            "Umbriel",
+            "Algieba",
+            "Despina",
+            "Erinome",
+            "Algenib",
+            "Rasalgethi",
+            "Laomedeia",
+            "Achernar",
+            "Alnilam",
+            "Schedar",
+            "Gacrux",
+            "Pulcherrima",
+            "Achird",
+            "Zubenelgenubi",
+            "Vindemiatrix",
+            "Sadachbia",
+            "Sadaltager",
+            "Sulafat",
+        ]
+
+        models = [
+            TTSModel(
+                id="gemini-2.5-flash-preview-tts",
+                name="Gemini 2.5 Flash TTS",
+                provider=Provider.Gemini,
+                voices=gemini_voices,
+            ),
+            TTSModel(
+                id="gemini-2.5-pro-preview-tts",
+                name="Gemini 2.5 Pro TTS",
+                provider=Provider.Gemini,
+                voices=gemini_voices,
+            ),
+        ]
+
+        log.debug(f"Returning {len(models)} Gemini TTS models")
+        return models
 
     def is_context_length_error(self, error: Exception) -> bool:
         msg = str(error).lower()

@@ -26,7 +26,7 @@ from nodetool.agents.tools.help_tools import (
 )
 
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.chat.providers.base import ChatProvider
+from nodetool.providers.base import BaseProvider
 from nodetool.agents.tools.base import Tool
 from .base import MessageProcessor
 
@@ -249,7 +249,7 @@ class HelpMessageProcessor(MessageProcessor):
     with access to help-specific tools and documentation.
     """
 
-    def __init__(self, provider: ChatProvider):
+    def __init__(self, provider: BaseProvider):
         super().__init__()
         self.provider = provider
 

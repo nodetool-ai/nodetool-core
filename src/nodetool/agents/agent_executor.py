@@ -19,7 +19,7 @@ import time
 from typing import Any, AsyncGenerator, Dict, List, Optional, Sequence, Union
 
 from nodetool.agents.tools.base import Tool
-from nodetool.chat.providers import ChatProvider
+from nodetool.providers import BaseProvider
 from nodetool.metadata.types import Message, ToolCall
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import Chunk
@@ -112,7 +112,7 @@ class AgentExecutor:
         objective: str,
         output_type: str,
         processing_context: ProcessingContext,
-        provider: ChatProvider,
+        provider: BaseProvider,
         model: str,
         tools: Sequence[Tool],
         input_values: Optional[Dict[str, Any]] = None,
@@ -332,7 +332,7 @@ Safety and privacy:
 async def main():
     """Test scenario for the AgentExecutor."""
     import os
-    from nodetool.chat.providers.openai_provider import OpenAIProvider
+    from nodetool.providers.openai_provider import OpenAIProvider
     from nodetool.workflows.processing_context import ProcessingContext
 
     # Test input data

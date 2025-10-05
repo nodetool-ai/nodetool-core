@@ -689,15 +689,32 @@ class BaseNode(BaseModel):
 
     @classmethod
     def unified_recommended_models(cls) -> list[UnifiedModel]:
-        import concurrent.futures
-
         recommended_models = cls.get_recommended_models()
-        with concurrent.futures.ThreadPoolExecutor() as executor:
-            futures = [
-                executor.submit(unified_model, model) for model in recommended_models
-            ]
-            models = [future.result() for future in futures]
-        return [model for model in models if model is not None]
+        if not recommended_models:
+            return []
+
+        async def fetch_all_models():
+            return await asyncio.gather(
+                *[unified_model(model) for model in recommended_models]
+            )
+
+        try:
+            loop = asyncio.get_running_loop()
+            import concurrent.futures
+            future = concurrent.futures.Future()
+
+            async def run_and_set_result():
+                try:
+                    result = await fetch_all_models()
+                    future.set_result(result)
+                except Exception as e:
+                    future.set_exception(e)
+
+            asyncio.create_task(run_and_set_result())
+            return future.result()
+        except RuntimeError:
+            return asyncio.run(fetch_all_models())
+
 
     @classmethod
     def get_basic_fields(cls) -> list[str]:
@@ -728,6 +745,7 @@ class BaseNode(BaseModel):
                 recommended_models=cls.unified_recommended_models(),
                 basic_fields=cls.get_basic_fields(),
                 is_dynamic=cls.is_dynamic(),
+                is_streaming_output=cls.is_streaming_output(),
                 expose_as_tool=cls.expose_as_tool(),
                 supports_dynamic_outputs=cls.supports_dynamic_outputs(),
             )

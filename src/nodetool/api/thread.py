@@ -16,7 +16,7 @@ from nodetool.types.thread import (
 from pydantic import BaseModel
 from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
-from nodetool.chat.providers import get_provider
+from nodetool.providers import get_provider
 
 
 log = get_logger(__name__)

@@ -191,6 +191,32 @@ class StreamRunnerBase:
         """
         raise NotImplementedError
 
+    def wrap_subprocess_command(
+        self, command: list[str], context: ProcessingContext
+    ) -> tuple[list[str], Any]:
+        """Hook to wrap subprocess command (e.g., with sandbox-exec).
+
+        Subclasses can override this to wrap the command with additional
+        layers like sandboxing, resource limiting, etc.
+
+        Args:
+            command: The command to wrap
+            context: Processing context (provides workspace_dir, etc.)
+
+        Returns:
+            Tuple of (wrapped_command, cleanup_data)
+            cleanup_data will be passed to cleanup_subprocess_wrapper()
+        """
+        return command, None
+
+    def cleanup_subprocess_wrapper(self, cleanup_data: Any) -> None:
+        """Hook to clean up resources from wrap_subprocess_command.
+
+        Args:
+            cleanup_data: Data returned by wrap_subprocess_command()
+        """
+        pass
+
     def build_container_environment(
         self,
         env: dict[str, Any],
@@ -320,8 +346,13 @@ class StreamRunnerBase:
         command_vec: list[str] | None = None
         proc: subprocess.Popen[bytes] | None = None
         cancel_timer: threading.Timer | None = None
+        cleanup_data: Any = None
         try:
             command_vec = self.build_container_command(user_code, env_locals)
+
+            # Allow subclass to wrap the command (e.g., with sandbox-exec)
+            command_vec, cleanup_data = self.wrap_subprocess_command(command_vec, context)
+
             cmd_str = self._format_command_str(command_vec)
 
             # Prepare environment and working directory
@@ -434,6 +465,12 @@ class StreamRunnerBase:
                     try:
                         if proc.poll() is None:
                             proc.terminate()
+                    except Exception:
+                        pass
+                # Clean up any wrapper resources (e.g., sandbox profile files)
+                if cleanup_data is not None:
+                    try:
+                        self.cleanup_subprocess_wrapper(cleanup_data)
                     except Exception:
                         pass
             except Exception:

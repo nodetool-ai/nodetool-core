@@ -8,7 +8,7 @@ from typing import AsyncGenerator, Sequence, Union, Any
 
 from nodetool.agents.sub_task_context import SubTaskContext
 from nodetool.workflows.types import Chunk, TaskUpdate
-from nodetool.chat.providers import ChatProvider
+from nodetool.providers import BaseProvider
 from nodetool.agents.tools.base import Tool
 from nodetool.metadata.types import (
     SubTask,
@@ -34,7 +34,7 @@ class SimpleAgent(BaseAgent):
         self,
         name: str,
         objective: str,
-        provider: ChatProvider,
+        provider: BaseProvider,
         model: str,
         tools: Sequence[Tool],
         output_schema: dict[str, Any],

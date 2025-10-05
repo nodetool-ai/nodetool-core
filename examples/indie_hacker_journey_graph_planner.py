@@ -19,9 +19,9 @@ Usage:
 import asyncio
 from typing import List
 
-from nodetool.agents.graph_planner import GraphPlanner
-from nodetool.chat.providers import get_provider
-from nodetool.metadata.types import Provider
+from nodetool.agents.graph_planner import GraphInput, GraphPlanner
+from nodetool.providers import get_provider
+from nodetool.metadata.types import Provider, TypeMetadata
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.run_workflow import run_workflow
@@ -92,10 +92,18 @@ async def create_and_execute_indie_hacker_workflow(
         model=model,
         objective=objective,
         verbose=True,
-        inputs={
-            "search_terms": INDIE_HACKER_SEARCH_TERMS,
-            "analysis_categories": ANALYSIS_CATEGORIES,
-        },
+        input_schema=[
+            GraphInput(
+                name="search_terms",
+                type=TypeMetadata(type="list[str]"),
+                description="Search terms for finding indie hacker stories",
+            ),
+            GraphInput(
+                name="analysis_categories",
+                type=TypeMetadata(type="list[str]"),
+                description="Categories to analyze in the stories",
+            ),
+        ],
     )
 
     # Plan the graph
@@ -180,11 +188,9 @@ async def test_indie_hacker_journey_graph_planner(provider, model: str):
                     hasattr(result, "content")
                     and "FINAL" in str(result.content).upper()
                 ):
-                    print(f"\n📝 Final Report Preview:")
-                    print(f"{str(result.content)[:500]}...")
+                    print(f"\n📝 Final Report:")
+                    print(result.content)
                     break
-
-        print(f"\n💡 Full analysis report saved to workspace: {context.workspace_dir}")
 
     except Exception as e:
         print(f"❌ Workflow failed: {e}")
@@ -201,7 +207,7 @@ async def main():
     # Test configurations - you can uncomment different providers
     test_configs = [
         # OpenAI - Good for analysis and reasoning
-        {"provider": Provider.OpenAI, "model": "gpt-4o-mini"},
+        {"provider": Provider.HuggingFaceCerebras, "model": "openai/gpt-oss-120b"},
         # Anthropic - Excellent for detailed analysis and structured output
         # {
         #     "provider": Provider.Anthropic,

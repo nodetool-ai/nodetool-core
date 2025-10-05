@@ -20,9 +20,9 @@ Usage:
 import asyncio
 from nodetool.agents.agent import Agent
 from nodetool.agents.tools.browser_tools import AgenticBrowserTool
-from nodetool.chat.providers import get_provider
+from nodetool.providers import get_provider
 from nodetool.agents.tools import BrowserTool, GoogleSearchTool
-from nodetool.chat.providers.base import ChatProvider
+from nodetool.providers.base import BaseProvider
 from nodetool.metadata.types import Provider, Task, SubTask
 from nodetool.agents.sub_task_context import SubTaskContext
 from nodetool.workflows.processing_context import ProcessingContext
@@ -31,7 +31,7 @@ import json
 
 
 async def test_instagram_scraper_task(
-    provider: ChatProvider,
+    provider: BaseProvider,
     model: str,
 ):
     # 1. Set up workspace directory
@@ -53,7 +53,8 @@ async def test_instagram_scraper_task(
         Create a summary of the trends, hashtags, and viral content.
         Return all trends you can find.
         """,
-        enable_data_contracts_phase=False,
+        enable_analysis_phase=True,
+        enable_data_contracts_phase=True,
         provider=provider,
         model=model,
         output_schema={
@@ -74,7 +75,12 @@ async def test_instagram_scraper_task(
                                     "likes": {"type": "integer"},
                                     "comments": {"type": "integer"},
                                 },
-                                "required": ["post_url", "caption", "likes", "comments"],
+                                "required": [
+                                    "post_url",
+                                    "caption",
+                                    "likes",
+                                    "comments",
+                                ],
                             },
                         },
                         "required": ["hashtag", "description", "example_post"],
@@ -101,7 +107,7 @@ async def test_instagram_scraper_task(
 if __name__ == "__main__":
     asyncio.run(
         test_instagram_scraper_task(
-            provider=get_provider(Provider.OpenAI), model="gpt-4.1-mini"
+            provider=get_provider(Provider.HuggingFaceCerebras), model="openai/gpt-oss-120b"
         )
     )
 

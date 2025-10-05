@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import AsyncMock
 
-from nodetool.chat.providers.fake_provider import (
+from nodetool.providers.fake_provider import (
     FakeProvider,
     create_fake_tool_call,
     create_simple_fake_provider,

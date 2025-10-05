@@ -11,8 +11,8 @@ This test file ensures that:
 import pytest
 from typing import List, Set
 from nodetool.metadata.types import LanguageModel, ImageModel, Provider
-from nodetool.chat.providers.base import BaseProvider, ProviderCapability
-from nodetool.image.providers.base import ImageProvider
+from nodetool.providers.base import BaseProvider, ProviderCapability
+from nodetool.providers.base import BaseProvider
 from nodetool.ml.models.language_models import get_all_language_models
 from nodetool.ml.models.image_models import get_all_image_models
 
@@ -38,12 +38,8 @@ class MockMultiModalProvider(BaseProvider):
     async def get_available_image_models(self) -> List[ImageModel]:
         """Return mock image models."""
         return [
-            ImageModel(
-                id="mock-img-1", name="Mock Image 1", provider=Provider.Empty
-            ),
-            ImageModel(
-                id="mock-img-2", name="Mock Image 2", provider=Provider.Empty
-            ),
+            ImageModel(id="mock-img-1", name="Mock Image 1", provider=Provider.Empty),
+            ImageModel(id="mock-img-2", name="Mock Image 2", provider=Provider.Empty),
         ]
 
     async def generate_message(self, messages, model, tools=None, **kwargs):  # type: ignore
@@ -79,7 +75,7 @@ class MockLanguageOnlyProvider(BaseProvider):
             yield
 
 
-class MockImageOnlyProvider(ImageProvider):
+class MockImageOnlyProvider(BaseProvider):
     """Mock provider that only supports image capabilities."""
 
     provider_name = "mock_image"
@@ -93,9 +89,7 @@ class MockImageOnlyProvider(ImageProvider):
     async def get_available_image_models(self) -> List[ImageModel]:
         """Return mock image models."""
         return [
-            ImageModel(
-                id="img-only-1", name="Image Only 1", provider=Provider.Empty
-            ),
+            ImageModel(id="img-only-1", name="Image Only 1", provider=Provider.Empty),
         ]
 
 
@@ -196,17 +190,17 @@ async def test_model_type_discriminator():
     language_models = await provider.get_available_language_models()
     for model in language_models:
         assert hasattr(model, "type")
-        assert model.type == "language_model", (
-            f"LanguageModel should have type='language_model', got '{model.type}'"
-        )
+        assert (
+            model.type == "language_model"
+        ), f"LanguageModel should have type='language_model', got '{model.type}'"
 
     # Test image models have correct type discriminator
     image_models = await provider.get_available_image_models()
     for model in image_models:
         assert hasattr(model, "type")
-        assert model.type == "image_model", (
-            f"ImageModel should have type='image_model', got '{model.type}'"
-        )
+        assert (
+            model.type == "image_model"
+        ), f"ImageModel should have type='image_model', got '{model.type}'"
 
 
 @pytest.mark.asyncio

@@ -3,7 +3,7 @@ import json
 import sys
 
 from nodetool.agents.agent import Agent
-from nodetool.chat.providers import get_provider
+from nodetool.providers import get_provider
 from nodetool.agents.tools import get_tool_by_name
 
 # Import tools modules to ensure registration happens

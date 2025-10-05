@@ -7,7 +7,7 @@ from pathlib import Path
 import json
 
 from nodetool.agents.graph_planner import GraphPlanner, GraphInput, GraphOutput
-from nodetool.chat.providers.openai_provider import OpenAIProvider
+from nodetool.providers.openai_provider import OpenAIProvider
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import PlanningUpdate
 from nodetool.types.graph import Graph as APIGraph

@@ -27,7 +27,7 @@ from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.run_workflow import run_workflow
 from nodetool.types.graph import get_input_schema, get_output_schema
 from nodetool.packages.registry import Registry
-from nodetool.chat.providers import get_provider
+from nodetool.providers import get_provider
 from nodetool.metadata.types import Provider
 from nodetool.chat.workspace_manager import WorkspaceManager
 import asyncio

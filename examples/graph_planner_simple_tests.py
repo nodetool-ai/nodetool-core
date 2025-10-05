@@ -8,7 +8,8 @@ from nodetool.agents.graph_planner import (
     GraphPlanner,
     print_visual_graph,
 )
-from nodetool.chat.providers.ollama_provider import OllamaProvider
+from nodetool.providers.huggingface_provider import HuggingFaceProvider
+from nodetool.providers.ollama_provider import OllamaProvider
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.run_workflow import run_workflow
@@ -19,8 +20,8 @@ from nodetool.config.logging_config import get_logger
 
 logger = get_logger(__name__)
 
-provider = OllamaProvider()
-model = "gpt-oss:20b"
+provider = HuggingFaceProvider("cerebras")
+model = "openai/gpt-oss-120b"
 
 
 async def create_and_execute_workflow(

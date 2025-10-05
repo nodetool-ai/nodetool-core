@@ -17,7 +17,7 @@ It performs the following steps:
 import asyncio
 import chromadb
 from nodetool.agents.tools.chroma_tools import ChromaMarkdownSplitAndIndexTool
-from chromadb.api.types import IncludeEnum
+from nodetool.integrations.vectorstores.chroma.async_chroma_client import get_async_chroma_client
 from nodetool.workflows.processing_context import (
     ProcessingContext,
 )  # Assuming a basic context is needed
@@ -28,19 +28,18 @@ async def run_test():
 
     # 1. Initialize ChromaDB (in-memory for testing)
     print("Initializing ChromaDB client...")
-    client = (
-        chromadb.Client()
-    )  # Use chromadb.PersistentClient(path="/path/to/data") for persistence
+    client = await get_async_chroma_client()
     collection_name = "test_markdown_collection"
     # Ensure the collection is clean for the test
     try:
-        client.delete_collection(name=collection_name)
+        await client.delete_collection(name=collection_name)
         print(f"Deleted existing collection: {collection_name}")
     except Exception:
         print(f"Collection {collection_name} does not exist, creating new one.")
         pass  # Collection doesn't exist, which is fine
-    collection = client.create_collection(name=collection_name)
+    collection = await client.create_collection(name=collection_name)
     print(f"Created collection: {collection_name}")
+
 
     # 2. Initialize the Tool
     # Use a dummy workspace directory for the test
@@ -108,8 +107,8 @@ Testing how it handles multiple H1 headers.
         await asyncio.sleep(1)
 
         # Retrieve all documents from the collection for verification
-        retrieved_docs = collection.get(
-            include=[IncludeEnum.metadatas, IncludeEnum.documents]
+        retrieved_docs = await collection.get(
+            include=["metadatas", "documents"]
         )
 
         print(

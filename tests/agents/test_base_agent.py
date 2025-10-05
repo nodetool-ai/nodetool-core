@@ -2,13 +2,13 @@ import pytest
 from typing import AsyncGenerator, Any, List, Set
 
 from nodetool.agents.base_agent import BaseAgent
-from nodetool.chat.providers.base import ChatProvider, ProviderCapability
+from nodetool.providers.base import BaseProvider, ProviderCapability
 from nodetool.workflows.types import Chunk
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.metadata.types import LanguageModel
 
 
-class DummyProvider(ChatProvider):
+class DummyProvider(BaseProvider):
     def __init__(self):
         super().__init__()
         self.calls = 0

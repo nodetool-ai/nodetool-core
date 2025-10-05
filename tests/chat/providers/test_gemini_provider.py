@@ -114,7 +114,7 @@ import pytest
 from typing import Any, Dict, List
 from unittest.mock import AsyncMock, patch, MagicMock
 
-from nodetool.chat.providers.gemini_provider import GeminiProvider
+from nodetool.providers.gemini_provider import GeminiProvider
 from nodetool.metadata.types import Message, MessageTextContent, ToolCall
 from tests.chat.providers.test_base_provider import BaseProviderTest, ResponseFixtures
 

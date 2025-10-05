@@ -23,7 +23,7 @@ from typing import Any, Dict, List, Optional, Type, Union
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from nodetool.agents.tools.base import Tool
-from nodetool.chat.providers.base import ChatProvider
+from nodetool.providers.base import BaseProvider
 from nodetool.metadata.types import Message, MessageTextContent, ToolCall, Provider
 from nodetool.workflows.types import Chunk
 from nodetool.workflows.processing_context import ProcessingContext
@@ -162,7 +162,7 @@ class BaseProviderTest(ABC):
 
     @property
     @abstractmethod
-    def provider_class(self) -> Type[ChatProvider]:
+    def provider_class(self) -> Type[BaseProvider]:
         """Return the provider class to test."""
         pass
 
@@ -172,7 +172,7 @@ class BaseProviderTest(ABC):
         """Return the provider name for identification."""
         pass
 
-    def create_provider(self, **kwargs) -> ChatProvider:
+    def create_provider(self, **kwargs) -> BaseProvider:
         """Create a provider instance with optional configuration."""
         return self.provider_class(**kwargs)
 

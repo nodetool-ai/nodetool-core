@@ -10,8 +10,8 @@ based on the research objective, allowing for comprehensive research on the pdf.
 import os
 import asyncio
 from nodetool.agents.agent import Agent
-from nodetool.chat.providers import get_provider
-from nodetool.chat.providers.base import ChatProvider
+from nodetool.providers import get_provider
+from nodetool.providers.base import BaseProvider
 from nodetool.workflows.types import Chunk
 from nodetool.metadata.types import Provider
 from nodetool.workflows.processing_context import ProcessingContext
@@ -20,10 +20,12 @@ from nodetool.agents.tools.chroma_tools import (
     ChromaHybridSearchTool,
     ChromaMarkdownSplitAndIndexTool,
 )
-from nodetool.integrations.vectorstores.chroma.async_chroma_client import get_async_chroma_client
+from nodetool.integrations.vectorstores.chroma.async_chroma_client import (
+    get_async_chroma_client,
+)
 
 
-async def test_chromadb_research_agent(provider: ChatProvider, model: str):
+async def test_chromadb_research_agent(provider: BaseProvider, model: str):
     context = ProcessingContext()
     input_files = []
 

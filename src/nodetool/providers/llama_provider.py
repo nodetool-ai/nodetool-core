@@ -18,13 +18,13 @@ from openai.types.chat import ChatCompletionChunk
 from huggingface_hub import hf_hub_download
 
 from nodetool.agents.tools.base import Tool
-from nodetool.chat.providers.base import (
-    ChatProvider,
+from nodetool.providers.base import (
+    BaseProvider,
     ProviderCapability,
-    register_chat_provider,
+    register_provider,
 )
-from nodetool.chat.providers.openai_compat import OpenAICompat
-from nodetool.chat.providers.llama_server_manager import LlamaServerManager
+from nodetool.providers.openai_compat import OpenAICompat
+from nodetool.providers.llama_server_manager import LlamaServerManager
 from nodetool.config.logging_config import get_logger
 from nodetool.metadata.types import Message, Provider, ToolCall, LanguageModel
 from nodetool.workflows.types import Chunk
@@ -33,8 +33,8 @@ from nodetool.workflows.processing_context import ProcessingContext
 log = get_logger(__name__)
 
 
-@register_chat_provider(Provider.LlamaCpp)
-class LlamaProvider(ChatProvider, OpenAICompat):
+@register_provider(Provider.LlamaCpp)
+class LlamaProvider(BaseProvider, OpenAICompat):
     """OpenAI-compatible chat provider backed by a local llama.cpp server.
 
     This provider automatically manages a background ``llama-server`` process per
@@ -566,11 +566,7 @@ if __name__ == "__main__":
         model = "ggml-org/Qwen2.5-Coder-0.5B-Q8_0-GGUF"
         tools: list[Tool] = [EchoTool()]
 
-        # Check if the model supports native tools or will use emulation
-        has_tools = provider.has_tool_support(model)
         print(f"Model: {model}")
-        print(f"Native tool support: {has_tools}")
-        print(f"Using tool emulation: {not has_tools}\n")
 
         # First try without tools to confirm basic functionality
         messages = [
@@ -654,10 +650,7 @@ if __name__ == "__main__":
         calculator_tools: list[Tool] = [CalculatorTool()]
 
         # Check if model supports native tool calling
-        has_native_tools = provider.has_tool_support(gemma_model)
         print(f"Model: {gemma_model}")
-        print(f"Native tool support: {has_native_tools}")
-        print(f"Using tool emulation: {not has_native_tools}\n")
 
         messages_calc: list[Message] = [
             Message(

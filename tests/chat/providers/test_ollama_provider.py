@@ -100,7 +100,7 @@ import httpx
 import types
 import ollama
 
-from nodetool.chat.providers.ollama_provider import OllamaProvider
+from nodetool.providers.ollama_provider import OllamaProvider
 from nodetool.metadata.types import Message, MessageTextContent, ToolCall
 from tests.chat.providers.test_base_provider import BaseProviderTest, ResponseFixtures
 
@@ -311,7 +311,7 @@ class TestOllamaProvider(BaseProviderTest):
         }
 
         with patch(
-            "nodetool.chat.providers.ollama_provider.get_ollama_sync_client",
+            "nodetool.providers.ollama_provider.get_ollama_sync_client",
             return_value=_SyncClient(model_info),
         ):
             context_length = provider.get_context_length("test-model")

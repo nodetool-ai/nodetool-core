@@ -75,7 +75,7 @@ import anthropic
 from anthropic.types import Message as AnthropicMessage, MessageParam
 from anthropic.types import TextBlock, ToolUseBlock, Usage
 
-from nodetool.chat.providers.anthropic_provider import AnthropicProvider
+from nodetool.providers.anthropic_provider import AnthropicProvider
 from nodetool.metadata.types import Message, MessageTextContent, ToolCall
 from tests.chat.providers.test_base_provider import BaseProviderTest, ResponseFixtures
 

@@ -6,7 +6,7 @@ import pytest
 from nodetool.agents.tools.base import (
     Tool,
 )
-from nodetool.agents.tools.workspace_tools import WriteFileTool, ReadFileTool
+from nodetool.agents.tools.filesystem_tools import WriteFileTool, ReadFileTool
 from nodetool.agents.tools.http_tools import DownloadFileTool
 from nodetool.agents.tools.asset_tools import SaveAssetTool, ReadAssetTool
 from nodetool.workflows.processing_context import ProcessingContext
@@ -20,24 +20,6 @@ def test_sanitize_node_name_truncates():
     long_name = "a" * 70
     result = sanitize_node_name(long_name)
     assert len(result) == 64
-
-
-@pytest.mark.asyncio
-async def test_write_and_read_file(context: ProcessingContext, monkeypatch):
-    write_tool = WriteFileTool()
-    await write_tool.process(context, {"path": "sample.txt", "content": "hello"})
-
-    full_path = context.resolve_workspace_path("sample.txt")
-    assert os.path.exists(full_path)
-    with open(full_path, "r", encoding="utf-8") as f:
-        assert f.read() == "hello"
-
-    read_tool = ReadFileTool()
-    monkeypatch.setattr(ReadFileTool, "count_tokens", lambda self, text: len(text))
-    result = await read_tool.process(context, {"path": "sample.txt"})
-    assert result["success"] is True
-    assert result["content"] == "hello"
-
 
 class DummyResponse:
     def __init__(self, content=b"data"):

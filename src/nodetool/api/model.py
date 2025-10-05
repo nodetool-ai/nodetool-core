@@ -12,9 +12,11 @@ from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
 from nodetool.ml.models.language_models import get_all_language_models
 from nodetool.ml.models.image_models import get_all_image_models
+from nodetool.ml.models.tts_models import get_all_tts_models
 from nodetool.metadata.types import (
     LanguageModel,
     ImageModel,
+    TTSModel,
     ModelFile,
     LlamaModel,
     Provider,
@@ -159,6 +161,16 @@ async def get_image_models_endpoint(
     Get all available image generation models from all providers.
     """
     return await get_all_image_models()
+
+
+@router.get("/tts")
+async def get_tts_models_endpoint(
+    user: str = Depends(current_user),
+) -> list[TTSModel]:
+    """
+    Get all available text-to-speech models from all providers.
+    """
+    return await get_all_tts_models()
 
 
 @router.get("/ollama_model_info")

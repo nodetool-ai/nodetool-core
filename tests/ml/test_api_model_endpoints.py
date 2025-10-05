@@ -9,7 +9,8 @@ correctly return only the expected model types, even when multi-modal providers
 import pytest
 from nodetool.ml.models.language_models import get_all_language_models
 from nodetool.ml.models.image_models import get_all_image_models
-from nodetool.metadata.types import LanguageModel, ImageModel
+from nodetool.ml.models.tts_models import get_all_tts_models
+from nodetool.metadata.types import LanguageModel, ImageModel, TTSModel
 
 
 @pytest.mark.asyncio
@@ -91,3 +92,42 @@ async def test_image_models_fastapi_serialization():
         assert "id" in model_dict
         assert "name" in model_dict
         assert "provider" in model_dict
+
+
+@pytest.mark.asyncio
+async def test_get_all_tts_models_returns_only_tts_models():
+    """
+    Regression test: Ensure get_all_tts_models() only returns TTSModel instances.
+
+    This ensures TTS providers correctly return only TTS models.
+    """
+    models = await get_all_tts_models()
+
+    # All returned models must be TTSModel instances
+    for model in models:
+        assert isinstance(
+            model, TTSModel
+        ), f"Expected TTSModel, got {type(model).__name__}: {model}"
+        assert (
+            model.type == "tts_model"
+        ), f"Expected type='tts_model', got type='{model.type}'"
+
+
+@pytest.mark.asyncio
+async def test_tts_models_fastapi_serialization():
+    """
+    Test that TTS models can be serialized for FastAPI response validation.
+    """
+    models = await get_all_tts_models()
+
+    # Simulate FastAPI serialization
+    for model in models:
+        model_dict = model.model_dump()
+
+        # These fields are required for FastAPI response validation
+        assert "type" in model_dict
+        assert model_dict["type"] == "tts_model"
+        assert "id" in model_dict
+        assert "name" in model_dict
+        assert "provider" in model_dict
+        assert "voices" in model_dict

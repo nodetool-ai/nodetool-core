@@ -22,7 +22,7 @@ from nodetool.agents.tools.openai_tools import OpenAIWebSearchTool
 from nodetool.metadata.types import SubTask, Task
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import Chunk, TaskUpdate
-from nodetool.chat.providers.openai_provider import OpenAIProvider
+from nodetool.providers.openai_provider import OpenAIProvider
 from nodetool.agents.sub_task_context import SubTaskContext
 
 # Create a console for rich output

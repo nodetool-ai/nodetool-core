@@ -14,9 +14,9 @@ to integrate findings into research, product development, or community analysis 
 
 Usage:
     python reddit_scraper_agent.py
-    
+
 By default, the script analyzes r/webdev for common developer challenges, but you can
-easily modify it to research any subreddit or topic by changing the SUBREDDIT and 
+easily modify it to research any subreddit or topic by changing the SUBREDDIT and
 FOCUS_AREA variables.
 
 Popular subreddits for analysis:
@@ -31,9 +31,9 @@ Popular subreddits for analysis:
 import asyncio
 
 from nodetool.agents.agent import Agent
-from nodetool.chat.providers import get_provider
+from nodetool.providers import get_provider
 from nodetool.agents.tools import BrowserTool, GoogleSearchTool
-from nodetool.chat.providers.base import ChatProvider
+from nodetool.providers.base import BaseProvider
 from nodetool.metadata.types import Provider
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import Chunk
@@ -45,7 +45,7 @@ dotenv.load_dotenv()
 
 
 async def analyze_reddit_subreddit(
-    provider: ChatProvider,
+    provider: BaseProvider,
     model: str,
     reasoning_model: str,
     planning_model: str,

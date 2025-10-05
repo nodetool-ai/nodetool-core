@@ -24,7 +24,7 @@ import asyncio
 from supabase import create_async_client, AsyncClient
 
 from nodetool.chat.ollama_service import get_ollama_models
-from nodetool.chat.providers import get_provider
+from nodetool.providers import get_provider
 from nodetool.config.environment import Environment
 from nodetool.models.message import Message as DBMessage
 from nodetool.models.thread import Thread

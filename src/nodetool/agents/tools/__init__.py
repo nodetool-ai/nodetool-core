@@ -9,7 +9,11 @@ from .tool_registry import load_all_nodes, _tool_node_registry
 from .node_tool import NodeTool
 from nodetool.workflows.base_node import get_node_class, sanitize_node_name
 
-__all__ = ["Tool", "get_tool_by_name"]
+from .browser_tools import BrowserTool
+from .serp_tools import GoogleSearchTool
+from .workflow_tool import WorkflowTool
+
+__all__ = ["Tool", "get_tool_by_name", "BrowserTool", "GoogleSearchTool", "WorkflowTool"]
 
 
 def get_tool_by_name(name: str) -> Optional[Type[Tool]]:

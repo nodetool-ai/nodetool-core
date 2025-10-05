@@ -22,7 +22,7 @@ from nodetool.workflows.types import (
 )
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.agents.tools.base import Tool
-from nodetool.chat.providers.base import ChatProvider
+from nodetool.providers.base import BaseProvider
 from .base import MessageProcessor
 
 log = get_logger(__name__)
@@ -37,7 +37,7 @@ class AgentMessageProcessor(MessageProcessor):
     them down into subtasks and executing them step by step.
     """
 
-    def __init__(self, provider: ChatProvider):
+    def __init__(self, provider: BaseProvider):
         super().__init__()
         self.provider = provider
 

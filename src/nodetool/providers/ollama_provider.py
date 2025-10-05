@@ -16,12 +16,12 @@ from ollama import AsyncClient, Client
 from pydantic import BaseModel
 import tiktoken
 
-from nodetool.chat.providers.base import (
-    ChatProvider,
+from nodetool.providers.base import (
+    BaseProvider,
     ProviderCapability,
-    register_chat_provider,
+    register_provider,
 )
-from nodetool.chat.providers.openai_compat import OpenAICompat
+from nodetool.providers.openai_compat import OpenAICompat
 from nodetool.chat.token_counter import count_messages_tokens
 from nodetool.agents.tools.base import Tool
 from nodetool.config.environment import Environment
@@ -68,8 +68,8 @@ async def get_ollama_client() -> AsyncGenerator[AsyncClient, None]:
         await client._client.aclose()
 
 
-@register_chat_provider(Provider.Ollama)
-class OllamaProvider(ChatProvider, OpenAICompat):
+@register_provider(Provider.Ollama)
+class OllamaProvider(BaseProvider, OpenAICompat):
     """
     Ollama implementation of the ChatProvider interface.
 

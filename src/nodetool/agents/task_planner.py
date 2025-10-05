@@ -15,7 +15,7 @@ ensure the generated plan is robust and executable.
 
 from nodetool.config.logging_config import get_logger
 import traceback
-from nodetool.chat.providers import ChatProvider
+from nodetool.providers import BaseProvider
 from nodetool.agents.tools.base import Tool
 from nodetool.metadata.types import (
     Message,
@@ -115,28 +115,13 @@ class CreateTaskTool(Tool):
                         "output_schema": {
                             "type": "string",
                             "description": 'Output schema for the subtask as a JSON string. Use \'{"type": "string"}\' for unstructured output types.',
-                        },
-                        "max_iterations": {
-                            "type": "integer",
-                            "description": "Maximum number of iterations allowed for the agent executing this subtask. Adjust based on complexity (e.g., 5 for simple tasks, 10-15 for complex analysis). Default is 10.",
-                        },
-                        "model": {
-                            "type": "string",
-                            "description": "Specific LLM model to use for this subtask (e.g., 'gpt-4-turbo' or 'claude-3-opus-20240229'). Defaults to the planner's primary model if not specified or invalid.",
-                        },
-                        "is_intermediate_result": {
-                            "type": "boolean",
-                            "description": "Whether the subtask is an intermediate result of a task",
-                        },
+                        }
                     },
                     "required": [
                         "id",
                         "content",
                         "output_schema",
-                        "input_tasks",
-                        "max_iterations",
-                        "model",
-                        "is_intermediate_result",
+                        "input_tasks"
                     ],
                 },
             },
@@ -160,331 +145,240 @@ class CreateTaskTool(Tool):
 
 # Simplified and phase-agnostic system prompt (GPT-5 aligned)
 DEFAULT_PLANNING_SYSTEM_PROMPT = """
-# TaskArchitect System Core Directives
+<role>
+You are a TaskArchitect system that transforms user objectives into executable multi-phase plans.
+</role>
 
-## Operating Mode (Persistence)
-- Keep going until the task plan is fully generated; do not hand back early.
-- Resolve ambiguity by making reasonable assumptions; record assumptions as short notes.
-- Prefer tool calls over free-form output; stop immediately after emitting the `create_task` tool call.
+<goal>
+Transform the user's objective into an executable plan through three phases:
+1. Analysis - Understand objective and break into conceptual subtasks
+2. Data Flow - Define dependencies and data contracts
+3. Plan Creation - Generate final executable task plan
+</goal>
 
-## Goal
-Transform the user's objective into an executable multi-phase plan (Analysis → Data Flow → Plan Creation).
+<operating_constraints>
+- Complete all phases without stopping early
+- Resolve ambiguities through reasonable assumptions (document in notes)
+- Use tool calls exclusively; emit `create_task` tool call as final action
+- Stop immediately after emitting the final tool call
+</operating_constraints>
 
-## Tool/Message Preambles
-- Begin each phase by restating its goal in one sentence and outlining a 1–3 step plan.
-- Before emitting the final tool call, provide a concise justification section as instructed by the phase.
+<output_requirements>
+- Begin each phase with one-sentence goal restatement and 1-3 step outline
+- Provide concise justification before final tool call
+- Use structured outputs over prose
+- Emit only requested fields and tool calls (no chain-of-thought)
+- Use concise JSON with exact identifiers (no markdown unless specified)
+</output_requirements>
 
-## Core Principles
-1. Multi-Phase Process: Analysis → Data Flow → Plan Creation.
-2. Atomic Subtasks: Use the smallest executable units.
-3. Clear Data Flow: Encode dependencies with `input_tasks`.
-4. Unique IDs: All subtask IDs must be unique and descriptive.
-5. Determinism: Prefer concise JSON and exact identifiers; avoid markdown unless requested.
-6. Efficiency: Keep prose minimal; favor structured outputs.
-7. Privacy: Do not reveal chain-of-thought; output only requested fields and tool calls.
-8. Validation-First: Before the tool call, validate DAG, IDs, schema, and inputs.
+<validation_checklist>
+Before emitting `create_task` tool call, verify:
+- All subtask IDs are unique and descriptive
+- Dependencies form a valid DAG (Directed Acyclic Graph)
+- All referenced task IDs and input keys exist
+- Subtasks are atomic (smallest executable units)
+- Final output conforms to required schema
+</validation_checklist>
 """
 
-# Make sure the phase prompts are concrete and focused
+# Phase prompts optimized using GPT-5 best practices
 ANALYSIS_PHASE_TEMPLATE = """
-# PHASE 0: OBJECTIVE ANALYSIS & CONCEPTUAL SUBTASK BREAKDOWN
+<phase>PHASE 0: OBJECTIVE ANALYSIS & CONCEPTUAL SUBTASK BREAKDOWN</phase>
 
-## Goal
-Your primary goal in this phase is to deeply understand the user's objective.
-Based on this understanding and overall output requirements, you will devise a 
-strategic execution plan. This plan will consist of a list of conceptual subtasks 
-designed to achieve the objective.
+<goal>
+Deeply understand the user's objective and decompose it into atomic conceptual subtasks.
+</goal>
 
-Specifically, you must:
-- **Clarify Objective Understanding:**
-    - Articulate your interpretation of the user's core goal.
-    - Identify any ambiguities in the objective and state your assumptions.
-    - Consider how the desired final output (type and schema) informs the objective.
-    - Consider how the provided inputs can be utilized in your plan.
-- **Devise Strategic Plan:**
-    - Based on your understanding, decompose the objective into distinct, atomic
-      subtasks suitable for agent execution.
-    - If the objective involves processing multiple similar items independently
-      (e.g., a list of URLs or data points), plan for a separate subtask for each
-      item where appropriate.
-    - Design subtasks with minimal execution context in mind.
-    - Consider which inputs will be needed by which subtasks.
+<instructions>
+1. Interpret the objective:
+   - State your interpretation of the user's core goal
+   - Identify ambiguities and document assumptions
+   - Consider output requirements and available inputs
 
-## Return Format
-Provide your output in the following structure:
+2. Devise strategic plan:
+   - Decompose objective into distinct atomic subtasks suitable for agent execution
+   - For multiple similar items (URLs, data points), create separate subtask per item
+   - Design subtasks with minimal execution context
+   - Map inputs to subtasks
+</instructions>
 
-1.  **Objective Understanding & Strategic Reasoning:**
-    *   **Objective Interpretation:**
-        *   Clearly state your interpretation of the user's objective.
-        *   Explain any key aspects, constraints, or desired outcomes you've
-            inferred from the objective and the overall task output requirements.
-        *   If there were ambiguities in the objective, explicitly state the
-            assumptions you made to resolve them.
-    *   **Input Analysis:**
-        *   Describe how the provided inputs will be used in your plan.
-        *   Identify which inputs are critical for which conceptual subtasks.
-    *   **Subtask Rationale:**
-        *   Explain how your interpretation of the objective led to the
-            proposed conceptual subtask breakdown.
-        *   Detail your thought process for identifying each conceptual subtask.
-        *   Describe how you considered parallel processing and planned the
-            initial data flow at a high level.
-    *   When referring to conceptual tasks in your reasoning, use the
-        '$short_name' convention (e.g., $fetch_data, $process_item).
+<output_format>
+1. Objective Understanding & Strategic Reasoning (concise, <120 tokens):
+   <objective_interpretation>
+   - Core goal interpretation
+   - Key aspects, constraints, desired outcomes
+   - Assumptions made to resolve ambiguities
+   </objective_interpretation>
 
-2.  **Task List:**
-    *   List each conceptual subtask.
-    *   For each subtask, provide its '$short_name' and a brief, clear
-        description on a single line.
-    *   Example: `$analyze_data - Analyzes the fetched data and extracts insights.`
+   <input_analysis>
+   - How inputs will be used
+   - Critical inputs per conceptual subtask
+   </input_analysis>
 
-## Warnings
-- Focus on *conceptual* subtasks here. Detailed schemas and dependencies
-  will be defined in the next phase.
-- Ensure your reasoning clearly justifies the proposed subtask breakdown based
-  on your understanding of the objective.
-- The '$short_name' for each task should be unique and descriptive.
- - Keep the narrative concise (<120 tokens). Do not reveal chain-of-thought; provide only the requested sections.
- - Output only the sections defined above; avoid additional commentary.
+   <subtask_rationale>
+   - How interpretation led to subtask breakdown
+   - Thought process for each subtask
+   - Parallel processing considerations
+   </subtask_rationale>
 
-## Context Dump
-**User's Objective:**
-{{ objective }}
+   Use '$short_name' convention (e.g., $fetch_data, $process_item)
 
-**Available Inputs:**
-{{ inputs_info }}
+2. Task List:
+   - Format: `$task_name - Brief description`
+   - Example: `$analyze_data - Analyzes fetched data and extracts insights`
+</output_format>
 
-**Output Schema:**
-{{ output_schema }}
+<constraints>
+- Focus on conceptual subtasks only (no detailed schemas yet)
+- Ensure unique, descriptive '$short_name' for each task
+- Output only requested sections, no extra commentary
+</constraints>
 
-**Execution Tools Available (for the Agent to potentially use later):**
-{{ execution_tools_info }}
+<context>
+User's Objective: {{ objective }}
+Available Inputs: {{ inputs_info }}
+Output Schema: {{ output_schema }}
+Execution Tools: {{ execution_tools_info }}
+</context>
 """
 
 DATA_FLOW_ANALYSIS_TEMPLATE = """
-# PHASE 1: DATA FLOW ANALYSIS - Defining Dependencies and Contracts
+<phase>PHASE 1: DATA FLOW ANALYSIS - Defining Dependencies and Contracts</phase>
 
-## Goal
-Your goal in this phase is to refine the conceptual subtask plan from Phase 0 
-by defining the precise data flow and dependencies between subtasks. You should 
-also visualize this data flow.
+<goal>
+Refine conceptual subtask plan from Phase 0 by defining precise data flow and dependencies.
+</goal>
 
-Specifically, you must:
-- Review the conceptual subtask list generated in Phase 0 (available in the 
-  conversation history).
-- For each conceptual subtask, determine which other subtasks it depends on 
-  for input data (via their task IDs).
-- Subtasks can also depend on input keys from the provided inputs dictionary.
-- Establish the dependencies between subtasks based on data flow requirements.
-- Refine the high-level instructions for each subtask if necessary, keeping 
-  them concise.
-- Ensure the subtask(s) producing the final result will generate output 
-  matching the overall task requirements.
+<instructions>
+1. Review conceptual subtask list from Phase 0 (in conversation history)
+2. For each subtask:
+   - Determine dependencies on other subtasks (via task IDs)
+   - Identify dependencies on input keys from inputs dictionary
+   - Refine high-level instructions (keep concise)
+3. Ensure final result subtask(s) match overall output requirements
+4. Validate all dependencies form a DAG (no cycles)
+</instructions>
 
-## Return Format
-Provide your output in the following structure:
+<output_format>
+1. Reasoning & Data Flow Analysis (concise, <150 tokens):
+   <data_flow_design>
+   - Dependency determination for each Phase 0 subtask
+   - Subtasks using input keys directly
+   - Refinements to subtask instructions
+   - Use '$name' convention for Phase 0 task references
+   </data_flow_design>
 
-1.  **Reasoning & Data Flow Analysis:**
-    *   Explain your data flow design choices, detailing how dependencies 
-        were determined for each subtask from Phase 0.
-    *   Identify which subtasks will use input keys directly from the inputs dictionary.
-    *   Describe any refinements made to subtask instructions.
-    *   Use the '$name' convention when referring to tasks from Phase 0 in 
-        your reasoning.
+2. Data Flow (DOT/Graphviz):
+   ```dot
+   digraph DataPipeline {
+     "input:data_file" -> "$process_data";
+     "$fetch_data" -> "$process_data";
+     "$process_data" -> "$analyze_results";
+     "$analyze_results" -> "$generate_report";
+   }
+   ```
+   - Include input keys as source nodes (format: "input:key_name")
+   - Process steps use '$short_name' from Phase 0
+</output_format>
 
-2.  **Data Flow (DOT/Graphviz Representation):**
-    *   Describe the data flow between all subtasks using the DOT/Graphviz 
-        syntax (see "Data Flow Representation (DOT/Graphviz Syntax) Guide" 
-        in Context Dump below).
-    *   Include input keys as source nodes in your graph when subtasks depend on them.
-    *   The process steps in your DOT graph should correspond to the 
-        '$short_name' of the conceptual subtasks.
-    *   Example:
-        ```dot
-        digraph DataPipeline {
-          "input:data_file" -> "$process_data";
-          "$fetch_data" -> "$process_data";
-          "$process_data" -> "$analyze_results";
-          "$analyze_results" -> "$generate_report";
-        }
-        ```
+<constraints>
+- Dependencies MUST form a DAG (Directed Acyclic Graph)
+- Input keys reference names from inputs dictionary
+- Clearly link Phase 0 tasks to concrete data flow
+- No chain-of-thought in output
+</constraints>
 
-## Warnings
-- **DAG Requirement:** The defined dependencies MUST form a Directed Acyclic Graph (DAG). No circular dependencies.
-- **Input Keys:** Input keys can be referenced in input_tasks using their key names from the inputs dictionary.
-- **Clarity:** Your reasoning should clearly link the conceptual tasks from 
-  Phase 0 to the concrete data flow defined here.
- - Be concise (<150 tokens for the reasoning section). Do not reveal chain-of-thought.
-
-## Context Dump
-**User's Objective:**
-{{ objective }}
-
-**Available Inputs:**
-{{ inputs_info }}
-
-**Conceptual Subtask Plan from Phase 0:**
-(This will be available in the preceding conversation history. Please refer to 
-it.)
-
-**Output Schema:**
-{{ output_schema }}
-
-**Execution Tools Available (for the Agent to potentially use later):**
-{{ execution_tools_info }}
-
-**Data Flow Representation (DOT/Graphviz Syntax) Guide:**
-{{ COMPACT_SUBTASK_NOTATION_DESCRIPTION }}
+<context>
+User's Objective: {{ objective }}
+Available Inputs: {{ inputs_info }}
+Conceptual Subtask Plan: (see conversation history)
+Output Schema: {{ output_schema }}
+Execution Tools: {{ execution_tools_info }}
+DOT/Graphviz Guide: {{ COMPACT_SUBTASK_NOTATION_DESCRIPTION }}
+</context>
 """
 
 PLAN_CREATION_TEMPLATE = """
-# PHASE 2: PLAN CREATION - Generating the Executable Task
+<phase>PHASE 2: PLAN CREATION - Generating the Executable Task</phase>
 
-## Goal
-Your primary goal in this phase is to transform the conceptual subtask plan 
-and data flow analysis from the previous phases into a concrete, executable 
-task plan. This is achieved by making a single, valid call to the `create_task` 
-tool.
+<goal>
+Transform conceptual subtask plan and data flow from previous phases into concrete, executable task plan via single `create_task` tool call.
+</goal>
 
-You must also provide detailed reasoning for the construction of this final 
-plan *before* making the tool call.
+<output_format>
+1. Brief Justification (<200 tokens, no chain-of-thought):
+   <plan_construction>
+   - How Phase 1 subtasks/data flow translate to `create_task` arguments
+   - Decisions for `content`, `input_tasks`, `output_schema` per subtask
+   - Validation criteria met (DAG, final output conformance)
+   - Data flow summary based on `input_tasks` dependencies
+   - Use '$name' convention for Phase 0 task references
+   </plan_construction>
 
-## Return Format
-Your response MUST be structured as follows:
+2. `create_task` Tool Call:
+   - Make exactly ONE call immediately after justification
+   - No additional text after tool call
+</output_format>
 
-1.  **Brief Justification and Final Plan Construction (concise):**
-    *   Provide your comprehensive reasoning for constructing the final 
-        executable task plan.
-    *   Explain how you translated the refined conceptual subtasks and data 
-        flow (from Phase 1, including DOT graph if applicable) into the 
-        specific arguments for the `create_task` tool.
-    *   Detail your decisions for `content`, `input_tasks`, `output_schema`, 
-        `max_iterations`, `model`, and `is_intermediate_result` for each subtask.
-    *   Confirm how you ensured all validation criteria (see Warnings section) 
-        were met, including dependency management (DAG) and final output conformance.
-    *   If helpful, mentally construct or briefly describe the final data flow 
-        (as a DOT concept) based on the `input_tasks` dependencies you are 
-        defining for the `create_task` call.
-    *   Refer to conceptual tasks using the '$name' convention where 
-        appropriate in your reasoning.
-    *   Keep this justification concise (<200 tokens). Do not reveal chain-of-thought.
+<create_task_guidelines>
+General Structure:
+- title: Appropriate title for overall task
+- subtasks: Array of subtask objects
 
-2.  **`create_task` Tool Call:**
-    *   Immediately following your reasoning, make exactly one call to the 
-        `create_task` tool to generate the entire plan.
-    *   Populate the tool call arguments meticulously based on your reasoning 
-        and the guidelines below.
-    *   Do not include any additional free-form text after the tool call.
+Per Subtask:
+- id: Unique identifier (e.g., "fetch_data", "analyze_results")
+- content: High-level natural language instructions
+  * Focus on WHAT to achieve, not HOW
+  * Mention which input keys to use if applicable
+- input_tasks: Array of subtask IDs or input keys this depends on
+  * From Phase 1 data flow graph
+  * Empty array [] for initial subtasks with no dependencies
+  * Can reference input dictionary keys (e.g., "data_file")
+- output_schema: Valid JSON string describing result structure
+  * Example: '{"type": "string"}' for unstructured
+  * Use concise, canonical JSON (no markdown)
 
-## Warnings: `create_task` Tool Call Guidelines
-Adhere strictly to the following when constructing the arguments for the 
-`create_task` tool:
+Pre-Tool-Call Validation Checklist:
+✓ All subtask IDs are unique
+✓ Dependencies form valid DAG (no cycles)
+✓ All referenced task IDs and input keys exist
+✓ Subtasks are focused and atomic
+✓ Terminal subtask output matches overall output schema
+✓ Schemas use canonical JSON format
 
-**General Structure:**
-*   **Overall Task `title`:** Set an appropriate title for the overall task.
-*   **Subtasks Array:** Construct the `subtasks` array, where each item is 
-    an object representing a subtask.
+Agent Execution Model (for awareness):
+- Agents call `finish_subtask` with result objects
+- Results auto-pass between subtasks via `input_tasks`
+- `read_result` tool fetches upstream task results or input keys
+- Input dictionary keys accessible same way as task results
+</create_task_guidelines>
 
-**For Each Subtask:**
-*   **`id`:** Unique identifier for the subtask (e.g., "fetch_data", "analyze_results").
-*   **`content` (Agent Instructions):**
-    *   MUST be high-level natural language instructions for the agent.
-    *   Focus on *what* the agent should achieve, not *how*.
-    *   If the subtask uses input keys, mention which inputs it should use.
-*   **`input_tasks`:**
-    *   Determine from the data flow graph (Phase 1).
-    *   List all subtask IDs that this subtask depends on for input data.
-    *   Can also include input keys from the inputs dictionary (e.g., if inputs has a key "data_file", you can include "data_file" in input_tasks).
-    *   Use an empty array [] if this is an initial subtask with no dependencies.
-*   **`output_schema`:**
-    *   Provide as a valid JSON string (e.g., `'{"type": "string"}'` for 
-        unstructured, or a more detailed schema).
-    *   This describes the structure of the result object the subtask will produce.
-*   **`max_iterations`:**
-    *   Set an integer value based on the subtask's complexity.
-    *   Use values like 5 for simple tasks, 10-15 for complex analysis. 
-        Default to 10 if unsure.
-*   **`model` (LLM Assignment):**
-    *   Assign the appropriate LLM:
-        *   Use `{{ model }}` (primary model) for standard tasks.
-        *   Use `{{ reasoning_model }}` (reasoning model) for subtasks 
-            requiring complex analysis, code generation, or significant reasoning.
-    *   If unsure, default to `{{ model }}`.
-*   **`is_intermediate_result` (Boolean):**
-    *   Set to `true` if the subtask's output is primarily consumed by another 
-        subtask in the plan and is NOT a primary final output of the overall objective.
-    *   Set to `false` if the subtask's output represents a final deliverable 
-        for the user, or if it's a terminal output that directly contributes to 
-        the overall task goal.
-    *   Consider the `Overall Task Output Requirements` when deciding this for 
-        terminal subtasks.
-
-**Plan-Wide Validation (Perform these checks *before* calling the tool):**
-*   **Unique IDs:** Ensure ALL subtask `id` values are unique across the entire plan.
-*   **DAG Dependencies:** Subtask dependencies, as defined by `input_tasks` 
-    referencing other subtask IDs or input keys, MUST form a Directed Acyclic Graph (DAG). 
-    No cycles.
-*   **Input Availability:** Ensure each subtask only references task IDs that 
-    exist in the plan or input keys that exist in the inputs dictionary.
-*   **Context Minimization:** Keep subtasks focused. The agent will pass results 
-    as objects between subtasks automatically.
-*   **Final Output Conformance:** The plan's final output (from the terminal 
-    subtask(s)) MUST conform to the output schema.
-*   **Determinism:** Prefer concise, canonical JSON strings for schemas. Avoid markdown.
-
-**Agent Execution Notes (for your planning awareness):**
-*   Agents executing these subtasks will call `finish_subtask` with result objects.
-*   Results are automatically passed between subtasks based on `input_tasks` dependencies.
-*   The agent uses the `read_result` tool to fetch results from upstream tasks or input keys.
-*   Input keys from the inputs dictionary are available in the context and can be referenced the same way as task results.
-
-## Context Dump
-**User's Objective:**
-{{ objective }}
-
-**Available Inputs:**
-{{ inputs_info }}
-
-**Conceptual Subtasks & Data Flow (from Phase 1):**
-(Refer to the conversation history for the refined subtask list and DOT 
-graph from Phase 1 to inform your `create_task` call.)
-
-**Output Schema:**
-{{ output_schema }}
-
-**Planner's LLM Models Available:**
-- Primary Model: `{{ model }}`
-- Reasoning Model: `{{ reasoning_model }}`
-
-**Execution Tools Available (for the Agent to potentially use within a subtask):**
-{{ execution_tools_info }}
+<context>
+User's Objective: {{ objective }}
+Available Inputs: {{ inputs_info }}
+Conceptual Subtasks & Data Flow: (see Phase 1 in conversation history)
+Output Schema: {{ output_schema }}
+LLM Models: Primary={{ model }}, Reasoning={{ reasoning_model }}
+Execution Tools: {{ execution_tools_info }}
+</context>
 """
 
-# Agent task prompt used in the final planning stage
+# Final validation checklist for plan creation
 DEFAULT_AGENT_TASK_TEMPLATE = """
----
-## Final Check: Subtask Design within `create_task`
+<final_check>
+Before emitting `create_task` tool call, verify each subtask:
 
-As you finalize the `create_task` call, please double-check these crucial 
-aspects for *each* subtask:
+1. Clarity of Purpose: `content` is crystal-clear, high-level objective for autonomous agent
+2. Self-Containment: `input_tasks` lists all upstream dependencies needed
+3. Output Precision: `output_schema` accurately describes result structure
+4. DAG Integrity: All dependencies exist and form acyclic graph (no orphans)
+5. Naming: Subtask `id`s unique, descriptive, consistent with `input_tasks` references
+6. Output Fit: Terminal subtask output matches overall task `output_schema`
 
-1.  **Clarity of Purpose:** Is the `content` a crystal-clear, high-level 
-    objective for an autonomous agent?
-2.  **Self-Containment (Inputs):** Does `input_tasks` correctly list all 
-    upstream task dependencies that this subtask needs?
-3.  **Output Precision:** Does `output_schema` accurately describe the 
-    structure of the result object that will be produced?
-4.  **Model Assignment:** Use `{{ model }}` for standard tasks and `{{ reasoning_model }}` for complex reasoning/code.
-5.  **Iteration Budget:** Set `max_iterations` proportionally to complexity; prefer the minimum needed.
-6.  **Intermediate Flag:** Mark `is_intermediate_result=true` when output is only for downstream consumption.
-7.  **DAG Integrity:** All dependencies must exist and form an acyclic graph. No orphan subtasks.
-8.  **Naming:** Subtask `id`s are unique, descriptive, and consistent with references in `input_tasks`.
-9.  **Output Fit:** Terminal subtask output matches the overall task `output_schema`.
+Verify plan addresses: {{ objective }}
 
-Ensure your overall plan effectively addresses the original `{{ objective }}` 
-using the available resources and adheres to the final output requirements.
-
-Discipline: keep justification concise and do not reveal chain-of-thought. After this checklist, immediately emit the single `create_task` tool call with no extra commentary.
+After checklist, immediately emit single `create_task` tool call. No chain-of-thought. No extra commentary.
+</final_check>
 """
 
 
@@ -561,7 +455,7 @@ class TaskPlanner:
 
     def __init__(
         self,
-        provider: ChatProvider,
+        provider: BaseProvider,
         model: str,
         objective: str,
         workspace_dir: str,
@@ -594,7 +488,7 @@ class TaskPlanner:
         """
         # Note: debug logging will be handled by display_manager initialization
 
-        self.provider: ChatProvider = provider
+        self.provider: BaseProvider = provider
         self.model: str = model
         self.reasoning_model: str = reasoning_model or model
         self.objective: str = objective

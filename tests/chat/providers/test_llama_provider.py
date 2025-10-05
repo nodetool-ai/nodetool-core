@@ -108,8 +108,8 @@ from openai.types.chat.chat_completion_message_tool_call import (
 )
 from openai.types.completion_usage import CompletionUsage
 
-from nodetool.chat.providers.llama_provider import LlamaProvider
-from nodetool.chat.providers.llama_server_manager import LlamaServerManager
+from nodetool.providers.llama_provider import LlamaProvider
+from nodetool.providers.llama_server_manager import LlamaServerManager
 from nodetool.metadata.types import Message, MessageTextContent, ToolCall
 from tests.chat.providers.test_base_provider import BaseProviderTest, ResponseFixtures
 

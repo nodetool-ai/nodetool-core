@@ -5,7 +5,7 @@ from nodetool.agents.sub_task_context import (
     SubTaskContext,
 )
 from nodetool.metadata.types import Task, SubTask
-from nodetool.chat.providers.base import MockProvider
+from nodetool.providers.base import MockProvider
 from nodetool.workflows.processing_context import ProcessingContext
 import tiktoken
 

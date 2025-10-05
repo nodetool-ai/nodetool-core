@@ -42,7 +42,7 @@ from rich.columns import Columns  # Add Columns
 # Existing imports
 from nodetool.agents.agent import Agent
 from nodetool.api.model import get_language_models
-from nodetool.chat.providers import get_provider
+from nodetool.providers import get_provider
 from nodetool.chat.regular_chat import process_regular_chat
 from nodetool.metadata.types import Message, ToolCall, LanguageModel
 from nodetool.workflows.processing_context import ProcessingContext
@@ -78,7 +78,6 @@ from nodetool.agents.tools.workspace_tools import (
     WriteFileTool,
 )
 from nodetool.workflows.types import Chunk
-
 
 
 class ChatCLI:
@@ -150,9 +149,14 @@ class ChatCLI:
         from nodetool.chat.commands.exit import ExitCommand
         from nodetool.chat.commands.help import HelpCommand
         from nodetool.chat.commands.model import ModelCommand, ModelsCommand
-        from nodetool.chat.commands.tools import ToolDisableCommand, ToolEnableCommand, ToolsCommand
+        from nodetool.chat.commands.tools import (
+            ToolDisableCommand,
+            ToolEnableCommand,
+            ToolsCommand,
+        )
         from nodetool.chat.commands.usage import UsageCommand
         from nodetool.chat.commands.workflow import RunWorkflowCommand
+
         commands = [
             HelpCommand(),
             ExitCommand(),
@@ -180,13 +184,13 @@ class ChatCLI:
             from nodetool.packages.registry import Registry
             from nodetool.metadata.node_metadata import get_node_classes_from_namespace
             import importlib
-            
+
             registry = Registry()
             packages = registry.list_installed_packages()
-            
+
             total_loaded = 0
             total_packages = len(packages)
-            
+
             for package in packages:
                 if package.nodes:
                     # Collect unique namespaces from this package
@@ -194,43 +198,52 @@ class ChatCLI:
                     for node_metadata in package.nodes:
                         node_type = node_metadata.node_type
                         # Extract namespace from node_type (e.g., "nodetool.text" from "nodetool.text.Concatenate")
-                        namespace_parts = node_type.split('.')[:-1]
-                        if len(namespace_parts) >= 2:  # Must have at least nodetool.something
-                            namespace = '.'.join(namespace_parts)
+                        namespace_parts = node_type.split(".")[:-1]
+                        if (
+                            len(namespace_parts) >= 2
+                        ):  # Must have at least nodetool.something
+                            namespace = ".".join(namespace_parts)
                             namespaces.add(namespace)
-                    
+
                     # Load each unique namespace from this package
                     for namespace in namespaces:
                         try:
                             # Try to import the module directly
-                            if namespace.startswith('nodetool.nodes.'):
+                            if namespace.startswith("nodetool.nodes."):
                                 module_path = namespace
                             else:
                                 module_path = f"nodetool.nodes.{namespace}"
-                            
+
                             importlib.import_module(module_path)
                             total_loaded += 1
                         except ImportError:
                             # Try alternative approach using get_node_classes_from_namespace
                             try:
-                                if namespace.startswith('nodetool.'):
-                                    namespace_suffix = namespace[9:]  # Remove 'nodetool.'
-                                    get_node_classes_from_namespace(f"nodetool.nodes.{namespace_suffix}")
+                                if namespace.startswith("nodetool."):
+                                    namespace_suffix = namespace[
+                                        9:
+                                    ]  # Remove 'nodetool.'
+                                    get_node_classes_from_namespace(
+                                        f"nodetool.nodes.{namespace_suffix}"
+                                    )
                                     total_loaded += 1
                                 else:
-                                    get_node_classes_from_namespace(f"nodetool.nodes.{namespace}")
+                                    get_node_classes_from_namespace(
+                                        f"nodetool.nodes.{namespace}"
+                                    )
                                     total_loaded += 1
                             except Exception:
                                 # Silent fail for packages that can't be loaded
                                 pass
-            
+
             from nodetool.workflows.base_node import NODE_BY_TYPE
+
             total_nodes = len(NODE_BY_TYPE)
-            
+
             self.console.print(
                 f"[bold green]Loaded {total_packages} packages with {total_nodes} available nodes[/bold green]"
             )
-            
+
         except Exception as e:
             self.console.print(
                 f"[bold yellow]Warning:[/bold yellow] Failed to load all packages: {e}"
@@ -242,7 +255,7 @@ class ChatCLI:
         # Load all available packages during startup
         self.console.print("[bold cyan]Loading available packages...[/bold cyan]")
         self.load_all_node_packages()
-        
+
         # Initialize components with progress indicators
         try:
             self.language_models = await get_language_models()
@@ -315,7 +328,7 @@ class ChatCLI:
             ScreenshotTool(),
             SearchEmailTool(),
         ]
-        
+
         # Initialize workflow tools
         workflow_tools: list[Any] = []
         try:
@@ -332,37 +345,45 @@ class ChatCLI:
             self.console.print(
                 f"[bold green]Loaded {len(workflow_tools)} workflow tools[/bold green]"
             )
-        
+
         # Initialize node tools
         from nodetool.workflows.base_node import NODE_BY_TYPE
         from nodetool.agents.tools.node_tool import NodeTool
-        
+
         node_tools = []
         for node_type, node_class in NODE_BY_TYPE.items():
             try:
                 node_tool = NodeTool(node_class)
                 node_tools.append(node_tool)
             except Exception as e:
-                self.console.print(f"[bold yellow]Warning:[/bold yellow] Failed to create node tool for {node_type}: {e}")
-        
+                self.console.print(
+                    f"[bold yellow]Warning:[/bold yellow] Failed to create node tool for {node_type}: {e}"
+                )
+
         if node_tools:
-            self.console.print(f"[bold green]Loaded {len(node_tools)} node tools[/bold green]")
-        
+            self.console.print(
+                f"[bold green]Loaded {len(node_tools)} node tools[/bold green]"
+            )
+
         # Store all available tools (standard tools + workflow tools + node tools)
         self.all_tools = standard_tools + workflow_tools + node_tools
-        
+
         # Initialize enabled_tools tracking if not already set
         for tool in self.all_tools:
             tool_name = tool.name
             if tool_name not in self.enabled_tools:
                 self.enabled_tools[tool_name] = False  # Default to disabled
-        
+
         # Filter tools based on enabled status
-        self.tools = [tool for tool in self.all_tools if self.enabled_tools.get(tool.name, False)]
+        self.tools = [
+            tool for tool in self.all_tools if self.enabled_tools.get(tool.name, False)
+        ]
 
     def refresh_tools(self):
         """Refresh the tools list based on current enabled status."""
-        self.tools = [tool for tool in self.all_tools if self.enabled_tools.get(tool.name, False)]
+        self.tools = [
+            tool for tool in self.all_tools if self.enabled_tools.get(tool.name, False)
+        ]
 
     async def setup_prompt_session(self):
         """Set up prompt_toolkit session with completers and styling."""
@@ -463,7 +484,7 @@ class ChatCLI:
         """Process a problem with the Agent and display the response with rich formatting."""
         self.agent = self.initialize_agent(problem)
         output = ""
-        
+
         async for item in self.agent.execute(self.context):
             if isinstance(item, Chunk):
                 output += item.content
@@ -477,7 +498,7 @@ class ChatCLI:
                     self.console.print(
                         f"\n[bold cyan][{item.name}]:[/bold cyan] {args}"
                     )
-        
+
         # Print final newline to separate from prompt
         self.console.print()
 
@@ -936,7 +957,7 @@ class ChatCLI:
 
         enabled_tools_count = len([t for t in self.enabled_tools.values() if t])
         total_tools_count = len(self.all_tools)
-        
+
         settings_list.extend(
             [
                 f"[bold cyan]Agent:[/bold cyan] {'ON' if self.agent_mode else 'OFF'} (/agent)",
@@ -1025,8 +1046,13 @@ class ChatCLI:
 
                     # Process regular chat without status wrapper to allow streaming output
                     from rich.status import Status
+
                     # Create a dummy status object for tool execution
-                    status = Status("[bold green]Processing...", console=self.console, spinner="dots")
+                    status = Status(
+                        "[bold green]Processing...",
+                        console=self.console,
+                        spinner="dots",
+                    )
                     self.messages = await process_regular_chat(
                         user_input=user_input,
                         messages=self.messages,

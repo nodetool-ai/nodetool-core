@@ -260,3 +260,45 @@ def numpy_to_audio_segment(arr: np.ndarray, sample_rate=44100) -> AudioSegment:
 
     # Create a pydub AudioSegment from raw data.
     return AudioSegment(arr_int16, sample_width=2, frame_rate=sample_rate, channels=1)
+
+
+def convert_audio_to_standard_format(
+    audio_bytes: bytes, target_sample_rate: int = 24000
+) -> np.ndarray:
+    """
+    Convert audio bytes to standardized 24kHz mono 16-bit numpy array.
+
+    This function:
+    1. Loads audio from bytes (any format)
+    2. Converts to mono if stereo
+    3. Resamples to target sample rate (default 24kHz)
+    4. Converts to int16 format
+
+    Args:
+        audio_bytes: Raw audio bytes (MP3, WAV, etc.)
+        target_sample_rate: Target sample rate in Hz (default 24000)
+
+    Returns:
+        np.ndarray: Audio data as int16 numpy array at target sample rate, mono
+    """
+    import io
+
+    # Load audio from bytes
+    audio = AudioSegment.from_file(io.BytesIO(audio_bytes))
+
+    # Convert to mono if stereo
+    if audio.channels > 1:
+        audio = audio.set_channels(1)
+
+    # Resample to target sample rate
+    if audio.frame_rate != target_sample_rate:
+        audio = audio.set_frame_rate(target_sample_rate)
+
+    # Ensure 16-bit sample width
+    if audio.sample_width != 2:
+        audio = audio.set_sample_width(2)
+
+    # Convert to numpy array (int16)
+    samples = np.array(audio.get_array_of_samples(), dtype=np.int16)
+
+    return samples

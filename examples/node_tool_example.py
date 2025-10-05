@@ -9,7 +9,7 @@ individual workflow nodes available as tools for agents.
 import asyncio
 from nodetool.agents.agent import Agent
 from nodetool.agents.tools.node_tool import NodeTool
-from nodetool.chat.providers import get_provider
+from nodetool.providers import get_provider
 from nodetool.metadata.types import Provider
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.base_node import BaseNode
@@ -20,31 +20,33 @@ from pydantic import Field
 # Example 1: Simple text processing node
 class TextProcessorNode(BaseNode):
     """Process text with various transformations."""
-    
+
     text: str = Field(description="Text to process")
     uppercase: bool = Field(default=False, description="Convert to uppercase")
     reverse: bool = Field(default=False, description="Reverse the text")
-    
+
     async def process(self, context: ProcessingContext) -> dict[str, str]:
         result = self.text
-        
+
         if self.uppercase:
             result = result.upper()
-        
+
         if self.reverse:
             result = result[::-1]
-            
+
         return {"processed": result}
 
 
 # Example 2: Math operation node
 class MathOperationNode(BaseNode):
     """Perform mathematical operations."""
-    
+
     a: float = Field(description="First number")
     b: float = Field(description="Second number")
-    operation: str = Field(default="add", description="Operation: add, subtract, multiply, divide")
-    
+    operation: str = Field(
+        default="add", description="Operation: add, subtract, multiply, divide"
+    )
+
     async def process(self, context: ProcessingContext) -> dict[str, float]:
         if self.operation == "add":
             result = self.a + self.b
@@ -58,50 +60,48 @@ class MathOperationNode(BaseNode):
             result = self.a / self.b
         else:
             raise ValueError(f"Unknown operation: {self.operation}")
-            
+
         return {"result": result}
 
 
 async def main():
     """Demonstrate using NodeTool with agents."""
-    
+
     # Create a processing context
     context = ProcessingContext(
         user_id="example_user",
         auth_token="example_token",
         workflow_id="example_workflow",
-        encode_assets_as_base64=False
+        encode_assets_as_base64=False,
     )
-    
+
     print("=== NodeTool with Agent Example ===\n")
-    
+
     # Example 1: Direct usage of NodeTool
     print("1. Direct NodeTool Usage:")
     text_tool = NodeTool(TextProcessorNode)
     print(f"Tool name: {text_tool.name}")
     print(f"Tool description: {text_tool.description}")
-    
+
     # Execute the text processing tool directly
-    result = await text_tool.process(context, {
-        "text": "Hello World",
-        "uppercase": True,
-        "reverse": False
-    })
+    result = await text_tool.process(
+        context, {"text": "Hello World", "uppercase": True, "reverse": False}
+    )
     print(f"Direct result: {result}\n")
-    
+
     # Example 2: Create tools for the agent
     print("2. Creating Agent with NodeTools:")
-    
+
     # Set up provider and model
     provider = get_provider(Provider.OpenAI)
     model = "gpt-4o-mini"
-    
+
     # Create NodeTools for the agent
     tools = [
         NodeTool(TextProcessorNode),
         NodeTool(MathOperationNode),
     ]
-    
+
     # Create an agent with custom node tools
     agent = Agent(
         name="Data Processing Agent",
@@ -118,15 +118,15 @@ async def main():
         tools=tools,
         enable_analysis_phase=True,
     )
-    
+
     print("\n3. Agent Execution:")
     print("Agent is working on the tasks...\n")
-    
+
     # Execute the agent
     async for item in agent.execute(context):
         if isinstance(item, Chunk):
             print(item.content, end="", flush=True)
-    
+
     print(f"\n\nWorkspace: {context.workspace_dir}")
     print("\nThe agent has completed all tasks using the custom NodeTools.")
 

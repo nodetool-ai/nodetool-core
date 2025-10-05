@@ -10,7 +10,7 @@ This script demonstrates how to create a single agent that:
 
 import asyncio
 from nodetool.agents.agent import Agent
-from nodetool.chat.providers import get_provider
+from nodetool.providers import get_provider
 from nodetool.agents.tools import GoogleSearchTool, BrowserTool
 from nodetool.metadata.types import Provider
 from nodetool.workflows.processing_context import ProcessingContext

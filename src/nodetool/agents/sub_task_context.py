@@ -178,7 +178,7 @@ import binascii
 import datetime
 import mimetypes
 import re
-from nodetool.chat.providers import ChatProvider
+from nodetool.providers import BaseProvider
 from nodetool.agents.tools.base import Tool
 from nodetool.metadata.types import Message, SubTask, Task, ToolCall, LogEntry
 from nodetool.workflows.types import Chunk, TaskUpdate, TaskUpdateEvent
@@ -457,7 +457,7 @@ class SubTaskContext:
     subtask: SubTask
     processing_context: ProcessingContext
     model: str
-    provider: ChatProvider
+    provider: BaseProvider
     max_token_limit: int
     use_finish_task: bool
     jinja_env: Environment
@@ -486,7 +486,7 @@ class SubTaskContext:
         processing_context: ProcessingContext,
         tools: Sequence[Tool],
         model: str,
-        provider: ChatProvider,
+        provider: BaseProvider,
         system_prompt: Optional[str] = None,
         use_finish_task: bool = False,
         max_token_limit: int | None = None,

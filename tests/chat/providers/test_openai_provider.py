@@ -70,7 +70,7 @@ from openai.types.chat.chat_completion_message_tool_call import (
 )
 from openai.types.completion_usage import CompletionUsage
 
-from nodetool.chat.providers.openai_provider import OpenAIProvider
+from nodetool.providers.openai_provider import OpenAIProvider
 from nodetool.metadata.types import Message, MessageTextContent, ToolCall
 from tests.chat.providers.test_base_provider import BaseProviderTest, ResponseFixtures
 

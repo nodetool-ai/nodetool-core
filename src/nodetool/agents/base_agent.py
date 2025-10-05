@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import AsyncGenerator, Sequence, Union, Any, Optional
 
-from nodetool.chat.providers import ChatProvider
+from nodetool.providers import BaseProvider
 from nodetool.agents.tools.base import Tool
 from nodetool.metadata.types import Task, ToolCall
 from nodetool.workflows.processing_context import ProcessingContext
@@ -18,7 +18,7 @@ class BaseAgent(ABC):
         self,
         name: str,
         objective: str,
-        provider: ChatProvider,
+        provider: BaseProvider,
         model: str,
         tools: Optional[Sequence[Tool]] = None,
         inputs: dict[str, Any] | None = None,

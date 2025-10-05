@@ -1,8 +1,8 @@
 import asyncio
 from nodetool.agents.simple_agent import SimpleAgent
-from nodetool.chat.providers import get_provider
+from nodetool.providers import get_provider
 from nodetool.agents.tools import GoogleSearchTool, BrowserTool
-from nodetool.chat.providers.base import ChatProvider
+from nodetool.providers.base import BaseProvider
 from nodetool.metadata.types import Provider, ToolCall, SubTask
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import Chunk, TaskUpdate
@@ -11,12 +11,14 @@ import dotenv
 dotenv.load_dotenv()
 
 
-async def run_simple_agent_test(provider: ChatProvider, model: str):
+async def run_simple_agent_test(provider: BaseProvider, model: str):
     """
     Tests the SimpleAgent with a basic objective.
     """
     context = ProcessingContext()
-    objective = "What is the weather in London according to https://www.bbc.com/weather/2643743"
+    objective = (
+        "What is the weather in London according to https://www.bbc.com/weather/2643743"
+    )
 
     print(f"Objective: {objective}")
 
