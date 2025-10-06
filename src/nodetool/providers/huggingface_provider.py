@@ -85,6 +85,33 @@ HF_PROVIDER_MAPPING = {
 }
 
 
+def _message_contains_media(message: Message) -> tuple[bool, str]:
+    """
+    Check if a message contains media content and return the type of media found.
+
+    Args:
+        message: The message to check for media content
+
+    Returns:
+        Tuple of (has_media, media_type) where media_type is "image", "audio", or "none"
+    """
+    if not message.content:
+        return False, "none"
+
+    if isinstance(message.content, str):
+        return False, "none"
+
+    if isinstance(message.content, list):
+        for part in message.content:
+            if isinstance(part, MessageImageContent):
+                return True, "image"
+            # Check for audio content if MessageAudioContent exists
+            if hasattr(part, '__class__') and 'Audio' in part.__class__.__name__:
+                return True, "audio"
+
+    return False, "none"
+
+
 async def fetch_image_models_from_hf_provider(
     provider: str, pipeline_tag: str, token: str | None = None
 ) -> List[ImageModel]:
@@ -680,7 +707,27 @@ class HuggingFaceProvider(BaseProvider):
                 body_text = getattr(getattr(e, "response", None), "text", None)
                 if isinstance(status, int) and 400 <= status < 500:
                     log.error(f"Non-retryable client error {status}; aborting retries")
-                    raise Exception(f"{status} {body_text or str(e)}")
+
+                    # Provide better error messages for 422 status codes
+                    if status == 422:
+                        # Check if the messages contain media that the model cannot process
+                        has_media = any(_message_contains_media(msg)[0] for msg in messages)
+                        if has_media:
+                            media_types = [_message_contains_media(msg)[1] for msg in messages if _message_contains_media(msg)[0]]
+                            media_str = ", ".join(set(media_types))
+                            raise Exception(
+                                f"422 Model '{model}' cannot process {media_str} content. "
+                                f"The model may not support multimodal input or the {media_str} format is not supported. "
+                                f"Original error: {body_text or str(e)}"
+                            )
+                        else:
+                            raise Exception(
+                                f"422 Model '{model}' received unprocessable input. "
+                                f"The model may not support the provided parameters or content format. "
+                                f"Original error: {body_text or str(e)}"
+                            )
+                    else:
+                        raise Exception(f"{status} {body_text or str(e)}")
                 if attempt < max_retries:
                     delay = base_delay * (2**attempt)  # Exponential backoff
                     log.debug(f"Retrying in {delay} seconds...")
@@ -923,7 +970,26 @@ class HuggingFaceProvider(BaseProvider):
             status = getattr(getattr(e, "response", None), "status_code", None)
             body_text = getattr(getattr(e, "response", None), "text", None)
             if status is not None:
-                raise Exception(f"{status} {body_text or str(e)}")
+                # Provide better error messages for 422 status codes in streaming
+                if status == 422:
+                    # Check if the messages contain media that the model cannot process
+                    has_media = any(_message_contains_media(msg)[0] for msg in messages)
+                    if has_media:
+                        media_types = [_message_contains_media(msg)[1] for msg in messages if _message_contains_media(msg)[0]]
+                        media_str = ", ".join(set(media_types))
+                        raise Exception(
+                            f"422 Model '{model}' cannot process {media_str} content in streaming mode. "
+                            f"The model may not support multimodal input or the {media_str} format is not supported. "
+                            f"Original error: {body_text or str(e)}"
+                        )
+                    else:
+                        raise Exception(
+                            f"422 Model '{model}' received unprocessable input in streaming mode. "
+                            f"The model may not support the provided parameters or content format. "
+                            f"Original error: {body_text or str(e)}"
+                        )
+                else:
+                    raise Exception(f"{status} {body_text or str(e)}")
             raise
 
     def get_usage(self) -> dict:

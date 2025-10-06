@@ -508,6 +508,7 @@ class TTSModel(BaseType):
     id: str = ""
     name: str = ""
     voices: list[str] = Field(default_factory=list)
+    selected_voice: str = ""
 
 
 class ASRModel(BaseType):
