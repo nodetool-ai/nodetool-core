@@ -66,6 +66,8 @@ async def unified_model(
     if model_info is None:
         return None
 
+    model_id = f"{model.repo_id}:{model.path}" if model.path is not None else model.repo_id
+
     # cache_path = try_to_load_from_cache(
     #     model.repo_id, model.path if model.path is not None else "config.json"
 
@@ -84,7 +86,7 @@ async def unified_model(
         else:
             size = size_on_disk(model_info)
     return UnifiedModel(
-        id=model.repo_id,
+        id=model_id,
         repo_id=model.repo_id,
         path=model.path,
         type=model.type,

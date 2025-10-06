@@ -63,33 +63,6 @@ PROVIDER_T = Literal[
     "together",
 ]
 
-class LanguageModelCache:
-    """
-    A class to manage caching of language models.
-    """
-
-    def __init__(self):
-        self.cache = {}
-
-    def get(self, key: str) -> Any:
-        if key in self.cache:
-            value, expiry_time = self.cache[key]
-            if expiry_time is None or time.time() < expiry_time:
-                return value
-            else:
-                del self.cache[key]  # Remove expired entry
-        return None
-
-    def set(self, key: str, value: Any, ttl: int = 3600):
-        expiry_time = time.time() + ttl
-        self.cache[key] = (value, expiry_time)
-
-    def clear(self):
-        self.cache.clear()
-
-# Dedicated in-memory cache for language models
-_language_model_cache = LanguageModelCache()
-
 # Provider mapping for HuggingFace Hub API
 HF_PROVIDER_MAPPING = {
     "cerebras": Provider.HuggingFaceCerebras,
@@ -127,52 +100,49 @@ async def fetch_image_models_from_hf_provider(
         List of ImageModel instances
     """
     try:
-        from huggingface_hub import HfApi
-        
-        api = HfApi(token=token)
-        
-        # List models with the specified pipeline tag and inference provider
-        # Note: HfApi.list_models doesn't support filtering by inference_provider directly
-        # So we use the API endpoint directly but with proper authentication
-        models_iterator = api.list_models(
-            filter=pipeline_tag,
-            limit=1000,
-            sort="downloads",
-            direction=-1,
-        )
-        
-        models = []
-        for model_info in models_iterator:
-            # Check if model has the right inference provider in its tags or config
-            model_id = model_info.id
-            if model_id:
-                # Use the model name from the ID
-                model_name = (
-                    model_id.split("/")[-1] if "/" in model_id else model_id
-                )
+        url = f"https://huggingface.co/api/models?inference_provider={provider}&pipeline_tag={pipeline_tag}&limit=1000"
 
-                # Get the appropriate provider enum value
-                provider_enum = HF_PROVIDER_MAPPING.get(provider)
-                if provider_enum is None:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url) as response:
+                if response.status == 200:
+                    models_data = await response.json()
+
+                    models = []
+                    for model_data in models_data:
+                        model_id = model_data.get("id", "")
+                        if model_id:
+                            # Use the model name from the API if available, otherwise use the ID
+                            model_name = (
+                                model_data.get("name") or model_id.split("/")[-1]
+                                if "/" in model_id
+                                else model_id
+                            )
+
+                            # Get the appropriate provider enum value
+                            provider_enum = HF_PROVIDER_MAPPING.get(provider)
+                            if provider_enum is None:
+                                log.warning(
+                                    f"Unknown image provider: {provider}, skipping model: {model_id}"
+                                )
+                                continue
+
+                            models.append(
+                                ImageModel(
+                                    id=model_id,
+                                    name=model_name,
+                                    provider=provider_enum,
+                                )
+                            )
+
+                    log.debug(
+                        f"Fetched {len(models)} image models from HF provider: {provider}"
+                    )
+                    return models
+                else:
                     log.warning(
-                        f"Unknown image provider: {provider}, skipping model: {model_id}"
+                        f"Failed to fetch image models for provider {provider}: HTTP {response.status}"
                     )
-                    continue
-
-                # For now, add all models - we may need to filter by provider later
-                # if HF API provides that capability
-                models.append(
-                    ImageModel(
-                        id=model_id,
-                        name=model_name,
-                        provider=provider_enum,
-                    )
-                )
-
-        log.debug(
-            f"Fetched {len(models)} image models from HF provider: {provider}"
-        )
-        return models
+                    return []
 
     except Exception as e:
         log.error(f"Error fetching image models for provider {provider}: {e}")
@@ -327,7 +297,7 @@ async def fetch_models_from_hf_provider(
 @register_provider(Provider.HuggingFaceSambanova, inference_provider="sambanova")
 @register_provider(Provider.HuggingFaceTogether, inference_provider="together")
 @register_provider(Provider.HuggingFaceScaleway, inference_provider="scaleway")
-@register_provider(Provider.HuggingFaceZAI, inference_provider="zai")
+@register_provider(Provider.HuggingFaceZAI, inference_provider="zai-org")
 class HuggingFaceProvider(BaseProvider):
     """
     HuggingFace implementation of the Provider interface.
@@ -1085,6 +1055,126 @@ class HuggingFaceProvider(BaseProvider):
                 f"Error fetching HuggingFace TTS models for provider {self.inference_provider}: {e}"
             )
             return []
+
+    async def text_to_image(
+        self,
+        params: Any,  # TextToImageParams
+        timeout_s: int | None = None,
+        context: Any = None,
+    ) -> bytes:
+        """Generate an image from a text prompt using HuggingFace text-to-image models.
+
+        Args:
+            params: Text-to-image generation parameters
+            timeout_s: Optional timeout in seconds
+            context: Processing context for asset handling
+
+        Returns:
+            Raw image bytes (PNG format)
+
+        Raises:
+            ValueError: If required parameters are missing
+            RuntimeError: If generation fails
+        """
+        log.debug(f"Generating image with HuggingFace model: {params.model.id}")
+
+        if not params.prompt:
+            raise ValueError("prompt must not be empty")
+
+        try:
+            # Use the text_to_image method from AsyncInferenceClient
+            image = await self.client.text_to_image(
+                prompt=params.prompt,
+                model=params.model.id,
+                negative_prompt=params.negative_prompt or None,
+                height=params.height if params.height else None,
+                width=params.width if params.width else None,
+                num_inference_steps=params.num_inference_steps,
+                guidance_scale=params.guidance_scale,
+                seed=params.seed if params.seed and params.seed >= 0 else None,
+                scheduler=params.scheduler if hasattr(params, 'scheduler') and params.scheduler else None,
+            )
+
+            log.debug("HuggingFace text-to-image API call successful")
+
+            # Convert PIL Image to bytes
+            import io
+            img_bytes = io.BytesIO()
+            image.save(img_bytes, format='PNG')
+            img_bytes.seek(0)
+
+            result = img_bytes.read()
+            log.debug(f"Generated {len(result)} bytes of image data")
+
+            return result
+
+        except Exception as e:
+            log.error(f"HuggingFace text-to-image generation failed: {e}")
+            raise RuntimeError(f"HuggingFace text-to-image generation failed: {str(e)}")
+
+    async def image_to_image(
+        self,
+        image: bytes,
+        params: Any,  # ImageToImageParams
+        timeout_s: int | None = None,
+        context: Any = None,
+    ) -> bytes:
+        """Transform an image based on a text prompt using HuggingFace image-to-image models.
+
+        Args:
+            image: Input image as bytes
+            params: Image-to-image generation parameters
+            timeout_s: Optional timeout in seconds
+            context: Processing context for asset handling
+
+        Returns:
+            Raw image bytes (PNG format)
+
+        Raises:
+            ValueError: If required parameters are missing
+            RuntimeError: If generation fails
+        """
+        log.debug(f"Transforming image with HuggingFace model: {params.model.id}")
+
+        if not params.prompt:
+            raise ValueError("prompt must not be empty")
+
+        try:
+            # Convert bytes to PIL Image for the API
+            from PIL import Image
+            import io
+
+            input_image = Image.open(io.BytesIO(image))
+
+            # Use the image_to_image method from AsyncInferenceClient
+            result_image = await self.client.image_to_image(
+                image=input_image,
+                prompt=params.prompt,
+                model=params.model.id,
+                negative_prompt=params.negative_prompt or None,
+                num_inference_steps=params.num_inference_steps,
+                guidance_scale=params.guidance_scale,
+                target_size={
+                    "width": params.target_width,
+                    "height": params.target_height,
+                } if hasattr(params, 'target_width') and params.target_width and hasattr(params, 'target_height') and params.target_height else None,
+            )
+
+            log.debug("HuggingFace image-to-image API call successful")
+
+            # Convert PIL Image to bytes
+            img_bytes = io.BytesIO()
+            result_image.save(img_bytes, format='PNG')
+            img_bytes.seek(0)
+
+            result = img_bytes.read()
+            log.debug(f"Generated {len(result)} bytes of image data")
+
+            return result
+
+        except Exception as e:
+            log.error(f"HuggingFace image-to-image generation failed: {e}")
+            raise RuntimeError(f"HuggingFace image-to-image generation failed: {str(e)}")
 
     async def get_available_image_models(self) -> List[ImageModel]:
         """

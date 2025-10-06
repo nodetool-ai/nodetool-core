@@ -26,14 +26,9 @@ def get_recommended_models() -> dict[str, list[UnifiedModel]]:
         for model in meta.recommended_models:
             if model is None:
                 continue
-            model_id = (
-                f"{model.repo_id}/{model.path}"
-                if model.path is not None
-                else model.repo_id
-            )
-            if model_id in model_ids:
+            if model.id in model_ids:
                 continue
-            model_ids.add(model_id)
+            model_ids.add(model.id)
             if model.repo_id is None:
                 continue
             models.setdefault(model.repo_id, []).append(model)
