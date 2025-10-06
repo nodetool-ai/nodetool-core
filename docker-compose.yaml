@@ -5,26 +5,20 @@ services:
       context: .
       dockerfile: Dockerfile
     volumes:
-      - "./key.pem:/app/key.pem"
-      - "./cert.pem:/app/cert.pem"
       - ${HF_HOME}:/app/huggingface
       - /var/run/docker.sock:/var/run/docker.sock
       - ${CHROMA_PATH}:/chroma-data
     command:
       [
-        "uvicorn",
-        "nodetool.api.app:app",
+        "nodetool",
+        "serve",
         "--host",
         "0.0.0.0",
         "--port",
-        "443",
-        "--ssl-keyfile",
-        "/app/key.pem",
-        "--ssl-certfile",
-        "/app/cert.pem",
+        "8000",
       ]
-    ports:
-      - "443:443"
+    expose:
+      - "8000"
     environment:
       ENV: ${ENV:-development}
       ASSET_BUCKET: ${ASSET_BUCKET}
@@ -37,10 +31,14 @@ services:
       S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID}
       S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY}
       S3_REGION: ${S3_REGION}
-      OLLAMA_API_URL: ${OLLAMA_API_URL}
       SUPABASE_URL: ${SUPABASE_URL}
       SUPABASE_KEY: ${SUPABASE_KEY}
       OPENAI_API_KEY: ${OPENAI_API_KEY}
+      VLLM_BASE_URL: ${VLLM_BASE_URL:-http://vllm:8888}
+      VLLM_API_KEY: ${VLLM_API_KEY:-}
+      VLLM_HTTP_TIMEOUT: ${VLLM_HTTP_TIMEOUT:-600}
+      VLLM_VERIFY_TLS: ${VLLM_VERIFY_TLS:-0}
+      VLLM_CONTEXT_WINDOW: ${VLLM_CONTEXT_WINDOW:-128000}
       HF_HOME: /app/huggingface
       SENTRY_DSN: ${SENTRY_DSN}
       MEMCACHE_HOST: ${MEMCACHE_HOST}
@@ -57,15 +55,26 @@ services:
   memcached:
     image: memcached:bookworm
     restart: unless-stopped
-  ollama:
-    image: ollama/ollama:latest
+
+  vllm:
+    image: ${VLLM_IMAGE:-vllm/vllm-openai:latest}
     restart: unless-stopped
+    ipc: host
+    environment:
+      HUGGING_FACE_HUB_TOKEN: ${HF_TOKEN:-}
     volumes:
-      - ${OLLAMA_PATH}:/root/.ollama
-    expose:
-      - "11434"
+      - ${HF_HOME}:/root/.cache/huggingface
+    command:
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "${VLLM_PORT:-8888}"
+      - "--model"
+      - "${VLLM_MODEL:-Qwen/Qwen2.5-1.5B-Instruct}"
+      - "--max-model-len"
+      - "${VLLM_MAX_MODEL_LEN:-8192}"
     ports:
-      - "11434:11434"
+      - "${VLLM_PORT:-8888}:8888"
     deploy:
       resources:
         reservations:
@@ -73,6 +82,19 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    depends_on:
+      - api
+    volumes:
+      - ./docker/nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./cert.pem:/etc/nginx/certs/cert.pem:ro
+      - ./key.pem:/etc/nginx/certs/key.pem:ro
+    ports:
+      - "80:80"
+      - "443:443"
 
   # Build the nodetool image for the api service to use
   nodetool:

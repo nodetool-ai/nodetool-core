@@ -68,30 +68,23 @@ RUN uv python install $PYTHON_VERSION
 RUN uv venv --python $PYTHON_VERSION $VIRTUAL_ENV
 
 ENV PATH=$VIRTUAL_ENV/bin:$PATH
-    
+
 # Set up the working directory
 WORKDIR /app
 
-COPY . /app/src/
-ENV PYTHONPATH=/app/src/nodetool:$PYTHONPATH
-RUN uv pip install --no-cache-dir /app/src
+# Copy project into the image so we install the local checkout
+COPY . /app
 
-
-# Install Python packages from GitHub repositories and PyPI
+# Install Python packages from the local repo and required registries
 # These will now use the pip from the Python 3.11 virtual environment
 RUN echo "Installing nodetool packages..." && \
     uv pip install --python $VIRTUAL_ENV/bin/python --no-cache-dir \
     --extra-index-url https://nodetool-ai.github.io/nodetool-registry/simple/ \
     --extra-index-url https://download.pytorch.org/whl/cu121 \
     --index-strategy unsafe-best-match \
-    # nodetool-core \
+    ./ \
     nodetool-base \
-    nodetool-lib-audio \
-    nodetool-lib-data \
     nodetool-lib-image \
-    nodetool-lib-ml \
     nodetool-huggingface
 
 RUN /app/venv/bin/playwright install
-
-ENV PATH=/app/venv/bin:$PATH
