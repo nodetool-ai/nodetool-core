@@ -32,12 +32,16 @@ async def get_all_language_models() -> List[LanguageModel]:
     models = []
 
     for provider in list_providers():
-        print(provider)
-        provider_models = await provider.get_available_language_models()
-        models.extend(provider_models)
-        log.debug(
-            f"Provider '{provider.provider_name}' returned {len(provider_models)} models"
-        )
+        try:
+            provider_models = await provider.get_available_language_models()
+            models.extend(provider_models)
+            log.debug(
+                f"Provider '{provider.provider_name}' returned {len(provider_models)} models"
+            )
+        except Exception as e:
+            log.warning(
+                f"Failed to get models from provider '{provider.provider_name}': {e}"
+            )
 
     log.info(
         f"Discovered {len(models)} total language models from {len(list_providers())} providers"

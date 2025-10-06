@@ -100,7 +100,7 @@ async def fetch_image_models_from_hf_provider(
         List of ImageModel instances
     """
     try:
-        url = f"https://huggingface.co/api/models?inference_provider={provider}&pipeline_tag={pipeline_tag}&limit=1000"
+        url = f"https://huggingface.co/api/models?inference_provider={provider}&pipeline_tag={pipeline_tag}&limit=100"
 
         async with aiohttp.ClientSession() as session:
             async with session.get(url) as response:

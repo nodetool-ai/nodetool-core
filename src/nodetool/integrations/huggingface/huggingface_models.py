@@ -30,12 +30,17 @@ from nodetool.metadata.types import (
     Provider,
 )
 from nodetool.workflows.recommended_models import get_recommended_models
+from nodetool.ml.models.model_cache import ModelCache
 
 log = get_logger(__name__)
 
 # Cache configuration
 CACHE_VERSION = "1.0"
 CACHE_EXPIRY_DAYS = int(os.environ.get("NODETOOL_CACHE_EXPIRY_DAYS", "7"))
+
+# Model info cache instance - 24 hour TTL for model metadata
+_model_info_cache = ModelCache("model_info")
+MODEL_INFO_CACHE_TTL = 24 * 3600  # 24 hours in seconds
 
 GGUF_MODELS_FILE = Path(__file__).parent / "gguf_models.json"
 MLX_MODELS_FILE = Path(__file__).parent / "mlx_models.json"
@@ -155,22 +160,35 @@ async def fetch_model_readme(model_id: str) -> str | None:
 
 async def fetch_model_info(model_id: str) -> ModelInfo | None:
     """
-    Fetches model info from the Hugging Face API or cache
-    using the HfApi client
-    https://huggingface.co/api/models/{model_id}
+    Fetches model info from the cache or Hugging Face API.
+    Uses nodetool's disk-based cache with 24-hour TTL for model metadata.
 
     Args:
         model_id (str): The ID of the model to fetch.
 
     Returns:
-        ModelInfo: The model info.
+        ModelInfo: The model info, or None if not found.
     """
-    # Use HfApi to fetch model info
+    cache_key = f"model_info:{model_id}"
+
+    # Try to get from cache first
+    cached_result = _model_info_cache.get(cache_key)
+    if cached_result is not None:
+        log.debug(f"Cache hit for model info: {model_id}")
+        return cached_result
+
+    # Cache miss - fetch from API
+    log.debug(f"Cache miss for model info: {model_id}")
     api = HfApi()
     try:
         model_info: ModelInfo = await asyncio.get_event_loop().run_in_executor(
             None, lambda: api.model_info(model_id, files_metadata=True)
         )
+
+        # Store in cache for future use
+        _model_info_cache.set(cache_key, model_info, MODEL_INFO_CACHE_TTL)
+        log.debug(f"Cached model info for: {model_id}")
+
     except Exception as e:
         log.debug(f"Failed to fetch model info for {model_id}: {e}")
         return None
