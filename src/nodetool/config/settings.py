@@ -20,15 +20,6 @@ NOT_GIVEN = object()
 # Built-in settings and secrets are registered here so that other packages can
 # extend the configuration system via :func:`register_setting`.
 
-register_setting(
-    package_name="nodetool",
-    env_var="DEFAULT_EXECUTION_STRATEGY",
-    group="Execution",
-    description="Default execution strategy for workflows",
-    is_secret=False,
-    enum=[strategy.value for strategy in ExecutionStrategy],
-)
-
 # Settings
 register_setting(
     package_name="nodetool",
@@ -69,63 +60,35 @@ register_setting(
 register_setting(
     package_name="nodetool",
     env_var="OPENAI_API_KEY",
-    group="LLM",
+    group="OpenAI",
     description="OpenAI API key for accessing GPT models, DALL-E, and other OpenAI services",
     is_secret=True,
 )
 register_setting(
     package_name="nodetool",
     env_var="VLLM_BASE_URL",
-    group="LLM",
+    group="vLLM",
     description="Base URL for the vLLM OpenAI-compatible server (e.g., http://localhost:8000)",
     is_secret=False,
 )
 register_setting(
     package_name="nodetool",
-    env_var="VLLM_API_KEY",
-    group="LLM",
-    description="Optional API key for authenticating with the vLLM server",
-    is_secret=True,
-)
-register_setting(
-    package_name="nodetool",
-    env_var="VLLM_HTTP_TIMEOUT",
-    group="LLM",
-    description="HTTP timeout (seconds) for requests to the vLLM server",
-    is_secret=False,
-)
-register_setting(
-    package_name="nodetool",
-    env_var="VLLM_VERIFY_TLS",
-    group="LLM",
-    description="Set to 1 to enable TLS certificate verification when connecting to vLLM",
-    is_secret=False,
-)
-register_setting(
-    package_name="nodetool",
-    env_var="VLLM_CONTEXT_WINDOW",
-    group="LLM",
-    description="Default context window size for vLLM models",
-    is_secret=False,
-)
-register_setting(
-    package_name="nodetool",
     env_var="ANTHROPIC_API_KEY",
-    group="LLM",
+    group="Anthropic",
     description="Anthropic API key for accessing Claude models and other Anthropic services",
     is_secret=True,
 )
 register_setting(
     package_name="nodetool",
     env_var="GEMINI_API_KEY",
-    group="LLM",
+    group="Gemini",
     description="Gemini API key for accessing Google's Gemini AI models",
     is_secret=True,
 )
 register_setting(
     package_name="nodetool",
     env_var="HF_TOKEN",
-    group="Hugging Face",
+    group="HF",
     description="Hugging Face Token for accessing gated or private models on the Hugging Face Hub",
     is_secret=True,
 )
