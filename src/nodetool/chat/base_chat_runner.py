@@ -290,7 +290,7 @@ class BaseChatRunner(ABC):
     async def ensure_thread_exists(self, thread_id: str | None = None) -> str:
         """
         Ensure that a thread exists for this conversation.
-        Creates a new thread if thread_id is None.
+        Creates a new thread if thread_id is None or creates it with the provided ID if it doesn't exist.
 
         Args:
             thread_id: The thread ID to verify, or None to create a new one
@@ -316,10 +316,10 @@ class BaseChatRunner(ABC):
             try:
                 thread = await Thread.find(user_id=self.user_id, id=thread_id)
                 if not thread:
-                    log.warning(f"Thread {thread_id} not found for user {self.user_id}")
-                    # Create a new thread as fallback
-                    thread = await Thread.create(user_id=self.user_id)
-                    log.debug(f"Created new thread {thread.id} as fallback")
+                    log.info(f"Thread {thread_id} not found, creating it for user {self.user_id}")
+                    # Create a thread with the provided ID to maintain consistency with frontend
+                    thread = await Thread.create(user_id=self.user_id, id=thread_id)
+                    log.debug(f"Created thread {thread.id} with client-provided ID")
                     return thread.id
                 return thread_id
             except Exception as e:

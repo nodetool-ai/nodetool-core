@@ -36,3 +36,18 @@ async def test_create_thread(user_id: str):
     )
 
     assert await Thread.get(thread.id) is not None
+
+
+@pytest.mark.asyncio
+async def test_create_thread_with_custom_id(user_id: str):
+    custom_id = "custom-thread-id-123"
+    thread = await Thread.create(
+        user_id=user_id,
+        id=custom_id,
+    )
+
+    assert thread.id == custom_id
+    found_thread = await Thread.get(custom_id)
+    assert found_thread is not None
+    assert found_thread.id == custom_id
+    assert found_thread.user_id == user_id

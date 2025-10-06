@@ -243,6 +243,27 @@ class TestBaseChatRunner:
                 user_id="user_123", id="existing_thread_123"
             )
 
+    async def test_ensure_thread_exists_create_with_client_id(self):
+        """Test thread creation with client-provided ID when thread doesn't exist"""
+        self.runner.user_id = "user_123"
+
+        # Mock Thread.find to return None (thread doesn't exist)
+        with patch.object(Thread, "find", return_value=None):
+            # Mock Thread.create
+            with patch.object(Thread, "create") as mock_create:
+                mock_thread = Mock()
+                mock_thread.id = "client_thread_456"
+                mock_create.return_value = mock_thread
+
+                # Ensure thread exists with client-provided ID
+                thread_id = await self.runner.ensure_thread_exists("client_thread_456")
+
+                # Verify new thread was created with the client-provided ID
+                assert thread_id == "client_thread_456"
+                mock_create.assert_called_once_with(
+                    user_id="user_123", id="client_thread_456"
+                )
+
     async def test_validate_token_success(self):
         """Test successful token validation"""
         # Mock supabase client
