@@ -434,13 +434,12 @@ Configuration is loaded in this order (later sources override earlier ones):
 
 #### Deployment & Monitoring
 
-| Variable           | Description                         | Default                 |
-| ------------------ | ----------------------------------- | ----------------------- |
-| `NODETOOL_API_URL` | NodeTool API base URL               | `http://localhost:8000` |
-| `RUNPOD_API_KEY`   | RunPod API key for cloud deployment | -                       |
-| `SENTRY_DSN`       | Sentry error tracking DSN           | -                       |
-| `MEMCACHE_HOST`    | Memcache server host                | -                       |
-| `MEMCACHE_PORT`    | Memcache server port                | -                       |
+| Variable         | Description                         | Default |
+| ---------------- | ----------------------------------- | ------- |
+| `RUNPOD_API_KEY` | RunPod API key for cloud deployment | -       |
+| `SENTRY_DSN`     | Sentry error tracking DSN           | -       |
+| `MEMCACHE_HOST`  | Memcache server host                | -       |
+| `MEMCACHE_PORT`  | Memcache server port                | -       |
 
 ### Environment Detection
 

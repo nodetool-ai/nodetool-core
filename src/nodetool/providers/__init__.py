@@ -38,6 +38,7 @@ def import_providers():
     from nodetool.providers import openai_provider
     from nodetool.providers import fake_provider
     from nodetool.providers import huggingface_provider
+    from nodetool.providers import vllm_provider
 
     # TODO: implement better discovery of providers
     try:

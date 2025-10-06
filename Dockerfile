@@ -72,19 +72,36 @@ ENV PATH=$VIRTUAL_ENV/bin:$PATH
 # Set up the working directory
 WORKDIR /app
 
+# Build argument to control installation method
+# Set USE_LOCAL_WHEELS=1 to use local wheel files from ./dist/
+ARG USE_LOCAL_WHEELS=0
+
 # Copy project into the image so we install the local checkout
 COPY . /app
 
 # Install Python packages from the local repo and required registries
 # These will now use the pip from the Python 3.11 virtual environment
 RUN echo "Installing nodetool packages..." && \
-    uv pip install --python $VIRTUAL_ENV/bin/python --no-cache-dir \
-    --extra-index-url https://nodetool-ai.github.io/nodetool-registry/simple/ \
-    --extra-index-url https://download.pytorch.org/whl/cu121 \
-    --index-strategy unsafe-best-match \
-    ./ \
-    nodetool-base \
-    nodetool-lib-image \
-    nodetool-huggingface
+    if [ "$USE_LOCAL_WHEELS" = "1" ]; then \
+        echo "Using local wheel files from ./dist/" && \
+        uv pip install --python $VIRTUAL_ENV/bin/python --no-cache-dir \
+        --find-links /app/dist \
+        --extra-index-url https://download.pytorch.org/whl/cu121 \
+        --index-strategy unsafe-best-match \
+        nodetool-core \
+        nodetool-base \
+        nodetool-lib-image \
+        nodetool-huggingface; \
+    else \
+        echo "Using package index" && \
+        uv pip install --python $VIRTUAL_ENV/bin/python --no-cache-dir \
+        --extra-index-url https://nodetool-ai.github.io/nodetool-registry/simple/ \
+        --extra-index-url https://download.pytorch.org/whl/cu121 \
+        --index-strategy unsafe-best-match \
+        ./ \
+        nodetool-base \
+        nodetool-lib-image \
+        nodetool-huggingface; \
+    fi
 
 RUN /app/venv/bin/playwright install

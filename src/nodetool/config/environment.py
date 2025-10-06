@@ -31,7 +31,7 @@ DEFAULT_ENV = {
     "CHROMA_URL": None,
     "CHROMA_PATH": str(get_system_data_path("chroma")),
     "COMFY_FOLDER": None,
-    "EXECUTION_STRATEGY": "threaded",
+    "DEFAULT_EXECUTION_STRATEGY": "threaded",
     "MEMCACHE_HOST": None,
     "MEMCACHE_PORT": None,
     "DB_PATH": str(get_system_file_path("nodetool.sqlite3")),

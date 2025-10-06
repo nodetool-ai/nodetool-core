@@ -18,6 +18,7 @@ dependencies = [
     "aiohttp>=3.11.2",
     "websockets>=14.1",
     "fastapi>=0.115.5",
+    "fastmcp>=2.12.4",
     "openapi-pydantic",
     "uvicorn>=0.32.0",
     "msgpack>=1.1.0",

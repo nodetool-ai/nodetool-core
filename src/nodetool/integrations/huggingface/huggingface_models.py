@@ -207,7 +207,9 @@ def model_type_from_model_info(
     return None
 
 
-async def read_cached_hf_files(tags: list[str] = []) -> List[CachedFileInfo]:
+async def read_cached_hf_files(
+    tags: list[str] = [], any_tags: bool = False
+) -> List[CachedFileInfo]:
     """
     Reads all models from the Hugging Face cache.
 
@@ -229,8 +231,12 @@ async def read_cached_hf_files(tags: list[str] = []) -> List[CachedFileInfo]:
         # Get cached files from all revisions
         if model_info is None:
             continue
-        if tags and not all(tag in (model_info.tags or []) for tag in tags):
-            continue
+        if any_tags:
+            if tags and not any(tag in (model_info.tags or []) for tag in tags):
+                continue
+        else:
+            if tags and not all(tag in (model_info.tags or []) for tag in tags):
+                continue
         for revision in repo.revisions:
             for file_info in revision.files:
                 cached_files.append(
@@ -328,6 +334,58 @@ async def get_llamacpp_language_models_from_hf_cache() -> List[LanguageModel]:
 
     # Sort for stability: by repo then filename
     results.sort(key=lambda m: (m.id.split(":", 1)[0], m.id))
+    return results
+
+
+VLLM_SUPPORTED = {
+    "llama",
+    "mistral",
+    "mixtral",
+    "falcon",
+    "baichuan",
+    "qwen",
+    "qwen2",
+    "chatglm",
+    "opt",
+    "bloom",
+    "gpt_neox",
+    "gptj",
+    "gpt_neo",
+    "pythia",
+    "yi",
+}
+
+
+async def get_vllm_language_models_from_hf_cache() -> List[LanguageModel]:
+    """Return LanguageModel entries tagged as vLLM in cached metadata files."""
+    cached = await read_cached_hf_files(tags=list(VLLM_SUPPORTED), any_tags=True)
+    seen_repos: set[str] = set()
+    results: list[LanguageModel] = []
+
+    SUPPORTED_WEIGHT_EXTENSIONS = (".safetensors", ".bin", ".pt", ".pth")
+
+    for f in cached:
+        # Skip cache entries without an actual weight filename to point at
+        if not f.file_name:
+            continue
+
+        lower_name = f.file_name.lower()
+        if not lower_name.endswith(SUPPORTED_WEIGHT_EXTENSIONS):
+            continue
+
+        # We only need a single listing per repo, so collapse duplicates
+        if f.repo_id in seen_repos:
+            continue
+        seen_repos.add(f.repo_id)
+
+        repo_display = f.repo_id.split("/")[-1]
+        results.append(
+            LanguageModel(
+                id=f.repo_id,
+                name=repo_display,
+                provider=Provider.VLLM,
+            )
+        )
     return results
 
 

@@ -75,6 +75,41 @@ register_setting(
 )
 register_setting(
     package_name="nodetool",
+    env_var="VLLM_BASE_URL",
+    group="LLM",
+    description="Base URL for the vLLM OpenAI-compatible server (e.g., http://localhost:8000)",
+    is_secret=False,
+)
+register_setting(
+    package_name="nodetool",
+    env_var="VLLM_API_KEY",
+    group="LLM",
+    description="Optional API key for authenticating with the vLLM server",
+    is_secret=True,
+)
+register_setting(
+    package_name="nodetool",
+    env_var="VLLM_HTTP_TIMEOUT",
+    group="LLM",
+    description="HTTP timeout (seconds) for requests to the vLLM server",
+    is_secret=False,
+)
+register_setting(
+    package_name="nodetool",
+    env_var="VLLM_VERIFY_TLS",
+    group="LLM",
+    description="Set to 1 to enable TLS certificate verification when connecting to vLLM",
+    is_secret=False,
+)
+register_setting(
+    package_name="nodetool",
+    env_var="VLLM_CONTEXT_WINDOW",
+    group="LLM",
+    description="Default context window size for vLLM models",
+    is_secret=False,
+)
+register_setting(
+    package_name="nodetool",
     env_var="ANTHROPIC_API_KEY",
     group="LLM",
     description="Anthropic API key for accessing Claude models and other Anthropic services",

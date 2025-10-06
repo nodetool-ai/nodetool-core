@@ -28,25 +28,27 @@ The following providers are currently implemented:
 - **Anthropic (`anthropic_provider.py`):** Connects to Anthropic's Claude API.
 - **Gemini (`gemini_provider.py`):** Connects to Google's Gemini API.
 - **Ollama (`ollama_provider.py`):** Connects to a locally running Ollama instance, allowing the use of various open-source models.
+- **vLLM (`vllm_provider.py`):** Connects to an externally managed vLLM server that exposes an OpenAI-compatible API.
 
 ## Feature Support Summary
 
-| Feature                      | OpenAI (`openai_provider.py`) | Anthropic (`anthropic_provider.py`) | Gemini (`gemini_provider.py`) | Ollama (`ollama_provider.py`)             |
-| :--------------------------- | :---------------------------- | :---------------------------------- | :---------------------------- | :---------------------------------------- |
-| **Streaming**                | Yes ✅                        | Yes ✅                              | Yes ✅                        | Yes ✅                                    |
-| **Tool Use (Native)**        | Yes ✅                        | Yes ✅                              | Yes ✅                        | Yes ✅ (Model Dependent)                  |
-| **Tool Use (Textual)**       | No                            | No                                  | No                            | Yes ✅ (Fallback for incompatible models) |
-| **System Prompt**            | Yes ✅                        | Yes ✅                              | Yes ✅                        | Yes ✅                                    |
-| **Image Input (Multimodal)** | Yes ✅                        | Yes ✅                              | No ❌ (File input only)       | Yes ✅ (Base64)                           |
-| **File Input (Generic)**     | No ❌                         | No ❌                               | Yes ✅ (Via Blobs)            | No ❌                                     |
-| **JSON Mode**                | Yes ✅                        | Yes ✅ (Via Tool)                   | Yes ✅                        | Yes ✅ (Model Dependent)                  |
-| **API Key Required**         | Yes ✅                        | Yes ✅                              | Yes ✅                        | Optional                                  |
-| **Backend Type**             | Cloud ☁️                      | Cloud ☁️                            | Cloud ☁️                      | Local/Self-Hosted 🏠                      |
-| **Configuration**            | `OPENAI_API_KEY`              | `ANTHROPIC_API_KEY`                 | `GEMINI_API_KEY`              | `OLLAMA_API_URL`                          |
+| Feature                      | OpenAI (`openai_provider.py`) | Anthropic (`anthropic_provider.py`) | Gemini (`gemini_provider.py`) | Ollama (`ollama_provider.py`)             | vLLM (`vllm_provider.py`)                |
+| :--------------------------- | :---------------------------- | :---------------------------------- | :---------------------------- | :---------------------------------------- | :--------------------------------------- |
+| **Streaming**                | Yes ✅                        | Yes ✅                              | Yes ✅                        | Yes ✅                                    | Yes ✅                                   |
+| **Tool Use (Native)**        | Yes ✅                        | Yes ✅                              | Yes ✅                        | Yes ✅ (Model Dependent)                  | Yes ✅ (Model Dependent)                 |
+| **Tool Use (Textual)**       | No                            | No                                  | No                            | Yes ✅ (Fallback for incompatible models) | No                                        |
+| **System Prompt**            | Yes ✅                        | Yes ✅                              | Yes ✅                        | Yes ✅                                    | Yes ✅                                   |
+| **Image Input (Multimodal)** | Yes ✅                        | Yes ✅                              | No ❌ (File input only)       | Yes ✅ (Base64)                           | Yes ✅ (OpenAI format)                   |
+| **File Input (Generic)**     | No ❌                         | No ❌                               | Yes ✅ (Via Blobs)            | No ❌                                     | No ❌                                    |
+| **JSON Mode**                | Yes ✅                        | Yes ✅ (Via Tool)                   | Yes ✅                        | Yes ✅ (Model Dependent)                  | Yes ✅ (Model Dependent)                 |
+| **API Key Required**         | Yes ✅                        | Yes ✅                              | Yes ✅                        | Optional                                  | Optional                                 |
+| **Backend Type**             | Cloud ☁️                      | Cloud ☁️                            | Cloud ☁️                      | Local/Self-Hosted 🏠                      | Local/Self-Hosted / Cloud 🏠☁️          |
+| **Configuration**            | `OPENAI_API_KEY`              | `ANTHROPIC_API_KEY`                 | `GEMINI_API_KEY`              | `OLLAMA_API_URL`                          | `VLLM_BASE_URL`, `VLLM_API_KEY` (optional) |
 
 **Notes:**
 
 - **Ollama Tool Use:** Native tool use depends on the specific Ollama model. A textual fallback mechanism (prompting the model to generate specific text for tool calls) is available.
+- **vLLM Hosting:** vLLM instances are managed outside Nodetool; configure connection details via environment variables like `VLLM_BASE_URL` and `VLLM_API_KEY`.
 - **Ollama JSON Mode:** Support depends on the specific Ollama model's ability to follow formatting instructions.
 - **Anthropic JSON Mode:** Implemented by instructing the model to use a predefined "json_output" tool.
 - **Gemini File Input:** Supports generic file input via `Blob` data, not just images embedded directly in message content like other providers. Image content within messages is not implemented.

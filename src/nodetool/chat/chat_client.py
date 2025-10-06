@@ -11,7 +11,11 @@ import os
 from typing import Optional, List, Dict, Union, Any
 from pathlib import Path
 from openai import AsyncOpenAI
-from openai.types.chat import ChatCompletionAssistantMessageParam, ChatCompletionMessageParam, ChatCompletionUserMessageParam
+from openai.types.chat import (
+    ChatCompletionAssistantMessageParam,
+    ChatCompletionMessageParam,
+    ChatCompletionUserMessageParam,
+)
 from rich.console import Console
 from rich.panel import Panel
 from rich.live import Live
@@ -41,7 +45,6 @@ class OpenAIChatClient:
         server_url: str,
         auth_token: Optional[str] = None,
         model: Optional[str] = None,
-        provider: Optional[str] = None,
     ):
         """
         Initialize the chat client.
@@ -50,57 +53,50 @@ class OpenAIChatClient:
             server_url: Base URL of the chat server (e.g., 'http://localhost:8080')
             auth_token: Optional authentication token
             model: Optional initial model to use (e.g., 'gpt-oss:20b')
-            provider: Optional provider to use (e.g., 'openai', 'anthropic', 'ollama')
         """
         self.server_url = server_url.rstrip("/")
         self.auth_token = auth_token
         self.history: List[ChatCompletionMessageParam] = []
         self.current_model = model or "gpt-oss:20b"  # Default model
 
-        # Determine provider based on server URL if not specified
-        if provider:
-            self.current_provider = provider
-        elif "api.openai.com" in server_url:
-            self.current_provider = "openai"
-        else:
-            self.current_provider = "ollama"  # Default for local servers
-
         # Initialize OpenAI client with custom base URL
         self.client = AsyncOpenAI(
             api_key=auth_token or "nodetool-local",  # Dummy key for local server
             base_url=f"{self.server_url}/v1",
         )
-        
+
         # Setup history file for readline functionality
-        self.history_file = os.path.join(os.path.expanduser("~"), ".nodetool_chat_history")
-        
+        self.history_file = os.path.join(
+            os.path.expanduser("~"), ".nodetool_chat_history"
+        )
+
         # Initialize prompt session (will be set up in setup_prompt_session)
         self.session: Optional[PromptSession] = None
 
     async def setup_prompt_session(self) -> None:
         """Set up prompt_toolkit session with completers and styling."""
         # Define commands available for completion
-        commands = [
-            "clear", "help", "history", "model", "quit", "exit"
-        ]
-        
+        commands = ["clear", "help", "history", "model", "quit", "exit"]
+
         # Create nested completer for commands
         command_completer: Dict[str, Optional[Completer]] = {
             f"/{cmd}": None for cmd in commands
         }
-        
+
         # Create the main completer
         completer = NestedCompleter(command_completer)
-        
+
         # Create prompt style
-        style = Style.from_dict({
-            "prompt": "ansiblue bold",
-            "completion-menu.completion": "bg:#008888 #ffffff",
-            "completion-menu.completion.current": "bg:#00aaaa #000000",
-            "scrollbar.background": "bg:#88aaaa",
-            "scrollbar.button": "bg:#222222",
-        })
-        
+        style = Style.from_dict(
+            {
+                "prompt": "ansiblue bold",
+                "completion-menu.completion": "bg:#008888 #ffffff",
+                "completion-menu.completion.current": "bg:#00aaaa #000000",
+                "scrollbar.background": "bg:#88aaaa",
+                "scrollbar.button": "bg:#222222",
+            }
+        )
+
         # Create session with history and auto-suggest
         self.session = PromptSession(
             history=FileHistory(self.history_file),
@@ -170,9 +166,7 @@ class OpenAIChatClient:
         """
         try:
             models = await self.client.models.list()
-            console.print(
-                f"[bold green]✅ Connected to OpenAI API[/bold green]"
-            )
+            console.print(f"[bold green]✅ Connected to OpenAI API[/bold green]")
             console.print(f"Available models: {len(models.data)} found")
             return True
 
@@ -185,14 +179,14 @@ class OpenAIChatClient:
         if not self.history:
             console.print("[yellow]📭 No conversation history[/yellow]")
             return
-            
+
         console.print("[bold cyan]📚 Conversation History[/bold cyan]")
         console.print()
-        
+
         for i, message in enumerate(self.history, 1):
             role = message.get("role", "unknown").title()
             content = message.get("content", "")
-            
+
             # Handle different content types (string or array)
             if isinstance(content, str):
                 display_content = content
@@ -201,7 +195,7 @@ class OpenAIChatClient:
             else:
                 # For complex content types, convert to string
                 display_content = str(content)
-            
+
             if role == "User":
                 console.print(f"[bold blue]{i}. You:[/bold blue]")
                 console.print(f"   {display_content}")
@@ -235,9 +229,7 @@ class OpenAIChatClient:
         console.print("Use '/history' to view conversation history.")
         console.print("Use '/model' to change the AI model.")
         console.print("Use '/help' for more information.")
-        console.print(
-            f"\nCurrent model: [bold]{self.current_model}[/bold] (provider: {self.current_provider})"
-        )
+        console.print(f"\nCurrent model: [bold]{self.current_model}[/bold]")
         console.print("[dim]💡 Tab completion and command history enabled[/dim]\n")
 
         try:
@@ -245,11 +237,13 @@ class OpenAIChatClient:
                 try:
                     # Get user input with advanced prompt features
                     if self.session is None:
-                        console.print("[bold red]Error: Prompt session not initialized[/bold red]")
+                        console.print(
+                            "[bold red]Error: Prompt session not initialized[/bold red]"
+                        )
                         break
-                        
+
                     user_input = await self.session.prompt_async(
-                        "[You]> ",
+                        "> ",
                         multiline=False,
                     )
                     user_input = user_input.strip()
@@ -323,7 +317,7 @@ class OpenAIChatClient:
 
     def change_model(self, command: str) -> None:
         """
-        Change the current AI model and provider.
+        Change the current AI model.
 
         Args:
             command: The model command (e.g., '/model gpt-oss:20b ollama')
@@ -333,48 +327,15 @@ class OpenAIChatClient:
         if len(parts) == 1:
             # Just '/model' - show current model
             console.print(f"[bold]Current model:[/bold] {self.current_model}")
-            console.print(f"[bold]Current provider:[/bold] {self.current_provider}")
-            console.print("[dim]Usage: /model <model_name> <provider>[/dim]")
+            console.print("[dim]Usage: /model <model_name>[/dim]")
             return
 
-        if len(parts) == 2:
-            # Model name only - guess provider
-            model_name = parts[1]
-
-            # Guess provider based on model name
-            if "gpt" in model_name.lower():
-                provider = "openai"
-            elif "claude" in model_name.lower():
-                provider = "anthropic"
-            elif "gemini" in model_name.lower():
-                provider = "google"
-            elif ":" in model_name:  # Ollama models often have :tag format
-                provider = "ollama"
-            else:
-                console.print(
-                    "[yellow]⚠️ Could not determine provider. Please specify provider explicitly.[/yellow]"
-                )
-                console.print("[dim]Usage: /model <model_name> <provider>[/dim]")
-                return
-
-        elif len(parts) >= 3:
-            # Model name and provider specified
-            model_name = parts[1]
-            provider = parts[2]
-
-        else:
-            console.print("[red]Invalid command format[/red]")
-            console.print("[dim]Usage: /model <model_name> <provider>[/dim]")
-            return
-
-        # Update model and provider
-        self.current_model = model_name
-        self.current_provider = provider
+        # Update model
+        self.current_model = parts[1]
 
         console.print(
             f"[green]✅ Switched to model:[/green] [bold]{self.current_model}[/bold]"
         )
-        console.print(f"[green]Provider:[/green] [bold]{self.current_provider}[/bold]")
 
 
 async def run_chat_client(
@@ -382,7 +343,6 @@ async def run_chat_client(
     auth_token: Optional[str] = None,
     message: Optional[str] = None,
     model: Optional[str] = None,
-    provider: Optional[str] = None,
 ) -> None:
     """
     Run the chat client.
@@ -392,9 +352,8 @@ async def run_chat_client(
         auth_token: Optional authentication token
         message: Optional single message to send (non-interactive mode)
         model: Optional initial model to use
-        provider: Optional provider to use (for local servers)
     """
-    client = OpenAIChatClient(server_url, auth_token, model, provider)
+    client = OpenAIChatClient(server_url, auth_token, model)
 
     if message:
         # Non-interactive mode: send single message

@@ -333,6 +333,7 @@ class Provider(str, enum.Enum):
     Local = "local"
     LlamaCpp = "llama_cpp"
     Gemini = "gemini"
+    VLLM = "vllm"
     Empty = "empty"
     MLX = "mlx"
     FalAI = "fal_ai"
