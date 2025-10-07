@@ -79,6 +79,18 @@ class PreviewUpdate(BaseModel):
     node_id: str
     value: Any
 
+class SaveUpdate(BaseModel):
+    """
+    A message representing a save update from a node.
+    """
+
+    type: Literal["save_update"] = "save_update"
+    node_id: str
+    name: str
+    value: Any
+    output_type: str
+    metadata: dict[str, Any] = {}
+
 
 class ToolResultUpdate(BaseModel):
     """
@@ -250,6 +262,7 @@ ProcessingMessage = (
     | Notification
     | Prediction
     | PreviewUpdate
+    | SaveUpdate
     | LogUpdate
     | TaskUpdate
     | ToolCallUpdate

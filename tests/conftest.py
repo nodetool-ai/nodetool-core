@@ -315,6 +315,10 @@ class Add(BaseNode):
     a: int = 0
     b: int = 0
 
+    @classmethod
+    def get_node_type(cls) -> str:
+        return "tests.conftest.Add"
+
     async def process(self, context: ProcessingContext) -> int:
         return self.a + self.b
 
