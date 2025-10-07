@@ -817,36 +817,79 @@ Agent[calculator] → Evaluate → FormatResult → ToolResult
 
 ## Working with Files and Assets
 
-NodeTool workflows can work with files from any accessible path. File operations are not restricted to the workspace directory.
+NodeTool workflows can work with files in two ways: **assets** (managed files) and **direct file access**. For AI agents generating workflows, **use direct file paths** unless you specifically need asset management features.
+
+### For AI Agents: Use Direct File Paths
+
+When generating workflows programmatically, use direct file paths:
+
+```json
+{
+  "type": "image",
+  "uri": "/absolute/path/to/image.jpg"
+}
+```
+
+**Guidelines for agents:**
+- Use absolute paths: `/home/user/image.jpg` (not relative paths)
+- Files can be anywhere accessible to the system
+- No need to manage asset IDs or import files first
+- Simpler and more predictable for automated workflow generation
+
+### Assets vs Direct Files
+
+**Assets** are files imported through NodeTool's UI that get:
+- Asset IDs for tracking and management
+- Thumbnails and metadata
+- Organization in the asset editor
+- Version control
+
+**Direct file access** is simpler for agents:
+- Reference any accessible file directly
+- No import step required
+- Works with generated or temporary files
+- Less overhead for automated workflows
 
 ### File Reference Types
 
-Workflows use typed references for media and data files:
+All file references use this structure:
+```json
+{
+  "type": "image|audio|video|document|dataframe",
+  "uri": "file:///path/to/file.ext",
+  "asset_id": "uuid"  // Optional: only present for imported assets
+}
+```
 
-- **ImageRef**: Image files (JPG, PNG, GIF, etc.)
-  ```json
-  {"type": "image", "uri": "file:///workspace/image.jpg", "asset_id": "123"}
-  ```
+**Examples:**
+- Image: `{"type": "image", "uri": "file:///data/photo.jpg"}`
+- Audio: `{"type": "audio", "uri": "file:///sounds/music.mp3"}`
+- Document: `{"type": "document", "uri": "file:///docs/report.pdf"}`
+- Data: `{"type": "dataframe", "uri": "file:///data/dataset.csv"}`
 
-- **AudioRef**: Audio files (MP3, WAV, etc.)
-  ```json
-  {"type": "audio", "uri": "file:///workspace/audio.mp3", "asset_id": "456"}
-  ```
+### Working with Existing Workflows (Assets)
 
-- **VideoRef**: Video files (MP4, AVI, etc.)
-  ```json
-  {"type": "video", "uri": "file:///workspace/video.mp4", "asset_id": "789"}
-  ```
+When **reading or modifying existing workflows**, you may encounter assets:
 
-- **DocumentRef**: Document files (PDF, TXT, etc.)
-  ```json
-  {"type": "document", "uri": "file:///workspace/doc.pdf", "asset_id": "012"}
-  ```
+**Asset references** include an `asset_id`:
+```json
+{
+  "type": "image",
+  "uri": "file:///workspace/assets/image.jpg",
+  "asset_id": "550e8400-e29b-41d4-a716-446655440000"
+}
+```
 
-- **DataframeRef**: Tabular data files
-  ```json
-  {"type": "dataframe", "uri": "file:///workspace/data.csv", "asset_id": "345"}
-  ```
+**Guidelines for agents working with existing workflows:**
+- **Preserve asset references** when modifying workflows - don't convert them to direct paths unless necessary
+- **Check for asset_id field** to identify assets vs direct file references
+- **Assets provide stability** - the same asset can be referenced across multiple workflows
+- **Asset paths may use workspace URIs** like `file:///workspace/assets/`
+
+**When to convert assets to direct paths:**
+- When you need to work with files outside the workspace
+- When creating portable workflows that shouldn't depend on specific assets
+- When the asset no longer exists or is inaccessible
 
 ## Core Principles
 
