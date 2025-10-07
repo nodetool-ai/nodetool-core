@@ -252,34 +252,17 @@ class WorkflowRunner:
         if self._input_queue is None:
             raise RuntimeError("Input queue is not initialized")
         loop = self._runner_loop
+        op = event.get("op")
+        inp = event.get("input")
+        handle = event.get("handle")
+        if op is None or inp is None or handle is None:
+            raise ValueError("Invalid event")
         if loop is not None:
-            try:
-                try:
-                    op = event.get("op")
-                    inp = event.get("input")
-                    handle = event.get("handle")
-                    log.debug(
-                        f"Enqueue (thread-safe) input event: op={op} input={inp} handle={handle} current_thread={threading.get_ident()} loop_id={id(loop)}"
-                    )
-                except Exception:
-                    pass
-                loop.call_soon_threadsafe(self._input_queue.put_nowait, event)
-                return
-            except Exception:
-                # Fallback to direct put; best-effort if loop reference is stale
-                log.debug(
-                    "call_soon_threadsafe failed; falling back to direct queue put",
-                    exc_info=True,
-                )
-        try:
-            op = event.get("op")
-            inp = event.get("input")
-            handle = event.get("handle")
             log.debug(
-                f"Enqueue (direct) input event: op={op} input={inp} handle={handle} (no runner loop)"
+                f"Enqueue (thread-safe) input event: op={op} input={inp} handle={handle} current_thread={threading.get_ident()} loop_id={id(loop)}"
             )
-        except Exception:
-            pass
+            loop.call_soon_threadsafe(self._input_queue.put_nowait, event)
+            return
         self._input_queue.put_nowait(event)
 
     def _find_input_node_id(self, context: ProcessingContext, input_name: str) -> str:

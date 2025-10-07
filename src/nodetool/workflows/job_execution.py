@@ -12,6 +12,7 @@ from nodetool.models.job import Job
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.workflow_runner import WorkflowRunner
+from nodetool.workflows.job_log_handler import JobLogHandler
 
 log = get_logger(__name__)
 
@@ -50,6 +51,10 @@ class JobExecution(ABC):
         self._status: str = "starting"
         self._result: dict[str, Any] | None = None
         self._error: str | None = None
+        self._log_handler: JobLogHandler | None = None
+
+        # Install log handler to capture logs
+        self._install_log_handler()
 
     @property
     def status(self) -> str:
@@ -99,6 +104,50 @@ class JobExecution(ABC):
         """Push an input value to the job execution."""
         pass
 
+    def _install_log_handler(self) -> None:
+        """Install log handler to capture logs for this job."""
+        try:
+            self._log_handler = JobLogHandler.install_handler(
+                job_id=self.job_id,
+                max_logs=1000,
+            )
+            log.info(f"Installed log handler for job {self.job_id}")
+        except Exception as e:
+            log.error(f"Failed to install log handler for job {self.job_id}: {e}")
+
+    def _uninstall_log_handler(self) -> None:
+        """Uninstall and persist logs for this job."""
+        try:
+            if self._log_handler:
+                # Get captured logs
+                captured_logs = self._log_handler.get_logs()
+
+                # Uninstall the handler
+                JobLogHandler.uninstall_handler(self.job_id)
+                self._log_handler = None
+
+                log.info(f"Uninstalled log handler for job {self.job_id}, captured {len(captured_logs)} logs")
+
+                # Return logs for persistence
+                return captured_logs
+        except Exception as e:
+            log.error(f"Failed to uninstall log handler for job {self.job_id}: {e}")
+        return []
+
+    def get_live_logs(self, limit: int | None = None) -> list[dict]:
+        """
+        Get logs from the active log handler (for running jobs).
+
+        Args:
+            limit: Optional limit on number of logs to return
+
+        Returns:
+            List of log entries
+        """
+        if self._log_handler:
+            return self._log_handler.get_logs(limit=limit)
+        return []
+
     async def finalize_state(self) -> None:
         """
         Ensure finished jobs have their status written to the database.
@@ -107,6 +156,9 @@ class JobExecution(ABC):
         or missing a finished_at timestamp.
         """
         try:
+            # Capture and persist logs before finalizing
+            captured_logs = self._uninstall_log_handler()
+
             # Reload to ensure we operate on latest values
             await self.job_model.reload()
             update_kwargs = {}
@@ -115,6 +167,10 @@ class JobExecution(ABC):
                 update_kwargs["status"] = self._status
             if self.job_model.finished_at is None:
                 update_kwargs["finished_at"] = datetime.now()
+
+            # Add logs to the update
+            if captured_logs:
+                update_kwargs["logs"] = captured_logs
 
             if update_kwargs:
                 await self.job_model.update(**update_kwargs)
