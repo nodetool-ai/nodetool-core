@@ -817,7 +817,7 @@ Agent[calculator] → Evaluate → FormatResult → ToolResult
 
 ## Working with Files and Assets
 
-NodeTool workflows can work with files through the workspace directory. All file operations are scoped to the workspace for security.
+NodeTool workflows can work with files from any accessible path. File operations are not restricted to the workspace directory.
 
 ### File Reference Types
 
