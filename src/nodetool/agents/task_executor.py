@@ -7,16 +7,21 @@ from nodetool.agents.sub_task_context import (
     TaskUpdate,
 )
 from nodetool.agents.tools.base import Tool
+from nodetool.agents.tools.task_tools import AddSubtaskTool, ListSubtasksTool
 from nodetool.metadata.types import (
     SubTask,
     Task,
     ToolCall,
 )
 import os
+import asyncio
 from typing import AsyncGenerator, List, Sequence, Union, Any
 
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import Chunk
+from nodetool.config.logging_config import get_logger
+
+log = get_logger(__name__)
 
 
 class TaskExecutor:
@@ -29,11 +34,13 @@ class TaskExecutor:
     and which ones need to wait for others to finish.
 
     Features:
-    - Parallel execution of independent subtasks
+    - Parallel or sequential execution of independent subtasks
     - Dependency tracking and enforcement
+    - Dynamic subtask addition during execution (via AddSubtaskTool)
     - Progress persistence through file updates
     - Result collection and reporting
     - Workspace file management
+    - Thread-safe subtask list management for parallel execution
     """
 
     def __init__(
@@ -79,6 +86,11 @@ class TaskExecutor:
         self.output_files = []
         self.parallel_execution = parallel_execution
 
+        # Lock for thread-safe subtask list access in parallel mode
+        self._subtask_lock = asyncio.Lock()
+        # Track initial subtask count to detect dynamic additions
+        self._initial_subtask_count = len(task.subtasks)
+
     async def execute_tasks(
         self,
         context: ProcessingContext,
@@ -112,6 +124,14 @@ class TaskExecutor:
         while not self._all_tasks_complete() and steps_taken < self.max_steps:
             steps_taken += 1
 
+            # Check for dynamically added subtasks and log them
+            current_subtask_count = len(self.task.subtasks)
+            if current_subtask_count > self._initial_subtask_count:
+                new_count = current_subtask_count - self._initial_subtask_count
+                log.info(f"Detected {new_count} dynamically added subtask(s). Total subtasks: {current_subtask_count}")
+                # Update the initial count for next iteration
+                self._initial_subtask_count = current_subtask_count
+
             # Find all executable tasks
             executable_tasks = self._get_all_executable_tasks()
 
@@ -129,13 +149,22 @@ class TaskExecutor:
 
             # Create execution contexts for all executable subtasks
             for subtask in executable_tasks:
+                # Create enhanced tools list with task management capabilities
+                enhanced_tools = list(self.tools).copy()
+
+                # Add task management tools to allow dynamic subtask creation
+                enhanced_tools.extend([
+                    AddSubtaskTool(task=self.task),
+                    ListSubtasksTool(task=self.task),
+                ])
+
                 # Create subtask context
                 subtask_context = SubTaskContext(
                     task=self.task,
                     subtask=subtask,
                     processing_context=context,
                     system_prompt=self.system_prompt,
-                    tools=list(self.tools).copy(),
+                    tools=enhanced_tools,
                     model=self.model,
                     provider=self.provider,
                     max_token_limit=self.max_token_limit,

@@ -151,9 +151,12 @@ You are a TaskArchitect system that transforms user objectives into executable m
 
 <goal>
 Transform the user's objective into an executable plan through three phases:
-1. Analysis - Understand objective and break into conceptual subtasks
+1. Analysis - Understand objective and break into conceptual subtasks (using two-tier planning: discovery vs execution)
 2. Data Flow - Define dependencies and data contracts
-3. Plan Creation - Generate final executable task plan
+3. Plan Creation - Generate final executable task plan with planning tasks for dynamic work discovery
+
+**Dynamic Planning Capability:**
+Agents executing subtasks have access to the `add_subtask` tool, enabling adaptive workflows. Use "planning tasks" for work that requires discovery (e.g., finding URLs, identifying items to process). Planning tasks should explicitly instruct agents to use `add_subtask` to create focused subtasks for each discovered item.
 </goal>
 
 <operating_constraints>
@@ -177,6 +180,8 @@ Before emitting `create_task` tool call, verify:
 - Dependencies form a valid DAG (Directed Acyclic Graph)
 - All referenced task IDs and input keys exist
 - Subtasks are atomic (smallest executable units)
+- Planning tasks explicitly instruct agents to use `add_subtask` for discovered items
+- Execution tasks have clear, direct implementation instructions
 - Final output conforms to required schema
 </validation_checklist>
 """
@@ -186,7 +191,7 @@ ANALYSIS_PHASE_TEMPLATE = """
 <phase>PHASE 0: OBJECTIVE ANALYSIS & CONCEPTUAL SUBTASK BREAKDOWN</phase>
 
 <goal>
-Deeply understand the user's objective and decompose it into atomic conceptual subtasks.
+Deeply understand the user's objective and decompose it into atomic conceptual subtasks using a two-tier planning strategy: planning tasks for discovery and execution tasks for known work.
 </goal>
 
 <instructions>
@@ -195,11 +200,31 @@ Deeply understand the user's objective and decompose it into atomic conceptual s
    - Identify ambiguities and document assumptions
    - Consider output requirements and available inputs
 
-2. Devise strategic plan:
-   - Decompose objective into distinct atomic subtasks suitable for agent execution
-   - For multiple similar items (URLs, data points), create separate subtask per item
-   - Design subtasks with minimal execution context
-   - Map inputs to subtasks
+2. Devise strategic plan using two-tier task decomposition:
+
+   **Planning Tasks (Discovery & Dynamic Expansion):**
+   Use planning tasks when:
+   - The exact set of work items is unknown upfront (e.g., "find URLs", "discover products")
+   - Multiple similar items need processing (URLs, files, data points)
+   - Work quantity depends on search/discovery results
+
+   Planning tasks should:
+   - Use tools to discover what needs to be done
+   - Use the `add_subtask` tool to create focused subtasks for each discovered item
+   - Have output_schema describing the discovery results
+
+   Example: Instead of creating 10 URL processing subtasks upfront, create:
+   - $discover_urls: "Use GoogleSearch to find relevant URLs, then use add_subtask to create one processing task per URL found"
+
+   **Execution Tasks (Direct Implementation):**
+   Use execution tasks when:
+   - Work is clearly defined and scope is known
+   - No discovery phase needed
+   - Task is truly atomic (single focused action)
+
+   Example: $compile_results: "Aggregate all processing results into final report format"
+
+   **Key Principle:** Prefer planning tasks for iterative/multiple-item work. This enables adaptive planning based on actual discoveries.
 </instructions>
 
 <output_format>
@@ -217,15 +242,17 @@ Deeply understand the user's objective and decompose it into atomic conceptual s
 
    <subtask_rationale>
    - How interpretation led to subtask breakdown
-   - Thought process for each subtask
+   - Which tasks are planning tasks (discovery) vs execution tasks (direct)
+   - Why planning tasks are used for dynamic work discovery
    - Parallel processing considerations
    </subtask_rationale>
 
-   Use '$short_name' convention (e.g., $fetch_data, $process_item)
+   Use '$short_name' convention (e.g., $discover_urls, $compile_results)
 
-2. Task List:
-   - Format: `$task_name - Brief description`
-   - Example: `$analyze_data - Analyzes fetched data and extracts insights`
+2. Task List with Type Classification:
+   - Format: `$task_name [PLANNING|EXECUTION] - Brief description`
+   - Planning Task Example: `$discover_urls [PLANNING] - Search for Reddit AI workflow posts, create subtask per URL using add_subtask`
+   - Execution Task Example: `$compile_report [EXECUTION] - Aggregate all results into markdown report`
 </output_format>
 
 <constraints>
@@ -326,10 +353,23 @@ General Structure:
 - subtasks: Array of subtask objects
 
 Per Subtask:
-- id: Unique identifier (e.g., "fetch_data", "analyze_results")
-- content: High-level natural language instructions
-  * Focus on WHAT to achieve, not HOW
+- id: Unique identifier (e.g., "discover_urls", "analyze_results", "compile_report")
+- content: High-level natural language instructions (distinguish planning vs execution)
+
+  **For PLANNING tasks (discovery/dynamic expansion):**
+  * Explicitly instruct agent to use `add_subtask` tool after discovery
+  * Example: "Use GoogleSearch to find 3-5 Reddit posts about AI workflows. For each URL found, use the add_subtask tool to create a new subtask with:
+    - content: 'Fetch {{url}}.json with BrowserTool and extract post title, summary, and top 3 comments'
+    - input_tasks: [] (no dependencies)
+    - output_schema describing the extracted data"
+  * Be specific about what data to pass to dynamically created subtasks
   * Mention which input keys to use if applicable
+
+  **For EXECUTION tasks (direct implementation):**
+  * Focus on WHAT to achieve, not HOW
+  * Example: "Aggregate results from all URL processing subtasks into markdown report with sections per workflow"
+  * Mention which input keys to use if applicable
+
 - input_tasks: Array of subtask IDs or input keys this depends on
   * From Phase 1 data flow graph
   * Empty array [] for initial subtasks with no dependencies
@@ -351,6 +391,10 @@ Agent Execution Model (for awareness):
 - Results auto-pass between subtasks via `input_tasks`
 - `read_result` tool fetches upstream task results or input keys
 - Input dictionary keys accessible same way as task results
+- **Dynamic Planning**: Agents have access to `add_subtask` tool to create new subtasks during execution
+  * Planning tasks should explicitly instruct agent to use this tool
+  * Dynamically added subtasks execute after the planning task completes
+  * This enables adaptive workflows based on discovered data
 </create_task_guidelines>
 
 <context>
@@ -369,11 +413,14 @@ DEFAULT_AGENT_TASK_TEMPLATE = """
 Before emitting `create_task` tool call, verify each subtask:
 
 1. Clarity of Purpose: `content` is crystal-clear, high-level objective for autonomous agent
+   - Planning tasks: Explicitly instruct to use `add_subtask` after discovery
+   - Execution tasks: Clear direct implementation instructions
 2. Self-Containment: `input_tasks` lists all upstream dependencies needed
 3. Output Precision: `output_schema` accurately describes result structure
 4. DAG Integrity: All dependencies exist and form acyclic graph (no orphans)
 5. Naming: Subtask `id`s unique, descriptive, consistent with `input_tasks` references
 6. Output Fit: Terminal subtask output matches overall task `output_schema`
+7. Dynamic Planning: Planning tasks explicitly mention using `add_subtask` for discovered items
 
 Verify plan addresses: {{ objective }}
 

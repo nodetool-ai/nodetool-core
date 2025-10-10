@@ -8,6 +8,13 @@ This script creates an agent that:
 3. Analyzes product descriptions and tags to identify AI-powered products.
 4. Extracts information about these AI products.
 5. Organizes and saves the results as a structured Markdown report.
+
+**NEW: DYNAMIC SUBTASK SUPPORT**
+The agent can now dynamically add subtasks during execution! If the agent discovers
+product categories that need deeper investigation, related leaderboards, or specific
+AI technology segments worth exploring separately, it can use the add_subtask tool
+to create focused extraction tasks. This enables more thorough and organized product
+research.
 """
 
 import asyncio

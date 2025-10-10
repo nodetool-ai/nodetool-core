@@ -15,6 +15,12 @@ The agent is capable of:
 - Code optimization and refactoring
 - Automated testing and validation
 
+**NEW: DYNAMIC SUBTASK SUPPORT**
+The agent can now dynamically add subtasks during execution! If the agent discovers
+that additional analysis steps are needed (e.g., deeper statistical tests, additional
+visualizations, model comparisons), it can use the add_subtask tool to create new
+tasks on-the-fly. This enables more adaptive and thorough analysis.
+
 Usage:
     python test_coding_agent.py [--docker-image DOCKER_IMAGE]
 
@@ -114,6 +120,11 @@ async def run_data_analysis_agent(
         - Save all figures with descriptive names (e.g., 'feature_distributions.png')
         - Include interpretation for each visualization
         - Write clear, concise explanations suitable for both technical and non-technical audiences
+
+        **Dynamic Subtask Addition**:
+        You have access to the add_subtask tool. If you discover that certain analyses need
+        deeper investigation (e.g., outlier analysis, specific feature relationships, or
+        additional model types), you can create new subtasks dynamically for more focused work.
         """,
         "quick": """
         Perform a quick exploratory analysis of the Iris dataset.

@@ -1,8 +1,8 @@
 import pytest
-from typing import AsyncGenerator, Any, List, Set
+from typing import AsyncGenerator, Any, List
 
 from nodetool.agents.base_agent import BaseAgent
-from nodetool.providers.base import BaseProvider, ProviderCapability
+from nodetool.providers.base import BaseProvider
 from nodetool.workflows.types import Chunk
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.metadata.types import LanguageModel
@@ -12,13 +12,6 @@ class DummyProvider(BaseProvider):
     def __init__(self):
         super().__init__()
         self.calls = 0
-
-    def get_capabilities(self) -> Set[ProviderCapability]:
-        """Dummy provider supports message generation."""
-        return {
-            ProviderCapability.GENERATE_MESSAGE,
-            ProviderCapability.GENERATE_MESSAGES,
-        }
 
     def get_context_length(self, model: str) -> int:  # type: ignore[override]
         self.calls += 1

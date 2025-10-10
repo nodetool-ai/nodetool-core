@@ -9,6 +9,12 @@ by scraping multiple websites in batches. It showcases:
 - Context window optimization for multiple browser calls
 - Memory-efficient processing of large lists
 
+**NEW: DYNAMIC SUBTASK SUPPORT**
+While this example creates subtasks upfront, SubTaskContext now supports dynamic
+subtask addition. If you use TaskExecutor instead of directly calling SubTaskContext,
+agents can use the add_subtask tool to create new tasks during execution. For example,
+if a scraper discovers new URLs that need investigation, it can dynamically add them.
+
 The task scrapes a list of websites to extract key information like titles,
 descriptions, and main content, processing them in configurable batches to
 minimize context window usage.

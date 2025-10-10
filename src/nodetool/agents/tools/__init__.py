@@ -12,8 +12,17 @@ from nodetool.workflows.base_node import get_node_class, sanitize_node_name
 from .browser_tools import BrowserTool
 from .serp_tools import GoogleSearchTool
 from .workflow_tool import WorkflowTool
+from .task_tools import AddSubtaskTool, ListSubtasksTool
 
-__all__ = ["Tool", "get_tool_by_name", "BrowserTool", "GoogleSearchTool", "WorkflowTool"]
+__all__ = [
+    "Tool",
+    "get_tool_by_name",
+    "BrowserTool",
+    "GoogleSearchTool",
+    "WorkflowTool",
+    "AddSubtaskTool",
+    "ListSubtasksTool",
+]
 
 
 def get_tool_by_name(name: str) -> Optional[Type[Tool]]:

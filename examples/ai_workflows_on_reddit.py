@@ -26,13 +26,8 @@ Find example for AI workflows on Reddit.
 Tasks:
 1. Use Google Search to find examples of AI workflows on Reddit.
 2. For each url, append .json to the url and use the BrowserTool to fetch the content
-3. Output results as a markdown file
-
-Report structure:
-## Workflow: [Workflow Name]
-Url: [Workflow URL]
-Summary: [Summary of the Workflow]
-Comments: [Key Comments from the Workflow]
+3. Summarize each workflow and save workflow as a JSON file with url, title, summary and comments
+4. Collect all workflows and output as a markdown file
 """
 
 
@@ -46,7 +41,7 @@ async def test_reddit_journey_deconstructor_agent(  # Renamed for clarity
         objective=objective,
         provider=provider,
         model=model,
-        enable_analysis_phase=False,
+        enable_analysis_phase=True,
         enable_data_contracts_phase=True,
         tools=[
             GoogleSearchTool(),

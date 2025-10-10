@@ -9,6 +9,12 @@ This script creates an intelligent Reddit research agent that:
 4. Analyzes findings to identify patterns and recurring themes
 5. Generates a structured report with actionable insights
 
+**NEW: DYNAMIC SUBTASK SUPPORT**
+The agent can now dynamically add subtasks during execution! If the agent discovers
+multiple distinct topics or areas that need deeper investigation, it can use the
+add_subtask tool to create additional research tasks on-the-fly. This enables more
+thorough and organized research that adapts to what the agent discovers.
+
 The agent outputs both JSON structured data and a markdown report, making it easy
 to integrate findings into research, product development, or community analysis workflows.
 
@@ -104,7 +110,14 @@ async def analyze_reddit_subreddit(
            - Direct quotes from users illustrating each pain point
            - Potential solutions or feature requests mentioned by users
            - Recommendations for product improvements with priority levels
-        
+
+        **Dynamic Subtask Addition**:
+        You have access to the add_subtask tool. If during your research you discover
+        distinct categories of issues that warrant deeper investigation (e.g., specific
+        technical problems, integration challenges, feature requests), use add_subtask
+        to create focused research tasks for each category. This allows for more thorough
+        analysis and better organized results.
+
         Be thorough but concise. Focus on actionable insights that could help the {subreddit} community or related products/services.
         """,
         provider=provider,
