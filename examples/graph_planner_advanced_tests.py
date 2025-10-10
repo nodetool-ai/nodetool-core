@@ -11,14 +11,15 @@ from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.run_workflow import run_workflow
 from nodetool.workflows.types import Chunk, PlanningUpdate
+from nodetool.providers.huggingface_provider import HuggingFaceProvider
 
 # Set up logging
 from nodetool.config.logging_config import get_logger
 
 logger = get_logger(__name__)
 
-provider = AnthropicProvider()
-model = "claude-sonnet-4-20250514"
+provider = HuggingFaceProvider("cerebras")
+model = "openai/gpt-oss-120b"
 
 
 async def create_and_execute_workflow(
@@ -34,7 +35,6 @@ async def create_and_execute_workflow(
         model=model,
         objective=objective,
         verbose=True,
-        inputs=inputs,
     )
 
     # Plan the graph

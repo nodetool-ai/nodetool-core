@@ -53,8 +53,6 @@ dotenv.load_dotenv()
 async def analyze_reddit_subreddit(
     provider: BaseProvider,
     model: str,
-    reasoning_model: str,
-    planning_model: str,
     subreddit: str = "n8n",
     focus_area: str = "customer pain points and issues",
 ):
@@ -63,11 +61,19 @@ async def analyze_reddit_subreddit(
         name="Reddit Search Agent",
         objective=f"""
         You are an expert Reddit researcher specializing in customer feedback analysis.
-        
+
         Your mission is to conduct comprehensive research on the r/{subreddit} subreddit to identify {focus_area}.
-        
-        Follow this structured approach:
-        
+
+        **OUTPUT FORMAT**: Provide your final results in this simple JSON structure:
+        {{
+            "summary": "Brief 3-5 sentence overview of key findings",
+            "posts_analyzed": number_of_posts_you_analyzed,
+            "key_issues": ["main problem 1", "main problem 2", "main problem 3", ...],
+            "recommendations": ["suggested improvement 1", "suggested improvement 2", ...]
+        }}
+
+        **RESEARCH APPROACH**:
+
         1. **Search Strategy**:
            - Use GoogleSearchTool with targeted queries like:
              * "site:reddit.com/r/{subreddit} problem"
@@ -80,7 +86,7 @@ async def analyze_reddit_subreddit(
              * "site:reddit.com/r/{subreddit} confused"
            - Find at least 10-15 relevant posts from the last 6 months
            - Prioritize posts with high engagement (many comments/upvotes)
-        
+
         2. **Data Collection**:
            - For each Reddit post URL found:
              * Use BrowserTool to visit the page
@@ -89,7 +95,7 @@ async def analyze_reddit_subreddit(
              * Note the number of upvotes (indicates issue prevalence)
              * Record any solutions or workarounds mentioned
              * Pay attention to moderator or official responses
-        
+
         3. **Content Analysis**:
            - Categorize pain points by type:
              * Technical issues (bugs, errors, crashes)
@@ -101,15 +107,12 @@ async def analyze_reddit_subreddit(
            - Identify recurring themes across multiple posts
            - Note the severity and frequency of each issue type
            - Track user sentiment and frustration levels
-        
-        4. **Report Generation**:
-           Create a comprehensive analysis with:
-           - Executive summary of key findings
-           - Top 5 most critical pain points with evidence
-           - Categorized list of all identified issues
-           - Direct quotes from users illustrating each pain point
-           - Potential solutions or feature requests mentioned by users
-           - Recommendations for product improvements with priority levels
+
+        4. **Final Output**:
+           - Write a brief summary (3-5 sentences) of your overall findings
+           - List the main issues you discovered (focus on the most common/critical ones)
+           - Provide actionable recommendations for improvement
+           - Use the exact JSON format shown above
 
         **Dynamic Subtask Addition**:
         You have access to the add_subtask tool. If during your research you discover
@@ -122,143 +125,34 @@ async def analyze_reddit_subreddit(
         """,
         provider=provider,
         model=model,
-        reasoning_model=reasoning_model,
-        planning_model=planning_model,
         enable_analysis_phase=True,
         enable_data_contracts_phase=True,
         tools=[
             GoogleSearchTool(),
             BrowserTool(),
         ],
-        output_type="json",
         output_schema={
             "type": "object",
             "properties": {
-                "executive_summary": {
+                "summary": {
                     "type": "string",
-                    "description": "High-level summary of key findings (3-5 sentences)",
+                    "description": "Brief summary of findings"
                 },
-                "total_posts_analyzed": {
+                "posts_analyzed": {
                     "type": "integer",
-                    "description": "Number of Reddit posts analyzed",
+                    "description": "Number of posts analyzed"
                 },
-                "date_range": {
-                    "type": "string",
-                    "description": "Date range of posts analyzed",
-                },
-                "top_pain_points": {
+                "key_issues": {
                     "type": "array",
-                    "description": "Top 5 most critical pain points identified",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "issue": {
-                                "type": "string",
-                                "description": "Brief description of the pain point",
-                            },
-                            "category": {
-                                "type": "string",
-                                "enum": [
-                                    "technical",
-                                    "feature",
-                                    "documentation",
-                                    "integration",
-                                    "performance",
-                                    "other",
-                                ],
-                                "description": "Category of the issue",
-                            },
-                            "frequency": {
-                                "type": "integer",
-                                "description": "Number of posts mentioning this issue",
-                            },
-                            "severity": {
-                                "type": "string",
-                                "enum": ["critical", "high", "medium", "low"],
-                                "description": "Severity level based on user impact",
-                            },
-                            "example_quotes": {
-                                "type": "array",
-                                "description": "2-3 direct quotes from users experiencing this issue",
-                                "items": {"type": "string"},
-                                "minItems": 1,
-                                "maxItems": 3,
-                            },
-                            "post_links": {
-                                "type": "array",
-                                "description": "Links to posts discussing this issue",
-                                "items": {"type": "string", "format": "uri"},
-                                "minItems": 1,
-                                "maxItems": 3,
-                            },
-                        },
-                        "required": [
-                            "issue",
-                            "category",
-                            "frequency",
-                            "severity",
-                            "example_quotes",
-                            "post_links",
-                        ],
-                    },
-                    "minItems": 3,
-                    "maxItems": 5,
-                },
-                "all_issues": {
-                    "type": "object",
-                    "description": "All issues categorized by type",
-                    "properties": {
-                        "technical": {"type": "array", "items": {"type": "string"}},
-                        "feature": {"type": "array", "items": {"type": "string"}},
-                        "documentation": {"type": "array", "items": {"type": "string"}},
-                        "integration": {"type": "array", "items": {"type": "string"}},
-                        "performance": {"type": "array", "items": {"type": "string"}},
-                        "other": {"type": "array", "items": {"type": "string"}},
-                    },
-                },
-                "user_solutions": {
-                    "type": "array",
-                    "description": "Workarounds or solutions mentioned by users",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "problem": {"type": "string"},
-                            "solution": {"type": "string"},
-                            "source_url": {"type": "string", "format": "uri"},
-                        },
-                    },
+                    "description": "Main problems found",
+                    "items": {"type": "string"}
                 },
                 "recommendations": {
                     "type": "array",
-                    "description": "Actionable recommendations for product improvement",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "recommendation": {"type": "string"},
-                            "priority": {
-                                "type": "string",
-                                "enum": ["urgent", "high", "medium", "low"],
-                            },
-                            "rationale": {"type": "string"},
-                        },
-                    },
-                    "minItems": 3,
-                    "maxItems": 7,
-                },
-                "markdown_report": {
-                    "type": "string",
-                    "description": "Full markdown-formatted report with all findings",
-                },
-            },
-            "required": [
-                "executive_summary",
-                "total_posts_analyzed",
-                "date_range",
-                "top_pain_points",
-                "all_issues",
-                "recommendations",
-                "markdown_report",
-            ],
+                    "description": "Suggested improvements",
+                    "items": {"type": "string"}
+                }
+            }
         },
     )
 
@@ -274,23 +168,19 @@ async def analyze_reddit_subreddit(
     print(f"Workspace: {context.workspace_dir}")
 
     if results:
-        print(f"\nTotal posts analyzed: {results.get('total_posts_analyzed', 'N/A')}")
-        print(f"Date range: {results.get('date_range', 'N/A')}")
+        print(f"\nPosts analyzed: {results.get('posts_analyzed', 'N/A')}")
 
-        # Display top pain points
-        print("\n--- Top Pain Points ---")
-        for i, pain_point in enumerate(results.get("top_pain_points", []), 1):
-            print(f"\n{i}. {pain_point['issue']} (Category: {pain_point['category']})")
-            print(
-                f"   Frequency: {pain_point['frequency']} posts | Severity: {pain_point['severity']}"
-            )
+        # Display key issues
+        print("\n--- Key Issues Found ---")
+        for i, issue in enumerate(results.get("key_issues", []), 1):
+            print(f"\n{i}. {issue}")
 
         # Display recommendations
         print("\n--- Recommendations ---")
         for i, rec in enumerate(results.get("recommendations", []), 1):
-            print(f"\n{i}. [{rec['priority'].upper()}] {rec['recommendation']}")
+            print(f"\n{i}. {rec}")
 
-        # Save full report to file
+        # Save results to file
         import json
         from pathlib import Path
 
@@ -300,14 +190,8 @@ async def analyze_reddit_subreddit(
         with open(output_file, "w") as f:
             json.dump(results, f, indent=2)
 
-        print(f"\n\nFull report saved to: {output_file}")
-
-        # Also save markdown report if available
-        if results.get("markdown_report"):
-            md_file = output_dir / "reddit_analysis_report.md"
-            with open(md_file, "w") as f:
-                f.write(results["markdown_report"])
-            print(f"Markdown report saved to: {md_file}")
+        print(f"\n\nReport saved to: {output_file}")
+        print(f"Summary: {results.get('summary', 'No summary available')}")
 
 
 if __name__ == "__main__":
@@ -323,10 +207,8 @@ if __name__ == "__main__":
     try:
         asyncio.run(
             analyze_reddit_subreddit(
-                provider=get_provider(Provider.OpenAI),
-                model="gpt-4o-mini",
-                planning_model="gpt-4o-mini",
-                reasoning_model="gpt-4o-mini",
+                provider=get_provider(Provider.HuggingFaceCerebras),
+                model="openai/gpt-oss-120b",
                 subreddit=SUBREDDIT,
                 focus_area=FOCUS_AREA,
             )

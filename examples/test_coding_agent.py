@@ -41,6 +41,7 @@ from nodetool.metadata.types import Provider
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import Chunk
 from pathlib import Path
+from nodetool.ui.console import AgentConsole
 
 import dotenv
 
@@ -62,82 +63,7 @@ async def run_data_analysis_agent(
     ]
 
     # Define analysis objectives based on type
-    analysis_objectives = {
-        "comprehensive": """
-        Perform a comprehensive data science analysis of the Iris dataset.
-
-        Your mission is to conduct a professional-grade analysis following these steps:
-
-        1. **Data Acquisition**:
-           - Download the Iris dataset from: https://archive.ics.uci.edu/ml/machine-learning-databases/iris/iris.data
-           - Save it as 'iris.csv' in the workspace
-           - Note: The file has NO headers. Columns are: sepal_length, sepal_width, petal_length, petal_width, species
-
-        2. **Data Exploration & Cleaning**:
-           - Load the data with proper column names
-           - Check for missing values, duplicates, and data types
-           - Generate basic statistics (mean, std, min, max, quartiles)
-           - Create a data quality report
-
-        3. **Exploratory Data Analysis (EDA)**:
-           - Create distribution plots for each feature
-           - Generate pair plots to show relationships between features
-           - Create correlation heatmaps
-           - Analyze class distributions and balance
-           - Use box plots to identify outliers
-
-        4. **Statistical Analysis**:
-           - Perform ANOVA tests to check feature significance
-           - Calculate feature importance using correlation analysis
-           - Test for normality of distributions
-           - Identify key distinguishing features between species
-
-        5. **Advanced Visualizations**:
-           - Create violin plots for feature distributions by species
-           - Generate 3D scatter plots for multi-dimensional relationships
-           - Design a dashboard-style figure combining multiple insights
-           - Use appropriate color schemes for accessibility
-
-        6. **Machine Learning Insights**:
-           - Apply PCA to understand variance in the data
-           - Create a simple classification model and evaluate performance
-           - Visualize decision boundaries if possible
-           - Generate a confusion matrix
-
-        7. **Report Generation**:
-           - Create a professional markdown report with:
-             * Executive summary of findings
-             * Methodology section
-             * Key insights with supporting visualizations
-             * Statistical findings with p-values
-             * Recommendations for further analysis
-             * All plots saved as high-quality PNG files
-             * Code snippets for reproducibility
-
-        Remember to:
-        - Use professional plotting styles (seaborn style 'paper' or 'whitegrid')
-        - Add proper titles, labels, and legends to all plots
-        - Save all figures with descriptive names (e.g., 'feature_distributions.png')
-        - Include interpretation for each visualization
-        - Write clear, concise explanations suitable for both technical and non-technical audiences
-
-        **Dynamic Subtask Addition**:
-        You have access to the add_subtask tool. If you discover that certain analyses need
-        deeper investigation (e.g., outlier analysis, specific feature relationships, or
-        additional model types), you can create new subtasks dynamically for more focused work.
-        """,
-        "quick": """
-        Perform a quick exploratory analysis of the Iris dataset.
-
-        Steps:
-        1. Download the Iris dataset from: https://archive.ics.uci.edu/ml/machine-learning-databases/iris/iris.data
-        2. Save as 'iris.csv' (no headers - columns: sepal_length, sepal_width, petal_length, petal_width, species)
-        3. Create basic visualizations (distributions, pair plot)
-        4. Generate a brief markdown report with key findings
-        """,
-        "ml_focused": """
-        Perform a machine learning focused analysis of the Iris dataset.
-
+    analysis_objective = """
         Your objective is to build and evaluate classification models:
 
         1. **Data Preparation**:
@@ -151,39 +77,31 @@ async def run_data_analysis_agent(
            - Normalize/standardize features
 
         3. **Model Development**:
-           - Implement multiple classifiers (LogisticRegression, RandomForest, SVM)
+           - Implement a logistic regression classifier
            - Perform cross-validation
-           - Tune hyperparameters
-           - Compare model performances
 
         4. **Model Evaluation**:
-           - Generate confusion matrices
-           - Calculate precision, recall, F1-scores
-           - Create ROC curves
+           - Generate a confusion matrix
+           - Calculate precision, recall, F1-score
+           - Create an ROC curve
            - Visualize decision boundaries
 
         5. **Report**:
-           - Document model performances
-           - Provide recommendations
-           - Include reproducible code
-        """,
-    }
+           - Generate a markdown report with key findings
+           - Document each step
+           - Reference the plots as images with correct file names
+        """
 
     agent = Agent(
         name="Data Science Agent",
-        objective=analysis_objectives.get(
-            analysis_type, analysis_objectives["comprehensive"]
-        ),
+        objective=analysis_objective,
         enable_analysis_phase=True,
         enable_data_contracts_phase=True,
         provider=provider,
         model=model,
         tools=code_tools,
         docker_image=docker_image,
-        output_schema={
-            "type": "string",
-            "description": "A comprehensive markdown report with embedded visualizations and code snippets",
-        },
+        # display_manager=AgentConsole(),
     )
 
     async for item in agent.execute(context):
@@ -198,7 +116,13 @@ async def run_data_analysis_agent(
     if agent.results:
         report_path = Path(context.workspace_dir) / "analysis_report.md"
         with open(report_path, "w") as f:
-            f.write(agent.results)
+            # Handle both string and dict results
+            if isinstance(agent.results, str):
+                f.write(agent.results)
+            else:
+                # If results is a dict or other type, convert to JSON string
+                import json
+                f.write(json.dumps(agent.results, indent=2))
         print(f"\n✓ Analysis report saved to: {report_path}")
 
         # List all generated files
