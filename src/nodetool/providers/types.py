@@ -1,12 +1,14 @@
 """
-Image generation types for the ImageProvider system.
+Image and video generation types for the Provider system.
 
-This module defines canonical request and response types for text-to-image and image-to-image generation.
+This module defines canonical request and response types for text-to-image, image-to-image,
+and text-to-video generation.
 """
 
 from pydantic import BaseModel, Field
 from nodetool.metadata.types import (
     ImageModel,
+    VideoModel,
 )
 
 
@@ -42,9 +44,6 @@ class TextToImageParams(BaseModel):
         default=None,
         description="Whether to enable safety checking (provider-specific)",
     )
-    image_format: str | None = Field(
-        default=None, description="Output image format (png, jpg, etc.)"
-    )
 
 
 class ImageToImageParams(BaseModel):
@@ -78,4 +77,37 @@ class ImageToImageParams(BaseModel):
     )
     scheduler: str | None = Field(
         default=None, description="Scheduler to use for generation"
+    )
+
+VideoBytes = bytes
+
+
+class TextToVideoParams(BaseModel):
+    """Parameters for text-to-video generation."""
+
+    model: VideoModel = Field(
+        description="Provider and model ID for the text-to-video model"
+    )
+    prompt: str = Field(description="Text prompt describing the desired video")
+    negative_prompt: str | None = Field(
+        default=None, description="Text prompt describing what to avoid in the video"
+    )
+    num_frames: int | None = Field(
+        default=None, description="Number of frames to generate (provider-specific)"
+    )
+    aspect_ratio: str | None = Field(
+        default=None, description="Aspect ratio (e.g., '16:9', '9:16')"
+    )
+    resolution: str | None = Field(
+        default=None, description="Video resolution (e.g., '720p', '1080p')"
+    )
+    guidance_scale: float | None = Field(
+        default=None,
+        description="Classifier-free guidance scale (higher values = closer to prompt)",
+    )
+    num_inference_steps: int | None = Field(
+        default=None, description="Number of denoising steps"
+    )
+    seed: int | None = Field(
+        default=None, description="Random seed for reproducibility (None for random)"
     )

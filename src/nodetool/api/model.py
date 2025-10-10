@@ -14,11 +14,13 @@ from nodetool.ml.models.language_models import get_all_language_models
 from nodetool.ml.models.image_models import get_all_image_models
 from nodetool.ml.models.tts_models import get_all_tts_models
 from nodetool.ml.models.asr_models import get_all_asr_models
+from nodetool.ml.models.video_models import get_all_video_models
 from nodetool.metadata.types import (
     LanguageModel,
     ImageModel,
     TTSModel,
     ASRModel,
+    VideoModel,
     ModelFile,
     LlamaModel,
     Provider,
@@ -183,6 +185,16 @@ async def get_asr_models_endpoint(
     Get all available automatic speech recognition models from all providers.
     """
     return await get_all_asr_models()
+
+
+@router.get("/video")
+async def get_video_models_endpoint(
+    user: str = Depends(current_user),
+) -> list[VideoModel]:
+    """
+    Get all available video generation models from all providers.
+    """
+    return await get_all_video_models()
 
 
 @router.get("/ollama_model_info")

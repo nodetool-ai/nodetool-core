@@ -6,16 +6,20 @@ handling message conversion, streaming, and tool integration.
 
 """
 
+import asyncio
 import base64
+import imghdr
 import inspect
 import json
 import io
+import math
 import numpy as np
 from typing import Any, AsyncGenerator, AsyncIterator, List, Sequence
 
 import aiohttp
 import httpx
 import openai
+from openai import NOT_GIVEN, Omit
 from openai.types.chat import (
     ChatCompletionMessageParam,
     ChatCompletionToolMessageParam,
@@ -30,6 +34,7 @@ from openai.types.chat.chat_completion_message_function_tool_call_param import (
     Function,
     ChatCompletionMessageFunctionToolCallParam,
 )
+from openai.types import Video
 from pydantic import BaseModel
 from pydub import AudioSegment
 from urllib.parse import unquote_to_bytes
@@ -49,11 +54,21 @@ from nodetool.metadata.types import (
     LanguageModel,
     TTSModel,
     ASRModel,
+    VideoModel,
+    ImageModel,
 )
 from nodetool.config.environment import Environment
 from nodetool.workflows.types import Chunk
+from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.io.uri_utils import fetch_uri_bytes_and_mime
 from nodetool.media.image.image_utils import image_data_to_base64_jpeg
+from nodetool.providers.types import (
+    ImageToImageParams,
+    TextToImageParams,
+    TextToVideoParams,
+)
+from nodetool.workflows.types import NodeProgress
+from openai._types import NotGiven
 
 log = get_logger(__name__)
 
@@ -334,6 +349,234 @@ class OpenAIProvider(BaseProvider):
 
         log.debug(f"Returning {len(models)} OpenAI ASR models")
         return models
+
+    async def get_available_video_models(self) -> List[VideoModel]:
+        """
+        Get available OpenAI video generation models.
+
+        Returns Sora video models only if OPENAI_API_KEY is configured.
+        Source: https://platform.openai.com/docs/guides/video
+
+        Returns:
+            List of VideoModel instances for OpenAI Sora
+        """
+        if not self.api_key:
+            log.debug("No OpenAI API key configured, returning empty video model list")
+            return []
+
+        models = [
+            VideoModel(
+                id="sora-2",
+                name="Sora 2",
+                provider=Provider.OpenAI,
+            ),
+            VideoModel(
+                id="sora-2-pro",
+                name="Sora 2 Pro",
+                provider=Provider.OpenAI,
+            ),
+        ]
+
+        log.debug(f"Returning {len(models)} OpenAI video models")
+        return models
+
+    async def get_available_image_models(self) -> List[ImageModel]:
+        """
+        Get available OpenAI image generation models.
+
+        Returns DALL-E models for image generation.
+        Returns an empty list if no API key is configured.
+
+        Returns:
+            List of ImageModel instances for OpenAI DALL-E
+        """
+        if not self.api_key:
+            log.debug("No OpenAI API key configured, returning empty image model list")
+            return []
+
+        # OpenAI image generation models
+        # Source: https://platform.openai.com/docs/guides/images
+        image_models_config = [
+            {
+                "id": "dall-e-3",
+                "name": "DALL-E 3",
+            },
+            {
+                "id": "dall-e-2",
+                "name": "DALL-E 2",
+            },
+        ]
+
+        models: List[ImageModel] = []
+        for config in image_models_config:
+            models.append(
+                ImageModel(
+                    id=config["id"],
+                    name=config["name"],
+                    provider=Provider.OpenAI,
+                )
+            )
+
+        log.debug(f"Returning {len(models)} OpenAI image models")
+        return models
+
+    def _resolve_image_size(self, width: int | None, height: int | None) -> str | None:
+        """Convert requested dimensions to OpenAI-supported image sizes.
+
+        OpenAI DALL-E API supports: '1024x1024', '1024x1536', '1536x1024', 'auto'
+
+        Args:
+            width: Requested width
+            height: Requested height
+
+        Returns:
+            OpenAI-compatible size string or None if no dimensions provided
+        """
+        if not width or not height:
+            return None
+
+        # OpenAI supported sizes
+        supported_sizes = [
+            (1024, 1024),
+            (1024, 1536),
+            (1536, 1024),
+        ]
+
+        # Find the closest supported size by area and aspect ratio
+        target_area = width * height
+        target_ratio = width / height
+
+        def score_size(supported_w: int, supported_h: int) -> float:
+            supported_area = supported_w * supported_h
+            supported_ratio = supported_w / supported_h
+
+            # Score based on area difference and aspect ratio difference
+            area_score = abs(supported_area - target_area) / max(target_area, supported_area)
+            ratio_score = abs(supported_ratio - target_ratio)
+
+            return area_score * 0.7 + ratio_score * 0.3
+
+        best_size = min(supported_sizes, key=lambda size: score_size(size[0], size[1]))
+        return f"{best_size[0]}x{best_size[1]}"
+
+    @staticmethod
+    def _resolve_video_size(
+        aspect_ratio: str | None,
+        resolution: str | None,
+    ) -> str | None:
+        """Convert aspect ratio and resolution inputs into Sora size strings."""
+        if not resolution:
+            return None
+
+        aspect_key = (aspect_ratio or "16:9").replace(" ", "")
+        resolution_key = resolution.lower()
+
+        supported_sizes: list[tuple[int, int]] = [
+            (1280, 720),
+            (1792, 1024),
+            (720, 1280),
+            (1024, 1792),
+        ]
+
+        def _format_size(size: tuple[int, int]) -> str:
+            return f"{size[0]}x{size[1]}"
+
+        def _closest_supported_size(width: int, height: int) -> str:
+            target_ratio = width / height
+            target_area = width * height
+
+            def score(candidate: tuple[int, int]) -> float:
+                cand_w, cand_h = candidate
+                cand_ratio = cand_w / cand_h
+                cand_area = cand_w * cand_h
+                ratio_diff = abs(cand_ratio - target_ratio)
+                area_diff = abs(cand_area - target_area) / max(target_area, cand_area)
+                return ratio_diff * 5 + area_diff
+
+            return _format_size(min(supported_sizes, key=score))
+
+        size_presets: dict[str, dict[str, str]] = {
+            "16:9": {
+                "480p": "854x480",
+                "720p": "1280x720",
+                "1080p": "1920x1080",
+            },
+            "9:16": {
+                "480p": "480x854",
+                "720p": "720x1280",
+                "1080p": "1080x1920",
+            },
+            "1:1": {
+                "480p": "480x480",
+                "720p": "720x720",
+                "1080p": "1080x1080",
+            },
+            "4:3": {
+                "480p": "640x480",
+                "720p": "960x720",
+                "1080p": "1440x1080",
+            },
+            "3:4": {
+                "480p": "480x640",
+                "720p": "720x960",
+                "1080p": "1080x1440",
+            },
+        }
+
+        preset_sizes = size_presets.get(aspect_key)
+        if preset_sizes:
+            size = preset_sizes.get(resolution_key)
+            if size:
+                width_str, height_str = size.split("x")
+                return _closest_supported_size(int(width_str), int(height_str))
+
+        # Fallback to computed size if preset not available
+        if ":" in aspect_key:
+            width_ratio_str, height_ratio_str = aspect_key.split(":", 1)
+            width_ratio = float(width_ratio_str)
+            height_ratio = float(height_ratio_str)
+        else:
+            # If no colon, assume square ratio
+            width_ratio = height_ratio = 1.0
+
+        resolution_value = int("".join(ch for ch in resolution_key if ch.isdigit()))
+        if resolution_value <= 0 or width_ratio <= 0 or height_ratio <= 0:
+            return None
+
+        if width_ratio >= height_ratio:
+            height = resolution_value
+            width = height * (width_ratio / height_ratio)
+        else:
+            width = resolution_value
+            height = width * (height_ratio / width_ratio)
+
+        def _make_even(value: float) -> int:
+            rounded = int(round(value))
+            if rounded % 2 != 0:
+                rounded += 1 if rounded > 0 else 0
+            return max(2, rounded)
+
+        computed_width = _make_even(width)
+        computed_height = _make_even(height)
+        return _closest_supported_size(computed_width, computed_height)
+
+    @staticmethod
+    def _seconds_from_params(params: TextToVideoParams) -> int | None:
+        """Derive generation length in seconds from provided parameters."""
+        num_frames = params.num_frames
+        if not num_frames:
+            return None
+
+        # Assume 24 FPS if not specified by API. Clamp to Sora's supported buckets.
+        estimated = math.ceil(num_frames / 24)
+        # Sora currently accepts only 4, 8 or 12 second durations.
+        if estimated < 4:
+            return 4
+        if estimated < 8:
+            return 4
+        if estimated < 12:
+            return 8
+        return 12
 
     async def uri_to_base64(self, uri: str) -> str:
         """Convert a URI to a base64-encoded ``data:`` URI string.
@@ -1029,6 +1272,157 @@ class OpenAIProvider(BaseProvider):
 
         return message
 
+    async def text_to_image(
+        self,
+        params: TextToImageParams,
+        timeout_s: int | None = None,
+        context: ProcessingContext | None = None,
+    ) -> bytes:
+        """Generate an image from a text prompt using OpenAI's Images API."""
+        if not params.prompt:
+            raise ValueError("The input prompt cannot be empty.")
+
+        if not self.api_key:
+            raise ValueError("OPENAI_API_KEY is required for image generation.")
+
+        model_id = params.model.id
+        if not model_id:
+            raise ValueError(
+                "A text-to-image model with a valid id must be specified for image generation."
+            )
+
+        prompt = params.prompt.strip()
+        if params.negative_prompt:
+            prompt = f"{prompt}\n\nDo not include: {params.negative_prompt.strip()}"
+
+        size = None
+        if params.width and params.height:
+            if params.width <= 0 or params.height <= 0:
+                raise ValueError("width and height must be positive integers.")
+            size = self._resolve_image_size(int(params.width), int(params.height))
+
+        try:
+            request_timeout = timeout_s if timeout_s and timeout_s > 0 else 120
+            client = self.get_client()
+
+            response = await client.images.generate(
+                model=model_id,
+                prompt=prompt,
+                n=1,
+                size=size if size else Omit, # type: ignore
+                timeout=request_timeout,
+            )
+
+            data = response.data or []
+            if len(data) == 0:
+                raise RuntimeError("OpenAI image generation returned no data.")
+
+            image_entry = data[0]
+            image_bytes: bytes | None = None
+            b64_data = image_entry.b64_json
+            if b64_data:
+                image_bytes = base64.b64decode(b64_data)
+            else:
+                image_url = image_entry.url
+                if image_url:
+                    _, image_bytes = await fetch_uri_bytes_and_mime(image_url)
+
+            if not image_bytes:
+                raise RuntimeError("OpenAI image generation returned no image bytes.")
+
+            return image_bytes
+
+        except openai.APIStatusError as api_error:
+            log.error(
+                "OpenAI text-to-image generation failed (status=%s): %s",
+                api_error.status_code,
+                api_error.message,
+            )
+            raise RuntimeError(
+                f"OpenAI text-to-image generation failed with status "
+                f"{api_error.status_code}: {api_error.message}"
+            ) from api_error
+        except Exception as exc:
+            log.error(f"OpenAI text-to-image generation failed: {exc}")
+            raise RuntimeError(f"OpenAI text-to-image generation failed: {exc}") from exc
+
+    async def image_to_image(
+        self,
+        image: bytes,
+        params: ImageToImageParams,
+        timeout_s: int | None = None,
+        context: ProcessingContext | None = None,
+    ) -> bytes:
+        """Transform an image based on a prompt using OpenAI's image editing API."""
+        if not image:
+            raise ValueError("image must not be empty.")
+
+        if not params.prompt:
+            raise ValueError("The input prompt cannot be empty.")
+
+        if not self.api_key:
+            raise ValueError("OPENAI_API_KEY is required for image editing.")
+
+        model_id = params.model.id
+        if not model_id:
+            raise ValueError(
+                "An image-to-image model with a valid id must be specified for image editing."
+            )
+
+        prompt = params.prompt.strip()
+        if params.negative_prompt:
+            prompt = f"{prompt}\n\nDo not include: {params.negative_prompt.strip()}"
+
+        size = None
+        if params.target_width and params.target_height:
+            if params.target_width <= 0 or params.target_height <= 0:
+                raise ValueError("target_width and target_height must be positive integers.")
+            size = self._resolve_image_size(int(params.target_width), int(params.target_height))
+
+        try:
+            request_timeout = timeout_s if timeout_s and timeout_s > 0 else 120
+            client = self.get_client()
+            response = await client.images.edit(
+                model=model_id,
+                prompt=prompt,
+                image=("image.png", image, "image/png"),
+                size=size if size else Omit, # type: ignore
+                timeout=request_timeout,
+            )
+
+            data_list = response.data or []
+            if len(data_list) == 0:
+                raise RuntimeError("OpenAI image editing returned no data.")
+
+            entry = data_list[0]
+            image_bytes: bytes | None = None
+            b64_data = entry.b64_json
+            if b64_data:
+                image_bytes = base64.b64decode(b64_data)
+            else:
+                image_url = entry.url
+                if image_url:
+                    _, image_bytes = await fetch_uri_bytes_and_mime(image_url)
+
+            if not image_bytes:
+                raise RuntimeError("OpenAI image editing returned no image bytes.")
+
+            return image_bytes
+
+        except openai.APIStatusError as api_error:
+            log.error(
+                "OpenAI image editing failed (status=%s): %s",
+                api_error.status_code,
+                api_error.message,
+            )
+            raise RuntimeError(
+                f"OpenAI image editing failed with status "
+                f"{api_error.status_code}: {api_error.message}"
+            ) from api_error
+        except Exception as exc:
+            log.error(f"OpenAI image editing failed: {exc}")
+            raise RuntimeError(f"OpenAI image editing failed: {exc}") from exc
+
     async def text_to_speech(
         self,
         text: str,
@@ -1099,6 +1493,179 @@ class OpenAIProvider(BaseProvider):
         except Exception as e:
             log.error(f"OpenAI TTS streaming failed: {e}")
             raise RuntimeError(f"OpenAI TTS generation failed: {str(e)}")
+
+    async def text_to_video(
+        self,
+        params: TextToVideoParams,
+        timeout_s: int | None = None,
+        context: ProcessingContext | None = None,
+        **kwargs: Any,
+    ) -> bytes:
+        """Generate a video from a text prompt using OpenAI Sora models.
+
+        Args:
+            params: Text-to-video generation parameters including:
+                - prompt: Text description of the video
+                - model: VideoModel with Sora model ID
+                - aspect_ratio: Optional aspect ratio (e.g., "16:9")
+                - resolution: Optional resolution (e.g., "1080p")
+                - num_frames: Optional frame count (used to estimate duration)
+            timeout_s: Optional timeout in seconds (defaults to 10 minutes)
+            context: Processing context for asset handling (unused, reserved)
+
+        Returns:
+            Raw video bytes (MP4 format)
+
+        Raises:
+            ValueError: If required parameters are missing
+            RuntimeError: If generation fails or the API returns an error
+        """
+        if not params.prompt:
+            raise ValueError("The input prompt cannot be empty.")
+
+        if not self.api_key:
+            raise ValueError("OPENAI_API_KEY is required for video generation")
+
+        if not params.model.id:
+            raise ValueError(
+                "A video model with a valid id must be specified for text-to-video generation."
+            )
+
+        log.debug(f"Starting OpenAI video generation with model: {params.model.id}")
+
+        size = self._resolve_video_size(
+            params.aspect_ratio,
+            params.resolution,
+        )
+        seconds = self._seconds_from_params(params)
+
+        if params.negative_prompt:
+            log.debug(
+                "negative_prompt provided but not currently supported by the OpenAI video API; ignoring."
+            )
+
+        self._log_api_request("text_to_video", params=params)
+
+        request_timeout = timeout_s if timeout_s and timeout_s > 0 else 600
+        client = self.get_client()
+
+        try:
+            video = await self._create_video_job(
+                client=client,
+                model_id=params.model.id,
+                prompt=params.prompt,
+                size=size if size else "1024x1024",
+                seconds=seconds if seconds else 4,
+                timeout=request_timeout,
+            )
+            log.debug("Submitted video generation request via OpenAI client.")
+        except openai.APIStatusError as api_error:
+            log.error(
+                "OpenAI video generation failed (status=%s): %s",
+                api_error.status_code,
+                api_error.message,
+            )
+            raise RuntimeError(
+                f"OpenAI video generation failed with status "
+                f"{api_error.status_code}: {api_error.message}"
+            ) from api_error
+        except Exception as exc:
+            log.error(f"OpenAI video generation failed: {exc}")
+            raise RuntimeError(f"OpenAI video generation failed: {exc}") from exc
+
+        maximum_wait = request_timeout
+        poll_interval = max(2, min(10, maximum_wait)) if maximum_wait else 10
+        if not video.id:
+            log.error(f"OpenAI video create response missing id: {video}")
+            raise RuntimeError("OpenAI video create response did not contain a video id")
+
+        log.debug(
+            f"Video job {video.id} created with initial status '{video.status}' and progress {video.progress}"
+        )
+
+        elapsed = 0
+        while video.status in ("queued", "in_progress"):
+            if maximum_wait and elapsed >= maximum_wait:
+                raise TimeoutError(
+                    f"Video generation timed out after {maximum_wait} seconds"
+                )
+
+            await asyncio.sleep(poll_interval)
+            elapsed += poll_interval
+
+            video = await client.videos.retrieve(
+                video_id=video.id,
+                timeout=request_timeout,
+            )
+
+            log.debug(
+                f"Video job {video.id} status update: {video.status} (progress={video.progress})"
+            )
+            if "node_id" in kwargs and context is not None and video.progress is not None:
+                context.post_message(
+                    NodeProgress(
+                        node_id=kwargs["node_id"],
+                        progress=video.progress, # type: ignore
+                        total=100, # type: ignore
+                    )
+                )
+
+            if video.status == "failed":
+                break
+
+        if video.status != "completed":
+            message = (
+                video.error
+                or f"Video generation ended with status '{video.status}'"
+            )
+            raise RuntimeError(message)
+
+        video_bytes = await self._download_video_content(
+            client=client,
+            video_id=video.id,
+            timeout=request_timeout,
+        )
+
+        if not video_bytes:
+            raise RuntimeError("OpenAI video download returned no data")
+
+        log.debug(f"Downloaded {len(video_bytes)} bytes for video job {video.id}")
+
+        self._log_api_response("text_to_video", video_bytes=len(video_bytes))
+        return video_bytes
+
+    async def _create_video_job(
+        self,
+        client: openai.AsyncClient,
+        model_id: str,
+        prompt: str,
+        size: str | NotGiven,
+        seconds: int,
+        timeout: float,
+    ) -> Video:
+        log.debug(f"Submitting video generation request: {model_id}, {prompt}, {size}, {seconds}")
+        return await client.videos.create(
+            model=model_id, # type: ignore
+            prompt=prompt,
+            size=size if size else Omit, # type: ignore
+            seconds=str(seconds) if seconds else Omit, # type: ignore
+            timeout=timeout,
+        )
+
+    async def _download_video_content(
+        self,
+        client: openai.AsyncClient,
+        video_id: str,
+        timeout: float,
+    ) -> bytes:
+        return await client.get(
+            f"/videos/{video_id}/content",
+            cast_to=bytes,
+            options={ # type: ignore
+                "timeout": timeout,
+                "params": {"variant": "video"},
+            },
+        )
 
     async def automatic_speech_recognition(
         self,

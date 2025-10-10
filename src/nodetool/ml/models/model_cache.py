@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, List, TypeVar
 
 from nodetool.config.logging_config import get_logger
-from nodetool.config.settings import get_system_data_path
+from nodetool.config.settings import get_system_cache_path
 
 log = get_logger(__name__)
 
@@ -32,7 +32,7 @@ class ModelCache:
         Args:
             cache_subdir: Subdirectory name within the nodetool cache folder
         """
-        self.cache_dir = get_system_data_path("cache") / cache_subdir
+        self.cache_dir = get_system_cache_path(cache_subdir)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
 
     def _get_cache_path(self, key: str) -> Path:

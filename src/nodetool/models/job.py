@@ -23,7 +23,7 @@ class Job(DBModel):
     params: dict = DBField(default_factory=dict)
     error: str | None = DBField(default=None)
     cost: float | None = DBField(default=None)
-    logs: list[dict] = DBField(default_factory=list)
+    logs: list[dict] | None = DBField(default=None)
 
     @classmethod
     async def find(cls, user_id: str, job_id: str):

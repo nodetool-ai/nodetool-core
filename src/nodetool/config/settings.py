@@ -191,6 +191,21 @@ def get_system_file_path(filename: str) -> Path:
     return Path("data") / filename
 
 
+def get_system_cache_path(filename: str) -> Path:
+    """Return the path to the cache folder for the current OS."""
+    import platform
+
+    os_name = platform.system()
+    if os_name in {"Linux", "Darwin"}:
+        return Path.home() / ".cache" / "nodetool" / filename
+    elif os_name == "Windows":
+        appdata = os.getenv("LOCALAPPDATA")
+        if appdata is not None:
+            return Path(appdata) / "nodetool" / "cache" / filename
+        return Path("data") / filename
+    return Path("data") / filename
+
+
 def get_system_data_path(filename: str) -> Path:
     """Return the path to the data folder for the current OS."""
     import platform

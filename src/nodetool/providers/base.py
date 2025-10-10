@@ -21,6 +21,7 @@ from nodetool.metadata.types import (
     ImageModel,
     TTSModel,
     ASRModel,
+    VideoModel,
 )
 from nodetool.workflows.types import Chunk
 
@@ -45,6 +46,7 @@ class ProviderCapability(str, Enum):
     IMAGE_TO_IMAGE = "image_to_image"               # Image transformation
     TEXT_TO_SPEECH = "text_to_speech"               # Text → Speech/Audio generation
     AUTOMATIC_SPEECH_RECOGNITION = "automatic_speech_recognition"  # Speech → Text transcription
+    TEXT_TO_VIDEO = "text_to_video"                 # Text → Video generation
 
 
 _PROVIDER_REGISTRY: dict[ProviderEnum, tuple[Type["BaseProvider"], dict[str, Any]]] = (
@@ -108,10 +110,12 @@ class BaseProvider(ABC):
     - TEXT_TO_IMAGE: Text-to-image generation
     - IMAGE_TO_IMAGE: Image transformation
     - TEXT_TO_SPEECH: Text-to-speech/audio generation
+    - AUTOMATIC_SPEECH_RECOGNITION: Audio-to-text transcription
+    - TEXT_TO_VIDEO: Text-to-video generation
 
     Subclasses should implement:
-    - The capability methods (generate_message, text_to_image, etc.) they support
-    - get_available_language_models() and/or get_available_image_models()
+    - The capability methods (generate_message, text_to_image, text_to_video, etc.) they support
+    - get_available_language_models(), get_available_image_models(), get_available_video_models(), etc.
     """
 
     _CAPABILITY_METHODS: dict[ProviderCapability, str] = {
@@ -121,6 +125,7 @@ class BaseProvider(ABC):
         ProviderCapability.IMAGE_TO_IMAGE: "image_to_image",
         ProviderCapability.TEXT_TO_SPEECH: "text_to_speech",
         ProviderCapability.AUTOMATIC_SPEECH_RECOGNITION: "automatic_speech_recognition",
+        ProviderCapability.TEXT_TO_VIDEO: "text_to_video",
     }
 
     log_file: str | None = None
@@ -228,15 +233,30 @@ class BaseProvider(ABC):
         """
         return []
 
-    async def get_available_models(self) -> List[LanguageModel | ImageModel | TTSModel | ASRModel]:
-        """Get a list of all available models for this provider.
+    async def get_available_video_models(self) -> List[VideoModel]:
+        """Get a list of available video generation models for this provider.
 
-        Returns language, image, TTS, and ASR models combined. Use get_available_language_models(),
-        get_available_image_models(), get_available_tts_models(), or get_available_asr_models()
-        to filter to specific model types.
+        This method should return all video models that are available for use with this provider.
+        The implementation may check for API keys, local cache, or other requirements.
 
         Returns:
-            List containing LanguageModel, ImageModel, TTSModel, and ASRModel instances
+            List of VideoModel instances available for this provider.
+            Returns empty list if provider doesn't support video generation.
+
+        Raises:
+            Exception: If model discovery fails (should be caught and return empty list)
+        """
+        return []
+
+    async def get_available_models(self) -> List[LanguageModel | ImageModel | TTSModel | ASRModel | VideoModel]:
+        """Get a list of all available models for this provider.
+
+        Returns language, image, TTS, ASR, and video models combined. Use get_available_language_models(),
+        get_available_image_models(), get_available_tts_models(), get_available_asr_models(), or
+        get_available_video_models() to filter to specific model types.
+
+        Returns:
+            List containing LanguageModel, ImageModel, TTSModel, ASRModel, and VideoModel instances
 
         Raises:
             Exception: If model discovery fails (should be caught and return empty list)
@@ -245,7 +265,8 @@ class BaseProvider(ABC):
         image_models = await self.get_available_image_models()
         tts_models = await self.get_available_tts_models()
         asr_models = await self.get_available_asr_models()
-        return language_models + image_models + tts_models + asr_models  # type: ignore
+        video_models = await self.get_available_video_models()
+        return language_models + image_models + tts_models + asr_models + video_models  # type: ignore
 
     def is_context_length_error(self, error: Exception) -> bool:
         """Return True if the given error indicates a context window overflow.
@@ -606,6 +627,40 @@ class BaseProvider(ABC):
         """
         raise NotImplementedError(
             f"{self.__class__.__name__} does not support AUTOMATIC_SPEECH_RECOGNITION capability"
+        )
+
+    async def text_to_video(
+        self,
+        params: Any,  # TextToVideoParams, but imported later to avoid circular deps
+        timeout_s: int | None = None,
+        context: Any = None,  # ProcessingContext, but imported later
+    ) -> bytes:
+        """Generate a video from a text prompt.
+
+        Only implemented by providers with TEXT_TO_VIDEO capability.
+
+        Args:
+            params: Text-to-video generation parameters including:
+                - prompt: Text description of the video to generate
+                - negative_prompt: Elements to exclude from generation
+                - model: Video model to use
+                - duration: Video duration in seconds (if supported)
+                - fps: Frames per second (if supported)
+                - aspect_ratio: Video aspect ratio (e.g., "16:9", "9:16")
+                - resolution: Video resolution (e.g., "720p", "1080p")
+            timeout_s: Optional timeout in seconds
+            context: Optional processing context
+
+        Returns:
+            Raw video bytes (MP4, WebM, etc.)
+
+        Raises:
+            NotImplementedError: If provider doesn't support TEXT_TO_VIDEO capability
+            ValueError: If required parameters are missing or invalid
+            RuntimeError: If generation fails
+        """
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not support TEXT_TO_VIDEO capability"
         )
 
 

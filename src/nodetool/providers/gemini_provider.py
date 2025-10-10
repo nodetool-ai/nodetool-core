@@ -1,5 +1,6 @@
 import mimetypes
 import aiohttp
+import asyncio
 from io import BytesIO
 import PIL.Image
 import numpy as np
@@ -12,6 +13,7 @@ from google.genai.types import (
     FunctionDeclaration,
     GenerateContentConfig,
     GenerateImagesConfig,
+    GenerateVideosConfig,
     FinishReason,
     Part,
     FunctionCall,
@@ -42,6 +44,7 @@ from nodetool.metadata.types import (
     ImageModel,
     TTSModel,
     ASRModel,
+    VideoModel,
 )
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import Chunk
@@ -1075,6 +1078,40 @@ class GeminiProvider(BaseProvider):
         log.debug(f"Returning {len(models)} Gemini ASR models")
         return models
 
+    async def get_available_video_models(self) -> List[VideoModel]:
+        """Get available Gemini video generation models.
+
+        Returns Veo video models only if GEMINI_API_KEY is configured.
+        Source: https://ai.google.dev/gemini-api/docs/video
+
+        Returns:
+            List of VideoModel instances for Gemini Veo
+        """
+        if not self.api_key:
+            log.debug("No Gemini API key configured, returning empty video model list")
+            return []
+
+        models = [
+            VideoModel(
+                id="veo-3.0-generate-001",
+                name="Veo 3.0",
+                provider=Provider.Gemini,
+            ),
+            VideoModel(
+                id="veo-3.0-fast-generate-001",
+                name="Veo 3.0 Fast",
+                provider=Provider.Gemini,
+            ),
+            VideoModel(
+                id="veo-2.0-generate-001",
+                name="Veo 2.0",
+                provider=Provider.Gemini,
+            ),
+        ]
+
+        log.debug(f"Returning {len(models)} Gemini video models")
+        return models
+
     async def automatic_speech_recognition(
         self,
         audio: bytes,
@@ -1199,6 +1236,125 @@ class GeminiProvider(BaseProvider):
         except Exception as e:
             log.error(f"Gemini ASR transcription failed: {e}")
             raise RuntimeError(f"Gemini ASR transcription failed: {str(e)}")
+
+    async def text_to_video(
+        self,
+        params: Any,  # TextToVideoParams
+        timeout_s: int | None = None,
+        context: ProcessingContext | None = None,
+    ) -> bytes:
+        """Generate a video from a text prompt using Gemini Veo models.
+
+        Args:
+            params: Text-to-video generation parameters including:
+                - prompt: Text description of the video
+                - negative_prompt: Optional elements to exclude
+                - model: VideoModel with Veo model ID
+                - aspect_ratio: "16:9" or "9:16" (default "16:9")
+                - resolution: "720p" or "1080p"
+            timeout_s: Optional timeout in seconds
+            context: Processing context for asset handling
+
+        Returns:
+            Raw video bytes (MP4 format)
+
+        Raises:
+            ValueError: If required parameters are missing
+            RuntimeError: If generation fails
+        """
+        if not params.prompt:
+            raise ValueError("The input prompt cannot be empty.")
+
+        if not self.api_key:
+            raise ValueError("GEMINI_API_KEY is required for video generation")
+
+        self._log_api_request("text_to_video", params=params)
+
+        try:
+            model_id = params.model.id
+
+            # Ensure we're using a Veo model
+            if not model_id.startswith("veo-"):
+                raise ValueError(
+                    f"Model {model_id} is not a Veo model. "
+                    "Only Veo models support text-to-video generation."
+                )
+
+            log.info(f"Using Gemini Veo model for text-to-video: {model_id}")
+
+            # Prepare generation config
+            aspect_ratio = getattr(params, "aspect_ratio", "16:9")
+            resolution = getattr(params, "resolution", "720p")
+
+            # Build the generation config using GenerateVideosConfig
+            config_kwargs = {}
+
+            # Add negative prompt if provided
+            if hasattr(params, "negative_prompt") and params.negative_prompt:
+                config_kwargs["negative_prompt"] = params.negative_prompt
+
+            config = GenerateVideosConfig(**config_kwargs) if config_kwargs else None
+
+            # Generate video using Gemini API
+            client = self.get_client()
+
+            # Use the generate_videos endpoint (returns an async operation)
+            log.debug(f"Initiating video generation for prompt: {params.prompt[:50]}...")
+            operation = await client.models.generate_videos(
+                model=model_id,
+                prompt=params.prompt,
+                config=config,
+            )
+
+            log.debug(f"Video generation operation started: {operation.name}")
+
+            # Poll for operation completion
+            max_wait_time = timeout_s if timeout_s else 600  # Default 10 minutes
+            poll_interval = 10  # Poll every 10 seconds
+            elapsed_time = 0
+
+            while not operation.done:
+                if elapsed_time >= max_wait_time:
+                    raise TimeoutError(
+                        f"Video generation timed out after {max_wait_time} seconds"
+                    )
+
+                log.debug(f"Waiting for video generation... ({elapsed_time}s elapsed)")
+                await asyncio.sleep(poll_interval)
+                elapsed_time += poll_interval
+
+                # Refresh operation status
+                operation = await client.operations.get(operation=operation)
+
+            log.debug(f"Video generation completed after {elapsed_time}s")
+
+            # Extract video from completed operation
+            if not operation.response or not hasattr(operation.response, "generated_videos"):
+                log.error("No video data in completed operation response")
+                raise RuntimeError("No video data returned from Gemini API")
+
+            generated_videos = operation.response.generated_videos
+            if not generated_videos or len(generated_videos) == 0:
+                raise RuntimeError("No generated videos in response")
+
+            # Get the first generated video
+            generated_video = generated_videos[0]
+
+            # Download the video file
+            if not hasattr(generated_video, "video") or not generated_video.video:
+                raise RuntimeError("No video file reference in generated video")
+
+            video_bytes = await client.files.download(file=generated_video.video)
+
+            if not video_bytes:
+                raise RuntimeError("No video bytes returned after download")
+
+            log.debug(f"Generated {len(video_bytes)} bytes of video data")
+            return video_bytes
+
+        except Exception as e:
+            log.error(f"Gemini text-to-video generation failed: {e}")
+            raise RuntimeError(f"Gemini text-to-video generation failed: {e}")
 
     def is_context_length_error(self, error: Exception) -> bool:
         msg = str(error).lower()

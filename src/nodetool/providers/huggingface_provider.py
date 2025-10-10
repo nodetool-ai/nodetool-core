@@ -32,6 +32,7 @@ from nodetool.metadata.types import (
     LanguageModel,
     TTSModel,
     ImageModel,
+    VideoModel,
 )
 from nodetool.config.environment import Environment
 from nodetool.workflows.base_node import ApiKeyMissingError
@@ -235,6 +236,70 @@ async def fetch_tts_models_from_hf_provider(
 
     except Exception as e:
         log.error(f"Error fetching TTS models for provider {provider}: {e}")
+        return []
+
+
+async def fetch_video_models_from_hf_provider(
+    provider: str, pipeline_tag: str
+) -> List[VideoModel]:
+    """
+    Fetch video models from HuggingFace Hub API for a specific provider.
+
+    Args:
+        provider: The provider value (e.g., "fal-ai", "replicate", "novita")
+        pipeline_tag: The pipeline tag value (e.g., "text-to-video")
+
+    Returns:
+        List of VideoModel instances
+    """
+    try:
+        url = f"https://huggingface.co/api/models?inference_provider={provider}&pipeline_tag={pipeline_tag}&limit=100"
+
+        timeout = aiohttp.ClientTimeout(total=10)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.get(url) as response:
+                if response.status == 200:
+                    models_data = await response.json()
+
+                    models = []
+                    for model_data in models_data:
+                        model_id = model_data.get("id", "")
+                        if model_id:
+                            # Use the model name from the API if available, otherwise use the ID
+                            model_name = (
+                                model_data.get("name") or model_id.split("/")[-1]
+                                if "/" in model_id
+                                else model_id
+                            )
+
+                            # Get the appropriate provider enum value
+                            provider_enum = HF_PROVIDER_MAPPING.get(provider)
+                            if provider_enum is None:
+                                log.warning(
+                                    f"Unknown video provider: {provider}, skipping model: {model_id}"
+                                )
+                                continue
+
+                            models.append(
+                                VideoModel(
+                                    id=model_id,
+                                    name=model_name,
+                                    provider=provider_enum,
+                                )
+                            )
+
+                    log.debug(
+                        f"Fetched {len(models)} video models from HF provider: {provider}"
+                    )
+                    return models
+                else:
+                    log.warning(
+                        f"Failed to fetch video models for provider {provider}: HTTP {response.status}"
+                    )
+                    return []
+
+    except Exception as e:
+        log.error(f"Error fetching video models for provider {provider}: {e}")
         return []
 
 
@@ -1259,6 +1324,104 @@ class HuggingFaceProvider(BaseProvider):
                 f"Error fetching HuggingFace image models for provider {self.inference_provider}: {e}"
             )
             return []
+
+    async def get_available_video_models(self) -> List[VideoModel]:
+        """
+        Get available HuggingFace video generation models for this inference provider.
+
+        Fetches models from the HuggingFace API based on the inference provider.
+        Returns an empty list if no API key is configured or if the fetch fails.
+
+        Returns:
+            List of VideoModel instances for HuggingFace
+        """
+        if not self.api_key:
+            log.debug("No HuggingFace API key configured, returning empty video model list")
+            return []
+
+        try:
+            assert self.inference_provider is not None, "Inference provider is not set"
+            models = await fetch_video_models_from_hf_provider(
+                self.inference_provider, "text-to-video"
+            )
+            log.debug(
+                f"Fetched {len(models)} video models for HF inference provider: {self.inference_provider}"
+            )
+            return models
+        except Exception as e:
+            log.error(
+                f"Error fetching HuggingFace video models for provider {self.inference_provider}: {e}"
+            )
+            return []
+
+    async def text_to_video(
+        self,
+        params: Any,  # TextToVideoParams
+        timeout_s: int | None = None,
+        context: Any = None,
+    ) -> bytes:
+        """Generate a video from a text prompt using HuggingFace text-to-video models.
+
+        Args:
+            params: Text-to-video generation parameters including:
+                - prompt: Text description of the video
+                - negative_prompt: Optional elements to exclude
+                - model: VideoModel with HuggingFace model ID
+                - num_frames: Number of video frames to generate
+                - guidance_scale: Guidance scale for generation
+                - num_inference_steps: Number of denoising steps
+                - seed: Random seed for reproducibility
+            timeout_s: Optional timeout in seconds
+            context: Processing context for asset handling
+
+        Returns:
+            Raw video bytes
+
+        Raises:
+            ValueError: If required parameters are missing
+            RuntimeError: If generation fails
+        """
+        log.debug(f"Generating video with HuggingFace model: {params.model.id}")
+
+        if not params.prompt:
+            raise ValueError("prompt must not be empty")
+
+        try:
+            # Prepare parameters for the text_to_video API call
+            api_params = {}
+
+            if hasattr(params, "num_frames") and params.num_frames:
+                api_params["num_frames"] = params.num_frames
+
+            if hasattr(params, "guidance_scale") and params.guidance_scale:
+                api_params["guidance_scale"] = params.guidance_scale
+
+            if hasattr(params, "negative_prompt") and params.negative_prompt:
+                api_params["negative_prompt"] = params.negative_prompt
+
+            if hasattr(params, "num_inference_steps") and params.num_inference_steps:
+                api_params["num_inference_steps"] = params.num_inference_steps
+
+            if hasattr(params, "seed") and params.seed and params.seed >= 0:
+                api_params["seed"] = params.seed
+
+            # Use the text_to_video method from AsyncInferenceClient
+            video_bytes = await self.client.text_to_video(
+                text=params.prompt,
+                model=params.model.id,
+                **api_params,
+            )
+
+            log.debug("HuggingFace text-to-video API call successful")
+
+            # video_bytes should be raw video bytes from the API
+            log.debug(f"Generated {len(video_bytes)} bytes of video data")
+
+            return video_bytes
+
+        except Exception as e:
+            log.error(f"HuggingFace text-to-video generation failed: {e}")
+            raise RuntimeError(f"HuggingFace text-to-video generation failed: {str(e)}")
 
 async def main():
     for provider in InferenceProvider.__members__.values():

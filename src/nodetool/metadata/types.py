@@ -518,6 +518,13 @@ class ASRModel(BaseType):
     name: str = ""
 
 
+class VideoModel(BaseType):
+    type: Literal["video_model"] = "video_model"
+    provider: Provider = Provider.Empty
+    id: str = ""
+    name: str = ""
+
+
 class LlamaModel(BaseType):
     type: Literal["llama_model"] = "llama_model"
     name: str = ""
