@@ -32,7 +32,7 @@ Example usage:
 from typing import Any, AsyncGenerator, List, Sequence, Callable, Union
 import uuid
 
-from nodetool.providers.base import BaseProvider, ProviderCapability
+from nodetool.providers.base import BaseProvider
 from nodetool.metadata.types import (
     Message,
     Provider,
@@ -86,13 +86,6 @@ class FakeProvider(BaseProvider):
         self.last_model: str | None = None
         self.last_tools: Sequence[Any] = []
         self.last_kwargs: dict[str, Any] = {}
-
-    def get_capabilities(self) -> set[ProviderCapability]:
-        """Fake provider supports message generation capabilities."""
-        return {
-            ProviderCapability.GENERATE_MESSAGE,
-            ProviderCapability.GENERATE_MESSAGES,
-        }
 
     def get_response(
         self, messages: Sequence[Message], model: str

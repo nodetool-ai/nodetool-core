@@ -41,14 +41,6 @@ async def get_all_asr_models() -> List[ASRModel]:
 
     models = []
     for provider in list_providers():
-        # Check if provider supports ASR
-        capabilities = provider.get_capabilities()
-        if ProviderCapability.AUTOMATIC_SPEECH_RECOGNITION not in capabilities:
-            log.debug(
-                f"Provider '{provider.provider_name}' does not support AUTOMATIC_SPEECH_RECOGNITION, skipping"
-            )
-            continue
-
         provider_models = await provider.get_available_asr_models()
         models.extend(provider_models)
         log.debug(

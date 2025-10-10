@@ -8,20 +8,20 @@ class UnifiedModel(BaseModel):
     type: str | None
     name: str
     repo_id: str | None
-    path: str | None
-    cache_path: str | None
-    allow_patterns: list[str] | None
-    ignore_patterns: list[str] | None
-    description: str | None
-    readme: str | None
-    size_on_disk: int | None
-    downloaded: bool
-    pipeline_tag: str | None
-    tags: list[str] | None
-    has_model_index: bool | None
-    downloads: int | None
-    likes: int | None
-    trending_score: float | None
+    path: str | None = None
+    cache_path: str | None = None
+    allow_patterns: list[str] | None = None
+    ignore_patterns: list[str] | None = None
+    description: str | None = None
+    readme: str | None = None
+    size_on_disk: int | None = None
+    downloaded: bool = False
+    pipeline_tag: str | None = None
+    tags: list[str] | None = None
+    has_model_index: bool | None = None
+    downloads: int | None = None
+    likes: int | None = None
+    trending_score: float | None = None
 
 
 class RepoPath(BaseModel):

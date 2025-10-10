@@ -42,14 +42,6 @@ async def get_all_tts_models() -> List[TTSModel]:
     from nodetool.providers import list_providers
     models = []
     for provider in list_providers():
-        # Check if provider supports TTS
-        capabilities = provider.get_capabilities()
-        if ProviderCapability.TEXT_TO_SPEECH not in capabilities:
-            log.debug(
-                f"Provider '{provider.provider_name}' does not support TEXT_TO_SPEECH, skipping"
-            )
-            continue
-
         provider_models = await provider.get_available_tts_models()
         models.extend(provider_models)
         log.debug(

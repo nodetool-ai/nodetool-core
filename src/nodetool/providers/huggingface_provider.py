@@ -15,11 +15,7 @@ import numpy as np
 
 from huggingface_hub import AsyncInferenceClient
 
-from nodetool.providers.base import (
-    BaseProvider,
-    ProviderCapability,
-    register_provider,
-)
+from nodetool.providers.base import BaseProvider, register_provider
 from nodetool.agents.tools.base import Tool
 from nodetool.config.logging_config import get_logger
 import base64
@@ -409,16 +405,6 @@ class HuggingFaceProvider(BaseProvider):
             log.debug("Async client closed successfully")
         else:
             log.debug("Client does not have close method")
-
-    def get_capabilities(self) -> set[ProviderCapability]:
-        """HuggingFace provider supports message generation and text-to-speech."""
-        return {
-            ProviderCapability.GENERATE_MESSAGE,
-            ProviderCapability.GENERATE_MESSAGES,
-            ProviderCapability.TEXT_TO_SPEECH,
-            ProviderCapability.TEXT_TO_IMAGE,
-            ProviderCapability.IMAGE_TO_IMAGE,
-        }
 
     def get_container_env(self) -> dict[str, str]:
         env_vars = {}

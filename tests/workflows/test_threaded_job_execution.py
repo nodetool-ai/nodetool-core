@@ -12,7 +12,8 @@ from nodetool.types.graph import Graph
 from nodetool.models.workflow import Workflow
 
 # Add timeout to all tests in this file to prevent hanging
-pytestmark = pytest.mark.timeout(30)
+# Run these tests in the same xdist group to avoid parallel execution issues
+pytestmark = [pytest.mark.timeout(30), pytest.mark.xdist_group(name="job_execution")]
 
 
 @pytest.fixture

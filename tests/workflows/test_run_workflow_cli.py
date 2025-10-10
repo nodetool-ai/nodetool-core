@@ -14,6 +14,10 @@ PARAM_CASES = [
 import pytest
 
 
+# Mark subprocess/CLI tests to run sequentially to avoid conflicts
+pytestmark = pytest.mark.xdist_group(name="subprocess_execution")
+
+
 def _build_simple_workflow_graph() -> dict[str, object]:
     return {
         "nodes": [

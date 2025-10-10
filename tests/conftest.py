@@ -54,6 +54,28 @@ async def setup_and_teardown(request):
 
     await create_all_tables()
 
+    # Reset JobExecutionManager singleton for test isolation
+    # This prevents tests from interfering with each other
+    from nodetool.workflows.job_execution_manager import JobExecutionManager
+    if JobExecutionManager._instance is not None:
+        manager = JobExecutionManager.get_instance()
+        # Cancel all jobs
+        for job_id in list(manager._jobs.keys()):
+            try:
+                await manager.cancel_job(job_id)
+            except Exception:
+                pass
+        # Clear jobs dict
+        manager._jobs.clear()
+        # Cancel cleanup task if running
+        if manager._cleanup_task and not manager._cleanup_task.done():
+            manager._cleanup_task.cancel()
+            try:
+                await manager._cleanup_task
+            except asyncio.CancelledError:
+                pass
+        manager._cleanup_task = None
+
     yield
 
     # Clean up database tables
@@ -227,13 +249,15 @@ async def text_asset(user_id: str):
     return await make_text(user_id, "test content")
 
 
-@pytest.fixture()
+@pytest.fixture(scope="session")
 def user_id() -> str:
+    """User ID for tests - session scoped since it never changes."""
     return "1"
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def http_client():
+    """Mock HTTP client - session scoped since it's stateless."""
     return Mock(httpx.AsyncClient)
 
 

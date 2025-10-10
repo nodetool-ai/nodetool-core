@@ -16,11 +16,7 @@ from ollama import AsyncClient, Client
 from pydantic import BaseModel
 import tiktoken
 
-from nodetool.providers.base import (
-    BaseProvider,
-    ProviderCapability,
-    register_provider,
-)
+from nodetool.providers.base import BaseProvider, register_provider
 from nodetool.providers.openai_compat import OpenAICompat
 from nodetool.chat.token_counter import count_messages_tokens
 from nodetool.agents.tools.base import Tool
@@ -132,13 +128,6 @@ class OllamaProvider(BaseProvider, OpenAICompat):
         log.debug(
             f"OllamaProvider initialized. API URL present: {bool(self.api_url)}, log_file: {log_file}"
         )
-
-    def get_capabilities(self) -> set[ProviderCapability]:
-        """Ollama provider supports message generation capabilities."""
-        return {
-            ProviderCapability.GENERATE_MESSAGE,
-            ProviderCapability.GENERATE_MESSAGES,
-        }
 
     def get_container_env(self) -> dict[str, str]:
         env_vars = {}

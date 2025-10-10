@@ -6,7 +6,7 @@ a common interface that providers must implement for chat completions, image gen
 and other AI capabilities. Providers declare their capabilities at runtime.
 """
 
-from abc import ABC, abstractmethod
+from abc import ABC
 from enum import Enum
 from typing import Any, AsyncGenerator, AsyncIterator, Callable, List, Sequence, Set, Type
 import numpy as np
@@ -34,7 +34,8 @@ log = get_logger(__name__)
 class ProviderCapability(str, Enum):
     """Capabilities that a provider can support.
 
-    Providers declare which capabilities they support via get_capabilities().
+    Providers expose capabilities automatically via BaseProvider.get_capabilities(),
+    which inspects whether subclasses override the relevant interface methods.
     This allows runtime discovery of provider features and enables multi-modal
     providers (like Gemini) to expose all their features through a single interface.
     """
@@ -98,21 +99,29 @@ class BaseProvider(ABC):
     Abstract base class for AI service providers.
 
     Defines a common interface for different providers (OpenAI, Anthropic, Gemini, FAL, etc.),
-    allowing the system to work with any supported provider interchangeably. Providers declare
-    their capabilities and implement the corresponding methods.
+    allowing the system to work with any supported provider interchangeably. Capabilities are
+    determined automatically based on which capability methods a subclass overrides.
 
-    Capabilities are queried via get_capabilities() and can include:
+    Capabilities that can be detected include:
     - GENERATE_MESSAGE: Single message generation
     - GENERATE_MESSAGES: Streaming message generation
     - TEXT_TO_IMAGE: Text-to-image generation
     - IMAGE_TO_IMAGE: Image transformation
     - TEXT_TO_SPEECH: Text-to-speech/audio generation
 
-    Subclasses must implement:
-    - get_capabilities(): Return set of supported capabilities
-    - Methods corresponding to their declared capabilities
+    Subclasses should implement:
+    - The capability methods (generate_message, text_to_image, etc.) they support
     - get_available_language_models() and/or get_available_image_models()
     """
+
+    _CAPABILITY_METHODS: dict[ProviderCapability, str] = {
+        ProviderCapability.GENERATE_MESSAGE: "generate_message",
+        ProviderCapability.GENERATE_MESSAGES: "generate_messages",
+        ProviderCapability.TEXT_TO_IMAGE: "text_to_image",
+        ProviderCapability.IMAGE_TO_IMAGE: "image_to_image",
+        ProviderCapability.TEXT_TO_SPEECH: "text_to_speech",
+        ProviderCapability.AUTOMATIC_SPEECH_RECOGNITION: "automatic_speech_recognition",
+    }
 
     log_file: str | None = None
     cost: float = 0.0
@@ -130,23 +139,22 @@ class BaseProvider(ABC):
             "total_images": 0,
         }
 
-    @abstractmethod
     def get_capabilities(self) -> Set[ProviderCapability]:
-        """Return the set of capabilities this provider supports.
+        """Determine supported capabilities based on implemented methods."""
+        return {
+            capability
+            for capability, method_name in self._CAPABILITY_METHODS.items()
+            if self._supports_capability(method_name)
+        }
 
-        This method allows runtime discovery of what features a provider offers.
-        Providers should return a set of ProviderCapability enum values.
-
-        Returns:
-            Set of ProviderCapability values this provider supports
-
-        Example:
-            return {
-                ProviderCapability.GENERATE_MESSAGE,
-                ProviderCapability.GENERATE_MESSAGES,
-            }
-        """
-        pass
+    @classmethod
+    def _supports_capability(cls, method_name: str) -> bool:
+        """Check if a subclass overrides the capability method from BaseProvider."""
+        base_method = getattr(BaseProvider, method_name, None)
+        subclass_method = getattr(cls, method_name, None)
+        if base_method is None or subclass_method is None:
+            return False
+        return base_method is not subclass_method
 
     def get_container_env(self) -> dict[str, str]:
         """Return environment variables needed when running inside Docker."""
@@ -623,13 +631,6 @@ class MockProvider(BaseProvider):
         self.call_log: list[dict[str, Any]] = []  # Log calls made to the provider
         self.response_index = 0
         self.log_file = log_file
-
-    def get_capabilities(self) -> Set[ProviderCapability]:
-        """Mock provider supports both message generation capabilities."""
-        return {
-            ProviderCapability.GENERATE_MESSAGE,
-            ProviderCapability.GENERATE_MESSAGES,
-        }
 
     def _get_next_response(self) -> Message:
         """Returns the next predefined response or raises an error if exhausted."""

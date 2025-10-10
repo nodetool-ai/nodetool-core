@@ -14,11 +14,7 @@ import httpx
 import openai
 
 from nodetool.agents.tools.base import Tool
-from nodetool.providers.base import (
-    BaseProvider,
-    ProviderCapability,
-    register_provider,
-)
+from nodetool.providers.base import BaseProvider, register_provider
 from nodetool.providers.openai_compat import OpenAICompat
 from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
@@ -101,13 +97,6 @@ class VllmProvider(BaseProvider, OpenAICompat):
             "reasoning_tokens": 0,
         }
         self._client: openai.AsyncClient | None = None
-
-    def get_capabilities(self) -> set[ProviderCapability]:
-        """vLLM provider supports message generation capabilities."""
-        return {
-            ProviderCapability.GENERATE_MESSAGE,
-            ProviderCapability.GENERATE_MESSAGES,
-        }
 
     def get_container_env(self) -> dict[str, str]:
         """Return environment variables for containerized execution.

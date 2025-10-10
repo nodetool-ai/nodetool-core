@@ -1330,26 +1330,22 @@ def scan_for_package_nodes(verbose: bool = False) -> PackageModel:
     # Authors: PEP 621 may use list of tables
     raw_authors = project_data.get("authors", [])
     authors: list[str] = []
-    try:
-        if (
-            isinstance(raw_authors, list)
-            and raw_authors
-            and isinstance(raw_authors[0], dict)
-        ):
-            for a in raw_authors:
-                name = a.get("name")
-                email = a.get("email")
-                if name and email:
-                    authors.append(f"{name} <{email}>")
-                elif name:
-                    authors.append(str(name))
-                elif email:
-                    authors.append(str(email))
-        elif isinstance(raw_authors, list):
-            authors = [str(a) for a in raw_authors]
-    except Exception:
-        # Safe fallback
-        authors = []
+    if (
+        isinstance(raw_authors, list)
+        and raw_authors
+        and isinstance(raw_authors[0], dict)
+    ):
+        for a in raw_authors:
+            name = a.get("name")
+            email = a.get("email")
+            if name and email:
+                authors.append(f"{name} <{email}>")
+            elif name:
+                authors.append(str(name))
+            elif email:
+                authors.append(str(email))
+    elif isinstance(raw_authors, list):
+        authors = [str(a) for a in raw_authors]
 
     # Repository URL -> repo_id extraction
     repo_url: str | None = None

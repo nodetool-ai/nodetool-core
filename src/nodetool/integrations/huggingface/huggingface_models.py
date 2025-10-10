@@ -25,6 +25,7 @@ from pathlib import Path
 from nodetool.config.logging_config import get_logger
 from nodetool.metadata.types import (
     CLASSNAME_TO_MODEL_TYPE,
+    HFTextGeneration,
     HuggingFaceModel,
     LanguageModel,
     Provider,

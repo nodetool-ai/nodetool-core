@@ -16,11 +16,7 @@ from anthropic.types.image_block_param import ImageBlockParam
 from anthropic.types.url_image_source_param import URLImageSourceParam
 from anthropic.types.base64_image_source_param import Base64ImageSourceParam
 from anthropic.types.tool_param import ToolParam
-from nodetool.providers.base import (
-    BaseProvider,
-    ProviderCapability,
-    register_provider,
-)
+from nodetool.providers.base import BaseProvider, register_provider
 from nodetool.io.media_fetch import fetch_uri_bytes_and_mime_sync
 from nodetool.providers.openai_prediction import calculate_chat_cost
 from nodetool.config.logging_config import get_logger
@@ -137,13 +133,6 @@ class AnthropicProvider(BaseProvider):
         }
         self.cost = 0.0
         log.debug("AnthropicProvider initialized with usage tracking")
-
-    def get_capabilities(self) -> set[ProviderCapability]:
-        """Anthropic provider supports message generation capabilities."""
-        return {
-            ProviderCapability.GENERATE_MESSAGE,
-            ProviderCapability.GENERATE_MESSAGES,
-        }
 
     def get_container_env(self) -> dict[str, str]:
         env_vars = {"ANTHROPIC_API_KEY": self.api_key} if self.api_key else {}

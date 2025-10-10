@@ -26,11 +26,7 @@ from google.genai.types import (
 from nodetool.workflows.base_node import ApiKeyMissingError
 from pydantic import BaseModel
 
-from nodetool.providers.base import (
-    BaseProvider,
-    ProviderCapability,
-    register_provider,
-)
+from nodetool.providers.base import BaseProvider, register_provider
 from nodetool.agents.tools.base import Tool as NodeTool
 from nodetool.config.environment import Environment
 from nodetool.metadata.types import (
@@ -76,17 +72,6 @@ class GeminiProvider(BaseProvider):
         self.usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
         self.cost = 0.0
         log.debug(f"GeminiProvider initialized. API key present: {bool(self.api_key)}")
-
-    def get_capabilities(self) -> set[ProviderCapability]:
-        """Gemini provider supports chat, image generation, text-to-speech, and ASR."""
-        return {
-            ProviderCapability.GENERATE_MESSAGE,
-            ProviderCapability.GENERATE_MESSAGES,
-            ProviderCapability.TEXT_TO_IMAGE,
-            ProviderCapability.IMAGE_TO_IMAGE,
-            ProviderCapability.TEXT_TO_SPEECH,
-            ProviderCapability.AUTOMATIC_SPEECH_RECOGNITION,
-        }
 
     def get_client(self) -> AsyncClient:
         """Return an async Gemini client. Extracted for ease of testing/mocking."""

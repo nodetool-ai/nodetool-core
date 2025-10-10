@@ -9,9 +9,8 @@ This test file ensures that:
 """
 
 import pytest
-from typing import List, Set
+from typing import List
 from nodetool.metadata.types import LanguageModel, ImageModel, Provider
-from nodetool.providers.base import BaseProvider, ProviderCapability
 from nodetool.providers.base import BaseProvider
 from nodetool.ml.models.language_models import get_all_language_models
 from nodetool.ml.models.image_models import get_all_image_models
@@ -19,14 +18,6 @@ from nodetool.ml.models.image_models import get_all_image_models
 
 class MockMultiModalProvider(BaseProvider):
     """Mock provider that supports both chat and image capabilities (like Gemini)."""
-
-    def get_capabilities(self) -> Set[ProviderCapability]:
-        return {
-            ProviderCapability.GENERATE_MESSAGE,
-            ProviderCapability.GENERATE_MESSAGES,
-            ProviderCapability.TEXT_TO_IMAGE,
-            ProviderCapability.IMAGE_TO_IMAGE,
-        }
 
     async def get_available_language_models(self) -> List[LanguageModel]:
         """Return mock language models."""
@@ -49,15 +40,15 @@ class MockMultiModalProvider(BaseProvider):
         if False:
             yield
 
+    async def text_to_image(self, *args, **kwargs):  # type: ignore[override]
+        return b""
+
+    async def image_to_image(self, *args, **kwargs):  # type: ignore[override]
+        return b""
+
 
 class MockLanguageOnlyProvider(BaseProvider):
     """Mock provider that only supports language capabilities."""
-
-    def get_capabilities(self) -> Set[ProviderCapability]:
-        return {
-            ProviderCapability.GENERATE_MESSAGE,
-            ProviderCapability.GENERATE_MESSAGES,
-        }
 
     async def get_available_language_models(self) -> List[LanguageModel]:
         """Return mock language models."""
@@ -80,17 +71,17 @@ class MockImageOnlyProvider(BaseProvider):
 
     provider_name = "mock_image"
 
-    def get_capabilities(self) -> Set[ProviderCapability]:
-        return {
-            ProviderCapability.TEXT_TO_IMAGE,
-            ProviderCapability.IMAGE_TO_IMAGE,
-        }
-
     async def get_available_image_models(self) -> List[ImageModel]:
         """Return mock image models."""
         return [
             ImageModel(id="img-only-1", name="Image Only 1", provider=Provider.Empty),
         ]
+
+    async def text_to_image(self, *args, **kwargs):  # type: ignore[override]
+        return b""
+
+    async def image_to_image(self, *args, **kwargs):  # type: ignore[override]
+        return b""
 
 
 @pytest.mark.asyncio

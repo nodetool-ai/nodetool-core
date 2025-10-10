@@ -2,6 +2,7 @@ from datetime import datetime
 import re
 import aiosqlite
 import sqlite3
+import asyncio
 from types import UnionType
 from typing import Any, Dict, List, Optional, get_args
 from pydantic.fields import FieldInfo
@@ -22,6 +23,44 @@ from enum import EnumMeta as EnumType
 from enum import Enum
 
 log = get_logger(__name__)
+
+
+async def retry_on_locked(func, max_retries=5, initial_delay=0.01):
+    """Retry a database operation if it fails due to database lock.
+
+    Uses exponential backoff with jitter to avoid thundering herd.
+
+    Args:
+        func: Async function to execute
+        max_retries: Maximum number of retry attempts
+        initial_delay: Initial delay in seconds (doubled each retry)
+    """
+    last_exception = None
+    delay = initial_delay
+
+    for attempt in range(max_retries):
+        try:
+            return await func()
+        except (sqlite3.OperationalError, aiosqlite.OperationalError) as e:
+            last_exception = e
+            error_msg = str(e).lower()
+
+            # Only retry on lock-related errors
+            if "locked" not in error_msg and "busy" not in error_msg:
+                raise
+
+            if attempt < max_retries - 1:
+                # Add jitter to prevent thundering herd
+                import random
+                jitter = delay * random.uniform(0.5, 1.5)
+                log.debug(f"Database locked, retrying in {jitter:.3f}s (attempt {attempt + 1}/{max_retries})")
+                await asyncio.sleep(jitter)
+                delay *= 2  # Exponential backoff
+            else:
+                log.error(f"Database operation failed after {max_retries} retries: {e}")
+                raise
+
+    raise last_exception or Exception("Unexpected error in retry_on_locked")
 
 
 def convert_to_sqlite_format(
@@ -253,6 +292,15 @@ class SQLiteAdapter(DatabaseAdapter):
         connection = await aiosqlite.connect(db_path, timeout=30)
         connection.row_factory = aiosqlite.Row
         await connection.set_trace_callback(log.debug)
+
+        # Configure SQLite for better concurrency and deadlock avoidance
+        await connection.execute("PRAGMA journal_mode=WAL")
+        await connection.execute("PRAGMA busy_timeout=10000")  # 10 seconds
+        await connection.execute("PRAGMA synchronous=NORMAL")
+        # Increase cache size for better performance (negative means KB)
+        await connection.execute("PRAGMA cache_size=-64000")  # 64MB
+        await connection.commit()
+
         self = cls(db_path, fields, table_schema, indexes, connection)
         if await self.table_exists():
             await self.migrate_table()
@@ -308,9 +356,12 @@ class SQLiteAdapter(DatabaseAdapter):
             sql += f"{field_name} {get_sqlite_type(field_type)}, "
         sql += f"PRIMARY KEY ({primary_key}))"
 
-        try:
+        async def _create():
             await self.connection.execute(sql)
             await self.connection.commit()
+
+        try:
+            await retry_on_locked(_create)
         except aiosqlite.Error as e:
             print(f"SQLite error during table creation: {e}")
             raise e
@@ -318,8 +369,12 @@ class SQLiteAdapter(DatabaseAdapter):
     async def drop_table(self) -> None:
         """Drops the database table associated with this adapter."""
         sql = f"DROP TABLE IF EXISTS {self.table_name}"
-        await self.connection.execute(sql)
-        await self.connection.commit()
+
+        async def _drop():
+            await self.connection.execute(sql)
+            await self.connection.commit()
+
+        await retry_on_locked(_drop)
 
     async def migrate_table(self) -> None:
         """Performs schema migration for the table.
@@ -435,8 +490,12 @@ class SQLiteAdapter(DatabaseAdapter):
             for key in valid_keys
         )
         query = f"INSERT OR REPLACE INTO {self.table_name} ({columns}) VALUES ({placeholders})"
-        await self.connection.execute(query, values)
-        await self.connection.commit()
+
+        async def _save():
+            await self.connection.execute(query, values)
+            await self.connection.commit()
+
+        await retry_on_locked(_save)
 
     async def get(self, key: Any) -> Dict[str, Any] | None:
         """Retrieves an item from the database table by its primary key.
@@ -465,8 +524,12 @@ class SQLiteAdapter(DatabaseAdapter):
         """
         pk_column = self.get_primary_key()
         query = f"DELETE FROM {self.table_name} WHERE {pk_column} = ?"
-        await self.connection.execute(query, (primary_key,))
-        await self.connection.commit()
+
+        async def _delete():
+            await self.connection.execute(query, (primary_key,))
+            await self.connection.commit()
+
+        await retry_on_locked(_delete)
 
     def _build_condition(
         self, condition: Union[Condition, ConditionGroup]

@@ -34,11 +34,7 @@ from pydantic import BaseModel
 from pydub import AudioSegment
 from urllib.parse import unquote_to_bytes
 
-from nodetool.providers.base import (
-    BaseProvider,
-    ProviderCapability,
-    register_provider,
-)
+from nodetool.providers.base import BaseProvider, register_provider
 from nodetool.agents.tools.base import Tool
 from nodetool.providers.openai_prediction import calculate_chat_cost
 from nodetool.config.logging_config import get_logger
@@ -115,15 +111,6 @@ class OpenAIProvider(BaseProvider):
             "reasoning_tokens": 0,
         }
         log.debug("OpenAIProvider initialized. API key present: True")
-
-    def get_capabilities(self) -> set[ProviderCapability]:
-        """OpenAI provider supports message generation, text-to-speech, and ASR capabilities."""
-        return {
-            ProviderCapability.GENERATE_MESSAGE,
-            ProviderCapability.GENERATE_MESSAGES,
-            ProviderCapability.TEXT_TO_SPEECH,
-            ProviderCapability.AUTOMATIC_SPEECH_RECOGNITION,
-        }
 
     def get_container_env(self) -> dict[str, str]:
         """Return environment variables required for containerized execution.

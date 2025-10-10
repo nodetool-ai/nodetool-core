@@ -18,11 +18,7 @@ from openai.types.chat import ChatCompletionChunk
 from huggingface_hub import hf_hub_download
 
 from nodetool.agents.tools.base import Tool
-from nodetool.providers.base import (
-    BaseProvider,
-    ProviderCapability,
-    register_provider,
-)
+from nodetool.providers.base import BaseProvider, register_provider
 from nodetool.providers.openai_compat import OpenAICompat
 from nodetool.providers.llama_server_manager import LlamaServerManager
 from nodetool.config.logging_config import get_logger
@@ -68,13 +64,6 @@ class LlamaProvider(BaseProvider, OpenAICompat):
             "total_tokens": 0,
             "cached_prompt_tokens": 0,
             "reasoning_tokens": 0,
-        }
-
-    def get_capabilities(self) -> set[ProviderCapability]:
-        """Llama provider supports message generation capabilities."""
-        return {
-            ProviderCapability.GENERATE_MESSAGE,
-            ProviderCapability.GENERATE_MESSAGES,
         }
 
     def _normalize_messages_for_llama(
