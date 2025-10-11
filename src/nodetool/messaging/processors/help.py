@@ -100,12 +100,69 @@ You are a helpful assistant that provides help for Nodetool.
 - A producer node can generate a stream of items
 - Connected nodes will be executed once for each item and continue to stream
 
-## Agent Nodes
+## Agent Nodes (In Workflows)
 - Connect nodes as tools to an Agent node via dynamic outputs.
 - A tool chain should end with a nodetool.workflows.base_node.ToolResult node.
 - The dynamic output connecting to the tool node should have the correct type and properly named.
 - For example, connect search_google output to search.google.GoogleSearch node's "keyword" property.
 - Agent's chunk output streams tokens while the text output streams the final text.
+
+## Autonomous Agent Execution
+NodeTool provides autonomous agent execution capabilities for tasks that require dynamic planning and web/email access. Agents can use various tools to accomplish objectives like web search, browsing, email access, and more.
+
+### Available Agent Tools
+- **google_search**: Search the web using Google
+- **browser**: Browse and extract content from web pages
+- **email**: Search and read emails
+
+### Agent vs Workflows
+**Use Agents when:**
+- Task requires dynamic planning and adaptation
+- You don't know exact steps in advance
+- Need web search or external data access
+- Want autonomous task completion
+
+**Use Workflows when:**
+- You have a well-defined process
+- Steps are known and repeatable
+- Need precise control over execution
+- Building reusable pipelines
+
+### Tips for Writing Good Agent Objectives
+1. **Be specific**: Clearly state what you want the agent to accomplish
+2. **Break down steps**: For complex tasks, list the steps in the objective
+3. **Specify output format**: Describe how you want the results formatted
+4. **Include constraints**: Mention any limitations or preferences
+5. **Use output_schema**: For structured data, provide a JSON schema
+
+### Provider and Model Selection
+**OpenAI (default):**
+- gpt-4o: Most capable, good for complex reasoning
+- gpt-4-turbo: Fast and capable
+- gpt-3.5-turbo: Faster, lower cost, good for simpler tasks
+
+**Anthropic:**
+- claude-3-7-sonnet-20250219: Very capable, good reasoning
+- claude-3-5-sonnet-20241022: Balanced capability and speed
+- claude-3-haiku-20240307: Fast, efficient for simpler tasks
+
+**HuggingFace Cerebras (free, fast):**
+- openai/gpt-oss-120b: Good performance, free tier available
+
+**Ollama (local):**
+- qwen3:14b: Good local model
+- gemma3:12b: Efficient local model
+
+**Google Gemini:**
+- gemini-2.0-flash: Fast and capable
+- gemini-pro-vision: For vision tasks
+
+### Agent Workspace
+Agents save files to a workspace directory. Check the workspace_dir in response to find:
+- Downloaded files
+- Generated reports
+- Intermediate data
+- Any artifacts created during execution
 
 ## Node Metadata Structure
 Each node type has specific metadata that defines:

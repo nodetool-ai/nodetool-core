@@ -17,6 +17,7 @@ Subclasses should implement transport-specific methods for:
 
 from nodetool.config.logging_config import get_logger
 from abc import ABC, abstractmethod
+import json
 import traceback
 from typing import List, Optional
 import asyncio
@@ -157,47 +158,6 @@ class BaseChatRunner(ABC):
             help_mode=db_message.help_mode,
         )
 
-    def _metadata_message_to_db_message(
-        self, metadata_message: ApiMessage
-    ) -> DBMessage:
-        """
-        Convert a metadata Message to a database Message.
-
-        Args:
-            metadata_message: The metadata Message to convert
-
-        Returns:
-            The converted database Message
-        """
-        # Extract graph as dict if it's a Graph object
-        graph_dict = None
-        if metadata_message.graph:
-            if hasattr(metadata_message.graph, "model_dump"):
-                graph_dict = metadata_message.graph.model_dump()
-            elif isinstance(metadata_message.graph, dict):
-                graph_dict = metadata_message.graph
-
-        return DBMessage.create(
-            thread_id=metadata_message.thread_id or "",
-            user_id=self.user_id or "",
-            workflow_id=metadata_message.workflow_id,
-            graph=graph_dict,
-            tools=metadata_message.tools,
-            tool_call_id=metadata_message.tool_call_id,
-            role=metadata_message.role,
-            name=metadata_message.name,
-            content=metadata_message.content,
-            tool_calls=metadata_message.tool_calls,
-            collections=metadata_message.collections,
-            input_files=metadata_message.input_files,
-            output_files=metadata_message.output_files,
-            provider=metadata_message.provider,
-            model=metadata_message.model,
-            agent_mode=metadata_message.agent_mode or False,
-            workflow_assistant=metadata_message.workflow_assistant or False,
-            help_mode=metadata_message.help_mode or False,
-        )
-
     async def _save_message_to_db_async(self, message_data: dict) -> DBMessage:
         """
         Asynchronously create and save a message to the database.
@@ -213,6 +173,11 @@ class BaseChatRunner(ABC):
         data_copy.pop("id", None)
         data_copy.pop("type", None)
         data_copy.pop("user_id", None)
+
+        # For agent_execution messages, convert dict content to JSON string
+        if data_copy.get("role") == "agent_execution" and isinstance(data_copy.get("content"), dict):
+            data_copy["content"] = json.dumps(data_copy["content"])
+            log.debug("Converted agent_execution message content dict to JSON string for DB storage")
 
         # Normalize tools field to expected types (list[str])
         try:
@@ -275,12 +240,20 @@ class BaseChatRunner(ABC):
                 thread_id=thread_id, limit=1000, reverse=False
             )
 
+            # Filter out agent_execution messages - these should not be sent to the LLM
+            # Only user, assistant, system (non-execution), and tool messages should be included
+            filtered_messages = [
+                db_msg for db_msg in db_messages
+                if db_msg.role != "agent_execution"
+            ]
+
             # Convert database messages to metadata messages
             chat_history = [
-                self._db_message_to_metadata_message(db_msg) for db_msg in db_messages
+                self._db_message_to_metadata_message(db_msg) for db_msg in filtered_messages
             ]
             log.debug(
-                f"Fetched {len(db_messages)} messages from database for thread {thread_id}"
+                f"Fetched {len(filtered_messages)} messages from database for thread {thread_id} "
+                f"(filtered {len(db_messages) - len(filtered_messages)} agent_execution messages)"
             )
             return chat_history
         except Exception as e:

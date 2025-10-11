@@ -32,6 +32,8 @@ class Message(DBModel):
     agent_mode: bool | None = DBField(default=None)
     workflow_assistant: bool | None = DBField(default=None)
     help_mode: bool | None = DBField(default=None)
+    agent_execution_id: str | None = DBField(default=None)
+    execution_event_type: str | None = DBField(default=None)
 
     @classmethod
     async def create(cls, thread_id: str, user_id: str, **kwargs) -> "Message":

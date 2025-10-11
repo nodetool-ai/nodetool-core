@@ -27,6 +27,7 @@ import re  # Add re for grep
 
 # New imports
 from nodetool.agents.tools.workflow_tool import create_workflow_tools
+from nodetool.ml.models.language_models import get_all_language_models
 from prompt_toolkit import PromptSession
 from prompt_toolkit.history import FileHistory
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
@@ -72,7 +73,7 @@ from nodetool.agents.tools.serp_tools import (
     GoogleNewsTool,
     GoogleSearchTool,
 )
-from nodetool.agents.tools.workspace_tools import (
+from nodetool.agents.tools.filesystem_tools import (
     ListDirectoryTool,
     ReadFileTool,
     WriteFileTool,
@@ -258,12 +259,12 @@ class ChatCLI:
 
         # Initialize components with progress indicators
         try:
-            self.language_models = await get_language_models()
+            self.language_models = await get_all_language_models()
         except Exception as e:
             self.console.print(
                 f"[bold red]Error fetching language models:[/bold red] {e}"
             )
-            self.language_models = []  # Ensure it's an empty list
+            self.language_models = [] 
 
         # Find and set the selected model based on loaded settings or default
         found_model = None
@@ -328,45 +329,46 @@ class ChatCLI:
             ScreenshotTool(),
             SearchEmailTool(),
         ]
+        self.all_tools = standard_tools
 
         # Initialize workflow tools
-        workflow_tools: list[Any] = []
-        try:
-            workflow_tools = await create_workflow_tools(
-                self.context.user_id, limit=200
-            )
-        except Exception as err:
-            self.console.print(
-                f"[bold yellow]Warning:[/bold yellow] Failed to load workflow tools: {err}"
-            )
-            workflow_tools = []
+        # workflow_tools: list[Any] = []
+        # try:
+        #     workflow_tools = await create_workflow_tools(
+        #         self.context.user_id, limit=200
+        #     )
+        # except Exception as err:
+        #     self.console.print(
+        #         f"[bold yellow]Warning:[/bold yellow] Failed to load workflow tools: {err}"
+        #     )
+        #     workflow_tools = []
 
-        if workflow_tools:
-            self.console.print(
-                f"[bold green]Loaded {len(workflow_tools)} workflow tools[/bold green]"
-            )
+        # if workflow_tools:
+        #     self.console.print(
+        #         f"[bold green]Loaded {len(workflow_tools)} workflow tools[/bold green]"
+        #     )
 
-        # Initialize node tools
-        from nodetool.workflows.base_node import NODE_BY_TYPE
-        from nodetool.agents.tools.node_tool import NodeTool
+        # # Initialize node tools
+        # from nodetool.workflows.base_node import NODE_BY_TYPE
+        # from nodetool.agents.tools.node_tool import NodeTool
 
-        node_tools = []
-        for node_type, node_class in NODE_BY_TYPE.items():
-            try:
-                node_tool = NodeTool(node_class)
-                node_tools.append(node_tool)
-            except Exception as e:
-                self.console.print(
-                    f"[bold yellow]Warning:[/bold yellow] Failed to create node tool for {node_type}: {e}"
-                )
+        # node_tools = []
+        # for node_type, node_class in NODE_BY_TYPE.items():
+        #     try:
+        #         node_tool = NodeTool(node_class)
+        #         node_tools.append(node_tool)
+        #     except Exception as e:
+        #         self.console.print(
+        #             f"[bold yellow]Warning:[/bold yellow] Failed to create node tool for {node_type}: {e}"
+        #         )
 
-        if node_tools:
-            self.console.print(
-                f"[bold green]Loaded {len(node_tools)} node tools[/bold green]"
-            )
+        # if node_tools:
+        #     self.console.print(
+        #         f"[bold green]Loaded {len(node_tools)} node tools[/bold green]"
+        #     )
 
-        # Store all available tools (standard tools + workflow tools + node tools)
-        self.all_tools = standard_tools + workflow_tools + node_tools
+        # # Store all available tools (standard tools + workflow tools + node tools)
+        # self.all_tools = standard_tools + workflow_tools + node_tools
 
         # Initialize enabled_tools tracking if not already set
         for tool in self.all_tools:

@@ -139,16 +139,7 @@ async def delete_ollama_model_endpoint(model_name: str) -> bool:
 
 
 async def get_language_models() -> list[LanguageModel]:
-    log.info("🔍 TRACE: get_language_models() CALLED (api/model.py)")
     models = await get_all_language_models()
-
-    ollama_models = await get_ollama_models()
-    models.extend(
-        [
-            LanguageModel(id=model.name, name=model.name, provider=Provider.Ollama)
-            for model in ollama_models
-        ]
-    )
     return models
 
 
