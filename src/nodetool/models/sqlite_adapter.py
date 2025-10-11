@@ -295,7 +295,7 @@ class SQLiteAdapter(DatabaseAdapter):
 
         # Configure SQLite for better concurrency and deadlock avoidance
         await connection.execute("PRAGMA journal_mode=WAL")
-        await connection.execute("PRAGMA busy_timeout=10000")  # 10 seconds
+        await connection.execute("PRAGMA busy_timeout=5000")  # 5 seconds
         await connection.execute("PRAGMA synchronous=NORMAL")
         # Increase cache size for better performance (negative means KB)
         await connection.execute("PRAGMA cache_size=-64000")  # 64MB

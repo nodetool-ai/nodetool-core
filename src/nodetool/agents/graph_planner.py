@@ -465,9 +465,11 @@ WORKFLOW_DESIGN_PROMPT = """
 ## Goal
 Design a COMPLETE workflow by selecting appropriate nodes and defining ALL data flow connections between them. Use the search_nodes tool to find specific node types and understand their inputs/outputs to create proper connections.
 
-**CRITICAL: You MUST create ALL nodes including Input and Output nodes AND ALL necessary edge connections between them. Every node that requires input must have its input properties connected via edges. The system will validate that your graph has complete data flow.**
+**🚨 CRITICAL: You MUST create ALL nodes including Input and Output nodes AND ALL necessary edge connections between them. Every node that requires input must have its input properties connected via edges. The system will validate that your graph has complete data flow.**
 
-**EDGE CONNECTION REQUIREMENT: After creating all nodes, you MUST ensure that every processing node receives its required inputs through edge connections. Missing edge connections will cause validation failures.**
+**🚨 EDGE CONNECTION REQUIREMENT: After creating all nodes, you MUST ensure that every processing node receives its required inputs through edge connections. Missing edge connections will cause validation failures.**
+
+**⚠️ COMMON MISTAKE: The model frequently forgets to connect nodes together. ALWAYS verify that ALL processing nodes have their required input properties connected via edge definitions in the properties JSON. Do not leave nodes disconnected!**
 
 Conciseness & Output Discipline:
 - Keep any explanatory text minimal (<100 tokens) and only when strictly necessary.
@@ -569,11 +571,15 @@ Example connections:
 Note: The `node_type` field uses the EXACT string from search_nodes results (e.g., "lib.browser.WebFetch"), NOT "type".
 
 ## Instructions - Dataflow Design & Edge Creation
+
+**🚨 REMINDER: The most common error is forgetting to create edge connections! After defining nodes, you MUST connect them!**
+
 4. **MANDATORY: Create ALL required edge connections.** Every processing node must have its input properties connected to appropriate source nodes via edges:
    - Trace data flow from Input nodes through processing nodes to Output nodes
    - Connect EVERY required input property of EVERY processing node
    - Use the node metadata from `search_nodes` to identify which properties need connections
    - Template nodes: ALL template variables (referenced as `{{ variable_name }}`) MUST have corresponding edge connections
+   - **This step is NOT optional** - workflows without proper edge connections will fail validation
 
 5. **Edge Connection Checklist - VERIFY BEFORE SUBMITTING:**
    - ✓ Every Input node connects to at least one processing node
@@ -604,15 +610,16 @@ Note: The `node_type` field uses the EXACT string from search_nodes results (e.g
 Before submitting your node specifications, verify:
 
 1. **CRITICAL - Correct Field Names:** Every node specification MUST use `node_type` (NOT "type") with the EXACT value from search_nodes results
-2. **Complete Data Flow:** Every node that needs input has edge connections defined in its properties
+2. **🚨 CRITICAL - Complete Data Flow:** Every node that needs input has edge connections defined in its properties. This is the #1 most common failure - DO NOT FORGET TO CONNECT NODES!
 3. **Template Variables:** If using template nodes, ALL variables in the template string have corresponding edge connections
 4. **Output Connectivity:** All Output nodes receive data via their "value" property connection
 5. **No Orphaned Nodes:** Every node participates in the data flow from inputs to outputs
-6. **Proper Node Types:** All intermediate nodes use valid types found via `search_nodes`
-7. **Determinism:** No extraneous text; output only the structured node specifications via the tool
-8. **Schema Mapping:** There is a one-to-one mapping between schema items and created Input/Output nodes with matching `name` properties
-9. **Unique IDs:** All `node_id` values are unique and consistently referenced by edges
-10. **Non-Dynamic Props:** Non-dynamic nodes only use properties present in their metadata
+6. **🔗 Edge Connection Double-Check:** Go through EVERY processing node and verify its required input properties have edge definitions like: `{"property_name": {"type": "edge", "source": "source_id", "sourceHandle": "output"}}`
+7. **Proper Node Types:** All intermediate nodes use valid types found via `search_nodes`
+8. **Determinism:** No extraneous text; output only the structured node specifications via the tool
+9. **Schema Mapping:** There is a one-to-one mapping between schema items and created Input/Output nodes with matching `name` properties
+10. **Unique IDs:** All `node_id` values are unique and consistently referenced by edges
+11. **Non-Dynamic Props:** Non-dynamic nodes only use properties present in their metadata
 
 **REMEMBER:** The evaluation showed that many workflows fail due to missing edge connections. Your graph must have COMPLETE data flow connectivity to pass validation.
 

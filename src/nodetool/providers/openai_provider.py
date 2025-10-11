@@ -399,12 +399,16 @@ class OpenAIProvider(BaseProvider):
         # Source: https://platform.openai.com/docs/guides/images
         image_models_config = [
             {
+                "id": "gpt-image-1",
+                "name": "GPT Image 1",
+            },
+            {
                 "id": "dall-e-3",
-                "name": "DALL-E 3",
+                "name": "DALL-E 3 (legacy)",
             },
             {
                 "id": "dall-e-2",
-                "name": "DALL-E 2",
+                "name": "DALL-E 2 (legacy)",
             },
         ]
 
