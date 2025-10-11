@@ -29,7 +29,6 @@ from nodetool.workflows.base_node import ApiKeyMissingError
 from pydantic import BaseModel
 
 from nodetool.providers.base import BaseProvider, register_provider
-from nodetool.agents.tools.base import Tool as NodeTool
 from nodetool.config.environment import Environment
 from nodetool.metadata.types import (
     Message,
@@ -965,7 +964,6 @@ class GeminiProvider(BaseProvider):
 
             # Extract audio from response
             # The response should contain audio data in the parts
-            audio_bytes = b""
             if hasattr(response, "candidates") and response.candidates:
                 for candidate in response.candidates:
                     if hasattr(candidate, "content") and candidate.content:
@@ -975,7 +973,7 @@ class GeminiProvider(BaseProvider):
                                     if part.inline_data.data:
                                         yield np.frombuffer(part.inline_data.data, dtype=np.int16)
 
-            log.debug(f"Gemini text-to-speech completed")
+            log.debug("Gemini text-to-speech completed")
         except Exception as e:
             log.error(f"Gemini text-to-speech failed: {e}")
             raise RuntimeError(f"Gemini text-to-speech generation failed: {e}")
@@ -1282,11 +1280,9 @@ class GeminiProvider(BaseProvider):
 
             log.info(f"Using Gemini Veo model for text-to-video: {model_id}")
 
-            # Prepare generation config
-            aspect_ratio = getattr(params, "aspect_ratio", "16:9")
-            resolution = getattr(params, "resolution", "720p")
-
             # Build the generation config using GenerateVideosConfig
+            # Note: aspect_ratio and resolution are not currently used in the Gemini API
+            # but are kept for potential future use
             config_kwargs = {}
 
             # Add negative prompt if provided
@@ -1355,6 +1351,147 @@ class GeminiProvider(BaseProvider):
         except Exception as e:
             log.error(f"Gemini text-to-video generation failed: {e}")
             raise RuntimeError(f"Gemini text-to-video generation failed: {e}")
+
+    async def image_to_video(
+        self,
+        image: bytes,
+        params: Any,  # ImageToVideoParams
+        timeout_s: int | None = None,
+        context: ProcessingContext | None = None,
+    ) -> bytes:
+        """Generate a video from an input image using Gemini Veo models.
+
+        The input image will be used as the first frame of the generated video,
+        and the video will animate from that starting point based on the prompt.
+
+        Args:
+            image: Input image as bytes (up to 20MB, any resolution/aspect ratio)
+            params: Image-to-video generation parameters including:
+                - model: VideoModel with Veo model ID (veo-2.0 or veo-3.0)
+                - prompt: Optional text description to guide animation
+                - negative_prompt: Optional elements to exclude
+                - aspect_ratio: "16:9" or "9:16" (default "16:9")
+                - resolution: "720p" or "1080p"
+                - seed: Optional seed for reproducibility
+            timeout_s: Optional timeout in seconds (default: 600)
+            context: Processing context for asset handling
+
+        Returns:
+            Raw video bytes (MP4 format, 8 seconds long)
+
+        Raises:
+            ValueError: If required parameters are missing or invalid
+            RuntimeError: If generation fails
+        """
+        if not image:
+            raise ValueError("Input image cannot be empty.")
+
+        if not self.api_key:
+            raise ValueError("GEMINI_API_KEY is required for video generation")
+
+        self._log_api_request("image_to_video", params=params)
+
+        try:
+            model_id = params.model.id
+
+            # Ensure we're using a Veo model
+            if not model_id.startswith("veo-"):
+                raise ValueError(
+                    f"Model {model_id} is not a Veo model. "
+                    "Only Veo models support image-to-video generation."
+                )
+
+            log.info(f"Using Gemini Veo model for image-to-video: {model_id}")
+
+            # Convert image bytes to PIL Image for Gemini API
+            from PIL import Image
+
+            pil_image = Image.open(BytesIO(image))
+            log.debug(f"Loaded input image: {pil_image.size}, format: {pil_image.format}")
+
+            # Build the generation config using GenerateVideosConfig
+            config_kwargs = {}
+
+            # Add negative prompt if provided
+            if hasattr(params, "negative_prompt") and params.negative_prompt:
+                config_kwargs["negative_prompt"] = params.negative_prompt
+
+            # Add seed if provided
+            if hasattr(params, "seed") and params.seed is not None:
+                config_kwargs["seed"] = params.seed
+
+            # Add aspect ratio if provided
+            if hasattr(params, "aspect_ratio") and params.aspect_ratio:
+                config_kwargs["aspect_ratio"] = params.aspect_ratio
+
+            config = GenerateVideosConfig(**config_kwargs) if config_kwargs else None
+
+            # Generate video using Gemini API
+            client = self.get_client()
+
+            # Build prompt
+            prompt = params.prompt if params.prompt else "Animate this image"
+
+            # Use the generate_videos endpoint with image parameter (returns an async operation)
+            log.debug(f"Initiating image-to-video generation with prompt: {prompt[:50]}...")
+            operation = await client.models.generate_videos(
+                model=model_id,
+                prompt=prompt,
+                image=pil_image,  # Pass PIL Image directly
+                config=config,
+            )
+
+            log.debug(f"Image-to-video generation operation started: {operation.name}")
+
+            # Poll for operation completion
+            max_wait_time = timeout_s if timeout_s else 600  # Default 10 minutes
+            poll_interval = 10  # Poll every 10 seconds
+            elapsed_time = 0
+
+            while not operation.done:
+                if elapsed_time >= max_wait_time:
+                    raise TimeoutError(
+                        f"Image-to-video generation timed out after {max_wait_time} seconds"
+                    )
+
+                log.debug(f"Waiting for image-to-video generation... ({elapsed_time}s elapsed)")
+                await asyncio.sleep(poll_interval)
+                elapsed_time += poll_interval
+
+                # Refresh operation status
+                operation = await client.operations.get(operation=operation)
+
+            log.debug(f"Image-to-video generation completed after {elapsed_time}s")
+
+            # Extract video from completed operation
+            if not operation.response or not hasattr(operation.response, "generated_videos"):
+                log.error("No video data in completed operation response")
+                raise RuntimeError("No video data returned from Gemini API")
+
+            generated_videos = operation.response.generated_videos
+            if not generated_videos or len(generated_videos) == 0:
+                raise RuntimeError("No generated videos in response")
+
+            # Get the first generated video
+            generated_video = generated_videos[0]
+
+            # Download the video file
+            if not hasattr(generated_video, "video") or not generated_video.video:
+                raise RuntimeError("No video file reference in generated video")
+
+            video_bytes = await client.files.download(file=generated_video.video)
+
+            if not video_bytes:
+                raise RuntimeError("No video bytes returned after download")
+
+            log.debug(f"Generated {len(video_bytes)} bytes of video data from image")
+            self._log_api_response("image_to_video", video_count=1)
+
+            return video_bytes
+
+        except Exception as e:
+            log.error(f"Gemini image-to-video generation failed: {e}")
+            raise RuntimeError(f"Gemini image-to-video generation failed: {e}")
 
     def is_context_length_error(self, error: Exception) -> bool:
         msg = str(error).lower()

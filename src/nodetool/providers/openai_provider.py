@@ -19,14 +19,13 @@ from typing import Any, AsyncGenerator, AsyncIterator, List, Sequence
 import aiohttp
 import httpx
 import openai
-from openai import NOT_GIVEN, Omit
+from openai import Omit
 from openai.types.chat import (
     ChatCompletionMessageParam,
     ChatCompletionToolMessageParam,
     ChatCompletionSystemMessageParam,
     ChatCompletionUserMessageParam,
     ChatCompletionAssistantMessageParam,
-    ChatCompletionMessageToolCallParam,
     ChatCompletionContentPartParam,
     ChatCompletionChunk,
 )
@@ -38,6 +37,7 @@ from openai.types import Video
 from pydantic import BaseModel
 from pydub import AudioSegment
 from urllib.parse import unquote_to_bytes
+from PIL import Image
 
 from nodetool.providers.base import BaseProvider, register_provider
 from nodetool.agents.tools.base import Tool
@@ -64,6 +64,7 @@ from nodetool.io.uri_utils import fetch_uri_bytes_and_mime
 from nodetool.media.image.image_utils import image_data_to_base64_jpeg
 from nodetool.providers.types import (
     ImageToImageParams,
+    ImageToVideoParams,
     TextToImageParams,
     TextToVideoParams,
 )
@@ -561,7 +562,122 @@ class OpenAIProvider(BaseProvider):
         return _closest_supported_size(computed_width, computed_height)
 
     @staticmethod
-    def _seconds_from_params(params: TextToVideoParams) -> int | None:
+    def _snap_to_valid_video_dimensions(width: int, height: int) -> str:
+        """Snap arbitrary dimensions to the closest valid OpenAI Sora video size.
+
+        OpenAI Sora-2 supports only 2 specific video dimensions. This method finds the
+        closest valid size while preserving aspect ratio as much as possible.
+
+        Supported sizes for OpenAI Sora-2:
+        - 1280x720 (16:9 landscape)
+        - 720x1280 (9:16 portrait)
+
+        Args:
+            width: Desired width in pixels
+            height: Desired height in pixels
+
+        Returns:
+            Size string in format "WIDTHxHEIGHT" snapped to valid dimensions
+        """
+        supported_sizes: list[tuple[int, int]] = [
+            (1280, 720),   # 16:9 landscape
+            (720, 1280),   # 9:16 portrait
+        ]
+
+        target_ratio = width / height
+        target_area = width * height
+
+        def score_size(candidate: tuple[int, int]) -> float:
+            """Calculate how well a candidate size matches the target dimensions.
+
+            Uses a weighted combination of aspect ratio difference and area difference.
+            Aspect ratio is weighted more heavily to preserve the visual composition.
+            """
+            cand_w, cand_h = candidate
+            cand_ratio = cand_w / cand_h
+            cand_area = cand_w * cand_h
+
+            # Aspect ratio difference (more important for visual preservation)
+            ratio_diff = abs(cand_ratio - target_ratio)
+
+            # Area difference (normalized to prevent dominating the score)
+            area_diff = abs(cand_area - target_area) / max(target_area, cand_area)
+
+            # Weight ratio more heavily (5x) to preserve aspect ratio
+            return ratio_diff * 5 + area_diff
+
+        best_size = min(supported_sizes, key=score_size)
+        log.debug(
+            f"Snapped dimensions {width}x{height} (ratio {target_ratio:.2f}) "
+            f"to {best_size[0]}x{best_size[1]} (ratio {best_size[0]/best_size[1]:.2f})"
+        )
+        return f"{best_size[0]}x{best_size[1]}"
+
+    @staticmethod
+    def _extract_image_dimensions(image: bytes) -> tuple[int, int]:
+        """Extract width and height from image bytes.
+
+        Args:
+            image: Image data as bytes
+
+        Returns:
+            Tuple of (width, height) in pixels
+
+        Raises:
+            ValueError: If image cannot be opened or dimensions cannot be extracted
+        """
+        try:
+            with Image.open(io.BytesIO(image)) as img:
+                width, height = img.size
+                log.debug(f"Extracted image dimensions: {width}x{height}")
+                return width, height
+        except Exception as e:
+            log.error(f"Failed to extract image dimensions: {e}")
+            raise ValueError(f"Failed to extract image dimensions: {e}")
+
+    @staticmethod
+    def _resize_image(image: bytes, target_width: int, target_height: int) -> bytes:
+        """Resize an image to exact target dimensions.
+
+        Args:
+            image: Original image data as bytes
+            target_width: Target width in pixels
+            target_height: Target height in pixels
+
+        Returns:
+            Resized image as bytes (PNG format)
+
+        Raises:
+            ValueError: If image cannot be resized
+        """
+        try:
+            with Image.open(io.BytesIO(image)) as img:
+                # Convert to RGB if needed (handle RGBA, grayscale, etc.)
+                if img.mode not in ('RGB', 'L'):
+                    img = img.convert('RGB')
+
+                # Resize using high-quality LANCZOS resampling
+                resized_img = img.resize(
+                    (target_width, target_height),
+                    Image.Resampling.LANCZOS
+                )
+
+                # Convert back to bytes
+                output = io.BytesIO()
+                resized_img.save(output, format='PNG')
+                result = output.getvalue()
+
+                log.info(
+                    f"Resized image from {img.size[0]}x{img.size[1]} "
+                    f"to {target_width}x{target_height}"
+                )
+                return result
+        except Exception as e:
+            log.error(f"Failed to resize image: {e}")
+            raise ValueError(f"Failed to resize image: {e}")
+
+    @staticmethod
+    def _seconds_from_params(params: TextToVideoParams | ImageToVideoParams) -> int | None:
         """Derive generation length in seconds from provided parameters."""
         num_frames = params.num_frames
         if not num_frames:
@@ -1486,7 +1602,7 @@ class OpenAIProvider(BaseProvider):
                 async for chunk in response.iter_bytes(chunk_size=4096):
                     yield np.frombuffer(chunk, dtype=np.int16)
 
-                log.debug(f"TTS streaming completed")
+                log.debug("TTS streaming completed")
 
             self._log_api_response("text_to_speech")
 
@@ -1665,6 +1781,219 @@ class OpenAIProvider(BaseProvider):
                 "timeout": timeout,
                 "params": {"variant": "video"},
             },
+        )
+
+    async def image_to_video(
+        self,
+        image: bytes,
+        params: ImageToVideoParams,
+        timeout_s: int | None = None,
+        context: ProcessingContext | None = None,
+        **kwargs: Any,
+    ) -> bytes:
+        """Generate a video from an input image using OpenAI Sora models.
+
+        Automatically matches the output video dimensions to the input image dimensions,
+        snapping to the closest valid OpenAI Sora video size while preserving aspect ratio.
+
+        Args:
+            image: Input image as bytes
+            params: Image-to-video generation parameters including:
+                - model: VideoModel with Sora model ID
+                - prompt: Optional text description to guide video generation
+                - negative_prompt: Elements to exclude from generation
+                - num_frames: Optional frame count (used to estimate duration)
+                Note: aspect_ratio and resolution are ignored; dimensions are extracted from the image
+            timeout_s: Optional timeout in seconds (defaults to 10 minutes)
+            context: Processing context for asset handling (unused, reserved)
+
+        Returns:
+            Raw video bytes (MP4 format)
+
+        Raises:
+            ValueError: If required parameters are missing or image dimensions cannot be extracted
+            RuntimeError: If generation fails or the API returns an error
+        """
+        if not image:
+            raise ValueError("The input image cannot be empty.")
+
+        if not self.api_key:
+            raise ValueError("OPENAI_API_KEY is required for image-to-video generation")
+
+        if not params.model.id:
+            raise ValueError(
+                "A video model with a valid id must be specified for image-to-video generation."
+            )
+
+        log.debug(f"Starting OpenAI image-to-video generation with model: {params.model.id}")
+
+        # Extract dimensions from input image and snap to valid OpenAI sizes
+        try:
+            img_width, img_height = self._extract_image_dimensions(image)
+            size = self._snap_to_valid_video_dimensions(img_width, img_height)
+            log.info(
+                f"Using image dimensions {img_width}x{img_height}, "
+                f"snapped to valid video size: {size}"
+            )
+
+            # Resize image to match the snapped video dimensions
+            target_width, target_height = map(int, size.split('x'))
+            if img_width != target_width or img_height != target_height:
+                log.info(f"Resizing image to match video dimensions: {size}")
+                image = self._resize_image(image, target_width, target_height)
+            else:
+                log.debug("Image already matches target dimensions, no resize needed")
+
+        except ValueError as e:
+            log.error(f"Failed to extract/resize image dimensions: {e}")
+            raise ValueError(
+                f"Could not prepare image for video generation: {e}"
+            ) from e
+
+        seconds = self._seconds_from_params(params)
+
+        if params.negative_prompt:
+            log.debug(
+                "negative_prompt provided but not currently supported by the OpenAI video API; ignoring."
+            )
+
+        self._log_api_request("image_to_video", params=params)
+
+        request_timeout = timeout_s if timeout_s and timeout_s > 0 else 600
+        client = self.get_client()
+
+        # Determine image format for proper MIME type
+        image_format = imghdr.what(None, h=image) or "png"
+        mime_type = f"image/{image_format}"
+
+        try:
+            # Create video job with input_reference parameter using image-derived dimensions
+            video = await self._create_video_job_with_image(
+                client=client,
+                model_id=params.model.id,
+                image=image,
+                mime_type=mime_type,
+                prompt=params.prompt,
+                size=size,  # Use the size derived from image dimensions
+                seconds=seconds if seconds else 4,
+                timeout=request_timeout,
+            )
+            log.debug("Submitted image-to-video generation request via OpenAI client.")
+        except openai.APIStatusError as api_error:
+            log.error(
+                "OpenAI image-to-video generation failed (status=%s): %s",
+                api_error.status_code,
+                api_error.message,
+            )
+            raise RuntimeError(
+                f"OpenAI image-to-video generation failed with status "
+                f"{api_error.status_code}: {api_error.message}"
+            ) from api_error
+        except Exception as exc:
+            log.error(f"OpenAI image-to-video generation failed: {exc}")
+            raise RuntimeError(f"OpenAI image-to-video generation failed: {exc}") from exc
+
+        maximum_wait = request_timeout
+        poll_interval = max(2, min(10, maximum_wait)) if maximum_wait else 10
+        if not video.id:
+            log.error(f"OpenAI video create response missing id: {video}")
+            raise RuntimeError("OpenAI video create response did not contain a video id")
+
+        log.debug(
+            f"Video job {video.id} created with initial status '{video.status}' and progress {video.progress}"
+        )
+
+        elapsed = 0
+        while video.status in ("queued", "in_progress"):
+            if maximum_wait and elapsed >= maximum_wait:
+                raise TimeoutError(
+                    f"Image-to-video generation timed out after {maximum_wait} seconds"
+                )
+
+            await asyncio.sleep(poll_interval)
+            elapsed += poll_interval
+
+            video = await client.videos.retrieve(
+                video_id=video.id,
+                timeout=request_timeout,
+            )
+
+            log.debug(
+                f"Video job {video.id} status update: {video.status} (progress={video.progress})"
+            )
+            if "node_id" in kwargs and context is not None and video.progress is not None:
+                context.post_message(
+                    NodeProgress(
+                        node_id=kwargs["node_id"],
+                        progress=video.progress, # type: ignore
+                        total=100, # type: ignore
+                    )
+                )
+
+            if video.status == "failed":
+                break
+
+        if video.status != "completed":
+            message = (
+                video.error
+                or f"Image-to-video generation ended with status '{video.status}'"
+            )
+            raise RuntimeError(message)
+
+        video_bytes = await self._download_video_content(
+            client=client,
+            video_id=video.id,
+            timeout=request_timeout,
+        )
+
+        if not video_bytes:
+            raise RuntimeError("OpenAI image-to-video download returned no data")
+
+        log.debug(f"Downloaded {len(video_bytes)} bytes for video job {video.id}")
+
+        self._log_api_response("image_to_video", video_bytes=len(video_bytes))
+        return video_bytes
+
+    async def _create_video_job_with_image(
+        self,
+        client: openai.AsyncClient,
+        model_id: str,
+        image: bytes,
+        mime_type: str,
+        prompt: str | None,
+        size: str | NotGiven,
+        seconds: int,
+        timeout: float,
+    ) -> Video:
+        """Create a video generation job with an input image.
+
+        Args:
+            client: OpenAI async client
+            model_id: Model ID for video generation
+            image: Input image bytes
+            mime_type: MIME type of the image
+            prompt: Optional text prompt to guide generation
+            size: Video size specification
+            seconds: Duration in seconds
+            timeout: Request timeout
+
+        Returns:
+            Video object with job details
+        """
+        log.debug(f"Submitting image-to-video generation request: {model_id}, prompt={prompt}, size={size}, seconds={seconds}")
+
+        # Determine filename from mime_type
+        ext = mime_type.split('/')[-1]
+        filename = f"input_image.{ext}"
+
+        # Create the request payload with input_reference
+        return await client.videos.create(
+            model=model_id, # type: ignore
+            prompt=prompt if prompt else Omit,
+            input_reference=(filename, image, mime_type), # type: ignore
+            size=size if size else Omit, # type: ignore
+            seconds=str(seconds) if seconds else Omit, # type: ignore
+            timeout=timeout,
         )
 
     async def automatic_speech_recognition(

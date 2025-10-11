@@ -111,3 +111,36 @@ class TextToVideoParams(BaseModel):
     seed: int | None = Field(
         default=None, description="Random seed for reproducibility (None for random)"
     )
+
+
+class ImageToVideoParams(BaseModel):
+    """Parameters for image-to-video generation."""
+
+    model: VideoModel = Field(
+        description="Provider and model ID for the image-to-video model"
+    )
+    prompt: str | None = Field(
+        default=None, description="Optional text prompt to guide video generation"
+    )
+    negative_prompt: str | None = Field(
+        default=None, description="Text prompt describing what to avoid in the video"
+    )
+    num_frames: int | None = Field(
+        default=None, description="Number of frames to generate (provider-specific)"
+    )
+    aspect_ratio: str | None = Field(
+        default=None, description="Aspect ratio (e.g., '16:9', '9:16')"
+    )
+    resolution: str | None = Field(
+        default=None, description="Video resolution (e.g., '720p', '1080p')"
+    )
+    guidance_scale: float | None = Field(
+        default=None,
+        description="Classifier-free guidance scale (higher values = closer to prompt)",
+    )
+    num_inference_steps: int | None = Field(
+        default=None, description="Number of denoising steps"
+    )
+    seed: int | None = Field(
+        default=None, description="Random seed for reproducibility (None for random)"
+    )

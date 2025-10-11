@@ -11,7 +11,6 @@ from enum import Enum
 from typing import Any, AsyncGenerator, AsyncIterator, Callable, List, Sequence, Set, Type
 import numpy as np
 
-from nodetool.agents.tools.base import Tool
 from nodetool.metadata.types import (
     Message,
     Provider as ProviderEnum,
@@ -47,6 +46,7 @@ class ProviderCapability(str, Enum):
     TEXT_TO_SPEECH = "text_to_speech"               # Text → Speech/Audio generation
     AUTOMATIC_SPEECH_RECOGNITION = "automatic_speech_recognition"  # Speech → Text transcription
     TEXT_TO_VIDEO = "text_to_video"                 # Text → Video generation
+    IMAGE_TO_VIDEO = "image_to_video"               # Image → Video generation
 
 
 _PROVIDER_REGISTRY: dict[ProviderEnum, tuple[Type["BaseProvider"], dict[str, Any]]] = (
@@ -112,9 +112,10 @@ class BaseProvider(ABC):
     - TEXT_TO_SPEECH: Text-to-speech/audio generation
     - AUTOMATIC_SPEECH_RECOGNITION: Audio-to-text transcription
     - TEXT_TO_VIDEO: Text-to-video generation
+    - IMAGE_TO_VIDEO: Image-to-video generation
 
     Subclasses should implement:
-    - The capability methods (generate_message, text_to_image, text_to_video, etc.) they support
+    - The capability methods (generate_message, text_to_image, text_to_video, image_to_video, etc.) they support
     - get_available_language_models(), get_available_image_models(), get_available_video_models(), etc.
     """
 
@@ -126,6 +127,7 @@ class BaseProvider(ABC):
         ProviderCapability.TEXT_TO_SPEECH: "text_to_speech",
         ProviderCapability.AUTOMATIC_SPEECH_RECOGNITION: "automatic_speech_recognition",
         ProviderCapability.TEXT_TO_VIDEO: "text_to_video",
+        ProviderCapability.IMAGE_TO_VIDEO: "image_to_video",
     }
 
     log_file: str | None = None
@@ -661,6 +663,42 @@ class BaseProvider(ABC):
         """
         raise NotImplementedError(
             f"{self.__class__.__name__} does not support TEXT_TO_VIDEO capability"
+        )
+
+    async def image_to_video(
+        self,
+        image: bytes,
+        params: Any,  # ImageToVideoParams, but imported later to avoid circular deps
+        timeout_s: int | None = None,
+        context: Any = None,  # ProcessingContext, but imported later
+    ) -> bytes:
+        """Generate a video from an input image.
+
+        Only implemented by providers with IMAGE_TO_VIDEO capability.
+
+        Args:
+            image: Input image as bytes
+            params: Image-to-video generation parameters including:
+                - prompt: Optional text description to guide video generation
+                - negative_prompt: Elements to exclude from generation
+                - model: Video model to use
+                - duration: Video duration in seconds (if supported)
+                - fps: Frames per second (if supported)
+                - aspect_ratio: Video aspect ratio (e.g., "16:9", "9:16")
+                - resolution: Video resolution (e.g., "720p", "1080p")
+            timeout_s: Optional timeout in seconds
+            context: Optional processing context
+
+        Returns:
+            Raw video bytes (MP4, WebM, etc.)
+
+        Raises:
+            NotImplementedError: If provider doesn't support IMAGE_TO_VIDEO capability
+            ValueError: If required parameters are missing or invalid
+            RuntimeError: If generation fails
+        """
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not support IMAGE_TO_VIDEO capability"
         )
 
 
