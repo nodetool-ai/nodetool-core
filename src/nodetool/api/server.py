@@ -84,6 +84,11 @@ Environment.initialize_sentry()
 
 log = get_logger(__name__)
 
+# Silence SQLite and SQLAlchemy logging
+import logging
+logging.getLogger('nodetool.models.sqlite_adapter').setLevel(logging.WARNING)
+logging.getLogger('nodetool.chat.chat_websocket_runner').setLevel(logging.WARNING)
+
 
 class ExtensionRouterRegistry:
     _instance = None

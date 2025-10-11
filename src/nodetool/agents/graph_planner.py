@@ -239,7 +239,6 @@ def get_node_type_for_metadata(
             if (
                 node_class
                 and (is_subclass_of is None or issubclass(node_class, is_subclass_of))
-                and "ChatInput" not in node_class.get_node_type()
             ):
                 # Check the output type of this input node
                 outputs = node_class.outputs()

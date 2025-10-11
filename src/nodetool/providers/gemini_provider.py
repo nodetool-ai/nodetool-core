@@ -807,6 +807,8 @@ class GeminiProvider(BaseProvider):
             return image.image_bytes
 
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             log.error(f"Gemini text-to-image generation failed: {e}")
             raise RuntimeError(f"Gemini text-to-image generation failed: {e}")
 

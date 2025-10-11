@@ -464,8 +464,7 @@ class WorkflowRunner:
 
         Raises:
             ValueError: If the graph is missing from the request or if there's a mismatch
-                        between input parameters and graph input nodes, or if a ChatInput node
-                        is required but not found for `req.messages`.
+                        between input parameters and graph input nodes
             Exception: Propagates exceptions from graph processing, including CUDA OOM errors
                        if they persist after retries.
 
