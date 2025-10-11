@@ -45,6 +45,7 @@ import mimetypes
 from nodetool.integrations.websocket.websocket_updates import websocket_updates
 from nodetool.api.openai import create_openai_compatible_router
 from nodetool.api.mcp_server import create_mcp_app
+import httpx
 
 _windows_policy = getattr(asyncio, "WindowsSelectorEventLoopPolicy", None)
 if platform.system() == "Windows" and _windows_policy is not None:
@@ -86,8 +87,6 @@ log = get_logger(__name__)
 
 # Silence SQLite and SQLAlchemy logging
 import logging
-logging.getLogger('nodetool.models.sqlite_adapter').setLevel(logging.WARNING)
-logging.getLogger('nodetool.chat.chat_websocket_runner').setLevel(logging.WARNING)
 
 
 class ExtensionRouterRegistry:
@@ -132,6 +131,53 @@ if not Environment.is_production():
     DEFAULT_ROUTERS.append(collection.router)
 
 
+async def check_ollama_availability(port: int = 11434, timeout: float = 2.0) -> bool:
+    """
+    Check if Ollama is responsive at the specified port.
+
+    Args:
+        port: The port to check (default: 11434)
+        timeout: Request timeout in seconds (default: 2.0)
+
+    Returns:
+        True if Ollama is responsive, False otherwise
+    """
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            response = await client.get(f"http://127.0.0.1:{port}/api/tags")
+            return response.status_code == 200
+    except Exception:
+        return False
+
+
+def setup_ollama_url():
+    """
+    Set OLLAMA_API_URL environment variable if Ollama is available at default port
+    and the variable is not already set.
+    """
+    if os.environ.get("OLLAMA_API_URL"):
+        log.info(f"OLLAMA_API_URL already set to: {os.environ.get('OLLAMA_API_URL')}")
+        return
+
+    # Check if Ollama is available at default port
+    try:
+        # Use synchronous check during startup
+        import httpx
+        try:
+            with httpx.Client(timeout=2.0) as client:
+                response = client.get("http://127.0.0.1:11434/api/tags")
+                if response.status_code == 200:
+                    os.environ["OLLAMA_API_URL"] = "http://127.0.0.1:11434"
+                    log.info("Detected Ollama running on port 11434, set OLLAMA_API_URL")
+                    return
+        except Exception:
+            pass
+    except Exception as e:
+        log.debug(f"Could not check Ollama availability: {e}")
+
+    log.info("Ollama not detected at port 11434, using default OLLAMA_API_URL from environment")
+
+
 def create_app(
     origins: list[str] = ["*"],
     routers: list[APIRouter] = DEFAULT_ROUTERS,
@@ -148,6 +194,9 @@ def create_app(
         os.environ.get("LOG_LEVEL"),
         os.environ.get("DEBUG"),
     )
+
+    # Check if Ollama is available and set OLLAMA_API_URL if not already set
+    setup_ollama_url()
 
     # Use FastAPI lifespan API instead of deprecated on_event hooks
     @asynccontextmanager
@@ -223,15 +272,6 @@ def create_app(
             provider=Provider.Ollama.value,
         )
     )
-
-    # Mount FastMCP server
-    try:
-        mcp_app = create_mcp_app()
-        # Mount MCP at /mcp prefix
-        app.mount("/mcp", mcp_app.get_asgi_app())
-        log.info("FastMCP server mounted at /mcp")
-    except Exception as e:
-        log.warning(f"Could not mount FastMCP server: {e}")
 
     for router in routers:
         app.include_router(router)
