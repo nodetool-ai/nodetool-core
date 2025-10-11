@@ -39,6 +39,9 @@ from nodetool.workflows.types import Chunk
 log = get_logger(__name__)
 log.setLevel(logging.DEBUG)
 
+# Only register the provider if OLLAMA_API_URL is explicitly set
+_ollama_api_url = Environment.get("OLLAMA_API_URL")
+
 
 def get_ollama_sync_client() -> Client:
     """Get a sync client for the Ollama API."""
@@ -64,7 +67,6 @@ async def get_ollama_client() -> AsyncGenerator[AsyncClient, None]:
         await client._client.aclose()
 
 
-@register_provider(Provider.Ollama)
 class OllamaProvider(BaseProvider, OpenAICompat):
     """
     Ollama implementation of the ChatProvider interface.
@@ -940,6 +942,14 @@ async def main():
         print(f"❌ JSON parsing failed: {e}")
 
     print(f"\n{'='*60}\n")
+
+
+# Conditionally register the provider only if OLLAMA_API_URL is set
+if _ollama_api_url:
+    register_provider(Provider.Ollama)(OllamaProvider)
+    log.info(f"Ollama provider registered with API URL: {_ollama_api_url}")
+else:
+    log.debug("Ollama provider not registered: OLLAMA_API_URL not set")
 
 
 if __name__ == "__main__":

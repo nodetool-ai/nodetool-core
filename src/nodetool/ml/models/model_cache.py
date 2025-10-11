@@ -87,11 +87,14 @@ class ModelCache:
         expiry_time = time.time() + ttl
 
         try:
+            log.debug(f"Attempting to cache key: {key}, value type: {type(value)}, length: {len(value) if hasattr(value, '__len__') else 'N/A'}")
             with open(cache_path, "wb") as f:
                 pickle.dump((value, expiry_time), f)
-            log.debug(f"Cached value for key: {key} (TTL: {ttl}s)")
+            log.debug(f"✓ Successfully cached value for key: {key} (TTL: {ttl}s) at {cache_path}")
         except Exception as e:
-            log.warning(f"Error writing cache for key {key}: {e}")
+            log.error(f"✗ Error writing cache for key {key}: {e}", exc_info=True)
+            import traceback
+            log.error(f"Traceback: {traceback.format_exc()}")
 
     def clear(self):
         """Remove all cached files."""

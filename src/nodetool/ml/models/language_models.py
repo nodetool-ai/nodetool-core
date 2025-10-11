@@ -19,9 +19,14 @@ async def get_all_language_models() -> List[LanguageModel]:
     get_available_models() method. Each provider is responsible for
     checking API keys and returning appropriate models.
 
+    Provider failures are handled gracefully - we cache whatever models
+    we successfully retrieve, even if some providers fail.
+
     Returns:
         List of all available LanguageModel instances from all providers
     """
+    log.info("🔍 TRACE: get_all_language_models() CALLED")
+
     # Check cache first
     cache_key = "language_models:all"
     cached_models = _model_cache.get(cache_key)
@@ -30,25 +35,41 @@ async def get_all_language_models() -> List[LanguageModel]:
         return cached_models
 
     models = []
+    successful_providers = 0
+    failed_providers = []
 
     for provider in list_providers():
         try:
             provider_models = await provider.get_available_language_models()
             models.extend(provider_models)
+            successful_providers += 1
             log.debug(
-                f"Provider '{provider.provider_name}' returned {len(provider_models)} models"
+                f"✓ Provider '{provider.provider_name}' returned {len(provider_models)} models"
             )
         except Exception as e:
+            failed_providers.append(provider.provider_name)
             log.warning(
-                f"Failed to get models from provider '{provider.provider_name}': {e}"
+                f"✗ Failed to get models from provider '{provider.provider_name}': {e}"
             )
 
     log.info(
-        f"Discovered {len(models)} total language models from {len(list_providers())} providers"
+        f"Discovered {len(models)} total language models from {successful_providers}/{len(list_providers())} providers"
     )
 
-    # Cache the results
-    _model_cache.set(cache_key, models)
+    if failed_providers:
+        log.warning(f"Failed providers: {', '.join(failed_providers)}")
+
+    # Cache the results even if some providers failed
+    # This prevents repeated failures from slowing down requests
+    if models:  # Only cache if we got at least some models
+        log.debug(f"About to cache {len(models)} language models with key: {cache_key}")
+        try:
+            _model_cache.set(cache_key, models)
+            log.info(f"✓ Successfully cached {len(models)} language models from {successful_providers} providers")
+        except Exception as e:
+            log.error(f"✗ Failed to cache language models: {e}", exc_info=True)
+    else:
+        log.warning("No models retrieved from any provider - skipping cache to allow retry")
 
     return models
 

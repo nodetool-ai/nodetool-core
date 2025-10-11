@@ -89,6 +89,7 @@ def dedupe_models(models: list[UnifiedModel]) -> list[UnifiedModel]:
 async def get_all_models(
     user: str = Depends(current_user),
 ) -> list[UnifiedModel]:
+    log.info("🔍 TRACE: /api/models/all endpoint called")
     reco_models = [
         model
         for model_list in get_recommended_models().values()
@@ -138,6 +139,7 @@ async def delete_ollama_model_endpoint(model_name: str) -> bool:
 
 
 async def get_language_models() -> list[LanguageModel]:
+    log.info("🔍 TRACE: get_language_models() CALLED (api/model.py)")
     models = await get_all_language_models()
 
     ollama_models = await get_ollama_models()

@@ -23,6 +23,9 @@ from nodetool.workflows.types import Chunk
 
 log = get_logger(__name__)
 
+# Only register the provider if VLLM_BASE_URL is explicitly set
+_vllm_base_url = Environment.get_environment().get("VLLM_BASE_URL")
+
 
 def _parse_bool(value: str | None, default: bool) -> bool:
     """Parse a string value to boolean.
@@ -44,7 +47,6 @@ def _parse_bool(value: str | None, default: bool) -> bool:
     return default
 
 
-@register_provider(Provider.VLLM)
 class VllmProvider(BaseProvider, OpenAICompat):
     """OpenAI-compatible provider backed by a vLLM server.
 
@@ -70,9 +72,11 @@ class VllmProvider(BaseProvider, OpenAICompat):
         """Initialize the vLLM provider with environment configuration."""
         super().__init__()
         env = Environment.get_environment()
-        self._base_url: str = env.get("VLLM_BASE_URL", "http://127.0.0.1:8000").rstrip(
-            "/"
-        )
+        # No default URL - VLLM_BASE_URL must be explicitly set
+        base_url = env.get("VLLM_BASE_URL")
+        if not base_url:
+            raise ValueError("VLLM_BASE_URL environment variable must be set to use vLLM provider")
+        self._base_url: str = base_url.rstrip("/")
         self._api_key: str | None = env.get("VLLM_API_KEY")
         timeout_raw = env.get("VLLM_HTTP_TIMEOUT", 600)
         try:
@@ -451,3 +455,11 @@ class VllmProvider(BaseProvider, OpenAICompat):
             "cached_prompt_tokens": 0,
             "reasoning_tokens": 0,
         }
+
+
+# Conditionally register the provider only if VLLM_BASE_URL is set
+if _vllm_base_url:
+    register_provider(Provider.VLLM)(VllmProvider)
+    log.info(f"vLLM provider registered with base URL: {_vllm_base_url}")
+else:
+    log.debug("vLLM provider not registered: VLLM_BASE_URL not set")
