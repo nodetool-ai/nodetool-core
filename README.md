@@ -12,7 +12,7 @@
 
 NodeTool Core is the open‑source Python engine that powers [NodeTool](https://github.com/nodetool-ai/nodetool).
 
----
+______________________________________________________________________
 
 ## 🔑 Feature Highlights
 
@@ -23,7 +23,7 @@ NodeTool Core is the open‑source Python engine that powers [NodeTool](https:
 - ⚡ **Actor-Based Execution Engine** – One actor per node, streaming-first.
 - 🔌 **Plugin SDK** – Bring your own node.
 
----
+______________________________________________________________________
 
 ## 🚀 Quick Start
 
@@ -109,19 +109,24 @@ graph TD
 
 ### Execution TL;DR
 
-    •	Each node runs in its own async task. No central loop.
-    •	Every node has an input queue (NodeInbox) that delivers data in order and tracks when it ends.
-    •	Streaming nodes handle data piece by piece (gen_process); batch nodes handle all at once (process).
-    •	When finished or failing, nodes signal “done” downstream so others don’t wait forever.
-    •	GPU jobs run one at a time with a global lock, with retries and cleanup if memory runs out.
+```
+•	Each node runs in its own async task. No central loop.
+•	Every node has an input queue (NodeInbox) that delivers data in order and tracks when it ends.
+•	Streaming nodes handle data piece by piece (gen_process); batch nodes handle all at once (process).
+•	When finished or failing, nodes signal “done” downstream so others don’t wait forever.
+•	GPU jobs run one at a time with a global lock, with retries and cleanup if memory runs out.
+```
 
 🤝 Contributing
 
-We welcome contributions from the community! Please see our [Contributing Guidelines](./CONTRIBUTING.md) for more information on how to get involved.
+We welcome contributions from the community! Please see our [Contributing Guidelines](./CONTRIBUTING.md) for more
+information on how to get involved.
 
 ### Development Setup
 
-This setup is for developing the `nodetool-core` library itself. If you want to set up the full NodeTool application (UI, backend, etc.), please refer to the development setup instructions in the main [NodeTool repository](https://github.com/nodetool-ai/nodetool).
+This setup is for developing the `nodetool-core` library itself. If you want to set up the full NodeTool application
+(UI, backend, etc.), please refer to the development setup instructions in the main
+[NodeTool repository](https://github.com/nodetool-ai/nodetool).
 
 1. **Clone the repository**
 
@@ -130,7 +135,7 @@ This setup is for developing the `nodetool-core` library itself. If you want to 
    cd nodetool-core
    ```
 
-2. **Install dependencies**
+1. **Install dependencies**
 
    ```bash
    # Using conda + uv (recommended)
@@ -143,7 +148,7 @@ This setup is for developing the `nodetool-core` library itself. If you want to 
    pip install -r requirements-dev.txt
    ```
 
-3. **Environment Configuration**
+1. **Environment Configuration**
 
    Set up your environment configuration for development:
 
@@ -165,9 +170,10 @@ This setup is for developing the `nodetool-core` library itself. If you want to 
    REPLICATE_API_TOKEN=your_replicate_token_here
    ```
 
-   > **Security Note**: Never commit `.env.*.local` files - they contain your actual API keys and are automatically gitignored.
+   > **Security Note**: Never commit `.env.*.local` files - they contain your actual API keys and are automatically
+   > gitignored.
 
-4. **Environment Files Overview**
+1. **Environment Files Overview**
 
    - `.env.example` - Template with all configuration options
    - `.env.development` - Development defaults (committed, no secrets)
@@ -188,7 +194,8 @@ This setup is for developing the `nodetool-core` library itself. If you want to 
 
 #### Example 2: PDF Indexing for RAG Applications
 
-This example shows how to create a workflow that loads a PDF document, extracts text, splits it into sentences, and indexes the chunks in a ChromaDB vector database for later retrieval:
+This example shows how to create a workflow that loads a PDF document, extracts text, splits it into sentences, and
+indexes the chunks in a ChromaDB vector database for later retrieval:
 
 ```python
 import asyncio
@@ -224,13 +231,16 @@ asyncio.run(run_graph(graph(g)))
 
 When using NodeTool programmatically, keep these key concepts in mind:
 
-1. **Nodes**: Each node represents a specific operation or function. Nodes have inputs and outputs that can be connected to form a workflow.
+1. **Nodes**: Each node represents a specific operation or function. Nodes have inputs and outputs that can be connected
+   to form a workflow.
 
-2. **Graph**: A collection of nodes and their connections, representing the entire workflow.
+1. **Graph**: A collection of nodes and their connections, representing the entire workflow.
 
-3. **DSL (Domain-Specific Language)**: NodeTool provides a Python DSL for creating workflows, with specialized modules for different domains (e.g., `nodetool.dsl.google.mail`, `nodetool.dsl.chroma.collections`).
+1. **DSL (Domain-Specific Language)**: NodeTool provides a Python DSL for creating workflows, with specialized modules
+   for different domains (e.g., `nodetool.dsl.google.mail`, `nodetool.dsl.chroma.collections`).
 
-4. **Execution**: Workflows are executed using the `run_graph` function, which takes a graph object created with the `graph` function.
+1. **Execution**: Workflows are executed using the `run_graph` function, which takes a graph object created with the
+   `graph` function.
 
 ## Using the Workflow API 🔌
 
@@ -282,9 +292,8 @@ const outputs = await response.json();
 
 ##### WebSocket API
 
-The WebSocket API is useful for getting real-time updates on the status of the workflow.
-It is similar to the streaming API, but it uses a more efficient binary encoding.
-It offers additional features like canceling jobs.
+The WebSocket API is useful for getting real-time updates on the status of the workflow. It is similar to the streaming
+API, but it uses a more efficient binary encoding. It offers additional features like canceling jobs.
 
 See [run_workflow_websocket.js](examples/run_workflow_websocket.js) for an example.
 
@@ -329,7 +338,8 @@ socket.send(msgpack.encode({ command: "get_status" }));
 
 ## Configuration
 
-NodeTool Core uses environment-specific configuration files for managing different deployment scenarios. The configuration system supports multiple environments with automatic loading based on context.
+NodeTool Core uses environment-specific configuration files for managing different deployment scenarios. The
+configuration system supports multiple environments with automatic loading based on context.
 
 ### Configuration Files
 
@@ -344,11 +354,11 @@ NodeTool Core uses environment-specific configuration files for managing differe
 Configuration is loaded in this order (later sources override earlier ones):
 
 1. Default values from code
-2. Base `.env` file
-3. Environment-specific file (`.env.development`, `.env.test`, or `.env.production`)
-4. Local override file (`.env.{environment}.local`)
-5. System environment variables
-6. YAML settings/secrets files
+1. Base `.env` file
+1. Environment-specific file (`.env.development`, `.env.test`, or `.env.production`)
+1. Local override file (`.env.{environment}.local`)
+1. System environment variables
+1. YAML settings/secrets files
 
 ### Environment Variables
 
@@ -446,8 +456,8 @@ Configuration is loaded in this order (later sources override earlier ones):
 The system automatically detects the environment from:
 
 1. `ENV` environment variable
-2. `PYTEST_CURRENT_TEST` (automatically sets test environment)
-3. Defaults to "development"
+1. `PYTEST_CURRENT_TEST` (automatically sets test environment)
+1. Defaults to "development"
 
 For a complete template with all options, see `.env.example` in the repository.
 
@@ -456,7 +466,8 @@ For a complete template with all options, see `.env.example` in the repository.
 ### Setup
 
 1. Clone the repository
-2. Install dependencies :
+
+1. Install dependencies :
 
    ```bash
    # Using conda + uv (recommended)
@@ -479,6 +490,42 @@ uv run pytest
 # Or directly if using activated environment
 pytest
 ```
+
+### Code Quality & Pre-Commit Hooks
+
+This repository uses pre-commit hooks to ensure code quality and consistency.
+
+**Setup:**
+
+```bash
+# Install pre-commit
+pip install pre-commit
+
+# Install git hooks
+pre-commit install
+```
+
+**What gets checked:**
+
+- Ruff linting and formatting (replaces black + flake8)
+- Trailing whitespace and file endings
+- YAML/JSON validation
+- Markdown formatting
+
+**Running manually:**
+
+```bash
+# Run all hooks on all files
+pre-commit run --all-files
+
+# Run on staged files only
+pre-commit run
+
+# Run specific hook
+pre-commit run ruff --all-files
+```
+
+Hooks run automatically on `git commit`. If they fail or make changes, stage the changes and commit again.
 
 ## License
 

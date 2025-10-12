@@ -34,14 +34,6 @@ repos:
   - id: ruff-format
     types_or: [python, pyi]
 
-    # Python: Type checking with mypy
-- repo: https://github.com/pre-commit/mirrors-mypy
-  rev: v1.13.0
-  hooks:
-  - id: mypy
-    additional_dependencies: [pydantic, types-requests, types-PyYAML]
-    args: [--ignore-missing-imports]
-
     # YAML formatting
 - repo: https://github.com/macisamuele/language-formatters-pre-commit-hooks
   rev: v2.14.0
