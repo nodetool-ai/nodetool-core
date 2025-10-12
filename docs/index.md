@@ -1,10 +1,13 @@
 # NodeTool Core Documentation
 
-Welcome to the NodeTool Core documentation! This guide will help you understand how to use NodeTool Core to build and run AI workflows.
+Welcome to the NodeTool Core documentation! This guide will help you understand how to use NodeTool Core to build and
+run AI workflows.
 
 ## What is NodeTool Core?
 
-NodeTool Core is a Python library that provides a powerful, flexible, and easy-to-use way to build and run AI workflows. It uses a node-based approach, where each node represents a specific operation, and nodes are connected together to form a workflow.
+NodeTool Core is a Python library that provides a powerful, flexible, and easy-to-use way to build and run AI workflows.
+It uses a node-based approach, where each node represents a specific operation, and nodes are connected together to form
+a workflow.
 
 ## Getting Started
 
@@ -41,6 +44,7 @@ The documentation is organized into the following sections:
 - [**Agents**](agents.md) - Multi-step agent framework
 - [**Chat Module**](chat.md) - Conversational interface
 - [**Chat Providers**](chat-providers.md) - Supported LLM backends
+- [**Providers**](providers.md) - Multi-modal AI provider system and generic nodes
 - [**Examples**](../examples/README.md) - Example workflows
 - [**Runpod Deployment**](runpod-deployment.md) - Runpod Deployment
 - [**Runpod Testing Guide**](runpod_testing_guide.md) - Runpod Testing Guide
@@ -53,4 +57,5 @@ The documentation is organized into the following sections:
 
 ## Contributing
 
-We welcome contributions from the community! Please see our [Contributing Guidelines](../CONTRIBUTING.md) for more information on how to get involved.
+We welcome contributions from the community! Please see our [Contributing Guidelines](../CONTRIBUTING.md) for more
+information on how to get involved.
