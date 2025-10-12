@@ -8,7 +8,16 @@ and other AI capabilities. Providers declare their capabilities at runtime.
 
 from abc import ABC
 from enum import Enum
-from typing import Any, AsyncGenerator, AsyncIterator, Callable, List, Sequence, Set, Type
+from typing import (
+    Any,
+    AsyncGenerator,
+    AsyncIterator,
+    Callable,
+    List,
+    Sequence,
+    Set,
+    Type,
+)
 import numpy as np
 
 from nodetool.metadata.types import (
@@ -39,19 +48,21 @@ class ProviderCapability(str, Enum):
     This allows runtime discovery of provider features and enables multi-modal
     providers (like Gemini) to expose all their features through a single interface.
     """
-    GENERATE_MESSAGE = "generate_message"           # Single message generation
-    GENERATE_MESSAGES = "generate_messages"         # Streaming message generation
-    TEXT_TO_IMAGE = "text_to_image"                 # Text → Image generation
-    IMAGE_TO_IMAGE = "image_to_image"               # Image transformation
-    TEXT_TO_SPEECH = "text_to_speech"               # Text → Speech/Audio generation
-    AUTOMATIC_SPEECH_RECOGNITION = "automatic_speech_recognition"  # Speech → Text transcription
-    TEXT_TO_VIDEO = "text_to_video"                 # Text → Video generation
-    IMAGE_TO_VIDEO = "image_to_video"               # Image → Video generation
+
+    GENERATE_MESSAGE = "generate_message"  # Single message generation
+    GENERATE_MESSAGES = "generate_messages"  # Streaming message generation
+    TEXT_TO_IMAGE = "text_to_image"  # Text → Image generation
+    IMAGE_TO_IMAGE = "image_to_image"  # Image transformation
+    TEXT_TO_SPEECH = "text_to_speech"  # Text → Speech/Audio generation
+    AUTOMATIC_SPEECH_RECOGNITION = (
+        "automatic_speech_recognition"  # Speech → Text transcription
+    )
+    TEXT_TO_VIDEO = "text_to_video"  # Text → Video generation
+    IMAGE_TO_VIDEO = "image_to_video"  # Image → Video generation
 
 
-_PROVIDER_REGISTRY: dict[ProviderEnum, tuple[Type["BaseProvider"], dict[str, Any]]] = (
-    {}
-)
+_PROVIDER_REGISTRY: dict[ProviderEnum, tuple[Type["BaseProvider"], dict[str, Any]]] = {}
+
 
 def register_provider(
     provider: ProviderEnum,
@@ -92,8 +103,6 @@ def get_registered_provider(
     if provider_cls is None:
         raise ValueError(f"Provider {provider} is not installed")
     return provider_cls, kwargs
-
-
 
 
 class BaseProvider(ABC):
@@ -250,7 +259,9 @@ class BaseProvider(ABC):
         """
         return []
 
-    async def get_available_models(self) -> List[LanguageModel | ImageModel | TTSModel | ASRModel | VideoModel]:
+    async def get_available_models(
+        self,
+    ) -> List[LanguageModel | ImageModel | TTSModel | ASRModel | VideoModel]:
         """Get a list of all available models for this provider.
 
         Returns language, image, TTS, ASR, and video models combined. Use get_available_language_models(),
@@ -671,6 +682,7 @@ class BaseProvider(ABC):
         params: Any,  # ImageToVideoParams, but imported later to avoid circular deps
         timeout_s: int | None = None,
         context: Any = None,  # ProcessingContext, but imported later
+        **kwargs: Any,
     ) -> bytes:
         """Generate a video from an input image.
 
