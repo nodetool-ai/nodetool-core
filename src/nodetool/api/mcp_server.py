@@ -314,10 +314,20 @@ async def get_node_info(node_type: str) -> dict[str, Any]:
     registry = Registry.get_instance()
     node = registry.find_node_by_type(node_type)
 
-    if not node:
+    if node:
+        return node
+
+    # If not found in registry, try to dynamically resolve the node class
+    # This handles core nodes like Preview, Comment, etc. that aren't in packages
+    from nodetool.workflows.base_node import get_node_class
+
+    node_class = get_node_class(node_type)
+    if not node_class:
         raise ValueError(f"Node type {node_type} not found")
 
-    return node
+    # Generate metadata from the node class
+    metadata = node_class.get_metadata()
+    return metadata.model_dump()
 
 
 @mcp.tool()
@@ -559,6 +569,59 @@ async def validate_workflow(workflow_id: str) -> dict[str, Any]:
         "warnings": warnings,
         "suggestions": suggestions,
         "message": "Workflow is valid and ready to run" if is_valid else "Workflow has validation errors - please fix before running"
+    }
+
+
+@mcp.tool()
+async def export_workflow_digraph(workflow_id: str) -> dict[str, Any]:
+    """
+    Export a workflow as a simple Graphviz Digraph (DOT format) for LLM parsing and visualization.
+
+    Args:
+        workflow_id: The ID of the workflow to export
+
+    Returns:
+        Dictionary with DOT format string and workflow metadata
+    """
+    workflow = await WorkflowModel.find("1", workflow_id)
+    if not workflow:
+        raise ValueError(f"Workflow {workflow_id} not found")
+
+    graph = workflow.get_api_graph()
+
+    # Start building DOT string
+    dot_lines = [
+        f"digraph workflow {{",
+    ]
+
+    # Helper function to sanitize node IDs for DOT format
+    def sanitize_id(node_id: str) -> str:
+        import re
+        return re.sub(r'[^a-zA-Z0-9_]', '_', node_id)
+
+    # Add nodes with simple labels
+    for node in graph.nodes:
+        sanitized_id = sanitize_id(node.id)
+        # Simple label: node_id (type)
+        label = f"{node.id} ({node.type})"
+        dot_lines.append(f'  {sanitized_id} [label="{label}"];')
+
+    # Add edges
+    for edge in graph.edges:
+        source_id = sanitize_id(edge.source)
+        target_id = sanitize_id(edge.target)
+        dot_lines.append(f"  {source_id} -> {target_id};")
+
+    dot_lines.append("}")
+
+    dot_content = "\n".join(dot_lines)
+
+    return {
+        "workflow_id": workflow_id,
+        "workflow_name": workflow.name,
+        "dot": dot_content,
+        "node_count": len(graph.nodes),
+        "edge_count": len(graph.edges),
     }
 
 
