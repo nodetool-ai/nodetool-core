@@ -8,9 +8,16 @@ allowing AI assistants to interact with NodeTool workflows, nodes, and assets.
 
 from fastmcp import FastMCP, Context
 from typing import Any, Optional
-from huggingface_hub import ModelInfo
 from nodetool.types.job import JobUpdate
-from nodetool.workflows.types import Error, LogUpdate, OutputUpdate, PreviewUpdate, SaveUpdate, NodeUpdate, NodeProgress
+from nodetool.workflows.types import (
+    Error,
+    LogUpdate,
+    OutputUpdate,
+    PreviewUpdate,
+    SaveUpdate,
+    NodeUpdate,
+    NodeProgress,
+)
 from pydantic import BaseModel, Field
 from nodetool.models.workflow import Workflow as WorkflowModel
 from nodetool.workflows.run_workflow import run_workflow
@@ -20,7 +27,6 @@ from nodetool.packages.registry import Registry
 from nodetool.config.logging_config import get_logger
 from nodetool.chat.search_nodes import search_nodes as search_nodes_tool
 from nodetool.models.asset import Asset as AssetModel
-from nodetool.types.asset import Asset
 from nodetool.config.environment import Environment
 from nodetool.models.job import Job as JobModel
 from nodetool.workflows.job_execution_manager import JobExecutionManager
@@ -30,9 +36,10 @@ from nodetool.api.model import (
     recommended_models,
     get_language_models,
 )
-from nodetool.types.model import UnifiedModel
-from nodetool.metadata.types import LanguageModel, ImageModel, Provider, TTSModel, ASRModel
-from nodetool.ml.models.image_models import get_all_image_models as get_all_image_models_func
+from nodetool.metadata.types import Provider
+from nodetool.ml.models.image_models import (
+    get_all_image_models as get_all_image_models_func,
+)
 from nodetool.ml.models.tts_models import get_all_tts_models as get_all_tts_models_func
 from nodetool.ml.models.asr_models import get_all_asr_models as get_all_asr_models_func
 from nodetool.integrations.vectorstores.chroma.async_chroma_client import (
@@ -41,7 +48,6 @@ from nodetool.integrations.vectorstores.chroma.async_chroma_client import (
 )
 from nodetool.integrations.huggingface.huggingface_models import read_cached_hf_models
 from huggingface_hub.constants import HF_HUB_CACHE
-from nodetool.indexing.service import index_file_to_collection
 from nodetool.indexing.ingestion import find_input_nodes
 from nodetool.models.thread import Thread
 from nodetool.models.message import Message as DBMessage
@@ -63,16 +69,20 @@ mcp = FastMCP("NodeTool API Server")
 
 class WorkflowRunParams(BaseModel):
     """Parameters for running a workflow"""
+
     workflow_id: str = Field(..., description="The ID of the workflow to run")
-    params: dict[str, Any] = Field(default_factory=dict, description="Input parameters for the workflow")
+    params: dict[str, Any] = Field(
+        default_factory=dict, description="Input parameters for the workflow"
+    )
 
 
 class NodeSearchParams(BaseModel):
     """Parameters for searching nodes"""
+
     query: str = Field(..., description="Search query for nodes")
-    namespace: Optional[str] = Field(None, description="Optional namespace to filter nodes")
-
-
+    namespace: Optional[str] = Field(
+        None, description="Optional namespace to filter nodes"
+    )
 
 
 @mcp.tool()
@@ -108,7 +118,9 @@ async def get_workflow(workflow_id: str) -> dict[str, Any]:
 
 
 @mcp.tool()
-async def run_workflow_tool(workflow_id: str, ctx: Context, params: dict[str, Any] = {}) -> dict[str, Any]:
+async def run_workflow_tool(
+    workflow_id: str, ctx: Context, params: dict[str, Any] = {}
+) -> dict[str, Any]:
     """
     Execute a NodeTool workflow with given parameters.
 
@@ -163,7 +175,9 @@ async def run_workflow_tool(workflow_id: str, ctx: Context, params: dict[str, An
 
 
 @mcp.tool()
-async def run_graph(graph: dict[str, Any], params: dict[str, Any] = {}) -> dict[str, Any]:
+async def run_graph(
+    graph: dict[str, Any], params: dict[str, Any] = {}
+) -> dict[str, Any]:
     """
     Execute a workflow graph directly without saving it as a workflow.
 
@@ -235,8 +249,11 @@ async def run_graph(graph: dict[str, Any], params: dict[str, Any] = {}) -> dict[
         "result": result,
     }
 
+
 @mcp.tool()
-async def list_nodes(namespace: Optional[str] = None, limit: int = 100) -> list[dict[str, Any]]:
+async def list_nodes(
+    namespace: Optional[str] = None, limit: int = 100
+) -> list[dict[str, Any]]:
     """
     List available nodes in NodeTool registry.
 
@@ -260,16 +277,24 @@ async def list_nodes(namespace: Optional[str] = None, limit: int = 100) -> list[
         if count >= limit:
             break
 
-        result.append({
-            "type": node.node_type,
-        })
+        result.append(
+            {
+                "type": node.node_type,
+            }
+        )
         count += 1
 
     return result
 
 
 @mcp.tool()
-async def search_nodes(query: list[str], n_results: int = 10, input_type: Optional[str] = None, output_type: Optional[str] = None, exclude_namespaces: Optional[list[str]] = None) -> list[dict[str, Any]]:
+async def search_nodes(
+    query: list[str],
+    n_results: int = 10,
+    input_type: Optional[str] = None,
+    output_type: Optional[str] = None,
+    exclude_namespaces: Optional[list[str]] = None,
+) -> list[dict[str, Any]]:
     """
     Search for nodes by name, description, or tags.
 
@@ -290,12 +315,14 @@ async def search_nodes(query: list[str], n_results: int = 10, input_type: Option
 
     result = []
     for node in nodes:
-        result.append({
-            "type": node.node_type,
-            "title": node.title,
-            "description": node.description,
-            "namespace": node.namespace,
-        })
+        result.append(
+            {
+                "type": node.node_type,
+                "title": node.title,
+                "description": node.description,
+                "namespace": node.namespace,
+            }
+        )
 
     return result
 
@@ -407,7 +434,7 @@ async def save_workflow(
         "output_schema": output_schema,
         "created_at": workflow.created_at.isoformat(),
         "updated_at": workflow.updated_at.isoformat(),
-        "message": "Workflow saved successfully"
+        "message": "Workflow saved successfully",
     }
 
 
@@ -502,7 +529,9 @@ async def validate_workflow(workflow_id: str) -> dict[str, Any]:
         return False
 
     if has_cycle():
-        errors.append("Workflow contains circular dependencies - must be a DAG (Directed Acyclic Graph)")
+        errors.append(
+            "Workflow contains circular dependencies - must be a DAG (Directed Acyclic Graph)"
+        )
 
     # Validate node inputs and type compatibility
     for node in graph.nodes:
@@ -512,10 +541,11 @@ async def validate_workflow(workflow_id: str) -> dict[str, Any]:
         metadata = node_types_found[node.id]
 
         # Check required inputs are connected
-        if hasattr(metadata, 'properties'):
+        if hasattr(metadata, "properties"):
             required_inputs = [
-                prop_name for prop_name, prop_data in metadata.properties.items()
-                if isinstance(prop_data, dict) and prop_data.get('required', False)
+                prop_name
+                for prop_name, prop_data in metadata.properties.items()
+                if isinstance(prop_data, dict) and prop_data.get("required", False)
             ]
 
             connected_inputs = set()
@@ -525,7 +555,7 @@ async def validate_workflow(workflow_id: str) -> dict[str, Any]:
                         connected_inputs.add(edge.targetHandle)
 
             # Check node properties for static values
-            if hasattr(node.data, 'properties'):
+            if hasattr(node.data, "properties"):
                 for prop_name in node.data.properties:
                     connected_inputs.add(prop_name)
 
@@ -543,13 +573,18 @@ async def validate_workflow(workflow_id: str) -> dict[str, Any]:
 
     for node in graph.nodes:
         # Skip input/output/constant nodes from orphan check
-        if any(keyword in node.type.lower() for keyword in ['input', 'output', 'constant', 'preview']):
+        if any(
+            keyword in node.type.lower()
+            for keyword in ["input", "output", "constant", "preview"]
+        ):
             continue
 
         if node.id not in nodes_with_inputs and node.id not in nodes_with_outputs:
             warnings.append(f"Orphaned node (not connected): {node.id} ({node.type})")
         elif node.id not in nodes_with_outputs:
-            suggestions.append(f"Node '{node.id}' has no outputs - consider adding Preview or Output node")
+            suggestions.append(
+                f"Node '{node.id}' has no outputs - consider adding Preview or Output node"
+            )
 
     # Summary
     is_valid = len(errors) == 0
@@ -568,48 +603,228 @@ async def validate_workflow(workflow_id: str) -> dict[str, Any]:
         "errors": errors,
         "warnings": warnings,
         "suggestions": suggestions,
-        "message": "Workflow is valid and ready to run" if is_valid else "Workflow has validation errors - please fix before running"
+        "message": "Workflow is valid and ready to run"
+        if is_valid
+        else "Workflow has validation errors - please fix before running",
     }
 
 
 @mcp.tool()
-async def export_workflow_digraph(workflow_id: str) -> dict[str, Any]:
+async def generate_dot_graph(
+    graph: dict[str, Any],
+    graph_name: str = "workflow",
+) -> dict[str, Any]:
+    """
+    Generate a Graphviz DOT graph from a workflow graph structure.
+
+    This tool converts a NodeTool workflow graph (with nodes and edges) into a
+    visual DOT graph representation for visualization.
+
+    Args:
+        graph: Workflow graph structure with nodes and edges
+        graph_name: Name of the graph (default: "workflow")
+
+    Returns:
+        Dictionary with DOT format string and graph statistics
+    """
+    import re
+
+    # Parse and validate graph
+    graph_obj = Graph.model_validate(graph)
+
+    # Helper function to sanitize node IDs for DOT format
+    def sanitize_id(node_id: str) -> str:
+        return re.sub(r"[^a-zA-Z0-9_]", "_", node_id)
+
+    # Start building DOT string
+    dot_lines = [
+        f"digraph {sanitize_id(graph_name)} {{",
+        "  rankdir=TB;",
+        "  node [shape=box, style=rounded];",
+        "",
+    ]
+
+    # Add nodes with simple labels
+    for node in graph_obj.nodes:
+        sanitized_id = sanitize_id(node.id)
+        # Simple label: node_id (type)
+        label = f"{node.id}\\n({node.type})"
+        dot_lines.append(f'  {sanitized_id} [label="{label}"];')
+
+    dot_lines.append("")
+
+    # Add edges
+    for edge in graph_obj.edges:
+        source_id = sanitize_id(edge.source)
+        target_id = sanitize_id(edge.target)
+
+        # Add edge label with handle information if available
+        edge_parts = []
+        if edge.sourceHandle:
+            edge_parts.append(edge.sourceHandle)
+        if edge.targetHandle:
+            edge_parts.append(edge.targetHandle)
+
+        if edge_parts:
+            edge_label = " → ".join(edge_parts)
+            dot_lines.append(f'  {source_id} -> {target_id} [label="{edge_label}"];')
+        else:
+            dot_lines.append(f"  {source_id} -> {target_id};")
+
+    dot_lines.append("}")
+
+    dot_content = "\n".join(dot_lines)
+
+    return {
+        "graph_name": graph_name,
+        "dot": dot_content,
+        "node_count": len(graph_obj.nodes),
+        "edge_count": len(graph_obj.edges),
+    }
+
+
+@mcp.tool()
+async def export_workflow_digraph(
+    workflow_id: str, descriptive_names: bool = True
+) -> dict[str, Any]:
     """
     Export a workflow as a simple Graphviz Digraph (DOT format) for LLM parsing and visualization.
 
+    This tool checks both saved workflows in the database and example workflows from packages.
+    By default, it replaces UUID-based node IDs with descriptive names based on node types.
+
     Args:
         workflow_id: The ID of the workflow to export
+        descriptive_names: Use descriptive node names instead of UUIDs (default: True)
 
     Returns:
         Dictionary with DOT format string and workflow metadata
     """
-    workflow = await WorkflowModel.find("1", workflow_id)
-    if not workflow:
-        raise ValueError(f"Workflow {workflow_id} not found")
+    import re
+    import asyncio
 
-    graph = workflow.get_api_graph()
+    # First try to find in database
+    workflow_model = await WorkflowModel.find("1", workflow_id)
 
-    # Start building DOT string
-    dot_lines = [
-        f"digraph workflow {{",
-    ]
+    if workflow_model:
+        graph = workflow_model.get_api_graph()
+        workflow_name = workflow_model.name
+    else:
+        # Try to find in example workflows
+        example_registry = Registry.get_instance()
+        examples = await asyncio.to_thread(example_registry.list_examples)
+
+        # Find matching example by ID
+        matching_example = None
+        for ex in examples:
+            if ex.id == workflow_id:
+                matching_example = ex
+                break
+
+        if not matching_example:
+            raise ValueError(
+                f"Workflow {workflow_id} not found in database or examples"
+            )
+
+        # Load the example workflow
+        example_workflow = await asyncio.to_thread(
+            example_registry.load_example,
+            matching_example.package_name,
+            matching_example.name,
+        )
+
+        if not example_workflow or not example_workflow.graph:
+            raise ValueError(f"Failed to load example workflow {workflow_id}")
+
+        graph = example_workflow.graph
+        workflow_name = example_workflow.name
 
     # Helper function to sanitize node IDs for DOT format
     def sanitize_id(node_id: str) -> str:
-        import re
-        return re.sub(r'[^a-zA-Z0-9_]', '_', node_id)
+        return re.sub(r"[^a-zA-Z0-9_]", "_", node_id)
 
-    # Add nodes with simple labels
+    # Helper function to create descriptive node ID from type
+    def create_descriptive_id(node_type: str, node_data: Any = None) -> str:
+        """Create a descriptive ID from node type, handling duplicates"""
+        # Extract the last part of the node type (e.g., "StringInput" from "nodetool.input.StringInput")
+        type_parts = node_type.split(".")
+        base_name = type_parts[-1]
+
+        # Convert PascalCase to snake_case
+        base_name = re.sub(r"(?<!^)(?=[A-Z])", "_", base_name).lower()
+
+        # Try to get a more specific name from node data
+        if node_data and hasattr(node_data, "name") and node_data.name:
+            # Use the node's name field if available
+            specific_name = re.sub(r"[^a-zA-Z0-9_]", "_", str(node_data.name).lower())
+            return specific_name
+
+        return base_name
+
+    # Helper function to create descriptive label
+    def create_descriptive_label(node_type: str, node_data: Any = None) -> str:
+        """Create a human-readable label for the node"""
+        # Extract the last part of the node type
+        type_parts = node_type.split(".")
+        base_name = type_parts[-1]
+
+        # If node has a name, include it in the label
+        if node_data and hasattr(node_data, "name") and node_data.name:
+            return f"{base_name} ({node_data.name})"
+
+        return base_name
+
+    # Start building DOT string
+    dot_lines = [
+        "digraph workflow {",
+    ]
+
+    # Track node ID mappings for descriptive names
+    id_map = {}
+    id_counter = {}  # Track counts for duplicate types
+
+    # Add nodes with labels
     for node in graph.nodes:
-        sanitized_id = sanitize_id(node.id)
-        # Simple label: node_id (type)
-        label = f"{node.id} ({node.type})"
+        if descriptive_names:
+            # Check if this is a UUID (contains hyphens and hex chars)
+            is_uuid = re.match(
+                r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                node.id,
+                re.IGNORECASE,
+            )
+
+            if is_uuid:
+                # Create descriptive ID
+                base_id = create_descriptive_id(node.type, node.data)
+
+                # Handle duplicates by adding suffix
+                if base_id in id_counter:
+                    id_counter[base_id] += 1
+                    descriptive_id = f"{base_id}_{id_counter[base_id]}"
+                else:
+                    id_counter[base_id] = 1
+                    descriptive_id = base_id
+
+                id_map[node.id] = descriptive_id
+                sanitized_id = sanitize_id(descriptive_id)
+                label = create_descriptive_label(node.type, node.data)
+            else:
+                # Keep original ID if it's already descriptive
+                id_map[node.id] = node.id
+                sanitized_id = sanitize_id(node.id)
+                label = f"{node.id} ({node.type})"
+        else:
+            # Use original IDs
+            id_map[node.id] = node.id
+            sanitized_id = sanitize_id(node.id)
+            label = f"{node.id} ({node.type})"
+
         dot_lines.append(f'  {sanitized_id} [label="{label}"];')
 
     # Add edges
     for edge in graph.edges:
-        source_id = sanitize_id(edge.source)
-        target_id = sanitize_id(edge.target)
+        source_id = sanitize_id(id_map[edge.source])
+        target_id = sanitize_id(id_map[edge.target])
         dot_lines.append(f"  {source_id} -> {target_id};")
 
     dot_lines.append("}")
@@ -618,15 +833,18 @@ async def export_workflow_digraph(workflow_id: str) -> dict[str, Any]:
 
     return {
         "workflow_id": workflow_id,
-        "workflow_name": workflow.name,
+        "workflow_name": workflow_name,
         "dot": dot_content,
         "node_count": len(graph.nodes),
         "edge_count": len(graph.edges),
+        "descriptive_names": descriptive_names,
     }
 
 
 @mcp.tool()
-async def list_workflows(limit: int = 100, start_key: str | None = None) -> dict[str, Any]:
+async def list_workflows(
+    limit: int = 100, start_key: str | None = None
+) -> dict[str, Any]:
     """
     List all workflows with pagination support.
 
@@ -638,26 +856,303 @@ async def list_workflows(limit: int = 100, start_key: str | None = None) -> dict
         Dictionary with workflows list and next pagination key
     """
     workflows, next_key = await WorkflowModel.paginate(
-        user_id="1",
-        limit=limit,
-        start_key=start_key
+        user_id="1", limit=limit, start_key=start_key
     )
 
     result = []
     for workflow in workflows:
-        result.append({
-            "id": workflow.id,
-            "name": workflow.name,
-            "description": workflow.description or "",
-            "tags": workflow.tags,
-            "created_at": workflow.created_at.isoformat(),
-            "updated_at": workflow.updated_at.isoformat(),
-        })
+        result.append(
+            {
+                "id": workflow.id,
+                "name": workflow.name,
+                "description": workflow.description or "",
+                "tags": workflow.tags,
+                "created_at": workflow.created_at.isoformat(),
+                "updated_at": workflow.updated_at.isoformat(),
+            }
+        )
 
     return {
         "workflows": result,
         "next": next_key,
     }
+
+
+@mcp.tool()
+async def list_example_workflows() -> list[dict[str, Any]]:
+    """
+    List available example workflows from installed packages.
+
+    Example workflows are pre-built workflows that demonstrate various
+    NodeTool capabilities. They can be used as templates or learning resources.
+
+    Returns:
+        List of example workflows with metadata including required providers and models
+    """
+    import asyncio
+
+    example_registry = Registry.get_instance()
+
+    # Get base list of examples
+    examples = await asyncio.to_thread(example_registry.list_examples)
+
+    provider_namespaces = {
+        "gemini",
+        "openai",
+        "replicate",
+        "huggingface",
+        "huggingface_hub",
+        "fal",
+        "aime",
+    }
+
+    def parse_namespace(node_type: str) -> str:
+        parts = node_type.split(".")
+        if not parts:
+            return ""
+        return parts[0]
+
+    def collect_from_value(val: Any, providers: set[str], models: set[str]):
+        # Recursively collect provider/model info from nested dict/list values
+        if isinstance(val, dict):
+            t = val.get("type")
+            if t == "language_model":
+                # Provider and id from LanguageModel
+                provider = val.get("provider")
+                if isinstance(provider, str) and provider:
+                    providers.add(provider)
+                model_id = val.get("id")
+                if isinstance(model_id, str) and model_id:
+                    models.add(model_id)
+            elif isinstance(t, str) and t.startswith("hf."):
+                # HuggingFace model types (repo_id)
+                repo_id = val.get("repo_id")
+                if isinstance(repo_id, str) and repo_id:
+                    models.add(repo_id)
+            elif isinstance(t, str) and t.startswith("inference_provider_"):
+                # Inference provider types: collect model ids and providers
+                model_id = val.get("model_id")
+                if isinstance(model_id, str) and model_id:
+                    models.add(model_id)
+
+            # Recurse into nested values
+            for v in val.values():
+                collect_from_value(v, providers, models)
+        elif isinstance(val, list):
+            for item in val:
+                collect_from_value(item, providers, models)
+
+    # Load full examples in parallel to speed up detection
+    load_tasks = []
+    indices: list[int] = []
+    for i, ex in enumerate(examples):
+        if ex.package_name and ex.name:
+            load_tasks.append(
+                asyncio.to_thread(
+                    example_registry.load_example, ex.package_name, ex.name
+                )
+            )
+            indices.append(i)
+
+    loaded_map = {}
+    if load_tasks:
+        results = await asyncio.gather(*load_tasks, return_exceptions=True)
+        for pos, res in enumerate(results):
+            idx = indices[pos]
+            if isinstance(res, Exception):
+                log.warning(f"Error loading example {idx}: {res}")
+                loaded_map[idx] = None
+            else:
+                loaded_map[idx] = res
+
+    enriched: list[dict[str, Any]] = []
+    for i, ex in enumerate(examples):
+        required_providers: set[str] = set()
+        required_models: set[str] = set()
+
+        full_example = loaded_map.get(i)
+        if full_example and full_example.graph and full_example.graph.nodes:
+            for node in full_example.graph.nodes:
+                ns = parse_namespace(node.type)
+                if ns in provider_namespaces:
+                    required_providers.add(ns)
+                collect_from_value(
+                    getattr(node, "data", {}), required_providers, required_models
+                )
+
+        enriched.append(
+            {
+                "id": ex.id,
+                "name": ex.name,
+                "package_name": ex.package_name,
+                "description": ex.description,
+                "tags": ex.tags,
+                "thumbnail_url": ex.thumbnail_url,
+                "path": ex.path,
+                "required_providers": sorted(required_providers)
+                if required_providers
+                else None,
+                "required_models": sorted(required_models) if required_models else None,
+            }
+        )
+
+    return enriched
+
+
+@mcp.tool()
+async def search_example_workflows(query: str) -> list[dict[str, Any]]:
+    """
+    Search for example workflows by searching through node titles, descriptions, and types.
+
+    Args:
+        query: The search string to find in node properties
+
+    Returns:
+        List of workflows that contain nodes matching the query
+    """
+    import asyncio
+
+    example_registry = Registry.get_instance()
+    matching_workflows = await asyncio.to_thread(
+        example_registry.search_example_workflows, query
+    )
+
+    return [
+        {
+            "id": workflow.id,
+            "name": workflow.name,
+            "package_name": workflow.package_name,
+            "description": workflow.description,
+            "tags": workflow.tags,
+            "thumbnail_url": workflow.thumbnail_url,
+            "path": workflow.path,
+        }
+        for workflow in matching_workflows
+    ]
+
+
+@mcp.tool()
+async def get_example_workflow(package_name: str, example_name: str) -> dict[str, Any]:
+    """
+    Load a specific example workflow from disk by package name and example name.
+
+    Args:
+        package_name: The name of the package containing the example
+        example_name: The name of the example workflow to load
+
+    Returns:
+        The loaded example workflow with full graph data
+
+    Raises:
+        ValueError: If the package or example is not found
+    """
+    example_registry = Registry.get_instance()
+    workflow = example_registry.load_example(package_name, example_name)
+
+    if not workflow:
+        raise ValueError(
+            f"Example '{example_name}' not found in package '{package_name}'"
+        )
+
+    # Convert to dict format
+    api_graph = workflow.graph
+    input_schema = get_input_schema(api_graph) if api_graph else {}
+    output_schema = get_output_schema(api_graph) if api_graph else {}
+
+    return {
+        "id": workflow.id,
+        "name": workflow.name,
+        "package_name": workflow.package_name,
+        "description": workflow.description,
+        "tags": workflow.tags,
+        "thumbnail_url": workflow.thumbnail_url,
+        "path": workflow.path,
+        "graph": api_graph.model_dump() if api_graph else None,
+        "input_schema": input_schema,
+        "output_schema": output_schema,
+    }
+
+
+@mcp.tool()
+async def save_example_workflow(
+    workflow_id: str,
+    name: str,
+    package_name: str,
+    path: str,
+    graph: dict[str, Any],
+    description: str = "",
+    tags: list[str] | None = None,
+    thumbnail_url: str = "",
+) -> dict[str, Any]:
+    """
+    Save an example workflow to disk.
+
+    This is only allowed in development mode. Example workflows are saved
+    to the package directory and can be loaded later as templates.
+
+    Args:
+        workflow_id: Unique identifier for the workflow
+        name: Human-readable name
+        package_name: Package the example belongs to
+        path: File path within the package
+        graph: Workflow graph structure with nodes and edges
+        description: Description of what the workflow does
+        tags: List of tags for categorization
+        thumbnail_url: URL to a thumbnail image
+
+    Returns:
+        Saved workflow details
+
+    Raises:
+        ValueError: If not in development mode or invalid workflow
+    """
+    from nodetool.types.graph import remove_connected_slots
+    from nodetool.types.workflow import Workflow
+    from datetime import datetime
+    import asyncio
+
+    if Environment.is_production():
+        raise ValueError("Saving example workflows is only allowed in development mode")
+
+    if not graph:
+        raise ValueError("Invalid workflow: graph is required")
+
+    # Parse and clean the graph
+    graph_obj = Graph.model_validate(graph)
+    cleaned_graph = remove_connected_slots(graph_obj)
+
+    # Create workflow object
+    workflow = Workflow(
+        id=workflow_id,
+        name=name,
+        description=description,
+        tags=[tag for tag in (tags or []) if tag != "example"],
+        package_name=package_name,
+        path=path,
+        thumbnail_url=thumbnail_url,
+        access="public",
+        graph=cleaned_graph,
+        created_at=datetime.now().isoformat(),
+        updated_at=datetime.now().isoformat(),
+    )
+
+    example_registry = Registry.get_instance()
+
+    try:
+        saved_workflow = await asyncio.to_thread(
+            example_registry.save_example, workflow
+        )
+
+        return {
+            "id": saved_workflow.id,
+            "name": saved_workflow.name,
+            "package_name": saved_workflow.package_name,
+            "path": saved_workflow.path,
+            "message": "Example workflow saved successfully",
+        }
+    except ValueError as e:
+        log.error(f"Error saving example workflow: {str(e)}")
+        raise ValueError(f"Failed to save example workflow: {str(e)}")
 
 
 def _asset_to_dict(asset: AssetModel) -> dict[str, Any]:
@@ -1227,7 +1722,6 @@ async def start_background_job(
     }
 
 
-
 @mcp.tool()
 async def list_all_models(
     provider: str,
@@ -1254,7 +1748,12 @@ async def list_all_models(
 
     # Filter by provider
     if provider.lower() != "all":
-        all_models = [m for m in all_models if provider.lower() in m.id.lower() or (m.repo_id and provider.lower() in m.repo_id.lower())]
+        all_models = [
+            m
+            for m in all_models
+            if provider.lower() in m.id.lower()
+            or (m.repo_id and provider.lower() in m.repo_id.lower())
+        ]
 
     # Filter by model type
     if model_type:
@@ -1333,7 +1832,9 @@ async def list_language_models(
 
     # Filter by provider
     if provider.lower() != "all":
-        all_models = [m for m in all_models if m.provider.value.lower() == provider.lower()]
+        all_models = [
+            m for m in all_models if m.provider.value.lower() == provider.lower()
+        ]
 
     # Apply limit
     all_models = all_models[:limit]
@@ -1370,7 +1871,9 @@ async def list_image_models(
 
     # Filter by provider
     if provider.lower() != "all":
-        all_models = [m for m in all_models if m.provider.value.lower() == provider.lower()]
+        all_models = [
+            m for m in all_models if m.provider.value.lower() == provider.lower()
+        ]
 
     # Apply limit
     all_models = all_models[:limit]
@@ -1407,7 +1910,9 @@ async def list_tts_models(
 
     # Filter by provider
     if provider.lower() != "all":
-        all_models = [m for m in all_models if m.provider.value.lower() == provider.lower()]
+        all_models = [
+            m for m in all_models if m.provider.value.lower() == provider.lower()
+        ]
 
     # Apply limit
     all_models = all_models[:limit]
@@ -1444,7 +1949,9 @@ async def list_asr_models(
 
     # Filter by provider
     if provider.lower() != "all":
-        all_models = [m for m in all_models if m.provider.value.lower() == provider.lower()]
+        all_models = [
+            m for m in all_models if m.provider.value.lower() == provider.lower()
+        ]
 
     # Apply limit
     all_models = all_models[:limit]
@@ -1675,6 +2182,7 @@ async def add_documents_to_collection(
     # Generate IDs if not provided
     if ids is None:
         import uuid
+
         ids = [str(uuid.uuid4()) for _ in documents]
 
     await collection.add(
@@ -2065,7 +2573,9 @@ async def upload_file_to_storage(
         raise ValueError(f"Invalid base64 content: {e}")
 
     # Get appropriate storage
-    storage = Environment.get_temp_storage() if temp else Environment.get_asset_storage()
+    storage = (
+        Environment.get_temp_storage() if temp else Environment.get_asset_storage()
+    )
 
     # Upload file
     await storage.upload(key, BytesIO(file_data))
@@ -2101,7 +2611,9 @@ async def download_file_from_storage(
         raise ValueError("Invalid key: path separators not allowed")
 
     # Get appropriate storage
-    storage = Environment.get_temp_storage() if temp else Environment.get_asset_storage()
+    storage = (
+        Environment.get_temp_storage() if temp else Environment.get_asset_storage()
+    )
 
     # Check if file exists
     if not await storage.file_exists(key):
@@ -2145,7 +2657,9 @@ async def get_file_metadata(
         raise ValueError("Invalid key: path separators not allowed")
 
     # Get appropriate storage
-    storage = Environment.get_temp_storage() if temp else Environment.get_asset_storage()
+    storage = (
+        Environment.get_temp_storage() if temp else Environment.get_asset_storage()
+    )
 
     # Check if file exists
     if not await storage.file_exists(key):
@@ -2184,7 +2698,9 @@ async def delete_file_from_storage(
         raise ValueError("Invalid key: path separators not allowed")
 
     # Get appropriate storage
-    storage = Environment.get_temp_storage() if temp else Environment.get_asset_storage()
+    storage = (
+        Environment.get_temp_storage() if temp else Environment.get_asset_storage()
+    )
 
     # Check if file exists
     if not await storage.file_exists(key):
@@ -2219,7 +2735,9 @@ async def list_storage_files(
         limit = 200
 
     # Get appropriate storage
-    storage = Environment.get_temp_storage() if temp else Environment.get_asset_storage()
+    storage = (
+        Environment.get_temp_storage() if temp else Environment.get_asset_storage()
+    )
 
     # Try to list files (not all storage backends support this)
     try:
@@ -2307,7 +2825,9 @@ async def inspect_hf_cached_model(repo_id: str) -> dict[str, Any]:
         "type": model.type,
         "path": model.path,
         "size_on_disk": model.size_on_disk,
-        "size_on_disk_gb": round((model.size_on_disk or 0) / (1024**3), 2) if model.size_on_disk else None,
+        "size_on_disk_gb": round((model.size_on_disk or 0) / (1024**3), 2)
+        if model.size_on_disk
+        else None,
         "downloaded": model.downloaded,
     }
 
@@ -2335,9 +2855,12 @@ async def query_hf_model_files(
     from fnmatch import fnmatch
     from huggingface_hub.hf_api import RepoFile, RepoFolder
     from dataclasses import asdict
+
     try:
         api = HfApi()
-        file_infos = api.list_repo_files(repo_id=repo_id, repo_type=repo_type, revision=revision)
+        file_infos = api.list_repo_files(
+            repo_id=repo_id, repo_type=repo_type, revision=revision
+        )
 
         # Filter by patterns if provided
         if patterns:
@@ -2350,13 +2873,15 @@ async def query_hf_model_files(
         # Get file info for each file
         files_data = []
         for file_path in file_infos[:100]:  # Limit to 100 files
-            try:
-                info = api.get_paths_info(repo_id=repo_id, paths=[file_path], repo_type=repo_type, revision=revision)
-                if info:
-                    file_info: RepoFile | RepoFolder = info[0]
-                    files_data.append(asdict(file_info))
-            except:
-                files_data.append({"path": file_path, "size": 0})
+            info = api.get_paths_info(
+                repo_id=repo_id,
+                paths=[file_path],
+                repo_type=repo_type,
+                revision=revision,
+            )
+            if info:
+                file_info: RepoFile | RepoFolder = info[0]
+                files_data.append(asdict(file_info))
 
         total_size = sum(f["size"] for f in files_data)
 
@@ -2551,7 +3076,6 @@ async def run_agent(
                 output_chunks.append(event.content)
             else:
                 events.append(event.model_dump())
-
 
         # Get final results
         results = agent.get_results()
