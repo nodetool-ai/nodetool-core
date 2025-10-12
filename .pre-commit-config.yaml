@@ -1,29 +1,74 @@
+# Pre-commit hooks for nodetool-core
+# Install: pip install pre-commit && pre-commit install
+# Run manually: pre-commit run --all-files
+
 repos:
-  - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.5.0
-    hooks:
-      - id: trailing-whitespace
-      - id: end-of-file-fixer
-      - id: check-yaml
-      - id: check-added-large-files
-      - id: check-ast
-      - id: check-json
-      - id: check-merge-conflict
-      - id: detect-private-key
+  # General file checks
+- repo: https://github.com/pre-commit/pre-commit-hooks
+  rev: v5.0.0
+  hooks:
+  - id: trailing-whitespace
+    args: [--markdown-linebreak-ext=md]
+  - id: end-of-file-fixer
+  - id: check-yaml
+    args: [--unsafe]
+  - id: check-json
+  - id: check-added-large-files
+    args: [--maxkb=1000]
+  - id: check-merge-conflict
+  - id: check-case-conflict
+  - id: check-ast
+  - id: mixed-line-ending
+    args: [--fix=lf]
+  - id: detect-private-key
 
-  - repo: https://github.com/psf/black
-    rev: 24.10.0
-    hooks:
-      - id: black
+    # Python: Ruff for fast linting and auto-fixing
+- repo: https://github.com/astral-sh/ruff-pre-commit
+  rev: v0.8.4
+  hooks:
+      # Run the linter
+  - id: ruff
+    args: [--fix, --exit-non-zero-on-fix]
+    types_or: [python, pyi]
+          # Run the formatter (replaces black)
+  - id: ruff-format
+    types_or: [python, pyi]
 
-  - repo: https://github.com/charliermarsh/ruff-pre-commit
-    rev: v0.3.4
-    hooks:
-      - id: ruff
-        args: [--fix, --exit-non-zero-on-fix]
+    # Python: Type checking with mypy
+- repo: https://github.com/pre-commit/mirrors-mypy
+  rev: v1.13.0
+  hooks:
+  - id: mypy
+    additional_dependencies: [pydantic, types-requests, types-PyYAML]
+    args: [--ignore-missing-imports]
 
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.9.0
-    hooks:
-      - id: mypy
-        additional_dependencies: [pydantic, types-requests, types-PyYAML]
+    # YAML formatting
+- repo: https://github.com/macisamuele/language-formatters-pre-commit-hooks
+  rev: v2.14.0
+  hooks:
+  - id: pretty-format-yaml
+    args: [--autofix, --indent, '2']
+    exclude: ^(\.github/)
+
+    # Markdown formatting and linting
+- repo: https://github.com/executablebooks/mdformat
+  rev: 0.7.21
+  hooks:
+  - id: mdformat
+    additional_dependencies:
+    - mdformat-gfm
+    - mdformat-tables
+    args: [--wrap, '120']
+
+# Configuration for specific file types
+exclude: |
+  (?x)^(
+    .*\.egg-info/.*|
+    .*\.venv/.*|
+    .*\.mypy_cache/.*|
+    .*\.pytest_cache/.*|
+    .*__pycache__/.*|
+    .*dist/.*|
+    .*build/.*|
+    .*\.git/.*
+  )$
