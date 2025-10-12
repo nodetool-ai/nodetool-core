@@ -456,7 +456,9 @@ class OpenAIProvider(BaseProvider):
             supported_ratio = supported_w / supported_h
 
             # Score based on area difference and aspect ratio difference
-            area_score = abs(supported_area - target_area) / max(target_area, supported_area)
+            area_score = abs(supported_area - target_area) / max(
+                target_area, supported_area
+            )
             ratio_score = abs(supported_ratio - target_ratio)
 
             return area_score * 0.7 + ratio_score * 0.3
@@ -584,8 +586,8 @@ class OpenAIProvider(BaseProvider):
             Size string in format "WIDTHxHEIGHT" snapped to valid dimensions
         """
         supported_sizes: list[tuple[int, int]] = [
-            (1280, 720),   # 16:9 landscape
-            (720, 1280),   # 9:16 portrait
+            (1280, 720),  # 16:9 landscape
+            (720, 1280),  # 9:16 portrait
         ]
 
         target_ratio = width / height
@@ -657,18 +659,17 @@ class OpenAIProvider(BaseProvider):
         try:
             with Image.open(io.BytesIO(image)) as img:
                 # Convert to RGB if needed (handle RGBA, grayscale, etc.)
-                if img.mode not in ('RGB', 'L'):
-                    img = img.convert('RGB')
+                if img.mode not in ("RGB", "L"):
+                    img = img.convert("RGB")
 
                 # Resize using high-quality LANCZOS resampling
                 resized_img = img.resize(
-                    (target_width, target_height),
-                    Image.Resampling.LANCZOS
+                    (target_width, target_height), Image.Resampling.LANCZOS
                 )
 
                 # Convert back to bytes
                 output = io.BytesIO()
-                resized_img.save(output, format='PNG')
+                resized_img.save(output, format="PNG")
                 result = output.getvalue()
 
                 log.info(
@@ -681,7 +682,9 @@ class OpenAIProvider(BaseProvider):
             raise ValueError(f"Failed to resize image: {e}")
 
     @staticmethod
-    def _seconds_from_params(params: TextToVideoParams | ImageToVideoParams) -> int | None:
+    def _seconds_from_params(
+        params: TextToVideoParams | ImageToVideoParams,
+    ) -> int | None:
         """Derive generation length in seconds from provided parameters."""
         num_frames = params.num_frames
         if not num_frames:
@@ -988,7 +991,9 @@ class OpenAIProvider(BaseProvider):
             else:
                 log.debug("Returning assistant message with tool calls")
                 return ChatCompletionAssistantMessageParam(
-                    role=message.role, content=content, tool_calls=tool_calls  # type: ignore
+                    role=message.role,
+                    content=content,
+                    tool_calls=tool_calls,  # type: ignore
                 )
         else:
             log.error(f"Unknown message role: {message.role}")
@@ -1157,16 +1162,16 @@ class OpenAIProvider(BaseProvider):
                     chunk.usage.prompt_tokens_details
                     and chunk.usage.prompt_tokens_details.cached_tokens
                 ):
-                    self.usage[
-                        "cached_prompt_tokens"
-                    ] += chunk.usage.prompt_tokens_details.cached_tokens
+                    self.usage["cached_prompt_tokens"] += (
+                        chunk.usage.prompt_tokens_details.cached_tokens
+                    )
                 if (
                     chunk.usage.completion_tokens_details
                     and chunk.usage.completion_tokens_details.reasoning_tokens
                 ):
-                    self.usage[
-                        "reasoning_tokens"
-                    ] += chunk.usage.completion_tokens_details.reasoning_tokens
+                    self.usage["reasoning_tokens"] += (
+                        chunk.usage.completion_tokens_details.reasoning_tokens
+                    )
                 log.debug(f"Updated usage stats: {self.usage}")
 
             if not chunk.choices:
@@ -1184,9 +1189,7 @@ class OpenAIProvider(BaseProvider):
 
             # Process tool call deltas before checking finish_reason
             if delta.tool_calls:
-                log.debug(f"Processing {len(delta.tool_calls)} tool call deltas")
                 for tool_call in delta.tool_calls:
-                    log.debug(f"Processing tool call delta at index {tool_call.index}")
                     tc: dict[str, Any] | None = None
                     if tool_call.index in delta_tool_calls:
                         tc = delta_tool_calls[tool_call.index]
@@ -1429,7 +1432,7 @@ class OpenAIProvider(BaseProvider):
                 model=model_id,
                 prompt=prompt,
                 n=1,
-                size=size if size else Omit, # type: ignore
+                size=size if size else Omit,  # type: ignore
                 timeout=request_timeout,
             )
 
@@ -1464,7 +1467,9 @@ class OpenAIProvider(BaseProvider):
             ) from api_error
         except Exception as exc:
             log.error(f"OpenAI text-to-image generation failed: {exc}")
-            raise RuntimeError(f"OpenAI text-to-image generation failed: {exc}") from exc
+            raise RuntimeError(
+                f"OpenAI text-to-image generation failed: {exc}"
+            ) from exc
 
     async def image_to_image(
         self,
@@ -1496,8 +1501,12 @@ class OpenAIProvider(BaseProvider):
         size = None
         if params.target_width and params.target_height:
             if params.target_width <= 0 or params.target_height <= 0:
-                raise ValueError("target_width and target_height must be positive integers.")
-            size = self._resolve_image_size(int(params.target_width), int(params.target_height))
+                raise ValueError(
+                    "target_width and target_height must be positive integers."
+                )
+            size = self._resolve_image_size(
+                int(params.target_width), int(params.target_height)
+            )
 
         try:
             request_timeout = timeout_s if timeout_s and timeout_s > 0 else 120
@@ -1506,7 +1515,7 @@ class OpenAIProvider(BaseProvider):
                 model=model_id,
                 prompt=prompt,
                 image=("image.png", image, "image/png"),
-                size=size if size else Omit, # type: ignore
+                size=size if size else Omit,  # type: ignore
                 timeout=request_timeout,
             )
 
@@ -1591,7 +1600,6 @@ class OpenAIProvider(BaseProvider):
         )
 
         try:
-
             # Use streaming response
             async with self.get_client().audio.speech.with_streaming_response.create(
                 model=model,
@@ -1697,7 +1705,9 @@ class OpenAIProvider(BaseProvider):
         poll_interval = max(2, min(10, maximum_wait)) if maximum_wait else 10
         if not video.id:
             log.error(f"OpenAI video create response missing id: {video}")
-            raise RuntimeError("OpenAI video create response did not contain a video id")
+            raise RuntimeError(
+                "OpenAI video create response did not contain a video id"
+            )
 
         log.debug(
             f"Video job {video.id} created with initial status '{video.status}' and progress {video.progress}"
@@ -1721,12 +1731,16 @@ class OpenAIProvider(BaseProvider):
             log.debug(
                 f"Video job {video.id} status update: {video.status} (progress={video.progress})"
             )
-            if "node_id" in kwargs and context is not None and video.progress is not None:
+            if (
+                "node_id" in kwargs
+                and context is not None
+                and video.progress is not None
+            ):
                 context.post_message(
                     NodeProgress(
                         node_id=kwargs["node_id"],
-                        progress=video.progress, # type: ignore
-                        total=100, # type: ignore
+                        progress=video.progress,  # type: ignore
+                        total=100,  # type: ignore
                     )
                 )
 
@@ -1735,8 +1749,7 @@ class OpenAIProvider(BaseProvider):
 
         if video.status != "completed":
             message = (
-                video.error
-                or f"Video generation ended with status '{video.status}'"
+                video.error or f"Video generation ended with status '{video.status}'"
             )
             raise RuntimeError(message)
 
@@ -1763,12 +1776,14 @@ class OpenAIProvider(BaseProvider):
         seconds: int,
         timeout: float,
     ) -> Video:
-        log.debug(f"Submitting video generation request: {model_id}, {prompt}, {size}, {seconds}")
+        log.debug(
+            f"Submitting video generation request: {model_id}, {prompt}, {size}, {seconds}"
+        )
         return await client.videos.create(
-            model=model_id, # type: ignore
+            model=model_id,  # type: ignore
             prompt=prompt,
-            size=size if size else Omit, # type: ignore
-            seconds=str(seconds) if seconds else Omit, # type: ignore
+            size=size if size else Omit,  # type: ignore
+            seconds=str(seconds) if seconds else Omit,  # type: ignore
             timeout=timeout,
         )
 
@@ -1781,7 +1796,7 @@ class OpenAIProvider(BaseProvider):
         return await client.get(
             f"/videos/{video_id}/content",
             cast_to=bytes,
-            options={ # type: ignore
+            options={  # type: ignore
                 "timeout": timeout,
                 "params": {"variant": "video"},
             },
@@ -1829,7 +1844,9 @@ class OpenAIProvider(BaseProvider):
                 "A video model with a valid id must be specified for image-to-video generation."
             )
 
-        log.debug(f"Starting OpenAI image-to-video generation with model: {params.model.id}")
+        log.debug(
+            f"Starting OpenAI image-to-video generation with model: {params.model.id}"
+        )
 
         # Extract dimensions from input image and snap to valid OpenAI sizes
         try:
@@ -1841,7 +1858,7 @@ class OpenAIProvider(BaseProvider):
             )
 
             # Resize image to match the snapped video dimensions
-            target_width, target_height = map(int, size.split('x'))
+            target_width, target_height = map(int, size.split("x"))
             if img_width != target_width or img_height != target_height:
                 log.info(f"Resizing image to match video dimensions: {size}")
                 image = self._resize_image(image, target_width, target_height)
@@ -1895,13 +1912,17 @@ class OpenAIProvider(BaseProvider):
             ) from api_error
         except Exception as exc:
             log.error(f"OpenAI image-to-video generation failed: {exc}")
-            raise RuntimeError(f"OpenAI image-to-video generation failed: {exc}") from exc
+            raise RuntimeError(
+                f"OpenAI image-to-video generation failed: {exc}"
+            ) from exc
 
         maximum_wait = request_timeout
         poll_interval = max(2, min(10, maximum_wait)) if maximum_wait else 10
         if not video.id:
             log.error(f"OpenAI video create response missing id: {video}")
-            raise RuntimeError("OpenAI video create response did not contain a video id")
+            raise RuntimeError(
+                "OpenAI video create response did not contain a video id"
+            )
 
         log.debug(
             f"Video job {video.id} created with initial status '{video.status}' and progress {video.progress}"
@@ -1925,12 +1946,16 @@ class OpenAIProvider(BaseProvider):
             log.debug(
                 f"Video job {video.id} status update: {video.status} (progress={video.progress})"
             )
-            if "node_id" in kwargs and context is not None and video.progress is not None:
+            if (
+                "node_id" in kwargs
+                and context is not None
+                and video.progress is not None
+            ):
                 context.post_message(
                     NodeProgress(
                         node_id=kwargs["node_id"],
-                        progress=video.progress, # type: ignore
-                        total=100, # type: ignore
+                        progress=video.progress,  # type: ignore
+                        total=100,  # type: ignore
                     )
                 )
 
@@ -1984,19 +2009,21 @@ class OpenAIProvider(BaseProvider):
         Returns:
             Video object with job details
         """
-        log.debug(f"Submitting image-to-video generation request: {model_id}, prompt={prompt}, size={size}, seconds={seconds}")
+        log.debug(
+            f"Submitting image-to-video generation request: {model_id}, prompt={prompt}, size={size}, seconds={seconds}"
+        )
 
         # Determine filename from mime_type
-        ext = mime_type.split('/')[-1]
+        ext = mime_type.split("/")[-1]
         filename = f"input_image.{ext}"
 
         # Create the request payload with input_reference
         return await client.videos.create(
-            model=model_id, # type: ignore
+            model=model_id,  # type: ignore
             prompt=prompt if prompt else Omit,
-            input_reference=(filename, image, mime_type), # type: ignore
-            size=size if size else Omit, # type: ignore
-            seconds=str(seconds) if seconds else Omit, # type: ignore
+            input_reference=(filename, image, mime_type),  # type: ignore
+            size=size if size else Omit,  # type: ignore
+            seconds=str(seconds) if seconds else Omit,  # type: ignore
             timeout=timeout,
         )
 

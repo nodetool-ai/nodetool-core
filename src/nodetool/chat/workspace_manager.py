@@ -41,7 +41,7 @@ class WorkspaceManager:
 
             if workflow_id:
                 # Create persistent workspace per workflow_id
-                workflow_workspace = os.path.join(self.workspace_root, f"workflow_{workflow_id}")
+                workflow_workspace = os.path.join(self.workspace_root, workflow_id)
                 os.makedirs(workflow_workspace, exist_ok=True)
                 self.current_workspace = workflow_workspace
             else:

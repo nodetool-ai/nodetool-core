@@ -7,7 +7,6 @@ Inference Providers API with the AsyncInferenceClient from huggingface_hub.
 
 import json
 import asyncio
-import time
 import traceback
 from typing import Any, AsyncGenerator, List, Literal, Sequence
 import aiohttp
@@ -22,11 +21,9 @@ import base64
 from nodetool.media.image.image_utils import image_data_to_base64_jpeg
 from nodetool.io.media_fetch import fetch_uri_bytes_and_mime_sync
 from nodetool.metadata.types import (
-    InferenceProvider,
     Message,
     Provider,
     ToolCall,
-    MessageContent,
     MessageImageContent,
     MessageTextContent,
     LanguageModel,
@@ -103,7 +100,7 @@ def _message_contains_media(message: Message) -> tuple[bool, str]:
             if isinstance(part, MessageImageContent):
                 return True, "image"
             # Check for audio content if MessageAudioContent exists
-            if hasattr(part, '__class__') and 'Audio' in part.__class__.__name__:
+            if hasattr(part, "__class__") and "Audio" in part.__class__.__name__:
                 return True, "audio"
 
     return False, "none"
@@ -366,8 +363,6 @@ async def fetch_models_from_hf_provider(
     except Exception as e:
         log.error(f"Error fetching models for provider {provider}: {e}")
         return []
-
-
 
 
 @register_provider(Provider.HuggingFaceGroq, inference_provider="groq")
@@ -754,7 +749,6 @@ class HuggingFaceProvider(BaseProvider):
                 log.debug("API call successful")
                 break
             except Exception as e:
-                error_str = str(e).lower()
                 log.warning(f"API call attempt {attempt + 1} failed: {str(e)}")
                 # Do not retry on client-side errors (4xx), including 429, 413, 404.
                 status = getattr(getattr(e, "response", None), "status_code", None)
@@ -765,9 +759,15 @@ class HuggingFaceProvider(BaseProvider):
                     # Provide better error messages for 422 status codes
                     if status == 422:
                         # Check if the messages contain media that the model cannot process
-                        has_media = any(_message_contains_media(msg)[0] for msg in messages)
+                        has_media = any(
+                            _message_contains_media(msg)[0] for msg in messages
+                        )
                         if has_media:
-                            media_types = [_message_contains_media(msg)[1] for msg in messages if _message_contains_media(msg)[0]]
+                            media_types = [
+                                _message_contains_media(msg)[1]
+                                for msg in messages
+                                if _message_contains_media(msg)[0]
+                            ]
                             media_str = ", ".join(set(media_types))
                             raise Exception(
                                 f"422 Model '{model}' cannot process {media_str} content. "
@@ -953,10 +953,8 @@ class HuggingFaceProvider(BaseProvider):
                     )
 
                 if delta and getattr(delta, "tool_calls", None):
-                    log.debug(f"Processing {len(delta.tool_calls)} tool call deltas")
                     for tool_call_delta in delta.tool_calls:
                         index = getattr(tool_call_delta, "index", 0)
-                        log.debug(f"Processing tool call delta at index {index}")
 
                         if index not in accumulated_tool_calls:
                             accumulated_tool_calls[index] = {
@@ -1029,7 +1027,11 @@ class HuggingFaceProvider(BaseProvider):
                     # Check if the messages contain media that the model cannot process
                     has_media = any(_message_contains_media(msg)[0] for msg in messages)
                     if has_media:
-                        media_types = [_message_contains_media(msg)[1] for msg in messages if _message_contains_media(msg)[0]]
+                        media_types = [
+                            _message_contains_media(msg)[1]
+                            for msg in messages
+                            if _message_contains_media(msg)[0]
+                        ]
                         media_str = ", ".join(set(media_types))
                         raise Exception(
                             f"422 Model '{model}' cannot process {media_str} content in streaming mode. "
@@ -1212,15 +1214,18 @@ class HuggingFaceProvider(BaseProvider):
                 num_inference_steps=params.num_inference_steps,
                 guidance_scale=params.guidance_scale,
                 seed=params.seed if params.seed and params.seed >= 0 else None,
-                scheduler=params.scheduler if hasattr(params, 'scheduler') and params.scheduler else None,
+                scheduler=params.scheduler
+                if hasattr(params, "scheduler") and params.scheduler
+                else None,
             )
 
             log.debug("HuggingFace text-to-image API call successful")
 
             # Convert PIL Image to bytes
             import io
+
             img_bytes = io.BytesIO()
-            image.save(img_bytes, format='PNG')
+            image.save(img_bytes, format="PNG")
             img_bytes.seek(0)
 
             result = img_bytes.read()
@@ -1277,14 +1282,19 @@ class HuggingFaceProvider(BaseProvider):
                 target_size={
                     "width": params.target_width,
                     "height": params.target_height,
-                } if hasattr(params, 'target_width') and params.target_width and hasattr(params, 'target_height') and params.target_height else None,
+                }
+                if hasattr(params, "target_width")
+                and params.target_width
+                and hasattr(params, "target_height")
+                and params.target_height
+                else None,
             )
 
             log.debug("HuggingFace image-to-image API call successful")
 
             # Convert PIL Image to bytes
             img_bytes = io.BytesIO()
-            result_image.save(img_bytes, format='PNG')
+            result_image.save(img_bytes, format="PNG")
             img_bytes.seek(0)
 
             result = img_bytes.read()
@@ -1294,7 +1304,9 @@ class HuggingFaceProvider(BaseProvider):
 
         except Exception as e:
             log.error(f"HuggingFace image-to-image generation failed: {e}")
-            raise RuntimeError(f"HuggingFace image-to-image generation failed: {str(e)}")
+            raise RuntimeError(
+                f"HuggingFace image-to-image generation failed: {str(e)}"
+            )
 
     async def get_available_image_models(self) -> List[ImageModel]:
         """
@@ -1307,7 +1319,9 @@ class HuggingFaceProvider(BaseProvider):
             List of ImageModel instances for HuggingFace
         """
         if not self.api_key:
-            log.debug("No HuggingFace API key configured, returning empty image model list")
+            log.debug(
+                "No HuggingFace API key configured, returning empty image model list"
+            )
             return []
 
         try:
@@ -1336,7 +1350,9 @@ class HuggingFaceProvider(BaseProvider):
             List of VideoModel instances for HuggingFace
         """
         if not self.api_key:
-            log.debug("No HuggingFace API key configured, returning empty video model list")
+            log.debug(
+                "No HuggingFace API key configured, returning empty video model list"
+            )
             return []
 
         try:
@@ -1422,13 +1438,3 @@ class HuggingFaceProvider(BaseProvider):
         except Exception as e:
             log.error(f"HuggingFace text-to-video generation failed: {e}")
             raise RuntimeError(f"HuggingFace text-to-video generation failed: {str(e)}")
-
-async def main():
-    for provider in InferenceProvider.__members__.values():
-        provider = HuggingFaceProvider(provider) # type: ignore
-        models = await provider.get_available_image_models()
-        print(provider)
-
-
-if __name__ == "__main__":
-    asyncio.run(main())

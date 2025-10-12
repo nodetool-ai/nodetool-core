@@ -1,10 +1,8 @@
-import logging
 import os
-import logging
 import threading
 import tempfile
 from pathlib import Path
-from nodetool.config.logging_config import configure_logging, get_logger
+from nodetool.config.logging_config import get_logger
 from typing import Any, Optional, Dict
 
 from nodetool.storage.abstract_node_cache import AbstractNodeCache
@@ -128,6 +126,7 @@ class Environment(object):
 
     settings: Optional[Dict[str, Any]] = None
     secrets: Optional[Dict[str, Any]] = None
+    _sqlite_connection: Any = None
     remote_auth: bool = True
     _thread_local: threading.local = threading.local()
 
@@ -445,18 +444,41 @@ class Environment(object):
             )
         elif cls.get_db_path() is not None:
             from nodetool.models.sqlite_adapter import SQLiteAdapter  # type: ignore
+            import aiosqlite
+
+            if cls._sqlite_connection is None:
+                cls._sqlite_connection = await aiosqlite.connect(
+                    cls.get_db_path(), timeout=30
+                )
+                cls._sqlite_connection.row_factory = aiosqlite.Row
+                # Configure SQLite for better concurrency and deadlock avoidance
+                await cls._sqlite_connection.execute("PRAGMA journal_mode=WAL")
+                await cls._sqlite_connection.execute(
+                    "PRAGMA busy_timeout=5000"
+                )  # 5 seconds
+                await cls._sqlite_connection.execute("PRAGMA synchronous=NORMAL")
+                # Increase cache size for better performance (negative means KB)
+                await cls._sqlite_connection.execute("PRAGMA cache_size=-64000")  # 64MB
+                await cls._sqlite_connection.commit()
+                # await cls._sqlite_connection.set_trace_callback(log.debug)
 
             db_path = cls.get_db_path()
             # Only create directories for file paths, not URIs or :memory:
             if db_path != ":memory:" and not db_path.startswith("file:"):
                 os.makedirs(os.path.dirname(db_path), exist_ok=True)
 
-            return await SQLiteAdapter.create(
+            adapter = SQLiteAdapter(
                 db_path=cls.get_db_path(),
+                connection=cls._sqlite_connection,
                 fields=fields,
                 table_schema=table_schema,
                 indexes=indexes,
             )
+
+            await adapter.auto_migrate()
+
+            return adapter
+
         else:
             raise Exception("No database adapter configured")
 

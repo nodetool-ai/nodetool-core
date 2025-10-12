@@ -357,34 +357,31 @@ async def list_workspace_files(
         workspace_root = get_workspace_root()
         workspace_path = os.path.join(workspace_root, workspace_id)
 
-        exists = await asyncio.to_thread(os.path.exists, workspace_path)
-        if not exists:
-            raise HTTPException(
-                status_code=404, detail=f"Workspace not found: {workspace_id}"
-            )
-
         # Construct full path within workspace
         if path == ".":
             full_path = workspace_path
         else:
             full_path = os.path.join(workspace_path, path)
 
+        resolved_path = os.path.realpath(full_path)
+
+        log.info(f"Resolved path: {resolved_path}")
+
         # Ensure path is within workspace (security check)
-        full_path = os.path.abspath(full_path)
-        if not full_path.startswith(workspace_path):
+        if not resolved_path.startswith(workspace_path):
             raise HTTPException(
                 status_code=403, detail="Access denied: path outside workspace"
             )
 
-        exists = await asyncio.to_thread(os.path.exists, full_path)
-        if not exists:
-            raise HTTPException(status_code=404, detail=f"Path not found: {path}")
+        log.info(f"Listing workspace files at {resolved_path}")
 
         files = []
-        entries = await aiofiles.os.listdir(full_path)
+
+        entries = await aiofiles.os.listdir(resolved_path)
         for entry in entries:
             # Include hidden files in workspace view (unlike general file listing)
-            entry_path = os.path.join(full_path, entry)
+            entry_path = os.path.join(resolved_path, entry)
+            log.info(f"Listing workspace file {entry_path}")
             try:
                 file_info = await get_file_info(entry_path)
                 files.append(file_info)

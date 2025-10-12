@@ -7,7 +7,6 @@ from types import UnionType
 from typing import Any, Dict, List, Optional, get_args
 from pydantic.fields import FieldInfo
 
-from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
 from nodetool.models.condition_builder import (
     Condition,
@@ -52,8 +51,11 @@ async def retry_on_locked(func, max_retries=5, initial_delay=0.01):
             if attempt < max_retries - 1:
                 # Add jitter to prevent thundering herd
                 import random
+
                 jitter = delay * random.uniform(0.5, 1.5)
-                log.debug(f"Database locked, retrying in {jitter:.3f}s (attempt {attempt + 1}/{max_retries})")
+                log.debug(
+                    f"Database locked, retrying in {jitter:.3f}s (attempt {attempt + 1}/{max_retries})"
+                )
                 await asyncio.sleep(jitter)
                 delay *= 2  # Exponential backoff
             else:
@@ -281,27 +283,9 @@ class SQLiteAdapter(DatabaseAdapter):
         self.indexes = indexes
         self._connection = connection
 
-    @classmethod
-    async def create(
-        cls,
-        db_path: str,
-        fields: Dict[str, FieldInfo],
-        table_schema: Dict[str, Any],
-        indexes: List[Dict[str, Any]],
-    ) -> "SQLiteAdapter":
-        connection = await aiosqlite.connect(db_path, timeout=30)
-        connection.row_factory = aiosqlite.Row
-        await connection.set_trace_callback(log.debug)
-
-        # Configure SQLite for better concurrency and deadlock avoidance
-        await connection.execute("PRAGMA journal_mode=WAL")
-        await connection.execute("PRAGMA busy_timeout=5000")  # 5 seconds
-        await connection.execute("PRAGMA synchronous=NORMAL")
-        # Increase cache size for better performance (negative means KB)
-        await connection.execute("PRAGMA cache_size=-64000")  # 64MB
-        await connection.commit()
-
-        self = cls(db_path, fields, table_schema, indexes, connection)
+    async def auto_migrate(
+        self,
+    ):
         if await self.table_exists():
             await self.migrate_table()
         else:
@@ -310,7 +294,6 @@ class SQLiteAdapter(DatabaseAdapter):
                 await self.create_index(
                     index["name"], index["columns"], index["unique"]
                 )
-        return self
 
     @property
     def connection(self) -> aiosqlite.Connection:
