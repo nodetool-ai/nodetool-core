@@ -171,7 +171,7 @@ class ProcessingContext:
         self.chroma_client = chroma_client
         if http_client is not None:
             self._http_client = http_client
-        self.workspace_dir = workspace_dir or WorkspaceManager().get_current_directory()
+        self.workspace_dir = workspace_dir or WorkspaceManager(workflow_id=self.workflow_id).get_current_directory()
         self.tool_bridge = tool_bridge
         self.ui_tool_names = ui_tool_names or set()
         self.client_tools_manifest = client_tools_manifest or {}

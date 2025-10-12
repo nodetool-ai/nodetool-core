@@ -18,16 +18,18 @@ class WorkspaceManager:
     giving the AI a virtual filing cabinet it can organize however it wants.
     """
 
-    def __init__(self, workspace_dir=None):
+    def __init__(self, workspace_dir=None, workflow_id=None):
         """
         Initialize the workspace manager with a root directory.
 
-        If no directory is specified, creates a timestamped workspace in
-        ~/.nodetool-workspaces for clean isolation of each agent run.
+        If workflow_id is provided, creates/uses a persistent workspace for that workflow.
+        If no directory is specified and no workflow_id, creates a numbered temporary workspace.
 
         Args:
             workspace_dir (str, optional): Custom workspace path to use.
-                If None, a timestamped directory is created automatically.
+                If None, a workspace is created in ~/.nodetool-workspaces.
+            workflow_id (str, optional): Workflow ID for persistent workspace.
+                If provided, creates/uses ~/.nodetool-workspaces/workflow_{workflow_id}
         """
         if workspace_dir:
             self.workspace_root = os.path.abspath(workspace_dir)
@@ -36,7 +38,15 @@ class WorkspaceManager:
             # Use ~/.nodetool-workspaces as the default root
             self.workspace_root = os.path.expanduser("~/.nodetool-workspaces")
             os.makedirs(self.workspace_root, exist_ok=True)
-            self.create_new_workspace()
+
+            if workflow_id:
+                # Create persistent workspace per workflow_id
+                workflow_workspace = os.path.join(self.workspace_root, f"workflow_{workflow_id}")
+                os.makedirs(workflow_workspace, exist_ok=True)
+                self.current_workspace = workflow_workspace
+            else:
+                # Create temporary numbered workspace
+                self.create_new_workspace()
 
     def create_new_workspace(self):
         """Creates a new workspace named with an incrementing number."""
