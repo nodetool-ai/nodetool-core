@@ -592,7 +592,23 @@ class Environment(object):
     def get_asset_folder(cls):
         """
         The asset folder is the folder where assets are located.
+        Can be overridden with ASSET_FOLDER environment variable for containerized deployments.
+        If ASSET_BUCKET looks like a filesystem path, it will be used instead of S3.
         """
+        # Check for explicit override first (for Docker/containerized deployments)
+        override = os.environ.get("ASSET_FOLDER")
+        if override:
+            return str(override)
+
+        # Check if ASSET_BUCKET looks like a filesystem path (starts with / or .)
+        # This allows using ASSET_BUCKET for both S3 bucket names and filesystem paths
+        asset_bucket = cls.get("ASSET_BUCKET")
+        if asset_bucket and (
+            asset_bucket.startswith("/") or asset_bucket.startswith(".")
+        ):
+            return str(asset_bucket)
+
+        # Default to system-specific path
         return str(get_system_file_path("assets"))
 
     @classmethod

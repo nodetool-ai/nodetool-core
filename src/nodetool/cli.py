@@ -1,25 +1,21 @@
 import os
-from pathlib import Path
 import sys
 import shutil
+import atexit
+import warnings
 import click
+from typing import Optional
+
 from nodetool.api.workflow import from_model
-from nodetool.config.configuration import get_settings_registry
 from nodetool.config.environment import Environment
-import logging
 from nodetool.config.logging_config import get_logger
 from nodetool.config.settings import load_settings
 from nodetool.deploy.docker import (
     generate_image_tag,
-    build_docker_image,
-    run_docker_image,
 )
 from nodetool.deploy.runpod_api import GPUType
 from nodetool.dsl.codegen import create_dsl_modules
 from nodetool.deploy.progress import ProgressManager
-
-# silence warnings on the command line
-import warnings
 
 # Add Rich for better tables and terminal output
 from nodetool.types.job import JobUpdate
@@ -27,7 +23,6 @@ from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
 from rich.text import Text
-from typing import Optional
 
 # Create console instance
 console = Console()
@@ -42,8 +37,6 @@ def cleanup_progress():
 
 
 # Register cleanup function
-import atexit
-
 atexit.register(cleanup_progress)
 
 warnings.filterwarnings("ignore")
@@ -86,6 +79,7 @@ def cli():
 def mcp():
     """Start a nodetool MCP server."""
     from nodetool.api.mcp_server import mcp
+
     mcp.run()
 
 
@@ -647,8 +641,9 @@ def show_settings(secrets: bool, mask: bool):
     table.add_column("Value", style="green")
     table.add_column("Description", style="yellow")
 
-    settings_registry = get_settings_registry()
-    for setting in settings_registry:
+    from nodetool.config.configuration import get_settings_registry
+
+    for setting in get_settings_registry():
         # Get field description from the model
         description = setting.description
         masked_value = "****" if setting.is_secret else data.get(setting.env_var, "")
@@ -674,7 +669,6 @@ def edit_settings(secrets: bool = False):
 
     # Load current settings and secrets
     settings_obj, secrets_obj = load_settings()
-    settings_registry = get_settings_registry()
 
     # If no specific key/value, open the file in an editor
     file_path = get_system_file_path(SECRETS_FILE if secrets else SETTINGS_FILE)
@@ -814,23 +808,6 @@ def init():
     author = click.prompt("Author (name <email>)", type=str)
     python_version = "3.11"
 
-    # Create pyproject.toml content (PEP 621 + setuptools)
-    author_name, author_email = (author, None)
-    if "<" in author and ">" in author:
-        try:
-            author_name = author.split("<")[0].strip()
-            author_email = author.split("<")[1].split(">")[0].strip()
-        except Exception:
-            author_name, author_email = author, None
-
-    deps_line = "\n".join(
-        [
-            "dependencies = [",
-            f'  "nodetool-core @ git+https://github.com/nodetool-ai/nodetool-core.git@main"',
-            "]",
-        ]
-    )
-
     # Create pyproject.toml content
     author_name = author.split(" <")[0] if " <" in author else author
     author_email = (
@@ -932,15 +909,7 @@ def docs(output_dir: str, compact: bool, verbose: bool):
             click.echo("Error: No package name found in pyproject.toml", err=True)
             sys.exit(1)
 
-        # Optional: repository URL from PEP 621 URLs
-        urls = project_data.get("urls") if isinstance(project_data, dict) else None
-        if isinstance(urls, dict):
-            repository = (
-                urls.get("Repository") or urls.get("Source") or urls.get("Homepage")
-            )
-        else:
-            repository = None
-        # repository is not strictly required for docs generation
+        # Note: repository URL from PEP 621 URLs is not required for docs generation
 
         # Discover node classes by scanning the directory
         node_classes = []
@@ -1459,7 +1428,6 @@ def _handle_docker_config_check(
         check_docker_auth,
         get_docker_username_from_config,
         format_image_name,
-        generate_image_tag,
     )
 
     console.print("🔍 Checking Docker configuration...")
@@ -1532,550 +1500,779 @@ def env_for_deploy(
     return env
 
 
-@cli.command("deploy-local")
-@click.option(
-    "--port", default=8000, type=int, help="Host port to expose (default: 8000)"
-)
-@click.option(
-    "--chat-provider",
-    default="ollama",
-    help="Chat provider to use (default: ollama).",
-)
-@click.option(
-    "--default-model",
-    default="gpt-oss:20b",
-    help="Default model to use (default: gpt-oss:20b).",
-)
-@click.option(
-    "--tag", help="Optional tag for the Docker image (default: auto-generated)"
-)
-@click.option(
-    "--name",
-    help="Optional container name (default: auto-generated)",
-)
-@click.option(
-    "--gpus",
-    default=None,
-    help="GPU option for docker run (e.g., 'all' or 'device=0'). Omit to run without GPUs.",
-)
-def deploy_local(
-    port: int,
-    chat_provider: str,
-    default_model: str,
-    tag: str | None,
-    name: str | None,
-    gpus: str | None,
-):
-    """Build and run a local Docker container for NodeTool."""
-    console.print("[bold cyan]🐳 Building local Docker image...[/]")
-
-    env = env_for_deploy(
-        chat_provider=chat_provider,
-        default_model=default_model,
-    )
-    # Drop unset values
-    env = {k: v for k, v in (env or {}).items() if v is not None and str(v) != ""}
-
-    # Ensure the FastAPI server listens on the expected container port
-    container_port = 8000
-    env["PORT"] = str(container_port)
-
-    full_image_name = "nodetool-ai/nodetool"
-    image_tag = tag or generate_image_tag()
-
-    # Build Docker image locally
-    build_docker_image(
-        image_name=full_image_name,
-        tag=image_tag,
-        platform="linux/amd64",
-        use_cache=False,
-        auto_push=False,
-    )
-
-    console.print("[bold green]✅ Build complete. Starting container...[/]")
-
-    # Run container mapping host port to container port
-    container_name = name or f"nodetool-local-{image_tag}"
-    run_docker_image(
-        image_name=full_image_name,
-        tag=image_tag,
-        host_port=port,
-        container_port=container_port,
-        container_name=container_name,
-        env=env,
-        gpus=gpus,
-        detach=True,
-        remove=True,
-    )
-
-    console.print(
-        f"[green]🚀 Container '{container_name}' is running at http://localhost:{port}[/]"
-    )
-
-
-@cli.command("deploy-runpod")
-@click.option(
-    "--chat-provider",
-    default="ollama",
-    help="Chat provider to use (default: ollama).",
-)
-@click.option(
-    "--default-model",
-    default="gpt-oss:20b",
-    help="Default model to use (default: gpt-oss:20b).",
-)
-@click.option(
-    "--docker-username",
-    help="Docker Hub username or organization (auto-detected from docker login if not provided)",
-)
-@click.option(
-    "--docker-registry",
-    default="docker.io",
-    help="Docker registry URL (default: docker.io for Docker Hub)",
-)
-@click.option("--tag", help="Tag of the Docker image (default: auto-generated hash)")
-@click.option(
-    "--platform",
-    default="linux/amd64",
-    help="Docker build platform (default: linux/amd64 for RunPod compatibility)",
-)
-@click.option(
-    "--template-name", help="Name of the RunPod template (defaults to image name)"
-)
-# Skip options
-@click.option("--skip-build", is_flag=True, help="Skip Docker build")
-@click.option("--skip-push", is_flag=True, help="Skip pushing to registry")
-@click.option("--skip-template", is_flag=True, help="Skip creating RunPod template")
-@click.option("--skip-endpoint", is_flag=True, help="Skip creating RunPod endpoint")
-# Cache options
-@click.option("--no-cache", is_flag=True, help="Disable Docker Hub cache optimization")
-@click.option(
-    "--no-auto-push", is_flag=True, help="Disable automatic push during optimized build"
-)
-@click.option(
-    "--check-docker-config", is_flag=True, help="Check Docker configuration and exit"
-)
-@click.option(
-    "--compute-type",
-    type=click.Choice(["CPU", "GPU"]),
-    default="GPU",
-    help="Compute type for the endpoint",
-)
-@click.option(
-    "--gpu-types",
-    multiple=True,
-    type=click.Choice(SUPPORTED_GPU_TYPES),
-    help="GPU types to use (can specify multiple). Use actual GPU model names.",
-)
-@click.option("--gpu-count", type=int, help="Number of GPUs per worker")
-@click.option(
-    "--cpu-flavors",
-    multiple=True,
-    type=click.Choice(["cpu3c", "cpu3g", "cpu5c", "cpu5g"]),
-    help="CPU flavors to use for CPU compute (can specify multiple)",
-)
-@click.option("--vcpu-count", type=int, help="Number of vCPUs for CPU compute")
-@click.option(
-    "--data-centers",
-    multiple=True,
-    help="Preferred data center locations (can specify multiple)",
-)
-# Endpoint scaling configuration
-@click.option(
-    "--workers-min", type=int, default=0, help="Minimum number of workers (default: 0)"
-)
-@click.option(
-    "--workers-max", type=int, default=1, help="Maximum number of workers (default: 3)"
-)
-@click.option(
-    "--idle-timeout",
-    type=int,
-    default=60,
-    help="Seconds before scaling down idle workers (default: 5)",
-)
-# Endpoint advanced configuration
-@click.option(
-    "--execution-timeout", type=int, help="Maximum execution time in milliseconds"
-)
-@click.option(
-    "--flashboot", is_flag=True, help="Enable flashboot for faster worker startup"
-)
-@click.option(
-    "--network-volume-id",
-    help="Network volume ID to attach to workers (models and caches will be stored under /workspace)",
-)
-@click.option(
-    "--allowed-cuda-versions",
-    multiple=True,
-    help="Allowed CUDA versions (can specify multiple)",
-)
-@click.option(
-    "--name",
-    help="Name for the endpoint (required for all deployments)",
-)
-# List options
-@click.option(
-    "--list-gpu-types", is_flag=True, help="List all available GPU types and exit"
-)
-@click.option(
-    "--list-cpu-flavors", is_flag=True, help="List all available CPU flavors and exit"
-)
-@click.option(
-    "--list-data-centers", is_flag=True, help="List all available data centers and exit"
-)
-@click.option(
-    "--list-all-options", is_flag=True, help="List all available options and exit"
-)
-def deploy_runpod(
-    docker_username: str | None,
-    docker_registry: str,
-    tag: str | None,
-    platform: str,
-    template_name: str | None,
-    chat_provider: str,
-    default_model: str,
-    skip_build: bool,
-    skip_push: bool,
-    skip_template: bool,
-    skip_endpoint: bool,
-    no_cache: bool,
-    no_auto_push: bool,
-    check_docker_config: bool,
-    compute_type: str,
-    gpu_types: tuple,
-    gpu_count: int | None,
-    cpu_flavors: tuple,
-    vcpu_count: int | None,
-    data_centers: tuple,
-    workers_min: int,
-    workers_max: int,
-    idle_timeout: int,
-    execution_timeout: int | None,
-    flashboot: bool,
-    network_volume_id: str | None,
-    allowed_cuda_versions: tuple,
-    name: str | None,
-    list_gpu_types: bool,
-    list_cpu_flavors: bool,
-    list_data_centers: bool,
-    list_all_options: bool,
-):
-    """Deploy workflow or chat handler to RunPod serverless infrastructure.
-
-    Examples:
-      # Basic workflow deployment
-      nodetool deploy --workflow-id abc123 --name my-workflow
-
-      # Deploy multiple workflows
-      nodetool deploy --workflow-id abc123 --workflow-id def456 --workflow-id ghi789 --name multi-workflow
-
-      # With specific GPU and regions
-      nodetool deploy --workflow-id abc123 --name gpu-workflow --gpu-types "NVIDIA GeForce RTX 4090" --gpu-types "NVIDIA L40S" --data-centers US-CA-2 --data-centers US-GA-1
-
-      # CPU-only endpoint
-      nodetool deploy --workflow-id abc123 --name cpu-workflow --compute-type CPU --cpu-flavors cpu3c --cpu-flavors cpu5c
-
-      # Check Docker configuration
-      nodetool deploy --check-docker-config
-
-      # List available options
-      nodetool deploy --list-gpu-types
-      nodetool deploy --list-all-options
-    """
-    from nodetool.config.settings import load_settings
-    import dotenv
-
-    dotenv.load_dotenv()
-
-    # Handle list options (these don't require workflow-id)
-    _handle_list_options(
-        list_gpu_types, list_cpu_flavors, list_data_centers, list_all_options
-    )
-
-    # Handle Docker config check (doesn't require workflow-id)
-    _handle_docker_config_check(check_docker_config, docker_registry, docker_username)
-
-    # Call the main deployment function
-    from nodetool.deploy.deploy_to_runpod import deploy_to_runpod
-
-    env = env_for_deploy(
-        chat_provider=chat_provider,
-        default_model=default_model,
-    )
-
-    deploy_to_runpod(
-        docker_username=docker_username,
-        docker_registry=docker_registry,
-        image_name=name,
-        tag=tag,
-        platform=platform,
-        template_name=template_name,
-        skip_build=skip_build,
-        skip_push=skip_push,
-        skip_template=skip_template,
-        skip_endpoint=skip_endpoint,
-        no_cache=no_cache,
-        no_auto_push=no_auto_push,
-        compute_type=compute_type,
-        gpu_types=gpu_types,
-        gpu_count=gpu_count,
-        cpu_flavors=cpu_flavors,
-        vcpu_count=vcpu_count,
-        data_centers=data_centers,
-        workers_min=workers_min,
-        workers_max=workers_max,
-        idle_timeout=idle_timeout,
-        execution_timeout=execution_timeout,
-        flashboot=flashboot,
-        network_volume_id=network_volume_id,
-        allowed_cuda_versions=allowed_cuda_versions,
-        name=name,
-        env=env,
-    )
-
-
-@cli.command("deploy-gcp")
-@click.option(
-    "--chat-provider",
-    default="ollama",
-    help="Chat provider to use (default: ollama).",
-)
-@click.option(
-    "--default-model",
-    default="gpt-oss:20b",
-    help="Default model to use (default: gpt-oss:20b).",
-)
-@click.option(
-    "--service-name",
-    required=True,
-    help="Name of the Cloud Run service (required for all deployments)",
-)
-@click.option(
-    "--project-id",
-    help="Google Cloud project ID (auto-detected from gcloud config if not provided)",
-)
-@click.option(
-    "--region",
-    type=click.Choice(
-        [
-            "us-central1",
-            "us-east1",
-            "us-east4",
-            "us-west1",
-            "us-west2",
-            "us-west3",
-            "us-west4",
-            "europe-west1",
-            "europe-west2",
-            "europe-west3",
-            "europe-west4",
-            "europe-west6",
-            "europe-north1",
-            "asia-east1",
-            "asia-east2",
-            "asia-northeast1",
-            "asia-northeast2",
-            "asia-northeast3",
-            "asia-south1",
-            "asia-southeast1",
-            "asia-southeast2",
-            "australia-southeast1",
-            "northamerica-northeast1",
-            "southamerica-east1",
-        ]
-    ),
-    default="us-central1",
-    help="Google Cloud region (default: us-central1)",
-)
-@click.option(
-    "--registry",
-    type=click.Choice(
-        ["gcr.io", "us-docker.pkg.dev", "europe-docker.pkg.dev", "asia-docker.pkg.dev"]
-    ),
-    help="Container registry to use (default: auto-infer from region)",
-)
-@click.option(
-    "--cpu",
-    type=click.Choice(["1", "2", "4", "6", "8"]),
-    default="4",
-    help="CPU allocation for Cloud Run service (default: 4)",
-)
-@click.option(
-    "--memory",
-    type=click.Choice(["512Mi", "1Gi", "2Gi", "4Gi", "8Gi", "16Gi", "32Gi"]),
-    default="16Gi",
-    help="Memory allocation for Cloud Run service (default: 16Gi)",
-)
-@click.option(
-    "--min-instances",
-    type=int,
-    default=0,
-    help="Minimum number of instances (default: 0)",
-)
-@click.option(
-    "--max-instances",
-    type=int,
-    default=3,
-    help="Maximum number of instances (default: 3)",
-)
-@click.option(
-    "--concurrency",
-    type=int,
-    default=80,
-    help="Maximum concurrent requests per instance (default: 80)",
-)
-@click.option(
-    "--timeout",
-    type=int,
-    default=3600,
-    help="Request timeout in seconds (default: 3600)",
-)
-@click.option(
-    "--no-auth",
-    is_flag=True,
-    help="Require authentication for access (default: allow unauthenticated)",
-)
-# Docker build options
-@click.option(
-    "--docker-username",
-    help="Docker Hub username for building base image (auto-detected from docker login if not provided)",
-)
-@click.option(
-    "--docker-registry",
-    default="docker.io",
-    help="Docker registry URL for building base image (default: docker.io)",
-)
-@click.option("--tag", help="Tag of the Docker image (default: auto-generated hash)")
-@click.option(
-    "--platform",
-    default="linux/amd64",
-    help="Docker build platform (default: linux/amd64)",
-)
-# Skip options
-@click.option("--skip-build", is_flag=True, help="Skip Docker build")
-@click.option("--skip-push", is_flag=True, help="Skip pushing to registry")
-@click.option("--skip-deploy", is_flag=True, help="Skip deploying to Cloud Run")
-# Cache options
-@click.option("--no-cache", is_flag=True, help="Disable Docker cache optimization")
-@click.option(
-    "--no-auto-push", is_flag=True, help="Disable automatic push during build"
-)
-@click.option(
-    "--skip-permission-setup",
-    is_flag=True,
-    help="Skip automatic IAM permission setup",
-)
-@click.option(
-    "--service-account",
-    help="Service account email to run the Cloud Run service under (e.g., my-service@project.iam.gserviceaccount.com)",
-)
-@click.option(
-    "--gcs-bucket",
-    help="GCS bucket name to mount into the service via Cloud Storage FUSE",
-)
-@click.option(
-    "--gcs-mount-path",
-    default="/mnt/gcs",
-    help="Container path to mount the GCS bucket (default: /mnt/gcs)",
-)
-def deploy_gcp(
-    chat_provider: str,
-    default_model: str,
-    service_name: str,
-    project_id: str | None,
-    region: str,
-    registry: str | None,
-    cpu: str,
-    memory: str,
-    min_instances: int,
-    max_instances: int,
-    concurrency: int,
-    timeout: int,
-    no_auth: bool,
-    docker_username: str | None,
-    docker_registry: str,
-    tag: str | None,
-    platform: str,
-    skip_build: bool,
-    skip_push: bool,
-    skip_deploy: bool,
-    no_cache: bool,
-    no_auto_push: bool,
-    skip_permission_setup: bool,
-    service_account: str | None,
-    gcs_bucket: str | None,
-    gcs_mount_path: str,
-):
-    """Deploy workflow or chat handler to Google Cloud Run.
-
-    Examples:
-      # Basic workflow deployment
-      nodetool deploy-gcp --workflow-id abc123 --service-name my-workflow
-
-      # Deploy multiple workflows
-      nodetool deploy-gcp --workflow-id abc123 --workflow-id def456 --service-name multi-workflow
-
-      # With specific region and resources
-      nodetool deploy-gcp --workflow-id abc123 --service-name my-workflow --region us-west1 --cpu 2 --memory 4Gi
-
-      # Deploy chat handler
-      nodetool deploy-gcp --service-name my-chat --tools "google_search,google_news"
-
-      # Run local Docker container
-      nodetool deploy-gcp --workflow-id abc123 --service-name my-workflow --local-docker
-    """
-    import dotenv
-
-    dotenv.load_dotenv()
-
-    env = env_for_deploy(
-        chat_provider=chat_provider,
-        default_model=default_model,
-    )
-
-    # Call the main deployment function
-    from nodetool.deploy.deploy_to_gcp import deploy_to_gcp
-
-    deploy_to_gcp(
-        service_name=service_name,
-        project_id=project_id,
-        region=region,
-        registry=registry,
-        cpu=cpu,
-        memory=memory,
-        min_instances=min_instances,
-        max_instances=max_instances,
-        concurrency=concurrency,
-        timeout=timeout,
-        allow_unauthenticated=not no_auth,
-        env=env,
-        docker_username=docker_username,
-        docker_registry=docker_registry,
-        image_name=service_name,
-        tag=tag,
-        platform=platform,
-        skip_build=skip_build,
-        skip_push=skip_push,
-        skip_deploy=skip_deploy,
-        no_cache=no_cache,
-        no_auto_push=no_auto_push,
-        skip_permission_setup=skip_permission_setup,
-        service_account=service_account,
-        gcs_bucket=gcs_bucket,
-        gcs_mount_path=gcs_mount_path,
-    )
-
-
 @cli.group()
-def provision():
-    """Provision infrastructure targets (RunPod, GCP, Docker)."""
+def deploy():
+    """Manage deployments via deployment.yaml configuration."""
     pass
 
 
-# Register existing deploy commands under the new `provision` group
-provision.add_command(deploy_runpod, name="runpod")
-provision.add_command(deploy_gcp, name="gcp")
-provision.add_command(deploy_local, name="docker")
+@deploy.command("init")
+def deploy_init():
+    """Initialize a new deployment.yaml configuration file."""
+    from nodetool.config.deployment import (
+        init_deployment_config,
+        get_deployment_config_path,
+    )
+
+    try:
+        config_path = get_deployment_config_path()
+
+        if config_path.exists():
+            if not click.confirm(
+                f"Deployment configuration already exists at {config_path}. Overwrite?"
+            ):
+                console.print("[yellow]Operation cancelled[/]")
+                return
+
+        console.print("[bold cyan]🚀 Initializing deployment configuration...[/]")
+        console.print()
+
+        init_deployment_config()
+
+        console.print(f"[green]✅ Created deployment.yaml at {config_path}[/]")
+        console.print()
+        console.print("[cyan]Next steps:[/]")
+        console.print("  1. Edit deployment.yaml to add your deployments")
+        console.print("  2. Run 'nodetool deploy list' to see configured deployments")
+        console.print("  3. Run 'nodetool deploy plan <name>' to preview changes")
+        console.print("  4. Run 'nodetool deploy apply <name>' to deploy")
+        console.print()
+        console.print("[cyan]Example deployment types:[/]")
+        console.print("  - self-hosted: Deploy to your own server via SSH")
+        console.print("  - runpod: Deploy to RunPod serverless")
+        console.print("  - gcp: Deploy to Google Cloud Run")
+
+    except FileExistsError as e:
+        console.print(f"[yellow]{e}[/]")
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/]")
+        import traceback
+
+        traceback.print_exc()
+        sys.exit(1)
+
+
+@deploy.command("show")
+@click.argument("name")
+def deploy_show(name: str):
+    """Display detailed information about a specific deployment."""
+    from nodetool.deploy.manager import DeploymentManager
+    from nodetool.config.deployment import (
+        SelfHostedDeployment,
+        RunPodDeployment,
+        GCPDeployment,
+    )
+
+    try:
+        manager = DeploymentManager()
+
+        # Get deployment configuration
+        deployment = manager.get_deployment(name)
+
+        # Get current state
+        state = manager.state_manager.read_state(name)
+
+        # Create rich panel with deployment details
+        from rich.panel import Panel
+
+        # Build content for the panel
+        content = []
+
+        # Header
+        content.append(f"[bold cyan]Deployment: {name}[/]")
+        content.append(f"[cyan]Type: {deployment.type}[/]")
+        content.append("")
+
+        # Type-specific configuration
+        if isinstance(deployment, SelfHostedDeployment):
+            content.append("[bold]Self-Hosted Configuration:[/]")
+            content.append(f"  Host: {deployment.host}")
+            content.append(f"  SSH User: {deployment.ssh.user}")
+            content.append(f"  Image: {deployment.image.name}:{deployment.image.tag}")
+            content.append("")
+
+            # Container details
+            content.append("[bold]Container:[/]")
+            content.append(f"  • {deployment.container.name}")
+            content.append(f"    Port: {deployment.container.port}")
+            if deployment.container.workflows:
+                content.append(
+                    f"    Workflows: {', '.join(deployment.container.workflows)}"
+                )
+            if deployment.container.gpu:
+                content.append(f"    GPU: {deployment.container.gpu}")
+            content.append("")
+
+            # Paths
+            content.append("[bold]Paths:[/]")
+            content.append(f"  Workspace: {deployment.paths.workspace}")
+            content.append(f"  HF Cache: {deployment.paths.hf_cache}")
+
+        elif isinstance(deployment, RunPodDeployment):
+            content.append("[bold]RunPod Configuration:[/]")
+            content.append(f"  Image: {deployment.image.name}:{deployment.image.tag}")
+            content.append(f"  Template ID: {deployment.template_id or 'Not set'}")
+            content.append(f"  Endpoint ID: {deployment.endpoint_id or 'Not set'}")
+            content.append("")
+
+            if state and state.get("pod_id"):
+                content.append("[bold]RunPod State:[/]")
+                content.append(f"  Pod ID: {state['pod_id']}")
+
+        elif isinstance(deployment, GCPDeployment):
+            content.append("[bold]Google Cloud Run Configuration:[/]")
+            content.append(f"  Project: {deployment.project_id}")
+            content.append(f"  Region: {deployment.region}")
+            content.append(f"  Service: {deployment.service_name}")
+            content.append(f"  Image: {deployment.image.name}:{deployment.image.tag}")
+            content.append(f"  CPU: {deployment.cpu}")
+            content.append(f"  Memory: {deployment.memory}")
+            content.append("")
+
+        # Current state
+        content.append("[bold]Status:[/]")
+        if state:
+            status = state.get("status", "unknown")
+            status_color = {
+                "running": "green",
+                "active": "green",
+                "stopped": "red",
+                "error": "red",
+                "unknown": "yellow",
+            }.get(status, "white")
+            content.append(f"  Status: [{status_color}]{status}[/]")
+
+            if state.get("last_deployed"):
+                content.append(f"  Last Deployed: {state['last_deployed']}")
+
+            if state.get("compose_hash"):
+                content.append(f"  Compose Hash: {state['compose_hash'][:12]}...")
+        else:
+            content.append("  Status: [yellow]Not deployed[/]")
+
+        content.append("")
+
+        # URLs and endpoints
+        if isinstance(deployment, SelfHostedDeployment):
+            content.append("[bold]Endpoints:[/]")
+            url = f"http://{deployment.host}:{deployment.container.port}"
+            content.append(f"  {deployment.container.name}: {url}")
+
+        elif isinstance(deployment, GCPDeployment):
+            if state and state.get("service_url"):
+                content.append("[bold]Endpoint:[/]")
+                content.append(f"  {state['service_url']}")
+
+        elif isinstance(deployment, RunPodDeployment):
+            if state and state.get("endpoint_url"):
+                content.append("[bold]Endpoint:[/]")
+                content.append(f"  {state['endpoint_url']}")
+
+        # Display the panel
+        panel_content = "\n".join(content)
+        panel = Panel(
+            panel_content,
+            title="[bold]Deployment Details[/]",
+            border_style="cyan",
+            expand=False,
+        )
+
+        console.print(panel)
+
+    except KeyError:
+        console.print(f"[red]Deployment '{name}' not found[/]")
+        console.print()
+        console.print("[cyan]Available deployments:[/]")
+        console.print("  Run: nodetool deploy list")
+        sys.exit(1)
+    except FileNotFoundError:
+        console.print("[yellow]No deployment.yaml found[/]")
+        console.print()
+        console.print("[cyan]Create one with:[/]")
+        console.print("  nodetool deploy init")
+        sys.exit(1)
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/]")
+        import traceback
+
+        traceback.print_exc()
+        sys.exit(1)
+
+
+@deploy.command("add")
+@click.argument("name")
+@click.option(
+    "--type",
+    "deployment_type",
+    type=click.Choice(["self-hosted", "runpod", "gcp"]),
+    prompt="Deployment type",
+    help="Type of deployment",
+)
+def deploy_add(name: str, deployment_type: str):
+    """Add a new deployment to deployment.yaml interactively."""
+    from nodetool.config.deployment import (
+        DeploymentConfig,
+        SelfHostedDeployment,
+        RunPodDeployment,
+        GCPDeployment,
+        SSHConfig,
+        ImageConfig,
+        ContainerConfig,
+        load_deployment_config,
+        save_deployment_config,
+        get_deployment_config_path,
+    )
+
+    try:
+        config_path = get_deployment_config_path()
+
+        # Load existing config
+        try:
+            config = load_deployment_config()
+        except FileNotFoundError:
+            console.print("[yellow]No deployment.yaml found. Creating new file...[/]")
+            config = DeploymentConfig(deployments={})
+
+        # Check if deployment name already exists
+        if name in config.deployments:
+            console.print(f"[red]Deployment '{name}' already exists[/]")
+            console.print("[cyan]Use 'nodetool deploy edit {name}' to modify it[/]")
+            sys.exit(1)
+
+        console.print(f"[bold cyan]Adding new {deployment_type} deployment: {name}[/]")
+        console.print()
+
+        # Gather deployment-specific configuration
+        if deployment_type == "self-hosted":
+            console.print("[cyan]Self-Hosted Configuration:[/]")
+            host = click.prompt("Host address", type=str)
+            ssh_user = click.prompt("SSH username", type=str)
+            ssh_key_path = click.prompt(
+                "SSH key path", type=str, default="~/.ssh/id_rsa"
+            )
+
+            image_name = click.prompt(
+                "Docker image name", type=str, default="nodetool/nodetool"
+            )
+            image_tag = click.prompt("Docker image tag", type=str, default="latest")
+
+            # Container configuration
+            console.print()
+            console.print("[cyan]Add containers (press Ctrl+C when done):[/]")
+            containers = []
+
+            while True:
+                try:
+                    console.print()
+                    container_name = click.prompt(
+                        f"  Container #{len(containers) + 1} name", type=str
+                    )
+                    container_port = click.prompt("  Port", type=int)
+
+                    # Optional GPU
+                    use_gpu = click.confirm("  Assign GPU?", default=False)
+                    gpu = None
+                    if use_gpu:
+                        gpu = click.prompt(
+                            "  GPU device(s) (e.g., '0' or '0,1')", type=str
+                        )
+
+                    # Optional workflows
+                    has_workflows = click.confirm(
+                        "  Assign specific workflows?", default=False
+                    )
+                    workflows = None
+                    if has_workflows:
+                        workflows_str = click.prompt(
+                            "  Workflow IDs (comma-separated)", type=str
+                        )
+                        workflows = [w.strip() for w in workflows_str.split(",")]
+
+                    containers.append(
+                        ContainerConfig(
+                            name=container_name,
+                            port=container_port,
+                            gpu=gpu,
+                            workflows=workflows,
+                        )
+                    )
+
+                    if not click.confirm("  Add another container?", default=True):
+                        break
+
+                except click.exceptions.Abort:
+                    break
+
+            if not containers:
+                console.print(
+                    "[yellow]No containers configured. Adding default container.[/]"
+                )
+                containers.append(ContainerConfig(name="default", port=8000))
+
+            deployment = SelfHostedDeployment(
+                host=host,
+                ssh=SSHConfig(user=ssh_user, key_path=ssh_key_path),
+                image=ImageConfig(name=image_name, tag=image_tag),
+                containers=containers,
+            )
+
+        elif deployment_type == "runpod":
+            console.print("[cyan]RunPod Configuration:[/]")
+            image_name = click.prompt("Docker image name", type=str)
+            image_tag = click.prompt("Docker image tag", type=str, default="latest")
+            template_id = click.prompt("Template ID (optional)", type=str, default="")
+            endpoint_id = click.prompt("Endpoint ID (optional)", type=str, default="")
+
+            deployment = RunPodDeployment(
+                image=ImageConfig(name=image_name, tag=image_tag),
+                template_id=template_id or None,
+                endpoint_id=endpoint_id or None,
+            )
+
+        elif deployment_type == "gcp":
+            console.print("[cyan]Google Cloud Run Configuration:[/]")
+            project_id = click.prompt("GCP Project ID", type=str)
+            region = click.prompt("Region", type=str, default="us-central1")
+            service_name = click.prompt("Service name", type=str, default=name)
+            image_name = click.prompt("Docker image name", type=str)
+            image_tag = click.prompt("Docker image tag", type=str, default="latest")
+
+            # Optional resource configuration
+            console.print()
+            configure_resources = click.confirm("Configure CPU/Memory?", default=False)
+            cpu = "4"
+            memory = "16Gi"
+            if configure_resources:
+                cpu = click.prompt("CPU cores", type=str, default="4")
+                memory = click.prompt("Memory", type=str, default="16Gi")
+
+            deployment = GCPDeployment(
+                project_id=project_id,
+                region=region,
+                service_name=service_name,
+                image=ImageConfig(name=image_name, tag=image_tag),
+                cpu=cpu,
+                memory=memory,
+            )
+
+        # Add deployment to config
+        config.deployments[name] = deployment
+
+        # Save config
+        save_deployment_config(config)
+
+        console.print()
+        console.print(f"[green]✅ Deployment '{name}' added to {config_path}[/]")
+        console.print()
+        console.print("[cyan]Next steps:[/]")
+        console.print(f"  1. Review configuration: nodetool deploy show {name}")
+        console.print(f"  2. Preview changes: nodetool deploy plan {name}")
+        console.print(f"  3. Deploy: nodetool deploy apply {name}")
+
+    except click.exceptions.Abort:
+        console.print()
+        console.print("[yellow]Operation cancelled[/]")
+        sys.exit(1)
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/]")
+        import traceback
+
+        traceback.print_exc()
+        sys.exit(1)
+
+
+@deploy.command("edit")
+@click.argument("name", required=False)
+def deploy_edit(name: Optional[str]):
+    """Edit deployment configuration file.
+
+    If a deployment name is provided, opens the file and shows the deployment location.
+    Otherwise, opens the entire deployment.yaml file.
+    """
+    from nodetool.config.deployment import (
+        get_deployment_config_path,
+        load_deployment_config,
+    )
+    import subprocess
+
+    try:
+        config_path = get_deployment_config_path()
+
+        if not config_path.exists():
+            console.print("[yellow]No deployment.yaml found[/]")
+            console.print()
+            console.print("[cyan]Create one with:[/]")
+            console.print("  nodetool deploy init")
+            sys.exit(1)
+
+        # Verify deployment name exists if provided
+        if name:
+            try:
+                dep_config = load_deployment_config()
+                if name not in dep_config.deployments:
+                    console.print(f"[red]Deployment '{name}' not found[/]")
+                    console.print()
+                    console.print("[cyan]Available deployments:[/]")
+                    for dep_name in dep_config.deployments.keys():
+                        console.print(f"  • {dep_name}")
+                    sys.exit(1)
+
+                console.print(
+                    f"[cyan]Opening deployment.yaml (deployment: {name})...[/]"
+                )
+            except Exception as e:
+                console.print(f"[yellow]Warning: Could not verify deployment: {e}[/]")
+        else:
+            console.print("[cyan]Opening deployment.yaml...[/]")
+
+        console.print(f"[cyan]File: {config_path}[/]")
+        console.print()
+
+        # Determine editor to use
+        editor = os.environ.get("EDITOR", "vi")
+
+        try:
+            subprocess.run([editor, str(config_path)], check=True)
+            console.print()
+            console.print("[green]✅ File saved[/]")
+            console.print()
+            console.print("[cyan]Next steps:[/]")
+            if name:
+                console.print(f"  1. Review changes: nodetool deploy show {name}")
+                console.print(f"  2. Preview deployment: nodetool deploy plan {name}")
+                console.print(f"  3. Apply changes: nodetool deploy apply {name}")
+            else:
+                console.print("  1. Review deployments: nodetool deploy list")
+                console.print(
+                    "  2. Show specific deployment: nodetool deploy show <name>"
+                )
+
+        except subprocess.CalledProcessError:
+            console.print("[red]Error: Failed to edit the file[/]")
+            sys.exit(1)
+
+    except FileNotFoundError:
+        console.print("[yellow]No deployment.yaml found[/]")
+        console.print()
+        console.print("[cyan]Create one with:[/]")
+        console.print("  nodetool deploy init")
+        sys.exit(1)
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/]")
+        import traceback
+
+        traceback.print_exc()
+        sys.exit(1)
+
+
+@deploy.command("list")
+def deploy_list():
+    """List all configured deployments and their status."""
+    from nodetool.deploy.manager import DeploymentManager
+
+    try:
+        manager = DeploymentManager()
+        deployments = manager.list_deployments()
+
+        if not deployments:
+            console.print("[yellow]No deployments configured[/]")
+            console.print()
+            console.print("[cyan]Create a deployment.yaml file to get started:[/]")
+            console.print("  nodetool deploy init")
+            return
+
+        table = Table(title="Deployments")
+        table.add_column("Name", style="cyan")
+        table.add_column("Type", style="green")
+        table.add_column("Status", style="yellow")
+        table.add_column("Host/Location", style="magenta")
+        table.add_column("Last Deployed", style="blue")
+
+        for deployment in deployments:
+            status_color = {
+                "running": "green",
+                "active": "green",
+                "stopped": "red",
+                "error": "red",
+                "unknown": "yellow",
+            }.get(deployment["status"], "white")
+
+            status = f"[{status_color}]{deployment['status']}[/]"
+
+            # Get host/location based on type
+            location = deployment.get("host", "")
+            if not location and "project" in deployment:
+                location = f"{deployment['project']}/{deployment.get('region', '')}"
+
+            last_deployed = deployment.get("last_deployed", "Never")
+            if last_deployed and last_deployed != "Never":
+                # Format timestamp
+                from datetime import datetime
+
+                try:
+                    dt = datetime.fromisoformat(last_deployed.replace("Z", "+00:00"))
+                    last_deployed = dt.strftime("%Y-%m-%d %H:%M")
+                except Exception:
+                    pass
+
+            table.add_row(
+                deployment["name"], deployment["type"], status, location, last_deployed
+            )
+
+        console.print(table)
+
+    except FileNotFoundError:
+        console.print("[yellow]No deployment.yaml found[/]")
+        console.print()
+        console.print("[cyan]Create one with:[/]")
+        console.print("  nodetool deploy init")
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/]")
+        import traceback
+
+        traceback.print_exc()
+        sys.exit(1)
+
+
+@deploy.command("plan")
+@click.argument("name")
+def deploy_plan(name: str):
+    """Show what changes will be made without executing deployment."""
+    from nodetool.deploy.manager import DeploymentManager
+
+    try:
+        manager = DeploymentManager()
+        plan = manager.plan(name)
+
+        console.print(f"[bold cyan]Deployment Plan: {plan['deployment_name']}[/]")
+        console.print(f"[cyan]Type: {plan.get('type', 'self-hosted')}[/]")
+        console.print(f"[cyan]Host: {plan.get('host', 'N/A')}[/]")
+        console.print()
+
+        if plan.get("changes"):
+            console.print("[bold yellow]Changes:[/]")
+            for change in plan["changes"]:
+                console.print(f"  • {change}")
+            console.print()
+
+        if plan.get("will_create"):
+            console.print("[bold green]Will Create:[/]")
+            for item in plan["will_create"]:
+                console.print(f"  + {item}")
+            console.print()
+
+        if plan.get("will_update"):
+            console.print("[bold yellow]Will Update:[/]")
+            for item in plan["will_update"]:
+                console.print(f"  ~ {item}")
+            console.print()
+
+        if plan.get("will_destroy"):
+            console.print("[bold red]Will Destroy:[/]")
+            for item in plan["will_destroy"]:
+                console.print(f"  - {item}")
+            console.print()
+
+        if (
+            not plan.get("changes")
+            and not plan.get("will_create")
+            and not plan.get("will_update")
+        ):
+            console.print("[green]✅ No changes - deployment is up to date[/]")
+
+    except KeyError:
+        console.print(f"[red]Deployment '{name}' not found[/]")
+        sys.exit(1)
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/]")
+        import traceback
+
+        traceback.print_exc()
+        sys.exit(1)
+
+
+@deploy.command("apply")
+@click.argument("name")
+@click.option(
+    "--dry-run", is_flag=True, help="Show what would be done without executing"
+)
+def deploy_apply(name: str, dry_run: bool):
+    """Apply deployment configuration to target platform."""
+    from nodetool.deploy.manager import DeploymentManager
+
+    try:
+        manager = DeploymentManager()
+
+        if dry_run:
+            console.print("[yellow]Dry run mode - no changes will be made[/]")
+            console.print()
+
+        console.print(f"[bold cyan]Applying deployment: {name}[/]")
+
+        results = manager.apply(name, dry_run=dry_run)
+
+        console.print()
+        console.print("[bold]Deployment Steps:[/]")
+        for step in results.get("steps", []):
+            console.print(f"  {step}")
+
+        if results.get("errors"):
+            console.print()
+            console.print("[bold red]Errors:[/]")
+            for error in results["errors"]:
+                console.print(f"  ❌ {error}")
+            sys.exit(1)
+
+        if results["status"] == "success":
+            console.print()
+            console.print("[bold green]✅ Deployment successful![/]")
+
+    except KeyError:
+        console.print(f"[red]Deployment '{name}' not found[/]")
+        sys.exit(1)
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/]")
+        import traceback
+
+        traceback.print_exc()
+        sys.exit(1)
+
+
+@deploy.command("status")
+@click.argument("name")
+def deploy_status(name: str):
+    """Get current status of a deployment."""
+    from nodetool.deploy.manager import DeploymentManager
+
+    try:
+        manager = DeploymentManager()
+        status = manager.status(name)
+
+        console.print(f"[bold cyan]Deployment Status: {status['deployment_name']}[/]")
+        console.print(f"[cyan]Host: {status['host']}[/]")
+        console.print(f"[cyan]Status: {status.get('status', 'unknown')}[/]")
+        console.print()
+
+        if status.get("last_deployed"):
+            console.print(f"Last deployed: {status['last_deployed']}")
+            console.print()
+
+        if status.get("containers"):
+            console.print("[bold]Containers:[/]")
+            for container in status["containers"]:
+                console.print(f"  • {container['name']}: {container['status']}")
+                if "url" in container:
+                    console.print(f"    URL: {container['url']}")
+            console.print()
+
+        if status.get("live_status"):
+            console.print("[bold]Live Status:[/]")
+            console.print(status["live_status"])
+
+        if status.get("live_status_error"):
+            console.print(
+                f"[yellow]Could not get live status: {status['live_status_error']}[/]"
+            )
+
+    except KeyError:
+        console.print(f"[red]Deployment '{name}' not found[/]")
+        sys.exit(1)
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/]")
+        import traceback
+
+        traceback.print_exc()
+        sys.exit(1)
+
+
+@deploy.command("logs")
+@click.argument("name")
+@click.option("--service", help="Specific service/container name")
+@click.option("--follow", "-f", is_flag=True, help="Follow log output")
+@click.option(
+    "--tail", default=100, type=int, help="Number of lines from end (default: 100)"
+)
+def deploy_logs(name: str, service: Optional[str], follow: bool, tail: int):
+    """View logs from deployed containers."""
+    from nodetool.deploy.manager import DeploymentManager
+
+    try:
+        manager = DeploymentManager()
+
+        console.print(f"[cyan]Fetching logs for: {name}[/]")
+        if service:
+            console.print(f"[cyan]Service: {service}[/]")
+        console.print()
+
+        logs = manager.logs(name, service=service, follow=follow, tail=tail)
+
+        # Print logs directly
+        print(logs)
+
+    except KeyError:
+        console.print(f"[red]Deployment '{name}' not found[/]")
+        sys.exit(1)
+    except NotImplementedError as e:
+        console.print(f"[yellow]{e}[/]")
+        sys.exit(1)
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/]")
+        import traceback
+
+        traceback.print_exc()
+        sys.exit(1)
+
+
+@deploy.command("destroy")
+@click.argument("name")
+@click.option("--force", is_flag=True, help="Skip confirmation prompt")
+def deploy_destroy(name: str, force: bool):
+    """Destroy deployment (stop and remove all resources)."""
+    from nodetool.deploy.manager import DeploymentManager
+
+    try:
+        manager = DeploymentManager()
+
+        if not force:
+            if not click.confirm(
+                f"Are you sure you want to destroy deployment '{name}'?"
+            ):
+                console.print("[yellow]Operation cancelled[/]")
+                return
+
+        console.print(f"[bold yellow]Destroying deployment: {name}[/]")
+
+        results = manager.destroy(name, force=force)
+
+        console.print()
+        console.print("[bold]Destruction Steps:[/]")
+        for step in results.get("steps", []):
+            console.print(f"  {step}")
+
+        if results.get("errors"):
+            console.print()
+            console.print("[bold red]Errors:[/]")
+            for error in results["errors"]:
+                console.print(f"  ❌ {error}")
+            sys.exit(1)
+
+        if results["status"] == "success":
+            console.print()
+            console.print("[bold green]✅ Deployment destroyed[/]")
+
+    except KeyError:
+        console.print(f"[red]Deployment '{name}' not found[/]")
+        sys.exit(1)
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/]")
+        import traceback
+
+        traceback.print_exc()
+        sys.exit(1)
+
+
+# Add deploy group to main CLI
+cli.add_command(deploy)
 
 
 @cli.group()

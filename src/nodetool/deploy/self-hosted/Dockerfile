@@ -1,5 +1,7 @@
 # syntax=docker/dockerfile:1
 FROM nvidia/cuda:12.1.0-base-ubuntu22.04 AS base
+
+# Install uv for fast Python package management
 COPY --from=ghcr.io/astral-sh/uv:0.8.5 /uv /uvx /bin/
 
 # Environment variables
@@ -8,32 +10,33 @@ ENV DEBIAN_FRONTEND=noninteractive \
     LC_ALL=C.UTF-8 \
     LANG=C.UTF-8 \
     PYTHON_VERSION=3.11 \
-    VIRTUAL_ENV=/app/venv
+    VIRTUAL_ENV=/app/venv \
+    PATH="/app/venv/bin:$PATH"
 
-# Install system dependencies, then Python 3.11 and related packages
+# Install system dependencies
 RUN apt-get update && \
     apt-get upgrade -y && \
     apt-get install -y --no-install-recommends \
-    # Essential for adding PPAs
+    # Essential tools
     software-properties-common \
     locales \
-    # Python build essentials and other tools
+    curl \
+    wget \
+    git \
+    # Python and build essentials
     build-essential \
     gcc \
     g++ \
-    git \
-    wget \
-    curl \
-    # System Libraries often needed for Python compilation or packages
+    # System libraries
     libssl-dev \
     libffi-dev \
     liblzma-dev \
     zlib1g-dev \
-    # Scientific Computing Libraries
+    # Scientific computing
     libblas-dev \
     liblapack-dev \
     libopenblas-dev \
-    # Image Processing
+    # Image processing
     libopencv-dev \
     libjpeg-dev \
     libpng-dev \
@@ -43,7 +46,7 @@ RUN apt-get update && \
     libsm6 \
     libxext6 \
     libxrender-dev \
-    # Audio and Video Processing
+    # Audio and video
     ffmpeg \
     libsndfile1 \
     libsndfile1-dev \
@@ -51,28 +54,49 @@ RUN apt-get update && \
     libx264-dev \
     libmp3lame-dev \
     libvorbis-dev \
-    # Data Processing and Storage
+    # Data processing
     libxml2-dev \
     libxslt1-dev \
     libsqlite3-dev \
-    # Document Processing
+    # OCR
     tesseract-ocr && \
-    # Clean up apt cache
+    # Clean up
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* && \
-    # Ensure UTF-8 locale is generated
+    # Generate UTF-8 locale
     echo "en_US.UTF-8 UTF-8" > /etc/locale.gen && \
     locale-gen en_US.UTF-8
 
-RUN uv python install $PYTHON_VERSION
-RUN uv venv $VIRTUAL_ENV
+# Install Python and create virtual environment
+RUN uv python install $PYTHON_VERSION && \
+    uv venv $VIRTUAL_ENV
 
-# Set up the working directory
+# Set up working directory
 WORKDIR /app
 
+# Copy nodetool-core source
 COPY . /app
-ADD start.sh /app/start.sh
+
+# Install nodetool-core and dependencies using uv
+RUN uv pip install --system /app
+
+# Create default workspace directory structure
+RUN mkdir -p /workspace/data \
+    /workspace/assets \
+    /workspace/temp \
+    /hf-cache/huggingface/hub \
+    /hf-cache/transformers
+
+# Copy startup script
+COPY src/nodetool/deploy/self-hosted/start.sh /app/start.sh
 RUN chmod +x /app/start.sh
+
+# Expose port
+EXPOSE 8000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
 
 # Run the startup script
 CMD ["/app/start.sh"]
