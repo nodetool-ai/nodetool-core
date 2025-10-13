@@ -90,7 +90,6 @@ RUN echo "Installing nodetool packages..." && \
         --index-strategy unsafe-best-match \
         nodetool-core \
         nodetool-base \
-        nodetool-lib-image \
         nodetool-huggingface; \
     else \
         echo "Using package index" && \
@@ -100,7 +99,6 @@ RUN echo "Installing nodetool packages..." && \
         --index-strategy unsafe-best-match \
         ./ \
         nodetool-base \
-        nodetool-lib-image \
         nodetool-huggingface; \
     fi
 
