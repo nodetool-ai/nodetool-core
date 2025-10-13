@@ -56,7 +56,20 @@ RUN apt-get update && \
     libxslt1-dev \
     libsqlite3-dev \
     # Document Processing
-    tesseract-ocr && \
+    tesseract-ocr \
+    # Playwright browser dependencies
+    libgtk-4-1 \
+    libgraphene-1.0-0 \
+    libwoff2-1.0.2 \
+    libevent-2.1-7 \
+    libgstreamer-gl1.0-0 \
+    libgstreamer-plugins-bad1.0-0 \
+    libavif13 \
+    libharfbuzz-icu0 \
+    libenchant-2-2 \
+    libsecret-1-0 \
+    libhyphen0 \
+    libmanette-0.2-0 && \
     # Clean up apt cache
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* && \
