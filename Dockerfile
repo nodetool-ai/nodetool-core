@@ -56,7 +56,7 @@ RUN apt-get update && \
     libxslt1-dev \
     libsqlite3-dev \
     # Document Processing
-    tesseract-ocr \
+    tesseract-ocr && \
     # Playwright browser dependencies
     # libgtk-4-1 \
     # libgraphene-1.0-0 \
