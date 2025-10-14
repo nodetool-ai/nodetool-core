@@ -101,7 +101,7 @@ RUN echo "Installing nodetool packages..." && \
         --find-links /app/dist \
         --extra-index-url https://download.pytorch.org/whl/cu121 \
         --index-strategy unsafe-best-match \
-        nodetool-core \
+        /app \
         nodetool-base \
         nodetool-huggingface; \
     else \
@@ -110,9 +110,15 @@ RUN echo "Installing nodetool packages..." && \
         --extra-index-url https://nodetool-ai.github.io/nodetool-registry/simple/ \
         --extra-index-url https://download.pytorch.org/whl/cu121 \
         --index-strategy unsafe-best-match \
-        ./ \
+        /app \
         nodetool-base \
         nodetool-huggingface; \
     fi
 
 # RUN /app/venv/bin/playwright install
+
+# Expose port for the worker
+EXPOSE 8000
+
+# Run the NodeTool worker
+CMD ["python", "-m", "nodetool.deploy.worker"]

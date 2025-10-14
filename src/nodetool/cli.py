@@ -398,6 +398,103 @@ def chat():
     asyncio.run(chat_cli())
 
 
+@cli.command("worker")
+@click.option("--host", default="0.0.0.0", help="Host address to serve on.")
+@click.option("--port", default=8000, help="Port to serve on.", type=int)
+@click.option(
+    "--remote-auth", is_flag=True, help="Use remote authentication (Supabase)."
+)
+@click.option(
+    "--default-model",
+    default="gpt-oss:20b",
+    help="Default AI model to use when not specified by client.",
+)
+@click.option(
+    "--provider",
+    default="ollama",
+    help="AI provider to use.",
+)
+@click.option(
+    "--tools",
+    default="",
+    help="Comma-separated list of tools to use (e.g., 'google_search,browser').",
+)
+@click.option(
+    "--workflow",
+    "workflows",
+    multiple=True,
+    type=click.Path(exists=True, resolve_path=True, file_okay=True, dir_okay=False),
+    help="One or more workflow files to use.",
+)
+@click.option(
+    "--verbose",
+    "-v",
+    is_flag=True,
+    help="Enable verbose logging (DEBUG level) for detailed output.",
+)
+def worker(
+    host: str,
+    port: int,
+    remote_auth: bool,
+    provider: str,
+    default_model: str,
+    tools: str,
+    workflows: list[str],
+    verbose: bool = False,
+):
+    """Start a NodeTool worker (deployable server).
+
+    The worker provides OpenAI-compatible endpoints, workflow execution,
+    admin operations, and collection management. It can be deployed anywhere.
+
+    Examples:
+      # Start worker on default port 8000
+      nodetool worker
+
+      # Start worker on custom port
+      nodetool worker --port 8080
+
+      # Start with specific provider and model
+      nodetool worker --provider openai --default-model gpt-4
+
+      # Start with tools enabled
+      nodetool worker --tools "google_search,browser"
+
+      # Start with verbose logging
+      nodetool worker --verbose
+    """
+    from nodetool.deploy.worker import run_worker
+
+    # Configure logging level based on verbose flag
+    if verbose:
+        from nodetool.config.logging_config import configure_logging
+
+        configure_logging(level="DEBUG")
+        console.print("[cyan]🐛 Verbose logging enabled (DEBUG level)[/]")
+
+    import json
+    from nodetool.types.workflow import Workflow
+    import dotenv
+
+    dotenv.load_dotenv()
+
+    def load_workflow(path: str) -> Workflow:
+        with open(path, "r") as f:
+            workflow = json.load(f)
+        return Workflow.model_validate(workflow)
+
+    loaded_workflows = [load_workflow(f) for f in workflows]
+
+    # Parse comma-separated tools string into list
+    tools_list = (
+        [tool.strip() for tool in tools.split(",") if tool.strip()] if tools else []
+    )
+
+    run_worker(
+        host, port, remote_auth, provider, default_model, tools_list, loaded_workflows
+    )
+
+
 @cli.command("chat-server")
 @click.option("--host", default="127.0.0.1", help="Host address to serve on.")
 @click.option("--port", default=8080, help="Port to serve on.", type=int)
