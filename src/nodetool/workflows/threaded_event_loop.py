@@ -310,7 +310,7 @@ class ThreadedEventLoop:
 
             # Clear per-thread caches now that the loop is stopping, to avoid cross-workflow leaks
             try:
-                # Environment.clear_thread_caches()
+                Environment.clear_thread_caches()
                 log.debug("Cleared thread-local caches via Environment.")
             except Exception as e:
                 log.warning(

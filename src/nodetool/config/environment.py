@@ -446,21 +446,25 @@ class Environment(object):
             from nodetool.models.sqlite_adapter import SQLiteAdapter  # type: ignore
             import aiosqlite
 
-            if cls._sqlite_connection is None:
-                cls._sqlite_connection = await aiosqlite.connect(
+            # Use thread-local storage for SQLite connections to avoid database locks
+            tls = cls._tls()
+            if not hasattr(tls, 'sqlite_connection') or tls.sqlite_connection is None:
+                import threading
+                log.debug(f"Creating new SQLite connection for thread {threading.get_ident()}")
+                tls.sqlite_connection = await aiosqlite.connect(
                     cls.get_db_path(), timeout=30
                 )
-                cls._sqlite_connection.row_factory = aiosqlite.Row
+                tls.sqlite_connection.row_factory = aiosqlite.Row
                 # Configure SQLite for better concurrency and deadlock avoidance
-                await cls._sqlite_connection.execute("PRAGMA journal_mode=WAL")
-                await cls._sqlite_connection.execute(
+                await tls.sqlite_connection.execute("PRAGMA journal_mode=WAL")
+                await tls.sqlite_connection.execute(
                     "PRAGMA busy_timeout=5000"
                 )  # 5 seconds
-                await cls._sqlite_connection.execute("PRAGMA synchronous=NORMAL")
+                await tls.sqlite_connection.execute("PRAGMA synchronous=NORMAL")
                 # Increase cache size for better performance (negative means KB)
-                await cls._sqlite_connection.execute("PRAGMA cache_size=-64000")  # 64MB
-                await cls._sqlite_connection.commit()
-                # await cls._sqlite_connection.set_trace_callback(log.debug)
+                await tls.sqlite_connection.execute("PRAGMA cache_size=-64000")  # 64MB
+                await tls.sqlite_connection.commit()
+                # await tls.sqlite_connection.set_trace_callback(log.debug)
 
             db_path = cls.get_db_path()
             # Only create directories for file paths, not URIs or :memory:
@@ -469,7 +473,7 @@ class Environment(object):
 
             adapter = SQLiteAdapter(
                 db_path=cls.get_db_path(),
-                connection=cls._sqlite_connection,
+                connection=tls.sqlite_connection,
                 fields=fields,
                 table_schema=table_schema,
                 indexes=indexes,
@@ -824,6 +828,25 @@ class Environment(object):
     def clear_thread_caches(cls):
         """Clear per-thread caches to avoid cross-workflow leaks."""
         tls = cls._tls()
+        
+        # Close SQLite connection if it exists
+        if hasattr(tls, 'sqlite_connection') and tls.sqlite_connection is not None:
+            try:
+                import asyncio
+                import threading
+                log.debug(f"Closing SQLite connection for thread {threading.get_ident()}")
+                # If we're in an async context, schedule the close
+                try:
+                    loop = asyncio.get_running_loop()
+                    loop.create_task(tls.sqlite_connection.close())
+                except RuntimeError:
+                    # No running loop, connection will be closed when GC'd
+                    pass
+            except Exception:
+                pass
+            finally:
+                tls.sqlite_connection = None
+        
         for attr in (
             "node_cache",
             "memory_uri_cache",
