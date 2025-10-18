@@ -861,6 +861,7 @@ def scan(verbose):
     )
 
     try:
+        print("Scanning for package nodes")
         # Scan for nodes and create package model
         package = scan_for_package_nodes(verbose=verbose)
 

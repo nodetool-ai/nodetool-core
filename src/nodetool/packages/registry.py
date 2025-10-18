@@ -241,6 +241,7 @@ class Registry:
     """
 
     _instance = None
+
     @classmethod
     def get_instance(cls):
         if cls._instance is None:
@@ -804,7 +805,7 @@ class Registry:
                     props["path"] = file_path
                 workflow = Workflow(**props)
                 return workflow
-        except json.JSONDecodeError as e:
+        except Exception as e:
             self.logger.error(
                 f"Error decoding JSON for example workflow {file_path}: {e}"
             )
