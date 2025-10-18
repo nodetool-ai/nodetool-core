@@ -29,7 +29,7 @@ DEFAULT_ENV = {
     "CHROMA_URL": None,
     "CHROMA_PATH": str(get_system_data_path("chroma")),
     "COMFY_FOLDER": None,
-    "DEFAULT_EXECUTION_STRATEGY": "threaded",
+    "JOB_EXECUTION_STRATEGY": "threaded",  # threaded, subprocess, docker
     "MEMCACHE_HOST": None,
     "MEMCACHE_PORT": None,
     "DB_PATH": str(get_system_file_path("nodetool.sqlite3")),
@@ -448,9 +448,12 @@ class Environment(object):
 
             # Use thread-local storage for SQLite connections to avoid database locks
             tls = cls._tls()
-            if not hasattr(tls, 'sqlite_connection') or tls.sqlite_connection is None:
+            if not hasattr(tls, "sqlite_connection") or tls.sqlite_connection is None:
                 import threading
-                log.debug(f"Creating new SQLite connection for thread {threading.get_ident()}")
+
+                cls.get_logger().debug(
+                    f"Creating new SQLite connection for thread {threading.get_ident()}"
+                )
                 tls.sqlite_connection = await aiosqlite.connect(
                     cls.get_db_path(), timeout=30
                 )
@@ -828,13 +831,16 @@ class Environment(object):
     def clear_thread_caches(cls):
         """Clear per-thread caches to avoid cross-workflow leaks."""
         tls = cls._tls()
-        
+
         # Close SQLite connection if it exists
-        if hasattr(tls, 'sqlite_connection') and tls.sqlite_connection is not None:
+        if hasattr(tls, "sqlite_connection") and tls.sqlite_connection is not None:
             try:
                 import asyncio
                 import threading
-                log.debug(f"Closing SQLite connection for thread {threading.get_ident()}")
+
+                cls.get_logger().debug(
+                    f"Closing SQLite connection for thread {threading.get_ident()}"
+                )
                 # If we're in an async context, schedule the close
                 try:
                     loop = asyncio.get_running_loop()
@@ -846,7 +852,7 @@ class Environment(object):
                 pass
             finally:
                 tls.sqlite_connection = None
-        
+
         for attr in (
             "node_cache",
             "memory_uri_cache",

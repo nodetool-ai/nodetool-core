@@ -62,6 +62,12 @@ class JobExecutionManager:
             NotImplementedError: If the requested execution strategy is not yet implemented
         """
         from nodetool.workflows.run_job_request import ExecutionStrategy
+        from nodetool.config.environment import Environment
+
+        if Environment.get("JOB_EXECUTION_STRATEGY"):
+            request.execution_strategy = ExecutionStrategy(
+                Environment.get("JOB_EXECUTION_STRATEGY").lower()
+            )
 
         # Switch on execution strategy
         if request.execution_strategy == ExecutionStrategy.THREADED:
