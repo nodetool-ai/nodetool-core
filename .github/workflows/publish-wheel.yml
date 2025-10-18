@@ -87,7 +87,7 @@ jobs:
       - name: Build wheel
         run: |
           echo "🏗️ Building wheel for ${{ env.PACKAGE_NAME }}"
-          python build.py build-wheel
+          python build.py build-wheel --expected-version "${{ needs.validate.outputs.version }}"
 
       - name: Validate wheel
         run: |
