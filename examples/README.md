@@ -12,7 +12,8 @@ Before running these examples, you'll need to:
    pip install nodetool-core
    ```
 
-2. Set up necessary API keys
+1. Set up necessary API keys
+
    ```
    nodetool settings edit
    ```
@@ -84,8 +85,8 @@ Before running these examples, you'll need to:
 To run any of these examples:
 
 1. Ensure you have NodeTool installed and configured
-2. Set up the required API keys for the chosen providers
-3. Run the script using Python:
+1. Set up the required API keys for the chosen providers
+1. Run the script using Python:
 
 ```bash
 python examples/wikipedia_agent_example.py
@@ -109,8 +110,8 @@ Each example will:
 After exploring these examples, you can:
 
 1. Create custom agents for your specific use cases
-2. Develop new tools to expand agent capabilities
-3. Build more complex multi-agent systems
-4. Integrate these capabilities into your applications
+1. Develop new tools to expand agent capabilities
+1. Build more complex multi-agent systems
+1. Integrate these capabilities into your applications
 
 For more information, refer to the main NodeTool documentation.

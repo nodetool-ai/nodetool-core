@@ -75,7 +75,9 @@ class VllmProvider(BaseProvider, OpenAICompat):
         # No default URL - VLLM_BASE_URL must be explicitly set
         base_url = env.get("VLLM_BASE_URL")
         if not base_url:
-            raise ValueError("VLLM_BASE_URL environment variable must be set to use vLLM provider")
+            raise ValueError(
+                "VLLM_BASE_URL environment variable must be set to use vLLM provider"
+            )
         self._base_url: str = base_url.rstrip("/")
         self._api_key: str | None = env.get("VLLM_API_KEY")
         timeout_raw = env.get("VLLM_HTTP_TIMEOUT", 600)
@@ -267,16 +269,16 @@ class VllmProvider(BaseProvider, OpenAICompat):
                     chunk.usage.prompt_tokens_details
                     and chunk.usage.prompt_tokens_details.cached_tokens
                 ):
-                    self._usage[
-                        "cached_prompt_tokens"
-                    ] += chunk.usage.prompt_tokens_details.cached_tokens
+                    self._usage["cached_prompt_tokens"] += (
+                        chunk.usage.prompt_tokens_details.cached_tokens
+                    )
                 if (
                     chunk.usage.completion_tokens_details
                     and chunk.usage.completion_tokens_details.reasoning_tokens
                 ):
-                    self._usage[
-                        "reasoning_tokens"
-                    ] += chunk.usage.completion_tokens_details.reasoning_tokens
+                    self._usage["reasoning_tokens"] += (
+                        chunk.usage.completion_tokens_details.reasoning_tokens
+                    )
 
             if not chunk.choices:
                 continue
@@ -400,16 +402,16 @@ class VllmProvider(BaseProvider, OpenAICompat):
                 completion.usage.prompt_tokens_details
                 and completion.usage.prompt_tokens_details.cached_tokens
             ):
-                self._usage[
-                    "cached_prompt_tokens"
-                ] += completion.usage.prompt_tokens_details.cached_tokens
+                self._usage["cached_prompt_tokens"] += (
+                    completion.usage.prompt_tokens_details.cached_tokens
+                )
             if (
                 completion.usage.completion_tokens_details
                 and completion.usage.completion_tokens_details.reasoning_tokens
             ):
-                self._usage[
-                    "reasoning_tokens"
-                ] += completion.usage.completion_tokens_details.reasoning_tokens
+                self._usage["reasoning_tokens"] += (
+                    completion.usage.completion_tokens_details.reasoning_tokens
+                )
 
         choice = completion.choices[0]
         response_message = choice.message

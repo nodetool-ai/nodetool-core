@@ -54,9 +54,7 @@ class SerpProvider(abc.ABC):
         pass
 
     @abc.abstractmethod
-    async def search_finance(
-        self, query: str, window: Optional[str] = None
-    ) -> Any:
+    async def search_finance(self, query: str, window: Optional[str] = None) -> Any:
         """
         Retrieves financial data.
         """

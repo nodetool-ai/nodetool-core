@@ -1,4 +1,3 @@
-import pytest
 from nodetool.types.graph import (
     Node,
     Edge,

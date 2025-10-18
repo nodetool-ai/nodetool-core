@@ -3,7 +3,6 @@ Graph utilities for node and edge operations.
 """
 
 from collections import deque
-from typing import Any
 
 from nodetool.metadata.type_metadata import TypeMetadata
 from nodetool.workflows.base_node import BaseNode

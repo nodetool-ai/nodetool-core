@@ -1,16 +1,17 @@
 from typing import Dict, Any
-import openai
 from nodetool.agents.tools.base import Tool
 from nodetool.config.environment import Environment
 from nodetool.workflows.processing_context import ProcessingContext
 import base64
 from openai import AsyncClient
 
+
 def get_openai_client() -> AsyncClient:
     env = Environment.get_environment()
     api_key = env.get("OPENAI_API_KEY")
     assert api_key, "OPENAI_API_KEY is not set"
     return AsyncClient(api_key=api_key)
+
 
 class OpenAIWebSearchTool(Tool):
     """

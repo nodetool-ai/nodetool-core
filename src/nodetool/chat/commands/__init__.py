@@ -8,7 +8,12 @@ from .clear import ClearCommand
 from .agent import AgentCommand
 from .debug import DebugCommand
 from .usage import UsageCommand
-from .tools import ToolsCommand, ToolEnableCommand, ToolDisableCommand, ToolSearchCommand
+from .tools import (
+    ToolsCommand,
+    ToolEnableCommand,
+    ToolDisableCommand,
+    ToolSearchCommand,
+)
 from .workspace import ChangeToWorkspaceCommand
 from .workflow import RunWorkflowCommand
 

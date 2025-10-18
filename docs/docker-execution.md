@@ -1,6 +1,7 @@
 # Docker Job Execution
 
-Docker job execution provides isolated, containerized workflow execution for nodetool. This is ideal for production deployments where security, resource management, and multi-tenancy are important.
+Docker job execution provides isolated, containerized workflow execution for nodetool. This is ideal for production
+deployments where security, resource management, and multi-tenancy are important.
 
 ## Overview
 
@@ -64,7 +65,7 @@ export DOCKER_GPU_MEMORY_LIMIT="8g"
 The nodetool Docker image must include:
 
 1. **nodetool-core** - Core workflow engine and CLI
-2. **Node packages** - nodetool-base and other node libraries
+1. **Node packages** - nodetool-base and other node libraries
 
 Build from the repository root:
 
@@ -118,8 +119,8 @@ Containers communicate via JSONL (JSON Lines) over stdin/stdout:
 ### Message Types
 
 1. **JobUpdate**: Overall job status changes
-2. **NodeUpdate**: Individual node status changes
-3. **NodeProgress**: Node execution progress
+1. **NodeUpdate**: Individual node status changes
+1. **NodeProgress**: Node execution progress
 
 ### Message Deserialization
 
@@ -138,20 +139,20 @@ NodeUpdate(node_id="input_text", status="completed")
 ## Status Flow
 
 1. **Job created** → status="starting"
-2. **Container started** → status="running"
-3. **Workflow completes** → status="completed"
-4. **On error** → status="error"
-5. **On cancel** → status="cancelled"
+1. **Container started** → status="running"
+1. **Workflow completes** → status="completed"
+1. **On error** → status="error"
+1. **On cancel** → status="cancelled"
 
 ## Container Lifecycle
 
 1. Create container with `auto_remove=True`
-2. Attach hijacked socket (before starting!)
-3. Start container
-4. Feed RunJobRequest JSON to stdin
-5. Stream stdout via DockerHijackMultiplexDemuxer
-6. Wait for container to finish
-7. Container auto-removes on completion
+1. Attach hijacked socket (before starting!)
+1. Start container
+1. Feed RunJobRequest JSON to stdin
+1. Stream stdout via DockerHijackMultiplexDemuxer
+1. Wait for container to finish
+1. Container auto-removes on completion
 
 ## Performance Characteristics
 
@@ -165,9 +166,9 @@ NodeUpdate(node_id="input_text", status="completed")
 
 ### Current Implementation
 
-✅ **Process isolation** via Docker  
-✅ **Auto-remove containers** (no persistence)  
-✅ **Environment variable isolation**  
+✅ **Process isolation** via Docker\
+✅ **Auto-remove containers** (no persistence)\
+✅ **Environment variable isolation**\
 ✅ **Resource limits** (CPU, memory, GPU)
 
 ### Future Enhancements

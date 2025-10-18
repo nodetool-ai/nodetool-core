@@ -18,4 +18,3 @@ def test_memory_uri_cache_set_get_and_expiry():
     # After TTL it should expire
     time.sleep(1.1)
     assert cache.get(key) is None
-

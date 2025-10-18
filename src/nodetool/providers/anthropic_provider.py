@@ -8,7 +8,7 @@ handling message conversion, streaming, and tool integration.
 import json
 import base64
 from typing import cast, Dict, List
-from typing import Any, AsyncGenerator, AsyncIterator, Sequence
+from typing import Any, AsyncIterator, Sequence
 import aiohttp
 import anthropic
 from anthropic.types.message_param import MessageParam
@@ -623,9 +623,9 @@ class AnthropicProvider(BaseProvider):
             self.usage["input_tokens"] += usage.input_tokens
             self.usage["output_tokens"] += usage.output_tokens
             if usage.cache_creation_input_tokens:
-                self.usage[
-                    "cache_creation_input_tokens"
-                ] += usage.cache_creation_input_tokens
+                self.usage["cache_creation_input_tokens"] += (
+                    usage.cache_creation_input_tokens
+                )
             if usage.cache_read_input_tokens:
                 self.usage["cache_read_input_tokens"] += usage.cache_read_input_tokens
             self.usage["total_tokens"] = self.usage.get(

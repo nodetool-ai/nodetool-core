@@ -176,17 +176,15 @@ import asyncio
 import base64
 import binascii
 import datetime
-import mimetypes
 import re
 from nodetool.providers import BaseProvider
 from nodetool.agents.tools.base import Tool
-from nodetool.metadata.types import Message, SubTask, Task, ToolCall, LogEntry
+from nodetool.metadata.types import Message, SubTask, Task, ToolCall
 from nodetool.workflows.types import Chunk, TaskUpdate, TaskUpdateEvent
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.ui.console import AgentConsole
 
 import tiktoken
-import yaml
 
 from nodetool.chat.token_counter import (
     count_message_tokens,
@@ -195,10 +193,8 @@ from nodetool.chat.token_counter import (
 
 
 import json
-import os
 import time
 import uuid
-import warnings
 from typing import (
     Any,
     AsyncGenerator,
@@ -207,7 +203,6 @@ from typing import (
     Union,
     Dict,
     Optional,
-    cast,
 )
 from nodetool.config.logging_config import get_logger
 

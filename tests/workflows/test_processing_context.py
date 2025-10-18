@@ -1,11 +1,10 @@
 import os
-
-mp3_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), "test.mp3")
-
 import pytest
 from typing import Iterator, Tuple, List
 
 from nodetool.workflows.processing_context import ProcessingContext
+
+mp3_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), "test.mp3")
 
 
 def _make_context(env: dict | None = None) -> ProcessingContext:

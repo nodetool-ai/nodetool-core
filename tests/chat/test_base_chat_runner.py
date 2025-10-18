@@ -3,11 +3,10 @@ Tests for BaseChatRunner functionality
 """
 
 import pytest
-from unittest.mock import Mock, AsyncMock, patch, MagicMock
+from unittest.mock import Mock, AsyncMock, patch
 from nodetool.chat.base_chat_runner import BaseChatRunner
-from nodetool.config.environment import Environment
 from nodetool.models.message import Message as DBMessage
-from nodetool.metadata.types import Message as ApiMessage, Provider
+from nodetool.metadata.types import Message as ApiMessage
 from nodetool.models.thread import Thread
 from nodetool.types.graph import Graph
 
@@ -42,7 +41,7 @@ class TestChatRunner(BaseChatRunner):
         db_message = await self._save_message_to_db_async(message_data)
 
         # Convert to API message and get full chat history
-        api_message = self._db_message_to_metadata_message(db_message)
+        self._db_message_to_metadata_message(db_message)
         messages = await self.get_chat_history_from_db(thread_id)
 
         # Call implementation
@@ -103,43 +102,6 @@ class TestBaseChatRunner:
         assert api_message.provider == "openai"
         assert api_message.model == "gpt-4"
         assert api_message.agent_mode is True
-
-    async def test_metadata_message_to_db_message(self):
-        """Test conversion from metadata message to database message"""
-        self.runner.user_id = "user_123"
-
-        # Create a metadata message
-        api_message = ApiMessage(
-            id="test_id",
-            workflow_id="workflow_123",
-            graph=Graph(nodes=[], edges=[]),
-            thread_id="thread_123",
-            tools=["tool1", "tool2"],
-            role="assistant",
-            content="Test response",
-            provider=Provider.Anthropic,
-            model="claude-3",
-            agent_mode=False,
-        )
-
-        # Mock DBMessage.create
-        with patch.object(DBMessage, "create") as mock_create:
-            mock_db_message = Mock()
-            mock_create.return_value = mock_db_message
-
-            # Convert to DB message
-            db_message = self.runner._metadata_message_to_db_message(api_message)
-
-            # Verify DBMessage.create was called with correct arguments
-            mock_create.assert_called_once()
-            call_args = mock_create.call_args[1]
-            assert call_args["thread_id"] == "thread_123"
-            assert call_args["user_id"] == "user_123"
-            assert call_args["workflow_id"] == "workflow_123"
-            assert call_args["role"] == "assistant"
-            assert call_args["content"] == "Test response"
-            assert call_args["provider"] == "anthropic"
-            assert call_args["model"] == "claude-3"
 
     async def test_save_message_to_db_async(self):
         """Test asynchronous message saving to database"""

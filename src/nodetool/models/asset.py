@@ -9,7 +9,6 @@ and optional workflow association.
 from typing import Dict, Optional, Literal, Sequence
 from datetime import datetime
 from nodetool.types.content_types import CONTENT_TYPE_TO_EXTENSION
-from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
 
 from nodetool.models.base_model import (

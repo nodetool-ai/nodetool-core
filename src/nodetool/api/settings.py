@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from nodetool.config.environment import Environment
 from nodetool.config.settings import load_settings, save_settings
-from nodetool.config.configuration import Setting, get_settings_registry
+from nodetool.config.configuration import get_settings_registry
 from pydantic import BaseModel
 from typing import Any, Dict, List, Optional
 

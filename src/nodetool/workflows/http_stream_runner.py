@@ -3,7 +3,6 @@ import json
 import time
 import uuid
 from typing import AsyncGenerator
-from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
 from nodetool.types.wrap_primitive_types import wrap_primitive_types
 from nodetool.workflows.processing_context import ProcessingContext
@@ -79,9 +78,12 @@ class HTTPStreamRunner:
             yield json.dumps({"type": "job_completed", "job_id": self.job_id}) + "\n"
         except Exception as e:
             log.exception(f"Error in job {self.job_id}: {e}")
-            yield json.dumps(
-                {"type": "job_failed", "job_id": self.job_id, "error": str(e)}
-            ) + "\n"
+            yield (
+                json.dumps(
+                    {"type": "job_failed", "job_id": self.job_id, "error": str(e)}
+                )
+                + "\n"
+            )
 
         self.job_id = None
         self.runner = None

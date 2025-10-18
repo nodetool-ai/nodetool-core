@@ -1,21 +1,23 @@
 # Contributing to Nodetool Core
 
-Thank you for considering contributing to Nodetool Core! This document provides guidelines and instructions for contributing to the project.
+Thank you for considering contributing to Nodetool Core! This document provides guidelines and instructions for
+contributing to the project.
 
 ## Development Process
 
 1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Make your changes
-4. Run tests to ensure they pass (`make test`)
-5. Commit your changes (`git commit -m 'Add some amazing feature'`)
-6. Push to the branch (`git push origin feature/amazing-feature`)
-7. Open a Pull Request
+1. Create a feature branch (`git checkout -b feature/amazing-feature`)
+1. Make your changes
+1. Run tests to ensure they pass (`make test`)
+1. Commit your changes (`git commit -m 'Add some amazing feature'`)
+1. Push to the branch (`git push origin feature/amazing-feature`)
+1. Open a Pull Request
 
 ## Development Environment Setup
 
 1. Clone your fork of the repository
-2. Install development dependencies:
+
+1. Install development dependencies:
 
    ```bash
    make dev-install
@@ -23,7 +25,8 @@ Thank you for considering contributing to Nodetool Core! This document provides 
 
    This will install the package in development mode and install all development dependencies.
 
-3. Install pre-commit hooks:
+1. Install pre-commit hooks:
+
    ```bash
    pre-commit install
    ```
@@ -73,11 +76,12 @@ make docs
 ## Pull Request Process
 
 1. Ensure your code passes all tests and style checks
-2. Update documentation if needed
-3. Update the CHANGELOG.md file with your changes
-4. The PR should be reviewed by at least one maintainer
-5. Once approved, a maintainer will merge your PR
+1. Update documentation if needed
+1. Update the CHANGELOG.md file with your changes
+1. The PR should be reviewed by at least one maintainer
+1. Once approved, a maintainer will merge your PR
 
 ## Code of Conduct
 
-Please be respectful and considerate of others when contributing to this project. We aim to foster an inclusive and welcoming community.
+Please be respectful and considerate of others when contributing to this project. We aim to foster an inclusive and
+welcoming community.

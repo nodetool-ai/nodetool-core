@@ -3,7 +3,7 @@ import pytest_asyncio
 from datetime import datetime
 from enum import Enum
 from typing import Dict, List, Optional
-from unittest.mock import MagicMock, patch, AsyncMock
+from unittest.mock import patch, AsyncMock
 from psycopg.types.json import Jsonb
 from nodetool.models.condition_builder import Field
 from nodetool.models.postgres_adapter import (

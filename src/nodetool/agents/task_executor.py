@@ -128,7 +128,9 @@ class TaskExecutor:
             current_subtask_count = len(self.task.subtasks)
             if current_subtask_count > self._initial_subtask_count:
                 new_count = current_subtask_count - self._initial_subtask_count
-                log.info(f"Detected {new_count} dynamically added subtask(s). Total subtasks: {current_subtask_count}")
+                log.info(
+                    f"Detected {new_count} dynamically added subtask(s). Total subtasks: {current_subtask_count}"
+                )
                 # Update the initial count for next iteration
                 self._initial_subtask_count = current_subtask_count
 
@@ -153,10 +155,12 @@ class TaskExecutor:
                 enhanced_tools = list(self.tools).copy()
 
                 # Add task management tools to allow dynamic subtask creation
-                enhanced_tools.extend([
-                    AddSubtaskTool(task=self.task),
-                    ListSubtasksTool(task=self.task),
-                ])
+                enhanced_tools.extend(
+                    [
+                        AddSubtaskTool(task=self.task),
+                        ListSubtasksTool(task=self.task),
+                    ]
+                )
 
                 # Create subtask context
                 subtask_context = SubTaskContext(

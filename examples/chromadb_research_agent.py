@@ -99,7 +99,6 @@ async def test_chromadb_research_agent(provider: BaseProvider, model: str):
 
 
 if __name__ == "__main__":
-
     asyncio.run(
         test_chromadb_research_agent(
             provider=get_provider(Provider.OpenAI),

@@ -1,16 +1,15 @@
 import traceback
-from typing import Any, List, Annotated
+from typing import Any, List
 import json
 import importlib
 import pkgutil
 import inspect
-import logging
 from nodetool.config.logging_config import get_logger
 from nodetool.types.model import UnifiedModel
 from pydantic import BaseModel, Field, ConfigDict
 from nodetool.packages.types import AssetInfo
 from nodetool.workflows.property import Property
-from nodetool.metadata.types import OutputSlot, HuggingFaceModel
+from nodetool.metadata.types import OutputSlot
 from enum import Enum
 from nodetool.workflows.base_node import (
     BaseNode,
@@ -63,7 +62,8 @@ class NodeMetadata(BaseModel):
     )
     is_dynamic: bool = Field(default=False, description="Whether the node is dynamic")
     is_streaming_output: bool = Field(
-        default=False, description="Whether the node can stream output")
+        default=False, description="Whether the node can stream output"
+    )
     expose_as_tool: bool = Field(
         default=False, description="Whether the node is exposed as a tool"
     )

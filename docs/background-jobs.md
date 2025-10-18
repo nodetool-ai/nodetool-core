@@ -2,7 +2,9 @@
 
 ## Overview
 
-The job execution system provides robust, resilient workflow execution that survives WebSocket disconnections and network interruptions. Jobs run in dedicated execution environments managed by the `JobExecutionManager`, allowing clients to disconnect and reconnect without losing job progress.
+The job execution system provides robust, resilient workflow execution that survives WebSocket disconnections and
+network interruptions. Jobs run in dedicated execution environments managed by the `JobExecutionManager`, allowing
+clients to disconnect and reconnect without losing job progress.
 
 ## Key Features
 
@@ -23,7 +25,7 @@ The job execution system provides robust, resilient workflow execution that surv
    - Maintains in-memory registry of running jobs
    - Automatic cleanup of completed jobs
 
-2. **JobExecution** Abstract Base Class
+1. **JobExecution** Abstract Base Class
 
    - Defines the interface for job execution strategies
    - Common behavior for status tracking and state finalization
@@ -32,20 +34,21 @@ The job execution system provides robust, resilient workflow execution that surv
      - `SubprocessJobExecution`: Runs in a separate process (planned)
      - `DockerJobExecution`: Runs in Docker container (planned)
 
-3. **WebSocketRunner** Updates
+1. **WebSocketRunner** Updates
 
    - Support for job recovery via `RECONNECT_JOB` command
    - Jobs run independently of WebSocket connection
    - Streams messages from background jobs to connected clients
 
-4. **Job API** (`api/job.py`)
+1. **Job API** (`api/job.py`)
 
    - List jobs (completed and running)
    - Get job details by ID
    - List currently running background jobs
    - Cancel jobs
 
-5. **Job Model** Updates
+1. **Job Model** Updates
+
    - Added `params` field to track job parameters
    - Stores job metadata for recovery
 
@@ -101,8 +104,8 @@ Use the WebSocket `RECONNECT_JOB` command:
 The WebSocket runner will:
 
 1. Look up the background job by ID
-2. Attach to the job's context and runner
-3. Stream any remaining messages to the client
+1. Attach to the job's context and runner
+1. Stream any remaining messages to the client
 
 #### Listing Jobs
 
@@ -310,10 +313,10 @@ Cancel a running job.
 ## Job Lifecycle
 
 1. **Starting**: Job is created and scheduled
-2. **Running**: Job is actively executing
-3. **Completed**: Job finished successfully
-4. **Failed**: Job encountered an error
-5. **Cancelled**: Job was manually cancelled
+1. **Running**: Job is actively executing
+1. **Completed**: Job finished successfully
+1. **Failed**: Job encountered an error
+1. **Cancelled**: Job was manually cancelled
 
 Jobs persist in the database with their status, allowing recovery and monitoring.
 
@@ -376,9 +379,9 @@ except Exception as e:
 If a client loses connection:
 
 1. Job continues running in the background
-2. Client can reconnect using the job ID
-3. Any queued messages are streamed to the reconnected client
-4. Job status is maintained throughout
+1. Client can reconnect using the job ID
+1. Any queued messages are streamed to the reconnected client
+1. Job status is maintained throughout
 
 ### Timeout Handling
 
@@ -387,10 +390,10 @@ Configure timeouts in the workflow runner or processing context as needed.
 ## Best Practices
 
 1. **Save Job IDs**: Always save job IDs on the client for reconnection
-2. **Monitor Status**: Poll the jobs API or use WebSocket updates to monitor progress
-3. **Handle Reconnection**: Implement automatic reconnection logic for network failures
-4. **Clean Up**: Let the automatic cleanup handle old jobs, or manually trigger as needed
-5. **Error Recovery**: Implement proper error handling and retry logic
+1. **Monitor Status**: Poll the jobs API or use WebSocket updates to monitor progress
+1. **Handle Reconnection**: Implement automatic reconnection logic for network failures
+1. **Clean Up**: Let the automatic cleanup handle old jobs, or manually trigger as needed
+1. **Error Recovery**: Implement proper error handling and retry logic
 
 ## Troubleshooting
 

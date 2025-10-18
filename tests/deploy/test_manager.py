@@ -38,9 +38,7 @@ class TestDeploymentManager:
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
-            containers=[
-                ContainerConfig(name="wf1", port=8001),
-            ],
+            container=ContainerConfig(name="wf1", port=8001),
         )
 
         # Create RunPod deployment
@@ -133,7 +131,7 @@ class TestDeploymentManager:
         assert deployments[0]["type"] == DeploymentType.SELF_HOSTED
         assert deployments[0]["status"] == "unknown"
         assert deployments[0]["host"] == "192.168.1.100"
-        assert deployments[0]["containers"] == 1
+        assert deployments[0]["container"] == "wf1"
 
         assert deployments[1]["name"] == "serverless"
         assert deployments[1]["type"] == DeploymentType.RUNPOD
@@ -456,7 +454,7 @@ class TestDeploymentManager:
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
-            containers=[ContainerConfig(name="wf1", port=8001)],
+            container=ContainerConfig(name="wf1", port=8001),
         )
 
         manager.config.deployments["no-auth"] = deployment
@@ -468,24 +466,22 @@ class TestDeploymentManager:
         assert "no-auth" in result["warnings"][0]
         assert "authentication" in result["warnings"][0].lower()
 
-    def test_validate_self_hosted_no_containers(self, manager):
-        """Test validation fails for deployment without containers."""
-        # Create deployment without containers
+    def test_validate_self_hosted_valid_container(self, manager):
+        """Test validation passes for deployment with valid container."""
+        # Create deployment with valid container
         deployment = SelfHostedDeployment(
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
-            containers=[],
+            container=ContainerConfig(name="default", port=8000),
         )
 
-        manager.config.deployments["no-containers"] = deployment
+        manager.config.deployments["valid-container"] = deployment
 
-        result = manager.validate("no-containers")
+        result = manager.validate("valid-container")
 
-        assert result["valid"] is False
-        assert len(result["errors"]) > 0
-        assert "no-containers" in result["errors"][0]
-        assert "containers" in result["errors"][0].lower()
+        # Should pass validation since all required fields are present
+        assert result["valid"] is True
 
     def test_has_changes_true(self, manager):
         """Test has_changes returns True when there are changes."""

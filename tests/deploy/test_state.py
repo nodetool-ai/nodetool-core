@@ -38,14 +38,13 @@ def sample_config(temp_config_dir):
                 host="192.168.1.100",
                 ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
                 image=ImageConfig(name="nodetool/nodetool", tag="latest"),
-                containers=[
-                    ContainerConfig(name="wf1", port=8001, workflows=["abc123"]),
-                ],
+                container=ContainerConfig(name="wf1", port=8001, workflows=["abc123"]),
             ),
             "test-server-2": SelfHostedDeployment(
                 host="192.168.1.101",
                 ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
                 image=ImageConfig(name="nodetool/nodetool", tag="latest"),
+                container=ContainerConfig(name="wf2", port=8002, workflows=[]),
             ),
         }
     )
@@ -100,7 +99,7 @@ class TestStateManager:
         # Update state
         manager.write_state(
             "test-server",
-            {"status": "running", "compose_hash": "abc123"},
+            {"status": "running", "container_id": "abc123"},
             update_timestamp=False,
         )
 
@@ -108,7 +107,7 @@ class TestStateManager:
         state = manager.read_state("test-server")
 
         assert state["status"] == "running"
-        assert state["compose_hash"] == "abc123"
+        assert state["container_id"] == "abc123"
 
     def test_write_state_with_timestamp(self, sample_config):
         """Test writing state with automatic timestamp."""
@@ -179,7 +178,7 @@ class TestStateManager:
         manager = StateManager(config_path=config_path)
 
         # Set some state
-        manager.write_state("test-server", {"status": "running", "compose_hash": "abc"})
+        manager.write_state("test-server", {"status": "running", "container_id": "abc"})
 
         # Clear it
         manager.clear_state("test-server")
@@ -187,7 +186,7 @@ class TestStateManager:
         # State should be reset to defaults
         state = manager.read_state("test-server")
         assert state["status"] == "unknown"
-        assert state["compose_hash"] is None
+        assert state["container_id"] is None
 
     def test_get_last_deployed(self, sample_config):
         """Test getting last deployed timestamp."""

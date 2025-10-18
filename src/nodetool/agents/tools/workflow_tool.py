@@ -22,10 +22,7 @@ from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.run_workflow import run_workflow
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.types import (
-    Error,
     JobUpdate,
-    NodeProgress,
-    NodeUpdate,
     OutputUpdate,
     ToolResultUpdate,
 )
@@ -120,7 +117,7 @@ class GraphTool(Tool):
             props = node.node_properties()
             if node.id in initial_edges_by_target:
                 edge = initial_edges_by_target[node.id]
-                if not edge.targetHandle in params:
+                if edge.targetHandle not in params:
                     raise ValueError(f"Missing required parameter: {edge.targetHandle}")
                 props[edge.targetHandle] = params[edge.targetHandle]
             return props

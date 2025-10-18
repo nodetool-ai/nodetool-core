@@ -94,7 +94,7 @@ async def demonstrate_dynamic_subtasks():
         pass
 
     # Display results
-    console.print(f"\n[bold green]Task Execution Complete![/bold green]")
+    console.print("\n[bold green]Task Execution Complete![/bold green]")
     console.print(f"[bold]Final Subtask Count:[/bold] {len(task.subtasks)}")
 
     if len(task.subtasks) > 1:
@@ -156,7 +156,9 @@ async def demonstrate_with_explicit_subtask_addition():
         },
     )
 
-    console.print(f"\n[bold green]Added new subtask:[/bold green] {result['subtask_id']}")
+    console.print(
+        f"\n[bold green]Added new subtask:[/bold green] {result['subtask_id']}"
+    )
     console.print(f"Total subtasks now: {len(task.subtasks)}")
 
     # The TaskExecutor will now execute both subtasks in order

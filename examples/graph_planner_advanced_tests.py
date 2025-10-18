@@ -1,12 +1,9 @@
 """Advanced integration examples for GraphPlanner with complex workflows"""
 
 import asyncio
-import tempfile
 from typing import Any
 
 from nodetool.agents.graph_planner import GraphPlanner, print_visual_graph
-from nodetool.providers.anthropic_provider import AnthropicProvider
-from nodetool.providers.openai_provider import OpenAIProvider
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.run_workflow import run_workflow
@@ -72,7 +69,7 @@ async def create_and_execute_workflow(
         params=inputs,
     )
 
-    logger.info(f"Executing workflow")
+    logger.info("Executing workflow")
     async for msg in run_workflow(req, context=context):
         logger.info(f"Workflow message: {msg}")
 
@@ -83,7 +80,7 @@ async def vector_search_and_analysis_workflow():
     objective = """
     Create a workflow to build and query a vector database:
     1. Take a list of text documents as input
-    2. Create a Chroma collection called "documents"  
+    2. Create a Chroma collection called "documents"
     3. Index all the documents into the collection with embeddings
     4. Take a search query and perform hybrid search (semantic + keyword)
     5. Extract the top 3 most relevant documents

@@ -1,10 +1,12 @@
 # Chat CLI
 
-The `nodetool chat` command starts an interactive terminal interface for conversing with language models and running tools.
+The `nodetool chat` command starts an interactive terminal interface for conversing with language models and running
+tools.
 
 ## Starting the Interface
 
-Run `nodetool chat` from your shell. A welcome panel appears with the current model, agent status, and workspace path. Type `/help` at any time to see available commands.
+Run `nodetool chat` from your shell. A welcome panel appears with the current model, agent status, and workspace path.
+Type `/help` at any time to see available commands.
 
 ## CLI Commands
 
@@ -17,14 +19,15 @@ Commands use a `/` prefix. Important commands include:
 - **/debug [on|off]** – Display tool calls and results.
 - **/analysis [on|off]** – Enable or disable the agent analysis phase.
 - **/flow [on|off]** – Control data‑flow analysis.
-- **/reasoning <id|default>** – Set the reasoning model.
+- **/reasoning \<id|default>** – Set the reasoning model.
 - **/tools [name]** – List available tools or show details for one.
 - **/usage** – Show usage statistics for the current provider.
 - **/exit** – Quit the chat session.
 
 ## Workspace Commands
 
-Within the chat you can manage files in a sandboxed workspace located under `~/.nodetool-workspaces`. Workspace operations do not use the `/` prefix:
+Within the chat you can manage files in a sandboxed workspace located under `~/.nodetool-workspaces`. Workspace
+operations do not use the `/` prefix:
 
 - `pwd` – Print the current directory.
 - `ls [path]` – List directory contents.
@@ -40,5 +43,5 @@ Within the chat you can manage files in a sandboxed workspace located under `~/.
 
 ## Settings and History
 
-Session settings are stored in `~/.nodetool_settings` and command history in `~/.nodetool_history`. These files allow the chat interface to remember your model choice, agent mode, and other options between runs.
-
+Session settings are stored in `~/.nodetool_settings` and command history in `~/.nodetool_history`. These files allow
+the chat interface to remember your model choice, agent mode, and other options between runs.

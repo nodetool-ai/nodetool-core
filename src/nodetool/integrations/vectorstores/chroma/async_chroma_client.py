@@ -25,7 +25,7 @@ import asyncio
 import chromadb
 from chromadb.api import ClientAPI
 
-from .chroma_client import get_chroma_client, get_collection
+from .chroma_client import get_chroma_client
 
 
 class _SingleThreadExecutor:

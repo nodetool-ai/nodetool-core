@@ -7,13 +7,21 @@ This module encapsulates endpoints under /admin, including:
 - Cache scan and size
 - Delete HF model
 - Workflow registry status
+- Collection management (CRUD operations)
 """
 
 from __future__ import annotations
 
 import json
-from fastapi import APIRouter, HTTPException, Request
+import os
+import shutil
+import tempfile
+import asyncio
+from typing import Any, Dict, List, Optional
+from fastapi import APIRouter, HTTPException, Request, UploadFile, File, Header
 from fastapi.responses import StreamingResponse
+import aiofiles
+import chromadb
 
 from nodetool.deploy.admin_operations import (
     download_hf_model,
@@ -23,11 +31,74 @@ from nodetool.deploy.admin_operations import (
     delete_hf_model,
 )
 from nodetool.config.environment import Environment
-from typing import Any, Dict
-
-from nodetool.models.asset import Asset
+from nodetool.models.asset import Asset as AssetModel
 from nodetool.models.database_adapter import DatabaseAdapter
 from nodetool.models.workflow import Workflow
+from nodetool.integrations.vectorstores.chroma.async_chroma_client import (
+    get_async_chroma_client,
+    get_async_collection,
+)
+from nodetool.indexing.service import index_file_to_collection
+from nodetool.indexing.ingestion import find_input_nodes
+from pydantic import BaseModel
+from nodetool.types.asset import Asset, AssetList
+
+
+# Collection-related Pydantic models
+class CollectionCreate(BaseModel):
+    name: str
+    embedding_model: str
+
+
+class CollectionResponse(BaseModel):
+    name: str
+    count: int
+    metadata: chromadb.CollectionMetadata
+    workflow_name: str | None = None
+
+
+class CollectionList(BaseModel):
+    collections: List[CollectionResponse]
+    count: int
+
+
+class CollectionModify(BaseModel):
+    name: str | None = None
+    metadata: dict[str, str] | None = None
+
+
+class IndexResponse(BaseModel):
+    path: str
+    error: Optional[str] = None
+
+
+def asset_from_model(asset: AssetModel) -> Asset:
+    """Convert AssetModel to Asset API response."""
+    storage = Environment.get_asset_storage()
+    if asset.content_type != "folder":
+        get_url = storage.get_url(asset.file_name)
+    else:
+        get_url = None
+
+    if asset.has_thumbnail:
+        thumb_url = storage.get_url(asset.thumb_file_name)
+    else:
+        thumb_url = None
+
+    return Asset(
+        id=asset.id,
+        user_id=asset.user_id,
+        workflow_id=asset.workflow_id,
+        parent_id=asset.parent_id,
+        name=asset.name,
+        content_type=asset.content_type,
+        size=asset.size,
+        metadata=asset.metadata,
+        created_at=asset.created_at.isoformat(),
+        get_url=get_url,
+        thumb_url=thumb_url,
+        duration=asset.duration,
+    )
 
 
 def get_model_adapter(table: str) -> DatabaseAdapter:
@@ -130,7 +201,11 @@ def create_admin_router() -> APIRouter:
             results = []
             async for chunk in scan_hf_cache():
                 results.append(chunk)
-            return results[0] if results else {"status": "error", "message": "No cache data"}
+            return (
+                results[0]
+                if results
+                else {"status": "error", "message": "No cache data"}
+            )
         except Exception as e:  # noqa: BLE001
             print(f"Cache scan error: {e}")
             raise HTTPException(status_code=500, detail=str(e))
@@ -142,7 +217,11 @@ def create_admin_router() -> APIRouter:
             results = []
             async for chunk in calculate_cache_size(cache_dir=cache_dir):
                 results.append(chunk)
-            return results[0] if results else {"status": "error", "message": "No size data"}
+            return (
+                results[0]
+                if results
+                else {"status": "error", "message": "No size data"}
+            )
         except Exception as e:  # noqa: BLE001
             print(f"Cache size calculation error: {e}")
             raise HTTPException(status_code=500, detail=str(e))
@@ -154,11 +233,14 @@ def create_admin_router() -> APIRouter:
             results = []
             async for chunk in delete_hf_model(repo_id=repo_id):
                 results.append(chunk)
-            return results[0] if results else {"status": "error", "message": "Delete failed"}
+            return (
+                results[0]
+                if results
+                else {"status": "error", "message": "Delete failed"}
+            )
         except Exception as e:  # noqa: BLE001
             print(f"HuggingFace model deletion error: {e}")
             raise HTTPException(status_code=500, detail=str(e))
-
 
     # Database adapter operations
     @router.post("/admin/db/{table}/save")
@@ -195,6 +277,318 @@ def create_admin_router() -> APIRouter:
         except Exception as e:  # noqa: BLE001
             raise HTTPException(status_code=500, detail=str(e))
 
+    # Collection management endpoints
+    @router.post("/admin/collections", response_model=CollectionResponse)
+    async def create_collection(req: CollectionCreate) -> CollectionResponse:
+        """Create a new collection."""
+        try:
+            client = await get_async_chroma_client()
+            metadata = {
+                "embedding_model": req.embedding_model,
+            }
+            collection = await client.create_collection(
+                name=req.name, metadata=metadata
+            )
+            return CollectionResponse(
+                name=collection.name,
+                metadata=collection.metadata,
+                count=0,
+            )
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @router.get("/admin/collections", response_model=CollectionList)
+    async def list_collections(
+        offset: Optional[int] = None,
+        limit: Optional[int] = None,
+    ) -> CollectionList:
+        """List all collections."""
+        try:
+            client = await get_async_chroma_client()
+            collections = await client.list_collections()
+
+            async def get_workflow_name(metadata: dict[str, str]) -> str | None:
+                if workflow_id := metadata.get("workflow"):
+                    workflow = await Workflow.get(workflow_id)
+                    if workflow:
+                        return workflow.name
+                return None
+
+            return CollectionList(
+                collections=[
+                    CollectionResponse(
+                        name=col.name,
+                        metadata=col.metadata or {},
+                        workflow_name=await get_workflow_name(col.metadata or {}),
+                        count=col.count(),
+                    )
+                    for col in collections
+                ],
+                count=len(collections),
+            )
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @router.get("/admin/collections/{name}", response_model=CollectionResponse)
+    async def get_collection(name: str) -> CollectionResponse:
+        """Get a specific collection by name."""
+        try:
+            client = await get_async_chroma_client()
+            collection = await client.get_collection(name=name)
+            count = await collection.count()
+            return CollectionResponse(
+                name=collection.name,
+                metadata=collection.metadata,
+                count=count,
+            )
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @router.put("/admin/collections/{name}")
+    async def update_collection(name: str, req: CollectionModify):
+        """Update a collection."""
+        try:
+            client = await get_async_chroma_client()
+            collection = await client.get_collection(name=name)
+            metadata = collection.metadata.copy()
+            metadata.update(req.metadata or {})
+
+            if workflow_id := metadata.get("workflow"):
+                workflow = await Workflow.get(workflow_id)
+                if not workflow:
+                    raise HTTPException(status_code=404, detail="Workflow not found")
+
+                # Validate workflow input nodes
+                graph = workflow.graph
+                collection_input, file_input = find_input_nodes(graph)
+                if not collection_input:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Workflow must have a CollectionInput node",
+                    )
+                if not file_input:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Workflow must have a FileInput or DocumentFileInput node",
+                    )
+
+            await collection.modify(name=req.name, metadata=metadata)
+            return CollectionResponse(
+                name=collection.name,
+                metadata=collection.metadata,
+                count=await collection.count(),
+            )
+        except HTTPException:
+            raise
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @router.delete("/admin/collections/{name}")
+    async def delete_collection(name: str):
+        """Delete a collection."""
+        try:
+            client = await get_async_chroma_client()
+            await client.delete_collection(name=name)
+            return {"message": f"Collection {name} deleted successfully"}
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @router.post("/admin/collections/{name}/index", response_model=IndexResponse)
+    async def index_collection(
+        name: str,
+        file: UploadFile = File(...),
+        authorization: Optional[str] = Header(None),
+    ) -> IndexResponse:
+        """Index a file to a collection."""
+        await get_async_collection(name)
+        token = "local_token"
+
+        # Save uploaded file temporarily
+        tmp_dir = tempfile.mkdtemp()
+        tmp_path = os.path.join(tmp_dir, file.filename or "uploaded_file")
+        try:
+            # Write uploaded file to disk asynchronously in chunks
+            async with aiofiles.open(tmp_path, "wb") as buffer:
+                while True:
+                    chunk = await file.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    await buffer.write(chunk)
+
+            file_path = tmp_path
+            mime_type = file.content_type or "application/octet-stream"
+
+            error = await index_file_to_collection(name, file_path, mime_type, token)
+            if error:
+                return IndexResponse(path=file.filename or "unknown", error=error)
+
+            return IndexResponse(path=file.filename or "unknown", error=None)
+        except Exception as e:
+            from nodetool.config.logging_config import get_logger
+
+            log = get_logger(__name__)
+            log.error(f"Error indexing file {file.filename}: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
+        finally:
+            # Ensure temporary directory is cleaned up without blocking
+            await asyncio.to_thread(shutil.rmtree, tmp_dir)
+            await file.close()
+
+    # Asset management endpoints
+    @router.get("/admin/assets", response_model=AssetList)
+    async def list_assets(
+        user_id: Optional[str] = "1",
+        parent_id: Optional[str] = None,
+        content_type: Optional[str] = None,
+        cursor: Optional[str] = None,
+        page_size: Optional[int] = 100,
+    ) -> AssetList:
+        """List assets (admin endpoint - no user restrictions)."""
+        try:
+            if page_size is None or page_size > 10000:
+                page_size = 10000
+
+            if content_type is None and parent_id is None and user_id:
+                parent_id = user_id
+
+            assets, next_cursor = await AssetModel.paginate(
+                user_id=user_id or "1",
+                parent_id=parent_id,
+                content_type=content_type,
+                limit=page_size,
+                start_key=cursor,
+            )
+
+            assets = [asset_from_model(asset) for asset in assets]
+
+            return AssetList(next=next_cursor, assets=assets)
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @router.post("/admin/assets", response_model=Asset)
+    async def create_asset(
+        user_id: str = "1",
+        name: str = "",
+        content_type: str = "",
+        parent_id: Optional[str] = None,
+        workflow_id: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> Asset:
+        """Create a new asset (admin endpoint - no user restrictions)."""
+        try:
+            asset = await AssetModel.create(
+                user_id=user_id,
+                name=name,
+                content_type=content_type,
+                parent_id=parent_id,
+                workflow_id=workflow_id,
+                metadata=metadata,
+            )
+            return asset_from_model(asset)
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @router.get("/admin/assets/{asset_id}", response_model=Asset)
+    async def get_asset(asset_id: str, user_id: Optional[str] = "1") -> Asset:
+        """Get a single asset by ID (admin endpoint - no user restrictions)."""
+        try:
+            uid = user_id or "1"
+
+            # Handle special case for user root folder
+            if asset_id == uid:
+                return Asset(
+                    user_id=uid,
+                    id=uid,
+                    name="Home",
+                    content_type="folder",
+                    parent_id="",
+                    workflow_id=None,
+                    size=None,
+                    get_url=None,
+                    thumb_url=None,
+                    created_at="",
+                )
+
+            asset = await AssetModel.get(asset_id)
+            if asset is None:
+                raise HTTPException(status_code=404, detail="Asset not found")
+            return asset_from_model(asset)
+        except HTTPException:
+            raise
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @router.delete("/admin/assets/{asset_id}")
+    async def delete_asset(asset_id: str):
+        """Delete an asset (recursive for folders) (admin endpoint - no user restrictions)."""
+        try:
+            asset = await AssetModel.get(asset_id)
+            if asset is None:
+                raise HTTPException(status_code=404, detail="Asset not found")
+
+            deleted_asset_ids = []
+
+            async def delete_folder(uid: str, folder_id: str) -> List[str]:
+                ids = []
+                try:
+                    assets, _ = await AssetModel.paginate(
+                        user_id=uid, parent_id=folder_id, limit=10000
+                    )
+                    # Delete children first
+                    for a in assets:
+                        if a.content_type == "folder":
+                            subfolder_ids = await delete_folder(uid, a.id)
+                            ids.extend(subfolder_ids)
+                        else:
+                            await delete_single_asset(a)
+                            ids.append(a.id)
+
+                    # Delete folder itself
+                    folder = await AssetModel.find(uid, folder_id)
+                    if folder:
+                        await delete_single_asset(folder)
+                        ids.append(folder_id)
+                    return ids
+                except Exception as e:  # noqa: BLE001
+                    from nodetool.config.logging_config import get_logger
+
+                    log = get_logger(__name__)
+                    log.exception(
+                        f"Error in delete_folder for folder {folder_id}: {str(e)}"
+                    )
+                    raise
+
+            async def delete_single_asset(a: AssetModel):
+                try:
+                    await a.delete()
+                    storage = Environment.get_asset_storage()
+                    try:
+                        await storage.delete(a.thumb_file_name)
+                    except Exception:  # noqa: BLE001
+                        pass
+                    try:
+                        await storage.delete(a.file_name)
+                    except Exception:  # noqa: BLE001
+                        pass
+                except Exception as e:  # noqa: BLE001
+                    from nodetool.config.logging_config import get_logger
+
+                    log = get_logger(__name__)
+                    log.exception(
+                        f"Error in delete_single_asset for asset {a.id}: {str(e)}"
+                    )
+                    raise
+
+            if asset.content_type == "folder":
+                deleted_asset_ids = await delete_folder(asset.user_id, asset_id)
+            else:
+                await delete_single_asset(asset)
+                deleted_asset_ids = [asset_id]
+
+            return {"deleted_asset_ids": deleted_asset_ids}
+        except HTTPException:
+            raise
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(status_code=500, detail=str(e))
+
     return router
-
-

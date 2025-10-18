@@ -7,9 +7,8 @@ stderr lines. No wrapping or serialization is added; the code runs as-is with
 `python -c`.
 """
 
-from typing import Any, AsyncGenerator, AsyncIterator
+from typing import Any
 
-from nodetool.workflows.base_node import BaseNode
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.code_runners.runtime_base import StreamRunnerBase
 

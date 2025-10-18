@@ -1,6 +1,4 @@
-from typing import Optional
-from huggingface_hub import ModelInfo
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel
 
 
 class UnifiedModel(BaseModel):

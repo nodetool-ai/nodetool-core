@@ -19,12 +19,12 @@ API Documentation References (2024):
 import json
 import pytest
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional, Type, Union
-from unittest.mock import AsyncMock, MagicMock, patch
+from typing import Any, Dict, List, Type
+from unittest.mock import MagicMock
 
 from nodetool.agents.tools.base import Tool
 from nodetool.providers.base import BaseProvider
-from nodetool.metadata.types import Message, MessageTextContent, ToolCall, Provider
+from nodetool.metadata.types import Message, MessageTextContent, ToolCall
 from nodetool.workflows.types import Chunk
 from nodetool.workflows.processing_context import ProcessingContext
 
@@ -325,8 +325,6 @@ class BaseProviderTest(ABC):
         """Test token usage tracking."""
         provider = self.create_provider()
         messages = self.create_simple_messages()
-
-        initial_usage = provider.usage
 
         with self.mock_api_call(ResponseFixtures.simple_text_response()):
             await provider.generate_message(messages, "test-model")

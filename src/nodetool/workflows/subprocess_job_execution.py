@@ -651,18 +651,18 @@ class SubprocessJobExecution(JobExecution):
                 # Provide more detailed error messages for common exit codes
                 if returncode == -6:
                     error_msg = (
-                        f"Subprocess terminated (exit code -6) - likely sandbox policy violation. "
-                        f"Check stderr logs for sandbox denial messages. "
-                        f"Set NODETOOL_SANDBOX_DEBUG=1 for detailed sandbox logging, "
-                        f"or disable sandbox with NODETOOL_USE_SANDBOX=0."
+                        "Subprocess terminated (exit code -6) - likely sandbox policy violation. "
+                        "Check stderr logs for sandbox denial messages. "
+                        "Set NODETOOL_SANDBOX_DEBUG=1 for detailed sandbox logging, "
+                        "or disable sandbox with NODETOOL_USE_SANDBOX=0."
                     )
                     if self._sandbox_profile_path:
                         error_msg += f" Sandbox profile: {self._sandbox_profile_path}"
                 elif returncode == -9:
-                    error_msg = f"Subprocess killed (exit code -9) - likely out of memory or exceeded resource limits"
+                    error_msg = "Subprocess killed (exit code -9) - likely out of memory or exceeded resource limits"
                 elif returncode == -11:
                     error_msg = (
-                        f"Subprocess crashed (exit code -11) - segmentation fault"
+                        "Subprocess crashed (exit code -11) - segmentation fault"
                     )
                 elif returncode < 0:
                     error_msg = f"Subprocess terminated by signal {-returncode}"
@@ -890,20 +890,20 @@ async def _test_subprocess_execution():
 
     # Check sandbox status
     if _should_use_sandbox():
-        print(f"\nSandbox: ENABLED (macOS sandbox-exec)")
+        print("\nSandbox: ENABLED (macOS sandbox-exec)")
         print(
             f"  Network: {'ALLOWED' if os.environ.get('NODETOOL_SANDBOX_ALLOW_NETWORK', '1') != '0' else 'DENIED'}"
         )
         debug_enabled = os.environ.get("NODETOOL_SANDBOX_DEBUG", "1") != "0"
         print(f"  Debug Logging: {'ENABLED' if debug_enabled else 'DISABLED'}")
         if debug_enabled:
-            print(f"    (Sandbox violations will be logged with '🔒 Sandbox' prefix)")
-        print(f"  To disable sandbox: NODETOOL_USE_SANDBOX=0")
-        print(f"  To disable sandbox debug: NODETOOL_SANDBOX_DEBUG=0")
+            print("    (Sandbox violations will be logged with '🔒 Sandbox' prefix)")
+        print("  To disable sandbox: NODETOOL_USE_SANDBOX=0")
+        print("  To disable sandbox debug: NODETOOL_SANDBOX_DEBUG=0")
     else:
-        print(f"\nSandbox: DISABLED")
+        print("\nSandbox: DISABLED")
         if platform.system() == "Darwin":
-            print(f"  (Set NODETOOL_USE_SANDBOX=1 to enable)")
+            print("  (Set NODETOOL_USE_SANDBOX=1 to enable)")
 
     print("\n" + "-" * 60)
     print("Starting workflow execution...")
@@ -923,8 +923,8 @@ async def _test_subprocess_execution():
         print(f"Process PID: {job_execution.process.pid}")
         if job_execution._sandbox_profile_path:
             print(f"Sandbox profile: {job_execution._sandbox_profile_path}")
-            print(f"  (You can inspect this file to see the sandbox policy)")
-        print(f"Waiting for completion...\n")
+            print("  (You can inspect this file to see the sandbox policy)")
+        print("Waiting for completion...\n")
 
         # Wait for the job to complete (with timeout)
         await asyncio.wait_for(job_execution._completed_event.wait(), timeout=60.0)
@@ -940,11 +940,11 @@ async def _test_subprocess_execution():
         # Check if sandbox profile still exists
         if job_execution._sandbox_profile_path:
             if os.path.exists(job_execution._sandbox_profile_path):
-                print(f"\nSandbox profile still available at:")
+                print("\nSandbox profile still available at:")
                 print(f"  {job_execution._sandbox_profile_path}")
                 print(f"\nTo inspect it: cat {job_execution._sandbox_profile_path}")
             else:
-                print(f"\nSandbox profile was cleaned up")
+                print("\nSandbox profile was cleaned up")
 
         # Note about stderr
         if job_execution.process.returncode == -6:

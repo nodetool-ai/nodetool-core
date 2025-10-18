@@ -5,7 +5,8 @@
 - **Smart Task Planning**: Automatically breaks down complex goals into clear, executable subtasks.
 - **LLM-Driven Execution**: Leverages LLMs to reason through subtasks, deciding when and how to use available tools.
 - **Step-by-Step Reasoning**: Uses a structured approach to solve problems, ensuring clarity and accuracy.
-- **Rich Tool Integration**: Comes equipped with tools for web browsing, file handling, code execution, data searching, PDF processing, and more.
+- **Rich Tool Integration**: Comes equipped with tools for web browsing, file handling, code execution, data searching,
+  PDF processing, and more.
 - **Clear Data Management**: Ensures subtasks communicate clearly through structured inputs and outputs.
 - **Independent Task Contexts**: Each subtask runs in isolation, preventing interference and ensuring reliability.
 - **Parallel Processing**: Executes independent subtasks simultaneously, speeding up workflows.
@@ -18,9 +19,10 @@
 Here's a simple overview of how NodeTool operates:
 
 1. **Define Your Objective**: You start by giving NodeTool a clear goal.
-2. **Planning Phase**: NodeTool analyzes your goal and creates a detailed plan, breaking it down into smaller subtasks.
-3. **Execution Phase**: Each subtask is executed independently within its own context (`SubTaskContext`). The LLM drives the execution, deciding whether to use tools or generate content based on the subtask's objective.
-4. **Completion**: Results from subtasks are combined to achieve your original objective.
+1. **Planning Phase**: NodeTool analyzes your goal and creates a detailed plan, breaking it down into smaller subtasks.
+1. **Execution Phase**: Each subtask is executed independently within its own context (`SubTaskContext`). The LLM drives
+   the execution, deciding whether to use tools or generate content based on the subtask's objective.
+1. **Completion**: Results from subtasks are combined to achieve your original objective.
 
 ## Architecture Overview
 
@@ -30,7 +32,8 @@ NodeTool consists of several key components working together:
 - **Task Planner**: Breaks down your objective into a structured plan of subtasks.
 - **Task Executor**: Manages the execution of subtasks, handling dependencies and parallel execution.
 - **SubTask Context**: Provides an isolated environment for each subtask, managing interactions with tools and the LLM.
-- **Tools**: A collection of specialized utilities that subtasks can use to perform actions like web browsing, file handling, and more.
+- **Tools**: A collection of specialized utilities that subtasks can use to perform actions like web browsing, file
+  handling, and more.
 - **Workspace**: A dedicated space where subtasks store and retrieve files.
 
 ## Execution Flow
@@ -99,9 +102,12 @@ NodeTool consists of several key components working together:
 ```
 
 1. **Initialization**: You provide an objective and select available tools.
-2. **Planning**: NodeTool creates a detailed plan, identifying subtasks and their dependencies.
-3. **Execution**: Subtasks are executed in order, respecting dependencies. Independent subtasks run in parallel. Each subtask runs within a `SubTaskContext`, where an LLM interaction loop determines the necessary steps, potentially involving tool calls.
-4. **Completion**: Each subtask explicitly finishes by saving its results (triggered by the `finish_subtask` tool call from the LLM). NodeTool then combines these results to fulfill your original objective.
+1. **Planning**: NodeTool creates a detailed plan, identifying subtasks and their dependencies.
+1. **Execution**: Subtasks are executed in order, respecting dependencies. Independent subtasks run in parallel. Each
+   subtask runs within a `SubTaskContext`, where an LLM interaction loop determines the necessary steps, potentially
+   involving tool calls.
+1. **Completion**: Each subtask explicitly finishes by saving its results (triggered by the `finish_subtask` tool call
+   from the LLM). NodeTool then combines these results to fulfill your original objective.
 
 ## Tools Available
 
@@ -116,7 +122,8 @@ NodeTool includes a variety of built-in tools:
 
 ## Advanced Capabilities
 
-- **Multi-Phase Planning**: NodeTool uses a structured approach (Analysis, Data Flow, Plan Creation) to ensure robust task plans.
+- **Multi-Phase Planning**: NodeTool uses a structured approach (Analysis, Data Flow, Plan Creation) to ensure robust
+  task plans.
 - **Structured Output**: Leverages structured outputs from LLMs to reliably generate task plans.
 - **Parallel Execution**: Runs independent subtasks simultaneously, significantly speeding up workflows.
 - **Formal Task Completion**: Ensures each subtask explicitly finishes, clearly defining outputs and metadata.
@@ -171,20 +178,19 @@ asyncio.run(run_agent())
 
 ### Running in Docker
 
-Set the `docker_image` parameter when creating an `Agent` to execute the
-entire plan inside a Docker container. The workspace will be mounted at
-`/workspace` inside the container and input files are copied there
-automatically. Results are written back to the same workspace on the host.
+Set the `docker_image` parameter when creating an `Agent` to execute the entire plan inside a Docker container. The
+workspace will be mounted at `/workspace` inside the container and input files are copied there automatically. Results
+are written back to the same workspace on the host.
 
-Environment variables required by the selected provider and tools will
-be passed through to the container automatically.
+Environment variables required by the selected provider and tools will be passed through to the container automatically.
 
 ## Limitations and Considerations
 
 - **Token Limits**: Complex tasks may hit token limits, requiring careful management within each `SubTaskContext`.
 - **Planning Complexity**: Extremely complex objectives might require refining or simplifying.
 - **Tool Reliability**: External tools can fail due to network issues or API limitations.
-- **Security**: Running code or interacting with external systems carries inherent risks. Always use sandboxed environments.
+- **Security**: Running code or interacting with external systems carries inherent risks. Always use sandboxed
+  environments.
 - **Cost**: Extensive LLM interactions within subtasks can incur significant costs.
 
 ## Next Steps
@@ -194,6 +200,6 @@ be passed through to the container automatically.
 - Develop new tools to integrate with your own APIs or workflows.
 - Experiment with different LLM providers and models to find the best fit for your tasks.
 
----
+______________________________________________________________________
 
 Happy building with NodeTool Agents! 🚀

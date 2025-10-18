@@ -20,11 +20,13 @@ from nodetool.api.model import router as model_router
 app = FastAPI()
 app.include_router(model_router)
 
+
 @pytest.fixture()
 def client():
     # Context-manage TestClient to avoid leaking event loop/resources
     with TestClient(app) as c:
         yield c
+
 
 # Define mock paths for consistent use in tests
 MOCK_OLLAMA_ROOT = Path("/safe/ollama/models").resolve()
@@ -80,7 +82,9 @@ def test_open_in_explorer_success_ollama_path(mock_create_proc, mock_get_roots, 
 
 @patch("nodetool.io.file_explorer.get_valid_explorable_roots")
 @patch("nodetool.io.file_explorer.asyncio.create_subprocess_exec")
-def test_open_in_explorer_success_hf_cache_path(mock_create_proc, mock_get_roots, client):
+def test_open_in_explorer_success_hf_cache_path(
+    mock_create_proc, mock_get_roots, client
+):
     """Test opening a valid path within the Hugging Face cache directory."""
     mock_get_roots.return_value = [MOCK_OLLAMA_ROOT, MOCK_HF_CACHE_ROOT]
     valid_path_to_open = MOCK_HF_CACHE_ROOT / "models--some-model"
@@ -101,7 +105,9 @@ def test_open_in_explorer_success_hf_cache_path(mock_create_proc, mock_get_roots
 
 @patch("nodetool.io.file_explorer.get_valid_explorable_roots")
 @patch("nodetool.io.file_explorer.asyncio.create_subprocess_exec")
-def test_open_in_explorer_path_traversal_attempt(mock_create_proc, mock_get_roots, client):
+def test_open_in_explorer_path_traversal_attempt(
+    mock_create_proc, mock_get_roots, client
+):
     """Test path traversal attempt is blocked when path is outside all safe roots."""
     mock_get_roots.return_value = [MOCK_OLLAMA_ROOT, MOCK_HF_CACHE_ROOT]
 

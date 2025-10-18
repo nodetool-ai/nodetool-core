@@ -1,7 +1,7 @@
 # Agent System
 
-NodeTool includes an agent framework that breaks complex objectives into smaller subtasks.
-Agents use language models and tools to accomplish each step.
+NodeTool includes an agent framework that breaks complex objectives into smaller subtasks. Agents use language models
+and tools to accomplish each step.
 
 Key features include:
 

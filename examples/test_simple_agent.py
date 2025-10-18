@@ -3,9 +3,9 @@ from nodetool.agents.simple_agent import SimpleAgent
 from nodetool.providers import get_provider
 from nodetool.agents.tools import GoogleSearchTool, BrowserTool
 from nodetool.providers.base import BaseProvider
-from nodetool.metadata.types import Provider, ToolCall, SubTask
+from nodetool.metadata.types import Provider
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.workflows.types import Chunk, TaskUpdate
+from nodetool.workflows.types import Chunk
 import dotenv
 
 dotenv.load_dotenv()

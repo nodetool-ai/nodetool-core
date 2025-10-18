@@ -5,7 +5,7 @@ This module provides tools for interacting with web browsers and web pages.
 """
 
 import os
-from typing import Any, Dict, List, Optional, AsyncGenerator, Union
+from typing import Any, Dict, Optional
 import html2text
 import json
 
@@ -68,7 +68,7 @@ async def get_element_info(element: ElementHandle) -> Dict[str, Any]:
             """(element) => {
             const rect = element.getBoundingClientRect();
             const computedStyle = window.getComputedStyle(element);
-            
+
             // Function to get nth-child position
             function getNthChild(el) {
                 let nth = 1;
@@ -81,7 +81,7 @@ async def get_element_info(element: ElementHandle) -> Dict[str, Any]:
                 }
                 return nth;
             }
-            
+
             return {
                 tagName: element.tagName.toLowerCase(),
                 id: element.id || null,
@@ -438,7 +438,6 @@ class DOMExamineTool(Tool):
 
         selector = params.get("selector")
         max_depth = params.get("max_depth", 3)
-        browser_context = None
 
         try:
             page = await context.get_browser_page(url)
@@ -473,13 +472,13 @@ class DOMExamineTool(Tool):
                     f"""() => {{
                     function analyzeDOM(element, depth = 0, maxDepth = {max_depth}) {{
                         if (depth > maxDepth) return null;
-                        
+
                         const children = Array.from(element.children)
                             .filter(child => !['script', 'style', 'noscript'].includes(child.tagName.toLowerCase()))
                             .slice(0, 10)  // Limit children per level
                             .map(child => analyzeDOM(child, depth + 1, maxDepth))
                             .filter(Boolean);
-                        
+
                         return {{
                             tag: element.tagName.toLowerCase(),
                             id: element.id || null,
@@ -489,7 +488,7 @@ class DOMExamineTool(Tool):
                             children: children
                         }};
                     }}
-                    
+
                     return {{
                         title: document.title,
                         url: window.location.href,
@@ -579,8 +578,6 @@ class DOMSearchTool(Tool):
         if not search_type or not query:
             return {"error": "search_type and query are required"}
 
-        browser_context = None
-
         try:
             page = await context.get_browser_page(url)
 
@@ -660,7 +657,7 @@ class DOMSearchTool(Tool):
                     info["xpath"] = xpath
 
                     results.append(info)
-                except:
+                except Exception:  # noqa: S110
                     continue
 
             return {
@@ -734,8 +731,6 @@ class DOMExtractTool(Tool):
 
         if not selector or not extract_type:
             return {"error": "selector and extract_type are required"}
-
-        browser_context = None
 
         try:
             page = await context.get_browser_page(url)
@@ -823,28 +818,28 @@ class DOMExtractTool(Tool):
                     return Array.from(elements).map(el => {
                         // Try to extract structured data
                         const data = {};
-                        
+
                         // Look for common patterns
                         const title = el.querySelector('h1, h2, h3, h4, .title, [class*="title"]');
                         if (title) data.title = title.textContent.trim();
-                        
+
                         const description = el.querySelector('p, .description, [class*="description"], .summary');
                         if (description) data.description = description.textContent.trim();
-                        
+
                         const price = el.querySelector('.price, [class*="price"], [data-price]');
                         if (price) data.price = price.textContent.trim();
-                        
+
                         const image = el.querySelector('img');
                         if (image) data.image = { src: image.src, alt: image.alt };
-                        
+
                         const link = el.querySelector('a');
                         if (link) data.link = { href: link.href, text: link.textContent.trim() };
-                        
+
                         // Get all text if no structured data found
                         if (Object.keys(data).length === 0) {
                             data.text = el.textContent.trim();
                         }
-                        
+
                         return data;
                     });
                 }"""
@@ -1128,7 +1123,6 @@ if __name__ == "__main__":
             },
         )
         print(f"Result: {json.dumps(result, indent=2)}")
-
 
         # # Test 1: Extract article content from Hacker News
         # print("Test 1: Extracting top stories from Hacker News...")

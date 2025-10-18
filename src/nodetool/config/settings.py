@@ -6,7 +6,6 @@ import os
 from pathlib import Path
 from typing import Any, Dict, Tuple
 
-from nodetool.workflows.run_job_request import ExecutionStrategy
 import yaml
 
 from nodetool.config.configuration import register_setting
@@ -167,6 +166,18 @@ register_setting(
     env_var="DATA_FOR_SEO_PASSWORD",
     group="DataForSEO",
     description="DataForSEO password for accessing DataForSEO's API",
+    is_secret=True,
+)
+register_setting(
+    package_name="nodetool",
+    env_var="WORKER_AUTH_TOKEN",
+    group="Deployment",
+    description=(
+        "Authentication token for securing NodeTool worker endpoints when deployed. "
+        "When set, all API endpoints (except /health and /ping) require this token "
+        "in the Authorization header as 'Bearer TOKEN'. Essential for Docker and "
+        "production deployments. Generate with: openssl rand -base64 32"
+    ),
     is_secret=True,
 )
 

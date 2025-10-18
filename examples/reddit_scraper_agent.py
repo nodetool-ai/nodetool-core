@@ -136,23 +136,23 @@ async def analyze_reddit_subreddit(
             "properties": {
                 "summary": {
                     "type": "string",
-                    "description": "Brief summary of findings"
+                    "description": "Brief summary of findings",
                 },
                 "posts_analyzed": {
                     "type": "integer",
-                    "description": "Number of posts analyzed"
+                    "description": "Number of posts analyzed",
                 },
                 "key_issues": {
                     "type": "array",
                     "description": "Main problems found",
-                    "items": {"type": "string"}
+                    "items": {"type": "string"},
                 },
                 "recommendations": {
                     "type": "array",
                     "description": "Suggested improvements",
-                    "items": {"type": "string"}
-                }
-            }
+                    "items": {"type": "string"},
+                },
+            },
         },
     )
 

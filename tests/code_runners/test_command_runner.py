@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import os
 from nodetool.workflows.base_node import BaseNode
 import pytest
 

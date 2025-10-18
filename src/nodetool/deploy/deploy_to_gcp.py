@@ -28,9 +28,8 @@ Environment Variables:
     GOOGLE_CLOUD_PROJECT: Google Cloud project ID
     GOOGLE_APPLICATION_CREDENTIALS: Path to service account key file (optional)
 """
-import os
+
 import sys
-import tempfile
 from typing import Optional, Dict, Any
 import traceback
 from rich.console import Console
@@ -64,42 +63,42 @@ def sanitize_service_name(name: str) -> str:
         str: The sanitized service name
     """
     import re
-    
+
     # Convert to lowercase and replace invalid chars with hyphens
     sanitized = re.sub(r"[^a-z0-9\-]", "-", name.lower())
-    
+
     # Remove consecutive hyphens
     sanitized = re.sub(r"-+", "-", sanitized)
-    
+
     # Ensure it starts with a letter
     if sanitized and not sanitized[0].isalpha():
         sanitized = "svc-" + sanitized
-    
+
     # Remove leading/trailing hyphens
     sanitized = sanitized.strip("-")
-    
+
     # Ensure it ends with alphanumeric
     if sanitized and not sanitized[-1].isalnum():
         sanitized = sanitized.rstrip("-")
-    
+
     # Truncate to 63 characters
     if len(sanitized) > 63:
         sanitized = sanitized[:60] + "svc"
-    
+
     # Ensure it's not empty
     if not sanitized:
         sanitized = "nodetool-svc"
-    
+
     return sanitized
 
 
 def infer_registry_from_region(region: str) -> str:
     """
     Infer Artifact Registry URL from region.
-    
+
     Args:
         region: Cloud Run region (e.g., "europe-west4")
-        
+
     Returns:
         str: Artifact Registry URL (e.g., "europe-west4-docker.pkg.dev")
     """
@@ -122,7 +121,7 @@ def deploy_to_gcp(
     allow_unauthenticated: bool = False,
     env: dict[str, str] = {},
     docker_username: Optional[str] = None,
-    docker_registry: str = "docker.io", 
+    docker_registry: str = "docker.io",
     image_name: Optional[str] = None,
     tag: Optional[str] = None,
     platform: str = "linux/amd64",
@@ -147,7 +146,7 @@ def deploy_to_gcp(
         region: Google Cloud region
         registry: Container registry to use (gcr.io or artifact registry)
         cpu: CPU allocation for Cloud Run service
-        memory: Memory allocation for Cloud Run service  
+        memory: Memory allocation for Cloud Run service
         min_instances: Minimum number of instances
         max_instances: Maximum number of instances
         concurrency: Maximum concurrent requests per instance
@@ -168,7 +167,6 @@ def deploy_to_gcp(
     """
     from .deploy import (
         get_docker_username,
-        print_deployment_summary,
     )
     from .docker import (
         format_image_name,
@@ -186,10 +184,10 @@ def deploy_to_gcp(
     ensure_gcloud_auth()
     project_id = ensure_project_set(project_id)
     console.print(f"Using project: {project_id}")
-    
+
     # Enable required APIs
     enable_required_apis(project_id)
-    
+
     # Ensure Cloud Run permissions (unless skipped)
     if not skip_permission_setup:
         ensure_cloud_run_permissions(project_id, service_account)
@@ -230,10 +228,12 @@ def deploy_to_gcp(
 
     # Format image names for both local and cloud use
     if docker_username:
-        local_image_name = format_image_name(image_name, docker_username, docker_registry)
+        local_image_name = format_image_name(
+            image_name, docker_username, docker_registry
+        )
     else:
         local_image_name = image_name
-        
+
     console.print(f"Local image name: {local_image_name}")
 
     deployment_info = None
@@ -256,17 +256,39 @@ def deploy_to_gcp(
             gcp_image_url = push_to_gcr(
                 local_image_name, image_tag, project_id, registry
             )
-            console.print(f"[bold green]✅ Image pushed to registry: {gcp_image_url}[/]")
+            console.print(
+                f"[bold green]✅ Image pushed to registry: {gcp_image_url}[/]"
+            )
 
         # Set default cache envs (respect provided values)
-        env.setdefault("HF_HOME", f"{gcs_mount_path}/.cache/huggingface" if gcs_bucket else "/workspace/.cache/huggingface")
-        env.setdefault("HF_HUB_CACHE", f"{gcs_mount_path}/.cache/huggingface/hub" if gcs_bucket else "/workspace/.cache/huggingface/hub")
-        env.setdefault("TRANSFORMERS_CACHE", f"{gcs_mount_path}/.cache/transformers" if gcs_bucket else "/workspace/.cache/transformers")
-        env.setdefault("OLLAMA_MODELS", f"{gcs_mount_path}/.ollama/models" if gcs_bucket else "/workspace/.ollama/models")
+        env.setdefault(
+            "HF_HOME",
+            f"{gcs_mount_path}/.cache/huggingface"
+            if gcs_bucket
+            else "/workspace/.cache/huggingface",
+        )
+        env.setdefault(
+            "HF_HUB_CACHE",
+            f"{gcs_mount_path}/.cache/huggingface/hub"
+            if gcs_bucket
+            else "/workspace/.cache/huggingface/hub",
+        )
+        env.setdefault(
+            "TRANSFORMERS_CACHE",
+            f"{gcs_mount_path}/.cache/transformers"
+            if gcs_bucket
+            else "/workspace/.cache/transformers",
+        )
+        env.setdefault(
+            "OLLAMA_MODELS",
+            f"{gcs_mount_path}/.ollama/models"
+            if gcs_bucket
+            else "/workspace/.ollama/models",
+        )
 
         # Deploy to Cloud Run
         if not skip_deploy and gcp_image_url:
-            console.print(f"[bold cyan]🚀 Deploying to Cloud Run...[/]")
+            console.print("[bold cyan]🚀 Deploying to Cloud Run...[/]")
 
             deployment_info = deploy_to_cloud_run(
                 service_name=service_name,
@@ -331,12 +353,14 @@ def print_gcp_deployment_summary(
         project_id: Google Cloud project ID
         deployment_info: Cloud Run deployment information
     """
-    console.print("\n[bold green]🎉 Google Cloud Run Deployment completed successfully![/]")
-    
+    console.print(
+        "\n[bold green]🎉 Google Cloud Run Deployment completed successfully![/]"
+    )
+
     console.print(f"[cyan]Local Image: {image_name}:{image_tag}[/]")
     if gcp_image_url:
         console.print(f"[cyan]GCP Image: {gcp_image_url}[/]")
-    
+
     console.print(f"[cyan]Project: {project_id}[/]")
     console.print(f"[cyan]Region: {region}[/]")
     console.print(f"[cyan]Service: {service_name}[/]")
@@ -345,57 +369,56 @@ def print_gcp_deployment_summary(
         service_url = deployment_info.get("status", {}).get("url")
         if service_url:
             console.print(f"[bold yellow]📡 Service URL: {service_url}[/]")
-            console.print(f"[bold yellow]🔗 Console: https://console.cloud.google.com/run/detail/{region}/{service_name}/metrics?project={project_id}[/]")
+            console.print(
+                f"[bold yellow]🔗 Console: https://console.cloud.google.com/run/detail/{region}/{service_name}/metrics?project={project_id}[/]"
+            )
 
     console.print("\n[bold green]✅ Deployment ready for use![/]")
 
 
 def delete_gcp_service(
-    service_name: str,
-    region: str = "us-central1", 
-    project_id: Optional[str] = None
+    service_name: str, region: str = "us-central1", project_id: Optional[str] = None
 ) -> bool:
     """
     Delete a Google Cloud Run service.
-    
+
     Args:
         service_name: Name of the service to delete
         region: Google Cloud region
         project_id: Google Cloud project ID
-        
+
     Returns:
         bool: True if successful, False otherwise
     """
     from .google_cloud_run_api import delete_cloud_run_service
-    
+
     # Ensure authentication and project
     ensure_gcloud_auth()
     project_id = ensure_project_set(project_id)
-    
+
     # Sanitize service name
     service_name = sanitize_service_name(service_name)
-    
+
     return delete_cloud_run_service(service_name, region, project_id)
 
 
 def list_gcp_services(
-    region: str = "us-central1",
-    project_id: Optional[str] = None
+    region: str = "us-central1", project_id: Optional[str] = None
 ) -> list:
     """
     List Google Cloud Run services.
-    
+
     Args:
-        region: Google Cloud region  
+        region: Google Cloud region
         project_id: Google Cloud project ID
-        
+
     Returns:
         list: List of service information
     """
     from .google_cloud_run_api import list_cloud_run_services
-    
+
     # Ensure authentication and project
     ensure_gcloud_auth()
     project_id = ensure_project_set(project_id)
-    
+
     return list_cloud_run_services(region, project_id)

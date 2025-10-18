@@ -14,10 +14,12 @@ It performs the following steps:
 5. Verifies the indexing by retrieving the documents directly from ChromaDB
    and comparing the count.
 """
+
 import asyncio
-import chromadb
 from nodetool.agents.tools.chroma_tools import ChromaMarkdownSplitAndIndexTool
-from nodetool.integrations.vectorstores.chroma.async_chroma_client import get_async_chroma_client
+from nodetool.integrations.vectorstores.chroma.async_chroma_client import (
+    get_async_chroma_client,
+)
 from nodetool.workflows.processing_context import (
     ProcessingContext,
 )  # Assuming a basic context is needed
@@ -39,7 +41,6 @@ async def run_test():
         pass  # Collection doesn't exist, which is fine
     collection = await client.create_collection(name=collection_name)
     print(f"Created collection: {collection_name}")
-
 
     # 2. Initialize the Tool
     # Use a dummy workspace directory for the test
@@ -107,9 +108,7 @@ Testing how it handles multiple H1 headers.
         await asyncio.sleep(1)
 
         # Retrieve all documents from the collection for verification
-        retrieved_docs = await collection.get(
-            include=["metadatas", "documents"]
-        )
+        retrieved_docs = await collection.get(include=["metadatas", "documents"])
 
         print(
             f"\nRetrieved {len(retrieved_docs.get('ids', []))} documents from collection '{collection_name}':"

@@ -21,7 +21,7 @@ Usage:
 
 import os
 import asyncio
-from typing import Dict, Any, AsyncGenerator
+from typing import AsyncGenerator
 from huggingface_hub import (
     hf_hub_download,
     scan_cache_dir,
@@ -30,7 +30,6 @@ from huggingface_hub import (
 )
 from huggingface_hub.hf_api import RepoFile
 from nodetool.integrations.huggingface.huggingface_models import delete_cached_hf_model
-from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
 from nodetool.chat.ollama_service import get_ollama_client
 from nodetool.integrations.huggingface.huggingface_cache import filter_repo_paths

@@ -9,7 +9,7 @@ from typing import Optional
 from nodetool.integrations.vectorstores.chroma.async_chroma_client import (
     get_async_collection,
 )
-from nodetool.indexing.ingestion import default_ingestion_workflow, find_input_nodes
+from nodetool.indexing.ingestion import find_input_nodes
 from nodetool.metadata.types import Collection, FilePath
 from nodetool.types.job import JobUpdate
 from nodetool.workflows.processing_context import ProcessingContext

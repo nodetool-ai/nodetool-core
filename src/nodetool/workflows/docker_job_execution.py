@@ -85,7 +85,6 @@ class NodetoolDockerRunner(StreamRunnerBase):
 
         Overrides base class to add GPU device requests for VRAM control.
         """
-        import docker
 
         # Build device_requests for GPU allocation
         device_requests = None
@@ -349,7 +348,7 @@ class DockerJobExecution(JobExecution):
             # Only update if still in running state (container didn't send completion update)
             if self._status == "running":
                 log.warning(
-                    f"Container finished but status still 'running' - marking as completed"
+                    "Container finished but status still 'running' - marking as completed"
                 )
                 self._status = "completed"
                 if self._job_model:
@@ -458,6 +457,17 @@ class DockerJobExecution(JobExecution):
                     await asyncio.wait_for(self._execution_task, timeout=2.0)
                 except (asyncio.TimeoutError, asyncio.CancelledError):
                     log.debug("Execution task cancelled or timed out during cleanup")
+                except Exception as e:
+                    # Suppress any other exceptions from the task to prevent "never retrieved" errors
+                    log.debug(f"Execution task raised exception during cleanup: {e}")
+            elif self._execution_task and self._execution_task.done():
+                # Retrieve the exception from the completed task to prevent "never retrieved" errors
+                try:
+                    self._execution_task.exception()
+                except (asyncio.CancelledError, asyncio.InvalidStateError):
+                    pass
+                except Exception as e:
+                    log.debug(f"Retrieved exception from completed execution task: {e}")
 
             log.info(f"Cleaned up Docker job {self.job_id}")
 

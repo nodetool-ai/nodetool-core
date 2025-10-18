@@ -1,6 +1,4 @@
 import pytest
-import sys
-import os
 from tests.conftest import make_job
 from nodetool.models.job import Job
 

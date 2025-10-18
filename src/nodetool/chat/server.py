@@ -196,15 +196,15 @@ const decoder = new TextDecoder();
 while (true) {
     const { done, value } = await reader.read();
     if (done) break;
-    
+
     const chunk = decoder.decode(value);
     const lines = chunk.split('\n');
-    
+
     for (const line of lines) {
         if (line.startsWith('data: ')) {
             const data = line.slice(6);
             if (data === '[DONE]') break;
-            
+
             try {
                 const parsed = JSON.parse(data);
                 const content = parsed.choices[0]?.delta?.content;
@@ -303,13 +303,9 @@ curl http://localhost:8080/health
 import uvicorn
 import asyncio
 import platform
-from fastapi import FastAPI, Request, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi import FastAPI
 from nodetool.config.environment import Environment
-from nodetool.chat.chat_sse_runner import ChatSSERunner
 from rich.console import Console
-from nodetool.api.model import get_language_models
-import json
 
 from nodetool.types.workflow import Workflow
 
@@ -363,7 +359,7 @@ def create_chat_server(
     # Add graceful shutdown
     @app.on_event("startup")
     async def startup_event():
-        console.print(f"Chat server started successfully")
+        console.print("Chat server started successfully")
 
     @app.on_event("shutdown")
     async def shutdown_event():

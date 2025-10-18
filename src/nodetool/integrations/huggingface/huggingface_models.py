@@ -25,7 +25,6 @@ from pathlib import Path
 from nodetool.config.logging_config import get_logger
 from nodetool.metadata.types import (
     CLASSNAME_TO_MODEL_TYPE,
-    HFTextGeneration,
     HuggingFaceModel,
     LanguageModel,
     Provider,
@@ -72,7 +71,9 @@ async def unified_model(
     if model_info is None:
         return None
 
-    model_id = f"{model.repo_id}:{model.path}" if model.path is not None else model.repo_id
+    model_id = (
+        f"{model.repo_id}:{model.path}" if model.path is not None else model.repo_id
+    )
 
     # cache_path = try_to_load_from_cache(
     #     model.repo_id, model.path if model.path is not None else "config.json"
@@ -213,7 +214,8 @@ def model_type_from_model_info(
         and "_class_name" in model_info.config["diffusers"]
     ):
         return CLASSNAME_TO_MODEL_TYPE.get(
-            model_info.config["diffusers"]["_class_name"], None  # type: ignore[no-any-return]
+            model_info.config["diffusers"]["_class_name"],
+            None,  # type: ignore[no-any-return]
         )
     if model_info.pipeline_tag:
         name = model_info.pipeline_tag.replace("-", "_")
@@ -254,20 +256,24 @@ async def read_cached_hf_files(
         return []
 
     model_repos = [repo for repo in cache_info.repos if repo.repo_type == "model"]
-    log.debug(f"Scanning {len(model_repos)} HF repos for files with tags={tags}, any_tags={any_tags}")
+    log.debug(
+        f"Scanning {len(model_repos)} HF repos for files with tags={tags}, any_tags={any_tags}"
+    )
 
     cached_files = []
 
     try:
         model_infos = await asyncio.gather(
             *[fetch_model_info(repo.repo_id) for repo in model_repos],
-            return_exceptions=True  # Don't fail entire operation if one model fails
+            return_exceptions=True,  # Don't fail entire operation if one model fails
         )
 
         for repo, model_info in zip(model_repos, model_infos):
             # Handle exceptions from individual fetch_model_info calls
             if isinstance(model_info, Exception):
-                log.debug(f"Failed to fetch model info for {repo.repo_id}: {model_info}")
+                log.debug(
+                    f"Failed to fetch model info for {repo.repo_id}: {model_info}"
+                )
                 continue
 
             # Get cached files from all revisions
@@ -291,7 +297,9 @@ async def read_cached_hf_files(
 
         # Cache for 1 hour (3600 seconds) - even partial results
         _model_info_cache.set(cache_key, cached_files, ttl=3600)
-        log.debug(f"Cached {len(cached_files)} HF files with tags={tags}, any_tags={any_tags}")
+        log.debug(
+            f"Cached {len(cached_files)} HF files with tags={tags}, any_tags={any_tags}"
+        )
 
     except Exception as e:
         log.error(f"Error processing cached HF files: {e}", exc_info=True)
@@ -315,7 +323,9 @@ async def read_cached_hf_models() -> List[UnifiedModel]:
     log.info(f"🔍 TRACE: Checking cache for key: {cache_key}")
     cached_result = _model_info_cache.get(cache_key)
     if cached_result is not None:
-        log.info(f"✓ CACHE HIT: Returning {len(cached_result)} cached HF models (skipping scan)")
+        log.info(
+            f"✓ CACHE HIT: Returning {len(cached_result)} cached HF models (skipping scan)"
+        )
         return cached_result
 
     log.info("✗ CACHE MISS: Scanning HF cache directory for models")
@@ -337,13 +347,15 @@ async def read_cached_hf_models() -> List[UnifiedModel]:
     try:
         model_infos = await asyncio.gather(
             *[fetch_model_info(repo.repo_id) for repo in model_repos],
-            return_exceptions=True  # Don't fail entire operation if one model fails
+            return_exceptions=True,  # Don't fail entire operation if one model fails
         )
 
         for repo, model_info in zip(model_repos, model_infos):
             # Handle exceptions from individual fetch_model_info calls
             if isinstance(model_info, Exception):
-                log.debug(f"Failed to fetch model info for {repo.repo_id}: {model_info}")
+                log.debug(
+                    f"Failed to fetch model info for {repo.repo_id}: {model_info}"
+                )
                 # Still create a basic model entry without the extra metadata
                 model_info = None
 
@@ -362,7 +374,9 @@ async def read_cached_hf_models() -> List[UnifiedModel]:
                     downloaded=repo.repo_path is not None,
                     pipeline_tag=model_info.pipeline_tag if model_info else None,
                     tags=model_info.tags if model_info else None,
-                    has_model_index=has_model_index(model_info) if model_info else False,
+                    has_model_index=has_model_index(model_info)
+                    if model_info
+                    else False,
                     repo_id=repo.repo_id,
                     path=None,
                     size_on_disk=repo.size_on_disk,
@@ -373,7 +387,9 @@ async def read_cached_hf_models() -> List[UnifiedModel]:
             )
 
         # Cache for 1 hour (3600 seconds) - even partial results
-        log.info(f"💾 Attempting to cache {len(models)} HF models with key: {cache_key}")
+        log.info(
+            f"💾 Attempting to cache {len(models)} HF models with key: {cache_key}"
+        )
         _model_info_cache.set(cache_key, models, ttl=3600)
         log.info(f"✓ Successfully cached {len(models)} HF models (TTL: 1 hour)")
 
@@ -636,6 +652,11 @@ def delete_cached_hf_model(model_id: str) -> bool:
         if repo.repo_type == "model" and repo.repo_id == model_id:
             if os.path.exists(repo.repo_path):
                 shutil.rmtree(repo.repo_path)
+
+                # Purge all HuggingFace caches after successful deletion
+                log.info("Purging HuggingFace model caches after model deletion")
+                _model_info_cache.delete_pattern("cached_hf_*")
+
                 return True
     return False
 

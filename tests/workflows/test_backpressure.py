@@ -7,7 +7,6 @@ import pytest
 
 from nodetool.workflows.inbox import NodeInbox
 from nodetool.workflows.workflow_runner import WorkflowRunner
-from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.types.graph import Graph as APIGraph, Node as APINode, Edge as APIEdge
 from nodetool.workflows.graph import Graph

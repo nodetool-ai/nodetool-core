@@ -4,7 +4,6 @@ from concurrent.futures import Future
 import threading
 from typing import Callable, Coroutine, Any, Optional, TypeVar
 from nodetool.config.logging_config import get_logger
-from nodetool.config.environment import Environment
 
 
 T = TypeVar("T")

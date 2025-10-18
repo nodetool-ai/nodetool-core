@@ -4,7 +4,6 @@ For simpler test examples, see graph_planner_simple_tests.py
 """
 
 import asyncio
-from io import StringIO
 import tempfile
 from typing import Any
 
@@ -20,7 +19,6 @@ from nodetool.workflows.types import Chunk, PlanningUpdate
 # Set up logging
 from nodetool.config.logging_config import get_logger
 
-import pandas as pd
 
 logger = get_logger(__name__)
 
@@ -69,7 +67,7 @@ async def create_and_execute_workflow(
         params=inputs,
     )
 
-    logger.info(f"Executing workflow")
+    logger.info("Executing workflow")
     async for msg in run_workflow(req, context=context, use_thread=False):
         logger.info(f"Workflow message: {msg}")
 
@@ -106,7 +104,7 @@ async def example_data_processing_workflow():
         Create a workflow to analyze the sales data:
         - Read the sales data from the CSV input
         - Calculate the total sales by region
-        - Output a structured report 
+        - Output a structured report
         """
 
         try:

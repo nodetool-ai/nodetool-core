@@ -9,7 +9,6 @@ Or directly with: python -m nodetool.api.run_mcp_server
 """
 
 import sys
-import os
 from pathlib import Path
 
 # Add parent directory to path for imports
@@ -24,7 +23,9 @@ log = get_logger(__name__)
 
 if __name__ == "__main__":
     log.info("Starting NodeTool FastMCP Server...")
-    log.info("Available tools: list_workflows, get_workflow, run_workflow_tool, list_nodes, search_nodes, get_node_info")
+    log.info(
+        "Available tools: list_workflows, get_workflow, run_workflow_tool, list_nodes, search_nodes, get_node_info"
+    )
     log.info("Available resources: nodetool://workflows, nodetool://nodes/{namespace}")
 
     # Run the MCP server

@@ -109,13 +109,12 @@ Performance Optimizations:
 - Regional deployment options
 """
 
-import json
 import pytest
 from typing import Any, Dict, List
 from unittest.mock import AsyncMock, patch, MagicMock
 
 from nodetool.providers.gemini_provider import GeminiProvider
-from nodetool.metadata.types import Message, MessageTextContent, ToolCall
+from nodetool.metadata.types import Message, MessageTextContent
 from tests.chat.providers.test_base_provider import BaseProviderTest, ResponseFixtures
 
 # Import for mocking - conditionally handle missing dependency
@@ -234,13 +233,13 @@ class TestGeminiProvider(BaseProviderTest):
         """Mock Gemini API call with structured response."""
         if "tool_calls" in response_data:
             # Function calling response
-            gemini_response = self.create_gemini_response(
+            self.create_gemini_response(
                 content=str(response_data.get("text")),
                 function_calls=response_data["tool_calls"],
             )
         else:
             # Regular text response
-            gemini_response = self.create_gemini_response(
+            self.create_gemini_response(
                 content=response_data.get("text", "Hello, world!")
             )
 

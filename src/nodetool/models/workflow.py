@@ -3,7 +3,6 @@ from typing import Any, Optional
 from nodetool.models.condition_builder import (
     ConditionBuilder,
     ConditionGroup,
-    Condition,
     Field,
     LogicalOperator,
 )

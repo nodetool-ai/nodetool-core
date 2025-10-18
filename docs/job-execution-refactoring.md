@@ -2,7 +2,8 @@
 
 ## Summary
 
-The `JobExecution` abstraction has been refactored to properly support multiple execution strategies (threaded, subprocess, Docker) without coupling the base class to the in-process `WorkflowRunner`.
+The `JobExecution` abstraction has been refactored to properly support multiple execution strategies (threaded,
+subprocess, Docker) without coupling the base class to the in-process `WorkflowRunner`.
 
 ## Changes Made
 
@@ -165,9 +166,9 @@ async def start_job(
 The abstraction now cleanly supports subprocess execution:
 
 1. **Status Management:** Subprocess can update `_status` based on `process.poll()` without needing a runner
-2. **Cancellation:** Can implement `cancel()` by sending SIGTERM and updating `_status`
-3. **Recovery:** Can store `pid` in `Job.params` and reattach via `os.kill(pid, 0)` check
-4. **Streaming:** Can use stdout/stderr pipes similar to `StreamRunnerBase` pattern
+1. **Cancellation:** Can implement `cancel()` by sending SIGTERM and updating `_status`
+1. **Recovery:** Can store `pid` in `Job.params` and reattach via `os.kill(pid, 0)` check
+1. **Streaming:** Can use stdout/stderr pipes similar to `StreamRunnerBase` pattern
 
 Example implementation outline:
 
@@ -194,9 +195,9 @@ class SubprocessJobExecution(JobExecution):
 The abstraction supports Docker containers similarly:
 
 1. **Status Management:** Poll container status via `docker_client.containers.get(container_id).status`
-2. **Cancellation:** Stop container via `container.stop()` and update `_status`
-3. **Recovery:** Store `container_id` in `Job.params` for reconnection
-4. **Streaming:** Use container logs API or attach similar to existing `StreamRunnerBase._docker_run`
+1. **Cancellation:** Stop container via `container.stop()` and update `_status`
+1. **Recovery:** Store `container_id` in `Job.params` for reconnection
+1. **Streaming:** Use container logs API or attach similar to existing `StreamRunnerBase._docker_run`
 
 Example implementation outline:
 
@@ -232,18 +233,18 @@ class DockerJobExecution(JobExecution):
 To implement subprocess or Docker execution:
 
 1. **Choose strategy** (subprocess recommended first for simplicity)
-2. **Create entrypoint script** that:
+1. **Create entrypoint script** that:
    - Accepts `RunJobRequest` as JSON via stdin or file
    - Creates `WorkflowRunner` and `ProcessingContext`
    - Runs workflow via `runner.run(request, context)`
    - Emits messages as JSON lines to stdout (JobUpdate, NodeProgress, etc.)
-3. **Implement `create_and_start` factory** similar to `ThreadedJobExecution.create_and_start`:
+1. **Implement `create_and_start` factory** similar to `ThreadedJobExecution.create_and_start`:
    - Spawn subprocess with entrypoint
    - Create job in database
    - Start background thread to read stdout and bridge messages to `ProcessingContext`
    - Return `SubprocessJobExecution` instance
-4. **Handle cancellation** via SIGTERM
-5. **Handle recovery** by storing `pid` in `Job.params` and checking `os.kill(pid, 0)`
+1. **Handle cancellation** via SIGTERM
+1. **Handle recovery** by storing `pid` in `Job.params` and checking `os.kill(pid, 0)`
 
 ### Example Entrypoint Script
 

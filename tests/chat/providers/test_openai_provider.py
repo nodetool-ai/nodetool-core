@@ -50,7 +50,7 @@ Error Handling:
 import json
 import pytest
 from typing import Any, Dict, List
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import patch, MagicMock
 
 import openai
 import openai.resources
@@ -71,7 +71,7 @@ from openai.types.chat.chat_completion_message_tool_call import (
 from openai.types.completion_usage import CompletionUsage
 
 from nodetool.providers.openai_provider import OpenAIProvider
-from nodetool.metadata.types import Message, MessageTextContent, ToolCall
+from nodetool.metadata.types import ToolCall
 from tests.chat.providers.test_base_provider import BaseProviderTest, ResponseFixtures
 
 
@@ -266,7 +266,7 @@ class TestOpenAIProvider(BaseProviderTest):
         with self.mock_api_call(
             ResponseFixtures.simple_text_response("OpenAI response")
         ) as mock_call:
-            response = await provider.generate_message(
+            await provider.generate_message(
                 messages,
                 "gpt-3.5-turbo",
                 temperature=0.7,
@@ -370,7 +370,7 @@ class TestOpenAIProvider(BaseProviderTest):
         with self.mock_api_call(
             ResponseFixtures.simple_text_response('{"result": "success"}')
         ) as mock_call:
-            response = await provider.generate_message(
+            await provider.generate_message(
                 messages, "gpt-3.5-turbo", response_format=response_format
             )
 
@@ -393,11 +393,6 @@ class TestOpenAIProvider(BaseProviderTest):
         tools = [self.create_mock_tool()]
 
         # Create streaming response with tool calls
-        tool_chunks = [
-            {"content": "", "tool_call_delta": {"id": "call_123", "name": "mock_tool"}},
-            {"content": "", "tool_call_delta": {"arguments": '{"query": "'}},
-            {"content": "", "tool_call_delta": {"arguments": 'test"}'}},
-        ]
 
         # Note: This is a simplified version - actual OpenAI streaming tool calls are more complex
         with patch.object(

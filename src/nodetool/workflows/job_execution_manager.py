@@ -117,7 +117,10 @@ class JobExecutionManager:
             # Remove job from registry and cleanup its resources
             stored_job = self._jobs.pop(job_id, None)
             if stored_job:
-                stored_job.cleanup_resources()
+                cleanup_result = stored_job.cleanup_resources()
+                # Handle both sync and async cleanup_resources methods
+                if asyncio.iscoroutine(cleanup_result):
+                    await cleanup_result
 
     def list_jobs(self, user_id: Optional[str] = None) -> list[JobExecution]:
         """
@@ -165,7 +168,10 @@ class JobExecutionManager:
 
         for job_id in jobs_to_remove:
             job = self._jobs.pop(job_id)
-            job.cleanup_resources()
+            cleanup_result = job.cleanup_resources()
+            # Handle both sync and async cleanup_resources methods
+            if asyncio.iscoroutine(cleanup_result):
+                await cleanup_result
             log.info(f"Cleaned up completed job {job_id}")
 
     async def start_cleanup_task(self, interval_seconds: int = 300):
@@ -206,8 +212,14 @@ class JobExecutionManager:
         # Cancel and cleanup all jobs
         for job_id, job in list(self._jobs.items()):
             if not job.is_completed():
-                job.cancel()
-            job.cleanup_resources()
+                cancel_result = job.cancel()
+                # Handle both sync and async cancel methods
+                if asyncio.iscoroutine(cancel_result):
+                    await cancel_result
+            cleanup_result = job.cleanup_resources()
+            # Handle both sync and async cleanup_resources methods
+            if asyncio.iscoroutine(cleanup_result):
+                await cleanup_result
 
         self._jobs.clear()
         log.info("JobExecutionManager shutdown complete")

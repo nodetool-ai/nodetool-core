@@ -2,7 +2,6 @@
 
 from typing import List
 from nodetool.chat.chat_cli import ChatCLI
-from rich.prompt import Confirm
 from .base import Command
 
 

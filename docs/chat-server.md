@@ -1,10 +1,12 @@
 # NodeTool Chat Server
 
-The NodeTool CLI now includes a `chat-server` command that allows you to run standalone chat servers using either WebSocket or Server-Sent Events (SSE) protocols.
+The NodeTool CLI now includes a `chat-server` command that allows you to run standalone chat servers using either
+WebSocket or Server-Sent Events (SSE) protocols.
 
 ## Quick Start
 
 ### WebSocket Server
+
 ```bash
 # Start WebSocket server on default port 8080
 nodetool chat-server
@@ -14,6 +16,7 @@ nodetool chat-server --port 3000 --protocol websocket
 ```
 
 ### SSE Server
+
 ```bash
 # Start SSE server on port 8080
 nodetool chat-server --protocol sse
@@ -23,12 +26,14 @@ nodetool chat-server --port 3000 --protocol sse
 ```
 
 ### With Authentication
+
 ```bash
 # Enable remote authentication (requires Supabase configuration)
 nodetool chat-server --remote-auth
 ```
 
 ### Database-Free Mode
+
 ```bash
 # Run WebSocket server without database (uses in-memory storage)
 nodetool chat-server --no-database
@@ -44,10 +49,11 @@ nodetool chat-server --protocol sse --no-database
 Connect to: `ws://127.0.0.1:8080/chat`
 
 Send messages in this format:
+
 ```json
 {
   "thread_id": "thread_123",
-  "role": "user", 
+  "role": "user",
   "content": "Hello, world!",
   "model": "gpt-4",
   "provider": "openai",
@@ -56,6 +62,7 @@ Send messages in this format:
 ```
 
 Authentication via query parameter:
+
 ```
 ws://127.0.0.1:8080/chat?token=YOUR_AUTH_TOKEN
 ```
@@ -65,11 +72,12 @@ ws://127.0.0.1:8080/chat?token=YOUR_AUTH_TOKEN
 Send POST requests to: `http://127.0.0.1:8080/chat/sse`
 
 Request format:
+
 ```json
 {
   "thread_id": "thread_456",
   "role": "user",
-  "content": "Hello via SSE!", 
+  "content": "Hello via SSE!",
   "model": "gpt-4",
   "provider": "openai"
 }
@@ -93,7 +101,7 @@ When using `--no-database`, include the full conversation history in the request
       "thread_id": "thread_456"
     },
     {
-      "role": "assistant", 
+      "role": "assistant",
       "content": "Hi there! How can I help you today?",
       "thread_id": "thread_456"
     }
@@ -102,6 +110,7 @@ When using `--no-database`, include the full conversation history in the request
 ```
 
 Headers:
+
 ```
 Content-Type: application/json
 Accept: text/event-stream
@@ -109,6 +118,7 @@ Authorization: Bearer YOUR_AUTH_TOKEN
 ```
 
 Response format (SSE):
+
 ```
 data: {"type": "content", "content": "Response text"}
 
@@ -121,17 +131,17 @@ data: {"type": "end"}
 
 ## Protocol Comparison
 
-| Feature | WebSocket | SSE |
-|---------|-----------|-----|
-| **Direction** | Bidirectional | Server-to-client only |
-| **Connection** | Persistent | Request-response with streaming |
-| **Protocol** | `ws://` | `http://` |
-| **Message Format** | JSON or MessagePack | JSON over SSE |
-| **Authentication** | Query param or header | Authorization header |
-| **Browser Support** | Requires WebSocket API | Uses standard EventSource API |
-| **Firewall Friendly** | Sometimes blocked | HTTP-based, rarely blocked |
-| **Database Mode** | Persistent or in-memory per thread | Persistent or history in request |
-| **Use Case** | Real-time chat apps | Web dashboards, notifications |
+| Feature               | WebSocket                          | SSE                              |
+| --------------------- | ---------------------------------- | -------------------------------- |
+| **Direction**         | Bidirectional                      | Server-to-client only            |
+| **Connection**        | Persistent                         | Request-response with streaming  |
+| **Protocol**          | `ws://`                            | `http://`                        |
+| **Message Format**    | JSON or MessagePack                | JSON over SSE                    |
+| **Authentication**    | Query param or header              | Authorization header             |
+| **Browser Support**   | Requires WebSocket API             | Uses standard EventSource API    |
+| **Firewall Friendly** | Sometimes blocked                  | HTTP-based, rarely blocked       |
+| **Database Mode**     | Persistent or in-memory per thread | Persistent or history in request |
+| **Use Case**          | Real-time chat apps                | Web dashboards, notifications    |
 
 ## Health Check
 
@@ -142,10 +152,11 @@ curl http://127.0.0.1:8080/health
 ```
 
 Response:
+
 ```json
 {
   "status": "healthy",
-  "protocol": "websocket" 
+  "protocol": "websocket"
 }
 ```
 
@@ -172,11 +183,13 @@ python examples/chat_server_examples.py
 ### Authentication Modes
 
 **Local Mode (default):**
+
 - No authentication required
 - Uses `user_id = "1"` for all requests
 - Suitable for development and testing
 
 **Remote Mode (`--remote-auth`):**
+
 - Requires valid Supabase JWT tokens
 - Validates tokens against Supabase auth
 - Suitable for production deployments
@@ -184,11 +197,13 @@ python examples/chat_server_examples.py
 ### Storage Modes
 
 **Database Mode (default):**
+
 - Messages are persisted to database
 - Chat history is maintained automatically
 - Suitable for multi-session conversations
 
 **Database-Free Mode (`--no-database`):**
+
 - WebSocket: Messages stored in-memory per thread_id (lost on disconnect)
 - SSE: Full chat history must be included in each request
 - Suitable for stateless deployments or testing
@@ -196,6 +211,7 @@ python examples/chat_server_examples.py
 ## Integration Examples
 
 ### JavaScript WebSocket Client
+
 ```javascript
 const ws = new WebSocket('ws://localhost:8080/chat?token=AUTH_TOKEN');
 
@@ -216,6 +232,7 @@ ws.onmessage = (event) => {
 ```
 
 ### JavaScript SSE Client
+
 ```javascript
 const response = await fetch('http://localhost:8080/chat/sse', {
   method: 'POST',
@@ -227,7 +244,7 @@ const response = await fetch('http://localhost:8080/chat/sse', {
     thread_id: 'thread_456',
     role: 'user',
     content: 'Hello from SSE!',
-    model: 'gpt-4', 
+    model: 'gpt-4',
     provider: 'openai'
   })
 });
@@ -238,23 +255,27 @@ const decoder = new TextDecoder();
 while (true) {
   const { done, value } = await reader.read();
   if (done) break;
-  
+
   const chunk = decoder.decode(value);
   console.log('SSE chunk:', chunk);
 }
 ```
 
 ### Python Client Examples
-See [`examples/chat_server_examples.py`](../examples/chat_server_examples.py) for complete WebSocket and SSE client implementations.
+
+See [`examples/chat_server_examples.py`](../examples/chat_server_examples.py) for complete WebSocket and SSE client
+implementations.
 
 ## Error Handling
 
 ### WebSocket Errors
+
 - Connection errors are logged to console
 - Authentication failures close connection with code 1008
 - Runtime errors send error messages to client
 
-### SSE Errors  
+### SSE Errors
+
 - HTTP 401 for authentication failures
 - HTTP 500 for server errors
 - Error events in SSE stream for runtime errors
@@ -268,7 +289,8 @@ See [`examples/chat_server_examples.py`](../examples/chat_server_examples.py) fo
 
 ## Deployment
 
-The chat server can be deployed standalone or integrated into existing FastAPI applications by importing the runner classes directly:
+The chat server can be deployed standalone or integrated into existing FastAPI applications by importing the runner
+classes directly:
 
 ```python
 from nodetool.chat.chat_websocket_runner import ChatWebSocketRunner

@@ -7,7 +7,7 @@ import asyncio
 from fastapi import FastAPI, Request
 from fastapi.responses import StreamingResponse
 from fastapi.testclient import TestClient
-from unittest.mock import patch, AsyncMock, Mock
+from unittest.mock import patch
 
 from nodetool.chat.chat_sse_runner import ChatSSERunner
 from nodetool.config.environment import Environment

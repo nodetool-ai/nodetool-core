@@ -146,7 +146,9 @@ class EditWorkflowCommand(Command):
                         status_color = (
                             "green"
                             if update.status == "Success"
-                            else "yellow" if update.status == "Starting" else "red"
+                            else "yellow"
+                            if update.status == "Starting"
+                            else "red"
                         )
                         cli.console.print(
                             f"[bold {status_color}]{update.phase}:[/bold {status_color}] {update.status}"
@@ -194,13 +196,14 @@ class EditWorkflowCommand(Command):
             print_visual_graph(planner.graph)
 
             # Get updated workflow name and description
-            workflow_name_updated, workflow_description_updated = (
-                await self._get_workflow_name_and_description(
-                    cli,
-                    objective,
-                    found_workflow.name,
-                    found_workflow.description or "",
-                )
+            (
+                workflow_name_updated,
+                workflow_description_updated,
+            ) = await self._get_workflow_name_and_description(
+                cli,
+                objective,
+                found_workflow.name,
+                found_workflow.description or "",
             )
 
             # Update the existing workflow

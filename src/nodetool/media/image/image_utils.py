@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from io import BytesIO
-from typing import Any
 
 import numpy as np
 import PIL.Image
@@ -155,9 +154,6 @@ def image_ref_to_base64_jpeg(
     Raises:
         ValueError: If the ImageRef cannot be processed
     """
-    import base64
-    import urllib.parse
-    from nodetool.config.environment import Environment
     from nodetool.io.media_fetch import fetch_uri_bytes_and_mime_sync
 
     # Handle direct data

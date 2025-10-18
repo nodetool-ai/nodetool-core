@@ -5,8 +5,6 @@ Tests for JPEG/base64 image utility functions.
 import base64
 from io import BytesIO
 
-import numpy as np
-import pytest
 from PIL import Image
 
 from nodetool.media.image.image_utils import (
@@ -143,5 +141,3 @@ class TestPilImageToBase64Jpeg:
 
         # High quality should produce larger base64 string (generally)
         assert len(result_high) >= len(result_low)
-
-

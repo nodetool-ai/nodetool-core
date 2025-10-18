@@ -5,13 +5,13 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 
 PARAM_CASES = [
     ("", "Hello, "),
     (json.dumps({"text": "World!"}), "Hello, World!"),
 ]
-
-import pytest
 
 
 # Mark subprocess/CLI tests to run sequentially to avoid conflicts

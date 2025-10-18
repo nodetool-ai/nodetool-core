@@ -3,7 +3,7 @@ Test fixtures and utilities for chat runner tests
 """
 
 import pytest
-from unittest.mock import Mock, AsyncMock, MagicMock
+from unittest.mock import Mock, AsyncMock
 from typing import List, Dict, Any, Optional
 import asyncio
 
@@ -15,13 +15,13 @@ from nodetool.agents.tools.base import Tool
 
 class MockTool(Tool):
     """Mock tool for testing"""
-    
+
     def __init__(self, name: str = "mock_tool"):
         self.name = name
         self.description = f"Mock tool {name}"
         self.call_count = 0
         self.last_args = None
-        
+
     async def execute(self, **kwargs):
         self.call_count += 1
         self.last_args = kwargs
@@ -30,29 +30,33 @@ class MockTool(Tool):
 
 class MockMessageProcessor:
     """Mock message processor for testing"""
-    
+
     def __init__(self):
         self.messages = []
         self.is_processing = False
         self._message_queue = asyncio.Queue()
-        
+
     def has_messages(self):
         return not self._message_queue.empty() or self.is_processing
-        
+
     async def get_message(self):
         try:
             return await asyncio.wait_for(self._message_queue.get(), timeout=0.1)
         except asyncio.TimeoutError:
             return None
-            
+
     async def process(self, chat_history, processing_context, tools, **kwargs):
         self.is_processing = True
         # Simulate processing
-        await self._message_queue.put({"type": "start", "message": "Processing started"})
+        await self._message_queue.put(
+            {"type": "start", "message": "Processing started"}
+        )
         await asyncio.sleep(0.01)
         await self._message_queue.put({"type": "content", "content": "Test response"})
         await asyncio.sleep(0.01)
-        await self._message_queue.put({"type": "message", "role": "assistant", "content": "Final response"})
+        await self._message_queue.put(
+            {"type": "message", "role": "assistant", "content": "Final response"}
+        )
         self.is_processing = False
 
 
@@ -62,7 +66,7 @@ def create_mock_db_message(
     user_id: str = "user_123",
     role: str = "user",
     content: str = "Test message",
-    **kwargs
+    **kwargs,
 ) -> Mock:
     """Create a mock database message"""
     message = Mock(spec=DBMessage)
@@ -93,7 +97,7 @@ def create_api_message(
     role: str = "user",
     content: str = "Test message",
     thread_id: str = "thread_123",
-    **kwargs
+    **kwargs,
 ) -> ApiMessage:
     """Create an API message for testing"""
     return ApiMessage(
@@ -119,10 +123,7 @@ def create_api_message(
     )
 
 
-def create_mock_thread(
-    id: str = "thread_123",
-    user_id: str = "user_123"
-) -> Mock:
+def create_mock_thread(id: str = "thread_123", user_id: str = "user_123") -> Mock:
     """Create a mock thread"""
     thread = Mock(spec=Thread)
     thread.id = id
@@ -132,7 +133,7 @@ def create_mock_thread(
 
 class MockWebSocket:
     """Mock WebSocket for testing"""
-    
+
     def __init__(self):
         self.accepted = False
         self.closed = False
@@ -140,24 +141,24 @@ class MockWebSocket:
         self.close_reason = None
         self.sent_messages = []
         self.receive_queue = asyncio.Queue()
-        
+
     async def accept(self):
         self.accepted = True
-        
+
     async def close(self, code: int = 1000, reason: str = ""):
         self.closed = True
         self.close_code = code
         self.close_reason = reason
-        
+
     async def send_bytes(self, data: bytes):
         self.sent_messages.append(("bytes", data))
-        
+
     async def send_text(self, data: str):
         self.sent_messages.append(("text", data))
-        
+
     async def receive(self):
         return await self.receive_queue.get()
-        
+
     def add_message(self, message: dict):
         """Add a message to be received"""
         self.receive_queue.put_nowait(message)
@@ -165,49 +166,46 @@ class MockWebSocket:
 
 class ChatHistoryBuilder:
     """Helper class to build chat histories for testing"""
-    
+
     def __init__(self):
         self.messages: List[ApiMessage] = []
-        
-    def add_user_message(self, content: str, **kwargs) -> 'ChatHistoryBuilder':
-        self.messages.append(create_api_message(
-            role="user",
-            content=content,
-            **kwargs
-        ))
+
+    def add_user_message(self, content: str, **kwargs) -> "ChatHistoryBuilder":
+        self.messages.append(create_api_message(role="user", content=content, **kwargs))
         return self
-        
-    def add_assistant_message(self, content: str, **kwargs) -> 'ChatHistoryBuilder':
-        self.messages.append(create_api_message(
-            role="assistant", 
-            content=content,
-            **kwargs
-        ))
+
+    def add_assistant_message(self, content: str, **kwargs) -> "ChatHistoryBuilder":
+        self.messages.append(
+            create_api_message(role="assistant", content=content, **kwargs)
+        )
         return self
-        
-    def add_tool_call(self, tool_name: str, args: dict, call_id: str = "call_123") -> 'ChatHistoryBuilder':
-        self.messages.append(create_api_message(
-            role="assistant",
-            content="",
-            tool_calls=[{
-                "id": call_id,
-                "type": "function",
-                "function": {
-                    "name": tool_name,
-                    "arguments": args
-                }
-            }]
-        ))
+
+    def add_tool_call(
+        self, tool_name: str, args: dict, call_id: str = "call_123"
+    ) -> "ChatHistoryBuilder":
+        self.messages.append(
+            create_api_message(
+                role="assistant",
+                content="",
+                tool_calls=[
+                    {
+                        "id": call_id,
+                        "type": "function",
+                        "function": {"name": tool_name, "arguments": args},
+                    }
+                ],
+            )
+        )
         return self
-        
-    def add_tool_result(self, result: str, call_id: str = "call_123") -> 'ChatHistoryBuilder':
-        self.messages.append(create_api_message(
-            role="tool",
-            content=result,
-            tool_call_id=call_id
-        ))
+
+    def add_tool_result(
+        self, result: str, call_id: str = "call_123"
+    ) -> "ChatHistoryBuilder":
+        self.messages.append(
+            create_api_message(role="tool", content=result, tool_call_id=call_id)
+        )
         return self
-        
+
     def build(self) -> List[ApiMessage]:
         return self.messages
 
@@ -248,35 +246,44 @@ def mock_supabase_client():
 
 # Helper functions for common test scenarios
 
-async def simulate_chat_interaction(runner, messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+
+async def simulate_chat_interaction(
+    runner, messages: List[Dict[str, Any]]
+) -> List[Dict[str, Any]]:
     """
     Simulate a chat interaction and collect responses
-    
+
     Args:
         runner: The chat runner instance
         messages: List of message dictionaries to send
-        
+
     Returns:
         List of response messages
     """
     responses = []
-    
+
     for message in messages:
         # Handle the message
         await runner.handle_message(message)
-        
+
         # Collect any sent messages
-        if hasattr(runner, 'sent_messages'):
+        if hasattr(runner, "sent_messages"):
             responses.extend(runner.sent_messages)
             runner.sent_messages.clear()
-            
+
     return responses
 
 
-def assert_message_contains(message: dict, expected_type: str, expected_content: Optional[str] = None):
+def assert_message_contains(
+    message: dict, expected_type: str, expected_content: Optional[str] = None
+):
     """Assert that a message has expected type and optionally content"""
-    assert message.get("type") == expected_type, f"Expected type {expected_type}, got {message.get('type')}"
-    
+    assert (
+        message.get("type") == expected_type
+    ), f"Expected type {expected_type}, got {message.get('type')}"
+
     if expected_content is not None:
         content = message.get("content") or message.get("message", "")
-        assert expected_content in content, f"Expected '{expected_content}' in '{content}'"
+        assert (
+            expected_content in content
+        ), f"Expected '{expected_content}' in '{content}'"

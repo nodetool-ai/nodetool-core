@@ -87,7 +87,7 @@ def _fetch_file_uri(uri: str) -> Tuple[str, bytes]:
     try:
         with open(p, "rb") as f:  # type: ignore[arg-type]
             data = f.read()
-    except Exception as e:
+    except Exception:
         # Surface as FileNotFoundError or underlying IO error
         raise
     mime_type, _ = mimetypes.guess_type(uri)

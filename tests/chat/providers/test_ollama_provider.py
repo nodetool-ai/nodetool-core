@@ -92,16 +92,13 @@ Error Handling:
 - Connection errors: Server not running
 """
 
-import json
 import pytest
 from typing import Any, Dict, List
 from unittest.mock import AsyncMock, patch, MagicMock
 import httpx
-import types
 import ollama
 
 from nodetool.providers.ollama_provider import OllamaProvider
-from nodetool.metadata.types import Message, MessageTextContent, ToolCall
 from tests.chat.providers.test_base_provider import BaseProviderTest, ResponseFixtures
 
 
@@ -205,7 +202,7 @@ class TestOllamaProvider(BaseProviderTest):
     def mock_streaming_call(self, chunks: List[Dict[str, Any]]) -> MagicMock:
         """Mock Ollama streaming API call."""
         text = "".join(chunk.get("content", "") for chunk in chunks)
-        ollama_chunks = self.create_ollama_streaming_responses(text)
+        self.create_ollama_streaming_responses(text)
 
         class _Message:
             def __init__(self, content: str):

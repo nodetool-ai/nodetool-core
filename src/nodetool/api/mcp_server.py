@@ -48,10 +48,8 @@ from nodetool.integrations.vectorstores.chroma.async_chroma_client import (
 )
 from nodetool.integrations.huggingface.huggingface_models import read_cached_hf_models
 from huggingface_hub.constants import HF_HUB_CACHE
-from nodetool.indexing.ingestion import find_input_nodes
 from nodetool.models.thread import Thread
 from nodetool.models.message import Message as DBMessage
-from nodetool.metadata.types import Message as ApiMessage
 from nodetool.providers import get_provider
 from io import BytesIO
 import base64
@@ -83,6 +81,46 @@ class NodeSearchParams(BaseModel):
     namespace: Optional[str] = Field(
         None, description="Optional namespace to filter nodes"
     )
+
+
+def _asset_to_dict(asset: AssetModel) -> dict[str, Any]:
+    """
+    Convert an Asset model to a dictionary for MCP responses.
+
+    Args:
+        asset: The AssetModel instance to convert
+
+    Returns:
+        Dictionary with asset information including URLs
+    """
+    storage = Environment.get_asset_storage()
+
+    # Generate URLs for non-folder assets
+    if asset.content_type != "folder":
+        get_url = storage.get_url(asset.file_name)
+    else:
+        get_url = None
+
+    # Generate thumbnail URL if applicable
+    if asset.has_thumbnail:
+        thumb_url = storage.get_url(asset.thumb_file_name)
+    else:
+        thumb_url = None
+
+    return {
+        "id": asset.id,
+        "user_id": asset.user_id,
+        "workflow_id": asset.workflow_id,
+        "parent_id": asset.parent_id,
+        "name": asset.name,
+        "content_type": asset.content_type,
+        "size": asset.size,
+        "metadata": asset.metadata,
+        "created_at": asset.created_at.isoformat(),
+        "get_url": get_url,
+        "thumb_url": thumb_url,
+        "duration": asset.duration,
+    }
 
 
 @mcp.tool()
@@ -355,87 +393,6 @@ async def get_node_info(node_type: str) -> dict[str, Any]:
     # Generate metadata from the node class
     metadata = node_class.get_metadata()
     return metadata.model_dump()
-
-
-@mcp.tool()
-async def save_workflow(
-    workflow_id: str,
-    name: str,
-    graph: dict[str, Any],
-    description: str = "",
-    tags: list[str] | None = None,
-    access: str = "private",
-    run_mode: str | None = None,
-) -> dict[str, Any]:
-    """
-    Save or update a workflow.
-
-    Args:
-        workflow_id: The ID of the workflow to save (creates new if doesn't exist)
-        name: Workflow name
-        graph: Workflow graph structure with nodes and edges
-        description: Workflow description
-        tags: List of tags for categorization
-        access: Access level ("private" or "public")
-        run_mode: Run mode ("workflow" or "tool")
-
-    Returns:
-        Saved workflow details
-    """
-    from nodetool.types.graph import remove_connected_slots
-    from datetime import datetime
-
-    # Try to get existing workflow
-    workflow = await WorkflowModel.get(workflow_id)
-
-    if not workflow:
-        # Create new workflow
-        workflow = WorkflowModel(
-            id=workflow_id,
-            user_id="1",  # Default user for MCP
-            name=name,
-            description=description,
-            tags=tags or [],
-            access=access,
-            run_mode=run_mode,
-            created_at=datetime.now(),
-            updated_at=datetime.now(),
-        )
-    else:
-        # Update existing workflow
-        workflow.name = name
-        workflow.description = description
-        workflow.tags = tags or []
-        workflow.access = access
-        if run_mode is not None:
-            workflow.run_mode = run_mode
-        workflow.updated_at = datetime.now()
-
-    # Parse and clean the graph
-    graph_obj = Graph.model_validate(graph)
-    workflow.graph = remove_connected_slots(graph_obj).model_dump()
-
-    # Save workflow
-    await workflow.save()
-
-    # Get schemas
-    api_graph = workflow.get_api_graph()
-    input_schema = get_input_schema(api_graph)
-    output_schema = get_output_schema(api_graph)
-
-    return {
-        "id": workflow.id,
-        "name": workflow.name,
-        "description": workflow.description or "",
-        "tags": workflow.tags,
-        "access": workflow.access,
-        "run_mode": workflow.run_mode,
-        "input_schema": input_schema,
-        "output_schema": output_schema,
-        "created_at": workflow.created_at.isoformat(),
-        "updated_at": workflow.updated_at.isoformat(),
-        "message": "Workflow saved successfully",
-    }
 
 
 @mcp.tool()
@@ -843,192 +800,194 @@ async def export_workflow_digraph(
 
 @mcp.tool()
 async def list_workflows(
-    limit: int = 100, start_key: str | None = None
+    workflow_type: str = "user",
+    query: str | None = None,
+    limit: int = 100,
+    start_key: str | None = None,
 ) -> dict[str, Any]:
     """
-    List all workflows with pagination support.
+    List workflows with flexible filtering and search options.
 
     Args:
+        workflow_type: Type of workflows to list. Options:
+            - "user": User-created workflows (default)
+            - "example": Pre-built example workflows from packages
+            - "all": Both user and example workflows
+        query: Optional search query to filter workflows (searches names, descriptions, node types)
         limit: Maximum number of workflows to return (default: 100)
-        start_key: Pagination key for fetching next page (optional)
+        start_key: Pagination key for fetching next page (only for user workflows)
 
     Returns:
-        Dictionary with workflows list and next pagination key
+        Dictionary with workflows list and optional pagination info
+
+    Examples:
+        - list_workflows() # List user workflows
+        - list_workflows(workflow_type="example") # List example workflows
+        - list_workflows(workflow_type="example", query="image") # Search examples
     """
-    workflows, next_key = await WorkflowModel.paginate(
-        user_id="1", limit=limit, start_key=start_key
-    )
+    import asyncio
 
     result = []
-    for workflow in workflows:
-        result.append(
-            {
+    next_key = None
+
+    # Helper to parse required providers/models from example workflows
+    async def enrich_example_metadata(examples: list[Any]) -> list[dict[str, Any]]:
+        provider_namespaces = {
+            "gemini",
+            "openai",
+            "replicate",
+            "huggingface",
+            "huggingface_hub",
+            "fal",
+            "aime",
+        }
+
+        def parse_namespace(node_type: str) -> str:
+            parts = node_type.split(".")
+            return parts[0] if parts else ""
+
+        def collect_from_value(val: Any, providers: set[str], models: set[str]):
+            if isinstance(val, dict):
+                t = val.get("type")
+                if t == "language_model":
+                    provider = val.get("provider")
+                    if isinstance(provider, str) and provider:
+                        providers.add(provider)
+                    model_id = val.get("id")
+                    if isinstance(model_id, str) and model_id:
+                        models.add(model_id)
+                elif isinstance(t, str) and (
+                    t.startswith("hf.") or t.startswith("inference_provider_")
+                ):
+                    model_id = val.get("repo_id") or val.get("model_id")
+                    if isinstance(model_id, str) and model_id:
+                        models.add(model_id)
+                for v in val.values():
+                    collect_from_value(v, providers, models)
+            elif isinstance(val, list):
+                for item in val:
+                    collect_from_value(item, providers, models)
+
+        example_registry = Registry.get_instance()
+
+        # Load examples in parallel
+        load_tasks = []
+        indices = []
+        for i, ex in enumerate(examples):
+            if ex.package_name and ex.name:
+                load_tasks.append(
+                    asyncio.to_thread(
+                        example_registry.load_example, ex.package_name, ex.name
+                    )
+                )
+                indices.append(i)
+
+        loaded_map = {}
+        if load_tasks:
+            results = await asyncio.gather(*load_tasks, return_exceptions=True)
+            for pos, res in enumerate(results):
+                idx = indices[pos]
+                if not isinstance(res, Exception):
+                    loaded_map[idx] = res
+
+        enriched = []
+        for i, ex in enumerate(examples):
+            required_providers, required_models = set(), set()
+            full_example = loaded_map.get(i)
+            if full_example and full_example.graph and full_example.graph.nodes:
+                for node in full_example.graph.nodes:
+                    ns = parse_namespace(node.type)
+                    if ns in provider_namespaces:
+                        required_providers.add(ns)
+                    collect_from_value(
+                        getattr(node, "data", {}), required_providers, required_models
+                    )
+
+            enriched.append(
+                {
+                    "id": ex.id,
+                    "name": ex.name,
+                    "package_name": ex.package_name,
+                    "description": ex.description,
+                    "tags": ex.tags,
+                    "thumbnail_url": ex.thumbnail_url,
+                    "path": ex.path,
+                    "required_providers": sorted(required_providers)
+                    if required_providers
+                    else None,
+                    "required_models": sorted(required_models)
+                    if required_models
+                    else None,
+                }
+            )
+        return enriched
+
+    # Get user workflows
+    if workflow_type in ("user", "all"):
+        workflows, next_key = await WorkflowModel.paginate(
+            user_id="1", limit=limit, start_key=start_key
+        )
+        for workflow in workflows:
+            wf_dict = {
                 "id": workflow.id,
                 "name": workflow.name,
                 "description": workflow.description or "",
                 "tags": workflow.tags,
                 "created_at": workflow.created_at.isoformat(),
                 "updated_at": workflow.updated_at.isoformat(),
+                "workflow_type": "user",
             }
-        )
+            # Apply query filter if specified
+            if query:
+                query_lower = query.lower()
+                if (
+                    query_lower in wf_dict["name"].lower()
+                    or query_lower in wf_dict["description"].lower()
+                    or any(query_lower in tag.lower() for tag in wf_dict["tags"])
+                ):
+                    result.append(wf_dict)
+            else:
+                result.append(wf_dict)
+
+    # Get example workflows
+    if workflow_type in ("example", "all"):
+        example_registry = Registry.get_instance()
+
+        if query:
+            # Use search for query
+            matching_workflows = await asyncio.to_thread(
+                example_registry.search_example_workflows, query
+            )
+            for workflow in matching_workflows:
+                result.append(
+                    {
+                        "id": workflow.id,
+                        "name": workflow.name,
+                        "package_name": workflow.package_name,
+                        "description": workflow.description,
+                        "tags": workflow.tags,
+                        "thumbnail_url": workflow.thumbnail_url,
+                        "path": workflow.path,
+                        "workflow_type": "example",
+                    }
+                )
+        else:
+            # List all examples with metadata
+            examples = await asyncio.to_thread(example_registry.list_examples)
+            enriched = await enrich_example_metadata(examples)
+            for wf in enriched:
+                wf["workflow_type"] = "example"
+                result.append(wf)
+
+    # Apply limit to combined results if "all"
+    if workflow_type == "all":
+        result = result[:limit]
 
     return {
         "workflows": result,
-        "next": next_key,
+        "next": next_key if workflow_type == "user" else None,
+        "total": len(result),
     }
-
-
-@mcp.tool()
-async def list_example_workflows() -> list[dict[str, Any]]:
-    """
-    List available example workflows from installed packages.
-
-    Example workflows are pre-built workflows that demonstrate various
-    NodeTool capabilities. They can be used as templates or learning resources.
-
-    Returns:
-        List of example workflows with metadata including required providers and models
-    """
-    import asyncio
-
-    example_registry = Registry.get_instance()
-
-    # Get base list of examples
-    examples = await asyncio.to_thread(example_registry.list_examples)
-
-    provider_namespaces = {
-        "gemini",
-        "openai",
-        "replicate",
-        "huggingface",
-        "huggingface_hub",
-        "fal",
-        "aime",
-    }
-
-    def parse_namespace(node_type: str) -> str:
-        parts = node_type.split(".")
-        if not parts:
-            return ""
-        return parts[0]
-
-    def collect_from_value(val: Any, providers: set[str], models: set[str]):
-        # Recursively collect provider/model info from nested dict/list values
-        if isinstance(val, dict):
-            t = val.get("type")
-            if t == "language_model":
-                # Provider and id from LanguageModel
-                provider = val.get("provider")
-                if isinstance(provider, str) and provider:
-                    providers.add(provider)
-                model_id = val.get("id")
-                if isinstance(model_id, str) and model_id:
-                    models.add(model_id)
-            elif isinstance(t, str) and t.startswith("hf."):
-                # HuggingFace model types (repo_id)
-                repo_id = val.get("repo_id")
-                if isinstance(repo_id, str) and repo_id:
-                    models.add(repo_id)
-            elif isinstance(t, str) and t.startswith("inference_provider_"):
-                # Inference provider types: collect model ids and providers
-                model_id = val.get("model_id")
-                if isinstance(model_id, str) and model_id:
-                    models.add(model_id)
-
-            # Recurse into nested values
-            for v in val.values():
-                collect_from_value(v, providers, models)
-        elif isinstance(val, list):
-            for item in val:
-                collect_from_value(item, providers, models)
-
-    # Load full examples in parallel to speed up detection
-    load_tasks = []
-    indices: list[int] = []
-    for i, ex in enumerate(examples):
-        if ex.package_name and ex.name:
-            load_tasks.append(
-                asyncio.to_thread(
-                    example_registry.load_example, ex.package_name, ex.name
-                )
-            )
-            indices.append(i)
-
-    loaded_map = {}
-    if load_tasks:
-        results = await asyncio.gather(*load_tasks, return_exceptions=True)
-        for pos, res in enumerate(results):
-            idx = indices[pos]
-            if isinstance(res, Exception):
-                log.warning(f"Error loading example {idx}: {res}")
-                loaded_map[idx] = None
-            else:
-                loaded_map[idx] = res
-
-    enriched: list[dict[str, Any]] = []
-    for i, ex in enumerate(examples):
-        required_providers: set[str] = set()
-        required_models: set[str] = set()
-
-        full_example = loaded_map.get(i)
-        if full_example and full_example.graph and full_example.graph.nodes:
-            for node in full_example.graph.nodes:
-                ns = parse_namespace(node.type)
-                if ns in provider_namespaces:
-                    required_providers.add(ns)
-                collect_from_value(
-                    getattr(node, "data", {}), required_providers, required_models
-                )
-
-        enriched.append(
-            {
-                "id": ex.id,
-                "name": ex.name,
-                "package_name": ex.package_name,
-                "description": ex.description,
-                "tags": ex.tags,
-                "thumbnail_url": ex.thumbnail_url,
-                "path": ex.path,
-                "required_providers": sorted(required_providers)
-                if required_providers
-                else None,
-                "required_models": sorted(required_models) if required_models else None,
-            }
-        )
-
-    return enriched
-
-
-@mcp.tool()
-async def search_example_workflows(query: str) -> list[dict[str, Any]]:
-    """
-    Search for example workflows by searching through node titles, descriptions, and types.
-
-    Args:
-        query: The search string to find in node properties
-
-    Returns:
-        List of workflows that contain nodes matching the query
-    """
-    import asyncio
-
-    example_registry = Registry.get_instance()
-    matching_workflows = await asyncio.to_thread(
-        example_registry.search_example_workflows, query
-    )
-
-    return [
-        {
-            "id": workflow.id,
-            "name": workflow.name,
-            "package_name": workflow.package_name,
-            "description": workflow.description,
-            "tags": workflow.tags,
-            "thumbnail_url": workflow.thumbnail_url,
-            "path": workflow.path,
-        }
-        for workflow in matching_workflows
-    ]
 
 
 @mcp.tool()
@@ -1074,139 +1033,112 @@ async def get_example_workflow(package_name: str, example_name: str) -> dict[str
 
 
 @mcp.tool()
-async def save_example_workflow(
-    workflow_id: str,
-    name: str,
-    package_name: str,
-    path: str,
-    graph: dict[str, Any],
-    description: str = "",
-    tags: list[str] | None = None,
-    thumbnail_url: str = "",
-) -> dict[str, Any]:
-    """
-    Save an example workflow to disk.
-
-    This is only allowed in development mode. Example workflows are saved
-    to the package directory and can be loaded later as templates.
-
-    Args:
-        workflow_id: Unique identifier for the workflow
-        name: Human-readable name
-        package_name: Package the example belongs to
-        path: File path within the package
-        graph: Workflow graph structure with nodes and edges
-        description: Description of what the workflow does
-        tags: List of tags for categorization
-        thumbnail_url: URL to a thumbnail image
-
-    Returns:
-        Saved workflow details
-
-    Raises:
-        ValueError: If not in development mode or invalid workflow
-    """
-    from nodetool.types.graph import remove_connected_slots
-    from nodetool.types.workflow import Workflow
-    from datetime import datetime
-    import asyncio
-
-    if Environment.is_production():
-        raise ValueError("Saving example workflows is only allowed in development mode")
-
-    if not graph:
-        raise ValueError("Invalid workflow: graph is required")
-
-    # Parse and clean the graph
-    graph_obj = Graph.model_validate(graph)
-    cleaned_graph = remove_connected_slots(graph_obj)
-
-    # Create workflow object
-    workflow = Workflow(
-        id=workflow_id,
-        name=name,
-        description=description,
-        tags=[tag for tag in (tags or []) if tag != "example"],
-        package_name=package_name,
-        path=path,
-        thumbnail_url=thumbnail_url,
-        access="public",
-        graph=cleaned_graph,
-        created_at=datetime.now().isoformat(),
-        updated_at=datetime.now().isoformat(),
-    )
-
-    example_registry = Registry.get_instance()
-
-    try:
-        saved_workflow = await asyncio.to_thread(
-            example_registry.save_example, workflow
-        )
-
-        return {
-            "id": saved_workflow.id,
-            "name": saved_workflow.name,
-            "package_name": saved_workflow.package_name,
-            "path": saved_workflow.path,
-            "message": "Example workflow saved successfully",
-        }
-    except ValueError as e:
-        log.error(f"Error saving example workflow: {str(e)}")
-        raise ValueError(f"Failed to save example workflow: {str(e)}")
-
-
-def _asset_to_dict(asset: AssetModel) -> dict[str, Any]:
-    """Convert asset model to dictionary with URLs."""
-    storage = Environment.get_asset_storage()
-
-    if asset.content_type != "folder":
-        get_url = storage.get_url(asset.file_name)
-    else:
-        get_url = None
-
-    if asset.has_thumbnail:
-        thumb_url = storage.get_url(asset.thumb_file_name)
-    else:
-        thumb_url = None
-
-    return {
-        "id": asset.id,
-        "user_id": asset.user_id,
-        "workflow_id": asset.workflow_id,
-        "parent_id": asset.parent_id,
-        "name": asset.name,
-        "content_type": asset.content_type,
-        "size": asset.size,
-        "metadata": asset.metadata,
-        "created_at": asset.created_at.isoformat(),
-        "get_url": get_url,
-        "thumb_url": thumb_url,
-        "duration": asset.duration,
-    }
-
-
-@mcp.tool()
 async def list_assets(
+    source: str = "user",
     parent_id: str | None = None,
+    query: str | None = None,
     content_type: str | None = None,
+    package_name: str | None = None,
     limit: int = 100,
     start_key: str | None = None,
 ) -> dict[str, Any]:
     """
-    List assets with optional filtering by parent folder or content type.
+    List or search assets with flexible filtering options.
 
     Args:
-        parent_id: Optional parent folder ID to list assets from (if None, lists root assets)
-        content_type: Optional content type filter (e.g., "image", "video", "audio", "text", "folder")
+        source: Asset source. Options:
+            - "user": User-uploaded assets (default)
+            - "package": Assets from installed NodeTool packages
+        parent_id: Filter by parent folder ID (user assets only, None = root)
+        query: Search query for asset names (min 2 chars, enables search mode)
+        content_type: Filter by type: "image", "video", "audio", "text", "folder"
+        package_name: Filter package assets by package name (package source only)
         limit: Maximum number of assets to return (default: 100)
-        start_key: Pagination key for fetching next page (optional)
+        start_key: Pagination key for next page (user assets only)
 
     Returns:
-        Dictionary with assets list and next pagination key
+        Dictionary with assets list and pagination info
+
+    Examples:
+        - list_assets() # List root user assets
+        - list_assets(parent_id="folder123") # List assets in folder
+        - list_assets(query="vacation", content_type="image") # Search images
+        - list_assets(source="package") # List all package assets
+        - list_assets(source="package", package_name="nodetool-base") # Filter by package
     """
-    # Use default user "1" for MCP
     user_id = "1"
 
+    if source == "package":
+        # List package assets
+        registry = Registry.get_instance()
+        all_assets = registry.list_assets()
+
+        if package_name:
+            all_assets = [a for a in all_assets if a.package_name == package_name]
+
+        # Apply query filter if specified
+        if query and len(query.strip()) >= 2:
+            query_lower = query.strip().lower()
+            all_assets = [a for a in all_assets if query_lower in a.name.lower()]
+
+        # Apply limit
+        all_assets = all_assets[:limit]
+
+        results = [
+            {
+                "id": f"pkg:{asset.package_name}/{asset.name}",
+                "name": asset.name,
+                "package_name": asset.package_name,
+                "virtual_path": f"/api/assets/packages/{asset.package_name}/{asset.name}",
+                "source": "package",
+            }
+            for asset in all_assets
+        ]
+
+        return {
+            "assets": results,
+            "next": None,
+            "total": len(results),
+        }
+
+    # User assets - search mode
+    if query:
+        if len(query.strip()) < 2:
+            raise ValueError("Search query must be at least 2 characters long")
+
+        assets, next_cursor, folder_paths = await AssetModel.search_assets_global(
+            user_id=user_id,
+            query=query.strip(),
+            content_type=content_type,
+            limit=limit,
+            start_key=start_key,
+        )
+
+        results = []
+        for i, asset in enumerate(assets):
+            asset_dict = _asset_to_dict(asset)
+            folder_info = (
+                folder_paths[i]
+                if i < len(folder_paths)
+                else {
+                    "folder_name": "Unknown",
+                    "folder_path": "Unknown",
+                    "folder_id": "",
+                }
+            )
+            asset_dict["folder_name"] = folder_info["folder_name"]
+            asset_dict["folder_path"] = folder_info["folder_path"]
+            asset_dict["folder_id"] = folder_info["folder_id"]
+            asset_dict["source"] = "user"
+            results.append(asset_dict)
+
+        return {
+            "assets": results,
+            "next": next_cursor,
+            "total": len(results),
+        }
+
+    # User assets - list mode
     if content_type is None and parent_id is None:
         parent_id = user_id
 
@@ -1218,66 +1150,14 @@ async def list_assets(
         start_key=start_key,
     )
 
-    return {
-        "assets": [_asset_to_dict(asset) for asset in assets],
-        "next": next_cursor,
-    }
-
-
-@mcp.tool()
-async def search_assets(
-    query: str,
-    content_type: str | None = None,
-    limit: int = 100,
-    start_key: str | None = None,
-) -> dict[str, Any]:
-    """
-    Search assets by name across all folders.
-
-    Args:
-        query: Search query (minimum 2 characters)
-        content_type: Optional content type filter (e.g., "image", "video", "audio")
-        limit: Maximum number of results to return (default: 100)
-        start_key: Pagination key for fetching next page (optional)
-
-    Returns:
-        Dictionary with search results including folder path information
-    """
-    if len(query.strip()) < 2:
-        raise ValueError("Search query must be at least 2 characters long")
-
-    # Use default user "1" for MCP
-    user_id = "1"
-
-    assets, next_cursor, folder_paths = await AssetModel.search_assets_global(
-        user_id=user_id,
-        query=query.strip(),
-        content_type=content_type,
-        limit=limit,
-        start_key=start_key,
-    )
-
-    results = []
-    for i, asset in enumerate(assets):
-        asset_dict = _asset_to_dict(asset)
-        folder_info = (
-            folder_paths[i]
-            if i < len(folder_paths)
-            else {
-                "folder_name": "Unknown",
-                "folder_path": "Unknown",
-                "folder_id": "",
-            }
-        )
-        asset_dict["folder_name"] = folder_info["folder_name"]
-        asset_dict["folder_path"] = folder_info["folder_path"]
-        asset_dict["folder_id"] = folder_info["folder_id"]
-        results.append(asset_dict)
+    results = [_asset_to_dict(asset) for asset in assets]
+    for r in results:
+        r["source"] = "user"
 
     return {
         "assets": results,
         "next": next_cursor,
-        "total_count": len(results),
+        "total": len(results),
     }
 
 
@@ -1303,178 +1183,74 @@ async def get_asset(asset_id: str) -> dict[str, Any]:
 
 
 @mcp.tool()
-async def create_folder(
-    name: str,
-    parent_id: str | None = None,
-) -> dict[str, Any]:
-    """
-    Create a new folder asset.
-
-    Args:
-        name: Name of the folder
-        parent_id: Optional parent folder ID (if None, creates in root)
-
-    Returns:
-        Created folder asset details
-    """
-    # Use default user "1" for MCP
-    user_id = "1"
-
-    if parent_id is None:
-        parent_id = user_id
-
-    asset = await AssetModel.create(
-        user_id=user_id,
-        parent_id=parent_id,
-        name=name,
-        content_type="folder",
-        metadata={},
-        size=None,
-    )
-
-    return _asset_to_dict(asset)
-
-
-@mcp.tool()
-async def update_asset(
-    asset_id: str,
-    name: str | None = None,
-    parent_id: str | None = None,
-    metadata: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    """
-    Update an existing asset's properties.
-
-    Args:
-        asset_id: The ID of the asset to update
-        name: New name for the asset (optional)
-        parent_id: New parent folder ID to move the asset (optional)
-        metadata: New metadata dictionary (optional)
-
-    Returns:
-        Updated asset details
-    """
-    # Use default user "1" for MCP
-    user_id = "1"
-
-    asset = await AssetModel.find(user_id, asset_id)
-    if not asset:
-        raise ValueError(f"Asset {asset_id} not found")
-
-    if name:
-        asset.name = name.strip()
-    if parent_id:
-        asset.parent_id = parent_id
-    if metadata is not None:
-        asset.metadata = metadata
-
-    await asset.save()
-    return _asset_to_dict(asset)
-
-
-@mcp.tool()
-async def delete_asset(asset_id: str) -> dict[str, Any]:
-    """
-    Delete an asset. If it's a folder, deletes all contents recursively.
-
-    Args:
-        asset_id: The ID of the asset to delete
-
-    Returns:
-        Dictionary with list of deleted asset IDs
-    """
-    # Use default user "1" for MCP
-    user_id = "1"
-
-    asset = await AssetModel.find(user_id, asset_id)
-    if not asset:
-        raise ValueError(f"Asset {asset_id} not found")
-
-    deleted_ids = []
-
-    async def delete_folder_recursive(folder_id: str) -> list[str]:
-        deleted = []
-        assets, _ = await AssetModel.paginate(
-            user_id=user_id, parent_id=folder_id, limit=10000
-        )
-
-        for child in assets:
-            if child.content_type == "folder":
-                deleted.extend(await delete_folder_recursive(child.id))
-            else:
-                await child.delete()
-                deleted.append(child.id)
-
-        folder_asset = await AssetModel.find(user_id, folder_id)
-        if folder_asset:
-            await folder_asset.delete()
-            deleted.append(folder_id)
-
-        return deleted
-
-    if asset.content_type == "folder":
-        deleted_ids = await delete_folder_recursive(asset_id)
-    else:
-        await asset.delete()
-        deleted_ids = [asset_id]
-
-    return {"deleted_asset_ids": deleted_ids}
-
-
-@mcp.tool()
-async def list_package_assets(package_name: str | None = None) -> list[dict[str, Any]]:
-    """
-    List assets from installed NodeTool packages.
-
-    Args:
-        package_name: Optional package name to filter assets (if None, lists all package assets)
-
-    Returns:
-        List of package assets with their metadata
-    """
-    registry = Registry.get_instance()
-    all_assets = registry.list_assets()
-
-    if package_name:
-        all_assets = [a for a in all_assets if a.package_name == package_name]
-
-    return [
-        {
-            "id": f"pkg:{asset.package_name}/{asset.name}",
-            "name": asset.name,
-            "package_name": asset.package_name,
-            "virtual_path": f"/api/assets/packages/{asset.package_name}/{asset.name}",
-        }
-        for asset in all_assets
-    ]
-
-
-@mcp.tool()
 async def list_jobs(
     workflow_id: str | None = None,
+    status: str | None = None,
+    running_only: bool = False,
     limit: int = 100,
     start_key: str | None = None,
 ) -> dict[str, Any]:
     """
-    List jobs with optional filtering by workflow.
+    List jobs with flexible filtering options.
 
     Args:
-        workflow_id: Optional workflow ID to filter jobs by
+        workflow_id: Filter by workflow ID
+        status: Filter by status: "running", "completed", "failed", "cancelled"
+        running_only: Only show currently running background jobs (default: False)
         limit: Maximum number of jobs to return (default: 100)
-        start_key: Pagination key for fetching next page (optional)
+        start_key: Pagination key for next page (only for non-running queries)
 
     Returns:
-        Dictionary with jobs list and next pagination key
+        Dictionary with jobs list and pagination info
+
+    Examples:
+        - list_jobs() # List all jobs
+        - list_jobs(workflow_id="wf123") # Jobs for specific workflow
+        - list_jobs(status="failed") # All failed jobs
+        - list_jobs(running_only=True) # Currently executing jobs
     """
-    # Use default user "1" for MCP
     user_id = "1"
 
+    # Handle running jobs from job manager
+    if running_only:
+        job_manager = JobExecutionManager.get_instance()
+        bg_jobs = job_manager.list_jobs(user_id=user_id)
+
+        # Filter by workflow_id if specified
+        if workflow_id:
+            bg_jobs = [j for j in bg_jobs if j.request.workflow_id == workflow_id]
+
+        # Apply limit
+        bg_jobs = bg_jobs[:limit]
+
+        return {
+            "jobs": [
+                {
+                    "id": job.job_id,
+                    "status": job.status,
+                    "workflow_id": job.request.workflow_id,
+                    "created_at": job.created_at.isoformat(),
+                    "is_running": job.is_running(),
+                    "is_completed": job.is_completed(),
+                    "source": "job_manager",
+                }
+                for job in bg_jobs
+            ],
+            "next": None,
+            "total": len(bg_jobs),
+        }
+
+    # Handle persisted jobs from database
     jobs, next_cursor = await JobModel.paginate(
         user_id=user_id,
         workflow_id=workflow_id,
         limit=limit,
         start_key=start_key,
     )
+
+    # Filter by status if specified
+    if status:
+        jobs = [j for j in jobs if j.status == status]
 
     return {
         "jobs": [
@@ -1488,10 +1264,12 @@ async def list_jobs(
                 "finished_at": job.finished_at.isoformat() if job.finished_at else None,
                 "error": job.error,
                 "cost": job.cost,
+                "source": "database",
             }
             for job in jobs
         ],
         "next": next_cursor,
+        "total": len(jobs),
     }
 
 
@@ -1531,70 +1309,6 @@ async def get_job(job_id: str, include_logs: bool = False) -> dict[str, Any]:
         result["has_logs"] = bool(job.logs)
 
     return result
-
-
-@mcp.tool()
-async def list_running_jobs() -> list[dict[str, Any]]:
-    """
-    List all currently running background jobs.
-
-    Returns:
-        List of running jobs with their current status
-    """
-    # Use default user "1" for MCP
-    user_id = "1"
-
-    job_manager = JobExecutionManager.get_instance()
-    bg_jobs = job_manager.list_jobs(user_id=user_id)
-
-    return [
-        {
-            "job_id": job.job_id,
-            "status": job.status,
-            "workflow_id": job.request.workflow_id,
-            "created_at": job.created_at.isoformat(),
-            "is_running": job.is_running(),
-            "is_completed": job.is_completed(),
-        }
-        for job in bg_jobs
-    ]
-
-
-@mcp.tool()
-async def cancel_job(job_id: str) -> dict[str, Any]:
-    """
-    Cancel a running job.
-
-    Args:
-        job_id: The ID of the job to cancel
-
-    Returns:
-        Dictionary with cancellation result message
-    """
-    # Use default user "1" for MCP
-    user_id = "1"
-
-    # Verify the job exists
-    job = await JobModel.find(user_id=user_id, job_id=job_id)
-    if not job:
-        raise ValueError(f"Job {job_id} not found")
-
-    # Cancel the background job if it's running
-    job_manager = JobExecutionManager.get_instance()
-    cancelled = await job_manager.cancel_job(job_id)
-
-    if cancelled:
-        return {
-            "success": True,
-            "message": "Job cancelled successfully",
-            "job_id": job_id,
-        }
-    else:
-        return {
-            "success": False,
-            "message": "Job not found in background manager or already completed",
-            "job_id": job_id,
-        }
 
 
 @mcp.tool()
@@ -1723,274 +1437,190 @@ async def start_background_job(
 
 
 @mcp.tool()
-async def list_all_models(
-    provider: str,
+async def list_models(
+    provider: str = "all",
     model_type: str | None = None,
     downloaded_only: bool = False,
+    recommended_only: bool = False,
     limit: int = 50,
 ) -> list[dict[str, Any]]:
     """
-    List available models from all providers with mandatory filtering.
+    List available AI models with flexible filtering options.
 
     Args:
-        provider: Filter by provider (required). Use "all" for all providers, or specific provider like "huggingface", "ollama", "openai", "anthropic"
-        model_type: Optional filter by model type (e.g., "language_model", "image_model", "tts_model", "asr_model")
-        downloaded_only: Only show models that are downloaded locally (default: False)
+        provider: Filter by provider. Use "all" for all providers, or specify: "openai", "anthropic", "ollama", "google", "groq", "huggingface", "replicate", "elevenlabs", etc.
+        model_type: Filter by type: "language_model", "image_model", "tts_model", "asr_model", or None for all types
+        downloaded_only: Only show models downloaded locally (default: False)
+        recommended_only: Only show curated recommended models (default: False)
         limit: Maximum number of models to return (default: 50, max: 200)
 
     Returns:
         List of models matching the filters
+
+    Examples:
+        - list_models(provider="openai", model_type="language_model")
+        - list_models(recommended_only=True, limit=20)
+        - list_models(provider="huggingface", downloaded_only=True)
     """
     if limit > 200:
         limit = 200
 
-    all_models = await get_all_models(user="1")
+    # Get models based on recommended flag
+    if recommended_only:
+        all_models = await recommended_models(user="1")
+    elif model_type == "language_model":
+        # Use specialized function for language models
+        lm_models = await get_language_models()
+        # Convert to common format
+        all_models = [
+            type(
+                "Model",
+                (),
+                {
+                    "id": m.id,
+                    "name": m.name,
+                    "repo_id": None,
+                    "path": None,
+                    "type": "language_model",
+                    "downloaded": False,
+                    "size_on_disk": None,
+                    "provider": m.provider,
+                },
+            )()
+            for m in lm_models
+        ]
+    elif model_type == "image_model":
+        img_models = await get_all_image_models_func()
+        all_models = [
+            type(
+                "Model",
+                (),
+                {
+                    "id": m.id,
+                    "name": m.name,
+                    "repo_id": None,
+                    "path": None,
+                    "type": "image_model",
+                    "downloaded": False,
+                    "size_on_disk": None,
+                    "provider": m.provider,
+                },
+            )()
+            for m in img_models
+        ]
+    elif model_type == "tts_model":
+        tts_models = await get_all_tts_models_func()
+        all_models = [
+            type(
+                "Model",
+                (),
+                {
+                    "id": m.id,
+                    "name": m.name,
+                    "repo_id": None,
+                    "path": None,
+                    "type": "tts_model",
+                    "downloaded": False,
+                    "size_on_disk": None,
+                    "provider": m.provider,
+                },
+            )()
+            for m in tts_models
+        ]
+    elif model_type == "asr_model":
+        asr_models = await get_all_asr_models_func()
+        all_models = [
+            type(
+                "Model",
+                (),
+                {
+                    "id": m.id,
+                    "name": m.name,
+                    "repo_id": None,
+                    "path": None,
+                    "type": "asr_model",
+                    "downloaded": False,
+                    "size_on_disk": None,
+                    "provider": m.provider,
+                },
+            )()
+            for m in asr_models
+        ]
+    else:
+        all_models = await get_all_models(user="1")
 
     # Filter by provider
     if provider.lower() != "all":
-        all_models = [
-            m
-            for m in all_models
-            if provider.lower() in m.id.lower()
-            or (m.repo_id and provider.lower() in m.repo_id.lower())
-        ]
+        filtered = []
+        for m in all_models:
+            matched = False
+            # Check provider attribute if available and meaningful
+            if hasattr(m, "provider") and m.provider is not None:
+                try:
+                    if hasattr(m.provider, "value"):
+                        if m.provider.value.lower() == provider.lower():
+                            matched = True
+                    elif str(m.provider).lower() == provider.lower():
+                        matched = True
+                except (AttributeError, TypeError):
+                    pass
 
-    # Filter by model type
-    if model_type:
-        all_models = [m for m in all_models if m.type == model_type]
+            # Fallback to checking id and repo_id if provider check didn't match
+            if not matched:
+                if provider.lower() in m.id.lower():
+                    matched = True
+                elif (
+                    hasattr(m, "repo_id")
+                    and m.repo_id
+                    and provider.lower() in m.repo_id.lower()
+                ):
+                    matched = True
+
+            if matched:
+                filtered.append(m)
+        all_models = filtered
+
+    # Filter by model type if specified and not already filtered
+    if model_type and not recommended_only:
+        all_models = [
+            m for m in all_models if hasattr(m, "type") and m.type == model_type
+        ]
 
     # Filter by downloaded status
     if downloaded_only:
-        all_models = [m for m in all_models if m.downloaded]
-
-    # Apply limit
-    all_models = all_models[:limit]
-
-    return [
-        {
-            "id": model.id,
-            "name": model.name,
-            "repo_id": model.repo_id,
-            "path": model.path,
-            "type": model.type,
-            "downloaded": model.downloaded,
-            "size_on_disk": model.size_on_disk,
-        }
-        for model in all_models
-    ]
-
-
-@mcp.tool()
-async def list_recommended_models(limit: int = 20) -> list[dict[str, Any]]:
-    """
-    List recommended models for NodeTool (curated list, typically small).
-
-    Args:
-        limit: Maximum number of models to return (default: 20, max: 50)
-
-    Returns:
-        List of recommended models
-    """
-    if limit > 50:
-        limit = 50
-
-    models = await recommended_models(user="1")
-    models = models[:limit]
-
-    return [
-        {
-            "id": model.id,
-            "name": model.name,
-            "repo_id": model.repo_id,
-            "path": model.path,
-            "type": model.type,
-            "downloaded": model.downloaded,
-        }
-        for model in models
-    ]
-
-
-@mcp.tool()
-async def list_language_models(
-    provider: str,
-    limit: int = 50,
-) -> list[dict[str, Any]]:
-    """
-    List available language models (LLMs) with mandatory provider filter.
-
-    Args:
-        provider: Filter by provider (required). Options: "openai", "anthropic", "ollama", "google", "groq", "openrouter", "all"
-        limit: Maximum number of models to return (default: 50, max: 100)
-
-    Returns:
-        List of language models matching the filter
-    """
-    if limit > 100:
-        limit = 100
-
-    all_models = await get_language_models()
-
-    # Filter by provider
-    if provider.lower() != "all":
         all_models = [
-            m for m in all_models if m.provider.value.lower() == provider.lower()
+            m for m in all_models if hasattr(m, "downloaded") and m.downloaded
         ]
 
     # Apply limit
     all_models = all_models[:limit]
 
-    return [
-        {
+    # Build result with available fields
+    result = []
+    for model in all_models:
+        model_dict = {
             "id": model.id,
             "name": model.name,
-            "provider": model.provider.value,
         }
-        for model in all_models
-    ]
+        if hasattr(model, "repo_id"):
+            model_dict["repo_id"] = model.repo_id
+        if hasattr(model, "path"):
+            model_dict["path"] = model.path
+        if hasattr(model, "type"):
+            model_dict["type"] = model.type
+        if hasattr(model, "downloaded"):
+            model_dict["downloaded"] = model.downloaded
+        if hasattr(model, "size_on_disk"):
+            model_dict["size_on_disk"] = model.size_on_disk
+        if hasattr(model, "provider"):
+            if hasattr(model.provider, "value"):
+                model_dict["provider"] = model.provider.value
+            else:
+                model_dict["provider"] = str(model.provider)
 
+        result.append(model_dict)
 
-@mcp.tool()
-async def list_image_models(
-    provider: str,
-    limit: int = 50,
-) -> list[dict[str, Any]]:
-    """
-    List available image generation models with mandatory provider filter.
-
-    Args:
-        provider: Filter by provider (required). Options: "replicate", "comfyui", "huggingface", "openai", "all"
-        limit: Maximum number of models to return (default: 50, max: 100)
-
-    Returns:
-        List of image models matching the filter
-    """
-    if limit > 100:
-        limit = 100
-
-    all_models = await get_all_image_models_func()
-
-    # Filter by provider
-    if provider.lower() != "all":
-        all_models = [
-            m for m in all_models if m.provider.value.lower() == provider.lower()
-        ]
-
-    # Apply limit
-    all_models = all_models[:limit]
-
-    return [
-        {
-            "id": model.id,
-            "name": model.name,
-            "provider": model.provider.value,
-        }
-        for model in all_models
-    ]
-
-
-@mcp.tool()
-async def list_tts_models(
-    provider: str,
-    limit: int = 50,
-) -> list[dict[str, Any]]:
-    """
-    List available text-to-speech models with mandatory provider filter.
-
-    Args:
-        provider: Filter by provider (required). Options: "openai", "elevenlabs", "huggingface", "all"
-        limit: Maximum number of models to return (default: 50, max: 100)
-
-    Returns:
-        List of TTS models matching the filter
-    """
-    if limit > 100:
-        limit = 100
-
-    all_models = await get_all_tts_models_func()
-
-    # Filter by provider
-    if provider.lower() != "all":
-        all_models = [
-            m for m in all_models if m.provider.value.lower() == provider.lower()
-        ]
-
-    # Apply limit
-    all_models = all_models[:limit]
-
-    return [
-        {
-            "id": model.id,
-            "name": model.name,
-            "provider": model.provider.value,
-        }
-        for model in all_models
-    ]
-
-
-@mcp.tool()
-async def list_asr_models(
-    provider: str,
-    limit: int = 50,
-) -> list[dict[str, Any]]:
-    """
-    List available automatic speech recognition models with mandatory provider filter.
-
-    Args:
-        provider: Filter by provider (required). Options: "openai", "huggingface", "all"
-        limit: Maximum number of models to return (default: 50, max: 100)
-
-    Returns:
-        List of ASR models matching the filter
-    """
-    if limit > 100:
-        limit = 100
-
-    all_models = await get_all_asr_models_func()
-
-    # Filter by provider
-    if provider.lower() != "all":
-        all_models = [
-            m for m in all_models if m.provider.value.lower() == provider.lower()
-        ]
-
-    # Apply limit
-    all_models = all_models[:limit]
-
-    return [
-        {
-            "id": model.id,
-            "name": model.name,
-            "provider": model.provider.value,
-        }
-        for model in all_models
-    ]
-
-
-@mcp.tool()
-async def create_collection(
-    name: str,
-    embedding_model: str = "all-minilm:latest",
-) -> dict[str, Any]:
-    """
-    Create a new vector database collection for storing document embeddings.
-
-    Args:
-        name: Name of the collection to create
-        embedding_model: Embedding model to use (default: "all-minilm:latest")
-
-    Returns:
-        Created collection details
-    """
-    client = await get_async_chroma_client()
-    metadata = {
-        "embedding_model": embedding_model,
-    }
-    collection = await client.create_collection(name=name, metadata=metadata)
-    return {
-        "name": collection.name,
-        "metadata": collection.metadata,
-        "count": 0,
-    }
+    return result
 
 
 @mcp.tool()
@@ -2058,69 +1688,6 @@ async def get_collection(name: str) -> dict[str, Any]:
 
 
 @mcp.tool()
-async def update_collection(
-    name: str,
-    new_name: str | None = None,
-    metadata: dict[str, str] | None = None,
-) -> dict[str, Any]:
-    """
-    Update a collection's name or metadata.
-
-    Args:
-        name: Current name of the collection
-        new_name: New name for the collection (optional)
-        metadata: New metadata to merge with existing metadata (optional)
-
-    Returns:
-        Updated collection details
-    """
-    client = await get_async_chroma_client()
-    collection = await client.get_collection(name=name)
-
-    current_metadata = collection.metadata.copy() if collection.metadata else {}
-    if metadata:
-        current_metadata.update(metadata)
-
-    # Validate workflow if specified
-    if workflow_id := current_metadata.get("workflow"):
-        workflow = await WorkflowModel.get(workflow_id)
-        if not workflow:
-            raise ValueError("Workflow not found")
-
-        # Validate workflow input nodes
-        graph = workflow.graph
-        collection_input, file_input = find_input_nodes(graph)
-        if not collection_input:
-            raise ValueError("Workflow must have a CollectionInput node")
-        if not file_input:
-            raise ValueError("Workflow must have a FileInput or DocumentFileInput node")
-
-    await collection.modify(name=new_name, metadata=current_metadata)
-
-    return {
-        "name": collection.name,
-        "metadata": collection.metadata,
-        "count": await collection.count(),
-    }
-
-
-@mcp.tool()
-async def delete_collection(name: str) -> dict[str, Any]:
-    """
-    Delete a collection and all its documents.
-
-    Args:
-        name: Name of the collection to delete
-
-    Returns:
-        Success message
-    """
-    client = await get_async_chroma_client()
-    await client.delete_collection(name=name)
-    return {"message": f"Collection {name} deleted successfully"}
-
-
-@mcp.tool()
 async def query_collection(
     name: str,
     query_texts: list[str],
@@ -2159,46 +1726,6 @@ async def query_collection(
 
 
 @mcp.tool()
-async def add_documents_to_collection(
-    name: str,
-    documents: list[str],
-    metadatas: list[dict[str, Any]] | None = None,
-    ids: list[str] | None = None,
-) -> dict[str, Any]:
-    """
-    Add documents to a collection.
-
-    Args:
-        name: Name of the collection
-        documents: List of document texts to add
-        metadatas: Optional list of metadata dictionaries (one per document)
-        ids: Optional list of document IDs (auto-generated if not provided)
-
-    Returns:
-        Success message with count of documents added
-    """
-    collection = await get_async_collection(name)
-
-    # Generate IDs if not provided
-    if ids is None:
-        import uuid
-
-        ids = [str(uuid.uuid4()) for _ in documents]
-
-    await collection.add(
-        documents=documents,
-        metadatas=metadatas,
-        ids=ids,
-    )
-
-    return {
-        "message": f"Added {len(documents)} documents to collection {name}",
-        "count": len(documents),
-        "ids": ids,
-    }
-
-
-@mcp.tool()
 async def get_documents_from_collection(
     name: str,
     ids: list[str] | None = None,
@@ -2233,56 +1760,6 @@ async def get_documents_from_collection(
         "documents": results.get("documents", []),
         "metadatas": results.get("metadatas", []),
         "count": len(results.get("ids", [])),
-    }
-
-
-@mcp.tool()
-async def delete_documents_from_collection(
-    name: str,
-    ids: list[str] | None = None,
-    where: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    """
-    Delete documents from a collection by IDs or metadata filter.
-
-    Args:
-        name: Name of the collection
-        ids: Optional list of document IDs to delete
-        where: Optional metadata filter to delete matching documents
-
-    Returns:
-        Success message
-    """
-    collection = await get_async_collection(name)
-
-    await collection.delete(
-        ids=ids,
-        where=where,
-    )
-
-    return {
-        "message": f"Deleted documents from collection {name}",
-    }
-
-
-@mcp.tool()
-async def create_thread(name: str | None = None) -> dict[str, Any]:
-    """
-    Create a new chat thread for organizing conversation history.
-
-    Args:
-        name: Optional name for the thread (auto-generated if not provided)
-
-    Returns:
-        Created thread details
-    """
-    thread = await Thread.create(user_id="1", title=name)
-    return {
-        "id": thread.id,
-        "user_id": thread.user_id,
-        "name": thread.title,
-        "created_at": thread.created_at.isoformat(),
-        "updated_at": thread.updated_at.isoformat(),
     }
 
 
@@ -2342,53 +1819,6 @@ async def get_thread(thread_id: str) -> dict[str, Any]:
 
 
 @mcp.tool()
-async def update_thread(thread_id: str, name: str) -> dict[str, Any]:
-    """
-    Update a thread's name.
-
-    Args:
-        thread_id: ID of the thread to update
-        name: New name for the thread
-
-    Returns:
-        Updated thread details
-    """
-    thread = await Thread.find(user_id="1", id=thread_id)
-    if not thread:
-        raise ValueError(f"Thread {thread_id} not found")
-
-    thread.title = name
-    await thread.save()
-
-    return {
-        "id": thread.id,
-        "user_id": thread.user_id,
-        "name": thread.title,
-        "created_at": thread.created_at.isoformat(),
-        "updated_at": thread.updated_at.isoformat(),
-    }
-
-
-@mcp.tool()
-async def delete_thread(thread_id: str) -> dict[str, Any]:
-    """
-    Delete a chat thread and all its messages.
-
-    Args:
-        thread_id: ID of the thread to delete
-
-    Returns:
-        Success message
-    """
-    thread = await Thread.find(user_id="1", id=thread_id)
-    if not thread:
-        raise ValueError(f"Thread {thread_id} not found")
-
-    await thread.delete()
-    return {"message": f"Thread {thread_id} deleted successfully"}
-
-
-@mcp.tool()
 async def get_thread_messages(
     thread_id: str,
     limit: int = 50,
@@ -2433,161 +1863,6 @@ async def get_thread_messages(
         ],
         "count": len(messages),
         "next": next_key,
-    }
-
-
-@mcp.tool()
-async def send_chat_message(
-    thread_id: str,
-    content: str,
-    model: str = "gpt-4o",
-    provider: Provider = Provider.OpenAI,
-    system_prompt: str | None = None,
-) -> dict[str, Any]:
-    """
-    Send a message to a chat thread and get an AI response.
-
-    This is a stateless MCP-optimized version that:
-    - Saves the user message to the thread
-    - Loads conversation history
-    - Gets AI response using the specified model
-    - Saves the assistant response
-    - Returns the complete response
-
-    Args:
-        thread_id: ID of the thread to send message to
-        content: User message content
-        model: Model to use for response (default: "gpt-4o")
-        provider: Provider for the model (default: "openai")
-        system_prompt: Optional system prompt to override default
-
-    Returns:
-        Dictionary with the assistant's response and message metadata
-    """
-    # Verify thread exists
-    thread = await Thread.find(user_id="1", id=thread_id)
-    if not thread:
-        raise ValueError(f"Thread {thread_id} not found")
-
-    # Save user message
-    user_message = await DBMessage.create(
-        user_id="1",
-        thread_id=thread_id,
-        role="user",
-        content=content,
-        tool_calls=[],
-    )
-
-    # Load conversation history
-    messages, _ = await DBMessage.paginate(
-        thread_id=thread_id,
-        limit=100,  # Get recent context
-    )
-
-    # Convert to API message format
-    api_messages = [
-        ApiMessage(
-            role=msg.role,
-            content=msg.content,
-            tool_calls=msg.tool_calls if msg.tool_calls else None,
-        )
-        for msg in reversed(messages)  # Messages come in reverse order
-    ]
-
-    # Add system prompt if provided
-    if system_prompt:
-        api_messages.insert(0, ApiMessage(role="system", content=system_prompt))
-
-    # Get provider and generate response
-    provider_instance = get_provider(provider)
-
-    # Stream response and collect chunks
-    response = await provider_instance.generate_message(
-        messages=api_messages,
-        model=model,
-    )
-
-    # Save assistant message
-    assistant_message = await DBMessage.create(
-        user_id="1",
-        thread_id=thread_id,
-        role="assistant",
-        content=response.content,
-        tool_calls=[],
-    )
-
-    return {
-        "thread_id": thread_id,
-        "user_message_id": user_message.id,
-        "assistant_message_id": assistant_message.id,
-        "content": response.content,
-        "model": model,
-        "provider": provider,
-    }
-
-
-@mcp.tool()
-async def delete_message(message_id: str) -> dict[str, Any]:
-    """
-    Delete a specific message from a thread.
-
-    Args:
-        message_id: ID of the message to delete
-
-    Returns:
-        Success message
-    """
-    message = await DBMessage.get(message_id)
-    if not message:
-        raise ValueError(f"Message {message_id} not found")
-
-    await message.delete()
-    return {"message": f"Message {message_id} deleted successfully"}
-
-
-@mcp.tool()
-async def upload_file_to_storage(
-    key: str,
-    content: str,
-    temp: bool = False,
-) -> dict[str, Any]:
-    """
-    Upload a file to NodeTool storage (asset or temp storage).
-
-    Args:
-        key: File key/name (no path separators allowed)
-        content: Base64-encoded file content
-        temp: If True, upload to temp storage; if False, upload to asset storage (default: False)
-
-    Returns:
-        Success message with file details
-    """
-    # Validate key has no path separators
-    if "/" in key or "\\" in key:
-        raise ValueError("Invalid key: path separators not allowed")
-
-    # Decode base64 content
-    try:
-        file_data = base64.b64decode(content)
-    except Exception as e:
-        raise ValueError(f"Invalid base64 content: {e}")
-
-    # Get appropriate storage
-    storage = (
-        Environment.get_temp_storage() if temp else Environment.get_asset_storage()
-    )
-
-    # Upload file
-    await storage.upload(key, BytesIO(file_data))
-
-    # Get file info
-    size = await storage.get_size(key)
-
-    return {
-        "key": key,
-        "size": size,
-        "storage": "temp" if temp else "asset",
-        "message": f"File uploaded successfully to {'temp' if temp else 'asset'} storage",
     }
 
 
@@ -2675,44 +1950,6 @@ async def get_file_metadata(
         "size": size,
         "last_modified": last_modified.isoformat() if last_modified else None,
         "storage": "temp" if temp else "asset",
-    }
-
-
-@mcp.tool()
-async def delete_file_from_storage(
-    key: str,
-    temp: bool = False,
-) -> dict[str, Any]:
-    """
-    Delete a file from NodeTool storage.
-
-    Args:
-        key: File key/name to delete
-        temp: If True, delete from temp storage; if False, delete from asset storage (default: False)
-
-    Returns:
-        Success message
-    """
-    # Validate key has no path separators
-    if "/" in key or "\\" in key:
-        raise ValueError("Invalid key: path separators not allowed")
-
-    # Get appropriate storage
-    storage = (
-        Environment.get_temp_storage() if temp else Environment.get_asset_storage()
-    )
-
-    # Check if file exists
-    if not await storage.file_exists(key):
-        raise ValueError(f"File not found: {key}")
-
-    # Delete file
-    await storage.delete(key)
-
-    return {
-        "key": key,
-        "storage": "temp" if temp else "asset",
-        "message": f"File deleted successfully from {'temp' if temp else 'asset'} storage",
     }
 
 

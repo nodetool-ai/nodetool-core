@@ -3,12 +3,10 @@ Additional tests for image utilities, specifically for image_ref_to_base64_jpeg.
 """
 
 import base64
-import tempfile
 import unittest
 from unittest.mock import MagicMock, patch, mock_open
 
 from nodetool.media.image.image_utils import image_ref_to_base64_jpeg
-from nodetool.metadata.types import ImageRef
 
 
 class TestImageUtilsExtra(unittest.TestCase):
@@ -69,13 +67,13 @@ class TestImageUtilsExtra(unittest.TestCase):
 
         self.assertEqual(result, "mocked_base64_data")
         mock_get.assert_called_once_with(
-            "https://example.com/image.jpg", 
+            "https://example.com/image.jpg",
             follow_redirects=True,
             headers={
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
                 "Accept": "*/*",
                 "Accept-Language": "en-US,en;q=0.9",
-            }
+            },
         )
         mock_convert.assert_called_once_with(self.test_image_data, (512, 512), 85)
 

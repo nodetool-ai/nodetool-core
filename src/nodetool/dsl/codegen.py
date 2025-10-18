@@ -244,7 +244,9 @@ def generate_class_source(node_cls: type[BaseNode]) -> str:
                     field_def = f"Field(default={enum_full_path}({repr(field.default)}), description={repr(field.description)})"
                 class_body += f"    {field_name}: {enum_full_path} = {field_def}\n"
             else:
-                new_field_type = f"{type_to_string(field_type)} | GraphNode | tuple[GraphNode, str]"  # type: ignore
+                new_field_type = (
+                    f"{type_to_string(field_type)} | GraphNode | tuple[GraphNode, str]"  # type: ignore
+                )
                 field_def = f"Field(default={field_default(field.default)}, description={repr(field.description)})"
                 class_body += f"    {field_name}: {new_field_type} = {field_def}\n"
         except Exception as e:

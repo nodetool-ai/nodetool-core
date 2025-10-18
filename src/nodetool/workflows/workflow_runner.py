@@ -36,7 +36,7 @@ import logging
 from nodetool.config.logging_config import get_logger
 import time
 import threading
-from typing import Any, AsyncGenerator, Optional
+from typing import Any, Optional
 from collections import defaultdict, deque
 
 from nodetool.types.job import JobUpdate
@@ -46,8 +46,7 @@ from nodetool.workflows.base_node import (
     InputNode,
     OutputNode,
 )
-from nodetool.workflows.types import EdgeUpdate, NodeProgress, NodeUpdate, OutputUpdate
-from nodetool.metadata.types import MessageTextContent
+from nodetool.workflows.types import EdgeUpdate, NodeUpdate, OutputUpdate
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.config.environment import Environment
@@ -408,7 +407,6 @@ class WorkflowRunner:
                 removed.append(edge.id or "<unknown>")
                 continue
 
-            source_cls = source_node.__class__
             target_cls = target_node.__class__
 
             # 3 – source handle must be an output on the *source* node (instance-aware)

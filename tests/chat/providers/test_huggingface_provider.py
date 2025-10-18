@@ -134,12 +134,12 @@ Model Management:
 import json
 import pytest
 from typing import Any, Dict, List
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import patch, MagicMock
 import httpx
 from huggingface_hub import AsyncInferenceClient
 
 from nodetool.providers.huggingface_provider import HuggingFaceProvider
-from nodetool.metadata.types import Message, MessageTextContent, ToolCall
+from nodetool.metadata.types import Message, MessageTextContent
 from .test_base_provider import BaseProviderTest, ResponseFixtures
 
 
@@ -157,6 +157,7 @@ class TestHuggingFaceProvider(BaseProviderTest):
     def create_provider(self, **kwargs):
         """Create a HuggingFaceProvider instance with mocked environment."""
         import os
+
         # Set a dummy HF_TOKEN for testing
         original_token = os.environ.get("HF_TOKEN")
         os.environ["HF_TOKEN"] = "hf_test_token_12345"
@@ -298,7 +299,7 @@ class TestHuggingFaceProvider(BaseProviderTest):
     def mock_streaming_call(self, chunks: List[Dict[str, Any]]):
         """Mock HuggingFace TGI streaming API call."""
         text = "".join(chunk.get("content", "") for chunk in chunks)
-        hf_chunks = self.create_huggingface_streaming_responses(text)
+        self.create_huggingface_streaming_responses(text)
 
         class _Delta:
             def __init__(self, content):

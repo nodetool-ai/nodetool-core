@@ -1,11 +1,9 @@
-import json
 import pytest
 
 from nodetool.agents.simple_agent import SimpleAgent
 from nodetool.providers.base import MockProvider
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.metadata.types import Message, SubTask, Task, ToolCall
-from nodetool.workflows.types import Chunk
+from nodetool.metadata.types import Message, ToolCall
 from nodetool.agents.tools.base import Tool
 
 

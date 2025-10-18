@@ -53,7 +53,12 @@ def test_update_planning_display(monkeypatch):
 def test_create_execution_table(monkeypatch):
     console = AgentConsole(verbose=True)
     sub1 = SubTask(
-        id="sub1", content="task1", output_file="out1.txt", input_files=["in1.txt"], start_time=1, completed=True
+        id="sub1",
+        content="task1",
+        output_file="out1.txt",
+        input_files=["in1.txt"],
+        start_time=1,
+        completed=True,
     )
     sub2 = SubTask(id="sub2", content="task2", output_file="out2.txt", completed=True)
     task = Task(title="t", subtasks=[sub1, sub2])
@@ -73,36 +78,36 @@ def test_create_execution_table(monkeypatch):
 def test_phase_logging():
     """Test that logs are stored separately for each phase."""
     console = AgentConsole(verbose=True)
-    
+
     # Test setting current phase
     console.set_current_phase("Analysis")
     assert console.current_phase == "Analysis"
     assert "Analysis" in console.phase_logs
-    
+
     # Test logging to current phase
     console.log_to_phase("info", "Starting analysis")
     assert len(console.get_phase_logs("Analysis")) == 1
     assert console.get_phase_logs("Analysis")[0]["message"] == "Starting analysis"
     assert console.get_phase_logs("Analysis")[0]["level"] == "info"
-    
+
     # Test switching phases
     console.set_current_phase("Data Flow")
     console.log_to_phase("debug", "Processing data flow")
-    
+
     # Verify logs are stored separately
     analysis_logs = console.get_phase_logs("Analysis")
     data_flow_logs = console.get_phase_logs("Data Flow")
-    
+
     assert len(analysis_logs) == 1
     assert len(data_flow_logs) == 1
     assert analysis_logs[0]["message"] == "Starting analysis"
     assert data_flow_logs[0]["message"] == "Processing data flow"
-    
+
     # Test logging to specific phase
     console.log_to_phase("warning", "Analysis warning", "Analysis")
     assert len(console.get_phase_logs("Analysis")) == 2
     assert console.get_phase_logs("Analysis")[1]["level"] == "warning"
-    
+
     # Test get all phase logs
     all_logs = console.get_all_phase_logs()
     assert "Analysis" in all_logs
@@ -114,27 +119,27 @@ def test_phase_logging():
 def test_phase_logging_via_standard_methods():
     """Test that standard logging methods (info, debug, etc.) also log to phases."""
     console = AgentConsole(verbose=True)
-    
+
     # Set a phase and use standard logging methods
     console.set_current_phase("Plan Creation")
-    
+
     console.info("This is an info message")
     console.debug("This is a debug message")
     console.warning("This is a warning")
     console.error("This is an error")
-    
+
     # Verify all messages were logged to the phase
     phase_logs = console.get_phase_logs("Plan Creation")
     assert len(phase_logs) == 4
-    
+
     messages = [log["message"] for log in phase_logs]
     levels = [log["level"] for log in phase_logs]
-    
+
     assert "This is an info message" in messages
     assert "This is a debug message" in messages
     assert "This is a warning" in messages
     assert "This is an error" in messages
-    
+
     assert "info" in levels
     assert "debug" in levels
     assert "warning" in levels
@@ -144,22 +149,22 @@ def test_phase_logging_via_standard_methods():
 def test_clear_phase_logs():
     """Test clearing phase logs."""
     console = AgentConsole(verbose=True)
-    
+
     console.set_current_phase("Test Phase")
     console.log_to_phase("info", "Test message")
-    
+
     assert len(console.get_phase_logs("Test Phase")) == 1
-    
+
     # Clear specific phase
     console.clear_phase_logs("Test Phase")
     assert len(console.get_phase_logs("Test Phase")) == 0
-    
+
     # Add logs to multiple phases
     console.set_current_phase("Phase 1")
     console.log_to_phase("info", "Phase 1 message")
     console.set_current_phase("Phase 2")
     console.log_to_phase("info", "Phase 2 message")
-    
+
     # Clear all phases
     console.clear_phase_logs()
     assert len(console.get_all_phase_logs()) == 0

@@ -1,11 +1,10 @@
 from abc import ABC, abstractmethod
-from typing import AsyncGenerator, Sequence, Union, Any, Optional
+from typing import AsyncGenerator, Sequence, Any, Optional
 
 from nodetool.providers import BaseProvider
 from nodetool.agents.tools.base import Tool
-from nodetool.metadata.types import Task, ToolCall
+from nodetool.metadata.types import Task
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.workflows.types import Chunk, PlanningUpdate, TaskUpdate
 
 
 class BaseAgent(ABC):

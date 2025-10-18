@@ -214,7 +214,6 @@ def _legacy_export_to_video_bytes(
         )
 
     import cv2
-    from io import BytesIO
 
     if isinstance(video_frames[0], np.ndarray):
         video_frames = [(frame * 255).astype(np.uint8) for frame in video_frames]

@@ -8,7 +8,6 @@ from rich.console import Console
 from nodetool.api.model import get_language_models
 from nodetool.api.workflow import from_model
 from nodetool.chat.chat_sse_runner import ChatSSERunner
-from nodetool.types.workflow import Workflow
 from nodetool.models.workflow import Workflow as WorkflowModel
 
 console = Console()

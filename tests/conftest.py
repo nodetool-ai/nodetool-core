@@ -1,6 +1,5 @@
 from typing import Any
 from unittest.mock import Mock
-from nodetool.models.schema import create_all_tables, drop_all_tables
 from nodetool.models.workflow import Workflow
 from pydantic import Field
 from fastapi.testclient import TestClient
@@ -16,15 +15,12 @@ from nodetool.models.message import Message
 from nodetool.models.thread import Thread
 from nodetool.models.job import Job
 from nodetool.models.asset import Asset
-from nodetool.models.base_model import close_all_database_adapters
 from nodetool.workflows.base_node import BaseNode, InputNode
-from nodetool.workflows.graph import Graph
 from nodetool.workflows.processing_context import ProcessingContext
 import io
 import uuid
 import PIL.Image
 import asyncio
-import pytest
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -52,17 +48,24 @@ async def setup_and_teardown(request):
     Environment.set_remote_auth(False)
     Environment.clear_test_storage()
 
-    await create_all_tables()
-
     # Reset JobExecutionManager singleton for test isolation
     # This prevents tests from interfering with each other
     from nodetool.workflows.job_execution_manager import JobExecutionManager
+
     if JobExecutionManager._instance is not None:
         manager = JobExecutionManager.get_instance()
-        # Cancel all jobs
+        # Cancel all jobs and clean up their resources
         for job_id in list(manager._jobs.keys()):
             try:
-                await manager.cancel_job(job_id)
+                job = manager._jobs.get(job_id)
+                if job:
+                    if not job.is_completed():
+                        cancel_result = job.cancel()
+                        if asyncio.iscoroutine(cancel_result):
+                            await cancel_result
+                    cleanup_result = job.cleanup_resources()
+                    if asyncio.iscoroutine(cleanup_result):
+                        await cleanup_result
             except Exception:
                 pass
         # Clear jobs dict
@@ -78,11 +81,67 @@ async def setup_and_teardown(request):
 
     yield
 
-    # Clean up database tables
-    await drop_all_tables()
+    # Clean up JobExecutionManager after test
+    try:
+        from nodetool.workflows.job_execution_manager import JobExecutionManager
+
+        if JobExecutionManager._instance is not None:
+            manager = JobExecutionManager.get_instance()
+            # Cancel all jobs and clean up their resources
+            for job_id in list(manager._jobs.keys()):
+                try:
+                    job = manager._jobs.get(job_id)
+                    if job:
+                        if not job.is_completed():
+                            cancel_result = job.cancel()
+                            if asyncio.iscoroutine(cancel_result):
+                                await cancel_result
+                        cleanup_result = job.cleanup_resources()
+                        if asyncio.iscoroutine(cleanup_result):
+                            await cleanup_result
+                except Exception as e:
+                    # Log but don't fail on cleanup errors
+                    import logging
+
+                    logging.debug(f"Error cleaning up job {job_id}: {e}")
+            # Clear jobs dict
+            manager._jobs.clear()
+            # Cancel cleanup task if running
+            if manager._cleanup_task and not manager._cleanup_task.done():
+                manager._cleanup_task.cancel()
+                try:
+                    await manager._cleanup_task
+                except asyncio.CancelledError:
+                    pass
+            manager._cleanup_task = None
+    except Exception:
+        pass
+
+    # Clear all database tables for test isolation
+    try:
+        from nodetool.models.asset import Asset
+        from nodetool.models.job import Job
+        from nodetool.models.thread import Thread
+        from nodetool.models.message import Message
+        from nodetool.models.workflow import Workflow
+        from nodetool.models.prediction import Prediction
+
+        # Clear tables in order (respecting foreign key constraints if any)
+        for model_class in [Message, Job, Prediction, Asset, Workflow, Thread]:
+            try:
+                adapter = await model_class.adapter()
+                # Delete all rows from the table
+                await adapter.connection.execute(f"DELETE FROM {adapter.table_name}")
+                await adapter.connection.commit()
+            except Exception:
+                # Ignore errors if table doesn't exist or other issues
+                pass
+    except Exception:
+        # Ignore any errors during cleanup
+        pass
 
     # Close all database connections
-    await close_all_database_adapters()
+    # await close_all_database_adapters()
 
     Environment.set_remote_auth(True)
 

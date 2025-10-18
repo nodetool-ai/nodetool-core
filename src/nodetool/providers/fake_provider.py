@@ -35,7 +35,6 @@ import uuid
 from nodetool.providers.base import BaseProvider
 from nodetool.metadata.types import (
     Message,
-    Provider,
     ToolCall,
     MessageTextContent,
     LanguageModel,

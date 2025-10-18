@@ -1,6 +1,5 @@
 #!/usr/bin/env python
 
-import asyncio
 import datetime
 import os
 from io import BytesIO

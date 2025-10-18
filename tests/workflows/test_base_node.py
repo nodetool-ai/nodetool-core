@@ -15,7 +15,7 @@ from nodetool.workflows.base_node import (
     get_node_class,
     type_metadata,
 )
-from nodetool.metadata.types import OutputSlot, DataframeRef, ColumnDef, ImageRef
+from nodetool.metadata.types import OutputSlot, DataframeRef, ImageRef
 from nodetool.workflows.inbox import NodeInbox
 
 
@@ -210,7 +210,7 @@ def test_return_type_streaming_node():
 
 
 def test_return_type_process_variants():
-    assert DummyClass.return_type() == int
+    assert DummyClass.return_type() is int
     assert ImageReturnNode.return_type() is ImageRef
     assert DictReturnNode.return_type() == dict[str, int]
 

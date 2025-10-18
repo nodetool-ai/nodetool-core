@@ -115,14 +115,9 @@ class CreateTaskTool(Tool):
                         "output_schema": {
                             "type": "string",
                             "description": 'Output schema for the subtask as a JSON string. Use \'{"type": "string"}\' for unstructured output types.',
-                        }
+                        },
                     },
-                    "required": [
-                        "id",
-                        "content",
-                        "output_schema",
-                        "input_tasks"
-                    ],
+                    "required": ["id", "content", "output_schema", "input_tasks"],
                 },
             },
         },
@@ -878,7 +873,9 @@ class TaskPlanner:
 
         log.debug("Calling LLM for %s using model: %s", phase_name, self.model)
         response_message: Message = await self.provider.generate_message(
-            messages=history, model=self.model, tools=[]  # Explicitly empty list
+            messages=history,
+            model=self.model,
+            tools=[],  # Explicitly empty list
         )
         history.append(response_message)
         log.debug(
@@ -1176,9 +1173,11 @@ class TaskPlanner:
                 self.display_manager.set_current_phase(current_phase)
             log.debug("Entering phase: %s", current_phase)
             yield PlanningUpdate(phase=current_phase, status="Starting", content=None)
-            task, plan_creation_error, planning_update = (
-                await self._run_plan_creation_phase(history, objective, max_retries)
-            )
+            (
+                task,
+                plan_creation_error,
+                planning_update,
+            ) = await self._run_plan_creation_phase(history, objective, max_retries)
             if planning_update:
                 yield planning_update  # Yield the update from the phase itself
 

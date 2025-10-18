@@ -66,17 +66,16 @@ Error Handling:
 - 529: Service overloaded
 """
 
-import json
 import pytest
 from typing import Any, Dict, List
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import patch, MagicMock
 
 import anthropic
-from anthropic.types import Message as AnthropicMessage, MessageParam
+from anthropic.types import Message as AnthropicMessage
 from anthropic.types import TextBlock, ToolUseBlock, Usage
 
 from nodetool.providers.anthropic_provider import AnthropicProvider
-from nodetool.metadata.types import Message, MessageTextContent, ToolCall
+from nodetool.metadata.types import Message, MessageTextContent
 from tests.chat.providers.test_base_provider import BaseProviderTest, ResponseFixtures
 
 
@@ -298,7 +297,7 @@ class TestAnthropicProvider(BaseProviderTest):
         with self.mock_api_call(
             ResponseFixtures.simple_text_response("Claude response")
         ) as mock_call:
-            response = await provider.generate_message(
+            await provider.generate_message(
                 messages,
                 "claude-3-sonnet-20240229",
                 max_tokens=1000,
@@ -404,9 +403,7 @@ class TestAnthropicProvider(BaseProviderTest):
         with self.mock_api_call(
             ResponseFixtures.simple_text_response("Hello! How can I help you?")
         ) as mock_call:
-            response = await provider.generate_message(
-                messages, "claude-3-sonnet-20240229"
-            )
+            await provider.generate_message(messages, "claude-3-sonnet-20240229")
 
         # Verify system message was handled correctly
         mock_call.assert_called_once()
@@ -528,9 +525,7 @@ class TestAnthropicProvider(BaseProviderTest):
                 "I'd suggest checking a weather app first."
             )
         ) as mock_call:
-            response = await provider.generate_message(
-                conversation, "claude-3-sonnet-20240229"
-            )
+            await provider.generate_message(conversation, "claude-3-sonnet-20240229")
 
         # Verify conversation was processed correctly
         mock_call.assert_called_once()

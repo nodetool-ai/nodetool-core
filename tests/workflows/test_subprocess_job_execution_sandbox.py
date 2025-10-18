@@ -2,25 +2,18 @@
 Tests for macOS sandbox-exec functionality in subprocess job execution.
 """
 
-import asyncio
 import os
 import platform
 import tempfile
-from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
-from nodetool.models.job import Job
-from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.subprocess_job_execution import (
-    SubprocessJobExecution,
     _create_macos_sandbox_profile,
     _should_use_sandbox,
     _wrap_command_with_sandbox,
 )
-from nodetool.workflows.run_job_request import ResourceLimits
 from nodetool.types.graph import Graph, Node, Edge
 
 

@@ -41,7 +41,7 @@ import asyncio
 from nodetool.config.logging_config import get_logger
 from typing import Any, Awaitable, Callable
 
-from nodetool.workflows.base_node import BaseNode, OutputNode
+from nodetool.workflows.base_node import BaseNode
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.inbox import NodeInbox
 from nodetool.workflows.types import NodeUpdate
@@ -438,7 +438,6 @@ class NodeActor:
     ) -> None:
         """Run a non-streaming-input node with fan-out per arriving input message."""
         node = self.node
-        ctx = self.context
 
         self.logger.debug(f"Running batched node {node.get_title()} ({node._id})")
         if self._only_nonroutable_upstreams():

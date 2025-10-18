@@ -36,6 +36,7 @@ from concurrent.futures import ProcessPoolExecutor
 import threading
 import os
 from huggingface_hub import constants
+from nodetool.ml.models.model_cache import ModelCache
 
 
 def has_cached_files(
@@ -183,6 +184,7 @@ class DownloadManager:
         self.downloads: dict[str, DownloadState] = {}
         self.process_pool = ProcessPoolExecutor(max_workers=4)
         self.manager = Manager()
+        self.model_cache = ModelCache("model_info")
 
     async def start_download(
         self,
@@ -340,6 +342,14 @@ class DownloadManager:
 
         state.status = "completed" if not state.cancel.is_set() else "cancelled"
         self.logger.info(f"Download {state.status} for repo: {repo_id}")
+
+        # Purge all HuggingFace caches when download completes successfully
+        if state.status == "completed":
+            self.logger.info(
+                "Purging HuggingFace model caches after successful download"
+            )
+            self.model_cache.delete_pattern("cached_hf_*")
+
         await self.send_update(repo_id, path)
 
 

@@ -20,13 +20,12 @@ import os
 import subprocess
 import traceback
 import sys
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict
 from pathlib import Path
 import shutil  # Add shutil for cp and mv
 import re  # Add re for grep
 
 # New imports
-from nodetool.agents.tools.workflow_tool import create_workflow_tools
 from nodetool.ml.models.language_models import get_all_language_models
 from prompt_toolkit import PromptSession
 from prompt_toolkit.history import FileHistory
@@ -42,7 +41,6 @@ from rich.columns import Columns  # Add Columns
 
 # Existing imports
 from nodetool.agents.agent import Agent
-from nodetool.api.model import get_language_models
 from nodetool.providers import get_provider
 from nodetool.chat.regular_chat import process_regular_chat
 from nodetool.metadata.types import Message, ToolCall, LanguageModel
@@ -264,7 +262,7 @@ class ChatCLI:
             self.console.print(
                 f"[bold red]Error fetching language models:[/bold red] {e}"
             )
-            self.language_models = [] 
+            self.language_models = []
 
         # Find and set the selected model based on loaded settings or default
         found_model = None
@@ -818,9 +816,7 @@ class ChatCLI:
                                         rel_file_path = abs_file_path.relative_to(
                                             current_dir
                                         )
-                                    except (
-                                        ValueError
-                                    ):  # Handle case where file is not under CWD (e.g., symlink)
+                                    except ValueError:  # Handle case where file is not under CWD (e.g., symlink)
                                         rel_file_path = abs_file_path  # Show absolute path if not relative
 
                                     self.console.print(

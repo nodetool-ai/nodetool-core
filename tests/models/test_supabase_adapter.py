@@ -6,16 +6,16 @@ from typing import Dict, List, Optional
 from unittest.mock import patch
 
 from nodetool.models.base_model import DBModel, DBField
-
-
-# Skip global DB setup/teardown from tests/conftest.py for this module
-pytestmark = pytest.mark.no_setup
 from nodetool.models.condition_builder import Field
 from nodetool.models.supabase_adapter import (
     SupabaseAdapter,
     convert_to_supabase_format,
     convert_from_supabase_format,
 )
+
+
+# Skip global DB setup/teardown from tests/conftest.py for this module
+pytestmark = pytest.mark.no_setup
 
 
 class TestEnum(Enum):

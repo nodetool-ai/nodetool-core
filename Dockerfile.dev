@@ -69,4 +69,3 @@ RUN uv pip install --no-cache-dir /app/nodetool-core
 RUN uv pip install --no-cache-dir /app/nodetool-base
 
 ENV PATH=/app/venv/bin:$PATH
-

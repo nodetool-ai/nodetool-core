@@ -1,5 +1,4 @@
-"""
-"""
+""" """
 
 
 def extract_models(workflow_data: dict) -> list[dict]:

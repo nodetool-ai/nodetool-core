@@ -8,9 +8,7 @@ independently within agent workflows.
 """
 
 from typing import Any, Dict, Type
-import asyncio
 from nodetool.agents.tools.base import Tool
-from nodetool.metadata.types import AssetRef
 from nodetool.workflows.base_node import (
     ApiKeyMissingError,
     BaseNode,
@@ -82,7 +80,7 @@ class NodeTool(Tool):
             try:
                 prop_schema = prop.get_json_schema()
                 properties[prop.name] = prop_schema
-            except Exception as e:
+            except Exception:
                 pass
 
         self.input_schema = {"type": "object", "properties": properties}
@@ -103,7 +101,7 @@ class NodeTool(Tool):
         """
         # Initialize node to None
         node = None
-        
+
         try:
             # Create node instance with a unique ID and properties
             import uuid
@@ -130,7 +128,7 @@ class NodeTool(Tool):
                 "result": converted_result,
                 "status": "completed",
             }
-        except ApiKeyMissingError as e:
+        except ApiKeyMissingError:
             return {
                 "node_type": self.node_type,
                 "error": "API key missing. ASK THE USER TO SET THE API KEY IN THE NODETOOL SETTINGS.",

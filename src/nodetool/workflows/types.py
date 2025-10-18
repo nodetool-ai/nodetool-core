@@ -79,6 +79,7 @@ class PreviewUpdate(BaseModel):
     node_id: str
     value: Any
 
+
 class SaveUpdate(BaseModel):
     """
     A message representing a save update from a node.

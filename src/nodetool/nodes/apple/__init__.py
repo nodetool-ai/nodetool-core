@@ -41,12 +41,13 @@ __all__ = [
 # Utility helpers
 # ---------------------------------------------------------------------------
 
+
 def escape_for_applescript(text: str) -> str:  # noqa: D401 – simple function
     """Escape quotes, backslashes and newlines for safe use in AppleScript."""
 
     return (
         text.replace("\\", "\\\\")  # Escape backslashes first
-        .replace("\"", "\\\"")  # Then escape quotes
+        .replace('"', '\\"')  # Then escape quotes
         .replace("\n", "\\n")  # Finally replace newlines with literal "\n"
     )
 
@@ -72,8 +73,12 @@ def _make_node_class(name: str, cacheable: bool) -> type[BaseNode]:
 # ---------------------------------------------------------------------------
 
 _calendar_mod = ModuleType("nodetool.nodes.apple.calendar")
-setattr(_calendar_mod, "CreateCalendarEvent", _make_node_class("CreateCalendarEvent", False))
-setattr(_calendar_mod, "ListCalendarEvents", _make_node_class("ListCalendarEvents", False))
+setattr(
+    _calendar_mod, "CreateCalendarEvent", _make_node_class("CreateCalendarEvent", False)
+)
+setattr(
+    _calendar_mod, "ListCalendarEvents", _make_node_class("ListCalendarEvents", False)
+)
 _sys.modules[_calendar_mod.__name__] = _calendar_mod
 calendar = _calendar_mod  # re-export
 
@@ -117,4 +122,4 @@ speech = _speech_mod  # re-export
 _dictionary_mod = ModuleType("nodetool.nodes.apple.dictionary")
 setattr(_dictionary_mod, "SearchDictionary", _make_node_class("SearchDictionary", True))
 _sys.modules[_dictionary_mod.__name__] = _dictionary_mod
-dictionary = _dictionary_mod  # re-export 
+dictionary = _dictionary_mod  # re-export

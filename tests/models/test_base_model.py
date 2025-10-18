@@ -1,5 +1,4 @@
 import pytest
-from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
 
 import pytest_asyncio

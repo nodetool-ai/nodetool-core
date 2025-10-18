@@ -15,8 +15,7 @@ Key simplifications:
 import asyncio
 import json
 from nodetool.config.logging_config import get_logger
-import time
-from typing import Any, AsyncGenerator, Dict, List, Optional, Sequence, Union
+from typing import Any, AsyncGenerator, Dict, Optional, Sequence, Union
 
 from nodetool.agents.tools.base import Tool
 from nodetool.providers import BaseProvider
@@ -331,7 +330,6 @@ Safety and privacy:
 
 async def main():
     """Test scenario for the AgentExecutor."""
-    import os
     from nodetool.providers.openai_provider import OpenAIProvider
     from nodetool.workflows.processing_context import ProcessingContext
 

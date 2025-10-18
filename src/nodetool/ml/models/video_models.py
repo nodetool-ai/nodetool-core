@@ -34,9 +34,7 @@ async def get_all_video_models() -> List[VideoModel]:
 
     # Get models from each registered provider
     providers = list_providers()
-    log.debug(
-        f"Discovering video models from {len(providers)} providers: {providers}"
-    )
+    log.debug(f"Discovering video models from {len(providers)} providers: {providers}")
 
     for provider in providers:
         print(f"Getting video models from provider: {provider.provider_name}")

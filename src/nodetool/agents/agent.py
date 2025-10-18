@@ -24,14 +24,13 @@ import shutil
 import sys
 import tempfile
 from pathlib import Path
-from typing import AsyncGenerator, List, Sequence, Union, Any, Optional
+from typing import AsyncGenerator, List, Sequence, Any, Optional
 
 from nodetool.agents.tools.code_tools import ExecutePythonTool
 from nodetool.code_runners.runtime_base import StreamRunnerBase
 from nodetool.config.settings import get_log_path
 from nodetool.workflows.types import (
     Chunk,
-    PlanningUpdate,
     SubTaskResult,
     TaskUpdate,
     TaskUpdateEvent,
@@ -137,7 +136,7 @@ def _create_macos_sandbox_profile(
     for path in default_write_paths:
         profile_lines.append(f'(allow file-write* (subpath "{path}"))')
 
-    for path in default_read_paths:
+    for path in read_paths:
         profile_lines.append(f'(allow file-read* (subpath "{path}"))')
 
     profile_lines.extend(
@@ -238,7 +237,9 @@ def _wrap_command_with_sandbox(
         )
 
         # Write profile to temporary file
-        fd, profile_path = tempfile.mkstemp(suffix=".sb", prefix="nodetool_agent_sandbox_")
+        fd, profile_path = tempfile.mkstemp(
+            suffix=".sb", prefix="nodetool_agent_sandbox_"
+        )
         try:
             os.write(fd, profile.encode("utf-8"))
         finally:
@@ -442,13 +443,17 @@ class AgentRunner(StreamRunnerBase):
             cleanup_data contains the sandbox profile path for cleanup
         """
         # Apply CPU limiting first (innermost wrapper)
-        command, resource_info = _wrap_command_with_cpu_limit(command, self.resource_limits)
+        command, resource_info = _wrap_command_with_cpu_limit(
+            command, self.resource_limits
+        )
         if resource_info:
             log.info(f"CPU limit applied to agent: {resource_info}")
 
         # Apply sandboxing (outermost wrapper)
         workspace_dir = getattr(context, "workspace_dir", None)
-        command, sandbox_profile_path = _wrap_command_with_sandbox(command, workspace_dir)
+        command, sandbox_profile_path = _wrap_command_with_sandbox(
+            command, workspace_dir
+        )
 
         return command, sandbox_profile_path
 

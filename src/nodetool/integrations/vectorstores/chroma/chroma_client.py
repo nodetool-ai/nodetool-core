@@ -210,7 +210,9 @@ def get_all_collections() -> List[chromadb.Collection]:
             )
 
         result.append(
-            client.get_collection(name=name, embedding_function=embedding_function)  # type: ignore
+            client.get_collection(
+                name=collection.name, embedding_function=embedding_function
+            )  # type: ignore
         )
 
     return result

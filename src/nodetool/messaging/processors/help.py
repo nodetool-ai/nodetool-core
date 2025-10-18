@@ -181,26 +181,26 @@ Output nodes: string→StringOutput, int→IntegerOutput, float→FloatOutput, b
 
 To build workflows efficiently, follow these consolidated guidelines for node selection and searching:
 
-- **Create all Input and Output nodes directly:**  
+- **Create all Input and Output nodes directly:**
   For every item in the Input Schema, create a corresponding Input node using the exact node type from the system prompt mappings (do NOT search for these). Set the node's `name` to match the schema's `name`. Do the same for each Output Schema item, using the correct Output node type and `name`.
 
-- **Strategically search for intermediate processing nodes using `search_nodes`:**  
+- **Strategically search for intermediate processing nodes using `search_nodes`:**
   - **Plan searches ahead:** Identify all processing steps needed (e.g., data transformation, aggregation, visualization, text generation) before searching.
   - **Batch related needs:** Combine similar requirements into broader queries to find multiple relevant nodes at once (e.g., "dataframe group aggregate sum" instead of separate searches).
   - **Use specific, descriptive queries:** Prefer targeted keywords that precisely describe the desired functionality, rather than generic terms.
   - **Leverage type filters:** Use `input_type` and `output_type` parameters to narrow results and reduce irrelevant nodes. Supported types include: "str", "int", "float", "bool", "list", "dict", "tuple", "union", "enum", "any".
   - **Use broad searches only when necessary:** If unsure about available node types, omit type parameters for a wider search.
   - **Prefer powerful nodes:** Choose nodes that can handle multiple related tasks over chaining many trivial nodes, when possible.
-  - **For specific operations:**  
+  - **For specific operations:**
     - Dataframe operations: Search with keywords like "GroupBy", "Aggregate", "Filter", "Transform", "dataframe" (often in `nodetool.data`).
     - List operations: Use `input_type="list"` or `output_type="list"` with relevant keywords.
     - Text operations: Use `input_type="str"` or `output_type="str"` (e.g., "concatenate", "regex", "template").
     - Agents: Search "agent" and verify input/output types in metadata.
-    - Type conversions:  
-      - dataframe → array: Search "dataframe to array" or "to_numpy"  
-      - dataframe → string: Search "dataframe to string" or "to_csv"  
-      - array → dataframe: Search "array to dataframe" or "from_array"  
-      - list → item: Use iterator node  
+    - Type conversions:
+      - dataframe → array: Search "dataframe to array" or "to_numpy"
+      - dataframe → string: Search "dataframe to string" or "to_csv"
+      - array → dataframe: Search "array to dataframe" or "from_array"
+      - list → item: Use iterator node
       - item → list: Use collector node
 
 Namespaces:
@@ -220,13 +220,13 @@ Namespaces:
 - nodetool.video
 - lib.*
 
-- **Check node metadata:**  
+- **Check node metadata:**
   For nodes found via `search_nodes`, always inspect their metadata for required fields and property names. Create appropriate property entries as needed.
 
-- **Edge connections:**  
+- **Edge connections:**
   Use the convention: `{"type": "edge", "source": "source_node_id", "sourceHandle": "output_name"}`.
 
-- **Handle conventions:**  
+- **Handle conventions:**
   - Most nodes have a single output, usually named "output". Always verify with `search_nodes` if unsure.
   - Input nodes provide data through the `"output"` handle.
   - Output nodes receive data through their `"value"` property.

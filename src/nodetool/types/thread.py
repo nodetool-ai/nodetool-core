@@ -7,16 +7,19 @@ from pydantic import BaseModel
 
 class ThreadCreateRequest(BaseModel):
     """Request model for creating a new thread."""
+
     title: Optional[str] = None
 
 
 class ThreadUpdateRequest(BaseModel):
     """Request model for updating a thread."""
+
     title: str
 
 
 class Thread(BaseModel):
     """API response model for a thread."""
+
     id: str
     user_id: str
     title: str | None
@@ -37,5 +40,6 @@ class Thread(BaseModel):
 
 class ThreadList(BaseModel):
     """Paginated list of threads."""
+
     next: Optional[str] = None
     threads: list[Thread]

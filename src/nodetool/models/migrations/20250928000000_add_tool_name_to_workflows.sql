@@ -2,4 +2,3 @@
 
 ALTER TABLE nodetool_workflows
 ADD COLUMN IF NOT EXISTS tool_name TEXT;
-

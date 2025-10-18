@@ -59,7 +59,11 @@ class JobLogHandler(logging.Handler):
 
             # Add exception info if present
             if record.exc_info:
-                log_entry["exc_info"] = self.formatter.formatException(record.exc_info) if self.formatter else str(record.exc_info)
+                log_entry["exc_info"] = (
+                    self.formatter.formatException(record.exc_info)
+                    if self.formatter
+                    else str(record.exc_info)
+                )
 
             self.logs.append(log_entry)
 

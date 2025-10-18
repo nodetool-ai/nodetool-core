@@ -20,7 +20,7 @@ import json
 import argparse
 import asyncio
 import base64
-from typing import Any, AsyncGenerator
+from typing import Any
 
 from nodetool.config.logging_config import get_logger
 from nodetool.workflows.processing_context import ProcessingContext

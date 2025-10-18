@@ -219,7 +219,8 @@ class OpenAICompat:
                 content = None
 
             result = ChatCompletionAssistantMessageParam(
-                role=message.role, content=content  # type: ignore
+                role=message.role,
+                content=content,  # type: ignore
             )
             if tool_calls:  # Only add tool_calls if they exist
                 result["tool_calls"] = tool_calls  # type: ignore
@@ -270,7 +271,7 @@ class OpenAICompat:
             if "properties" in parameters:
                 for param_name, param_info in parameters["properties"].items():
                     param_type = param_info.get("type", "any")
-                    param_desc = param_info.get("description", "")
+                    param_info.get("description", "")
                     params.append(f"{param_name}")
 
                     # Create example value based on type

@@ -2,7 +2,6 @@ import asyncio
 from datetime import datetime
 from enum import Enum
 import json
-import platform
 from fastapi.websockets import WebSocketState
 import msgpack
 from typing import AsyncGenerator, Dict, Optional
@@ -14,7 +13,7 @@ from nodetool.config.logging_config import get_logger
 from nodetool.ml.core.model_manager import ModelManager
 from nodetool.types.job import JobUpdate
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.workflows.run_job_request import ExecutionStrategy, RunJobRequest
+from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.workflow_runner import WorkflowRunner
 from nodetool.workflows.types import Chunk, Error
 from nodetool.workflows.job_execution_manager import (
@@ -30,7 +29,7 @@ log = get_logger(__name__)
 WebSocket-based workflow execution manager for Node Tool.
 
 This module provides WebSocket communication and workflow execution management, enabling real-time
-bidirectional communication between clients and the workflow engine. It supports both binary 
+bidirectional communication between clients and the workflow engine. It supports both binary
 (MessagePack) and text (JSON) protocols for message exchange.
 
 Key components:
@@ -82,7 +81,6 @@ async def process_message(context: ProcessingContext, explicit_types: bool = Fal
     if isinstance(msg, Error):
         raise Exception(msg.error)
     else:
-
         if isinstance(msg, dict):
             msg_dict = msg
         else:
@@ -682,7 +680,9 @@ class WebSocketRunner:
                         done=value["done"],
                         content_type=value["content_type"],
                     )
-                job_ctx.job_execution.push_input_value(input_name=input_name, value=value, source_handle=handle)  # type: ignore[arg-type]
+                job_ctx.job_execution.push_input_value(
+                    input_name=input_name, value=value, source_handle=handle
+                )  # type: ignore[arg-type]
                 log.debug("STREAM_INPUT enqueued to runner input queue")
                 return {
                     "message": "Input item streamed",

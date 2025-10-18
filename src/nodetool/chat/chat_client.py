@@ -8,8 +8,7 @@ Provides an interactive chat interface that connects to a running chat server wi
 import asyncio
 import sys
 import os
-from typing import Optional, List, Dict, Union, Any
-from pathlib import Path
+from typing import Optional, List, Dict
 from openai import AsyncOpenAI
 from openai.types.chat import (
     ChatCompletionAssistantMessageParam,
@@ -25,7 +24,7 @@ from rich.markdown import Markdown
 from prompt_toolkit import PromptSession
 from prompt_toolkit.history import FileHistory
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
-from prompt_toolkit.completion import WordCompleter, NestedCompleter, Completer
+from prompt_toolkit.completion import NestedCompleter, Completer
 from prompt_toolkit.styles import Style
 
 
@@ -166,7 +165,7 @@ class OpenAIChatClient:
         """
         try:
             models = await self.client.models.list()
-            console.print(f"[bold green]✅ Connected to OpenAI API[/bold green]")
+            console.print("[bold green]✅ Connected to OpenAI API[/bold green]")
             console.print(f"Available models: {len(models.data)} found")
             return True
 
@@ -291,7 +290,7 @@ class OpenAIChatClient:
 
 [bold]Commands:[/bold]
 • [cyan]quit[/cyan] or [cyan]exit[/cyan] - Exit the chat
-• [cyan]/clear[/cyan] - Clear conversation history  
+• [cyan]/clear[/cyan] - Clear conversation history
 • [cyan]/history[/cyan] - Show conversation history
 • [cyan]/model[/cyan] - Change the AI model
 • [cyan]/help[/cyan] - Show this help message

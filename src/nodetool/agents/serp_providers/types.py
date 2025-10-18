@@ -1,9 +1,8 @@
 from pathlib import Path
-from typing import List, Optional, Dict, Any, Union, Literal
+from typing import List, Optional, Dict
 from pydantic import BaseModel, Field
 
 from nodetool.metadata.types import (
-    BaseType,
     OrganicResult,
     NewsResult,
     ImageResult,

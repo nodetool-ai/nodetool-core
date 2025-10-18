@@ -77,9 +77,7 @@ class ProgressManager:
 
             if completed is not None:
                 # Calculate advance amount
-                current_completed = self.current_operations[operation_id][
-                    "completed"
-                ]
+                current_completed = self.current_operations[operation_id]["completed"]
                 advance = completed - current_completed
                 if advance > 0:
                     update_kwargs["advance"] = advance
@@ -130,95 +128,108 @@ class ProgressManager:
 
         if status == "starting":
             self.console.print(f"[blue]🚀 {message}[/]")
-            
+
         elif status == "progress":
             # Handle different types of progress updates with proper progress bars
-            
+
             if "current_file" in progress_update:
                 current_file = progress_update["current_file"]
-                
-                if "file_progress" in progress_update and "total_files" in progress_update:
+
+                if (
+                    "file_progress" in progress_update
+                    and "total_files" in progress_update
+                ):
                     # File-based progress with progress bar
                     file_num = progress_update["file_progress"]
                     total_files = progress_update["total_files"]
                     operation_id = f"files_{current_file}"
-                    
+
                     description = f"📁 Downloading files ({file_num}/{total_files}): {current_file}"
-                    
+
                     # Add or update file progress task
                     if operation_id not in self.tasks:
                         self.add_task(operation_id, description, total=total_files)
-                    self.update_task(operation_id, completed=file_num, description=description)
+                    self.update_task(
+                        operation_id, completed=file_num, description=description
+                    )
                 else:
                     # Single file progress without known total
                     self.console.print(f"[yellow]📁 {current_file}[/]")
-            
+
             # Handle download progress with size information
             if "downloaded_size" in progress_update and "total_size" in progress_update:
                 downloaded = progress_update["downloaded_size"]
                 total = progress_update["total_size"]
-                
+
                 if total > 0:
                     # Create a unique operation ID for this download
                     operation_id = progress_update.get("operation_id", "download")
                     current_file = progress_update.get("current_file", "")
-                    
+
                     downloaded_mb = downloaded / (1024 * 1024)
                     total_mb = total / (1024 * 1024)
-                    
-                    description = f"📊 Downloading"
+
+                    description = "📊 Downloading"
                     if current_file:
                         description += f" {current_file}"
                     description += f" ({downloaded_mb:.1f}/{total_mb:.1f} MB)"
-                    
+
                     # Add or update download progress task
                     if operation_id not in self.tasks:
                         self.add_task(operation_id, description, total=total)
-                    self.update_task(operation_id, completed=downloaded, description=description)
-            
+                    self.update_task(
+                        operation_id, completed=downloaded, description=description
+                    )
+
             # Handle general progress messages
-            if not any(key in progress_update for key in ["current_file", "downloaded_size"]):
+            if not any(
+                key in progress_update for key in ["current_file", "downloaded_size"]
+            ):
                 self.console.print(f"[yellow]⚙️ {message}[/]")
 
         elif status == "completed":
             self.console.print(f"[green]✅ {message}[/]")
-            
+
             # Complete any active progress tasks related to downloads/files
             for operation_id in list(self.tasks.keys()):
                 if "download" in operation_id or "files_" in operation_id:
                     self.complete_task(operation_id)
-            
+
             if "downloaded_files" in progress_update:
                 self.console.print(
                     f"[green]📋 Downloaded {progress_update['downloaded_files']} files[/]"
                 )
-                
+
         elif status.startswith("pulling"):
             # Handle Docker/Ollama pulling status with progress bars
             digest = progress_update.get("digest", "")
             total = progress_update.get("total")
             completed = progress_update.get("completed")
-            
+
             # Extract the layer ID from status (e.g., "pulling aeda25e63ebd")
             layer_id = status.replace("pulling ", "") if " " in status else "unknown"
             operation_id = f"pull_{layer_id}"
-            
+
             # Create description with layer info
             description = f"🐋 Pulling layer {layer_id}"
             if digest and "sha256:" in digest:
-                short_digest = digest.split(":")[-1][:12] if ":" in digest else digest[:12]
+                short_digest = (
+                    digest.split(":")[-1][:12] if ":" in digest else digest[:12]
+                )
                 description += f" (sha256:{short_digest})"
-            
+
             # Show progress with progress bar if size information is available
             if total and completed is not None:
                 total_mb = total / (1024 * 1024)
                 completed_mb = completed / (1024 * 1024)
                 description += f" ({completed_mb:.1f}/{total_mb:.1f} MB)"
-                
+
                 # Add or update pulling progress task
                 if operation_id not in self.tasks:
                     self.add_task(operation_id, description, total=total)
-                self.update_task(operation_id, completed=completed, description=description)
+                self.update_task(
+                    operation_id, completed=completed, description=description
+                )
             elif total:
                 # Just show size without progress bar
                 total_mb = total / (1024 * 1024)
@@ -227,15 +238,15 @@ class ProgressManager:
             else:
                 # No size info available
                 self.console.print(f"[yellow]{description}[/]")
-                
+
         elif status == "error":
             error = progress_update.get("error", "Unknown error")
             self.console.print(f"[red]❌ Error: {error}[/]")
-            
+
             # Stop any active progress bars on error
             self.stop()
             sys.exit(1)
-            
+
         elif status == "healthy":
             self.console.print("[green]✅ System is healthy[/]")
 

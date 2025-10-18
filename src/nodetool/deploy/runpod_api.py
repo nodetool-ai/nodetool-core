@@ -20,19 +20,18 @@ Usage:
         invoke_streaming_endpoint
     )
 """
+
 import os
 import sys
 import json
 import traceback
 import requests
-import time
 from enum import Enum
-from typing import Any, Generator, List, Optional
-
-RUNPOD_REST_BASE_URL = "https://rest.runpod.io/v1"
-
+from typing import Any, List, Optional
 from runpod import error
 from runpod.user_agent import USER_AGENT
+
+RUNPOD_REST_BASE_URL = "https://rest.runpod.io/v1"
 
 HTTP_STATUS_UNAUTHORIZED = 401
 
@@ -921,8 +920,8 @@ def create_runpod_endpoint_graphql(
         mutation_parts.append(f"workersMin: {workers_min}")
         mutation_parts.append(f"workersMax: {workers_max}")
         mutation_parts.append(f"idleTimeout: {idle_timeout}")
-        mutation_parts.append(f'scalerType: "REQUEST_COUNT"')
-        mutation_parts.append(f"scalerValue: 4")
+        mutation_parts.append('scalerType: "REQUEST_COUNT"')
+        mutation_parts.append("scalerValue: 4")
         mutation_parts.append(f"executionTimeoutMs: {execution_timeout_ms or 300000}")
         mutation_parts.append(f'gpuIds: "{gpu_ids_str}"')
         mutation_parts.append(f"gpuCount: {gpu_count or 1}")
@@ -969,7 +968,7 @@ def create_runpod_endpoint_graphql(
         }}
         """
 
-        print(f"\nExecuting GraphQL mutation:")
+        print("\nExecuting GraphQL mutation:")
         print(mutation)
 
         result = run_graphql_query(mutation)
@@ -984,11 +983,11 @@ def create_runpod_endpoint_graphql(
         endpoint_id = endpoint_data.get("id")
 
         if not endpoint_id:
-            print(f"Error: No endpoint ID returned")
+            print("Error: No endpoint ID returned")
             print(f"Response data: {json.dumps(result, indent=2)}")
             sys.exit(1)
 
-        print(f"\nEndpoint created successfully!")
+        print("\nEndpoint created successfully!")
         print(f"  ID: {endpoint_id}")
         print(f"  Name: {endpoint_data.get('name')}")
         print(f"  GPU Configuration: {endpoint_data.get('gpuIds')}")

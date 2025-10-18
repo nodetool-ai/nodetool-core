@@ -1,6 +1,5 @@
 import pytest
 from enum import Enum
-from typing import Any
 
 from nodetool.metadata.type_metadata import TypeMetadata
 from nodetool.metadata.typecheck import (

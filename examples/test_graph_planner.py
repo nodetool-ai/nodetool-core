@@ -88,7 +88,6 @@ async def test_graph_planner():
         # Plan the graph
         logger.info("Creating workflow graph...")
         updates = []
-        analysis_complete = False
         async for update in planner.create_graph(context):
             if isinstance(update, PlanningUpdate):
                 logger.info(
@@ -97,11 +96,10 @@ async def test_graph_planner():
                 updates.append(update)
                 # Log when analysis phase completes
                 if update.phase == "Analysis" and update.status == "Success":
-                    analysis_complete = True
                     logger.info("Analysis phase completed - workflow design is ready")
 
         if planner.graph:
-            logger.info(f"Graph created successfully!")
+            logger.info("Graph created successfully!")
             logger.info(f"Nodes: {len(planner.graph.nodes)}")
             for node in planner.graph.nodes:
                 logger.info(f"  - {node.type} ({node.id})")
@@ -173,7 +171,7 @@ async def test_simple_graph():
                     logger.info("Analysis phase completed - workflow design is ready")
 
         if planner.graph:
-            logger.info(f"\nGraph structure:")
+            logger.info("\nGraph structure:")
             logger.info(f"Nodes: {[(n.type, n.id) for n in planner.graph.nodes]}")
             logger.info(f"Edges: {[(e.source, e.target) for e in planner.graph.edges]}")
 
@@ -243,7 +241,7 @@ async def test_math_workflow():
                     logger.info("Analysis phase completed with structured output")
 
         if planner.graph:
-            logger.info(f"\nGraph created successfully!")
+            logger.info("\nGraph created successfully!")
             logger.info(f"Total nodes: {len(planner.graph.nodes)}")
             logger.info(f"Total edges: {len(planner.graph.edges)}")
 
@@ -323,7 +321,7 @@ async def test_greeting_graph():
                     logger.info("Analysis phase completed - workflow design is ready")
 
         if planner.graph:
-            logger.info(f"\nGraph structure:")
+            logger.info("\nGraph structure:")
             logger.info(f"Nodes: {[(n.type, n.id) for n in planner.graph.nodes]}")
             logger.info(f"Edges: {[(e.source, e.target) for e in planner.graph.edges]}")
 
@@ -393,7 +391,7 @@ async def test_data_processing_workflow():
                     logger.info("Analysis phase completed - workflow design is ready")
 
         if planner.graph:
-            logger.info(f"\nGraph created successfully!")
+            logger.info("\nGraph created successfully!")
             logger.info(f"Total nodes: {len(planner.graph.nodes)}")
             logger.info(f"Total edges: {len(planner.graph.edges)}")
 

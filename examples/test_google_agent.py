@@ -103,7 +103,10 @@ if __name__ == "__main__":
     #     )
     # )
     asyncio.run(
-        test_google_agent(provider=get_provider(Provider.HuggingFaceCerebras), model="openai/gpt-oss-120b")
+        test_google_agent(
+            provider=get_provider(Provider.HuggingFaceCerebras),
+            model="openai/gpt-oss-120b",
+        )
     )
     # asyncio.run(
     #     test_google_agent(

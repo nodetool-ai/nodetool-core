@@ -124,7 +124,7 @@ build/
 
 # OS specific files
 .DS_Store
-Thumbs.db 
+Thumbs.db
 *.pem
 *.key
 *.crt

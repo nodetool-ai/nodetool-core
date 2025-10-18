@@ -2,8 +2,6 @@
 
 from typing import List, Optional
 from fastapi import APIRouter, HTTPException, Header, UploadFile, File
-from nodetool.config.environment import Environment
-from nodetool.types.job import JobUpdate
 from pydantic import BaseModel
 from nodetool.integrations.vectorstores.chroma.async_chroma_client import (
     get_async_chroma_client,
@@ -17,12 +15,8 @@ import traceback
 import asyncio
 import aiofiles
 
-from nodetool.metadata.types import Collection, FilePath
 from nodetool.models.workflow import Workflow
 from nodetool.indexing.service import index_file_to_collection
-from nodetool.indexing.ingestion import (
-    find_input_nodes,
-)
 
 router = APIRouter(prefix="/api/collections", tags=["collections"])
 
@@ -177,7 +171,7 @@ async def index(
     file: UploadFile = File(...),
     authorization: Optional[str] = Header(None),
 ) -> IndexResponse:
-    collection = await get_async_collection(name)
+    await get_async_collection(name)
     token = "local_token"
 
     # Save uploaded file temporarily

@@ -19,14 +19,12 @@ Usage:
 
 import asyncio
 from nodetool.agents.agent import Agent
-from nodetool.agents.tools.browser_tools import AgenticBrowserTool
 from nodetool.providers import get_provider
 from nodetool.agents.tools import BrowserTool, GoogleSearchTool
 from nodetool.providers.base import BaseProvider
-from nodetool.metadata.types import Provider, Task, SubTask
-from nodetool.agents.sub_task_context import SubTaskContext
+from nodetool.metadata.types import Provider
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.workflows.types import Chunk, TaskUpdate
+from nodetool.workflows.types import Chunk
 import json
 
 
@@ -38,7 +36,7 @@ async def test_instagram_scraper_task(
     context = ProcessingContext()
 
     # 3. Set up browser and search tools
-    tools = [
+    [
         BrowserTool(),
         GoogleSearchTool(),
     ]
@@ -47,7 +45,7 @@ async def test_instagram_scraper_task(
     agent = Agent(
         name="Instagram Trends Collection",
         objective="""
-        Use google to identify top 5 trending hashtags on Instagram.    
+        Use google to identify top 5 trending hashtags on Instagram.
         For each hashtag, use google to find one example post.
         For each post, use the browser tool to get the post details.
         Create a summary of the trends, hashtags, and viral content.
@@ -107,7 +105,8 @@ async def test_instagram_scraper_task(
 if __name__ == "__main__":
     asyncio.run(
         test_instagram_scraper_task(
-            provider=get_provider(Provider.HuggingFaceCerebras), model="openai/gpt-oss-120b"
+            provider=get_provider(Provider.HuggingFaceCerebras),
+            model="openai/gpt-oss-120b",
         )
     )
 

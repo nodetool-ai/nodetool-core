@@ -8,7 +8,13 @@ It provides a complete FastAPI server with:
 2. Model listing (/v1/models)
 3. Workflow execution (/workflows/*)
 4. Admin operations (/admin/*)
-5. Collection/RAG operations (/collections/*)
+   - Model downloads (HuggingFace, Ollama)
+   - Cache management
+   - Database operations
+   - Collection/RAG management (/admin/collections/*)
+   - File storage management (/admin/storage/*)
+5. Public storage (read-only) (/storage/*)
+6. Legacy collection routes (/collections/*)
 
 This worker can be deployed to:
 - Local machines
@@ -32,12 +38,12 @@ Usage:
 
 import os
 import datetime
-import multiprocessing
 import platform
 from typing import List
 
 import uvicorn
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request, status
+from fastapi.responses import JSONResponse
 from rich.console import Console
 
 from nodetool.config.environment import Environment
@@ -49,6 +55,15 @@ from nodetool.deploy.workflow_routes import (
 )
 from nodetool.deploy.admin_routes import create_admin_router
 from nodetool.deploy.collection_routes import create_collection_router
+from nodetool.deploy.storage_routes import (
+    create_admin_storage_router,
+    create_public_storage_router,
+)
+from nodetool.deploy.auth import (
+    get_worker_auth_token,
+    get_token_source,
+    DEPLOYMENT_CONFIG_FILE,
+)
 
 
 console = Console()
@@ -95,6 +110,55 @@ def create_worker_app(
         description="Deployable NodeTool worker with OpenAI-compatible API, workflow execution, and admin operations",
     )
 
+    # Add authentication middleware
+    @app.middleware("http")
+    async def authenticate_requests(request: Request, call_next):
+        """
+        Middleware to authenticate all requests.
+        Excludes health check endpoints from authentication.
+        """
+        # Allow health check endpoints without authentication
+        if request.url.path in ["/health", "/ping"]:
+            return await call_next(request)
+
+        # All other endpoints require authentication
+        auth_header = request.headers.get("authorization")
+
+        if not auth_header:
+            return JSONResponse(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                content={
+                    "detail": "Authorization header required. Use 'Authorization: Bearer YOUR_TOKEN'"
+                },
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        # Parse Bearer token
+        parts = auth_header.split()
+        if len(parts) != 2 or parts[0].lower() != "bearer":
+            return JSONResponse(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                content={
+                    "detail": "Invalid authorization header format. Use 'Authorization: Bearer YOUR_TOKEN'"
+                },
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        provided_token = parts[1]
+        expected_token = get_worker_auth_token()
+
+        # Verify token
+        if provided_token != expected_token:
+            return JSONResponse(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                content={"detail": "Invalid authentication token"},
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        # Token is valid, proceed with request
+        response = await call_next(request)
+        return response
+
     @app.on_event("startup")
     async def startup_event():
         """Initialize worker on startup."""
@@ -112,6 +176,9 @@ def create_worker_app(
             app.include_router(create_workflow_router())
             app.include_router(create_admin_router())
             app.include_router(create_collection_router())
+            # Include storage routers (admin and public)
+            app.include_router(create_admin_storage_router())
+            app.include_router(create_public_storage_router())
         except Exception as e:  # noqa: BLE001
             log.error(f"Failed to include routers: {e}")
 
@@ -184,42 +251,114 @@ def run_worker(
 
     app = create_worker_app(remote_auth, provider, default_model, tools, workflows)
 
+    # Get authentication info
+    auth_token = get_worker_auth_token()
+    token_source = get_token_source()
+    masked_token = (
+        f"{auth_token[:8]}...{auth_token[-4:]}"
+        if auth_token and len(auth_token) > 12
+        else "***"
+    )
+
     console.print(f"🚀 Starting NodeTool worker on {host}:{port}")
+    console.print("")
+    console.print("=" * 70)
+    console.print("AUTHENTICATION")
+    console.print("=" * 70)
+    console.print("🔒 Status: ENABLED (all endpoints require authentication)")
+    console.print(f"🔑 Token: {masked_token}")
+
+    if token_source == "environment":
+        console.print("📍 Source: Environment variable (WORKER_AUTH_TOKEN)")
+    elif token_source == "config":
+        console.print(f"📍 Source: Config file ({DEPLOYMENT_CONFIG_FILE})")
+    else:  # generated
+        console.print(
+            f"📍 Source: Auto-generated and saved to {DEPLOYMENT_CONFIG_FILE}"
+        )
+        console.print(f"💾 Full token saved to: {DEPLOYMENT_CONFIG_FILE}")
+
+    console.print("")
+    console.print("🔓 Public endpoints (no auth): /health, /ping")
+    console.print("🔐 Protected endpoints: All others (use header below)")
+    console.print("")
+    console.print(f"   Authorization: Bearer {auth_token}")
+    console.print("=" * 70)
+    console.print("")
+
+    auth_header = f' -H "Authorization: Bearer {auth_token}"'
+
+    console.print("ENDPOINTS:")
+    console.print("")
+    console.print("OpenAI-Compatible:")
     console.print(
-        f"Chat completions endpoint: http://{host}:{port}/v1/chat/completions"
+        f"  Chat: curl{auth_header} -X POST http://{host}:{port}/v1/chat/completions \\"
     )
-    console.print(f"Models endpoint: http://{host}:{port}/v1/models")
-    console.print(f"Workflows endpoint: http://{host}:{port}/workflows")
-    console.print("Admin endpoints:")
-    console.print(f"  - Health check: http://{host}:{port}/admin/health")
+    console.print('    -H "Content-Type: application/json" \\')
     console.print(
-        f"  - HuggingFace download: http://{host}:{port}/admin/models/huggingface/download"
+        f'    -d \'{{"model": "{default_model}", "messages": [{{"role": "user", "content": "Hello"}}]}}\''
+    )
+    console.print(f"  Models: curl{auth_header} http://{host}:{port}/v1/models")
+    console.print("")
+    console.print("Workflows:")
+    console.print(f"  curl{auth_header} http://{host}:{port}/workflows")
+    console.print("")
+    console.print("Admin:")
+    console.print(f"  Health (public): curl http://{host}:{port}/health")
+    console.print(
+        f"  HF download: curl{auth_header} -X POST http://{host}:{port}/admin/models/huggingface/download"
     )
     console.print(
-        f"  - Ollama download: http://{host}:{port}/admin/models/ollama/download"
+        f"  Cache scan: curl{auth_header} http://{host}:{port}/admin/cache/scan"
     )
-    console.print(f"  - Cache scan: http://{host}:{port}/admin/cache/scan")
-    console.print(f"  - Cache size: http://{host}:{port}/admin/cache/size")
+    console.print("")
+    console.print("Collections:")
+    console.print(f"  List: curl{auth_header} http://{host}:{port}/admin/collections")
     console.print(
-        f"  - Delete HF model: http://{host}:{port}/admin/models/huggingface/{{repo_id}}"
+        f"  Create: curl{auth_header} -X POST http://{host}:{port}/admin/collections \\"
     )
-    console.print(f"  - Workflow status: http://{host}:{port}/admin/workflows/status")
+    console.print('    -H "Content-Type: application/json" \\')
     console.print(
-        "Authentication mode:",
+        '    -d \'{"name": "my_docs", "embedding_model": "all-minilm:latest"}\''
+    )
+    console.print("")
+    console.print("Storage:")
+    console.print(
+        f"  Upload: curl{auth_header} -X PUT http://{host}:{port}/admin/storage/assets/file.png \\"
+    )
+    console.print("    --data-binary @file.png")
+    console.print(
+        f"  Download: curl{auth_header} http://{host}:{port}/storage/assets/file.png"
+    )
+    console.print("")
+    console.print("Assets:")
+    console.print(
+        f"  List: curl{auth_header} 'http://{host}:{port}/admin/assets?user_id=1'"
+    )
+    console.print(
+        f"  Create: curl{auth_header} -X POST 'http://{host}:{port}/admin/assets' \\"
+    )
+    console.print("    -d 'user_id=1&name=MyFolder&content_type=folder'")
+    console.print(
+        f"  Get: curl{auth_header} 'http://{host}:{port}/admin/assets/{{asset_id}}?user_id=1'"
+    )
+    console.print(
+        f"  Delete: curl{auth_header} -X DELETE 'http://{host}:{port}/admin/assets/{{asset_id}}?user_id=1'"
+    )
+    console.print("")
+    console.print(
+        "User authentication:",
         "Remote (Supabase)" if remote_auth else "Local (user_id=1)",
     )
     console.print("Default model:", f"{default_model} (provider: {provider})")
     console.print("Tools:", tools)
     console.print("Workflows:", [w.name for w in workflows])
-    console.print("\\nSend requests with Authorization: Bearer YOUR_TOKEN header")
 
     # Run the server
     try:
         loop = "asyncio" if platform.system() == "Windows" else "uvloop"
-        workers = max(1, multiprocessing.cpu_count())
-        uvicorn.run(
-            app, host=host, port=port, log_level="info", loop=loop, workers=workers
-        )
+        # Always use single worker (multiple workers not supported with app object)
+        uvicorn.run(app, host=host, port=port, log_level="info", loop=loop)
     except KeyboardInterrupt:
         console.print("\\n👋 NodeTool worker stopped by user")
     except Exception as e:

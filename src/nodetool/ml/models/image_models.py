@@ -2,16 +2,13 @@
 
 import asyncio
 from nodetool.config.logging_config import get_logger
-from typing import List, Any
-import aiohttp
-from nodetool.metadata.types import ImageModel, Provider
-import time
+from typing import List
+from nodetool.metadata.types import ImageModel
 
 from nodetool.providers import list_providers
 from nodetool.ml.models.model_cache import _model_cache
 
 log = get_logger(__name__)
-
 
 
 async def get_all_image_models() -> List[ImageModel]:
@@ -37,9 +34,7 @@ async def get_all_image_models() -> List[ImageModel]:
 
     # Get models from each registered provider
     providers = list_providers()
-    log.debug(
-        f"Discovering models from {len(providers)} providers: {providers}"
-    )
+    log.debug(f"Discovering models from {len(providers)} providers: {providers}")
 
     for provider in providers:
         provider_models = await provider.get_available_image_models()
@@ -57,7 +52,9 @@ async def get_all_image_models() -> List[ImageModel]:
 
     return models
 
+
 if __name__ == "__main__":
     import asyncio
+
     models = asyncio.run(get_all_image_models())
     print(models)

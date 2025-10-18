@@ -3,12 +3,10 @@ from nodetool.providers import get_provider
 
 # Assuming ReasoningTool is available alongside other standard tools
 from nodetool.providers.base import BaseProvider
-from nodetool.metadata.types import Provider, Task, SubTask, ToolCall
+from nodetool.metadata.types import Provider, Task, SubTask
 from nodetool.agents.sub_task_context import SubTaskContext
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.workflows.types import Chunk, TaskUpdate
 import json
-from pathlib import Path
 
 
 async def test_logical_puzzle_task(
@@ -16,7 +14,7 @@ async def test_logical_puzzle_task(
     model: str,
 ):
     # 1. Set up workspace directory
-    context = ProcessingContext()
+    ProcessingContext()
 
     # 3. Create a sample task focused on reasoning
     task = Task(

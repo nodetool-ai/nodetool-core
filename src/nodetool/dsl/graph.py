@@ -1,4 +1,4 @@
-from nodetool.workflows.types import Error, JobUpdate, OutputUpdate
+from nodetool.workflows.types import Error, OutputUpdate
 from pydantic import BaseModel, Field
 import uuid
 

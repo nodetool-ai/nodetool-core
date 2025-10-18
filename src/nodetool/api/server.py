@@ -3,7 +3,6 @@ import asyncio
 import platform
 import sys
 from typing import Any, List
-import dotenv
 from contextlib import asynccontextmanager
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, RedirectResponse
@@ -19,7 +18,6 @@ from nodetool.chat.chat_websocket_runner import ChatWebSocketRunner
 from fastapi import APIRouter, FastAPI, Request, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from uvicorn import run as uvicorn
-import sys
 from nodetool.config.logging_config import configure_logging, get_logger
 
 from nodetool.metadata.types import Provider
@@ -44,7 +42,6 @@ import mimetypes
 
 from nodetool.integrations.websocket.websocket_updates import websocket_updates
 from nodetool.api.openai import create_openai_compatible_router
-from nodetool.api.mcp_server import create_mcp_app
 import httpx
 
 _windows_policy = getattr(asyncio, "WindowsSelectorEventLoopPolicy", None)
@@ -86,7 +83,6 @@ Environment.initialize_sentry()
 log = get_logger(__name__)
 
 # Silence SQLite and SQLAlchemy logging
-import logging
 
 
 class ExtensionRouterRegistry:
@@ -163,19 +159,24 @@ def setup_ollama_url():
     try:
         # Use synchronous check during startup
         import httpx
+
         try:
             with httpx.Client(timeout=2.0) as client:
                 response = client.get("http://127.0.0.1:11434/api/tags")
                 if response.status_code == 200:
                     os.environ["OLLAMA_API_URL"] = "http://127.0.0.1:11434"
-                    log.info("Detected Ollama running on port 11434, set OLLAMA_API_URL")
+                    log.info(
+                        "Detected Ollama running on port 11434, set OLLAMA_API_URL"
+                    )
                     return
         except Exception:
             pass
     except Exception as e:
         log.debug(f"Could not check Ollama availability: {e}")
 
-    log.info("Ollama not detected at port 11434, using default OLLAMA_API_URL from environment")
+    log.info(
+        "Ollama not detected at port 11434, using default OLLAMA_API_URL from environment"
+    )
 
 
 def create_app(
@@ -379,11 +380,9 @@ def run_uvicorn_server(app: Any, host: str, port: int, reload: bool) -> None:
         "format": os.getenv(
             "NODETOOL_LOG_FORMAT",
             (
-                (
-                    "\x1b[90m%(asctime)s\x1b[0m | %(levelname)s | \x1b[36m%(name)s\x1b[0m | %(message)s"
-                    if use_color
-                    else "%(asctime)s | %(levelname)s | %(name)s | %(message)s"
-                )
+                "\x1b[90m%(asctime)s\x1b[0m | %(levelname)s | \x1b[36m%(name)s\x1b[0m | %(message)s"
+                if use_color
+                else "%(asctime)s | %(levelname)s | %(name)s | %(message)s"
             ),
         ),
         "datefmt": os.getenv("NODETOOL_LOG_DATEFMT", "%Y-%m-%d %H:%M:%S"),

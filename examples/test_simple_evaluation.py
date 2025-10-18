@@ -83,20 +83,20 @@ async def test_simple_evaluation():
             planner=planner, test_case_name="simple_math", prompt_version="simple_test"
         )
 
-        print(f"\n✅ Evaluation completed successfully!")
+        print("\n✅ Evaluation completed successfully!")
         print(f"📊 Overall Score: {result.overall_score:.2%}")
         print(f"⏱️  Execution Time: {result.execution_time:.2f}s")
         print(f"🔧 Total Metrics: {len(result.metrics)}")
 
         # Show metric breakdown
-        print(f"\n📈 Metric Results:")
+        print("\n📈 Metric Results:")
         for metric in result.metrics:
             status = "✅" if metric.passed else "❌"
             score_pct = metric.score * 100
             print(f"  {status} {metric.name}: {score_pct:.1f}%")
 
         if result.recommendations:
-            print(f"\n💡 Recommendations:")
+            print("\n💡 Recommendations:")
             for i, rec in enumerate(result.recommendations, 1):
                 print(f"  {i}. {rec}")
 
@@ -110,6 +110,6 @@ async def test_simple_evaluation():
 if __name__ == "__main__":
     success = asyncio.run(test_simple_evaluation())
     if success:
-        print(f"\n🎉 Test completed successfully!")
+        print("\n🎉 Test completed successfully!")
     else:
-        print(f"\n😞 Test failed")
+        print("\n😞 Test failed")

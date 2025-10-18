@@ -92,7 +92,6 @@ import json
 import pytest
 from typing import Any, Dict, List
 from unittest.mock import AsyncMock, patch, MagicMock
-import asyncio
 
 import httpx
 import openai
@@ -110,7 +109,7 @@ from openai.types.completion_usage import CompletionUsage
 
 from nodetool.providers.llama_provider import LlamaProvider
 from nodetool.providers.llama_server_manager import LlamaServerManager
-from nodetool.metadata.types import Message, MessageTextContent, ToolCall
+from nodetool.metadata.types import Message, MessageTextContent
 from tests.chat.providers.test_base_provider import BaseProviderTest, ResponseFixtures
 
 

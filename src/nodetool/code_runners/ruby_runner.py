@@ -8,9 +8,8 @@ wrapper or serialization.
 
 from __future__ import annotations
 
-from typing import Any, AsyncGenerator, AsyncIterator
+from typing import Any
 
-from nodetool.workflows.base_node import BaseNode
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.code_runners.runtime_base import StreamRunnerBase
 
@@ -51,7 +50,7 @@ if __name__ == "__main__":
             self.outputs.append((slot, typ))
 
     async def _smoke() -> None:
-        runner = RubyDockerRunner()
+        RubyDockerRunner()
         ctx = ProcessingContext()
         node = _SmokeNode()
 

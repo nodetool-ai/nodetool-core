@@ -41,7 +41,6 @@ from nodetool.metadata.types import Provider
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import Chunk
 from pathlib import Path
-from nodetool.ui.console import AgentConsole
 
 import dotenv
 
@@ -122,6 +121,7 @@ async def run_data_analysis_agent(
             else:
                 # If results is a dict or other type, convert to JSON string
                 import json
+
                 f.write(json.dumps(agent.results, indent=2))
         print(f"\n✓ Analysis report saved to: {report_path}")
 

@@ -1,5 +1,4 @@
 import asyncio
-import io
 import json
 import os
 import platform
@@ -7,12 +6,11 @@ import re
 import shutil
 import tempfile
 from collections import deque
-from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
 from nodetool.config.settings import get_system_data_path, load_settings
@@ -313,7 +311,7 @@ def _create_zip(src_dir: Path, zip_dest: Path) -> None:
     # Ensure parent exists
     zip_dest.parent.mkdir(parents=True, exist_ok=True)
     # Use shutil make_archive for robustness
-    base_name = zip_dest.with_suffix("")
+    zip_dest.with_suffix("")
     # shutil.make_archive adds extension itself; to control exact name we write to temp then rename
     tmp_base = tempfile.mktemp(prefix="nodetool-debug-")
     archive_path = shutil.make_archive(tmp_base, "zip", root_dir=str(src_dir))

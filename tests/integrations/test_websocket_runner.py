@@ -129,8 +129,6 @@ async def test_websocket_runner_manages_multiple_jobs(
 @pytest.mark.asyncio
 async def test_websocket_runner_job_streaming_context():
     """Test JobStreamContext creation."""
-    from nodetool.workflows.processing_context import ProcessingContext
-    from nodetool.workflows.workflow_runner import WorkflowRunner
     from unittest.mock import MagicMock
 
     # Create mock background job

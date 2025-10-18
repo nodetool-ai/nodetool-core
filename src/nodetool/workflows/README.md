@@ -1,6 +1,7 @@
 # Nodetool Workflows
 
-This directory contains the core logic for defining, managing, and executing computational workflows within the Nodetool system.
+This directory contains the core logic for defining, managing, and executing computational workflows within the Nodetool
+system.
 
 ## TL;DR: Actor-based execution
 
@@ -13,43 +14,50 @@ This directory contains the core logic for defining, managing, and executing com
 
 ## Core Concepts
 
-Nodetool workflows are represented as **Directed Acyclic Graphs (DAGs)**. These graphs define a series of computational steps and their dependencies.
+Nodetool workflows are represented as **Directed Acyclic Graphs (DAGs)**. These graphs define a series of computational
+steps and their dependencies.
 
-1.  **`Graph` (`graph.py`)**:
+1. **`Graph` (`graph.py`)**:
 
-    - Represents the entire workflow structure.
-    - Composed of `Nodes` and `Edges`.
-    - `Edges` define the flow of data and dependencies between `Nodes`.
+   - Represents the entire workflow structure.
+   - Composed of `Nodes` and `Edges`.
+   - `Edges` define the flow of data and dependencies between `Nodes`.
 
-2.  **`BaseNode` (`base_node.py`)**:
+1. **`BaseNode` (`base_node.py`)**:
 
-    - The fundamental building block of a workflow. Each node encapsulates a specific unit of computation or logic.
-    - Nodes have defined `inputs` and `outputs` (slots) through which data flows.
-    - Nodes possess `properties` that configure their behavior.
-    - Key specialized node types include:
-      - `InputNode`: Represents an entry point for data into the workflow.
-      - `OutputNode`: Represents an exit point for results from the workflow.
-      - `GroupNode`: Allows nesting of subgraphs, enabling modularity and complexity management.
-      - Other utility nodes like `Comment` and `Preview`.
+   - The fundamental building block of a workflow. Each node encapsulates a specific unit of computation or logic.
+   - Nodes have defined `inputs` and `outputs` (slots) through which data flows.
+   - Nodes possess `properties` that configure their behavior.
+   - Key specialized node types include:
+     - `InputNode`: Represents an entry point for data into the workflow.
+     - `OutputNode`: Represents an exit point for results from the workflow.
+     - `GroupNode`: Allows nesting of subgraphs, enabling modularity and complexity management.
+     - Other utility nodes like `Comment` and `Preview`.
 
-3.  **`WorkflowRunner` (`workflow_runner.py`)**:
+1. **`WorkflowRunner` (`workflow_runner.py`)**:
 
-    - The execution engine responsible for processing a workflow `Graph`.
-    - Uses an actor model: one lightweight async task (NodeActor) per node drives that node to completion.
-    - Actors read inputs from the node's `NodeInbox`, execute the node (`process` once or `gen_process` for streaming), and send outputs downstream.
-    - Handles resource allocation, including managing access to GPUs for relevant nodes using a global lock to ensure sequential access when necessary.
-    - Orchestrates the flow of data between nodes according to the defined `Edges` by delivering outputs directly into downstream inboxes.
+   - The execution engine responsible for processing a workflow `Graph`.
+   - Uses an actor model: one lightweight async task (NodeActor) per node drives that node to completion.
+   - Actors read inputs from the node's `NodeInbox`, execute the node (`process` once or `gen_process` for streaming),
+     and send outputs downstream.
+   - Handles resource allocation, including managing access to GPUs for relevant nodes using a global lock to ensure
+     sequential access when necessary.
+   - Orchestrates the flow of data between nodes according to the defined `Edges` by delivering outputs directly into
+     downstream inboxes.
 
-4.  **`ProcessingContext` (`processing_context.py`)**:
+1. **`ProcessingContext` (`processing_context.py`)**:
 
-    - Holds runtime information relevant to a specific workflow execution, such as user details, authentication tokens, and communication channels for updates.
+   - Holds runtime information relevant to a specific workflow execution, such as user details, authentication tokens,
+     and communication channels for updates.
 
-5.  **Execution Flow (`run_workflow.py`)**:
-    - The `run_workflow` function provides a high-level asynchronous interface to initiate a workflow execution.
-    - It sets up the `WorkflowRunner` and `ProcessingContext`.
-    - The runner constructs per-node inboxes, starts one `NodeActor` per node, and awaits all actors.
-    - Nodes execute when their inputs are available in their inbox (or immediately for pure producers). Streaming-output nodes yield incrementally.
-    - Status updates and results (including `OutputUpdate`s) are communicated back during execution.
+1. **Execution Flow (`run_workflow.py`)**:
+
+   - The `run_workflow` function provides a high-level asynchronous interface to initiate a workflow execution.
+   - It sets up the `WorkflowRunner` and `ProcessingContext`.
+   - The runner constructs per-node inboxes, starts one `NodeActor` per node, and awaits all actors.
+   - Nodes execute when their inputs are available in their inbox (or immediately for pure producers). Streaming-output
+     nodes yield incrementally.
+   - Status updates and results (including `OutputUpdate`s) are communicated back during execution.
 
 ## Key Files
 
@@ -63,34 +71,50 @@ Nodetool workflows are represented as **Directed Acyclic Graphs (DAGs)**. These 
 
 ## Streaming I/O and Actor Model
 
-- NodeInbox: Per-node, per-handle FIFO buffers used for inputs. The runner attaches an inbox to nodes and delivers messages as they arrive. There is no special event fast-path; all messages are handled uniformly. EOS (end-of-stream) is tracked per handle using upstream counts.
+- NodeInbox: Per-node, per-handle FIFO buffers used for inputs. The runner attaches an inbox to nodes and delivers
+  messages as they arrive. There is no special event fast-path; all messages are handled uniformly. EOS (end-of-stream)
+  is tracked per handle using upstream counts.
 
-- BaseNode helpers: Nodes can opt into streaming input consumption by overriding `is_streaming_input()` to return `True`. Helper methods are available:
+- BaseNode helpers: Nodes can opt into streaming input consumption by overriding `is_streaming_input()` to return
+  `True`. Helper methods are available:
 
   - `has_input()`: Quick check for any buffered inputs.
   - `await recv(handle)`: Receive one item from a specific input handle.
   - `async for item in iter_input(handle)`: Iterate items from one handle until EOS.
   - `async for handle, item in iter_any_input()`: Iterate across all handles in arrival order.
 
-- Output streaming: Nodes that implement `gen_process(context)` are considered streaming-output nodes. They can `yield (handle, value)` to emit results incrementally. Input streaming (via inbox) and output streaming can be combined.
+- Output streaming: Nodes that implement `gen_process(context)` are considered streaming-output nodes. They can
+  `yield (handle, value)` to emit results incrementally. Input streaming (via inbox) and output streaming can be
+  combined.
+
 - Actor model: Each node runs inside a `NodeActor` loop:
-  - Non-streaming nodes: wait until each inbound handle has one item (or EOS), pop one per handle, call `process`, convert outputs, and send.
-  - Streaming-output nodes: assign initial inputs (unless they opt into streaming input), send a “running” update with valid properties, then iterate `gen_process` and send each yield.
+
+  - Non-streaming nodes: wait until each inbound handle has one item (or EOS), pop one per handle, call `process`,
+    convert outputs, and send.
+  - Streaming-output nodes: assign initial inputs (unless they opt into streaming input), send a “running” update with
+    valid properties, then iterate `gen_process` and send each yield.
   - Pure producers: non-streaming run once; streaming-output run their generator to completion.
 
 ### Input Synchronization Modes
 
-Non-streaming consumers can control how multiple inbound input handles are synchronized using the per-node `sync_mode`. Supported modes:
+Non-streaming consumers can control how multiple inbound input handles are synchronized using the per-node `sync_mode`.
+Supported modes:
 
-- `on_any` (default): Fire on every arrival with the latest values from other handles. Similar to Rx combineLatest/withLatestFrom and matches previous behavior.
-- `zip_all`: Wait until each inbound handle has at least one queued item, then consume exactly one from each and run once per aligned set. This guarantees pairs/tuples remain matched (e.g., `message_id` with its corresponding `label`).
+- `on_any` (default): Fire on every arrival with the latest values from other handles. Similar to Rx
+  combineLatest/withLatestFrom and matches previous behavior.
+- `zip_all`: Wait until each inbound handle has at least one queued item, then consume exactly one from each and run
+  once per aligned set. This guarantees pairs/tuples remain matched (e.g., `message_id` with its corresponding `label`).
 
 Notes:
 
-- `sync_mode` only applies to non-streaming nodes. Streaming-input nodes should consume via `iter_input()`/`iter_any_input()` and manage alignment themselves.
-- `zip_all` respects per-handle FIFO order. When EOS is reached and a full set cannot be formed, remaining partials are dropped.
+- `sync_mode` only applies to non-streaming nodes. Streaming-input nodes should consume via
+  `iter_input()`/`iter_any_input()` and manage alignment themselves.
+- `zip_all` respects per-handle FIFO order. When EOS is reached and a full set cannot be formed, remaining partials are
+  dropped.
 
-End-of-stream (EOS): The runner tracks the number of upstream producers per input handle and marks EOS when all upstream sources complete. The inbox iterators terminate once buffers are empty and EOS is reached for the given handle(s). Actors mark downstream EOS on completion/error to reliably terminate consumers.
+End-of-stream (EOS): The runner tracks the number of upstream producers per input handle and marks EOS when all upstream
+sources complete. The inbox iterators terminate once buffers are empty and EOS is reached for the given handle(s).
+Actors mark downstream EOS on completion/error to reliably terminate consumers.
 
 ### NodeActor Details
 
@@ -98,14 +122,19 @@ End-of-stream (EOS): The runner tracks the number of upstream producers per inpu
 
   - Consume inputs via `NodeInbox` (blocking on condition, no busy-wait).
   - Execute the node:
-    - Non-streaming: `await node.pre_process(ctx)` → optional cache → `await node.process(ctx)` → `await node.convert_output(ctx, result)`.
-    - Streaming: `await node.pre_process(ctx)` → `await node.send_update(ctx, "running", properties=[...])` → `async for (slot, value) in node.gen_process(ctx)`.
-  - Forward outputs using `WorkflowRunner.send_messages`, which both enqueues to edge queues (compatibility) and delivers to downstream inboxes, and posts `OutputUpdate` for `OutputNode` targets.
+    - Non-streaming: `await node.pre_process(ctx)` → optional cache → `await node.process(ctx)` →
+      `await node.convert_output(ctx, result)`.
+    - Streaming: `await node.pre_process(ctx)` → `await node.send_update(ctx, "running", properties=[...])` →
+      `async for (slot, value) in node.gen_process(ctx)`.
+  - Forward outputs using `WorkflowRunner.send_messages`, which both enqueues to edge queues (compatibility) and
+    delivers to downstream inboxes, and posts `OutputUpdate` for `OutputNode` targets.
   - Mark downstream EOS for each outgoing handle on completion or error.
 
 ### Flow Overview
 
 - Runner validates and initializes nodes, builds inboxes, and starts one `NodeActor` per node.
 - Messages travel from producers to consumers via `send_messages` → target inbox `put(handle, value)`.
-- Output nodes are not actively driven; whenever they receive a value via `send_messages`, the runner updates `runner.outputs[name]` and posts an `OutputUpdate`.
-- On completion, actors call `mark_source_done(handle)` for each outgoing handle, allowing consumers’ inbox iterators to terminate.
+- Output nodes are not actively driven; whenever they receive a value via `send_messages`, the runner updates
+  `runner.outputs[name]` and posts an `OutputUpdate`.
+- On completion, actors call `mark_source_done(handle)` for each outgoing handle, allowing consumers’ inbox iterators to
+  terminate.

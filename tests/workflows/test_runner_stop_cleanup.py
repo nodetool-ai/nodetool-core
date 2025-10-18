@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+
 class _Sock:
     def __init__(self) -> None:
         self.closed = False
@@ -55,4 +56,3 @@ def test_stream_runner_stop_removes_container_and_closes_socket():
 
     assert container.removed is True
     assert sock._sock.closed is True
-

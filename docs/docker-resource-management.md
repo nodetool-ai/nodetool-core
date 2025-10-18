@@ -1,10 +1,12 @@
 # Docker Resource Management
 
-This guide explains how to configure and manage resource constraints for Docker-based job execution in multi-user production deployments.
+This guide explains how to configure and manage resource constraints for Docker-based job execution in multi-user
+production deployments.
 
 ## Overview
 
-In a multi-user AI workflow engine, it's crucial to prevent individual jobs from monopolizing system resources. Nodetool's Docker job execution supports fine-grained resource constraints for:
+In a multi-user AI workflow engine, it's crucial to prevent individual jobs from monopolizing system resources.
+Nodetool's Docker job execution supports fine-grained resource constraints for:
 
 - **CPU**: Limit CPU cores per job
 - **Memory (RAM)**: Limit system memory per job
@@ -288,8 +290,8 @@ docker run --rm --gpus all nodetool nvidia-smi
 For stricter GPU memory control, consider:
 
 1. **MPS (Multi-Process Service)**: NVIDIA's GPU sharing mechanism
-2. **MIG (Multi-Instance GPU)**: Partition A100/H100 GPUs into isolated instances
-3. **Kubernetes**: More advanced resource management and scheduling
+1. **MIG (Multi-Instance GPU)**: Partition A100/H100 GPUs into isolated instances
+1. **Kubernetes**: More advanced resource management and scheduling
 
 ## Production Configuration Example
 
@@ -311,11 +313,11 @@ export DOCKER_GPU_DEVICES=""  # Disabled by default
 ## Best Practices
 
 1. **Start Conservative**: Begin with lower limits and increase based on monitoring
-2. **Monitor Metrics**: Track resource usage, queue lengths, job completion times
-3. **User Feedback**: Log resource constraints so users understand limits
-4. **Graceful Degradation**: Fall back to CPU when GPUs unavailable
-5. **Cost Tracking**: Associate resource usage with user accounts for billing
-6. **Auto-scaling**: Consider cloud auto-scaling for elastic capacity
+1. **Monitor Metrics**: Track resource usage, queue lengths, job completion times
+1. **User Feedback**: Log resource constraints so users understand limits
+1. **Graceful Degradation**: Fall back to CPU when GPUs unavailable
+1. **Cost Tracking**: Associate resource usage with user accounts for billing
+1. **Auto-scaling**: Consider cloud auto-scaling for elastic capacity
 
 ## Troubleshooting
 

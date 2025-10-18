@@ -3,14 +3,12 @@ UI Console for displaying Agent progress using Rich.
 """
 
 import json
-import os
 import time
 from typing import List, Optional, Union, TYPE_CHECKING, Dict, Any
 
 from rich.console import Console
 from rich.live import Live
 from rich.panel import Panel
-from rich.progress import Progress, BarColumn, TextColumn, TimeRemainingColumn
 from rich.table import Table
 from rich.text import Text
 from rich.tree import Tree
@@ -137,7 +135,9 @@ class AgentConsole:
             status_style = (
                 "bold red"
                 if is_error
-                else "bold green" if status == "Success" else "bold yellow"
+                else "bold green"
+                if status == "Success"
+                else "bold yellow"
             )
             # Truncate long content for better display
             content_str = str(content)
@@ -185,10 +185,12 @@ class AgentConsole:
             status_symbol = (
                 "✅" if subtask.completed else "🔄" if subtask.is_running() else "⏳"
             )
-            status_style = (
+            (
                 "green"
                 if subtask.completed
-                else "yellow" if subtask.is_running() else "white"
+                else "yellow"
+                if subtask.is_running()
+                else "white"
             )
 
             # Create subtask node with status and content
@@ -351,7 +353,9 @@ class AgentConsole:
             from nodetool.metadata.types import LogEntry
 
             log_entry = LogEntry(
-                message=message, level=level, timestamp=int(time.time())  # type: ignore
+                message=message,
+                level=level,
+                timestamp=int(time.time()),  # type: ignore
             )
             self.current_subtask.logs.append(log_entry)
             self.update_execution_display()
@@ -528,7 +532,7 @@ class AgentConsole:
                 f"[bold cyan]Content:[/] {subtask.content}\n"
                 f"[bold cyan]ID:[/] {subtask.id}\n"
                 f"[bold cyan]Input Tasks:[/] {', '.join(subtask.input_tasks) if subtask.input_tasks else 'None'}",
-                title=f"[bold green]🚀 Starting SubTask[/]",
+                title="[bold green]🚀 Starting SubTask[/]",
                 border_style="green",
                 expand=False,
             )
@@ -668,7 +672,7 @@ class AgentConsole:
 
             panel = Panel(
                 "\n".join(content),
-                title=f"[bold]🏁 SubTask Completed[/]",
+                title="[bold]🏁 SubTask Completed[/]",
                 border_style=border_style,
                 expand=False,
             )
@@ -684,7 +688,7 @@ class AgentConsole:
         """
         if self.console:
             percentage = (current / limit) * 100
-            warning_text = f"[bold yellow]⚠️  Token Usage Warning[/]\n\n"
+            warning_text = "[bold yellow]⚠️  Token Usage Warning[/]\n\n"
             warning_text += f"Current tokens: [bold]{current:,}[/] / {limit:,} ([bold red]{percentage:.1f}%[/])\n"
             warning_text += self._create_progress_bar(percentage, "red")
 

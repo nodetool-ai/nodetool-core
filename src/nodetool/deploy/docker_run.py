@@ -144,9 +144,19 @@ class DockerRunGenerator:
         env["PORT"] = "8000"
         env["NODETOOL_API_URL"] = f"http://localhost:{self.container.port}"
 
+        # Set database path to workspace (mounted volume)
+        env["DB_PATH"] = "/workspace/nodetool.db"
+
+        # Set HuggingFace cache to mounted volume
+        env["HF_HOME"] = "/hf-cache"
+
         # Add workflow IDs if specified
         if self.container.workflows:
             env["NODETOOL_WORKFLOWS"] = ",".join(self.container.workflows)
+
+        # Add worker authentication token (for self-hosted deployments)
+        if self.deployment.worker_auth_token:
+            env["WORKER_AUTH_TOKEN"] = self.deployment.worker_auth_token
 
         # Convert to KEY=value format
         return [f"{key}={value}" for key, value in env.items()]

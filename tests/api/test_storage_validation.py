@@ -17,9 +17,9 @@ class TestStorageKeyValidation:
             "file.with.dots.txt",
             "123456789.jpg",
             ".hidden_file",
-            "file..txt"
+            "file..txt",
         ]
-        
+
         for key in valid_keys:
             try:
                 validate_key(key)
@@ -38,9 +38,9 @@ class TestStorageKeyValidation:
             "folder/subfolder/file.txt",
             "folder\\subfolder\\file.txt",
             "./file.txt",
-            ".\\file.txt"
+            ".\\file.txt",
         ]
-        
+
         for key in invalid_keys:
             with pytest.raises(HTTPException) as exc_info:
                 validate_key(key)
@@ -54,23 +54,23 @@ class TestStorageKeyValidation:
             "file..txt",  # double dots in filename
             ".hidden_file",  # hidden file
             "...",  # just dots
-            "file...name"
+            "file...name",
         ]
-        
+
         for key in valid_edge_cases:
             try:
                 validate_key(key)
             except HTTPException:
                 pytest.fail(f"Valid edge case key '{key}' was rejected")
-        
+
         # Keys that should be rejected due to path separators
         invalid_edge_cases = [
             "./",
             "../",
             "folder/.hidden_file",
-            "folder.with.dots/file.txt"
+            "folder.with.dots/file.txt",
         ]
-        
+
         for key in invalid_edge_cases:
             with pytest.raises(HTTPException) as exc_info:
                 validate_key(key)

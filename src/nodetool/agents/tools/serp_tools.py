@@ -1,5 +1,5 @@
 import json
-from typing import Any, Dict, Optional, Union, TypeVar
+from typing import Any, Dict, Optional, TypeVar
 import time
 
 from nodetool.agents.serp_providers.data_for_seo_provider import DataForSEOProvider

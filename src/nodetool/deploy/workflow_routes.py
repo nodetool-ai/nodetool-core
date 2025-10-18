@@ -10,13 +10,11 @@ This module encapsulates:
 from __future__ import annotations
 
 import json
-import os
 from typing import Dict
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
-from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
 from nodetool.types.job import JobUpdate
 from nodetool.types.workflow import Workflow
@@ -45,14 +43,25 @@ def get_workflow_by_id(workflow_id: str) -> Workflow:
 def create_workflow_router() -> APIRouter:
     router = APIRouter()
 
+    @router.get("/workflows")
+    async def list_workflows() -> WorkflowList:
+        """List all workflows in the database."""
+        # List all workflows without user restriction (admin mode)
+        # Use paginate to get all workflows
+        workflows, next_key = await WorkflowModel.paginate(
+            user_id="1",  # Default user for non-authenticated mode
+            limit=1000,  # Large page size to get all workflows
+        )
+        return WorkflowList(workflows=[from_model(w) for w in workflows], next=next_key)
+
     @router.put("/workflows/{id}")
     async def update_workflow(
         id: str,
         workflow_request: WorkflowRequest,
     ) -> Workflow:
-        workflow = WorkflowModel.get(id)
+        workflow = await WorkflowModel.get(id)
         if not workflow:
-            workflow = WorkflowModel(id=id)
+            workflow = WorkflowModel(id=id, user_id="1")
         if workflow_request.graph is None:
             raise HTTPException(status_code=400, detail="Invalid workflow")
         workflow.name = workflow_request.name
@@ -66,10 +75,19 @@ def create_workflow_router() -> APIRouter:
         workflow.settings = workflow_request.settings
         workflow.run_mode = workflow_request.run_mode
         workflow.updated_at = workflow.updated_at
-        workflow.save()
+        await workflow.save()
         updated_workflow = from_model(workflow)
 
         return updated_workflow
+
+    @router.delete("/workflows/{id}")
+    async def delete_workflow(id: str):
+        """Delete a workflow from the database."""
+        workflow = await WorkflowModel.get(id)
+        if not workflow:
+            raise HTTPException(status_code=404, detail="Workflow not found")
+        await workflow.delete()
+        return {"status": "ok", "message": f"Workflow {id} deleted"}
 
     @router.post("/workflows/{id}/run")
     async def execute_workflow(id: str, request: Request):

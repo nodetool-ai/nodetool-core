@@ -15,9 +15,7 @@ Tools included:
 from typing import Any
 
 from nodetool.agents.tools.base import Tool
-from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
-from nodetool.workflows.base_node import BaseNode, get_node_class
 from nodetool.workflows.processing_context import ProcessingContext
 
 log = get_logger(__name__)
@@ -44,14 +42,12 @@ TYPES = [
 
 class SearchNodesTool(Tool):
     name: str = "search_nodes"
-    description: str = (
-        """
-        Performs keyword search on nodetool nodes. 
+    description: str = """
+        Performs keyword search on nodetool nodes.
         Use for finding specific node types or features by exact word matches.
         Supply a list of words to search for as array, including synonyms and related words.
         Returns a list of node metadata that match the search query.
         """
-    )
     input_schema: dict[str, Any] = {
         "type": "object",
         "properties": {
@@ -133,9 +129,7 @@ class SearchNodesTool(Tool):
 
 class SearchExamplesTool(Tool):
     name: str = "search_examples"
-    description: str = (
-        "Searches for relevant Nodetool workflow examples. Use for finding example workflows and use cases."
-    )
+    description: str = "Searches for relevant Nodetool workflow examples. Use for finding example workflows and use cases."
     input_schema: dict[str, Any] = {
         "type": "object",
         "properties": {

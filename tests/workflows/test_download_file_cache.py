@@ -1,4 +1,3 @@
-import asyncio
 import io
 
 import pytest
@@ -25,4 +24,3 @@ async def test_download_file_uses_uri_cache_for_http_url():
     f = await ctx.download_file(url)
     assert isinstance(f, io.BytesIO)
     assert f.read() == payload
-

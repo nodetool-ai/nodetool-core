@@ -103,19 +103,15 @@ from typing import (
     AsyncGenerator,
     Callable,
     ClassVar,
-    Mapping,
     Optional,
     Type,
     TypeVar,
     AsyncIterator,
-    TYPE_CHECKING,
     TypedDict,
-    get_args,
     get_type_hints,
 )
 
 from nodetool.types.graph import Edge
-from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
 from nodetool.metadata.type_metadata import TypeMetadata
 from nodetool.metadata.types import (
@@ -287,17 +283,23 @@ def type_metadata(
     elif is_list_type(python_type):
         return TypeMetadata(
             type="list",
-            type_args=[type_metadata(python_type.__args__[0])] if hasattr(python_type, "__args__") else [],  # type: ignore
+            type_args=[type_metadata(python_type.__args__[0])]
+            if hasattr(python_type, "__args__")
+            else [],  # type: ignore
         )
     elif is_tuple_type(python_type):
         return TypeMetadata(
             type="tuple",
-            type_args=[type_metadata(t) for t in python_type.__args__] if hasattr(python_type, "__args__") else [],  # type: ignore
+            type_args=[type_metadata(t) for t in python_type.__args__]
+            if hasattr(python_type, "__args__")
+            else [],  # type: ignore
         )
     elif is_dict_type(python_type):
         return TypeMetadata(
             type="dict",
-            type_args=[type_metadata(t) for t in python_type.__args__] if hasattr(python_type, "__args__") else [],  # type: ignore
+            type_args=[type_metadata(t) for t in python_type.__args__]
+            if hasattr(python_type, "__args__")
+            else [],  # type: ignore
         )
     # check optional type before union type as optional is a union of None and the type
     elif is_optional_type(python_type):
@@ -308,7 +310,9 @@ def type_metadata(
     elif is_union_type(python_type):
         return TypeMetadata(
             type="union",
-            type_args=[type_metadata(t) for t in python_type.__args__] if hasattr(python_type, "__args__") else [],  # type: ignore
+            type_args=[type_metadata(t) for t in python_type.__args__]
+            if hasattr(python_type, "__args__")
+            else [],  # type: ignore
         )
     elif is_enum_type(python_type):
         assert not isinstance(python_type, UnionType)
@@ -566,7 +570,6 @@ class BaseNode(BaseModel):
 
     @classmethod
     def __init_subclass__(cls):
-
         super().__init_subclass__()
         add_node_type(cls)
         # Resolve annotations robustly (handles postponed annotations)
@@ -699,8 +702,9 @@ class BaseNode(BaseModel):
             )
 
         try:
-            loop = asyncio.get_running_loop()
+            asyncio.get_running_loop()
             import concurrent.futures
+
             future = concurrent.futures.Future()
 
             async def run_and_set_result():
@@ -713,8 +717,7 @@ class BaseNode(BaseModel):
             asyncio.create_task(run_and_set_result())
             return future.result()
         except RuntimeError:
-            return asyncio.run(fetch_all_models()) # type: ignore
-
+            return asyncio.run(fetch_all_models())  # type: ignore
 
     @classmethod
     def get_basic_fields(cls) -> list[str]:
@@ -897,7 +900,6 @@ class BaseNode(BaseModel):
         Raises:
             ValueError: If skip_errors is False and an error occurs while setting a property.
         """
-        from pydantic_core import PydanticUndefined
 
         error_messages = []
 

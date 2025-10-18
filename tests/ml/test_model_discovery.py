@@ -12,8 +12,6 @@ import pytest
 from typing import List
 from nodetool.metadata.types import LanguageModel, ImageModel, Provider
 from nodetool.providers.base import BaseProvider
-from nodetool.ml.models.language_models import get_all_language_models
-from nodetool.ml.models.image_models import get_all_image_models
 
 
 class MockMultiModalProvider(BaseProvider):

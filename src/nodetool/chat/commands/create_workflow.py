@@ -102,7 +102,9 @@ class CreateWorkflowCommand(Command):
                         status_color = (
                             "green"
                             if update.status == "Success"
-                            else "yellow" if update.status == "Starting" else "red"
+                            else "yellow"
+                            if update.status == "Starting"
+                            else "red"
                         )
                         cli.console.print(
                             f"[bold {status_color}]{update.phase}:[/bold {status_color}] {update.status}"
@@ -150,9 +152,10 @@ class CreateWorkflowCommand(Command):
             print_visual_graph(planner.graph)
 
             # Get workflow name and description
-            workflow_name, workflow_description = (
-                await self._get_workflow_name_and_description(cli, objective)
-            )
+            (
+                workflow_name,
+                workflow_description,
+            ) = await self._get_workflow_name_and_description(cli, objective)
 
             # Save the workflow
             try:

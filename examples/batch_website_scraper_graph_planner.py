@@ -61,7 +61,7 @@ async def create_and_execute_scraping_workflow(
     )
 
     # Plan the graph
-    print(f"🔧 Planning workflow for batch website scraping...")
+    print("🔧 Planning workflow for batch website scraping...")
     print(f"📦 Target: {len(WEBSITES_TO_SCRAPE)} websites")
     print(f"🤖 Model: {model}\n")
 
@@ -83,7 +83,7 @@ async def create_and_execute_scraping_workflow(
     # Create execution request
     req = RunJobRequest(graph=graph)
 
-    print(f"\n🚀 Executing website scraping workflow...")
+    print("\n🚀 Executing website scraping workflow...")
 
     # Execute the workflow
     results = []
@@ -128,7 +128,7 @@ async def test_batch_website_scraper_with_graph_planner(
 
         traceback.print_exc()
 
-    print(f"\n✨ Batch website scraping complete!")
+    print("\n✨ Batch website scraping complete!")
 
 
 async def main():
@@ -140,7 +140,7 @@ async def main():
         {
             "provider": Provider.HuggingFaceCerebras,
             "model": "openai/gpt-oss-120b",
-            "batch_size": 4
+            "batch_size": 4,
         },
         # Anthropic - Excellent context handling
         # {
@@ -158,7 +158,7 @@ async def main():
 
     for config in test_configs:
         print(f"\n{'#'*80}")
-        print(f"# Testing GraphPlanner Website Scraper")
+        print("# Testing GraphPlanner Website Scraper")
         print(f"# Provider: {config['provider'].value}")
         print(f"# Model: {config['model']}")
         print(f"# Batch size: {config['batch_size']}")

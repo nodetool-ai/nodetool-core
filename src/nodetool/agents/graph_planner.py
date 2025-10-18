@@ -105,8 +105,6 @@ separate nodes and edges arrays for execution by the WorkflowRunner.
 import json
 from nodetool.config.logging_config import get_logger
 from typing import Any, AsyncGenerator, Dict, List, Optional, cast
-import traceback
-from nodetool.providers.anthropic_provider import AnthropicProvider
 from nodetool.metadata.type_metadata import TypeMetadata
 from nodetool.metadata.typecheck import typecheck
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -236,9 +234,8 @@ def get_node_type_for_metadata(
     for node_meta in all_nodes:
         try:
             node_class = get_node_class(node_meta.node_type)
-            if (
-                node_class
-                and (is_subclass_of is None or issubclass(node_class, is_subclass_of))
+            if node_class and (
+                is_subclass_of is None or issubclass(node_class, is_subclass_of)
             ):
                 # Check the output type of this input node
                 outputs = node_class.outputs()
@@ -310,9 +307,7 @@ class SubmitDesignResultTool(Tool):
     """Tool for submitting workflow design results."""
 
     name: str = "submit_design_result"
-    description: str = (
-        "Submit the final workflow design result. Use this tool when you have completed your workflow design and are ready to provide the structured node specifications."
-    )
+    description: str = "Submit the final workflow design result. Use this tool when you have completed your workflow design and are ready to provide the structured node specifications."
     input_schema: Dict[str, Any] = WorkflowDesignResult.model_json_schema()
 
     async def process(
@@ -433,7 +428,7 @@ DEFAULT_GRAPH_PLANNING_SYSTEM_PROMPT = """
 # GraphArchitect AI System Core Directives
 
 ## Mission
-As GraphArchitect AI, you are an intelligent system that transforms natural language objectives into executable workflow graphs. 
+As GraphArchitect AI, you are an intelligent system that transforms natural language objectives into executable workflow graphs.
 Your intelligence lies in automatically understanding what users want to accomplish and creating the appropriate graph structure.
 
 ## Core Principles
@@ -498,7 +493,7 @@ Analyze the user's request and the existing graph to determine which nodes to ad
 When using the `search_nodes` tool:
 - Provide a `query` with keywords describing the node's function (e.g., "convert", "summarize", "filter data").
 - **Start with targeted searches using `input_type` and `output_type` when you know the data types** - this reduces irrelevant results and speeds up the process
-- **Only use broad searches without type parameters if you're unsure about available node types** 
+- **Only use broad searches without type parameters if you're unsure about available node types**
 - The available types for `input_type` and `output_type` are: "str", "int", "float", "bool", "list", "dict", "tuple", "union", "enum", "any"
 - **Search for multiple related functionalities in a single query** when possible (e.g., "dataframe group aggregate sum" instead of separate searches)
  - Prefer fewer, more capable nodes over long chains of trivial nodes when functionality overlaps.
@@ -714,11 +709,11 @@ class GraphPlanner:
 
         self.verbose = verbose
         self.registry = Registry()
-        logger.debug(f"Registry initialized")
+        logger.debug("Registry initialized")
 
         # Initialize Jinja2 environment
         self.jinja_env = Environment(loader=BaseLoader())
-        logger.debug(f"Jinja2 environment initialized")
+        logger.debug("Jinja2 environment initialized")
 
         # Graph storage
         self.graph: Optional[APIGraph] = None
@@ -1455,7 +1450,7 @@ class GraphPlanner:
 
     def _validate_input_output_nodes(self, graph: Graph) -> str:
         """Validate InputNode and OutputNode instances against input and output schemas."""
-        logger.debug(f"Validating input/output nodes against schemas")
+        logger.debug("Validating input/output nodes against schemas")
         logger.debug(f"Graph has {len(graph.nodes)} total nodes")
         error_messages = []
 

@@ -808,6 +808,7 @@ class GeminiProvider(BaseProvider):
 
         except Exception as e:
             import traceback
+
             traceback.print_exc()
             log.error(f"Gemini text-to-image generation failed: {e}")
             raise RuntimeError(f"Gemini text-to-image generation failed: {e}")
@@ -969,11 +970,16 @@ class GeminiProvider(BaseProvider):
             if hasattr(response, "candidates") and response.candidates:
                 for candidate in response.candidates:
                     if hasattr(candidate, "content") and candidate.content:
-                        if hasattr(candidate.content, "parts") and candidate.content.parts:
+                        if (
+                            hasattr(candidate.content, "parts")
+                            and candidate.content.parts
+                        ):
                             for part in candidate.content.parts:
                                 if hasattr(part, "inline_data") and part.inline_data:
                                     if part.inline_data.data:
-                                        yield np.frombuffer(part.inline_data.data, dtype=np.int16)
+                                        yield np.frombuffer(
+                                            part.inline_data.data, dtype=np.int16
+                                        )
 
             log.debug("Gemini text-to-speech completed")
         except Exception as e:
@@ -1166,7 +1172,11 @@ class GeminiProvider(BaseProvider):
             mime_type = "audio/wav"  # Default
             if audio[:4] == b"RIFF":
                 mime_type = "audio/wav"
-            elif audio[:3] == b"ID3" or audio[:2] == b"\xff\xfb" or audio[:2] == b"\xff\xf3":
+            elif (
+                audio[:3] == b"ID3"
+                or audio[:2] == b"\xff\xfb"
+                or audio[:2] == b"\xff\xf3"
+            ):
                 mime_type = "audio/mp3"
             elif audio[:4] == b"fLaC":
                 mime_type = "audio/flac"
@@ -1297,7 +1307,9 @@ class GeminiProvider(BaseProvider):
             client = self.get_client()
 
             # Use the generate_videos endpoint (returns an async operation)
-            log.debug(f"Initiating video generation for prompt: {params.prompt[:50]}...")
+            log.debug(
+                f"Initiating video generation for prompt: {params.prompt[:50]}..."
+            )
             operation = await client.models.generate_videos(
                 model=model_id,
                 prompt=params.prompt,
@@ -1327,7 +1339,9 @@ class GeminiProvider(BaseProvider):
             log.debug(f"Video generation completed after {elapsed_time}s")
 
             # Extract video from completed operation
-            if not operation.response or not hasattr(operation.response, "generated_videos"):
+            if not operation.response or not hasattr(
+                operation.response, "generated_videos"
+            ):
                 log.error("No video data in completed operation response")
                 raise RuntimeError("No video data returned from Gemini API")
 
@@ -1409,7 +1423,9 @@ class GeminiProvider(BaseProvider):
             from PIL import Image
 
             pil_image = Image.open(BytesIO(image))
-            log.debug(f"Loaded input image: {pil_image.size}, format: {pil_image.format}")
+            log.debug(
+                f"Loaded input image: {pil_image.size}, format: {pil_image.format}"
+            )
 
             # Build the generation config using GenerateVideosConfig
             config_kwargs = {}
@@ -1435,7 +1451,9 @@ class GeminiProvider(BaseProvider):
             prompt = params.prompt if params.prompt else "Animate this image"
 
             # Use the generate_videos endpoint with image parameter (returns an async operation)
-            log.debug(f"Initiating image-to-video generation with prompt: {prompt[:50]}...")
+            log.debug(
+                f"Initiating image-to-video generation with prompt: {prompt[:50]}..."
+            )
             operation = await client.models.generate_videos(
                 model=model_id,
                 prompt=prompt,
@@ -1456,7 +1474,9 @@ class GeminiProvider(BaseProvider):
                         f"Image-to-video generation timed out after {max_wait_time} seconds"
                     )
 
-                log.debug(f"Waiting for image-to-video generation... ({elapsed_time}s elapsed)")
+                log.debug(
+                    f"Waiting for image-to-video generation... ({elapsed_time}s elapsed)"
+                )
                 await asyncio.sleep(poll_interval)
                 elapsed_time += poll_interval
 
@@ -1466,7 +1486,9 @@ class GeminiProvider(BaseProvider):
             log.debug(f"Image-to-video generation completed after {elapsed_time}s")
 
             # Extract video from completed operation
-            if not operation.response or not hasattr(operation.response, "generated_videos"):
+            if not operation.response or not hasattr(
+                operation.response, "generated_videos"
+            ):
                 log.error("No video data in completed operation response")
                 raise RuntimeError("No video data returned from Gemini API")
 

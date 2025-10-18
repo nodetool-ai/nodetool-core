@@ -4,10 +4,9 @@ from datetime import datetime
 import traceback
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Header, Request
 from fastapi.responses import StreamingResponse
-from nodetool.types.job import JobUpdate
 from nodetool.workflows.types import Error, OutputUpdate
 from pydantic import BaseModel, Field
-from nodetool.types.graph import Edge, Graph, Node, remove_connected_slots
+from nodetool.types.graph import Graph, remove_connected_slots
 from nodetool.types.workflow import (
     WorkflowList,
     Workflow,
@@ -17,7 +16,6 @@ from nodetool.types.workflow import (
 )
 from nodetool.api.utils import current_user
 from nodetool.config.environment import Environment
-import logging
 from typing import Any, Optional
 from nodetool.workflows.read_graph import read_graph
 from nodetool.models.workflow import Workflow as WorkflowModel
@@ -27,9 +25,6 @@ from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.run_workflow import run_workflow
 from nodetool.types.graph import get_input_schema, get_output_schema
 from nodetool.packages.registry import Registry
-from nodetool.providers import get_provider
-from nodetool.metadata.types import Provider
-from nodetool.chat.workspace_manager import WorkspaceManager
 import asyncio
 from nodetool.config.logging_config import get_logger
 

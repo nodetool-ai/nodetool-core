@@ -39,7 +39,6 @@ from nodetool.chat.workspace_manager import WorkspaceManager
 from nodetool.metadata.types import (
     NPArray,
     Provider,
-    TorchTensor,
     asset_types,
 )
 from nodetool.workflows.graph import Graph
@@ -171,7 +170,10 @@ class ProcessingContext:
         self.chroma_client = chroma_client
         if http_client is not None:
             self._http_client = http_client
-        self.workspace_dir = workspace_dir or WorkspaceManager(workflow_id=self.workflow_id).get_current_directory()
+        self.workspace_dir = (
+            workspace_dir
+            or WorkspaceManager(workflow_id=self.workflow_id).get_current_directory()
+        )
         self.tool_bridge = tool_bridge
         self.ui_tool_names = ui_tool_names or set()
         self.client_tools_manifest = client_tools_manifest or {}
@@ -988,7 +990,11 @@ class ProcessingContext:
             ValueError: If the AssetRef is empty or contains unsupported data.
         """
         # Check for memory:// protocol URI first (preferred for performance)
-        if hasattr(asset_ref, "uri") and asset_ref.uri and asset_ref.uri.startswith("memory://"):
+        if (
+            hasattr(asset_ref, "uri")
+            and asset_ref.uri
+            and asset_ref.uri.startswith("memory://")
+        ):
             key = asset_ref.uri
             obj = self._memory_get(key)
             if obj is not None:
@@ -1179,7 +1185,11 @@ class ProcessingContext:
         """
         Converts an AssetRef to a URI with a specific MIME type.
         """
-        if asset_ref.data is None and asset_ref.uri and asset_ref.uri.startswith("memory://"):
+        if (
+            asset_ref.data is None
+            and asset_ref.uri
+            and asset_ref.uri.startswith("memory://")
+        ):
             key = asset_ref.uri
             obj = self._memory_get(key)
             if obj is not None:
@@ -1203,7 +1213,11 @@ class ProcessingContext:
             PIL.Image.Image: The converted PIL Image object.
         """
         # Check for memory:// protocol URI first (preferred for performance)
-        if hasattr(image_ref, "uri") and image_ref.uri and image_ref.uri.startswith("memory://"):
+        if (
+            hasattr(image_ref, "uri")
+            and image_ref.uri
+            and image_ref.uri.startswith("memory://")
+        ):
             key = image_ref.uri
             obj = self._memory_get(key)
             if obj is not None:
@@ -1298,7 +1312,11 @@ class ProcessingContext:
             AudioSegment: The converted audio segment.
         """
         # Check for memory:// protocol URI first (preferred for performance)
-        if hasattr(audio_ref, "uri") and audio_ref.uri and audio_ref.uri.startswith("memory://"):
+        if (
+            hasattr(audio_ref, "uri")
+            and audio_ref.uri
+            and audio_ref.uri.startswith("memory://")
+        ):
             key = audio_ref.uri
             obj = self._memory_get(key)
             if obj is not None:
@@ -1730,7 +1748,11 @@ class ProcessingContext:
         """
         if isinstance(text_ref, TextRef):
             # Check for memory:// protocol URI first (preferred for performance)
-            if hasattr(text_ref, "uri") and text_ref.uri and text_ref.uri.startswith("memory://"):
+            if (
+                hasattr(text_ref, "uri")
+                and text_ref.uri
+                and text_ref.uri.startswith("memory://")
+            ):
                 key = text_ref.uri
                 obj = self._memory_get(key)
                 if obj is not None:
@@ -1866,7 +1888,11 @@ class ProcessingContext:
             ValueError: If the model reference is empty.
         """
         # Check for memory:// protocol URI first (preferred for performance)
-        if hasattr(model_ref, "uri") and model_ref.uri and model_ref.uri.startswith("memory://"):
+        if (
+            hasattr(model_ref, "uri")
+            and model_ref.uri
+            and model_ref.uri.startswith("memory://")
+        ):
             key = model_ref.uri
             obj = self._memory_get(key)
             # Return the model object directly if it's already a model
@@ -1879,7 +1905,9 @@ class ProcessingContext:
         file = await self.asset_to_io(model_ref)
         return joblib.load(file)
 
-    async def from_estimator(self, est: "BaseEstimator", name: str | None = None, **kwargs):  # type: ignore
+    async def from_estimator(
+        self, est: "BaseEstimator", name: str | None = None, **kwargs
+    ):  # type: ignore
         """
         Create a model asset from an estimator.
 
@@ -2003,7 +2031,9 @@ class ProcessingContext:
         if isinstance(value, AssetRef):
             if isinstance(value, DataframeRef):
                 return value
-            if (value.uri and value.uri.startswith("memory://")) or value.data is not None:
+            if (
+                value.uri and value.uri.startswith("memory://")
+            ) or value.data is not None:
                 data_bytes = await self.asset_to_bytes(value)
                 return value.model_copy(update={"uri": None, "data": data_bytes})
             return value

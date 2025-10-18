@@ -1,12 +1,5 @@
 #!/usr/bin/env python
 
-import pytest
-import pytest_asyncio
-from fastapi.testclient import TestClient
-from nodetool.models.thread import Thread
-from nodetool.models.message import Message
-from nodetool.types.thread import ThreadCreateRequest, ThreadUpdateRequest
-
 
 # @pytest.mark.asyncio
 # async def test_create_thread(client: TestClient, headers: dict[str, str], user_id: str):

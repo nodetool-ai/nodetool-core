@@ -14,7 +14,6 @@ from nodetool.types.thread import (
     ThreadList,
 )
 from pydantic import BaseModel
-from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
 from nodetool.providers import get_provider
 
@@ -96,7 +95,6 @@ async def delete(thread_id: str, user: str = Depends(current_user)) -> None:
         raise HTTPException(status_code=404, detail="Thread not found")
 
     # Delete all messages in the thread using cursor-based pagination
-    from nodetool.models.message import Message as MessageModel
 
     # Keep deleting messages until none are left
     while True:

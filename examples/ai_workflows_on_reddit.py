@@ -66,9 +66,7 @@ async def test_reddit_journey_deconstructor_agent(  # Renamed for clarity
 if __name__ == "__main__":
     asyncio.run(
         test_reddit_journey_deconstructor_agent(
-            provider=get_provider(
-                Provider.HuggingFaceCerebras
-            ),
+            provider=get_provider(Provider.HuggingFaceCerebras),
             model="openai/gpt-oss-120b",
         )
     )

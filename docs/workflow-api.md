@@ -1,7 +1,7 @@
 # Workflow API Guide
 
-NodeTool exposes an HTTP and WebSocket API so you can integrate workflows into your own applications.
-This page collects the basics from the project README.
+NodeTool exposes an HTTP and WebSocket API so you can integrate workflows into your own applications. This page collects
+the basics from the project README.
 
 ## Loading Workflows
 
@@ -109,8 +109,8 @@ while (true) {
 
 ## WebSocket API
 
-The WebSocket API uses a binary protocol for efficiency and allows cancelling jobs.
-See [`run_workflow_websocket.js`](../examples/run_workflow_websocket.js) for more details.
+The WebSocket API uses a binary protocol for efficiency and allows cancelling jobs. See
+[`run_workflow_websocket.js`](../examples/run_workflow_websocket.js) for more details.
 
 ```javascript
 const socket = new WebSocket("ws://localhost:8000/predict");

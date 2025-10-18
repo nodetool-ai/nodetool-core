@@ -53,13 +53,21 @@ class ModelManager:
             key = f"{model_id}_{task}_{path}"
             model = cls._models.get(key)
             if model is not None:
-                logger.info(f"✓ Cache HIT: Retrieved cached model for {model_id} (task: {task}, path: {path})")
+                logger.info(
+                    f"✓ Cache HIT: Retrieved cached model for {model_id} (task: {task}, path: {path})"
+                )
             else:
-                logger.info(f"✗ Cache MISS: No cached model found for {model_id} (task: {task}, path: {path})")
-            logger.debug(f"Model cache status - Total models: {len(cls._models)}, Key searched: {key}")
+                logger.info(
+                    f"✗ Cache MISS: No cached model found for {model_id} (task: {task}, path: {path})"
+                )
+            logger.debug(
+                f"Model cache status - Total models: {len(cls._models)}, Key searched: {key}"
+            )
             return model
         else:
-            logger.debug(f"Production environment: Model caching disabled for {model_id}")
+            logger.debug(
+                f"Production environment: Model caching disabled for {model_id}"
+            )
         return None
 
     @classmethod
@@ -82,16 +90,26 @@ class ModelManager:
             cls._models_by_node[node_id] = key
 
             if was_existing:
-                logger.info(f"↻ Cache UPDATE: Replaced cached model for {model_id} (task: {task}, path: {path}) - Node: {node_id}")
+                logger.info(
+                    f"↻ Cache UPDATE: Replaced cached model for {model_id} (task: {task}, path: {path}) - Node: {node_id}"
+                )
             else:
-                logger.info(f"+ Cache STORE: Cached new model for {model_id} (task: {task}, path: {path}) - Node: {node_id}")
+                logger.info(
+                    f"+ Cache STORE: Cached new model for {model_id} (task: {task}, path: {path}) - Node: {node_id}"
+                )
 
-            logger.debug(f"Model cache status - Total models: {len(cls._models)}, Node associations: {len(cls._models_by_node)}")
+            logger.debug(
+                f"Model cache status - Total models: {len(cls._models)}, Node associations: {len(cls._models_by_node)}"
+            )
         else:
-            logger.debug(f"Production environment: Model caching disabled, not storing {model_id} for node {node_id}")
+            logger.debug(
+                f"Production environment: Model caching disabled, not storing {model_id} for node {node_id}"
+            )
 
     @classmethod
-    async def get_model_lock(cls, model_id: str, task: str, path: str | None = None) -> asyncio.Lock:
+    async def get_model_lock(
+        cls, model_id: str, task: str, path: str | None = None
+    ) -> asyncio.Lock:
         """Gets or creates a lock for a specific model.
 
         This method ensures thread-safe access to individual models by providing
@@ -123,12 +141,16 @@ class ModelManager:
             # Double-check after acquiring lock (another coroutine might have created it)
             if key not in cls._locks:
                 cls._locks[key] = asyncio.Lock()
-                logger.debug(f"🔒 Created new lock for model: {model_id} (task: {task}, path: {path})")
+                logger.debug(
+                    f"🔒 Created new lock for model: {model_id} (task: {task}, path: {path})"
+                )
             return cls._locks[key]
 
     @classmethod
     @asynccontextmanager
-    async def lock_model(cls, model_id: str, task: str, path: str | None = None) -> AsyncIterator[None]:
+    async def lock_model(
+        cls, model_id: str, task: str, path: str | None = None
+    ) -> AsyncIterator[None]:
         """Context manager for acquiring exclusive access to a model.
 
         This provides a convenient way to ensure thread-safe access to models
@@ -150,7 +172,9 @@ class ModelManager:
         """
         lock = await cls.get_model_lock(model_id, task, path)
         key = f"{model_id}_{task}_{path}"
-        logger.debug(f"🔐 Acquiring lock for model: {model_id} (task: {task}, path: {path})")
+        logger.debug(
+            f"🔐 Acquiring lock for model: {model_id} (task: {task}, path: {path})"
+        )
         async with lock:
             logger.debug(f"✓ Lock acquired for model: {key}")
             try:
@@ -176,15 +200,17 @@ class ModelManager:
             if key:
                 if key in cls._models:
                     # Extract model info for logging
-                    parts = key.split('_', 2)
-                    model_id = parts[0] if len(parts) > 0 else 'unknown'
-                    task = parts[1] if len(parts) > 1 else 'unknown'
+                    parts = key.split("_", 2)
+                    model_id = parts[0] if len(parts) > 0 else "unknown"
+                    task = parts[1] if len(parts) > 1 else "unknown"
                     path = parts[2] if len(parts) > 2 else None
 
                     del cls._models[key]
                     cleared_count += 1
                     cleared_models.append(f"{model_id} (task: {task}, path: {path})")
-                    logger.debug(f"- Cleared cached model for node {node_id}: {model_id}")
+                    logger.debug(
+                        f"- Cleared cached model for node {node_id}: {model_id}"
+                    )
 
                     # Clean up associated lock
                     if key in cls._locks:
@@ -193,10 +219,14 @@ class ModelManager:
                         logger.debug(f"🔒 Removed lock for cleared model: {key}")
 
         if cleared_count > 0:
-            logger.info(f"🗑️ Cache CLEANUP: Removed {cleared_count} unused models: {', '.join(cleared_models)}")
+            logger.info(
+                f"🗑️ Cache CLEANUP: Removed {cleared_count} unused models: {', '.join(cleared_models)}"
+            )
             if cleared_locks > 0:
                 logger.debug(f"🔒 Removed {cleared_locks} associated locks")
-            logger.debug(f"Model cache status after cleanup - Total models: {len(cls._models)}, Node associations: {len(cls._models_by_node)}, Locks: {len(cls._locks)}")
+            logger.debug(
+                f"Model cache status after cleanup - Total models: {len(cls._models)}, Node associations: {len(cls._models_by_node)}, Locks: {len(cls._locks)}"
+            )
         else:
             logger.debug("Cache cleanup: No unused models to remove")
 
@@ -211,13 +241,15 @@ class ModelManager:
         if model_count > 0:
             model_info = []
             for key in cls._models.keys():
-                parts = key.split('_', 2)
-                model_id = parts[0] if len(parts) > 0 else 'unknown'
-                task = parts[1] if len(parts) > 1 else 'unknown'
+                parts = key.split("_", 2)
+                model_id = parts[0] if len(parts) > 0 else "unknown"
+                task = parts[1] if len(parts) > 1 else "unknown"
                 path = parts[2] if len(parts) > 2 else None
                 model_info.append(f"{model_id} (task: {task}, path: {path})")
 
-            logger.info(f"🧹 Cache CLEAR ALL: Removing {model_count} cached models, {node_count} node associations, {lock_count} locks")
+            logger.info(
+                f"🧹 Cache CLEAR ALL: Removing {model_count} cached models, {node_count} node associations, {lock_count} locks"
+            )
             logger.debug(f"Models being cleared: {', '.join(model_info)}")
         else:
             logger.debug("Cache clear: No models to remove")
@@ -227,4 +259,6 @@ class ModelManager:
         cls._locks.clear()
 
         if model_count > 0:
-            logger.info(f"✅ Cache cleared successfully: {model_count} models removed, {lock_count} locks removed")
+            logger.info(
+                f"✅ Cache cleared successfully: {model_count} models removed, {lock_count} locks removed"
+            )

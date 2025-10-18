@@ -3,7 +3,7 @@
 import pytest
 import tempfile
 from pydantic import Field
-from unittest.mock import Mock, AsyncMock, patch
+from unittest.mock import Mock, AsyncMock
 
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.agents.graph_planner import (
@@ -23,6 +23,7 @@ class StringInputNode(InputNode):
 
     async def process(self, context: ProcessingContext) -> str:
         return self.value
+
 
 class StringOutputNode(OutputNode):
     value: str = Field(default="", description="The value of the output.")
@@ -53,9 +54,7 @@ class TestGraphPlanner:
     def processing_context(self, temp_workspace):
         """Create a processing context for tests"""
         return ProcessingContext(
-            user_id="test_user",
-            auth_token="test_token", 
-            workspace_dir=temp_workspace
+            user_id="test_user", auth_token="test_token", workspace_dir=temp_workspace
         )
 
     def test_initialization(self, mock_provider, temp_workspace):
@@ -103,37 +102,34 @@ class TestGraphPlanner:
         # Create explicit schema
         input_schema = [
             GraphInput(
-                name="text",
-                type=TypeMetadata(type="str"),
-                description="Text input"
+                name="text", type=TypeMetadata(type="str"), description="Text input"
             ),
             GraphInput(
-                name="number",
-                type=TypeMetadata(type="int"),
-                description="Number input"
+                name="number", type=TypeMetadata(type="int"), description="Number input"
             ),
             GraphInput(
                 name="float_num",
                 type=TypeMetadata(type="float"),
-                description="Float input"
+                description="Float input",
             ),
             GraphInput(
-                name="flag",
-                type=TypeMetadata(type="bool"),
-                description="Boolean flag"
+                name="flag", type=TypeMetadata(type="bool"), description="Boolean flag"
             ),
             GraphInput(
                 name="items",
                 type=TypeMetadata(type="list", type_args=[TypeMetadata(type="str")]),
-                description="List of strings"
+                description="List of strings",
             ),
             GraphInput(
                 name="mapping",
-                type=TypeMetadata(type="dict", type_args=[TypeMetadata(type="str"), TypeMetadata(type="str")]),
-                description="String to string mapping"
+                type=TypeMetadata(
+                    type="dict",
+                    type_args=[TypeMetadata(type="str"), TypeMetadata(type="str")],
+                ),
+                description="String to string mapping",
             ),
         ]
-        
+
         planner = GraphPlanner(
             provider=mock_provider,
             model="test-model",
@@ -167,17 +163,15 @@ class TestGraphPlanner:
         # Create explicit output schema
         output_schema = [
             GraphOutput(
-                name="result",
-                type=TypeMetadata(type="str"),
-                description="Result text"
+                name="result", type=TypeMetadata(type="str"), description="Result text"
             ),
             GraphOutput(
                 name="score",
                 type=TypeMetadata(type="float"),
-                description="Result score"
+                description="Result score",
             ),
         ]
-        
+
         planner = GraphPlanner(
             provider=mock_provider,
             model="test-model",
@@ -201,28 +195,28 @@ class TestGraphPlanner:
             GraphInput(
                 name="input_text",
                 type=TypeMetadata(type="str"),
-                description="Input text"
+                description="Input text",
             ),
             GraphInput(
                 name="threshold",
                 type=TypeMetadata(type="float"),
-                description="Processing threshold"
+                description="Processing threshold",
             ),
         ]
-        
+
         output_schema = [
             GraphOutput(
                 name="processed_text",
                 type=TypeMetadata(type="str"),
-                description="Processed text output"
+                description="Processed text output",
             ),
             GraphOutput(
                 name="confidence",
                 type=TypeMetadata(type="float"),
-                description="Processing confidence"
+                description="Processing confidence",
             ),
         ]
-        
+
         planner = GraphPlanner(
             provider=mock_provider,
             model="test-model",
@@ -235,12 +229,12 @@ class TestGraphPlanner:
         # Check both schemas were set correctly
         assert len(planner.input_schema) == 2
         assert len(planner.output_schema) == 2
-        
+
         # Verify input schema
         input_by_name = {inp.name: inp for inp in planner.input_schema}
         assert input_by_name["input_text"].type.type == "str"
         assert input_by_name["threshold"].type.type == "float"
-        
+
         # Verify output schema
         output_by_name = {out.name: out for out in planner.output_schema}
         assert output_by_name["processed_text"].type.type == "str"
@@ -256,17 +250,17 @@ class TestGraphPlanner:
         )
 
         # Test that the method exists and is callable
-        assert hasattr(planner, 'create_graph')
+        assert hasattr(planner, "create_graph")
         assert callable(planner.create_graph)
-
 
     @pytest.mark.asyncio
     async def test_create_graph_failure(self, mock_provider, processing_context):
         """Test create_graph handles failures gracefully"""
+
         # Mock generate_messages to return chunks with invalid JSON content
         async def mock_generate_messages(*args, **kwargs):
             yield Chunk(content="Invalid JSON response")
-        
+
         mock_provider.generate_messages = mock_generate_messages
 
         planner = GraphPlanner(
@@ -287,8 +281,8 @@ class TestGraphPlanner:
         # Simple test to verify the function can be imported and called
         # without doing actual node type resolution which requires full registry
         str_meta = TypeMetadata(type="str")
-        
-        # Just test that the function is callable - we can't easily test actual 
+
+        # Just test that the function is callable - we can't easily test actual
         # functionality without the full node registry setup
         try:
             # This will likely fail but we're just testing it's callable
@@ -296,7 +290,7 @@ class TestGraphPlanner:
         except (ValueError, Exception):
             # Expected to fail without proper registry setup
             pass
-        
+
         # If we get here, the function exists and is callable
         assert callable(get_node_type_for_metadata)
 

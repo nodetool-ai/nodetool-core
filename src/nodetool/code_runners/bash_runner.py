@@ -9,9 +9,7 @@ stderr lines. No wrapper or serialization.
 from __future__ import annotations
 
 from typing import Any
-import logging
 
-from nodetool.workflows.base_node import BaseNode
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.code_runners.runtime_base import StreamRunnerBase
 
@@ -36,7 +34,7 @@ class BashDockerRunner(StreamRunnerBase):
         user_code: str,
         env_locals: dict[str, Any],
     ) -> list[str]:
-        user_code_with_args = f"set -e\n"
+        user_code_with_args = "set -e\n"
         for key, value in env_locals.items():
             user_code_with_args += f"{key}={repr(value)}\n"
         user_code_with_args += user_code
@@ -46,7 +44,6 @@ class BashDockerRunner(StreamRunnerBase):
 if __name__ == "__main__":
     # Lightweight smoke test: raw stdout/stderr with input streaming
     import asyncio
-    import os
 
     class _SmokeNode:
         def __init__(self) -> None:

@@ -2369,6 +2369,217 @@ def deploy_destroy(name: str, force: bool):
         sys.exit(1)
 
 
+@deploy.group("workflows")
+def deploy_workflows():
+    """Manage workflows on deployed instances."""
+    pass
+
+
+@deploy_workflows.command("sync")
+@click.argument("deployment_name")
+@click.argument("workflow_id")
+def deploy_workflows_sync(deployment_name: str, workflow_id: str):
+    """Sync a workflow to a deployed instance."""
+    import asyncio
+    from nodetool.deploy.manager import DeploymentManager
+    from nodetool.deploy.admin_client import AdminHTTPClient
+    from nodetool.models.workflow import Workflow
+    from nodetool.api.workflow import from_model
+
+    async def run_sync():
+        try:
+            manager = DeploymentManager()
+            deployment = manager.get_deployment(deployment_name)
+
+            # Get server URL from deployment
+            server_url = deployment.get_server_url()
+            if not server_url:
+                console.print(
+                    f"[red]Cannot determine server URL for deployment '{deployment_name}'[/]"
+                )
+                console.print(
+                    "[yellow]The deployment may not be active yet. Try deploying first with:[/]"
+                )
+                console.print(f"  nodetool deploy apply {deployment_name}")
+                sys.exit(1)
+
+            console.print(f"[bold cyan]🔄 Syncing workflow to {deployment_name}...[/]")
+            console.print(f"[cyan]Server: {server_url}[/]")
+            console.print(f"[cyan]Workflow ID: {workflow_id}[/]")
+            console.print()
+
+            # Get local workflow
+            workflow = await Workflow.get(workflow_id)
+            if workflow is None:
+                console.print(f"[red]❌ Workflow not found locally: {workflow_id}[/]")
+                sys.exit(1)
+
+            # Get auth token from deployment (for self-hosted deployments)
+            from nodetool.config.deployment import SelfHostedDeployment
+
+            auth_token = None
+            if isinstance(deployment, SelfHostedDeployment):
+                auth_token = deployment.worker_auth_token
+
+            # Sync to remote
+            client = AdminHTTPClient(server_url, auth_token=auth_token)
+            result = await client.update_workflow(
+                workflow_id, from_model(workflow).model_dump()
+            )
+
+            if result.get("status") == "ok":
+                console.print("[green]✅ Workflow synced successfully[/]")
+            else:
+                console.print(f"[yellow]⚠️ Remote response: {result}[/]")
+
+        except KeyError:
+            console.print(f"[red]Deployment '{deployment_name}' not found[/]")
+            sys.exit(1)
+        except Exception as e:
+            console.print(f"[red]❌ Failed to sync workflow: {e}[/]")
+            import traceback
+
+            traceback.print_exc()
+            sys.exit(1)
+
+    asyncio.run(run_sync())
+
+
+@deploy_workflows.command("list")
+@click.argument("deployment_name")
+def deploy_workflows_list(deployment_name: str):
+    """List workflows on a deployed instance."""
+    import asyncio
+    from nodetool.deploy.manager import DeploymentManager
+    from nodetool.deploy.admin_client import AdminHTTPClient
+
+    async def run_list():
+        try:
+            manager = DeploymentManager()
+            deployment = manager.get_deployment(deployment_name)
+
+            # Get server URL from deployment
+            server_url = deployment.get_server_url()
+            if not server_url:
+                console.print(
+                    f"[red]Cannot determine server URL for deployment '{deployment_name}'[/]"
+                )
+                console.print(
+                    "[yellow]The deployment may not be active yet. Try deploying first with:[/]"
+                )
+                console.print(f"  nodetool deploy apply {deployment_name}")
+                sys.exit(1)
+
+            console.print(
+                f"[bold cyan]📋 Fetching workflows from {deployment_name}...[/]"
+            )
+            console.print(f"[cyan]Server: {server_url}[/]")
+            console.print()
+
+            # Get workflows from remote
+            client = AdminHTTPClient(server_url)
+            result = await client.list_workflows()
+
+            workflows = result.get("workflows", [])
+
+            if not workflows:
+                console.print("[yellow]No workflows found on remote instance[/]")
+                return
+
+            table = Table(title=f"Workflows on '{deployment_name}'")
+            table.add_column("ID", style="cyan")
+            table.add_column("Name", style="green")
+            table.add_column("Description", style="yellow")
+
+            for workflow in workflows:
+                table.add_row(
+                    workflow.get("id", ""),
+                    workflow.get("name", ""),
+                    workflow.get("description", "")[:50]
+                    if workflow.get("description")
+                    else "",
+                )
+
+            console.print(table)
+            console.print()
+            console.print(f"[cyan]Total: {len(workflows)} workflow(s)[/]")
+
+        except KeyError:
+            console.print(f"[red]Deployment '{deployment_name}' not found[/]")
+            sys.exit(1)
+        except Exception as e:
+            console.print(f"[red]❌ Failed to list workflows: {e}[/]")
+            import traceback
+
+            traceback.print_exc()
+            sys.exit(1)
+
+    asyncio.run(run_list())
+
+
+@deploy_workflows.command("delete")
+@click.argument("deployment_name")
+@click.argument("workflow_id")
+@click.option("--force", is_flag=True, help="Skip confirmation prompt")
+def deploy_workflows_delete(deployment_name: str, workflow_id: str, force: bool):
+    """Delete a workflow from a deployed instance."""
+    import asyncio
+    from nodetool.deploy.manager import DeploymentManager
+    from nodetool.deploy.admin_client import AdminHTTPClient
+
+    async def run_delete():
+        try:
+            manager = DeploymentManager()
+            deployment = manager.get_deployment(deployment_name)
+
+            # Get server URL from deployment
+            server_url = deployment.get_server_url()
+            if not server_url:
+                console.print(
+                    f"[red]Cannot determine server URL for deployment '{deployment_name}'[/]"
+                )
+                console.print(
+                    "[yellow]The deployment may not be active yet. Try deploying first with:[/]"
+                )
+                console.print(f"  nodetool deploy apply {deployment_name}")
+                sys.exit(1)
+
+            if not force:
+                if not click.confirm(
+                    f"Are you sure you want to delete workflow '{workflow_id}' from '{deployment_name}'?"
+                ):
+                    console.print("[yellow]Operation cancelled[/]")
+                    return
+
+            console.print(
+                f"[bold yellow]🗑️ Deleting workflow from {deployment_name}...[/]"
+            )
+            console.print(f"[cyan]Server: {server_url}[/]")
+            console.print(f"[cyan]Workflow ID: {workflow_id}[/]")
+            console.print()
+
+            # Delete from remote
+            client = AdminHTTPClient(server_url)
+            result = await client.delete_workflow(workflow_id)
+
+            if result.get("status") == "ok":
+                console.print("[green]✅ Workflow deleted successfully[/]")
+            else:
+                console.print(f"[yellow]⚠️ Remote response: {result}[/]")
+
+        except KeyError:
+            console.print(f"[red]Deployment '{deployment_name}' not found[/]")
+            sys.exit(1)
+        except Exception as e:
+            console.print(f"[red]❌ Failed to delete workflow: {e}[/]")
+            import traceback
+
+            traceback.print_exc()
+            sys.exit(1)
+
+    asyncio.run(run_delete())
+
+
 # Add deploy group to main CLI
 cli.add_command(deploy)
 

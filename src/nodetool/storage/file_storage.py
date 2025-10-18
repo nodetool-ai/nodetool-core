@@ -34,9 +34,7 @@ class FileStorage(AbstractStorage):
             mtime = await asyncio.to_thread(
                 os.path.getmtime, os.path.join(self.base_path, key)
             )
-            return datetime.fromtimestamp(
-                mtime, tz=datetime.now().astimezone().tzinfo
-            )
+            return datetime.fromtimestamp(mtime, tz=datetime.now().astimezone().tzinfo)
         except FileNotFoundError:
             return None
 

@@ -1,4 +1,3 @@
-import pytest
 from rich.text import Text
 
 from nodetool.agents.task_planner import (
@@ -74,7 +73,7 @@ def test_validate_dependencies_missing_input(tmp_path):
 
 def test_task_id_uniqueness(tmp_path):
     """Test that task IDs should be unique in a plan"""
-    planner = make_planner(tmp_path)
+    make_planner(tmp_path)
     s1 = SubTask(id="duplicate_id", content="a", input_tasks=[])
     s2 = SubTask(id="duplicate_id", content="b", input_tasks=[])
     # Since task IDs should be unique, having duplicates would be caught

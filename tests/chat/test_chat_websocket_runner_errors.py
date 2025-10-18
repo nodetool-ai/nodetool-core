@@ -1,13 +1,7 @@
 """Test error handling in ChatWebSocketRunner, specifically for connection errors."""
 
-import pytest
 import json
 import msgpack
-from unittest.mock import AsyncMock, MagicMock, patch
-import httpx
-
-from nodetool.chat.chat_websocket_runner import ChatWebSocketRunner
-from nodetool.metadata.types import Message, Provider
 
 
 class MockWebSocket:

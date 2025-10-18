@@ -490,7 +490,7 @@ class OllamaProvider(BaseProvider, OpenAICompat):
                 self.convert_message(m, use_tool_emulation=True)
                 for m in modified_messages
             ]
-            log.debug(f"Using tool emulation: added tool definitions to system message")
+            log.debug("Using tool emulation: added tool definitions to system message")
         else:
             # Regular message conversion
             ollama_messages = [
@@ -836,7 +836,7 @@ async def main():
         model=model_name,
         tools=tools,
     )
-    print(f"\n--- Initial Response ---")
+    print("\n--- Initial Response ---")
     print(f"Content: {response.content}")
     print(f"Tool calls: {response.tool_calls}\n")
 
@@ -869,7 +869,7 @@ async def main():
             model=model_name,
             tools=tools,
         )
-        print(f"\n--- Response After Tool Call ---")
+        print("\n--- Response After Tool Call ---")
         print(f"Content: {response.content}")
         print(f"Tool calls: {response.tool_calls}")
         iteration += 1
@@ -883,7 +883,7 @@ async def main():
 
     # Test 2: Response format (structured output)
     print(f"\n{'='*60}")
-    print(f"TEST 2: Response Format (Structured Output)")
+    print("TEST 2: Response Format (Structured Output)")
     print(f"{'='*60}\n")
 
     # Define a JSON schema for structured output
@@ -923,7 +923,7 @@ async def main():
         response_format=response_format,
     )
 
-    print(f"--- Structured Response ---")
+    print("--- Structured Response ---")
     print(f"Content:\n{response_json.content}\n")
 
     # Try to parse the JSON
@@ -934,7 +934,7 @@ async def main():
             else str(response_json.content)
         )
         parsed = json.loads(content_str)
-        print(f"✅ Valid JSON!")
+        print("✅ Valid JSON!")
         print(f"Calculation: {parsed.get('calculation')}")
         print(f"Result: {parsed.get('result')}")
         print(f"Explanation: {parsed.get('explanation')}")

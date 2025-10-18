@@ -9,12 +9,10 @@ across all registered providers that support the TEXT_TO_SPEECH capability.
 
 from nodetool.config.logging_config import get_logger
 from typing import List
-from nodetool.metadata.types import TTSModel, Provider
-import aiohttp
+from nodetool.metadata.types import TTSModel
 from nodetool.ml.models.model_cache import _model_cache
 
 log = get_logger(__name__)
-
 
 
 async def get_all_tts_models() -> List[TTSModel]:
@@ -36,10 +34,8 @@ async def get_all_tts_models() -> List[TTSModel]:
         log.info(f"Returning {len(cached_models)} cached TTS models")
         return cached_models
 
-    from nodetool.providers.base import (
-        ProviderCapability,
-    )
     from nodetool.providers import list_providers
+
     models = []
     for provider in list_providers():
         provider_models = await provider.get_available_tts_models()

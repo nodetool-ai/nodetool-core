@@ -4,10 +4,9 @@ Chain of Thought (CoT) Agent implementation with tool calling capabilities.
 """
 
 import json
-from typing import AsyncGenerator, Sequence, Union, Any
+from typing import AsyncGenerator, Sequence, Any
 
 from nodetool.agents.sub_task_context import SubTaskContext
-from nodetool.workflows.types import Chunk, TaskUpdate
 from nodetool.providers import BaseProvider
 from nodetool.agents.tools.base import Tool
 from nodetool.metadata.types import (

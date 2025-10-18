@@ -7,20 +7,12 @@ services:
       args:
         USE_LOCAL_WHEELS: ${USE_LOCAL_WHEELS:-0}
     volumes:
-      - ${HF_HOME}:/app/huggingface
-      - /var/run/docker.sock:/var/run/docker.sock
-      - ${CHROMA_PATH}:/chroma-data
-    command:
-      [
-        "nodetool",
-        "serve",
-        "--host",
-        "0.0.0.0",
-        "--port",
-        "8000",
-      ]
+    - ${HF_HOME}:/app/huggingface
+    - /var/run/docker.sock:/var/run/docker.sock
+    - ${CHROMA_PATH}:/chroma-data
+    command: [nodetool, serve, --host, 0.0.0.0, --port, '8000']
     expose:
-      - "8000"
+    - '8000'
     environment:
       ENV: ${ENV:-development}
       ASSET_BUCKET: ${ASSET_BUCKET}
@@ -51,9 +43,9 @@ services:
       resources:
         reservations:
           devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
+          - driver: nvidia
+            count: all
+            capabilities: [gpu]
   memcached:
     image: memcached:bookworm
     restart: unless-stopped
@@ -65,38 +57,38 @@ services:
     environment:
       HUGGING_FACE_HUB_TOKEN: ${HF_TOKEN:-}
     volumes:
-      - ${HF_HOME}:/root/.cache/huggingface
+    - ${HF_HOME}:/root/.cache/huggingface
     command:
-      - "--host"
-      - "0.0.0.0"
-      - "--port"
-      - "${VLLM_PORT:-8888}"
-      - "--model"
-      - "${VLLM_MODEL:-openai/gpt-oss-20b}"
-      - "--max-model-len"
-      - "${VLLM_MAX_MODEL_LEN:-8192}"
+    - --host
+    - 0.0.0.0
+    - --port
+    - ${VLLM_PORT:-8888}
+    - --model
+    - ${VLLM_MODEL:-openai/gpt-oss-20b}
+    - --max-model-len
+    - ${VLLM_MAX_MODEL_LEN:-8192}
     ports:
-      - "${VLLM_PORT:-8888}:8888"
+    - ${VLLM_PORT:-8888}:8888
     deploy:
       resources:
         reservations:
           devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
+          - driver: nvidia
+            count: all
+            capabilities: [gpu]
 
   nginx:
     image: nginx:1.27-alpine
     restart: unless-stopped
     depends_on:
-      - api
+    - api
     volumes:
-      - ./docker/nginx/conf.d:/etc/nginx/conf.d:ro
-      - ./cert.pem:/etc/nginx/certs/cert.pem:ro
-      - ./key.pem:/etc/nginx/certs/key.pem:ro
+    - ./docker/nginx/conf.d:/etc/nginx/conf.d:ro
+    - ./cert.pem:/etc/nginx/certs/cert.pem:ro
+    - ./key.pem:/etc/nginx/certs/key.pem:ro
     ports:
-      - "80:80"
-      - "443:443"
+    - 80:80
+    - 443:443
 
   # Build the nodetool image for the api service to use
   nodetool:
@@ -105,4 +97,4 @@ services:
       dockerfile: Dockerfile.agent
     image: nodetool
     profiles:
-      - build-only
+    - build-only

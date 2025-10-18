@@ -16,7 +16,7 @@ from nodetool.config.deployment import (
     DeploymentStatus,
 )
 from nodetool.deploy.state import StateManager
-from nodetool.deploy.deploy_to_runpod import deploy_to_runpod as legacy_deploy_to_runpod
+from nodetool.deploy.deploy_to_runpod import deploy_to_runpod
 
 logger = logging.getLogger(__name__)
 
@@ -133,8 +133,7 @@ class RunPodDeployer:
             )
 
             # Call legacy deploy function
-            # TODO: Refactor this to use direct API calls instead of legacy function
-            legacy_deploy_to_runpod(
+            deploy_to_runpod(
                 docker_username=self.deployment.docker.username,
                 docker_registry=self.deployment.docker.registry,
                 image_name=self.deployment.image.name,
@@ -202,9 +201,9 @@ class RunPodDeployer:
         state = self.state_manager.read_state(self.deployment_name)
         if state:
             status_info["status"] = state.get("status", "unknown")
-            status_info["last_deployed"] = state.get("last_deployed")
-            status_info["template_name"] = state.get("template_name")
-            status_info["pod_id"] = state.get("pod_id")
+            status_info["last_deployed"] = state.get("last_deployed", "unknown")
+            status_info["template_name"] = state.get("template_name", "unknown")
+            status_info["pod_id"] = state.get("pod_id", "unknown")
 
         # TODO: Query RunPod API for live status
 

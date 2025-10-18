@@ -182,14 +182,14 @@ class ChatSSERunner(BaseChatRunner):
                         "message": "Generation stopped by user",
                     }
                 )
-            except:
+            except Exception:  # noqa: S110
                 pass
         except Exception as e:
             log.error(f"Error processing message: {str(e)}", exc_info=True)
             error_message = {"type": "error", "message": str(e)}
             try:
                 await self.send_message(error_message)
-            except:
+            except Exception:  # noqa: S110
                 pass
 
     def _validate_openai_request(self, request_data: dict) -> dict:
@@ -458,7 +458,7 @@ class ChatSSERunner(BaseChatRunner):
         """
         # Initialize validated_request to None
         validated_request = None
-        
+
         try:
             # Validate OpenAI request format first
             log.debug("Validating OpenAI Chat Completions API request format")
@@ -511,7 +511,11 @@ class ChatSSERunner(BaseChatRunner):
                             await self.current_task
                         except Exception as e:
                             # Send error and break
-                            model_name = validated_request["model"] if validated_request else "unknown"
+                            model_name = (
+                                validated_request["model"]
+                                if validated_request
+                                else "unknown"
+                            )
                             error_chunk = self._create_openai_error_chunk(
                                 str(e), model_name
                             )
@@ -530,9 +534,7 @@ class ChatSSERunner(BaseChatRunner):
         except Exception as e:
             log.error(f"Error in SSE streaming: {str(e)}", exc_info=True)
             model_name = validated_request["model"] if validated_request else "unknown"
-            error_chunk = self._create_openai_error_chunk(
-                str(e), model_name
-            )
+            error_chunk = self._create_openai_error_chunk(str(e), model_name)
             yield f"data: {error_chunk.model_dump_json()}\n\n"
         finally:
             # Send final [DONE] message for OpenAI format

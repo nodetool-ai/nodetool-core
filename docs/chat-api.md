@@ -11,10 +11,12 @@ NodeTool exposes OpenAI-compatible endpoints that allow you to use standard Open
 **URL:** `http://localhost:8000/v1/chat/completions`
 
 **Headers:**
+
 - `Content-Type: application/json`
 - `Authorization: Bearer YOUR_TOKEN`
 
 **Request Body:**
+
 ```json
 {
   "model": "gpt-4",
@@ -26,6 +28,7 @@ NodeTool exposes OpenAI-compatible endpoints that allow you to use standard Open
 ```
 
 **Example using OpenAI Python client:**
+
 ```python
 import openai
 
@@ -60,13 +63,11 @@ curl http://localhost:8000/v1/models \
 
 ## WebSocket API
 
-NodeTool also exposes a `/chat` WebSocket endpoint for real time conversations.
-The server side is implemented by `ChatWebSocketRunner` which handles message
-parsing, tool execution and streaming responses.
+NodeTool also exposes a `/chat` WebSocket endpoint for real time conversations. The server side is implemented by
+`ChatWebSocketRunner` which handles message parsing, tool execution and streaming responses.
 
-The connection supports both binary (MessagePack) and text (JSON) messages.
-Authentication can be provided via `Authorization: Bearer <token>` headers or
-an `api_key` query parameter.
+The connection supports both binary (MessagePack) and text (JSON) messages. Authentication can be provided via
+`Authorization: Bearer <token>` headers or an `api_key` query parameter.
 
 ### WebSocket Example usage
 
@@ -102,6 +103,5 @@ Responses from the server may include:
 - `job_update` – status updates when running a workflow
 - `error` – error messages
 
-The runner also supports workflow execution by sending a message with a
-`workflow_id`. In that case the WebSocket will stream job updates in addition
-to regular chat responses.
+The runner also supports workflow execution by sending a message with a `workflow_id`. In that case the WebSocket will
+stream job updates in addition to regular chat responses.

@@ -8,7 +8,6 @@ during execution using the AddSubtaskTool.
 import pytest
 import asyncio
 from nodetool.agents.task_executor import TaskExecutor
-from nodetool.agents.sub_task_context import SubTaskContext
 from nodetool.metadata.types import Task, SubTask
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.providers.fake_provider import FakeProvider
@@ -236,7 +235,10 @@ async def test_output_schema_validation():
     assert "subtask_id" in result
     assert len(task.subtasks) == 2
     # The schema should be reset to default due to invalid JSON
-    assert task.subtasks[1].output_schema == '{"type": "object", "description": "Subtask result"}'
+    assert (
+        task.subtasks[1].output_schema
+        == '{"type": "object", "description": "Subtask result"}'
+    )
 
 
 if __name__ == "__main__":

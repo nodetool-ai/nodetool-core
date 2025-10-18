@@ -92,7 +92,6 @@ from nodetool.metadata.types import (
     HFKontextGeneration,
 )
 from nodetool.workflows.base_node import ToolResultNode, get_node_class
-from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.types import ProcessingMessage

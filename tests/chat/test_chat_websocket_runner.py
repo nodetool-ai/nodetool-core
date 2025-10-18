@@ -6,7 +6,7 @@ import pytest
 import json
 import msgpack
 import asyncio
-from unittest.mock import Mock, AsyncMock, patch, MagicMock
+from unittest.mock import Mock, AsyncMock, patch
 from fastapi import WebSocket
 from fastapi.websockets import WebSocketState
 from nodetool.chat.chat_websocket_runner import ChatWebSocketRunner, WebSocketMode

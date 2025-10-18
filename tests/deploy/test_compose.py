@@ -33,9 +33,7 @@ class TestComposeGenerator:
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
-            containers=[
-                ContainerConfig(name="wf1", port=8001),
-            ],
+            container=ContainerConfig(name="wf1", port=8001),
         )
 
     @pytest.fixture
@@ -45,11 +43,7 @@ class TestComposeGenerator:
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
-            containers=[
-                ContainerConfig(name="wf1", port=8001, workflows=["workflow-1"]),
-                ContainerConfig(name="wf2", port=8002, workflows=["workflow-2"]),
-                ContainerConfig(name="wf3", port=8003),
-            ],
+            container=ContainerConfig(name="wf1", port=8001, workflows=["workflow-1"]),
         )
 
     @pytest.fixture
@@ -59,10 +53,7 @@ class TestComposeGenerator:
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
-            containers=[
-                ContainerConfig(name="gpu1", port=8001, gpu="0"),
-                ContainerConfig(name="gpu2", port=8002, gpu="1,2"),
-            ],
+            container=ContainerConfig(name="gpu1", port=8001, gpu="0"),
         )
 
     def test_init(self, basic_deployment):
@@ -117,21 +108,17 @@ class TestComposeGenerator:
         assert service["restart"] == "unless-stopped"
 
     def test_multi_container_services(self, multi_container_deployment):
-        """Test generating multiple container services."""
+        """Test generating service with workflow configuration."""
         generator = ComposeGenerator(multi_container_deployment)
         content = generator.generate()
         parsed = yaml.safe_load(content)
 
         services = parsed["services"]
-        assert len(services) == 3
+        assert len(services) == 1
         assert "wf1" in services
-        assert "wf2" in services
-        assert "wf3" in services
 
-        # Check ports are correctly mapped
+        # Check port is correctly mapped
         assert "8001:8000" in services["wf1"]["ports"]
-        assert "8002:8000" in services["wf2"]["ports"]
-        assert "8003:8000" in services["wf3"]["ports"]
 
     def test_volume_mounts(self, basic_deployment):
         """Test volume mount configuration."""
@@ -147,7 +134,7 @@ class TestComposeGenerator:
 
         # Check workspace volume (read-write)
         workspace_vol = [v for v in volumes if "/workspace" in v][0]
-        assert "/data/workspaces/wf1:/workspace" in workspace_vol
+        assert "/data/workspace:/workspace" in workspace_vol
 
         # Check HF cache volume (read-only)
         hf_vol = [v for v in volumes if "/hf-cache:ro" in v][0]
@@ -183,11 +170,6 @@ class TestComposeGenerator:
         assert "NODETOOL_WORKFLOWS" in wf1_env_dict
         assert wf1_env_dict["NODETOOL_WORKFLOWS"] == "workflow-1"
 
-        # Container without workflows should not have NODETOOL_WORKFLOWS
-        wf3_env = parsed["services"]["wf3"]["environment"]
-        wf3_env_dict = dict(e.split("=", 1) for e in wf3_env)
-        assert "NODETOOL_WORKFLOWS" not in wf3_env_dict
-
     def test_healthcheck_configuration(self, basic_deployment):
         """Test healthcheck configuration."""
         generator = ComposeGenerator(basic_deployment)
@@ -214,7 +196,7 @@ class TestComposeGenerator:
         content = generator.generate()
         parsed = yaml.safe_load(content)
 
-        # Check first container with single GPU
+        # Check container with single GPU
         gpu1 = parsed["services"]["gpu1"]
         assert "deploy" in gpu1
         deploy = gpu1["deploy"]
@@ -225,12 +207,6 @@ class TestComposeGenerator:
         assert devices[0]["driver"] == "nvidia"
         assert devices[0]["device_ids"] == ["0"]
         assert "gpu" in devices[0]["capabilities"]
-
-        # Check second container with multiple GPUs
-        gpu2 = parsed["services"]["gpu2"]
-        deploy2 = gpu2["deploy"]
-        devices2 = deploy2["resources"]["reservations"]["devices"]
-        assert devices2[0]["device_ids"] == ["1", "2"]
 
     def test_no_gpu_configuration(self, basic_deployment):
         """Test that deploy section is omitted when no GPU."""
@@ -281,14 +257,14 @@ class TestComposeGenerator:
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
-            containers=[ContainerConfig(name="wf1", port=8001)],
+            container=ContainerConfig(name="wf1", port=8001),
         )
 
         deployment2 = SelfHostedDeployment(
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="v2.0"),  # Different tag
-            containers=[ContainerConfig(name="wf1", port=8001)],
+            container=ContainerConfig(name="wf1", port=8001),
         )
 
         hash1 = ComposeGenerator(deployment1).generate_hash()
@@ -302,9 +278,9 @@ class TestComposeGenerator:
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
-            containers=[ContainerConfig(name="wf1", port=8001)],
+            container=ContainerConfig(name="wf1", port=8001),
             paths=SelfHostedPaths(
-                workspace_base="/custom/workspace",
+                workspace="/custom/workspace",
                 hf_cache="/custom/hf-cache",
             ),
         )
@@ -317,7 +293,7 @@ class TestComposeGenerator:
 
         # Check custom paths are used
         workspace_vol = [v for v in volumes if "/workspace" in v][0]
-        assert "/custom/workspace/wf1:/workspace" in workspace_vol
+        assert "/custom/workspace:/workspace" in workspace_vol
 
         hf_vol = [v for v in volumes if "/hf-cache:ro" in v][0]
         assert "/custom/hf-cache:/hf-cache:ro" in hf_vol
@@ -332,7 +308,7 @@ class TestComposeHelperFunctions:
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
-            containers=[ContainerConfig(name="wf1", port=8001)],
+            container=ContainerConfig(name="wf1", port=8001),
         )
 
         content = generate_compose_file(deployment)
@@ -347,7 +323,7 @@ class TestComposeHelperFunctions:
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
-            containers=[ContainerConfig(name="wf1", port=8001)],
+            container=ContainerConfig(name="wf1", port=8001),
         )
 
         output_path = tmp_path / "docker-compose.yml"
@@ -375,7 +351,7 @@ class TestComposeHelperFunctions:
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
-            containers=[ContainerConfig(name="wf1", port=8001)],
+            container=ContainerConfig(name="wf1", port=8001),
         )
 
         hash_value = get_compose_hash(deployment)
@@ -394,16 +370,12 @@ class TestComposeEdgeCases:
     """Tests for edge cases and special scenarios."""
 
     def test_container_with_special_characters(self):
-        """Test containers with special characters in names."""
+        """Test container with special characters in name."""
         deployment = SelfHostedDeployment(
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
-            containers=[
-                ContainerConfig(name="workflow.1", port=8001),
-                ContainerConfig(name="workflow@2", port=8002),
-                ContainerConfig(name="workflow 3", port=8003),
-            ],
+            container=ContainerConfig(name="workflow.1", port=8001),
         )
 
         generator = ComposeGenerator(deployment)
@@ -412,10 +384,9 @@ class TestComposeEdgeCases:
 
         services = parsed["services"]
 
-        # Names should be sanitized
+        # Name should be sanitized
         assert "workflow-1" in services
-        assert "workflow-2" in services
-        assert "workflow-3" in services
+        assert len(services) == 1
 
     def test_multiple_workflows_per_container(self):
         """Test container with multiple workflow IDs."""
@@ -423,13 +394,9 @@ class TestComposeEdgeCases:
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
-            containers=[
-                ContainerConfig(
-                    name="multi",
-                    port=8001,
-                    workflows=["wf-1", "wf-2", "wf-3"],
-                ),
-            ],
+            container=ContainerConfig(
+                name="multi", port=8001, workflows=["wf-1", "wf-2", "wf-3"]
+            ),
         )
 
         generator = ComposeGenerator(deployment)
@@ -449,13 +416,9 @@ class TestComposeEdgeCases:
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
-            containers=[
-                ContainerConfig(
-                    name="custom",
-                    port=8001,
-                    environment={"CUSTOM_VAR": "custom_value"},
-                ),
-            ],
+            container=ContainerConfig(
+                name="custom", port=8001, environment={"CUSTOM_VAR": "custom_value"}
+            ),
         )
 
         generator = ComposeGenerator(deployment)
@@ -469,19 +432,20 @@ class TestComposeEdgeCases:
         assert "CUSTOM_VAR" in env_dict
         assert env_dict["CUSTOM_VAR"] == "custom_value"
 
-    def test_empty_containers_list(self):
-        """Test deployment with no containers."""
+    def test_default_container(self):
+        """Test deployment with default container."""
         deployment = SelfHostedDeployment(
             host="192.168.1.100",
             ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
             image=ImageConfig(name="nodetool/nodetool", tag="latest"),
-            containers=[],
+            container=ContainerConfig(name="default", port=8000),
         )
 
         generator = ComposeGenerator(deployment)
         content = generator.generate()
         parsed = yaml.safe_load(content)
 
-        # Should still have valid structure with empty services
+        # Should have valid structure with one service
         assert "services" in parsed
-        assert len(parsed["services"]) == 0
+        assert len(parsed["services"]) == 1
+        assert "default" in parsed["services"]

@@ -16,6 +16,7 @@ from nodetool.models.base_model import DBModel, DBField
 # Skip global setup/teardown for these tests
 pytestmark = pytest.mark.no_setup
 
+
 # Mock Pydantic model for testing
 class TestEnum(Enum):
     VALUE1 = "value1"
@@ -42,10 +43,19 @@ class TestModel(DBModel):
 # Fixture for in-memory SQLite database
 @pytest_asyncio.fixture
 async def db_adapter():
-    adapter = await SQLiteAdapter.create(
-        ":memory:",
-        TestModel.db_fields(),
-        TestModel.get_table_schema(),
+    import aiosqlite
+
+    # Create a connection to an in-memory database
+    connection = await aiosqlite.connect(":memory:")
+    # Enable row factory to return rows as dict-like objects
+    connection.row_factory = aiosqlite.Row
+
+    # Create the adapter
+    adapter = SQLiteAdapter(
+        db_path=":memory:",
+        connection=connection,
+        fields=TestModel.db_fields(),
+        table_schema=TestModel.get_table_schema(),
         indexes=[
             dict(
                 name="age_index",
@@ -54,7 +64,12 @@ async def db_adapter():
             )
         ],
     )
+
+    # Run auto-migration to create tables
+    await adapter.auto_migrate()
+
     yield adapter
+
     await adapter.close()
 
 

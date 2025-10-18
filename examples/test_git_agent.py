@@ -20,10 +20,8 @@ from nodetool.agents.agent import Agent
 from nodetool.agents.tools.git_tools import GitCommitTool, GitCheckoutTool
 from nodetool.providers.base import BaseProvider
 from nodetool.providers.huggingface_provider import HuggingFaceProvider
-from nodetool.providers.openai_provider import OpenAIProvider
 from nodetool.ui.console import AgentConsole
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.workflows.types import Chunk
 
 
 async def test_git_agent(

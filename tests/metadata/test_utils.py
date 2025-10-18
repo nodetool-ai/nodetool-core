@@ -1,7 +1,5 @@
-import types
 from collections.abc import AsyncGenerator, AsyncIterator
 
-import pytest
 
 from nodetool.metadata.utils import get_return_annotation, async_generator_item_type
 

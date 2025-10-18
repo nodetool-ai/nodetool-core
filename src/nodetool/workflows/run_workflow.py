@@ -1,9 +1,7 @@
 import asyncio
 from contextlib import suppress
-from typing import AsyncGenerator, Any
+from typing import AsyncGenerator
 from uuid import uuid4
-from nodetool.types.graph import Edge, Node, Graph
-from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
 from nodetool.types.job import JobUpdate
 from nodetool.workflows.processing_context import ProcessingContext
@@ -11,7 +9,6 @@ from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.types import Error, ProcessingMessage
 from nodetool.workflows.workflow_runner import WorkflowRunner
 from nodetool.workflows.threaded_event_loop import ThreadedEventLoop
-from nodetool.models.workflow import Workflow as WorkflowModel
 
 log = get_logger(__name__)
 

@@ -35,4 +35,4 @@ class SearchEmailTool:  # noqa: D101 – minimal stub
 setattr(_email_mod, "SearchEmailTool", SearchEmailTool)
 _sys.modules[_email_mod.__name__] = _email_mod
 
-del _import_module, _ModuleType, _sys  # tidy up namespace 
+del _import_module, _ModuleType, _sys  # tidy up namespace

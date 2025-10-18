@@ -55,7 +55,8 @@ def test_read_workflow():
 @pytest.mark.asyncio
 async def test_process(context: ProcessingContext):
     workflow_node = WorkflowNode(
-        workflow_json=math_json, dynamic_properties={"number1": 1, "number2": 2}  # type: ignore
+        workflow_json=math_json,
+        dynamic_properties={"number1": 1, "number2": 2},  # type: ignore
     )
 
     output = {}

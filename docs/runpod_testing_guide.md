@@ -1,16 +1,19 @@
 # RunPod Workflow Testing Guide
 
-This guide explains how to test your deployed NodeTool workflows on RunPod serverless infrastructure using the integrated CLI commands.
+This guide explains how to test your deployed NodeTool workflows on RunPod serverless infrastructure using the
+integrated CLI commands.
 
 ## Prerequisites
 
 1. **Deployed Workflow**: You must have already deployed a workflow using `nodetool deploy`
-2. **RunPod API Key**: Get this from your [RunPod account settings](https://www.runpod.io/console/user/settings)
-3. **Endpoint ID**: This is returned when you deploy your workflow with `nodetool deploy`
+1. **RunPod API Key**: Get this from your [RunPod account settings](https://www.runpod.io/console/user/settings)
+1. **Endpoint ID**: This is returned when you deploy your workflow with `nodetool deploy`
 
-**Note**: When deploying workflows, Docker images are built with `--platform linux/amd64` to ensure compatibility with RunPod's Linux servers. This may take longer on ARM-based systems (Apple Silicon) due to cross-platform emulation.
+**Note**: When deploying workflows, Docker images are built with `--platform linux/amd64` to ensure compatibility with
+RunPod's Linux servers. This may take longer on ARM-based systems (Apple Silicon) due to cross-platform emulation.
 
-**Template Management**: The deployment script automatically deletes existing RunPod templates with the same name before creating new ones.
+**Template Management**: The deployment script automatically deletes existing RunPod templates with the same name before
+creating new ones.
 
 ## Quick Start
 
@@ -114,14 +117,14 @@ For workflows with multiple inputs:
 
 ## Command Line Options
 
-| Option | Description | Example |
-|--------|-------------|---------|
-| `--endpoint-id` | RunPod endpoint ID (required) | `--endpoint-id abc123def456` |
-| `--api-key` | RunPod API key | `--api-key your-key-here` |
-| `--params` | JSON file with parameters | `--params test_params.json` |
-| `--params-json` | Inline JSON parameters | `--params-json '{"key": "value"}'` |
-| `--output` | Output file for results | `--output results.json` |
-| `--timeout` | Timeout in seconds | `--timeout 120` |
+| Option          | Description                   | Example                            |
+| --------------- | ----------------------------- | ---------------------------------- |
+| `--endpoint-id` | RunPod endpoint ID (required) | `--endpoint-id abc123def456`       |
+| `--api-key`     | RunPod API key                | `--api-key your-key-here`          |
+| `--params`      | JSON file with parameters     | `--params test_params.json`        |
+| `--params-json` | Inline JSON parameters        | `--params-json '{"key": "value"}'` |
+| `--output`      | Output file for results       | `--output results.json`            |
+| `--timeout`     | Timeout in seconds            | `--timeout 120`                    |
 
 ## Understanding Results
 
@@ -170,40 +173,48 @@ The script handles various error scenarios:
 ### Common Issues
 
 1. **401 Unauthorized**
+
    - Check your RunPod API key
    - Verify the key has access to the endpoint
 
-2. **404 Not Found**
+1. **404 Not Found**
+
    - Verify the endpoint ID is correct
    - Check that the endpoint is still active
 
-3. **Timeout**
+1. **Timeout**
+
    - Increase timeout with `--timeout 120`
    - Check RunPod console for endpoint status
 
-4. **Workflow Errors**
+1. **Workflow Errors**
+
    - Review the error details in the output
    - Check that your workflow parameters match what the workflow expects
 
-5. **Platform/Architecture Issues**
+1. **Platform/Architecture Issues**
+
    - On Apple Silicon Macs: Docker build may be slower due to `--platform linux/amd64` emulation
    - If build fails with platform errors, ensure Docker Desktop has cross-platform builds enabled
-       - For faster builds on ARM systems, consider using a cloud build service or Linux AMD64 machine
-    - Advanced users can override platform with `--platform` flag, but `linux/amd64` is required for RunPod
+     - For faster builds on ARM systems, consider using a cloud build service or Linux AMD64 machine
+   - Advanced users can override platform with `--platform` flag, but `linux/amd64` is required for RunPod
 
 ### Debugging Tips
 
 1. **Use shorter timeouts for debugging**:
+
    ```bash
    nodetool test-runpod --endpoint-id YOUR_ID --timeout 30
    ```
 
-2. **Save results for analysis**:
+1. **Save results for analysis**:
+
    ```bash
    nodetool test-runpod --endpoint-id YOUR_ID --output debug_results.json
    ```
 
-4. **Check the RunPod console**:
+1. **Check the RunPod console**:
+
    - Visit [RunPod Serverless Console](https://www.runpod.io/console/serverless)
    - Monitor your endpoint logs and metrics
 
@@ -228,5 +239,6 @@ nodetool test-runpod --endpoint-id $ENDPOINT_ID --params custom_params.json --ou
 ```
 
 For more information, see:
+
 - [RunPod Serverless Documentation](https://docs.runpod.io/serverless/overview)
-- [NodeTool Documentation](https://docs.nodetool.ai/) 
+- [NodeTool Documentation](https://docs.nodetool.ai/)

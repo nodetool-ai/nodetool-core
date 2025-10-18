@@ -65,14 +65,17 @@ async def get_all_language_models() -> List[LanguageModel]:
         log.debug(f"About to cache {len(models)} language models with key: {cache_key}")
         try:
             _model_cache.set(cache_key, models)
-            log.info(f"✓ Successfully cached {len(models)} language models from {successful_providers} providers")
+            log.info(
+                f"✓ Successfully cached {len(models)} language models from {successful_providers} providers"
+            )
         except Exception as e:
             log.error(f"✗ Failed to cache language models: {e}", exc_info=True)
     else:
-        log.warning("No models retrieved from any provider - skipping cache to allow retry")
+        log.warning(
+            "No models retrieved from any provider - skipping cache to allow retry"
+        )
 
     return models
-
 
 
 if __name__ == "__main__":

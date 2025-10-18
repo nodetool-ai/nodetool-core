@@ -324,4 +324,4 @@ class ListDirectoryTool(Tool):
         msg = f"Listing contents of directory {path}..."
         if len(msg) > 80:
             msg = "Listing directory contents..."
-        return msg 
+        return msg

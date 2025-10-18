@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 
-import asyncio
 import pytest
 from unittest.mock import patch, AsyncMock, MagicMock
 from nodetool.ml.models.language_models import get_all_language_models
 from nodetool.metadata.types import LanguageModel, Provider
-from nodetool.providers.base import BaseProvider, ProviderCapability
+from nodetool.providers.base import BaseProvider
 
 
 class TestDynamicLanguageModels:
@@ -15,6 +14,7 @@ class TestDynamicLanguageModels:
     def setup_and_teardown(self):
         """Clear cache before and after each test."""
         from nodetool.ml.models.model_cache import _model_cache
+
         _model_cache.clear()
         yield
         _model_cache.clear()

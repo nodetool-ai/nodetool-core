@@ -17,7 +17,6 @@ Usage:
 """
 
 import asyncio
-from typing import List
 
 from nodetool.agents.graph_planner import GraphInput, GraphPlanner
 from nodetool.providers import get_provider
@@ -60,28 +59,28 @@ async def create_and_execute_indie_hacker_workflow(
     # Define the objective for GraphPlanner
     objective = f"""
     Create a workflow to analyze indie hacker success stories from Reddit:
-    
+
     1. Search Reddit for indie hacker stories using these search terms, use google search to find the most relevant posts:
        {', '.join(INDIE_HACKER_SEARCH_TERMS[:4])}  # Limit for brevity
-    
+
     2. For each relevant post found:
        - Extract the post content and top comments
        - Identify key details about the product/service
        - Extract timeline, strategies, tools used, and outcomes
-    
+
     3. Analyze all collected stories to identify patterns and insights across:
        - Product types and categories
        - Common strategies for growth
        - Popular tools and technologies
        - Timeline patterns for reaching milestones
        - Revenue progression patterns
-    
+
     4. Generate a comprehensive markdown report with:
        - Summary table of all stories found
        - Analysis of common patterns and strategies
        - Actionable insights for aspiring indie hackers
        - Recommended tools and approaches based on success stories
-    
+
     The final output should be a well-structured markdown report that provides
     actionable value to someone starting their indie hacker journey.
     """
@@ -107,8 +106,8 @@ async def create_and_execute_indie_hacker_workflow(
     )
 
     # Plan the graph
-    print(f"🔧 Planning workflow for indie hacker journey analysis...")
-    print(f"📦 Target: Reddit indie hacker success stories")
+    print("🔧 Planning workflow for indie hacker journey analysis...")
+    print("📦 Target: Reddit indie hacker success stories")
     print(f"🤖 Model: {model}")
     print(f"🔍 Search terms: {len(INDIE_HACKER_SEARCH_TERMS)}")
     print(f"📊 Analysis categories: {len(ANALYSIS_CATEGORIES)}\n")
@@ -142,7 +141,7 @@ async def create_and_execute_indie_hacker_workflow(
         params=inputs,
     )
 
-    print(f"\n🚀 Executing indie hacker analysis workflow...")
+    print("\n🚀 Executing indie hacker analysis workflow...")
 
     # Execute the workflow
     results = []
@@ -188,7 +187,7 @@ async def test_indie_hacker_journey_graph_planner(provider, model: str):
                     hasattr(result, "content")
                     and "FINAL" in str(result.content).upper()
                 ):
-                    print(f"\n📝 Final Report:")
+                    print("\n📝 Final Report:")
                     print(result.content)
                     break
 
@@ -198,7 +197,7 @@ async def test_indie_hacker_journey_graph_planner(provider, model: str):
 
         traceback.print_exc()
 
-    print(f"\n✨ Indie hacker journey analysis complete!")
+    print("\n✨ Indie hacker journey analysis complete!")
 
 
 async def main():
@@ -222,7 +221,7 @@ async def main():
 
     for config in test_configs:
         print(f"\n{'#'*80}")
-        print(f"# Testing GraphPlanner Indie Hacker Journey Analyzer")
+        print("# Testing GraphPlanner Indie Hacker Journey Analyzer")
         print(f"# Provider: {config['provider'].value}")
         print(f"# Model: {config['model']}")
         print(f"{'#'*80}")

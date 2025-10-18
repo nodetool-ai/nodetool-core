@@ -72,7 +72,6 @@ from nodetool.metadata.node_metadata import NodeMetadata, PackageModel, ExampleM
 from nodetool.packages.types import AssetInfo, PackageInfo
 from nodetool.types.workflow import Workflow
 from nodetool.types.graph import Graph as APIGraph
-from nodetool.workflows.base_node import get_node_class, split_camel_case
 
 
 # Constants
@@ -252,9 +251,7 @@ class Registry:
         self.pkg_mgr = get_package_manager_command()
         self._node_cache = None  # Cache for node metadata
         self._packages_cache = None  # Cache for installed packages
-        self._examples_cache = (
-            {}
-        )  # Cache for loaded examples by package_name:example_name
+        self._examples_cache = {}  # Cache for loaded examples by package_name:example_name
         self._example_search_cache: Optional[Dict[str, Any]] = None
         self._index_available = None  # Cache for package index availability
         self.logger = get_logger(__name__)
@@ -1705,7 +1702,9 @@ async def main():
     print("\n--- Testing registry.get_package_for_node_type ---")
     # This test depends on search_nodes populating the cache.
     sample_node_type = "huggingface.text_to_image.StableDiffusion"
-    await registry.search_nodes()  # This might repopulate or confirm emptiness due to prior errors
+    await (
+        registry.search_nodes()
+    )  # This might repopulate or confirm emptiness due to prior errors
 
     package_repo_id = await registry.get_package_for_node_type(sample_node_type)
     if package_repo_id:

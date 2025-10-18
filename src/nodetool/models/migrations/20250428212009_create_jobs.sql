@@ -11,4 +11,4 @@ CREATE TABLE IF NOT EXISTS nodetool_jobs (
     graph JSONB,
     error TEXT,
     cost REAL
-); 
+);

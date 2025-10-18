@@ -25,7 +25,6 @@ Usage:
 
 import asyncio
 import json
-from pathlib import Path
 from nodetool.providers import get_provider
 from nodetool.agents.tools import BrowserTool
 from nodetool.providers.base import BaseProvider
@@ -154,13 +153,13 @@ async def test_batch_website_scraper(
                 print(event.content, end="", flush=True)
             elif isinstance(event, TaskUpdate):
                 if event.event == TaskUpdateEvent.SUBTASK_STARTED:
-                    print(f"\n🟢 Subtask started")
+                    print("\n🟢 Subtask started")
                 elif event.event == TaskUpdateEvent.ENTERED_CONCLUSION_STAGE:
-                    print(f"\n⚠️  Entering conclusion stage (context limit approaching)")
+                    print("\n⚠️  Entering conclusion stage (context limit approaching)")
                 elif event.event == TaskUpdateEvent.SUBTASK_COMPLETED:
-                    print(f"\n✅ Subtask completed")
+                    print("\n✅ Subtask completed")
                 elif event.event == TaskUpdateEvent.MAX_ITERATIONS_REACHED:
-                    print(f"\n⚠️  Max iterations reached")
+                    print("\n⚠️  Max iterations reached")
             elif hasattr(event, "name"):  # ToolCall
                 tool_calls.append(event.name)
 
@@ -168,11 +167,11 @@ async def test_batch_website_scraper(
         execution_time = end_time - start_time
 
         # Print execution statistics
-        print(f"\n\n📊 Subtask Execution Statistics:")
+        print("\n\n📊 Subtask Execution Statistics:")
         print(f"   - Execution time: {execution_time:.2f} seconds")
         print(f"   - Tool calls: {len(tool_calls)}")
 
-        print(f"   - Subtask output:")
+        print("   - Subtask output:")
         print(context.get(subtask.id))
 
 

@@ -3,9 +3,8 @@ Tests for ChatSSERunner functionality
 """
 
 import pytest
-import json
 import asyncio
-from unittest.mock import Mock, AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, patch
 from nodetool.chat.chat_sse_runner import ChatSSERunner
 from nodetool.config.environment import Environment
 from nodetool.metadata.types import MessageTextContent, MessageImageContent
@@ -246,7 +245,7 @@ class TestChatSSERunner:
                 task.cancel()
 
                 try:
-                    events = await task
+                    await task
                 except asyncio.CancelledError:
                     # This is expected
                     pass

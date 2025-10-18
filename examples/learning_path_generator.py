@@ -11,7 +11,6 @@ learning paths.
 """
 
 import asyncio
-import json
 from typing import List
 from pydantic import BaseModel
 
@@ -22,7 +21,6 @@ from nodetool.providers.base import BaseProvider
 from nodetool.metadata.types import Provider
 from nodetool.ui.console import AgentConsole
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.workflows.types import Chunk
 
 import dotenv
 
@@ -56,7 +54,7 @@ async def generate_learning_path(provider: BaseProvider, model: str, topic: str)
         model=model,
         tools=[GoogleSearchTool()],
         display_manager=AgentConsole(),
-        output_schema=LearningPath.model_json_schema()
+        output_schema=LearningPath.model_json_schema(),
     )
 
     print(f"Generating learning path for: {topic}")

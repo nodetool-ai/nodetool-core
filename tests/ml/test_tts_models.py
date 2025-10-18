@@ -71,6 +71,4 @@ async def test_tts_models_have_required_fields():
         assert model.provider, f"Model provider should be set: {model}"
 
         # Voices should be a list (can be empty for some models)
-        assert isinstance(
-            model.voices, list
-        ), f"Model voices should be a list: {model}"
+        assert isinstance(model.voices, list), f"Model voices should be a list: {model}"

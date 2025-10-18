@@ -175,9 +175,13 @@ class BaseChatRunner(ABC):
         data_copy.pop("user_id", None)
 
         # For agent_execution messages, convert dict content to JSON string
-        if data_copy.get("role") == "agent_execution" and isinstance(data_copy.get("content"), dict):
+        if data_copy.get("role") == "agent_execution" and isinstance(
+            data_copy.get("content"), dict
+        ):
             data_copy["content"] = json.dumps(data_copy["content"])
-            log.debug("Converted agent_execution message content dict to JSON string for DB storage")
+            log.debug(
+                "Converted agent_execution message content dict to JSON string for DB storage"
+            )
 
         # Normalize tools field to expected types (list[str])
         try:
@@ -243,13 +247,13 @@ class BaseChatRunner(ABC):
             # Filter out agent_execution messages - these should not be sent to the LLM
             # Only user, assistant, system (non-execution), and tool messages should be included
             filtered_messages = [
-                db_msg for db_msg in db_messages
-                if db_msg.role != "agent_execution"
+                db_msg for db_msg in db_messages if db_msg.role != "agent_execution"
             ]
 
             # Convert database messages to metadata messages
             chat_history = [
-                self._db_message_to_metadata_message(db_msg) for db_msg in filtered_messages
+                self._db_message_to_metadata_message(db_msg)
+                for db_msg in filtered_messages
             ]
             log.debug(
                 f"Fetched {len(filtered_messages)} messages from database for thread {thread_id} "
@@ -289,7 +293,9 @@ class BaseChatRunner(ABC):
             try:
                 thread = await Thread.find(user_id=self.user_id, id=thread_id)
                 if not thread:
-                    log.info(f"Thread {thread_id} not found, creating it for user {self.user_id}")
+                    log.info(
+                        f"Thread {thread_id} not found, creating it for user {self.user_id}"
+                    )
                     # Create a thread with the provided ID to maintain consistency with frontend
                     thread = await Thread.create(user_id=self.user_id, id=thread_id)
                     log.debug(f"Created thread {thread.id} with client-provided ID")

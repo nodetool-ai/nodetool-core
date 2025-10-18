@@ -1,9 +1,6 @@
-import pytest
 from nodetool.workflows.base_node import BaseNode, split_camel_case
 from nodetool.workflows.graph import Graph
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.types.graph import Edge
-from nodetool.metadata.type_metadata import TypeMetadata
 from nodetool.config.environment import Environment
 
 

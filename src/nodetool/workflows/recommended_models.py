@@ -1,4 +1,3 @@
-from nodetool.metadata.types import HuggingFaceModel
 from nodetool.types.model import UnifiedModel
 
 

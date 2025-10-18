@@ -82,12 +82,8 @@ class ContainerConfig(BaseModel):
 class SelfHostedPaths(BaseModel):
     """Paths on the remote self-hosted server."""
 
-    workspace: str = Field(
-        "/data/workspace", description="Container workspace directory"
-    )
-    hf_cache: str = Field(
-        "/data/hf-cache", description="Shared HuggingFace cache directory"
-    )
+    workspace: str = "/data/workspace"
+    hf_cache: str = "/data/hf-cache"
 
 
 class SelfHostedState(BaseModel):
@@ -119,10 +115,18 @@ class SelfHostedDeployment(BaseModel):
     enabled: bool = Field(True, description="Whether this deployment is enabled")
     host: str = Field(..., description="Remote host address (IP or hostname)")
     ssh: SSHConfig
-    paths: SelfHostedPaths = Field(default_factory=SelfHostedPaths)
+    paths: SelfHostedPaths = SelfHostedPaths()
     image: ImageConfig
     container: ContainerConfig = Field(..., description="Container configuration")
+    worker_auth_token: Optional[str] = Field(
+        None,
+        description="Authentication token for worker API (auto-generated if not set)",
+    )
     state: SelfHostedState = Field(default_factory=SelfHostedState)
+
+    def get_server_url(self) -> str:
+        """Get the server URL for this deployment."""
+        return f"http://{self.host}:{self.container.port}"
 
 
 # ============================================================================
@@ -133,8 +137,8 @@ class SelfHostedDeployment(BaseModel):
 class RunPodBuildConfig(BaseModel):
     """Docker build configuration for RunPod."""
 
-    platform: str = Field("linux/amd64", description="Docker build platform")
-    no_cache: bool = Field(False, description="Disable build cache")
+    platform: str = "linux/amd64"
+    no_cache: bool = False
 
 
 class RunPodImageConfig(BaseModel):
@@ -191,7 +195,14 @@ class RunPodState(BaseModel):
     endpoint_url: Optional[str] = None
     last_deployed: Optional[datetime] = None
     status: DeploymentStatus = DeploymentStatus.UNKNOWN
-    last_build_hash: Optional[str] = Field(None, description="Hash of last built image")
+    last_build_hash: Optional[str] = None
+
+
+class RunPodDockerConfig(BaseModel):
+    """Docker configuration for RunPod."""
+
+    username: Optional[str] = None
+    registry: str = "docker.io"
 
 
 class RunPodDeployment(BaseModel):
@@ -202,10 +213,34 @@ class RunPodDeployment(BaseModel):
     image: RunPodImageConfig
     template: RunPodTemplateConfig
     endpoint: RunPodEndpointConfig
+    gpu_types: List[str] = Field(default_factory=list, description="Allowed GPU types")
+    gpu_count: Optional[int] = None
+    data_centers: List[str] = Field(
+        default_factory=list, description="Preferred data center locations"
+    )
+    network_volume_id: Optional[str] = Field(
+        None, description="Network volume ID to attach"
+    )
+    docker: RunPodDockerConfig = RunPodDockerConfig()
+    platform: str = "linux/amd64"
+    template_name: Optional[str] = None
+    compute_type: str = "GPU"
+    workers_min: int = 0
+    workers_max: int = 3
+    idle_timeout: int = 5
+    execution_timeout: Optional[int] = None
+    flashboot: bool = False
+    environment: Optional[Dict[str, str]] = Field(
+        None, description="Environment variables for the deployment"
+    )
     workflows: List[str] = Field(
         default_factory=list, description="Workflow IDs to deploy"
     )
-    state: RunPodState = Field(default_factory=RunPodState)
+    state: RunPodState = Field(default=RunPodState())
+
+    def get_server_url(self) -> Optional[str]:
+        """Get the server URL for this deployment."""
+        return self.state.endpoint_url
 
 
 # ============================================================================
@@ -216,7 +251,7 @@ class RunPodDeployment(BaseModel):
 class GCPBuildConfig(BaseModel):
     """Docker build configuration for GCP."""
 
-    platform: str = Field("linux/amd64", description="Docker build platform")
+    platform: str = "linux/amd64"
 
 
 class GCPImageConfig(BaseModel):
@@ -240,12 +275,12 @@ class GCPImageConfig(BaseModel):
 class GCPResourceConfig(BaseModel):
     """Cloud Run resource configuration."""
 
-    cpu: str = Field("4", description="CPU allocation (1, 2, 4, 6, 8)")
-    memory: str = Field("16Gi", description="Memory allocation (e.g., 16Gi)")
-    min_instances: int = Field(0, description="Minimum number of instances")
-    max_instances: int = Field(3, description="Maximum number of instances")
-    concurrency: int = Field(80, description="Maximum concurrent requests per instance")
-    timeout: int = Field(3600, description="Request timeout in seconds")
+    cpu: str = "4"
+    memory: str = "16Gi"
+    min_instances: int = 0
+    max_instances: int = 3
+    concurrency: int = 80
+    timeout: int = 3600
 
 
 class GCPStorageConfig(BaseModel):
@@ -260,12 +295,8 @@ class GCPStorageConfig(BaseModel):
 class GCPIAMConfig(BaseModel):
     """Cloud Run IAM configuration."""
 
-    service_account: Optional[str] = Field(
-        None, description="Service account email to run the service"
-    )
-    allow_unauthenticated: bool = Field(
-        False, description="Allow unauthenticated access"
-    )
+    service_account: Optional[str] = None
+    allow_unauthenticated: bool = False
 
 
 class GCPState(BaseModel):
@@ -274,7 +305,7 @@ class GCPState(BaseModel):
     service_url: Optional[str] = None
     last_deployed: Optional[datetime] = None
     status: DeploymentStatus = DeploymentStatus.UNKNOWN
-    revision: Optional[str] = Field(None, description="Current Cloud Run revision")
+    revision: Optional[str] = None
 
 
 class GCPDeployment(BaseModel):
@@ -294,6 +325,10 @@ class GCPDeployment(BaseModel):
     )
     state: GCPState = Field(default_factory=GCPState)
 
+    def get_server_url(self) -> Optional[str]:
+        """Get the server URL for this deployment."""
+        return self.state.service_url
+
 
 # ============================================================================
 # Main Configuration Models
@@ -303,24 +338,22 @@ class GCPDeployment(BaseModel):
 class DefaultsConfig(BaseModel):
     """Default environment variables applied to all deployments."""
 
-    chat_provider: str = Field("llama_cpp", description="Default chat provider")
-    default_model: str = Field("", description="Default model name")
-    log_level: str = Field("INFO", description="Default log level")
-    remote_auth: bool = Field(False, description="Enable remote authentication")
+    chat_provider: str = "llama_cpp"
+    default_model: str = ""
+    log_level: str = "INFO"
+    remote_auth: bool = False
     # Can add more defaults as needed
-    extra: Dict[str, Any] = Field(
-        default_factory=dict, description="Additional default environment variables"
-    )
+    extra: Dict[str, Any] = {}
 
 
 class DeploymentConfig(BaseModel):
     """Main deployment configuration."""
 
-    version: str = Field("1.0", description="Configuration schema version")
-    defaults: DefaultsConfig = Field(default_factory=DefaultsConfig)
+    version: str = "1.0"
+    defaults: DefaultsConfig = DefaultsConfig()
     deployments: Dict[
         str, Union[SelfHostedDeployment, RunPodDeployment, GCPDeployment]
-    ] = Field(default_factory=dict, description="Deployment definitions")
+    ] = {}
 
     @field_validator("deployments")
     @classmethod
@@ -349,6 +382,9 @@ def load_deployment_config() -> DeploymentConfig:
     """
     Load deployment configuration from deployment.yaml.
 
+    Automatically generates and saves worker_auth_token for self-hosted
+    deployments that don't have one.
+
     Returns:
         DeploymentConfig: The loaded configuration.
 
@@ -357,6 +393,8 @@ def load_deployment_config() -> DeploymentConfig:
         yaml.YAMLError: If the YAML is invalid.
         ValidationError: If the configuration is invalid.
     """
+    import secrets
+
     config_path = get_deployment_config_path()
 
     if not config_path.exists():
@@ -371,7 +409,21 @@ def load_deployment_config() -> DeploymentConfig:
     if not data:
         return DeploymentConfig()
 
-    return DeploymentConfig.model_validate(data)
+    config = DeploymentConfig.model_validate(data)
+
+    # Auto-generate worker_auth_token for self-hosted deployments that don't have one
+    config_updated = False
+    for name, deployment in config.deployments.items():
+        if isinstance(deployment, SelfHostedDeployment):
+            if not deployment.worker_auth_token:
+                deployment.worker_auth_token = secrets.token_urlsafe(32)
+                config_updated = True
+
+    # Save the config if we generated any tokens
+    if config_updated:
+        save_deployment_config(config)
+
+    return config
 
 
 def save_deployment_config(config: DeploymentConfig) -> None:

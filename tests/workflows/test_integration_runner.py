@@ -3,13 +3,12 @@ from __future__ import annotations
 import asyncio
 import queue
 
-from nodetool.workflows.run_workflow import run_workflow
 from nodetool.workflows.base_node import BaseNode, InputNode, OutputNode
 import pytest
 
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.workflow_runner import WorkflowRunner
-from nodetool.workflows.types import EdgeUpdate, JobUpdate
+from nodetool.workflows.types import JobUpdate
 from nodetool.types.graph import Edge as APIEdge, Node as APINode, Graph as APIGraph
 
 
@@ -109,7 +108,6 @@ async def test_workflow_runner_completes_and_produces_output():
 
 @pytest.mark.asyncio
 async def test_workflow_cancellation_drains_edges_and_finalizes():
-
     finalize_calls: list[str] = []
 
     class SlowNode(BaseNode):

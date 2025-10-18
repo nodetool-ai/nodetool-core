@@ -23,11 +23,10 @@ from nodetool.agents.tools.base import Tool
 def pytest_configure(config):
     """Configure pytest with custom markers."""
     config.addinivalue_line(
-        "markers", "integration: mark test as integration test requiring external services"
+        "markers",
+        "integration: mark test as integration test requiring external services",
     )
-    config.addinivalue_line(
-        "markers", "slow: mark test as slow running"
-    )
+    config.addinivalue_line("markers", "slow: mark test as slow running")
     config.addinivalue_line(
         "markers", "requires_api_key: mark test as requiring API key configuration"
     )
@@ -44,7 +43,10 @@ def pytest_collection_modifyitems(config, items):
             item.add_marker(pytest.mark.integration)
 
         # Mark slow tests
-        if any(keyword in item.name for keyword in ["comprehensive", "stress", "performance"]):
+        if any(
+            keyword in item.name
+            for keyword in ["comprehensive", "stress", "performance"]
+        ):
             item.add_marker(pytest.mark.slow)
 
         # Mark tests requiring API keys
@@ -67,34 +69,47 @@ def event_loop():
 @pytest.fixture
 def simple_messages() -> List[Message]:
     """Fixture providing simple test messages."""
-    return [Message(
-        role="user",
-        content=[MessageTextContent(text="Hello, how are you?")]
-    )]
+    return [
+        Message(role="user", content=[MessageTextContent(text="Hello, how are you?")])
+    ]
 
 
 @pytest.fixture
 def conversation_messages() -> List[Message]:
     """Fixture providing a multi-turn conversation."""
     return [
-        Message(role="user", content=[MessageTextContent(text="What's the weather like?")]),
-        Message(role="assistant", content=[MessageTextContent(text="I don't have access to current weather data.")]),
-        Message(role="user", content=[MessageTextContent(text="What should I wear then?")])
+        Message(
+            role="user", content=[MessageTextContent(text="What's the weather like?")]
+        ),
+        Message(
+            role="assistant",
+            content=[
+                MessageTextContent(text="I don't have access to current weather data.")
+            ],
+        ),
+        Message(
+            role="user", content=[MessageTextContent(text="What should I wear then?")]
+        ),
     ]
 
 
 @pytest.fixture
 def tool_messages() -> List[Message]:
     """Fixture providing messages that should trigger tool calls."""
-    return [Message(
-        role="user",
-        content=[MessageTextContent(text="Search for information about machine learning")]
-    )]
+    return [
+        Message(
+            role="user",
+            content=[
+                MessageTextContent(text="Search for information about machine learning")
+            ],
+        )
+    ]
 
 
 @pytest.fixture
 def mock_tool():
     """Fixture providing a mock tool for testing."""
+
     class TestTool(Tool):
         name = "test_search"
         description = "Search for information"
@@ -102,17 +117,22 @@ def mock_tool():
             "type": "object",
             "properties": {
                 "query": {"type": "string", "description": "Search query"},
-                "limit": {"type": "integer", "default": 5}
+                "limit": {"type": "integer", "default": 5},
             },
-            "required": ["query"]
+            "required": ["query"],
         }
 
-        async def process(self, context: ProcessingContext, params: Dict[str, Any]) -> Any:
+        async def process(
+            self, context: ProcessingContext, params: Dict[str, Any]
+        ) -> Any:
             return {
                 "results": [
-                    {"title": f"Result for: {params.get('query', 'unknown')}", "score": 0.9}
+                    {
+                        "title": f"Result for: {params.get('query', 'unknown')}",
+                        "score": 0.9,
+                    }
                 ],
-                "total": 1
+                "total": 1,
             }
 
     return TestTool()
@@ -121,19 +141,25 @@ def mock_tool():
 @pytest.fixture
 def calculator_tool():
     """Fixture providing a calculator tool for testing."""
+
     class CalculatorTool(Tool):
         name = "calculator"
         description = "Perform mathematical calculations"
         input_schema = {
             "type": "object",
             "properties": {
-                "expression": {"type": "string", "description": "Mathematical expression to evaluate"},
-                "precision": {"type": "integer", "default": 2}
+                "expression": {
+                    "type": "string",
+                    "description": "Mathematical expression to evaluate",
+                },
+                "precision": {"type": "integer", "default": 2},
             },
-            "required": ["expression"]
+            "required": ["expression"],
         }
 
-        async def process(self, context: ProcessingContext, params: Dict[str, Any]) -> Any:
+        async def process(
+            self, context: ProcessingContext, params: Dict[str, Any]
+        ) -> Any:
             expression = params.get("expression", "")
             try:
                 # Simple evaluation for testing (in real implementation, use safe evaluation)
@@ -141,13 +167,10 @@ def calculator_tool():
                 return {
                     "result": result,
                     "expression": expression,
-                    "precision": params.get("precision", 2)
+                    "precision": params.get("precision", 2),
                 }
             except Exception as e:
-                return {
-                    "error": str(e),
-                    "expression": expression
-                }
+                return {"error": str(e), "expression": expression}
 
     return CalculatorTool()
 
@@ -162,9 +185,7 @@ def processing_context():
 def sample_tool_call() -> ToolCall:
     """Fixture providing a sample tool call."""
     return ToolCall(
-        id="call_test_123",
-        name="test_search",
-        args={"query": "test query", "limit": 3}
+        id="call_test_123", name="test_search", args={"query": "test query", "limit": 3}
     )
 
 
@@ -182,7 +203,7 @@ def api_key_config():
 @pytest.fixture
 def mock_http_client():
     """Fixture providing a mock HTTP client."""
-    with patch('httpx.AsyncClient') as mock_client:
+    with patch("httpx.AsyncClient") as mock_client:
         mock_instance = MagicMock()
         mock_client.return_value.__aenter__.return_value = mock_instance
         yield mock_instance
@@ -191,14 +212,14 @@ def mock_http_client():
 @pytest.fixture
 def mock_openai_client():
     """Fixture providing a mock OpenAI client."""
-    with patch('openai.AsyncOpenAI') as mock_client:
+    with patch("openai.AsyncOpenAI") as mock_client:
         yield mock_client
 
 
 @pytest.fixture
 def mock_anthropic_client():
     """Fixture providing a mock Anthropic client."""
-    with patch('anthropic.AsyncAnthropic') as mock_client:
+    with patch("anthropic.AsyncAnthropic") as mock_client:
         yield mock_client
 
 
@@ -230,6 +251,7 @@ def temp_model_cache():
 
 # Test data fixtures
 
+
 @pytest.fixture
 def sample_responses():
     """Fixture providing sample responses for different scenarios."""
@@ -237,30 +259,32 @@ def sample_responses():
         "simple_text": {
             "content": "Hello! How can I help you today?",
             "role": "assistant",
-            "usage": {"prompt_tokens": 10, "completion_tokens": 8, "total_tokens": 18}
+            "usage": {"prompt_tokens": 10, "completion_tokens": 8, "total_tokens": 18},
         },
         "with_tool_call": {
             "content": None,
             "role": "assistant",
-            "tool_calls": [{
-                "id": "call_123",
-                "name": "search",
-                "args": {"query": "machine learning"}
-            }],
-            "usage": {"prompt_tokens": 15, "completion_tokens": 0, "total_tokens": 15}
+            "tool_calls": [
+                {
+                    "id": "call_123",
+                    "name": "search",
+                    "args": {"query": "machine learning"},
+                }
+            ],
+            "usage": {"prompt_tokens": 15, "completion_tokens": 0, "total_tokens": 15},
         },
         "tool_result": {
             "content": "I found some information about machine learning. It's a subset of artificial intelligence focused on algorithms that improve through experience.",
             "role": "assistant",
-            "usage": {"prompt_tokens": 25, "completion_tokens": 22, "total_tokens": 47}
+            "usage": {"prompt_tokens": 25, "completion_tokens": 22, "total_tokens": 47},
         },
         "error": {
             "error": {
                 "type": "rate_limit_error",
                 "message": "Rate limit exceeded",
-                "code": "rate_limit_exceeded"
+                "code": "rate_limit_exceeded",
             }
-        }
+        },
     }
 
 
@@ -272,11 +296,12 @@ def streaming_chunks():
         {"content": " there", "done": False},
         {"content": "! How", "done": False},
         {"content": " can I", "done": False},
-        {"content": " help?", "done": True}
+        {"content": " help?", "done": True},
     ]
 
 
 # Performance testing fixtures
+
 
 @pytest.fixture
 def performance_metrics():
@@ -285,7 +310,7 @@ def performance_metrics():
         "start_time": None,
         "end_time": None,
         "memory_usage": [],
-        "response_times": []
+        "response_times": [],
     }
 
     import psutil
@@ -293,11 +318,15 @@ def performance_metrics():
 
     def start_monitoring():
         metrics["start_time"] = time.time()
-        metrics["memory_usage"].append(psutil.Process().memory_info().rss / 1024 / 1024)  # MB
+        metrics["memory_usage"].append(
+            psutil.Process().memory_info().rss / 1024 / 1024
+        )  # MB
 
     def stop_monitoring():
         metrics["end_time"] = time.time()
-        metrics["memory_usage"].append(psutil.Process().memory_info().rss / 1024 / 1024)  # MB
+        metrics["memory_usage"].append(
+            psutil.Process().memory_info().rss / 1024 / 1024
+        )  # MB
 
     def record_response_time(duration: float):
         metrics["response_times"].append(duration)
@@ -311,16 +340,19 @@ def performance_metrics():
 
 # Skip conditions
 
+
 def pytest_runtest_setup(item):
     """Skip tests based on environment conditions."""
     # Skip integration tests if no API keys are available
     if item.get_closest_marker("requires_api_key"):
-        api_keys_available = any([
-            os.getenv("OPENAI_API_KEY"),
-            os.getenv("ANTHROPIC_API_KEY"),
-            os.getenv("GEMINI_API_KEY"),
-            os.getenv("HF_TOKEN")
-        ])
+        api_keys_available = any(
+            [
+                os.getenv("OPENAI_API_KEY"),
+                os.getenv("ANTHROPIC_API_KEY"),
+                os.getenv("GEMINI_API_KEY"),
+                os.getenv("HF_TOKEN"),
+            ]
+        )
         if not api_keys_available:
             pytest.skip("No API keys configured for integration testing")
 

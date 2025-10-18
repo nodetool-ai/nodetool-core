@@ -30,8 +30,8 @@ docker run --rm --entrypoint nodetool nodetool --help
 **Solutions**:
 
 1. Check node type format (no `nodes.` prefix)
-2. Ensure `nodetool-base` is installed in image
-3. Verify node package is imported
+1. Ensure `nodetool-base` is installed in image
+1. Verify node package is imported
 
 ### Issue: Container startup timeout
 
@@ -40,8 +40,8 @@ docker run --rm --entrypoint nodetool nodetool --help
 **Solutions**:
 
 1. Check Docker daemon is running
-2. Verify image exists: `docker images | grep nodetool`
-3. Check Docker logs: `docker logs <container_id>`
+1. Verify image exists: `docker images | grep nodetool`
+1. Check Docker logs: `docker logs <container_id>`
 
 ### Issue: GPU not available
 
@@ -50,8 +50,8 @@ docker run --rm --entrypoint nodetool nodetool --help
 **Solutions**:
 
 1. Verify nvidia-docker: `docker run --rm --gpus all nvidia/cuda:11.8.0-base-ubuntu22.04 nvidia-smi`
-2. Check GPU devices: `nvidia-smi`
-3. Verify container GPU access: `docker run --rm --gpus all nodetool nvidia-smi`
+1. Check GPU devices: `nvidia-smi`
+1. Verify container GPU access: `docker run --rm --gpus all nodetool nvidia-smi`
 
 ## CI Testing
 
@@ -60,13 +60,13 @@ The GitHub Actions workflow automatically tests Docker execution:
 ### Workflow Steps
 
 1. Checkout code
-2. Set up Docker Buildx with layer caching
-3. Set up Python 3.11
-4. Install Python dependencies
-5. **Build Docker image with caching**
-6. **Verify image has required features**
-7. Run non-Docker tests
-8. Run Docker-specific tests
+1. Set up Docker Buildx with layer caching
+1. Set up Python 3.11
+1. Install Python dependencies
+1. **Build Docker image with caching**
+1. **Verify image has required features**
+1. Run non-Docker tests
+1. Run Docker-specific tests
 
 ### Local CI Simulation
 

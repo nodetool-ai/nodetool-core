@@ -14,4 +14,4 @@ CREATE TABLE IF NOT EXISTS nodetool_assets (
     duration REAL
 );
 
-CREATE INDEX IF NOT EXISTS idx_nodetool_assets_user_id_parent_id ON nodetool_assets (user_id, parent_id); 
+CREATE INDEX IF NOT EXISTS idx_nodetool_assets_user_id_parent_id ON nodetool_assets (user_id, parent_id);

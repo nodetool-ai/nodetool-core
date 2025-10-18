@@ -5,12 +5,11 @@ from nodetool.workflows.run_workflow import run_workflow
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.graph import Graph
-from typing import Any, ClassVar
+from typing import ClassVar
 
 from nodetool.workflows.types import (
     Chunk,
     Error,
-    JobUpdate,
     LogUpdate,
     NodeProgress,
     NodeUpdate,
@@ -57,7 +56,6 @@ class WorkflowNode(BaseNode):
             graph=self.get_api_graph(),
             params=self._dynamic_properties,
         )
-        output = {}
         async for msg in run_workflow(req):
             if isinstance(msg, Error):
                 raise Exception(msg.error)

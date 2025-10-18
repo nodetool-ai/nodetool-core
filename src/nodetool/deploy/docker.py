@@ -5,6 +5,7 @@ Docker utilities for NodeTool deployment.
 This module contains all Docker-related functionality for building, pushing,
 and managing Docker images for NodeTool deployments.
 """
+
 import os
 import shlex
 import subprocess
@@ -15,6 +16,7 @@ import tempfile
 import shutil
 from pathlib import Path
 import json
+
 # Note: no need for urllib.parse after removing editable support
 from importlib import metadata as importlib_metadata
 
@@ -221,7 +223,7 @@ def build_docker_image(
         Creates and cleans up temporary build directory during the process.
         When use_cache=True and auto_push=True, the image is automatically pushed.
     """
-    print(f"Building Docker image")
+    print("Building Docker image")
     print(f"Platform: {platform}")
 
     # Get the deploy directory where Dockerfile, handlers, and scripts are located
@@ -273,7 +275,9 @@ def build_docker_image(
             discovered: list[dict] = []
             for dist in importlib_metadata.distributions():
                 try:
-                    raw_name = dist.metadata.get("Name") or dist.metadata.get("Summary") or ""
+                    raw_name = (
+                        dist.metadata.get("Name") or dist.metadata.get("Summary") or ""
+                    )
                 except Exception:
                     continue
                 if not raw_name:
@@ -291,14 +295,18 @@ def build_docker_image(
                     if isinstance(url, str) and url and not url.startswith("file:"):
                         # Prefix with git+ if it looks like a Git URL and not already prefixed
                         install_url = url
-                        if install_url.startswith("https://github.com/") and not install_url.startswith("git+"):
+                        if install_url.startswith(
+                            "https://github.com/"
+                        ) and not install_url.startswith("git+"):
                             install_url = f"git+{install_url}"
                         info["install_url"] = install_url
                         discovered.append(info)
                         continue
 
                 # Fallback to canonical GitHub repo under nodetool-ai org
-                info["install_url"] = f"git+https://github.com/nodetool-ai/{name_normalized}"
+                info["install_url"] = (
+                    f"git+https://github.com/nodetool-ai/{name_normalized}"
+                )
                 discovered.append(info)
 
             # Stable order for reproducible Dockerfiles
@@ -315,14 +323,16 @@ def build_docker_image(
 
             lines = dockerfile_contents.splitlines()
             try:
-                cmd_index = max(i for i, ln in enumerate(lines) if ln.strip().startswith("CMD "))
+                cmd_index = max(
+                    i for i, ln in enumerate(lines) if ln.strip().startswith("CMD ")
+                )
             except ValueError:
                 cmd_index = len(lines)
 
             # Build RUN command
             run_lines: list[str] = []
             run_lines.append("RUN --mount=type=cache,target=/root/.cache/uv \\\n")
-            run_lines.append("    echo \"Installing nodetool packages...\" \\\n")
+            run_lines.append('    echo "Installing nodetool packages..." \\\n')
 
             for idx, pkg in enumerate(nodetool_packages):
                 install_url = str(pkg.get("install_url") or "").strip()
@@ -335,7 +345,10 @@ def build_docker_image(
             # Insert before CMD
             new_lines = lines[:cmd_index] + run_lines + lines[cmd_index:]
             with open(dockerfile_path, "w", encoding="utf-8") as f:
-                f.write("\n".join(new_lines) + ("\n" if not new_lines[-1].endswith("\n") else ""))
+                f.write(
+                    "\n".join(new_lines)
+                    + ("\n" if not new_lines[-1].endswith("\n") else "")
+                )
 
         # Build with the Dockerfile from the build directory
         original_dir = os.getcwd()

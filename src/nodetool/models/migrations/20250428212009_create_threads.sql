@@ -6,4 +6,4 @@ CREATE TABLE IF NOT EXISTS nodetool_threads (
     title TEXT,
     created_at TIMESTAMP,
     updated_at TIMESTAMP
-); 
+);

@@ -15,7 +15,13 @@ from nodetool.models.message import Message as DBMessage
 from nodetool.metadata.types import Message as ApiMessage, Provider
 from nodetool.messaging.processors.agent import AgentMessageProcessor
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.workflows.types import TaskUpdate, PlanningUpdate, SubTaskResult, Chunk, TaskUpdateEvent
+from nodetool.workflows.types import (
+    TaskUpdate,
+    PlanningUpdate,
+    SubTaskResult,
+    Chunk,
+    TaskUpdateEvent,
+)
 from nodetool.metadata.types import Task, SubTask
 from nodetool.chat.base_chat_runner import BaseChatRunner
 
@@ -83,7 +89,12 @@ class TestAgentExecutionMessageStorage:
 
     @pytest.mark.asyncio
     async def test_task_update_saved_as_message(
-        self, agent_processor, test_message, processing_context, test_thread_id, test_user_id
+        self,
+        agent_processor,
+        test_message,
+        processing_context,
+        test_thread_id,
+        test_user_id,
     ):
         """Test that TaskUpdate events are saved as agent_execution messages."""
         chat_history = [test_message]
@@ -91,7 +102,9 @@ class TestAgentExecutionMessageStorage:
         # Create a mock agent that yields a TaskUpdate event
         task = Task(id="task1", title="Test Task", description="Test Description")
         subtask = SubTask(id="subtask1", content="Test Subtask")
-        task_update = TaskUpdate(event=TaskUpdateEvent.SUBTASK_STARTED, task=task, subtask=subtask)
+        task_update = TaskUpdate(
+            event=TaskUpdateEvent.SUBTASK_COMPLETED, task=task, subtask=subtask
+        )
 
         # Mock the agent execution to yield the task update
         with patch("nodetool.agents.agent.Agent") as MockAgent:
@@ -106,51 +119,64 @@ class TestAgentExecutionMessageStorage:
             mock_agent_instance.execute = mock_execute
             MockAgent.return_value = mock_agent_instance
 
-            # Mock the send_message method to avoid actual websocket sending
-            agent_processor.send_message = AsyncMock()
+            # Collect sent messages instead of mocking send_message
+            sent_messages = []
+            original_send = agent_processor.send_message
 
-            # Mock DBMessage.create to track calls
-            with patch.object(DBMessage, "create", new_callable=AsyncMock) as mock_create:
-                # Execute the agent processor
-                await agent_processor.process(
-                    chat_history=chat_history,
-                    processing_context=processing_context,
-                )
+            async def capture_send(msg):
+                sent_messages.append(msg)
+                await original_send(msg)
 
-                # Verify that DBMessage.create was called with correct parameters
-                task_update_calls = [
-                    call for call in mock_create.call_args_list
-                    if call[1].get("execution_event_type") == "task_update"
-                ]
+            agent_processor.send_message = capture_send
 
-                assert len(task_update_calls) > 0, "TaskUpdate should be saved as message"
+            # Execute the agent processor
+            await agent_processor.process(
+                chat_history=chat_history,
+                processing_context=processing_context,
+            )
 
-                call_kwargs = task_update_calls[0][1]
-                assert call_kwargs["thread_id"] == test_thread_id
-                assert call_kwargs["user_id"] == test_user_id
-                assert call_kwargs["role"] == "agent_execution"
-                assert call_kwargs["execution_event_type"] == "task_update"
-                assert "agent_execution_id" in call_kwargs
+            # Verify that a task_update message was sent
+            task_update_messages = [
+                msg
+                for msg in sent_messages
+                if msg.get("type") == "message"
+                and msg.get("execution_event_type") == "task_update"
+            ]
 
-                content = call_kwargs["content"]
-                assert content["type"] == "task_update"
-                assert content["event"] == TaskUpdateEvent.SUBTASK_STARTED
-                assert content["task"] is not None
-                assert content["subtask"] is not None
+            assert (
+                len(task_update_messages) > 0
+            ), "TaskUpdate should be saved as message"
+
+            message = task_update_messages[0]
+            assert message["thread_id"] == test_thread_id
+            assert message["role"] == "agent_execution"
+            assert message["execution_event_type"] == "task_update"
+            assert "agent_execution_id" in message
+
+            content = message["content"]
+            assert content["type"] == "task_update"
+            assert content["event"] == TaskUpdateEvent.SUBTASK_COMPLETED
+            assert content["task"] is not None
+            assert content["subtask"] is not None
 
     @pytest.mark.asyncio
     async def test_planning_update_saved_as_message(
-        self, agent_processor, test_message, processing_context, test_thread_id, test_user_id
+        self,
+        agent_processor,
+        test_message,
+        processing_context,
+        test_thread_id,
+        test_user_id,
     ):
         """Test that PlanningUpdate events are saved as agent_execution messages."""
         chat_history = [test_message]
 
-        # Create a mock planning update
+        # Create a mock planning update - use "Success" status to trigger message sending
         planning_update = PlanningUpdate(
             phase="planning",
-            status="in_progress",
+            status="Success",
             content="Creating task plan",
-            node_id="node1"
+            node_id="node1",
         )
 
         with patch("nodetool.agents.agent.Agent") as MockAgent:
@@ -164,35 +190,50 @@ class TestAgentExecutionMessageStorage:
             mock_agent_instance.execute = mock_execute
             MockAgent.return_value = mock_agent_instance
 
-            agent_processor.send_message = AsyncMock()
+            # Collect sent messages
+            sent_messages = []
+            original_send = agent_processor.send_message
 
-            with patch.object(DBMessage, "create", new_callable=AsyncMock) as mock_create:
-                await agent_processor.process(
-                    chat_history=chat_history,
-                    processing_context=processing_context,
-                )
+            async def capture_send(msg):
+                sent_messages.append(msg)
+                await original_send(msg)
 
-                planning_calls = [
-                    call for call in mock_create.call_args_list
-                    if call[1].get("execution_event_type") == "planning_update"
-                ]
+            agent_processor.send_message = capture_send
 
-                assert len(planning_calls) > 0, "PlanningUpdate should be saved as message"
+            await agent_processor.process(
+                chat_history=chat_history,
+                processing_context=processing_context,
+            )
 
-                call_kwargs = planning_calls[0][1]
-                assert call_kwargs["thread_id"] == test_thread_id
-                assert call_kwargs["user_id"] == test_user_id
-                assert call_kwargs["role"] == "agent_execution"
-                assert call_kwargs["execution_event_type"] == "planning_update"
+            planning_messages = [
+                msg
+                for msg in sent_messages
+                if msg.get("type") == "message"
+                and msg.get("execution_event_type") == "planning_update"
+            ]
 
-                content = call_kwargs["content"]
-                assert content["type"] == "planning_update"
-                assert content["phase"] == "planning"
-                assert content["status"] == "in_progress"
+            assert (
+                len(planning_messages) > 0
+            ), "PlanningUpdate should be saved as message"
+
+            message = planning_messages[0]
+            assert message["thread_id"] == test_thread_id
+            assert message["role"] == "agent_execution"
+            assert message["execution_event_type"] == "planning_update"
+
+            content = message["content"]
+            assert content["type"] == "planning_update"
+            assert content["phase"] == "planning"
+            assert content["status"] == "Success"
 
     @pytest.mark.asyncio
     async def test_subtask_result_saved_as_message(
-        self, agent_processor, test_message, processing_context, test_thread_id, test_user_id
+        self,
+        agent_processor,
+        test_message,
+        processing_context,
+        test_thread_id,
+        test_user_id,
     ):
         """Test that SubTaskResult events are saved as agent_execution messages."""
         chat_history = [test_message]
@@ -202,7 +243,7 @@ class TestAgentExecutionMessageStorage:
         subtask_result = SubTaskResult(
             subtask=subtask,
             result="Subtask completed successfully",
-            is_task_result=False
+            is_task_result=False,
         )
 
         with patch("nodetool.agents.agent.Agent") as MockAgent:
@@ -216,30 +257,38 @@ class TestAgentExecutionMessageStorage:
             mock_agent_instance.execute = mock_execute
             MockAgent.return_value = mock_agent_instance
 
-            agent_processor.send_message = AsyncMock()
+            # Collect sent messages
+            sent_messages = []
+            original_send = agent_processor.send_message
 
-            with patch.object(DBMessage, "create", new_callable=AsyncMock) as mock_create:
-                await agent_processor.process(
-                    chat_history=chat_history,
-                    processing_context=processing_context,
-                )
+            async def capture_send(msg):
+                sent_messages.append(msg)
+                await original_send(msg)
 
-                subtask_calls = [
-                    call for call in mock_create.call_args_list
-                    if call[1].get("execution_event_type") == "subtask_result"
-                ]
+            agent_processor.send_message = capture_send
 
-                assert len(subtask_calls) > 0, "SubTaskResult should be saved as message"
+            await agent_processor.process(
+                chat_history=chat_history,
+                processing_context=processing_context,
+            )
 
-                call_kwargs = subtask_calls[0][1]
-                assert call_kwargs["thread_id"] == test_thread_id
-                assert call_kwargs["user_id"] == test_user_id
-                assert call_kwargs["role"] == "agent_execution"
-                assert call_kwargs["execution_event_type"] == "subtask_result"
+            subtask_messages = [
+                msg
+                for msg in sent_messages
+                if msg.get("type") == "message"
+                and msg.get("execution_event_type") == "subtask_result"
+            ]
 
-                content = call_kwargs["content"]
-                assert content["type"] == "subtask_result"
-                assert content["result"] == "Subtask completed successfully"
+            assert len(subtask_messages) > 0, "SubTaskResult should be saved as message"
+
+            message = subtask_messages[0]
+            assert message["thread_id"] == test_thread_id
+            assert message["role"] == "agent_execution"
+            assert message["execution_event_type"] == "subtask_result"
+
+            content = message["content"]
+            assert content["type"] == "subtask_result"
+            assert content["result"] == "Subtask completed successfully"
 
     @pytest.mark.asyncio
     async def test_all_events_share_same_execution_id(
@@ -248,15 +297,14 @@ class TestAgentExecutionMessageStorage:
         """Test that all events from the same execution share the same agent_execution_id."""
         chat_history = [test_message]
 
-        # Create multiple events
+        # Create multiple events - use statuses that trigger message sending
         task = Task(id="task1", title="Test Task")
         subtask = SubTask(id="subtask1", content="Test Subtask")
-        task_update = TaskUpdate(event=TaskUpdateEvent.SUBTASK_STARTED, task=task, subtask=subtask)
+        task_update = TaskUpdate(
+            event=TaskUpdateEvent.SUBTASK_COMPLETED, task=task, subtask=subtask
+        )
         planning_update = PlanningUpdate(
-            phase="planning",
-            status="in_progress",
-            content="Planning",
-            node_id="node1"
+            phase="planning", status="Success", content="Planning", node_id="node1"
         )
 
         with patch("nodetool.agents.agent.Agent") as MockAgent:
@@ -271,30 +319,37 @@ class TestAgentExecutionMessageStorage:
             mock_agent_instance.execute = mock_execute
             MockAgent.return_value = mock_agent_instance
 
-            agent_processor.send_message = AsyncMock()
+            # Collect sent messages
+            sent_messages = []
+            original_send = agent_processor.send_message
 
-            with patch.object(DBMessage, "create", new_callable=AsyncMock) as mock_create:
-                await agent_processor.process(
-                    chat_history=chat_history,
-                    processing_context=processing_context,
-                )
+            async def capture_send(msg):
+                sent_messages.append(msg)
+                await original_send(msg)
 
-                # Get all execution message calls
-                execution_calls = [
-                    call for call in mock_create.call_args_list
-                    if call[1].get("role") == "agent_execution"
-                ]
+            agent_processor.send_message = capture_send
 
-                assert len(execution_calls) >= 2, "Should have multiple execution events"
+            await agent_processor.process(
+                chat_history=chat_history,
+                processing_context=processing_context,
+            )
 
-                # Extract execution IDs
-                execution_ids = [
-                    call[1]["agent_execution_id"]
-                    for call in execution_calls
-                ]
+            # Get all execution message calls
+            execution_messages = [
+                msg
+                for msg in sent_messages
+                if msg.get("type") == "message" and msg.get("role") == "agent_execution"
+            ]
 
-                # All execution IDs should be the same
-                assert len(set(execution_ids)) == 1, "All events should share the same execution ID"
+            assert len(execution_messages) >= 2, "Should have multiple execution events"
+
+            # Extract execution IDs
+            execution_ids = [msg["agent_execution_id"] for msg in execution_messages]
+
+            # All execution IDs should be the same
+            assert (
+                len(set(execution_ids)) == 1
+            ), "All events should share the same execution ID"
 
 
 class TestAgentExecutionMessageFiltering:
@@ -345,7 +400,9 @@ class TestAgentExecutionMessageFiltering:
             message = DBMessage(id=str(uuid4()), created_at=None, **msg)
             mock_db_messages.append(message)
 
-        with patch.object(DBMessage, "paginate", new_callable=AsyncMock) as mock_paginate:
+        with patch.object(
+            DBMessage, "paginate", new_callable=AsyncMock
+        ) as mock_paginate:
             mock_paginate.return_value = (mock_db_messages, None)
 
             # Create a test chat runner
@@ -418,7 +475,9 @@ class TestAgentExecutionMessageFiltering:
             message = DBMessage(id=str(uuid4()), created_at=None, **msg)
             mock_db_messages.append(message)
 
-        with patch.object(DBMessage, "paginate", new_callable=AsyncMock) as mock_paginate:
+        with patch.object(
+            DBMessage, "paginate", new_callable=AsyncMock
+        ) as mock_paginate:
             mock_paginate.return_value = (mock_db_messages, None)
 
             chat_runner = TestChatRunner()
@@ -446,7 +505,7 @@ class TestAgentExecutionMessageFiltering:
         task_update = TaskUpdate(
             event=TaskUpdateEvent.SUBTASK_STARTED,
             task=Task(id="task1", title="Test Task"),
-            subtask=SubTask(id="subtask1", content="Test Subtask")
+            subtask=SubTask(id="subtask1", content="Test Subtask"),
         )
 
         with patch("nodetool.agents.agent.Agent") as MockAgent:

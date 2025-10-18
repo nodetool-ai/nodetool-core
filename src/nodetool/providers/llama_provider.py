@@ -14,7 +14,6 @@ from typing import Any, AsyncIterator, List, Sequence
 
 import httpx
 import openai
-from openai.types.chat import ChatCompletionChunk
 from huggingface_hub import hf_hub_download
 
 from nodetool.agents.tools.base import Tool
@@ -549,7 +548,9 @@ if __name__ == "__main__":
                 "required": ["text"],
             }
 
-            async def process(self, context: ProcessingContext, params: dict[str, Any]) -> Any:  # type: ignore[override]
+            async def process(
+                self, context: ProcessingContext, params: dict[str, Any]
+            ) -> Any:  # type: ignore[override]
                 return {"echo": params.get("text", "")}
 
         model = "ggml-org/Qwen2.5-Coder-0.5B-Q8_0-GGUF"
@@ -658,7 +659,7 @@ if __name__ == "__main__":
             tools=calculator_tools,
             max_tokens=512,
         )
-        print(f"--- Initial Response ---")
+        print("--- Initial Response ---")
         print(f"Content: {response.content}")
         print(f"Tool calls: {response.tool_calls}\n")
 
@@ -694,7 +695,7 @@ if __name__ == "__main__":
                 tools=calculator_tools,
                 max_tokens=512,
             )
-            print(f"\n--- Response After Tool Call ---")
+            print("\n--- Response After Tool Call ---")
             print(f"Content: {response.content}")
             print(f"Tool calls: {response.tool_calls}")
             iteration += 1

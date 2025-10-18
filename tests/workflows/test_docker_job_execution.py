@@ -6,7 +6,6 @@ import asyncio
 import docker
 import docker.errors
 import subprocess
-import json
 
 import pytest
 

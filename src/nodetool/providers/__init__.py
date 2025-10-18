@@ -31,23 +31,25 @@ from nodetool.workflows.types import Chunk
 
 def import_providers():
     # import providers to ensure they are registered
-    from nodetool.providers import anthropic_provider
-    from nodetool.providers import gemini_provider
-    from nodetool.providers import llama_provider
-    from nodetool.providers import ollama_provider
-    from nodetool.providers import openai_provider
-    from nodetool.providers import fake_provider
-    from nodetool.providers import huggingface_provider
-    from nodetool.providers import vllm_provider
+    from nodetool.providers import (  # noqa: F401
+        anthropic_provider,
+        gemini_provider,
+        llama_provider,
+        ollama_provider,
+        openai_provider,
+        fake_provider,
+        huggingface_provider,
+        vllm_provider,
+    )
 
     # TODO: implement better discovery of providers
     try:
-        import nodetool.mlx.mlx_provider # type: ignore
+        import nodetool.mlx.mlx_provider  # type: ignore  # noqa: F401
     except ImportError:
         pass
 
     try:
-        import nodetool.huggingface.huggingface_local_provider # type: ignore
+        import nodetool.huggingface.huggingface_local_provider  # type: ignore  # noqa: F401
     except ImportError:
         pass
 
@@ -101,6 +103,7 @@ def list_providers() -> list["BaseProvider"]:
         provider = provider_cls(**kwargs)
         providers.append(provider)
     return providers
+
 
 __all__ = [
     "BaseProvider",

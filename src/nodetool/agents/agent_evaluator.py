@@ -19,7 +19,6 @@ through a JSON file written by the CLI runner.
 
 import asyncio
 import asyncio.subprocess as asp
-import math
 import os
 import time
 import json
@@ -163,9 +162,10 @@ class AgentEvaluator:
                 ]
                 start_time = time.perf_counter()
                 os.makedirs(os.path.dirname(stdout_path), exist_ok=True)
-                with open(stdout_path, "a", encoding="utf-8") as stdout_file, open(
-                    stderr_path, "a", encoding="utf-8"
-                ) as stderr_file:
+                with (
+                    open(stdout_path, "a", encoding="utf-8") as stdout_file,
+                    open(stderr_path, "a", encoding="utf-8") as stderr_file,
+                ):
                     proc = await asp.create_subprocess_exec(
                         *cmd,
                         stdout=stdout_file,

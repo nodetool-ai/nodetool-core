@@ -2,9 +2,8 @@
 
 # Base Node Module for Workflow System
 
-This module defines the core components and functionality for nodes in a workflow graph system.
-It provides the foundation for creating, managing, and executing computational nodes within
-a directed graph workflow.
+This module defines the core components and functionality for nodes in a workflow graph system. It provides the
+foundation for creating, managing, and executing computational nodes within a directed graph workflow.
 
 ## Key Components:
 
@@ -22,23 +21,19 @@ a directed graph workflow.
 - Node serialization and deserialization
 - Workflow execution utilities
 
-This module is essential for constructing and managing complex computational graphs
-in the workflow system. It handles the registration, validation, and execution of
-nodes, as well as providing utilities for type checking and metadata generation.
+This module is essential for constructing and managing complex computational graphs in the workflow system. It handles
+the registration, validation, and execution of nodes, as well as providing utilities for type checking and metadata
+generation.
 
 ## BaseNode
 
-The foundational class for all nodes in the workflow graph.
-Attributes:
-\_id (str): Unique identifier for the node.
-\_parent_id (str | None): Identifier of the parent node, if any.
-\_ui_properties (dict[str, Any]): UI-specific properties for the node.
-\_visible (bool): Whether the node is visible in the UI.
-\_layout (str): The layout style for the node in the UI.
+The foundational class for all nodes in the workflow graph. Attributes: \_id (str): Unique identifier for the node.
+\_parent_id (str | None): Identifier of the parent node, if any. \_ui_properties (dict[str, Any]): UI-specific
+properties for the node. \_visible (bool): Whether the node is visible in the UI. \_layout (str): The layout style for
+the node in the UI.
 
-Methods:
-Includes methods for initialization, property management, metadata generation,
-type checking, and node processing.
+Methods: Includes methods for initialization, property management, metadata generation, type checking, and node
+processing.
 
 **Tags:**
 
@@ -46,9 +41,8 @@ type checking, and node processing.
 
 ### assign_property
 
-Assign a value to a node property, performing type checking and conversion.
-If the property is dynamic, it will be added to the \_dynamic_properties dictionary.
-If the property cannot be assigned, we will not fail.
+Assign a value to a node property, performing type checking and conversion. If the property is dynamic, it will be added
+to the \_dynamic_properties dictionary. If the property cannot be assigned, we will not fail.
 
 **Args:**
 
@@ -57,8 +51,7 @@ If the property cannot be assigned, we will not fail.
 
 **Note:**
 
-This method handles type conversion for enums, lists, and objects with 'model_validate' method.
-**Args:**
+This method handles type conversion for enums, lists, and objects with 'model_validate' method. **Args:**
 
 - **name (str)**
 - **value (Any)**
@@ -76,9 +69,8 @@ This method handles type conversion for enums, lists, and objects with 'model_va
 
 Finalizes the workflow by performing any necessary cleanup or post-processing tasks.
 
-This method is called when the workflow is shutting down.
-It's responsible for cleaning up resources, unloading GPU models, and performing any necessary teardown operations.
-**Args:**
+This method is called when the workflow is shutting down. It's responsible for cleaning up resources, unloading GPU
+models, and performing any necessary teardown operations. **Args:**
 
 - **context**
 
@@ -96,8 +88,7 @@ Find a property of the node by its name.
 
 **Raises:**
 
-- **ValueError**: If no property with the given name exists.
-  **Args:**
+- **ValueError**: If no property with the given name exists. **Args:**
 - **name (str)**
 
 ### from_dict
@@ -110,8 +101,7 @@ Create a Node object from a dictionary representation.
 
 **Returns:**
 
-- **Node**: The created Node object.
-  **Args:**
+- **Node**: The created Node object. **Args:**
 - **node (dict[str, typing.Any])**
 - **skip_errors (bool) (default: False)**
 
@@ -119,15 +109,12 @@ Create a Node object from a dictionary representation.
 
 ### gen_process
 
-Generate output messages for streaming.
-Node implementers should override this method to provide streaming output.
-It should yield tuples of (slot_name, value).
-If this method is implemented, `process` should not be.
-**Args:**
+Generate output messages for streaming. Node implementers should override this method to provide streaming output. It
+should yield tuples of (slot_name, value). If this method is implemented, `process` should not be. **Args:**
 
 - **context (Any)**
 
-**Returns:** typing.AsyncGenerator[tuple[str, typing.Any], NoneType]
+**Returns:** typing.AsyncGenerator\[tuple[str, typing.Any], NoneType\]
 
 ### get_dynamic_properties
 
@@ -135,14 +122,12 @@ If this method is implemented, `process` should not be.
 
 ### handle_event
 
-Handle an incoming event async.
-May dispatch output or events.
-**Args:**
+Handle an incoming event async. May dispatch output or events. **Args:**
 
 - **context (Any)**
 - **event (Event)**
 
-**Returns:** typing.AsyncGenerator[tuple[str, typing.Any], NoneType]
+**Returns:** typing.AsyncGenerator\[tuple[str, typing.Any], NoneType\]
 
 ### has_parent
 
@@ -152,8 +137,7 @@ May dispatch output or events.
 
 Initialize the node when workflow starts.
 
-Responsible for setting up the node, including loading any necessary GPU models.
-**Args:**
+Responsible for setting up the node, including loading any necessary GPU models. **Args:**
 
 - **context (Any)**
 - **skip_cache (bool) (default: False)**
@@ -169,8 +153,7 @@ Check if a value can be assigned to a specific property of the node.
 
 **Returns:**
 
-- **bool**: True if the value can be assigned to the property, False otherwise.
-  **Args:**
+- **bool**: True if the value can be assigned to the property, False otherwise. **Args:**
 - **name (str)**
 - **value (Any)**
 
@@ -182,8 +165,7 @@ Move the node to a specific device, "cpu", "cuda" or "mps".
 
 **Args:**
 
-- **device (str)**: The device to move the node to.
-  **Args:**
+- **device (str)**: The device to move the node to. **Args:**
 - **device (str)**
 
 ### node_properties
@@ -192,10 +174,8 @@ Move the node to a specific device, "cpu", "cuda" or "mps".
 
 ### pre_process
 
-Pre-process the node before processing.
-This will be called before cache key is computed.
-Default implementation generates a seed for any field named seed.
-**Args:**
+Pre-process the node before processing. This will be called before cache key is computed. Default implementation
+generates a seed for any field named seed. **Args:**
 
 - **context (Any)**
 
@@ -203,10 +183,8 @@ Default implementation generates a seed for any field named seed.
 
 ### process_with_gpu
 
-Process the node with GPU.
-Default implementation calls the process method in inference mode.
-For training nodes, this method should be overridden.
-**Args:**
+Process the node with GPU. Default implementation calls the process method in inference mode. For training nodes, this
+method should be overridden. **Args:**
 
 - **context (Any)**
 - **max_retries (int) (default: 3)**
@@ -215,14 +193,11 @@ For training nodes, this method should be overridden.
 
 ### properties_for_client
 
-Properties to send to the client for updating the node.
-Comfy types and tensors are excluded.
-**Args:**
+Properties to send to the client for updating the node. Comfy types and tensors are excluded. **Args:**
 
 ### read_property
 
-Read a property from the node.
-If the property is dynamic, it will be read from the \_dynamic_properties dictionary.
+Read a property from the node. If the property is dynamic, it will be read from the \_dynamic_properties dictionary.
 
 **Args:**
 
@@ -234,8 +209,7 @@ If the property is dynamic, it will be read from the \_dynamic_properties dictio
 
 **Raises:**
 
-- **ValueError**: If the property does not exist.
-  **Args:**
+- **ValueError**: If the property does not exist. **Args:**
 - **name (str)**
 
 **Returns:** Any
@@ -250,8 +224,7 @@ Determine if this node requires GPU for processing.
 
 **Returns:**
 
-- **bool**: True if GPU is required, False otherwise.
-  **Args:**
+- **bool**: True if GPU is required, False otherwise. **Args:**
 
 **Returns:** bool
 
@@ -259,8 +232,7 @@ Determine if this node requires GPU for processing.
 
 Prepares the node result for inclusion in a NodeUpdate message.
 
-This method is used when the node is sending updates for all outputs.
-**Args:**
+This method is used when the node is sending updates for all outputs. **Args:**
 
 - **result (dict[str, typing.Any])**
 
@@ -281,8 +253,7 @@ Prepares the node result for inclusion in a NodeUpdate message.
 **Note:**
 
 - Converts Pydantic models to dictionaries.
-- Serializes binary data to base64.
-  **Args:**
+- Serializes binary data to base64. **Args:**
 - **result (dict[str, typing.Any])**
 
 **Returns:** dict[str, typing.Any]
@@ -296,8 +267,7 @@ Send a status update for the node to the client.
 - **context (Any)**: The context in which the node is being processed.
 - **status (str)**: The status of the node.
 - **result (dict[str, Any], optional)**: The result of the node's processing. Defaults to {}.
-- **properties (list[str], optional)**: The properties to send to the client. Defaults to None.
-  **Args:**
+- **properties (list[str], optional)**: The properties to send to the client. Defaults to None. **Args:**
 - **context (Any)**
 - **status (str)**
 - **result (dict[str, typing.Any] | None) (default: None)**
@@ -318,8 +288,7 @@ Set multiple node properties at once.
 
 **Note:**
 
-Errors during property assignment are printed regardless of the skip_errors flag.
-**Args:**
+Errors during property assignment are printed regardless of the skip_errors flag. **Args:**
 
 - **properties (dict[str, typing.Any])**
 - **skip_errors (bool) (default: False)**
@@ -340,15 +309,13 @@ Validate the node's inputs before processing.
 
 **Raises:**
 
-- **ValueError**: If any input is missing or invalid.
-  **Args:**
+- **ValueError**: If any input is missing or invalid. **Args:**
 - **input_edges (list[nodetool.types.graph.Edge])**
 
 ## Comment
 
-A utility node for adding comments or annotations to the workflow graph.
-Attributes:
-comment (list[Any]): The content of the comment, stored as a list of elements.
+A utility node for adding comments or annotations to the workflow graph. Attributes: comment (list[Any]): The content of
+the comment, stored as a list of elements.
 
 **Tags:**
 
@@ -370,10 +337,8 @@ This node type allows for hierarchical structuring of workflows.
 
 ## InputNode
 
-A special node type representing an input to the workflow.
-Attributes:
-label (str): A human-readable label for the input.
-name (str): The parameter name for this input in the workflow.
+A special node type representing an input to the workflow. Attributes: label (str): A human-readable label for the
+input. name (str): The parameter name for this input in the workflow.
 
 **Tags:**
 
@@ -384,11 +349,8 @@ name (str): The parameter name for this input in the workflow.
 
 ## OutputNode
 
-A special node type representing an output from the workflow.
-Attributes:
-name (str): The parameter name for this output in the workflow.
-description (str): A detailed description of the output.
-value (Any): The value of the output.
+A special node type representing an output from the workflow. Attributes: name (str): The parameter name for this output
+in the workflow. description (str): A detailed description of the output. value (Any): The value of the output.
 
 **Tags:**
 
@@ -407,9 +369,7 @@ value (Any): The value of the output.
 
 ## Preview
 
-A utility node for previewing data within the workflow graph.
-Attributes:
-value (Any): The value to be previewed.
+A utility node for previewing data within the workflow graph. Attributes: value (Any): The value to be previewed.
 
 **Tags:**
 
@@ -430,15 +390,13 @@ value (Any): The value to be previewed.
 
 Register a ComfyUI node class by its class name.
 
-This function stores ComfyUI node classes in a separate dictionary
-`COMFY_NODE_CLASSES` to avoid name conflicts with standard nodes.
-If the node class has a `comfy_class` attribute, that name is used;
-otherwise, the actual class name of `node_class` is used.
+This function stores ComfyUI node classes in a separate dictionary `COMFY_NODE_CLASSES` to avoid name conflicts with
+standard nodes. If the node class has a `comfy_class` attribute, that name is used; otherwise, the actual class name of
+`node_class` is used.
 
 **Args:**
 
-- **node_class**: The ComfyUI node class to be registered.
-  **Args:**
+- **node_class**: The ComfyUI node class to be registered. **Args:**
 - **node_class (type['BaseNode'])**
 
 **Returns:** None
@@ -447,14 +405,12 @@ otherwise, the actual class name of `node_class` is used.
 
 Add a node type to the global registry `NODE_BY_TYPE`.
 
-The node type is determined by `node_class.get_node_type()`.
-If the node type starts with "comfy.", it is also registered
-as a ComfyUI node class using `add_comfy_classname`.
+The node type is determined by `node_class.get_node_type()`. If the node type starts with "comfy.", it is also
+registered as a ComfyUI node class using `add_comfy_classname`.
 
 **Args:**
 
-- **node_class**: The node class to register.
-  **Args:**
+- **node_class**: The node class to register. **Args:**
 - **node_class (type['BaseNode'])**
 
 **Returns:** None
@@ -463,9 +419,8 @@ as a ComfyUI node class using `add_comfy_classname`.
 
 Find a registered node class by its Python class name.
 
-Iterates through all registered node classes (obtained via
-`get_registered_node_classes`) and returns the first one whose
-`__name__` attribute matches the given `class_name`.
+Iterates through all registered node classes (obtained via `get_registered_node_classes`) and returns the first one
+whose `__name__` attribute matches the given `class_name`.
 
 **Args:**
 
@@ -473,8 +428,7 @@ Iterates through all registered node classes (obtained via
 
 **Returns:**
 
-The `BaseNode` subclass if found, otherwise `None`.
-**Args:**
+The `BaseNode` subclass if found, otherwise `None`. **Args:**
 
 - **class_name (str)**
 
@@ -484,10 +438,8 @@ The `BaseNode` subclass if found, otherwise `None`.
 
 Retrieve a ComfyUI node class by its registered name.
 
-Handles special cases like "Note" (maps to `Comment`) and "PreviewImage"
-(maps to `Preview`). If an exact match for `class_name` isn't found in
-`COMFY_NODE_CLASSES`, it attempts a match by removing hyphens from
-`class_name`.
+Handles special cases like "Note" (maps to `Comment`) and "PreviewImage" (maps to `Preview`). If an exact match for
+`class_name` isn't found in `COMFY_NODE_CLASSES`, it attempts a match by removing hyphens from `class_name`.
 
 **Args:**
 
@@ -495,8 +447,7 @@ Handles special cases like "Note" (maps to `Comment`) and "PreviewImage"
 
 **Returns:**
 
-The corresponding `BaseNode` subclass if found, otherwise `None`.
-**Args:**
+The corresponding `BaseNode` subclass if found, otherwise `None`. **Args:**
 
 - **class_name (str)**
 
@@ -506,30 +457,24 @@ The corresponding `BaseNode` subclass if found, otherwise `None`.
 
 Retrieve a node class by its unique node type identifier.
 
-Node type resolution is multi-step to be resilient to missing imports
-and naming variations:
+Node type resolution is multi-step to be resilient to missing imports and naming variations:
 
 1. Registry lookup (with and without "Node" suffix on the class name)
-2. Dynamic import of modules inferred from the type path (e.g.,
-   `foo.Bar` → import `nodetool.nodes.foo` then `foo`), then registry lookup
-3. Package registry fallback for externally installed node packages
-4. Class-name fallback comparing only the last identifier, ignoring an
-   optional trailing "Node"
+1. Dynamic import of modules inferred from the type path (e.g., `foo.Bar` → import `nodetool.nodes.foo` then `foo`),
+   then registry lookup
+1. Package registry fallback for externally installed node packages
+1. Class-name fallback comparing only the last identifier, ignoring an optional trailing "Node"
 
-This allows graphs to reference node types by fully-qualified names,
-short class names, or via installed packages without pre-importing all
-node modules.
+This allows graphs to reference node types by fully-qualified names, short class names, or via installed packages
+without pre-importing all node modules.
 
 **Args:**
 
-- **node_type**: The unique type identifier of the node (e.g.,
-  "namespace.ClassName").
+- **node_type**: The unique type identifier of the node (e.g., "namespace.ClassName").
 
 **Returns:**
 
-The `BaseNode` subclass corresponding to `node_type` if found,
-otherwise `None`.
-**Args:**
+The `BaseNode` subclass corresponding to `node_type` if found, otherwise `None`. **Args:**
 
 - **node_type (str)**
 
@@ -539,23 +484,19 @@ otherwise `None`.
 
 Aggregate recommended HuggingFace models from all registered node classes.
 
-Iterates through all registered and visible node classes, collecting
-their recommended models. It ensures that each unique model (identified
-by repository ID and path) is listed only once. The result is a
-dictionary mapping repository IDs to a list of `HuggingFaceModel`
-objects from that repository.
+Iterates through all registered and visible node classes, collecting their recommended models. It ensures that each
+unique model (identified by repository ID and path) is listed only once. The result is a dictionary mapping repository
+IDs to a list of `HuggingFaceModel` objects from that repository.
 
 **Returns:**
 
-A dictionary where keys are Hugging Face repository IDs (str) and
-values are lists of `HuggingFaceModel` instances.
+A dictionary where keys are Hugging Face repository IDs (str) and values are lists of `HuggingFaceModel` instances.
 
 ### get_registered_node_classes
 
 Retrieve all registered node classes that are marked as visible.
 
-Filters the global `NODE_BY_TYPE` dictionary to include only those
-node classes for which `is_visible()` returns `True`.
+Filters the global `NODE_BY_TYPE` dictionary to include only those node classes for which `is_visible()` returns `True`.
 
 **Returns:**
 
@@ -565,10 +506,9 @@ A list of visible `BaseNode` subclasses.
 
 A decorator to memoize the results of a class method.
 
-The cache is stored in a `WeakKeyDictionary` keyed by the class,
-allowing cache entries to be garbage-collected when the class itself is
-no longer referenced. Within each class's cache, results are stored
-based on the method's arguments and keyword arguments.
+The cache is stored in a `WeakKeyDictionary` keyed by the class, allowing cache entries to be garbage-collected when the
+class itself is no longer referenced. Within each class's cache, results are stored based on the method's arguments and
+keyword arguments.
 
 **Args:**
 
@@ -576,8 +516,7 @@ based on the method's arguments and keyword arguments.
 
 **Returns:**
 
-A wrapped class method that caches its results.
-**Args:**
+A wrapped class method that caches its results. **Args:**
 
 - **func (typing.Callable[..., ~T])**
 
@@ -593,8 +532,7 @@ Uppercase sequences are kept together. Numbers are treated as separate words.
 
 **Returns:**
 
-A string with words separated by spaces.
-**Args:**
+A string with words separated by spaces. **Args:**
 
 - **text (str)**
 
@@ -604,8 +542,7 @@ A string with words separated by spaces.
 
 Generate `TypeMetadata` for a given Python type.
 
-Supports basic types, lists, tuples, dicts, optional types, unions,
-and enums.
+Supports basic types, lists, tuples, dicts, optional types, unions, and enums.
 
 **Args:**
 
@@ -613,14 +550,12 @@ and enums.
 
 **Returns:**
 
-A `TypeMetadata` object describing the structure and properties
-of the input type.
+A `TypeMetadata` object describing the structure and properties of the input type.
 
 **Raises:**
 
-- **ValueError**: If the input type is unknown or unsupported (i.e., does
-  not derive from `BaseType` or is not a recognized compound type).
-  **Args:**
+- **ValueError**: If the input type is unknown or unsupported (i.e., does not derive from `BaseType` or is not a
+  recognized compound type). **Args:**
 - **python_type (typing.Union[typing.Type, types.UnionType])**
 
 **Returns:** TypeMetadata

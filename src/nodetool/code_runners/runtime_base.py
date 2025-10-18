@@ -1,5 +1,4 @@
 import asyncio
-import logging
 import os
 import shlex
 import socket
@@ -9,7 +8,7 @@ from typing import Any, AsyncGenerator, AsyncIterator
 
 from nodetool.workflows.base_node import BaseNode
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.workflows.types import NodeProgress, Notification, LogUpdate
+from nodetool.workflows.types import Notification, LogUpdate
 from nodetool.code_runners.docker_ws import DockerHijackMultiplexDemuxer
 from nodetool.config.logging_config import get_logger
 
@@ -351,7 +350,9 @@ class StreamRunnerBase:
             command_vec = self.build_container_command(user_code, env_locals)
 
             # Allow subclass to wrap the command (e.g., with sandbox-exec)
-            command_vec, cleanup_data = self.wrap_subprocess_command(command_vec, context)
+            command_vec, cleanup_data = self.wrap_subprocess_command(
+                command_vec, context
+            )
 
             cmd_str = self._format_command_str(command_vec)
 
@@ -660,7 +661,9 @@ class StreamRunnerBase:
         log.debug("container created: id=%s", getattr(container, "id", "<no-id>"))
         return container
 
-    def _attach_before_start(self, container: Any, stdin_stream: AsyncIterator[str] | None):  # type: ignore[no-untyped-def]
+    def _attach_before_start(
+        self, container: Any, stdin_stream: AsyncIterator[str] | None
+    ):  # type: ignore[no-untyped-def]
         """Attach a hijacked socket before starting the container.
 
         Attaching prior to start ensures no early output is missed.

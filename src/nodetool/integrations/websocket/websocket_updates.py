@@ -9,7 +9,6 @@ from typing import Literal, Set
 from nodetool.config.logging_config import get_logger
 from pydantic import BaseModel
 
-from nodetool.config.environment import Environment
 from nodetool.system.system_stats import SystemStats
 from nodetool.system.system_stats import get_system_stats
 

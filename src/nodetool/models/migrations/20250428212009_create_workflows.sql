@@ -15,4 +15,4 @@ CREATE TABLE IF NOT EXISTS nodetool_workflows (
     receive_clipboard BOOLEAN
 );
 
-CREATE INDEX IF NOT EXISTS idx_nodetool_workflows_user_id ON nodetool_workflows (user_id); 
+CREATE INDEX IF NOT EXISTS idx_nodetool_workflows_user_id ON nodetool_workflows (user_id);

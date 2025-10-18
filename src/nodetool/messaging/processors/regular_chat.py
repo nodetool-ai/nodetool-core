@@ -8,7 +8,7 @@ or special modes.
 from nodetool.config.logging_config import get_logger
 import json
 import asyncio
-from typing import List, Dict, Any, Optional
+from typing import List, Optional
 import httpx
 from nodetool.agents.tools.tool_registry import resolve_tool_by_name
 from pydantic import BaseModel
@@ -20,7 +20,6 @@ from nodetool.metadata.types import (
 )
 from nodetool.workflows.types import (
     Chunk,
-    ToolCallUpdate,
 )
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.types.graph import Graph

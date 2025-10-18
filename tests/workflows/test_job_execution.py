@@ -3,7 +3,6 @@ import pytest
 from datetime import datetime
 from nodetool.workflows.job_execution_manager import (
     JobExecutionManager,
-    JobExecution,
     ThreadedJobExecution,
     SubprocessJobExecution,
 )
@@ -363,7 +362,7 @@ async def test_cleanup_completed_jobs(simple_workflow, cleanup_jobs):
     assert manager.get_job(job_id) is None
 
     # DB record should still exist
-    db_job = await Job.get(job_id)
+    await Job.get(job_id)
     # Note: Depending on timing, job may or may not be in DB
 
 

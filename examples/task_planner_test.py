@@ -20,11 +20,9 @@ discover during execution.
 
 import asyncio
 from nodetool.providers.huggingface_provider import HuggingFaceProvider
-from nodetool.providers.openai_provider import OpenAIProvider
 from rich.console import Console
 
 from nodetool.providers.base import BaseProvider
-from nodetool.providers.ollama_provider import OllamaProvider
 from nodetool.agents.task_planner import TaskPlanner
 from nodetool.agents.tools import (
     BrowserTool,
@@ -61,7 +59,7 @@ async def test_task_planner(provider: BaseProvider, model: str):
     )
     console.print("[bold]Configuration:[/bold]")
     console.print(f"  - Model: {model}")
-    console.print(f"  - Dynamic subtasks: Enabled automatically")
+    console.print("  - Dynamic subtasks: Enabled automatically")
 
     context = ProcessingContext()
     # Create TaskPlanner instance with different configurations for testing
@@ -124,7 +122,11 @@ async def test_task_planner(provider: BaseProvider, model: str):
 
 # Run the test
 if __name__ == "__main__":
-    asyncio.run(test_task_planner(provider=HuggingFaceProvider("cerebras"), model="openai/gpt-oss-120b"))  # pyright: ignore[reportCallIssue]
+    asyncio.run(
+        test_task_planner(
+            provider=HuggingFaceProvider("cerebras"), model="openai/gpt-oss-120b"
+        )
+    )  # pyright: ignore[reportCallIssue]
     # asyncio.run(test_task_planner(provider=OpenAIProvider(), model="gpt-4o-mini"))
     # asyncio.run(
     #     test_task_planner(

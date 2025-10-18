@@ -1,5 +1,4 @@
 import pytest
-from unittest.mock import AsyncMock
 
 from nodetool.providers.fake_provider import (
     FakeProvider,

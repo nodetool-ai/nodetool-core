@@ -1,7 +1,6 @@
 import json
 from typing import AsyncGenerator
 from nodetool.config.environment import Environment
-from nodetool.io.file_explorer import get_ollama_models_dir
 from nodetool.metadata.types import LlamaModel
 from nodetool.types.model import UnifiedModel
 from ollama import AsyncClient

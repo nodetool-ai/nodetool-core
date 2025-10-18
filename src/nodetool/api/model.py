@@ -23,7 +23,6 @@ from nodetool.metadata.types import (
     VideoModel,
     ModelFile,
     LlamaModel,
-    Provider,
     comfy_model_to_folder,
 )
 from huggingface_hub import try_to_load_from_cache
@@ -38,7 +37,6 @@ from nodetool.integrations.huggingface.huggingface_models import (
 )
 from nodetool.types.model import CachedRepo, RepoPath, UnifiedModel
 from nodetool.workflows.recommended_models import get_recommended_models
-from pydantic import BaseModel
 from nodetool.chat.ollama_service import (
     get_ollama_models,
     get_ollama_models_unified,
@@ -46,7 +44,6 @@ from nodetool.chat.ollama_service import (
     stream_ollama_model_pull,
     delete_ollama_model as _delete_ollama_model,
 )
-import sys
 from pathlib import Path
 import asyncio
 from nodetool.io.file_explorer import (
@@ -294,7 +291,7 @@ if not Environment.is_production():
     async def pull_ollama_model(model_name: str, user: str = Depends(current_user)):
         # Preflight: attempt a lightweight call to detect if Ollama is reachable
         try:
-            models = await get_ollama_models()
+            await get_ollama_models()
         except Exception as e:  # noqa: BLE001
             api_url = Environment.get("OLLAMA_API_URL")
             raise HTTPException(

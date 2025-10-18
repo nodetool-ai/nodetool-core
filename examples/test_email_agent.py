@@ -8,14 +8,12 @@ It demonstrates how to set up an agent for email processing and summarization.
 """
 
 import asyncio
-from nodetool.providers.huggingface_provider import HuggingFaceProvider
 from nodetool.agents.agent import Agent
 from nodetool.providers import get_provider
 from nodetool.metadata.types import Provider
 from nodetool.ui.console import AgentConsole
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.agents.tools.email_tools import SearchEmailTool
-from nodetool.workflows.types import Chunk
 
 
 async def main():

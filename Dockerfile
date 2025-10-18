@@ -89,19 +89,14 @@ WORKDIR /app
 # Set USE_LOCAL_WHEELS=1 to use local wheel files from ./dist/
 ARG USE_LOCAL_WHEELS=0
 
-# Copy project into the image so we install the local checkout
-COPY . /app
-
-# Install Python packages from the local repo and required registries
-# These will now use the pip from the Python 3.11 virtual environment
-RUN echo "Installing nodetool packages..." && \
+# Install external dependencies first (cached layer - rarely changes)
+RUN echo "Installing external nodetool packages..." && \
     if [ "$USE_LOCAL_WHEELS" = "1" ]; then \
         echo "Using local wheel files from ./dist/" && \
         uv pip install --python $VIRTUAL_ENV/bin/python --no-cache-dir \
         --find-links /app/dist \
         --extra-index-url https://download.pytorch.org/whl/cu121 \
         --index-strategy unsafe-best-match \
-        /app \
         nodetool-base \
         nodetool-huggingface; \
     else \
@@ -110,10 +105,16 @@ RUN echo "Installing nodetool packages..." && \
         --extra-index-url https://nodetool-ai.github.io/nodetool-registry/simple/ \
         --extra-index-url https://download.pytorch.org/whl/cu121 \
         --index-strategy unsafe-best-match \
-        /app \
         nodetool-base \
         nodetool-huggingface; \
     fi
+
+# Copy source code (invalidates cache on code changes)
+COPY . /app
+
+# Install local package without dependencies (fast - no dependency resolution)
+RUN echo "Installing local nodetool-core..." && \
+    uv pip install --python $VIRTUAL_ENV/bin/python --no-cache-dir --no-deps /app
 
 # RUN /app/venv/bin/playwright install
 

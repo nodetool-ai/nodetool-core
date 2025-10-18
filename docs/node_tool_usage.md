@@ -1,10 +1,12 @@
 # NodeTool Usage Guide
 
-The `NodeTool` class provides a way to wrap individual `BaseNode` instances as tools for use by agents, enabling seamless integration between the workflow node system and the agent system.
+The `NodeTool` class provides a way to wrap individual `BaseNode` instances as tools for use by agents, enabling
+seamless integration between the workflow node system and the agent system.
 
 ## Overview
 
 NodeTool allows you to:
+
 - Convert any BaseNode into a tool that agents can use
 - Automatically generate tool metadata from node properties
 - Execute nodes with proper error handling and result formatting
@@ -23,7 +25,7 @@ from pydantic import Field
 class TextProcessorNode(BaseNode):
     text: str = Field(description="Text to process")
     uppercase: bool = Field(default=False, description="Convert to uppercase")
-    
+
     async def process(self, context):
         result = self.text.upper() if self.uppercase else self.text
         return {"output": result}
@@ -104,6 +106,7 @@ NodeTool returns results in a consistent format:
 ## Integration with Workflow System
 
 NodeTool maintains full compatibility with the workflow system:
+
 - Proper initialization and finalization of nodes
 - Context passing for asset management and API access
 - Support for all node types including streaming nodes
@@ -112,13 +115,14 @@ NodeTool maintains full compatibility with the workflow system:
 ## Best Practices
 
 1. **Use descriptive field descriptions**: These become part of the tool's schema
-2. **Handle required fields properly**: Ensure nodes can be created with minimal parameters
-3. **Implement proper error handling**: Nodes should raise clear exceptions
-4. **Follow node conventions**: Use standard return formats for consistency
+1. **Handle required fields properly**: Ensure nodes can be created with minimal parameters
+1. **Implement proper error handling**: Nodes should raise clear exceptions
+1. **Follow node conventions**: Use standard return formats for consistency
 
 ## Examples
 
 See `examples/node_tool_example.py` for complete working examples demonstrating:
+
 - Basic node wrapping
 - Complex nodes with multiple parameters
 - Error handling
@@ -127,6 +131,7 @@ See `examples/node_tool_example.py` for complete working examples demonstrating:
 ## Implementation Details
 
 NodeTool handles several complexities:
+
 - Dynamic property assignment for nodes with required fields
 - Automatic conversion between snake_case tool names and CamelCase node names
 - Proper async context management

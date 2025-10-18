@@ -1,15 +1,18 @@
 """
 Self-hosted deployment implementation for NodeTool.
 
-This module handles deployment to self-hosted servers via SSH, including:
+This module handles deployment to self-hosted servers via SSH or locally, including:
 - Docker run command generation
-- Remote directory setup
+- Remote/local directory setup
 - Single container orchestration
 - Health monitoring
+- Localhost detection (skips SSH for localhost deployments)
 """
 
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Tuple
 import time
+import subprocess
+import os
 
 from nodetool.config.deployment import (
     SelfHostedDeployment,
@@ -24,14 +27,65 @@ from nodetool.deploy.docker_run import (
 from nodetool.deploy.state import StateManager
 
 
+def is_localhost(host: str) -> bool:
+    """Check if the host is localhost."""
+    localhost_names = ["localhost", "127.0.0.1", "::1", "0.0.0.0"]
+    return host.lower() in localhost_names
+
+
+class LocalExecutor:
+    """Executes commands locally (mimics SSHConnection interface)."""
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        pass
+
+    def execute(
+        self, command: str, check: bool = True, timeout: Optional[int] = None
+    ) -> Tuple[int, str, str]:
+        """Execute a command locally."""
+        try:
+            result = subprocess.run(
+                command,
+                shell=True,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                check=False,
+            )
+
+            if check and result.returncode != 0:
+                raise SSHCommandError(
+                    f"Command failed: {command}",
+                    result.returncode,
+                    result.stdout,
+                    result.stderr,
+                )
+
+            return result.returncode, result.stdout, result.stderr
+        except subprocess.TimeoutExpired as e:
+            raise SSHCommandError(
+                f"Command timed out: {command}",
+                -1,
+                e.stdout.decode() if e.stdout else "",
+                e.stderr.decode() if e.stderr else "",
+            )
+
+    def mkdir(self, path: str, parents: bool = False) -> None:
+        """Create a directory locally."""
+        os.makedirs(path, exist_ok=parents)
+
+
 class SelfHostedDeployer:
     """
-    Handles deployment to self-hosted servers via SSH.
+    Handles deployment to self-hosted servers via SSH or locally.
 
     This class orchestrates the entire deployment process including:
-    - SSH connection management
+    - SSH connection management (or local execution for localhost)
     - Docker run command generation
-    - Remote command execution
+    - Remote/local command execution
     - Single container health monitoring
     """
 
@@ -52,6 +106,20 @@ class SelfHostedDeployer:
         self.deployment_name = deployment_name
         self.deployment = deployment
         self.state_manager = state_manager or StateManager()
+        self.is_localhost = is_localhost(deployment.host)
+
+    def _get_executor(self):
+        """Get appropriate executor (SSH or local) based on host."""
+        if self.is_localhost:
+            return LocalExecutor()
+        else:
+            return SSHConnection(
+                host=self.deployment.host,
+                user=self.deployment.ssh.user,
+                key_path=self.deployment.ssh.key_path,
+                password=self.deployment.ssh.password,
+                port=self.deployment.ssh.port,
+            )
 
     def plan(self) -> Dict[str, Any]:
         """
@@ -101,7 +169,7 @@ class SelfHostedDeployer:
 
     def apply(self, dry_run: bool = False) -> Dict[str, Any]:
         """
-        Apply the deployment to the remote host.
+        Apply the deployment to the host (remote or localhost).
 
         Args:
             dry_run: If True, only show what would be done without executing
@@ -119,30 +187,27 @@ class SelfHostedDeployer:
             "errors": [],
         }
 
+        if self.is_localhost:
+            results["steps"].append("Deploying to localhost (skipping SSH)")
+
         try:
             # Update state to deploying
             self.state_manager.update_deployment_status(
                 self.deployment_name, DeploymentStatus.DEPLOYING.value
             )
 
-            with SSHConnection(
-                host=self.deployment.host,
-                user=self.deployment.ssh.user,
-                key_path=self.deployment.ssh.key_path,
-                password=self.deployment.ssh.password,
-                port=self.deployment.ssh.port,
-            ) as ssh:
+            with self._get_executor() as executor:
                 # Step 1: Create directories
-                self._create_directories(ssh, results)
+                self._create_directories(executor, results)
 
                 # Step 2: Stop existing container if running
-                self._stop_existing_container(ssh, results)
+                self._stop_existing_container(executor, results)
 
                 # Step 3: Start container
-                docker_run_hash = self._start_container(ssh, results)
+                docker_run_hash = self._start_container(executor, results)
 
                 # Step 4: Check health
-                self._check_health(ssh, results)
+                self._check_health(executor, results)
 
                 # Update state with success
                 container_name = get_container_name(self.deployment)
@@ -285,13 +350,7 @@ class SelfHostedDeployer:
         }
 
         try:
-            with SSHConnection(
-                host=self.deployment.host,
-                user=self.deployment.ssh.user,
-                key_path=self.deployment.ssh.key_path,
-                password=self.deployment.ssh.password,
-                port=self.deployment.ssh.port,
-            ) as ssh:
+            with self._get_executor() as ssh:
                 container_name = get_container_name(self.deployment)
 
                 # Stop container
@@ -346,18 +405,12 @@ class SelfHostedDeployer:
         state = self.state_manager.read_state(self.deployment_name)
         if state:
             status_info["status"] = state.get("status", "unknown")
-            status_info["last_deployed"] = state.get("last_deployed")
-            status_info["url"] = state.get("url")
+            status_info["last_deployed"] = state.get("last_deployed", "unknown")
+            status_info["url"] = state.get("url", "unknown")
 
-        # Try to get live status from remote host
+        # Try to get live status from host (remote or local)
         try:
-            with SSHConnection(
-                host=self.deployment.host,
-                user=self.deployment.ssh.user,
-                key_path=self.deployment.ssh.key_path,
-                password=self.deployment.ssh.password,
-                port=self.deployment.ssh.port,
-            ) as ssh:
+            with self._get_executor() as ssh:
                 container_name = get_container_name(self.deployment)
 
                 # Get container status
@@ -395,13 +448,7 @@ class SelfHostedDeployer:
         Returns:
             Log output as string
         """
-        with SSHConnection(
-            host=self.deployment.host,
-            user=self.deployment.ssh.user,
-            key_path=self.deployment.ssh.key_path,
-            password=self.deployment.ssh.password,
-            port=self.deployment.ssh.port,
-        ) as ssh:
+        with self._get_executor() as ssh:
             container_name = get_container_name(self.deployment)
 
             command = f"docker logs --tail={tail}"

@@ -34,9 +34,8 @@ Environment Variables:
     DOCKER_USERNAME: Docker Hub username (optional if docker login was used)
     DOCKER_REGISTRY: Docker registry URL (defaults to Docker Hub)
 """
-import os
+
 import sys
-import tempfile
 from typing import Optional
 import re
 
@@ -183,9 +182,7 @@ def deploy_to_runpod(
     # Format full image name with registry and username
     assert image_name, "Image name is required"
     assert docker_username, "Docker username is required"
-    full_image_name = format_image_name(
-        image_name, docker_username, docker_registry
-    )
+    full_image_name = format_image_name(image_name, docker_username, docker_registry)
     console.print(f"Full image name: {full_image_name}")
 
     template_name = template_name or image_name

@@ -1,7 +1,6 @@
 from nodetool.types.graph import Edge
 from nodetool.workflows.graph import Graph
-from nodetool.workflows.base_node import BaseNode, InputNode, OutputNode
-from typing import Any
+from nodetool.workflows.base_node import BaseNode
 
 
 class InNode(BaseNode):

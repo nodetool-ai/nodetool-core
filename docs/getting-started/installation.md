@@ -72,8 +72,8 @@ NodeTool Core uses various AI services that require API keys. You can set these 
    export ANTHROPIC_API_KEY="your-anthropic-api-key"
    ```
 
-2. **.env file**:
-   Create a `.env` file in your project root with the following content:
+1. **.env file**: Create a `.env` file in your project root with the following content:
+
    ```
    OPENAI_API_KEY=your-openai-api-key
    ANTHROPIC_API_KEY=your-anthropic-api-key
@@ -113,8 +113,8 @@ Make sure you're using a compatible Python version (3.11+).
 If you're having trouble with GPU support:
 
 1. Ensure you have compatible CUDA drivers installed
-2. Verify that your GPU is supported
-3. Check the installation logs for specific errors
+1. Verify that your GPU is supported
+1. Check the installation logs for specific errors
 
 ## Next Steps
 

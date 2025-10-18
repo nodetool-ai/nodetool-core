@@ -7,7 +7,7 @@ during execution, making the agent system more flexible and adaptive.
 
 import uuid
 import json
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict
 from nodetool.agents.tools.base import Tool
 from nodetool.metadata.types import SubTask, Task
 from nodetool.workflows.processing_context import ProcessingContext
@@ -90,7 +90,9 @@ class AddSubtaskTool(Tool):
         content = params.get("content", "")
         return f"Adding new subtask: {content[:100]}..."
 
-    async def process(self, context: ProcessingContext, params: Dict[str, Any]) -> Dict[str, Any]:
+    async def process(
+        self, context: ProcessingContext, params: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """
         Add a new subtask to the task plan.
 
@@ -105,7 +107,9 @@ class AddSubtaskTool(Tool):
         subtask_id = f"subtask_{uuid.uuid4().hex[:8]}"
 
         # Parse output schema if provided as string
-        output_schema = params.get("output_schema", '{"type": "object", "description": "Subtask result"}')
+        output_schema = params.get(
+            "output_schema", '{"type": "object", "description": "Subtask result"}'
+        )
         if isinstance(output_schema, str):
             try:
                 # Validate it's valid JSON
@@ -178,7 +182,9 @@ class ListSubtasksTool(Tool):
         """Generate a user-friendly message describing the tool call."""
         return "Listing all subtasks in the current task plan"
 
-    async def process(self, context: ProcessingContext, params: Dict[str, Any]) -> Dict[str, Any]:
+    async def process(
+        self, context: ProcessingContext, params: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """
         List all subtasks with their status.
 
@@ -192,14 +198,16 @@ class ListSubtasksTool(Tool):
         subtasks_info = []
 
         for subtask in self.task.subtasks:
-            subtasks_info.append({
-                "id": subtask.id,
-                "content": subtask.content,
-                "completed": subtask.completed,
-                "input_tasks": subtask.input_tasks,
-                "input_files": subtask.input_files,
-                "max_tool_calls": subtask.max_tool_calls,
-            })
+            subtasks_info.append(
+                {
+                    "id": subtask.id,
+                    "content": subtask.content,
+                    "completed": subtask.completed,
+                    "input_tasks": subtask.input_tasks,
+                    "input_files": subtask.input_files,
+                    "max_tool_calls": subtask.max_tool_calls,
+                }
+            )
 
         completed_count = sum(1 for st in self.task.subtasks if st.completed)
         total_count = len(self.task.subtasks)

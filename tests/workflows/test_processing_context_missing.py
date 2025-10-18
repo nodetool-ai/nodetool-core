@@ -10,7 +10,6 @@ import PIL.Image
 import importlib.util
 
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.workflows.graph import Graph
 from nodetool.metadata.types import (
     AssetRef,
     ImageRef,
@@ -454,7 +453,9 @@ class TestUtilityFunctions:
     @pytest.mark.asyncio
     async def test_is_huggingface_model_cached(self, context: ProcessingContext):
         """Test checking if HuggingFace model is cached."""
-        with patch("nodetool.integrations.huggingface.hf_utils.try_to_load_from_cache") as mock_cache:
+        with patch(
+            "nodetool.integrations.huggingface.hf_utils.try_to_load_from_cache"
+        ) as mock_cache:
             mock_cache.return_value = "/path/to/cache"
 
             result = await context.is_huggingface_model_cached("bert-base-uncased")
@@ -478,7 +479,9 @@ class TestVideoMethods:
             mock_file.name = "/tmp/test_video.mp4"
             mock_temp.return_value.__enter__.return_value = mock_file
 
-            with patch("nodetool.media.video.video_utils.export_to_video") as mock_export:
+            with patch(
+                "nodetool.media.video.video_utils.export_to_video"
+            ) as mock_export:
                 with patch("builtins.open", create=True) as mock_open:
                     mock_open.return_value = BytesIO(b"fake video data")
 

@@ -1,4 +1,3 @@
-import os
 from typing import AsyncGenerator, TypedDict
 from nodetool.metadata.types import Any
 from nodetool.workflows.processing_context import ProcessingContext
@@ -9,7 +8,6 @@ from nodetool.types.graph import Graph as ApiGraph, Edge, Node
 from nodetool.workflows.types import PreviewUpdate
 from nodetool.workflows.run_workflow import run_workflow
 from nodetool.workflows.base_node import BaseNode, Preview
-import math
 
 pytestmark = pytest.mark.skip(
     reason="Skip sync mode integration tests - known to hang due to async generator issues in workflow execution"

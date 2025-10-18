@@ -83,7 +83,7 @@ async def test_task_planner_batch_processing(
     )
 
     print(f"🚀 Starting agent: {batch_agent.name}")
-    print(f"📋 Objective: Analyze 20 tech sites for AI trends")
+    print("📋 Objective: Analyze 20 tech sites for AI trends")
     print(f"🔧 Planning Model: {planning_model}")
     print(f"⚙️  Execution Model: {model}\n")
 
@@ -101,7 +101,7 @@ async def test_task_planner_batch_processing(
             # Monitor task updates to see batch processing in action
             if hasattr(item, "task") and item.task and not plan_generated:
                 plan_generated = True
-                print(f"\n📊 PLAN GENERATED:")
+                print("\n📊 PLAN GENERATED:")
                 print(f"   Total subtasks: {len(item.task.subtasks)}")
 
                 # Check for batch processing
@@ -128,7 +128,7 @@ async def test_task_planner_batch_processing(
                     )
                 else:
                     print(
-                        f"\n⚠️  No batch processing detected (might process all at once)"
+                        "\n⚠️  No batch processing detected (might process all at once)"
                     )
 
         elif isinstance(item, Chunk):
@@ -154,7 +154,7 @@ async def test_task_planner_batch_processing(
     # Check if batch processing files were created
     batch_files = [f for f in jsonl_files if "batch" in f.name.lower()]
     if batch_files:
-        print(f"\n🔄 Batch processing files found:")
+        print("\n🔄 Batch processing files found:")
         for bf in batch_files:
             size = bf.stat().st_size
             print(f"   - {bf.name} ({size:,} bytes)")
@@ -166,7 +166,7 @@ async def test_task_planner_batch_processing(
 
     # Display final results summary
     if final_results:
-        print(f"\n📊 Final Results Preview:")
+        print("\n📊 Final Results Preview:")
         # Try to parse as JSON
         try:
             result_data = json.loads(final_results)
@@ -177,7 +177,7 @@ async def test_task_planner_batch_processing(
                     print(f"   Trends found: {len(result_data['trends'])}")
                 if "articles" in result_data:
                     print(f"   Articles collected: {len(result_data['articles'])}")
-        except:
+        except Exception:  # noqa: S110
             # If not JSON, show text preview
             print(f"   {final_results[:200]}...")
 

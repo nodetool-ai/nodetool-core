@@ -11,16 +11,18 @@ Key Features:
 - Local testing capabilities
 - Common deployment utilities
 """
+
 import os
 import sys
-from typing import Optional, Tuple
+from typing import Optional
 from rich.console import Console
 
 console = Console()
 
 
 def run_local_docker(
-    full_image_name: str, image_tag: str,
+    full_image_name: str,
+    image_tag: str,
 ) -> None:
     """
     Run the Docker container locally instead of deploying to RunPod.

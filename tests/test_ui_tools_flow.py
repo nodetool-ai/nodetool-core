@@ -1,5 +1,3 @@
-import asyncio
-import json
 import pytest
 
 from nodetool.chat.chat_websocket_runner import ChatWebSocketRunner

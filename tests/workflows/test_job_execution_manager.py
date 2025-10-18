@@ -11,7 +11,6 @@ from nodetool.workflows.subprocess_job_execution import SubprocessJobExecution
 from nodetool.workflows.docker_job_execution import DockerJobExecution
 from nodetool.workflows.run_job_request import RunJobRequest, ExecutionStrategy
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.models.job import Job
 from nodetool.types.graph import Graph, Node as GraphNode, Edge
 from nodetool.models.workflow import Workflow
 

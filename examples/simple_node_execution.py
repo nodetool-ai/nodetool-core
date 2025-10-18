@@ -5,7 +5,6 @@ import tempfile
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.nodes.lib.math import Add, Multiply
 from nodetool.nodes.nodetool.text import Concat, FormatText
-from nodetool.nodes.nodetool.constant import Float, Text
 
 # Set up logging
 from nodetool.config.logging_config import get_logger

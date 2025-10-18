@@ -361,7 +361,6 @@ async def test_run_streaming_happy_path_sends_updates_and_messages():
 
 
 class BadStreamingNode(BaseNode):
-
     class OutputType(TypedDict):
         output: int
 

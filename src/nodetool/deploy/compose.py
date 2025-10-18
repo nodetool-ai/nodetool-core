@@ -72,10 +72,10 @@ class ComposeGenerator:
             "services": {},
         }
 
-        # Generate service for each container
-        for container in self.deployment.containers:
-            service_name = self._sanitize_service_name(container.name)
-            compose["services"][service_name] = self._build_service(container)
+        # Generate service for the container
+        container = self.deployment.container
+        service_name = self._sanitize_service_name(container.name)
+        compose["services"][service_name] = self._build_service(container)
 
         return compose
 
@@ -140,9 +140,8 @@ class ComposeGenerator:
         """
         volumes = []
 
-        # Workspace volume (read-write, per-container)
-        workspace_path = f"{self.deployment.paths.workspace_base}/{container.name}"
-        volumes.append(f"{workspace_path}:/workspace")
+        # Workspace volume (read-write)
+        volumes.append(f"{self.deployment.paths.workspace}:/workspace")
 
         # HuggingFace cache volume (read-only, shared)
         volumes.append(f"{self.deployment.paths.hf_cache}:/hf-cache:ro")

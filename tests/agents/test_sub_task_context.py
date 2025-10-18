@@ -1,5 +1,3 @@
-import os
-import json
 from nodetool.agents.sub_task_context import (
     _remove_think_tags,
     SubTaskContext,

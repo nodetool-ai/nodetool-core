@@ -79,6 +79,7 @@ class ImageToImageParams(BaseModel):
         default=None, description="Scheduler to use for generation"
     )
 
+
 VideoBytes = bytes
 
 
