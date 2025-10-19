@@ -1,10 +1,9 @@
-# syntax=docker/dockerfile:1
 FROM nvidia/cuda:12.6.0-base-ubuntu22.04 AS base
 COPY --from=ghcr.io/astral-sh/uv:0.8.5 /uv /uvx /bin/
 
 # Note: llama-server is optional and may not be available on all platforms
 # If you need llama-server support, you can add this line manually:
-# COPY --from=ghcr.io/ggml-org/llama.cpp:server-cuda /llama-server /usr/local/bin/llama-server
+COPY --from=ghcr.io/ggml-org/llama.cpp:server-cuda /app/llama-server /usr/local/bin/llama-server
 
 # Environment variables
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -86,12 +85,6 @@ RUN uv venv --python $PYTHON_VERSION $VIRTUAL_ENV
 
 ENV PATH=$VIRTUAL_ENV/bin:$PATH
 
-# Set up the working directory
-WORKDIR /app
-
-# Build argument to control installation method
-# Set USE_LOCAL_WHEELS=1 to use local wheel files from ./dist/
-ARG USE_LOCAL_WHEELS=0
 
 # Install external dependencies from GitHub releases (latest versions)
 RUN echo "Installing external nodetool packages from GitHub releases..." && \
@@ -106,7 +99,6 @@ RUN echo "Installing external nodetool packages from GitHub releases..." && \
     rm -rf /root/.cache/pip && \
     rm -rf /tmp/* && \
     rm -rf /var/tmp/*
-
 
 # RUN /app/venv/bin/playwright install
 
