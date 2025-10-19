@@ -112,8 +112,11 @@ class Asset(DBModel):
         Returns:
             The newly created and saved Asset instance.
         """
+        # Allow overriding id via kwargs, otherwise generate new one
+        asset_id = kwargs.pop("id", None) or create_time_ordered_uuid()
+
         return await super().create(
-            id=create_time_ordered_uuid(),
+            id=asset_id,
             name=name,
             user_id=user_id,
             parent_id=parent_id or user_id,

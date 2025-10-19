@@ -9,6 +9,7 @@ def extract_models(workflow_data: dict) -> list[dict]:
     pre-downloaded. This includes:
     - Hugging Face models (type starts with "hf.")
     - Ollama language models (type="language_model" and provider="ollama")
+    - llama_cpp language models (type="language_model" and provider="llama_cpp")
 
     Args:
         workflow_data (dict): The complete workflow data dictionary
@@ -77,6 +78,30 @@ def extract_models(workflow_data: dict) -> list[dict]:
                         "id": model["id"],
                     }
                     models.append(ollama_model)
+
+            # llama_cpp language models (HuggingFace GGUF models)
+            elif (
+                model.get("type") == "language_model"
+                and model.get("provider") == "llama_cpp"
+                and model.get("id")
+            ):
+                # Parse repo_id:file_path format
+                model_id = model["id"]
+                if ":" in model_id:
+                    repo_id, file_path = model_id.split(":", 1)
+                    model_key = ("hf", "hf.gguf", repo_id, file_path, None)
+
+                    if model_key not in seen_models:
+                        seen_models.add(model_key)
+                        hf_model = {
+                            "type": "hf.gguf",
+                            "repo_id": repo_id,
+                            "path": file_path,
+                            "variant": None,
+                            "allow_patterns": None,
+                            "ignore_patterns": None,
+                        }
+                        models.append(hf_model)
 
         # Check for language models at the root level (some nodes might have them directly)
         if (

@@ -81,6 +81,141 @@ class AdminHTTPClient:
                     )
                 return await response.json()
 
+    async def run_workflow(
+        self, workflow_id: str, params: Dict[str, Any] = None
+    ) -> Dict[str, Any]:
+        """Run a workflow on the deployed instance."""
+        if params is None:
+            params = {}
+
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{self.base_url}/workflows/{workflow_id}/run",
+                headers=self.headers,
+                json=params,
+            ) as response:
+                if response.status != 200:
+                    raise Exception(
+                        f"Failed to run workflow: {response.status} {await response.text()}"
+                    )
+                return await response.json()
+
+    async def get_asset(self, asset_id: str, user_id: str = "1") -> Dict[str, Any]:
+        """Get asset metadata from the deployed instance."""
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                f"{self.base_url}/admin/assets/{asset_id}",
+                headers=self.headers,
+                params={"user_id": user_id},
+            ) as response:
+                if response.status != 200:
+                    raise Exception(
+                        f"Failed to get asset: {response.status} {await response.text()}"
+                    )
+                return await response.json()
+
+    async def create_asset(
+        self,
+        id: Optional[str] = None,
+        user_id: str = "1",
+        name: str = "",
+        content_type: str = "",
+        parent_id: Optional[str] = None,
+        workflow_id: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Create asset metadata on the deployed instance."""
+        data = {
+            "user_id": user_id,
+            "name": name,
+            "content_type": content_type,
+        }
+        if id:
+            data["id"] = id
+        if parent_id:
+            data["parent_id"] = parent_id
+        if workflow_id:
+            data["workflow_id"] = workflow_id
+        if metadata:
+            data["metadata"] = metadata
+
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{self.base_url}/admin/assets",
+                headers=self.headers,
+                json=data,
+            ) as response:
+                if response.status != 200:
+                    raise Exception(
+                        f"Failed to create asset: {response.status} {await response.text()}"
+                    )
+                return await response.json()
+
+    async def upload_asset_file(self, file_name: str, data: bytes) -> None:
+        """Upload asset file to storage on the deployed instance."""
+        async with aiohttp.ClientSession() as session:
+            async with session.put(
+                f"{self.base_url}/admin/storage/assets/{file_name}",
+                headers=self.headers,
+                data=data,
+            ) as response:
+                if response.status != 200:
+                    raise Exception(
+                        f"Failed to upload asset file: {response.status} {await response.text()}"
+                    )
+
+    async def download_asset_file(self, file_name: str) -> bytes:
+        """Download asset file from storage on the deployed instance."""
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                f"{self.base_url}/storage/assets/{file_name}",
+                headers=self.headers,
+            ) as response:
+                if response.status != 200:
+                    raise Exception(
+                        f"Failed to download asset file: {response.status} {await response.text()}"
+                    )
+                return await response.read()
+
+    async def db_get(self, table: str, key: str) -> Dict[str, Any]:
+        """Get an item from database table by key."""
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                f"{self.base_url}/admin/db/{table}/{key}",
+                headers=self.headers,
+            ) as response:
+                if response.status != 200:
+                    raise Exception(
+                        f"Failed to get item: {response.status} {await response.text()}"
+                    )
+                return await response.json()
+
+    async def db_save(self, table: str, item: Dict[str, Any]) -> Dict[str, Any]:
+        """Save an item to database table."""
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{self.base_url}/admin/db/{table}/save",
+                headers=self.headers,
+                json=item,
+            ) as response:
+                if response.status != 200:
+                    raise Exception(
+                        f"Failed to save item: {response.status} {await response.text()}"
+                    )
+                return await response.json()
+
+    async def db_delete(self, table: str, key: str) -> None:
+        """Delete an item from database table by key."""
+        async with aiohttp.ClientSession() as session:
+            async with session.delete(
+                f"{self.base_url}/admin/db/{table}/{key}",
+                headers=self.headers,
+            ) as response:
+                if response.status != 200:
+                    raise Exception(
+                        f"Failed to delete item: {response.status} {await response.text()}"
+                    )
+
     async def download_huggingface_model(
         self,
         repo_id: str,
@@ -98,27 +233,37 @@ class AdminHTTPClient:
         if allow_patterns:
             data["allow_patterns"] = allow_patterns
 
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                f"{self.base_url}/admin/models/huggingface/download",
-                headers=self.headers,
-                json=data,
-            ) as response:
-                if response.status != 200:
-                    raise Exception(
-                        f"HuggingFace download failed: {response.status} {await response.text()}"
-                    )
+        timeout = aiohttp.ClientTimeout(total=3600)  # 1 hour timeout for large models
+        async with aiohttp.TCPConnector(force_close=True) as connector:
+            async with aiohttp.ClientSession(timeout=timeout, connector=connector) as session:
+                async with session.post(
+                    f"{self.base_url}/admin/models/huggingface/download",
+                    headers=self.headers,
+                    json=data,
+                ) as response:
+                    if response.status != 200:
+                        raise Exception(
+                            f"HuggingFace download failed: {response.status} {await response.text()}"
+                        )
 
-                async for line in response.content:
-                    line = line.decode("utf-8").strip()
-                    if line.startswith("data: "):
-                        data_str = line[6:]  # Remove 'data: ' prefix
-                        if data_str == "[DONE]":
-                            break
-                        try:
-                            yield json.loads(data_str)
-                        except json.JSONDecodeError:
-                            continue
+                    buffer = ""
+                    async for chunk in response.content.iter_any():
+                        buffer += chunk.decode("utf-8")
+                        while "\n" in buffer:
+                            line, buffer = buffer.split("\n", 1)
+                            line = line.strip()
+                            if line:  # Log non-empty lines
+                                console.print(f"[dim]HF SSE: {line[:100]}...[/]" if len(line) > 100 else f"[dim]HF SSE: {line}[/]")
+                            if line.startswith("data: "):
+                                data_str = line[6:]  # Remove 'data: ' prefix
+                                if data_str == "[DONE]":
+                                    console.print("[dim]HF SSE stream completed with [DONE][/]")
+                                    return
+                                try:
+                                    yield json.loads(data_str)
+                                except json.JSONDecodeError:
+                                    console.print(f"[dim yellow]HF SSE JSON decode error: {data_str[:100]}[/]")
+                                    continue
 
     async def download_ollama_model(
         self, model_name: str
@@ -126,27 +271,33 @@ class AdminHTTPClient:
         """Download Ollama model with streaming progress."""
         data = {"model_name": model_name, "stream": True}
 
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                f"{self.base_url}/admin/models/ollama/download",
-                headers=self.headers,
-                json=data,
-            ) as response:
-                if response.status != 200:
-                    raise Exception(
-                        f"Ollama download failed: {response.status} {await response.text()}"
-                    )
+        timeout = aiohttp.ClientTimeout(total=3600)  # 1 hour timeout for large models
+        async with aiohttp.TCPConnector(force_close=True) as connector:
+            async with aiohttp.ClientSession(timeout=timeout, connector=connector) as session:
+                async with session.post(
+                    f"{self.base_url}/admin/models/ollama/download",
+                    headers=self.headers,
+                    json=data,
+                ) as response:
+                    if response.status != 200:
+                        raise Exception(
+                            f"Ollama download failed: {response.status} {await response.text()}"
+                        )
 
-                async for line in response.content:
-                    line = line.decode("utf-8").strip()
-                    if line.startswith("data: "):
-                        data_str = line[6:]  # Remove 'data: ' prefix
-                        if data_str == "[DONE]":
-                            break
-                        try:
-                            yield json.loads(data_str)
-                        except json.JSONDecodeError:
-                            continue
+                    buffer = ""
+                    async for chunk in response.content.iter_any():
+                        buffer += chunk.decode("utf-8")
+                        while "\n" in buffer:
+                            line, buffer = buffer.split("\n", 1)
+                            line = line.strip()
+                            if line.startswith("data: "):
+                                data_str = line[6:]  # Remove 'data: ' prefix
+                                if data_str == "[DONE]":
+                                    return
+                                try:
+                                    yield json.loads(data_str)
+                                except json.JSONDecodeError:
+                                    continue
 
     async def scan_cache(self) -> Dict[str, Any]:
         """Scan HuggingFace cache directory."""
@@ -190,6 +341,52 @@ class AdminHTTPClient:
                 if response.status != 200:
                     raise Exception(
                         f"Model deletion failed: {response.status} {await response.text()}"
+                    )
+                return await response.json()
+
+    async def create_collection(
+        self, name: str, embedding_model: str
+    ) -> Dict[str, Any]:
+        """Create a collection on the deployed instance."""
+        data = {"name": name, "embedding_model": embedding_model}
+
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{self.base_url}/admin/collections",
+                headers=self.headers,
+                json=data,
+            ) as response:
+                if response.status != 200:
+                    raise Exception(
+                        f"Failed to create collection: {response.status} {await response.text()}"
+                    )
+                return await response.json()
+
+    async def add_to_collection(
+        self,
+        collection_name: str,
+        documents: list[str],
+        ids: list[str],
+        metadatas: list[dict[str, Any]],
+        embeddings: list[list[float]],
+    ) -> Dict[str, Any]:
+        """Add documents to a collection on the deployed instance."""
+        data = {
+            "documents": documents,
+            "ids": ids,
+            "metadatas": metadatas,
+            "embeddings": embeddings,
+        }
+
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{self.base_url}/admin/collections/{collection_name}/add",
+                headers=self.headers,
+                json=data,
+            ) as response:
+                if response.status != 200:
+                    raise Exception(
+                        f"Failed to add to collection: {response.status} {await response.text()}"
                     )
                 return await response.json()
 

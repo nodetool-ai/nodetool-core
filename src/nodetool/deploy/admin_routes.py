@@ -13,14 +13,9 @@ This module encapsulates endpoints under /admin, including:
 from __future__ import annotations
 
 import json
-import os
-import shutil
-import tempfile
-import asyncio
 from typing import Any, Dict, List, Optional
-from fastapi import APIRouter, HTTPException, Request, UploadFile, File, Header
+from fastapi import APIRouter, HTTPException, Request, UploadFile, File, Header, Body
 from fastapi.responses import StreamingResponse
-import aiofiles
 import chromadb
 
 from nodetool.deploy.admin_operations import (
@@ -36,7 +31,6 @@ from nodetool.models.database_adapter import DatabaseAdapter
 from nodetool.models.workflow import Workflow
 from nodetool.integrations.vectorstores.chroma.async_chroma_client import (
     get_async_chroma_client,
-    get_async_collection,
 )
 from nodetool.indexing.service import index_file_to_collection
 from nodetool.indexing.ingestion import find_input_nodes
@@ -65,6 +59,13 @@ class CollectionList(BaseModel):
 class CollectionModify(BaseModel):
     name: str | None = None
     metadata: dict[str, str] | None = None
+
+
+class AddToCollection(BaseModel):
+    documents: List[str]
+    ids: List[str]
+    metadatas: List[dict[str, str]]
+    embeddings: List[List[float]]
 
 
 class IndexResponse(BaseModel):
@@ -101,11 +102,11 @@ def asset_from_model(asset: AssetModel) -> Asset:
     )
 
 
-def get_model_adapter(table: str) -> DatabaseAdapter:
+async def get_model_adapter(table: str) -> DatabaseAdapter:
     if table == "workflows":
-        return Workflow.adapter()
+        return await Workflow.adapter()
     elif table == "assets":
-        return Asset.adapter()
+        return await AssetModel.adapter()
     else:
         raise ValueError(f"Unknown table: {table}")
 
@@ -247,8 +248,8 @@ def create_admin_router() -> APIRouter:
     async def db_save(table: str, item: Dict[str, Any]):
         """Save an item to the specified table using the database adapter."""
         try:
-            adapter = get_model_adapter(table)
-            adapter.save(item)
+            adapter = await get_model_adapter(table)
+            await adapter.save(item)
             return {"status": "ok"}
         except Exception as e:  # noqa: BLE001
             raise HTTPException(status_code=500, detail=str(e))
@@ -257,8 +258,8 @@ def create_admin_router() -> APIRouter:
     async def db_get(table: str, key: str):
         """Get an item by primary key from the specified table."""
         try:
-            adapter = get_model_adapter(table)
-            item = adapter.get(key)
+            adapter = await get_model_adapter(table)
+            item = await adapter.get(key)
             if item is None:
                 raise HTTPException(status_code=404, detail="Not found")
             return item
@@ -271,8 +272,8 @@ def create_admin_router() -> APIRouter:
     async def db_delete(table: str, key: str):
         """Delete an item by primary key from the specified table."""
         try:
-            adapter = get_model_adapter(table)
-            adapter.delete(key)
+            adapter = await get_model_adapter(table)
+            await adapter.delete(key)
             return {"status": "ok"}
         except Exception as e:  # noqa: BLE001
             raise HTTPException(status_code=500, detail=str(e))
@@ -352,26 +353,6 @@ def create_admin_router() -> APIRouter:
             collection = await client.get_collection(name=name)
             metadata = collection.metadata.copy()
             metadata.update(req.metadata or {})
-
-            if workflow_id := metadata.get("workflow"):
-                workflow = await Workflow.get(workflow_id)
-                if not workflow:
-                    raise HTTPException(status_code=404, detail="Workflow not found")
-
-                # Validate workflow input nodes
-                graph = workflow.graph
-                collection_input, file_input = find_input_nodes(graph)
-                if not collection_input:
-                    raise HTTPException(
-                        status_code=400,
-                        detail="Workflow must have a CollectionInput node",
-                    )
-                if not file_input:
-                    raise HTTPException(
-                        status_code=400,
-                        detail="Workflow must have a FileInput or DocumentFileInput node",
-                    )
-
             await collection.modify(name=req.name, metadata=metadata)
             return CollectionResponse(
                 name=collection.name,
@@ -393,46 +374,16 @@ def create_admin_router() -> APIRouter:
         except Exception as e:  # noqa: BLE001
             raise HTTPException(status_code=500, detail=str(e))
 
-    @router.post("/admin/collections/{name}/index", response_model=IndexResponse)
-    async def index_collection(
-        name: str,
-        file: UploadFile = File(...),
-        authorization: Optional[str] = Header(None),
-    ) -> IndexResponse:
-        """Index a file to a collection."""
-        await get_async_collection(name)
-        token = "local_token"
-
-        # Save uploaded file temporarily
-        tmp_dir = tempfile.mkdtemp()
-        tmp_path = os.path.join(tmp_dir, file.filename or "uploaded_file")
+    @router.post("/admin/collections/{name}/add")
+    async def add_to_collection(name: str, req: AddToCollection):
+        """Add a file to a collection."""
         try:
-            # Write uploaded file to disk asynchronously in chunks
-            async with aiofiles.open(tmp_path, "wb") as buffer:
-                while True:
-                    chunk = await file.read(1024 * 1024)
-                    if not chunk:
-                        break
-                    await buffer.write(chunk)
-
-            file_path = tmp_path
-            mime_type = file.content_type or "application/octet-stream"
-
-            error = await index_file_to_collection(name, file_path, mime_type, token)
-            if error:
-                return IndexResponse(path=file.filename or "unknown", error=error)
-
-            return IndexResponse(path=file.filename or "unknown", error=None)
-        except Exception as e:
-            from nodetool.config.logging_config import get_logger
-
-            log = get_logger(__name__)
-            log.error(f"Error indexing file {file.filename}: {e}")
+            client = await get_async_chroma_client()
+            collection = await client.get_collection(name=name)
+            await collection.add(documents=req.documents, ids=req.ids, metadatas=req.metadatas, embeddings=req.embeddings)
+            return {"message": f"Documents added to collection {name} successfully"}
+        except Exception as e:  # noqa: BLE001
             raise HTTPException(status_code=500, detail=str(e))
-        finally:
-            # Ensure temporary directory is cleaned up without blocking
-            await asyncio.to_thread(shutil.rmtree, tmp_dir)
-            await file.close()
 
     # Asset management endpoints
     @router.get("/admin/assets", response_model=AssetList)
@@ -467,22 +418,24 @@ def create_admin_router() -> APIRouter:
 
     @router.post("/admin/assets", response_model=Asset)
     async def create_asset(
-        user_id: str = "1",
-        name: str = "",
-        content_type: str = "",
-        parent_id: Optional[str] = None,
-        workflow_id: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        data: Dict[str, Any] = Body(...),
     ) -> Asset:
         """Create a new asset (admin endpoint - no user restrictions)."""
         try:
+            # Extract id separately to pass via kwargs
+            asset_id = data.get("id")
+            kwargs = {}
+            if asset_id:
+                kwargs["id"] = asset_id
+
             asset = await AssetModel.create(
-                user_id=user_id,
-                name=name,
-                content_type=content_type,
-                parent_id=parent_id,
-                workflow_id=workflow_id,
-                metadata=metadata,
+                user_id=data.get("user_id", "1"),
+                name=data.get("name", ""),
+                content_type=data.get("content_type", ""),
+                parent_id=data.get("parent_id"),
+                workflow_id=data.get("workflow_id"),
+                metadata=data.get("metadata"),
+                **kwargs,
             )
             return asset_from_model(asset)
         except Exception as e:  # noqa: BLE001

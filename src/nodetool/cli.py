@@ -2381,10 +2381,170 @@ def deploy_workflows():
 def deploy_workflows_sync(deployment_name: str, workflow_id: str):
     """Sync a workflow to a deployed instance."""
     import asyncio
+    from io import BytesIO
     from nodetool.deploy.manager import DeploymentManager
     from nodetool.deploy.admin_client import AdminHTTPClient
     from nodetool.models.workflow import Workflow
+    from nodetool.models.asset import Asset as AssetModel
     from nodetool.api.workflow import from_model
+    from nodetool.config.environment import Environment
+    from nodetool.deploy.sync import extract_models
+
+    async def extract_and_download_models(
+        workflow_data: dict, client: AdminHTTPClient
+    ) -> int:
+        """Extract model references from workflow and download them on remote."""
+        models = extract_models(workflow_data)
+
+        if not models:
+            return 0
+
+        console.print(f"[cyan]Found {len(models)} model(s) to download[/]")
+
+        downloaded_count = 0
+        for model in models:
+            try:
+                model_type = model.get("type", "")
+
+                # Handle HuggingFace models
+                if model_type.startswith("hf."):
+                    repo_id = model.get("repo_id")
+                    console.print(f"  [cyan]Downloading HF model: {repo_id}[/]")
+
+                    # Start download (streaming progress)
+                    last_status = None
+                    async for progress in client.download_huggingface_model(
+                        repo_id=repo_id,
+                        file_path=model.get("path"),
+                        ignore_patterns=model.get("ignore_patterns"),
+                        allow_patterns=model.get("allow_patterns"),
+                    ):
+                        last_status = progress.get("status")
+                        if last_status == "downloading":
+                            file_name = progress.get("file", "")
+                            percent = progress.get("percent", 0)
+                            console.print(
+                                f"    [yellow]{file_name}: {percent:.1f}%[/]",
+                                end="\r",
+                            )
+                        elif last_status == "complete":
+                            console.print(f"    [green]✓ Downloaded {repo_id}[/]")
+
+                    # Stream completed - mark as downloaded
+                    if last_status != "complete":
+                        console.print(f"    [green]✓ Downloaded {repo_id}[/]")
+                    downloaded_count += 1
+
+                # Handle Ollama models
+                elif (
+                    model_type == "language_model" and model.get("provider") == "ollama"
+                ):
+                    model_id = model.get("id")
+                    console.print(f"  [cyan]Downloading Ollama model: {model_id}[/]")
+
+                    last_status = None
+                    async for progress in client.download_ollama_model(
+                        model_name=model_id
+                    ):
+                        last_status = progress.get("status")
+                        if last_status and last_status != "success":
+                            console.print(f"    [yellow]{last_status}[/]", end="\r")
+                        elif last_status == "success":
+                            console.print(f"    [green]✓ Downloaded {model_id}[/]")
+
+                    # Stream completed - mark as downloaded
+                    if last_status != "success":
+                        console.print(f"    [green]✓ Downloaded {model_id}[/]")
+                    downloaded_count += 1
+
+            except Exception as e:
+                console.print(
+                    f"    [red]✗ Failed to download model: {e}[/]"
+                )
+
+        return downloaded_count
+
+    async def extract_and_sync_assets(
+        workflow_data: dict, client: AdminHTTPClient
+    ) -> int:
+        """Extract asset references from workflow and sync them to remote."""
+        asset_ids = set()
+
+        # Extract asset IDs from constant nodes
+        for node in workflow_data.get("graph", {}).get("nodes", []):
+            node_type = node.get("type", "")
+            if node_type.startswith("nodetool.constant."):
+                value = node.get("data", {}).get("value", {})
+                if isinstance(value, dict):
+                    # Check for asset_id field
+                    asset_id = value.get("asset_id")
+                    if asset_id:
+                        asset_ids.add(asset_id)
+
+        if not asset_ids:
+            return 0
+
+        console.print(f"[cyan]Found {len(asset_ids)} asset(s) to sync[/]")
+
+        # Get local storage
+        storage = Environment.get_asset_storage()
+        synced_count = 0
+
+        for asset_id in asset_ids:
+            try:
+                # Get local asset metadata
+                asset = await AssetModel.get(asset_id)
+                if not asset:
+                    console.print(f"  [yellow]⚠️  Asset {asset_id} not found locally, skipping[/]")
+                    continue
+
+                console.print(f"  [cyan]Syncing asset: {asset.name}[/]")
+
+                # Check if asset already exists on remote
+                try:
+                    remote_asset = await client.get_asset(asset_id)
+                    console.print(f"    [yellow]Asset already exists on remote, skipping[/]")
+                    synced_count += 1
+                    continue
+                except Exception:
+                    # Asset doesn't exist, continue with sync
+                    pass
+
+                # Create asset metadata on remote (preserve asset ID)
+                await client.create_asset(
+                    id=asset.id,
+                    user_id=asset.user_id,
+                    name=asset.name,
+                    content_type=asset.content_type,
+                    parent_id=asset.parent_id,
+                    workflow_id=asset.workflow_id,
+                    metadata=asset.metadata,
+                )
+
+                # Upload asset file if it's not a folder
+                if asset.content_type != "folder" and asset.file_name:
+                    # Download from local storage
+                    stream = BytesIO()
+                    await storage.download(asset.file_name, stream)
+                    file_data = stream.getvalue()
+
+                    # Upload to remote storage
+                    await client.upload_asset_file(asset.file_name, file_data)
+
+                    # Upload thumbnail if exists
+                    if asset.has_thumbnail and asset.thumb_file_name:
+                        thumb_stream = BytesIO()
+                        await storage.download(asset.thumb_file_name, thumb_stream)
+                        thumb_data = thumb_stream.getvalue()
+                        await client.upload_asset_file(asset.thumb_file_name, thumb_data)
+
+                console.print(f"    [green]✓ Synced {asset.name}[/]")
+                synced_count += 1
+
+            except Exception as e:
+                console.print(f"    [red]✗ Failed to sync asset {asset_id}: {e}[/]")
+
+        return synced_count
 
     async def run_sync():
         try:
@@ -2421,28 +2581,61 @@ def deploy_workflows_sync(deployment_name: str, workflow_id: str):
             if isinstance(deployment, SelfHostedDeployment):
                 auth_token = deployment.worker_auth_token
 
-            # Sync to remote
+            # Create client
             client = AdminHTTPClient(server_url, auth_token=auth_token)
-            result = await client.update_workflow(
-                workflow_id, from_model(workflow).model_dump()
-            )
+
+            # Sync assets first
+            workflow_data = from_model(workflow).model_dump()
+            synced_assets = await extract_and_sync_assets(workflow_data, client)
+            if synced_assets > 0:
+                console.print(f"[green]✅ Synced {synced_assets} asset(s)[/]")
+                console.print()
+
+            # Download models required by the workflow
+            synced_models = await extract_and_download_models(workflow_data, client)
+            if synced_models > 0:
+                console.print(f"[green]✅ Downloaded {synced_models} model(s)[/]")
+                console.print()
+
+            # Sync workflow
+            result = await client.update_workflow(workflow_id, workflow_data)
 
             if result.get("status") == "ok":
                 console.print("[green]✅ Workflow synced successfully[/]")
             else:
                 console.print(f"[yellow]⚠️ Remote response: {result}[/]")
 
+            # Close database connections
+            from nodetool.models.base_model import close_all_database_adapters
+            try:
+                await close_all_database_adapters()
+            except Exception:
+                pass  # Ignore errors during cleanup
+
+            # Give asyncio a chance to clean up any remaining tasks
+            await asyncio.sleep(0.1)
+
+            # Cancel any remaining tasks to allow clean shutdown
+            tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
+            if tasks:
+                for task in tasks:
+                    task.cancel()
+                await asyncio.gather(*tasks, return_exceptions=True)
+
+            return 0
+
         except KeyError:
             console.print(f"[red]Deployment '{deployment_name}' not found[/]")
-            sys.exit(1)
+            return 1
         except Exception as e:
             console.print(f"[red]❌ Failed to sync workflow: {e}[/]")
             import traceback
 
             traceback.print_exc()
-            sys.exit(1)
+            return 1
 
-    asyncio.run(run_sync())
+    exit_code = asyncio.run(run_sync())
+    sys.exit(exit_code)
 
 
 @deploy_workflows.command("list")
@@ -2476,8 +2669,15 @@ def deploy_workflows_list(deployment_name: str):
             console.print(f"[cyan]Server: {server_url}[/]")
             console.print()
 
+            # Get auth token from deployment (for self-hosted deployments)
+            from nodetool.config.deployment import SelfHostedDeployment
+
+            auth_token = None
+            if isinstance(deployment, SelfHostedDeployment):
+                auth_token = deployment.worker_auth_token
+
             # Get workflows from remote
-            client = AdminHTTPClient(server_url)
+            client = AdminHTTPClient(server_url, auth_token=auth_token)
             result = await client.list_workflows()
 
             workflows = result.get("workflows", [])
@@ -2558,8 +2758,15 @@ def deploy_workflows_delete(deployment_name: str, workflow_id: str, force: bool)
             console.print(f"[cyan]Workflow ID: {workflow_id}[/]")
             console.print()
 
+            # Get auth token from deployment (for self-hosted deployments)
+            from nodetool.config.deployment import SelfHostedDeployment
+
+            auth_token = None
+            if isinstance(deployment, SelfHostedDeployment):
+                auth_token = deployment.worker_auth_token
+
             # Delete from remote
-            client = AdminHTTPClient(server_url)
+            client = AdminHTTPClient(server_url, auth_token=auth_token)
             result = await client.delete_workflow(workflow_id)
 
             if result.get("status") == "ok":
@@ -2578,6 +2785,389 @@ def deploy_workflows_delete(deployment_name: str, workflow_id: str, force: bool)
             sys.exit(1)
 
     asyncio.run(run_delete())
+
+
+@deploy_workflows.command("run")
+@click.argument("deployment_name")
+@click.argument("workflow_id")
+@click.option(
+    "--params",
+    "-p",
+    multiple=True,
+    help='Workflow parameters in key=value format (e.g., -p prompt="Hello")',
+)
+def deploy_workflows_run(deployment_name: str, workflow_id: str, params: tuple):
+    """Run a workflow on a deployed instance."""
+    import asyncio
+    from nodetool.deploy.manager import DeploymentManager
+    from nodetool.deploy.admin_client import AdminHTTPClient
+
+    async def run_workflow():
+        try:
+            manager = DeploymentManager()
+            deployment = manager.get_deployment(deployment_name)
+
+            # Get server URL from deployment
+            server_url = deployment.get_server_url()
+            if not server_url:
+                console.print(
+                    f"[red]Cannot determine server URL for deployment '{deployment_name}'[/]"
+                )
+                console.print(
+                    "[yellow]The deployment may not be active yet. Try deploying first with:[/]"
+                )
+                console.print(f"  nodetool deploy apply {deployment_name}")
+                sys.exit(1)
+
+            # Parse parameters
+            workflow_params = {}
+            for param in params:
+                if "=" not in param:
+                    console.print(f"[red]Invalid parameter format: {param}[/]")
+                    console.print(
+                        "[yellow]Use key=value format, e.g., -p prompt='Hello'[/]"
+                    )
+                    sys.exit(1)
+                key, value = param.split("=", 1)
+                workflow_params[key] = value
+
+            console.print(
+                f"[bold cyan]▶️  Running workflow on {deployment_name}...[/]"
+            )
+            console.print(f"[cyan]Server: {server_url}[/]")
+            console.print(f"[cyan]Workflow ID: {workflow_id}[/]")
+            if workflow_params:
+                console.print(f"[cyan]Parameters: {workflow_params}[/]")
+            console.print()
+
+            # Get auth token from deployment (for self-hosted deployments)
+            from nodetool.config.deployment import SelfHostedDeployment
+
+            auth_token = None
+            if isinstance(deployment, SelfHostedDeployment):
+                auth_token = deployment.worker_auth_token
+
+            # Run workflow on remote
+            client = AdminHTTPClient(server_url, auth_token=auth_token)
+            result = await client.run_workflow(workflow_id, workflow_params)
+
+            console.print("[green]✅ Workflow executed successfully[/]")
+            console.print("\n[bold]Results:[/]")
+
+            # Display results
+            import json
+            console.print(json.dumps(result.get("results", {}), indent=2))
+
+        except KeyError:
+            console.print(f"[red]Deployment '{deployment_name}' not found[/]")
+            sys.exit(1)
+        except Exception as e:
+            console.print(f"[red]❌ Failed to run workflow: {e}[/]")
+            import traceback
+
+            traceback.print_exc()
+            sys.exit(1)
+
+    asyncio.run(run_workflow())
+
+
+@deploy.group("database")
+def deploy_database():
+    """Manage database on deployed instances."""
+    pass
+
+
+@deploy_database.command("get")
+@click.argument("deployment_name")
+@click.argument("table")
+@click.argument("key")
+def deploy_database_get(deployment_name: str, table: str, key: str):
+    """Get an item from database table by key."""
+    import asyncio
+    from nodetool.deploy.manager import DeploymentManager
+    from nodetool.deploy.admin_client import AdminHTTPClient
+
+    async def run_get():
+        try:
+            manager = DeploymentManager()
+            deployment = manager.get_deployment(deployment_name)
+
+            # Get server URL from deployment
+            server_url = deployment.get_server_url()
+            if not server_url:
+                console.print(
+                    f"[red]Cannot determine server URL for deployment '{deployment_name}'[/]"
+                )
+                sys.exit(1)
+
+            # Get auth token from deployment (for self-hosted deployments)
+            from nodetool.config.deployment import SelfHostedDeployment
+
+            auth_token = None
+            if isinstance(deployment, SelfHostedDeployment):
+                auth_token = deployment.worker_auth_token
+
+            # Get item from database
+            client = AdminHTTPClient(server_url, auth_token=auth_token)
+            item = await client.db_get(table, key)
+
+            console.print(f"[bold cyan]Item from {table}/{key}:[/]")
+            import json
+            console.print(json.dumps(item, indent=2))
+
+        except KeyError:
+            console.print(f"[red]Deployment '{deployment_name}' not found[/]")
+            sys.exit(1)
+        except Exception as e:
+            console.print(f"[red]❌ Failed to get item: {e}[/]")
+            sys.exit(1)
+
+    asyncio.run(run_get())
+
+
+@deploy_database.command("save")
+@click.argument("deployment_name")
+@click.argument("table")
+@click.argument("json_data")
+def deploy_database_save(deployment_name: str, table: str, json_data: str):
+    """Save an item to database table."""
+    import asyncio
+    import json
+    from nodetool.deploy.manager import DeploymentManager
+    from nodetool.deploy.admin_client import AdminHTTPClient
+
+    async def run_save():
+        try:
+            manager = DeploymentManager()
+            deployment = manager.get_deployment(deployment_name)
+
+            # Get server URL from deployment
+            server_url = deployment.get_server_url()
+            if not server_url:
+                console.print(
+                    f"[red]Cannot determine server URL for deployment '{deployment_name}'[/]"
+                )
+                sys.exit(1)
+
+            # Parse JSON data
+            try:
+                item = json.loads(json_data)
+            except json.JSONDecodeError as e:
+                console.print(f"[red]Invalid JSON: {e}[/]")
+                sys.exit(1)
+
+            # Get auth token from deployment (for self-hosted deployments)
+            from nodetool.config.deployment import SelfHostedDeployment
+
+            auth_token = None
+            if isinstance(deployment, SelfHostedDeployment):
+                auth_token = deployment.worker_auth_token
+
+            # Save item to database
+            client = AdminHTTPClient(server_url, auth_token=auth_token)
+            result = await client.db_save(table, item)
+
+            console.print(f"[green]✅ Item saved to {table}[/]")
+            console.print(json.dumps(result, indent=2))
+
+        except KeyError:
+            console.print(f"[red]Deployment '{deployment_name}' not found[/]")
+            sys.exit(1)
+        except Exception as e:
+            console.print(f"[red]❌ Failed to save item: {e}[/]")
+            import traceback
+            traceback.print_exc()
+            sys.exit(1)
+
+    asyncio.run(run_save())
+
+
+@deploy_database.command("delete")
+@click.argument("deployment_name")
+@click.argument("table")
+@click.argument("key")
+@click.option("--force", is_flag=True, help="Skip confirmation prompt")
+def deploy_database_delete(deployment_name: str, table: str, key: str, force: bool):
+    """Delete an item from database table by key."""
+    import asyncio
+    from nodetool.deploy.manager import DeploymentManager
+    from nodetool.deploy.admin_client import AdminHTTPClient
+
+    async def run_delete():
+        try:
+            manager = DeploymentManager()
+            deployment = manager.get_deployment(deployment_name)
+
+            # Get server URL from deployment
+            server_url = deployment.get_server_url()
+            if not server_url:
+                console.print(
+                    f"[red]Cannot determine server URL for deployment '{deployment_name}'[/]"
+                )
+                sys.exit(1)
+
+            if not force:
+                if not click.confirm(
+                    f"Are you sure you want to delete {table}/{key} from '{deployment_name}'?"
+                ):
+                    console.print("[yellow]Operation cancelled[/]")
+                    return
+
+            # Get auth token from deployment (for self-hosted deployments)
+            from nodetool.config.deployment import SelfHostedDeployment
+
+            auth_token = None
+            if isinstance(deployment, SelfHostedDeployment):
+                auth_token = deployment.worker_auth_token
+
+            # Delete item from database
+            client = AdminHTTPClient(server_url, auth_token=auth_token)
+            await client.db_delete(table, key)
+
+            console.print(f"[green]✅ Item {table}/{key} deleted successfully[/]")
+
+        except KeyError:
+            console.print(f"[red]Deployment '{deployment_name}' not found[/]")
+            sys.exit(1)
+        except Exception as e:
+            console.print(f"[red]❌ Failed to delete item: {e}[/]")
+            sys.exit(1)
+
+    asyncio.run(run_delete())
+
+
+@deploy.group("collections")
+def deploy_collections():
+    """Manage collections on deployed instances."""
+    pass
+
+
+@deploy_collections.command("sync")
+@click.argument("deployment_name")
+@click.argument("collection_name")
+def deploy_collections_sync(deployment_name: str, collection_name: str):
+    """Sync a collection to a deployed instance."""
+    import asyncio
+
+    from nodetool.deploy.manager import DeploymentManager
+    from nodetool.deploy.admin_client import AdminHTTPClient
+    from nodetool.integrations.vectorstores.chroma.async_chroma_client import (
+        get_async_chroma_client,
+    )
+
+    async def run_sync():
+        try:
+            manager = DeploymentManager()
+            deployment = manager.get_deployment(deployment_name)
+
+            if deployment is None:
+                console.print(f"[red]Deployment '{deployment_name}' not found[/]")
+                sys.exit(1)
+
+            # Get server URL
+            server_url = deployment.get_server_url()
+
+            console.print(f"🔄 Syncing collection to {deployment_name}...")
+            console.print(f"Server: {server_url}")
+            console.print(f"Collection: {collection_name}")
+            console.print()
+
+            # Get auth token from deployment (for self-hosted deployments)
+            from nodetool.config.deployment import SelfHostedDeployment
+
+            auth_token = None
+            if isinstance(deployment, SelfHostedDeployment):
+                auth_token = deployment.worker_auth_token
+
+            client = AdminHTTPClient(server_url, auth_token=auth_token)
+
+            # Get local collection
+            chroma_client = await get_async_chroma_client()
+            collection = await chroma_client.get_collection(name=collection_name)
+
+            # Get collection metadata to extract embedding model
+            collection_metadata = collection.metadata
+            embedding_model = collection_metadata.get(
+                "embedding_model", "all-minilm:latest"
+            )
+
+            # Create collection on remote if it doesn't exist
+            try:
+                console.print(
+                    f"Creating collection '{collection_name}' with embedding model '{embedding_model}'..."
+                )
+                await client.create_collection(
+                    name=collection_name, embedding_model=embedding_model
+                )
+                console.print("[green]✓ Collection created[/]")
+            except Exception as e:
+                # Collection might already exist, that's ok
+                if "already exists" in str(e).lower():
+                    console.print("[yellow]⚠️ Collection already exists[/]")
+                else:
+                    console.print(f"[yellow]⚠️ {e}[/]")
+
+            existing_count = await collection.count()
+            console.print(f"Found {existing_count} items in local collection")
+            console.print()
+
+            # Sync in batches
+            batch_size = 10
+            synced_count = 0
+
+            for i in range(0, existing_count, batch_size):
+                batch = await collection.get(
+                    include=["metadatas", "documents", "embeddings"],
+                    limit=batch_size,
+                    offset=i,
+                )
+
+                if batch["ids"]:
+                    # Convert numpy arrays to lists for JSON serialization
+                    embeddings = (
+                        [emb.tolist() for emb in batch["embeddings"]]
+                        if batch["embeddings"] is not None
+                        else []
+                    )
+
+                    # Convert None metadatas to dicts with placeholder
+                    # ChromaDB requires non-empty metadata dicts
+                    metadatas = (
+                        [
+                            meta if meta is not None and meta else {"_empty": "true"}
+                            for meta in batch["metadatas"]
+                        ]
+                        if batch["metadatas"] is not None
+                        else []
+                    )
+
+                    await client.add_to_collection(
+                        collection_name=collection_name,
+                        documents=batch["documents"],
+                        ids=batch["ids"],
+                        metadatas=metadatas,
+                        embeddings=embeddings,
+                    )
+                    synced_count += len(batch["ids"])
+                    console.print(
+                        f"  Synced batch {i // batch_size + 1} ({synced_count}/{existing_count} items)"
+                    )
+
+            console.print(
+                f"[green]✅ Synced {synced_count} items to collection '{collection_name}'[/]"
+            )
+
+        except KeyError:
+            console.print(f"[red]Deployment '{deployment_name}' not found[/]")
+            sys.exit(1)
+        except Exception as e:
+            console.print(f"[red]❌ Failed to sync collection: {e}[/]")
+            import traceback
+
+            traceback.print_exc()
+            sys.exit(1)
+
+    asyncio.run(run_sync())
 
 
 # Add deploy group to main CLI

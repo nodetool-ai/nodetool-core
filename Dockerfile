@@ -1,6 +1,7 @@
 # syntax=docker/dockerfile:1
 FROM nvidia/cuda:12.1.0-base-ubuntu22.04 AS base
 COPY --from=ghcr.io/astral-sh/uv:0.8.5 /uv /uvx /bin/
+COPY --from=ghcr.io/ggml-org/llama.cpp:server-cuda /llama-server /usr/local/bin/llama-server
 
 # Environment variables
 ENV DEBIAN_FRONTEND=noninteractive \
