@@ -248,7 +248,26 @@ class ProcessingContext:
         for attempt in range(max_retries):
             try:
                 response = await self.get_http_client().request(method, url, **kwargs)
-                log.info(f"{method.upper()} {url} {response.status_code}")
+                status = response.status_code
+                log.info(f"{method.upper()} {url} {status}")
+                # Retry on common transient statuses
+                if status in {408, 425, 429, 500, 502, 503, 504}:
+                    if attempt == max_retries - 1:
+                        response.raise_for_status()
+                        return response
+                    # Honor Retry-After if present
+                    retry_after = response.headers.get("Retry-After")
+                    try:
+                        header_delay = float(retry_after) if retry_after else None
+                    except Exception:
+                        header_delay = None
+                    delay = header_delay if header_delay is not None else backoff_seconds * (2 ** attempt)
+                    log.warning(
+                        f"{method.upper()} {url} got {status}; retrying in {delay:.1f}s (attempt {attempt + 1}/{max_retries})"
+                    )
+                    await asyncio.sleep(delay)
+                    continue
+                # Success and non-retry statuses
                 response.raise_for_status()
                 return response
             except (httpx.TransportError, httpx.ReadTimeout) as e:
@@ -794,13 +813,8 @@ class ProcessingContext:
         Returns:
             httpx.Response: The response object.
         """
-        _headers = HTTP_HEADERS.copy()
-        _headers.update(kwargs.get("headers", {}))
-        kwargs["headers"] = _headers
-        response = await self.get_http_client().post(url, **kwargs)
-        log.info(f"POST {url} {response.status_code}")
-        response.raise_for_status()
-        return response
+        # For providers that support it (e.g., OpenAI), allow callers to pass Idempotency-Key via headers
+        return await self._http_request_with_retries("POST", url, **kwargs)
 
     async def http_patch(
         self,
@@ -817,13 +831,7 @@ class ProcessingContext:
         Returns:
             httpx.Response: The response object.
         """
-        _headers = HTTP_HEADERS.copy()
-        _headers.update(kwargs.get("headers", {}))
-        kwargs["headers"] = _headers
-        response = await self.get_http_client().patch(url, **kwargs)
-        log.info(f"PATCH {url} {response.status_code}")
-        response.raise_for_status()
-        return response
+        return await self._http_request_with_retries("PATCH", url, **kwargs)
 
     async def http_put(
         self,
@@ -840,13 +848,7 @@ class ProcessingContext:
         Returns:
             httpx.Response: The response object.
         """
-        _headers = HTTP_HEADERS.copy()
-        _headers.update(kwargs.get("headers", {}))
-        kwargs["headers"] = _headers
-        response = await self.get_http_client().put(url, **kwargs)
-        log.info(f"PUT {url} {response.status_code}")
-        response.raise_for_status()
-        return response
+        return await self._http_request_with_retries("PUT", url, **kwargs)
 
     async def http_delete(
         self,
@@ -862,13 +864,7 @@ class ProcessingContext:
         Returns:
             bytes: The response content.
         """
-        _headers = HTTP_HEADERS.copy()
-        _headers.update(kwargs.get("headers", {}))
-        kwargs["headers"] = _headers
-        response = await self.get_http_client().delete(url, **kwargs)
-        log.info(f"DELETE {url} {response.status_code}")
-        response.raise_for_status()
-        return response
+        return await self._http_request_with_retries("DELETE", url, **kwargs)
 
     async def http_head(
         self,
