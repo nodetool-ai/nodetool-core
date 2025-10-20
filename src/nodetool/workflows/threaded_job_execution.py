@@ -127,7 +127,7 @@ class ThreadedJobExecution(JobExecution):
         # Define the execution coroutine
         async def execute():
             try:
-                assert job_instance is not None
+                # job_instance may not be assigned yet due to scheduling; avoid dereferencing it here
                 if request.graph is None:
                     log.info(f"Loading workflow graph for {request.workflow_id}")
                     workflow = await context.get_workflow(request.workflow_id)
@@ -135,11 +135,13 @@ class ThreadedJobExecution(JobExecution):
                         raise ValueError(f"Workflow {request.workflow_id} not found")
                     request.graph = workflow.get_api_graph()
 
-                job_instance._status = "running"
+                if job_instance:
+                    job_instance._status = "running"
                 await runner.run(request, context)
 
                 # Update job status on completion
-                job_instance._status = "completed"
+                if job_instance:
+                    job_instance._status = "completed"
                 await job_model.update(status="completed", finished_at=datetime.now())
                 log.info(f"Background job {job_id} completed successfully")
 
@@ -154,11 +156,16 @@ class ThreadedJobExecution(JobExecution):
                 runner.status = "error"
                 if job_instance:
                     job_instance._status = "error"
-                error_msg = str(e)
+                error_text = str(e).strip()
+                error_msg = (
+                    f"{e.__class__.__name__}: {error_text}"
+                    if error_text
+                    else repr(e)
+                )
                 await job_model.update(
                     status="failed", error=error_msg, finished_at=datetime.now()
                 )
-                log.error(f"Background job {job_id} failed: {error_msg}")
+                log.exception("Background job %s failed: %s", job_id, error_msg)
                 context.post_message(
                     JobUpdate(job_id=job_id, status="failed", error=error_msg)
                 )

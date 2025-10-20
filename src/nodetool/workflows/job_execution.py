@@ -177,8 +177,7 @@ class JobExecution(ABC):
                 await self.job_model.update(**update_kwargs)
 
         except Exception as e:
-            log.error(
+            log.exception(
                 "JobExecution.finalize_state: failed to persist status",
-                exc_info=True,
                 extra={"job_id": self.job_id, "error": str(e)},
             )
