@@ -36,9 +36,9 @@ from nodetool.workflows.types import Chunk
 import json
 import datetime
 from nodetool.config.logging_config import get_logger
+from nodetool.workflows.processing_context import ProcessingContext
 
 log = get_logger(__name__)
-
 
 class ProviderCapability(str, Enum):
     """Capabilities that a provider can support.
@@ -144,6 +144,10 @@ class BaseProvider(ABC):
     usage: dict[str, int] = {}
     provider_name: str = ""
 
+    @classmethod
+    def required_secrets(cls) -> list[str]:
+        return []
+
     def __init__(self) -> None:
         self.usage = {
             "prompt_tokens": 0,
@@ -172,7 +176,7 @@ class BaseProvider(ABC):
             return False
         return base_method is not subclass_method
 
-    def get_container_env(self) -> dict[str, str]:
+    def get_container_env(self, context: ProcessingContext) -> dict[str, str]:
         """Return environment variables needed when running inside Docker."""
         return {}
 

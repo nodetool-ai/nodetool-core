@@ -427,7 +427,7 @@ class BaseProviderTest(ABC):
         """Test container environment variable configuration."""
         provider = self.create_provider()
 
-        env_vars = provider.get_container_env()
+        env_vars = provider.get_container_env(ProcessingContext())
         assert isinstance(env_vars, dict)
         # All values should be strings
         for key, value in env_vars.items():

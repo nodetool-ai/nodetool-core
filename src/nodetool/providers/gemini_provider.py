@@ -67,10 +67,14 @@ def get_genai_client() -> AsyncClient:
 class GeminiProvider(BaseProvider):
     provider_name: str = "gemini"
 
-    def __init__(self):
+    @classmethod
+    def required_secrets(cls) -> list[str]:
+        return ["GEMINI_API_KEY"]
+
+    def __init__(self, secrets: dict[str, str]):
         super().__init__()
-        env = Environment.get_environment()
-        self.api_key = env.get("GEMINI_API_KEY")
+        assert "GEMINI_API_KEY" in secrets, "GEMINI_API_KEY is required"
+        self.api_key = secrets["GEMINI_API_KEY"]
         self.usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
         self.cost = 0.0
         log.debug(f"GeminiProvider initialized. API key present: {bool(self.api_key)}")
@@ -79,10 +83,8 @@ class GeminiProvider(BaseProvider):
         """Return an async Gemini client. Extracted for ease of testing/mocking."""
         return get_genai_client()
 
-    def get_container_env(self) -> dict[str, str]:
-        env_dict = {"GEMINI_API_KEY": self.api_key} if self.api_key else {}
-        log.debug(f"Container environment variables: {list(env_dict.keys())}")
-        return env_dict
+    def get_container_env(self, context: ProcessingContext) -> dict[str, str]:
+        return {"GEMINI_API_KEY": self.api_key} if self.api_key else {}
 
     def get_context_length(self, model: str) -> int:
         """Get the maximum token limit for a given model."""

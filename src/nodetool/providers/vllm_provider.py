@@ -11,6 +11,7 @@ import json
 from typing import Any, AsyncIterator, List, Sequence
 
 import httpx
+from nodetool.workflows.processing_context import ProcessingContext
 import openai
 
 from nodetool.agents.tools.base import Tool
@@ -104,7 +105,7 @@ class VllmProvider(BaseProvider, OpenAICompat):
         }
         self._client: openai.AsyncClient | None = None
 
-    def get_container_env(self) -> dict[str, str]:
+    def get_container_env(self, context: ProcessingContext) -> dict[str, str]:
         """Return environment variables for containerized execution.
 
         Returns:

@@ -7,6 +7,5 @@ def test_register_setting():
         env_var="VAR1",
         group="general",
         description="desc",
-        is_secret=False,
     )
     assert any(s.env_var == "VAR1" and s.package_name == "testpkg" for s in regs)

@@ -9,17 +9,10 @@ from google.genai.types import (
 )
 from nodetool.agents.tools.base import Tool
 from nodetool.config.environment import Environment
+from nodetool.metadata.types import Provider
+from nodetool.providers.gemini_provider import GeminiProvider
 from nodetool.workflows.base_node import ApiKeyMissingError
 from nodetool.workflows.processing_context import ProcessingContext
-
-
-def get_genai_client() -> AsyncClient:
-    env = Environment.get_environment()
-    api_key = env.get("GEMINI_API_KEY")
-    if not api_key:
-        raise ApiKeyMissingError("GEMINI_API_KEY is not set")
-    return Client(api_key=api_key).aio
-
 
 class GoogleGroundedSearchTool(Tool):
     """
@@ -69,7 +62,9 @@ class GoogleGroundedSearchTool(Tool):
         google_search_tool = GenAITool(google_search=GoogleSearch())
 
         # Generate content with search grounding
-        client = get_genai_client()
+        provider = await context.get_provider(Provider.Gemini)
+        assert isinstance(provider, GeminiProvider)
+        client = await provider.get_client()  # pyright: ignore[reportAttributeAccessIssue]
         response = await client.models.generate_content(
             model="gemini-2.0-flash",
             contents=query,
@@ -203,7 +198,9 @@ class GoogleImageGenerationTool(Tool):
         if not output_file:
             raise ValueError("Output file is required")
 
-        client = get_genai_client()
+        provider = await context.get_provider(Provider.Gemini)
+        assert isinstance(provider, GeminiProvider)
+        client = await provider.get_client()  # pyright: ignore[reportAttributeAccessIssue]
         response = await client.models.generate_images(
             model="imagen-3.0-generate-002",
             prompt=prompt,

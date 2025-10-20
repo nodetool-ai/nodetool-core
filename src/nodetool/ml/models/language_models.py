@@ -10,7 +10,7 @@ from nodetool.ml.models.model_cache import _model_cache
 log = get_logger(__name__)
 
 
-async def get_all_language_models() -> List[LanguageModel]:
+async def get_all_language_models(user_id: str) -> List[LanguageModel]:
     """
     Get all language models from all registered chat providers.
     Results are cached for 6 hours to reduce API calls.
@@ -22,13 +22,16 @@ async def get_all_language_models() -> List[LanguageModel]:
     Provider failures are handled gracefully - we cache whatever models
     we successfully retrieve, even if some providers fail.
 
+    Args:
+        user_id: The user ID to get the language models for
+
     Returns:
         List of all available LanguageModel instances from all providers
     """
     log.info("🔍 TRACE: get_all_language_models() CALLED")
 
     # Check cache first
-    cache_key = "language_models:all"
+    cache_key = f"language_models:all:{user_id}"
     cached_models = _model_cache.get(cache_key)
     if cached_models is not None:
         log.info(f"Returning {len(cached_models)} cached language models")
@@ -37,8 +40,9 @@ async def get_all_language_models() -> List[LanguageModel]:
     models = []
     successful_providers = 0
     failed_providers = []
+    providers = await list_providers(user_id)
 
-    for provider in list_providers():
+    for provider in providers:
         try:
             provider_models = await provider.get_available_language_models()
             models.extend(provider_models)
@@ -53,7 +57,7 @@ async def get_all_language_models() -> List[LanguageModel]:
             )
 
     log.info(
-        f"Discovered {len(models)} total language models from {successful_providers}/{len(list_providers())} providers"
+        f"Discovered {len(models)} total language models from {successful_providers}/{len(providers)} providers"
     )
 
     if failed_providers:

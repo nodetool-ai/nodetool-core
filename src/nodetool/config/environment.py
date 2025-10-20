@@ -12,7 +12,6 @@ from nodetool.config.settings import (
     get_value,
     get_system_file_path,
     SETTINGS_FILE,
-    SECRETS_FILE,
 )
 
 # Global test storage instances to avoid thread-local issues in tests
@@ -55,12 +54,10 @@ the Environment class. It handles loading and accessing configuration from multi
 
 - Environment variables
 - Settings file (settings.yaml)
-- Secrets file (secrets.yaml)
 - Default values
 
 Key Features:
 - Configuration hierarchy with environment variables taking precedence
-- Secure secrets management
 - Type-safe configuration access
 - Environment-aware behavior (development/production/test)
 - Service connection management (database, S3, memcache, etc.)
@@ -114,9 +111,7 @@ class Environment(object):
     database paths, and more.
 
     Settings and Secrets:
-    The class supports loading and saving settings and secrets from/to YAML files. The settings file
-    (`settings.yaml`) stores general configuration options, while the secrets file (`secrets.yaml`)
-    stores sensitive information like API keys.
+    The class supports loading and saving settings from/to YAML files.
 
     Local Mode:
     In local mode (non-production environment), the class uses default values or prompts the user for
@@ -125,7 +120,6 @@ class Environment(object):
     """
 
     settings: Optional[Dict[str, Any]] = None
-    secrets: Optional[Dict[str, Any]] = None
     _sqlite_connection: Any = None
     remote_auth: bool = True
     _thread_local: threading.local = threading.local()
@@ -138,7 +132,7 @@ class Environment(object):
     def load_settings(cls):
         # Load .env files first
         load_dotenv_files()
-        cls.settings, cls.secrets = load_settings()
+        cls.settings = load_settings()
 
     @classmethod
     def get_settings(cls):
@@ -148,16 +142,8 @@ class Environment(object):
         return cls.settings
 
     @classmethod
-    def get_secrets(cls):
-        if cls.secrets is None:
-            cls.load_settings()
-        assert cls.secrets is not None
-        return cls.secrets
-
-    @classmethod
     def get_environment(cls):
         settings = cls.get_settings()
-        secrets = cls.get_secrets()
 
         env = DEFAULT_ENV.copy()
         env.update(os.environ)
@@ -165,26 +151,19 @@ class Environment(object):
         for k, v in settings.items():
             if v is not None:
                 env[k] = v
-        for k, v in secrets.items():
-            if v is not None:
-                env[k] = v
 
         return env
 
     @classmethod
     def get(cls, key: str, default: Any = None):
-        if cls.settings is None or cls.secrets is None:
+        if cls.settings is None:
             cls.load_settings()
-        assert cls.settings is not None and cls.secrets is not None
-        return get_value(key, cls.settings, cls.secrets, DEFAULT_ENV, default)
+        assert cls.settings is not None
+        return get_value(key, cls.settings, DEFAULT_ENV, default)
 
     @classmethod
     def has_settings(cls):
         return get_system_file_path(SETTINGS_FILE).exists()
-
-    @classmethod
-    def has_secrets(cls):
-        return get_system_file_path(SECRETS_FILE).exists()
 
     @classmethod
     def get_aws_region(cls):
@@ -254,7 +233,7 @@ class Environment(object):
         """Return desired log level string.
 
         Priority:
-        1) Explicit LOG_LEVEL from settings/secrets/env via get()
+        1) Explicit LOG_LEVEL from settings/env via get()
         2) If DEBUG env is truthy, return "DEBUG"
         3) NODETOOL_LOG_LEVEL env (default "INFO")
         """

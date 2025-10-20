@@ -108,15 +108,18 @@ class OpenAIProvider(BaseProvider):
     has_code_interpreter: bool = False
     provider: Provider = Provider.OpenAI
 
-    def __init__(self):
+    @classmethod
+    def required_secrets(cls) -> list[str]:
+        return ["OPENAI_API_KEY"]
+
+    def __init__(self, secrets: dict[str, str]):
         """Initialize the OpenAI provider with client credentials.
 
         Reads ``OPENAI_API_KEY`` from environment and prepares usage tracking.
         """
         super().__init__()
-        env = Environment.get_environment()
-        self.api_key = env.get("OPENAI_API_KEY")
-        # Do not assert API key at init; tests mock API calls.
+        assert "OPENAI_API_KEY" in secrets, "OPENAI_API_KEY is required"
+        self.api_key = secrets["OPENAI_API_KEY"]
         self.client = None
         self.cost = 0.0
         self.usage = {
@@ -128,15 +131,13 @@ class OpenAIProvider(BaseProvider):
         }
         log.debug("OpenAIProvider initialized. API key present: True")
 
-    def get_container_env(self) -> dict[str, str]:
+    def get_container_env(self, context: ProcessingContext) -> dict[str, str]:
         """Return environment variables required for containerized execution.
 
         Returns:
             A mapping containing ``OPENAI_API_KEY`` if available; otherwise empty.
         """
-        env_vars = {"OPENAI_API_KEY": self.api_key} if self.api_key else {}
-        log.debug(f"Container environment variables: {list(env_vars.keys())}")
-        return env_vars
+        return {"OPENAI_API_KEY": self.api_key} if self.api_key else {}
 
     def get_client(
         self,

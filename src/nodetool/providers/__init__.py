@@ -27,6 +27,7 @@ from nodetool.providers.fake_provider import (
 )
 from nodetool.metadata.types import Provider as ProviderEnum
 from nodetool.workflows.types import Chunk
+from nodetool.security.secret_helper import get_secret
 
 
 def import_providers():
@@ -59,14 +60,14 @@ _provider_cache: dict[ProviderEnum, BaseProvider] = {}
 _provider_cache_lock = threading.Lock()
 
 
-def get_provider(provider_type: ProviderEnum, **kwargs) -> BaseProvider:
+async def get_provider(provider_type: ProviderEnum, user_id: str, **kwargs) -> BaseProvider:
     """
     Get a chat provider instance based on the provider type.
     Providers are cached after first creation.
 
     Args:
         provider_type: The provider type enum
-
+        user_id: The user ID
     Returns:
         A chat provider instance
 
@@ -85,14 +86,17 @@ def get_provider(provider_type: ProviderEnum, **kwargs) -> BaseProvider:
                 f"Provider {provider_type.value} is not available. Install the corresponding package via nodetool's package manager."
             )
 
-        provider: BaseProvider = provider_cls(**kwargs)
+        required_secrets = provider_cls.required_secrets()
+        secrets = {}
+        for secret in required_secrets:
+            secrets[secret] = await get_secret(secret, user_id)
 
-        _provider_cache[provider_type] = provider
-        return provider
+        _provider_cache[provider_type] = provider_cls(secrets=secrets, **kwargs)
+        return _provider_cache[provider_type]
 
 
-def list_providers() -> list["BaseProvider"]:
-    """List all registered providers."""
+async def list_providers(user_id: str) -> list["BaseProvider"]:
+    """List all registered providers for a given user."""
     import_providers()
 
     # Get models from each registered chat provider
@@ -100,7 +104,16 @@ def list_providers() -> list["BaseProvider"]:
     providers = []
     for provider_enum in provider_enums:
         provider_cls, kwargs = get_registered_provider(provider_enum)
-        provider = provider_cls(**kwargs)
+        required_secrets = provider_cls.required_secrets()
+        secrets = {}
+        for secret in required_secrets:
+            secret_value = await get_secret(secret, user_id)
+            if not secret_value:
+                continue
+            secrets[secret] = secret_value
+        if len(required_secrets) > 0 and len(secrets) == 0:
+            continue
+        provider = provider_cls(secrets=secrets, **kwargs)
         providers.append(provider)
     return providers
 

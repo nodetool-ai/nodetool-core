@@ -10,6 +10,7 @@ import asyncio
 import traceback
 from typing import Any, AsyncGenerator, List, Literal, Sequence
 import aiohttp
+from nodetool.workflows.processing_context import ProcessingContext
 import numpy as np
 
 from huggingface_hub import AsyncInferenceClient
@@ -416,17 +417,17 @@ class HuggingFaceProvider(BaseProvider):
 
     provider_name: str = "huggingface"
 
-    def __init__(self, inference_provider: PROVIDER_T):
+    @classmethod
+    def required_secrets(cls) -> list[str]:
+        return ["HF_TOKEN"]
+
+    def __init__(self, secrets: dict[str, str], inference_provider: PROVIDER_T):
         """Initialize the HuggingFace provider with AsyncInferenceClient."""
         super().__init__()
-        env = Environment.get_environment()
-        self.api_key = env.get("HF_TOKEN")
+        assert "HF_TOKEN" in secrets, "HF_TOKEN is required"
+        self.api_key = secrets["HF_TOKEN"]
         self.inference_provider = inference_provider
         self.provider_name = f"huggingface_{inference_provider}"
-
-        if not self.api_key:
-            log.error("HF_TOKEN or HUGGINGFACE_API_KEY is not set")
-            raise ApiKeyMissingError("HF_TOKEN or HUGGINGFACE_API_KEY is not set")
 
         # Initialize the AsyncInferenceClient
         log.debug(
@@ -466,7 +467,7 @@ class HuggingFaceProvider(BaseProvider):
         else:
             log.debug("Client does not have close method")
 
-    def get_container_env(self) -> dict[str, str]:
+    def get_container_env(self, context: ProcessingContext) -> dict[str, str]:
         env_vars = {}
         if self.api_key:
             env_vars["HF_TOKEN"] = self.api_key

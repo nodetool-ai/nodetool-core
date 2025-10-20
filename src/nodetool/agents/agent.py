@@ -827,9 +827,9 @@ class Agent(BaseAgent):
 
         # Collect environment variables from provider and tools
         env_vars: dict[str, str] = {}
-        env_vars.update(self.provider.get_container_env())
+        env_vars.update(self.provider.get_container_env(context))
         for tool in self.tools:
-            env_vars.update(tool.get_container_env())
+            env_vars.update(tool.get_container_env(context))
 
         # Create the runner with appropriate settings for the mode
         if mode == "docker":

@@ -718,14 +718,12 @@ def settings():
 
 
 @settings.command("show")
-@click.option("--secrets", is_flag=True, help="Show secrets instead of settings.")
-@click.option("--mask", is_flag=True, help="Mask secret values with ****.")
-def show_settings(secrets: bool, mask: bool):
+def show_settings():
     """Show current settings or secrets."""
     from nodetool.config.settings import load_settings
 
     # Load settings and secrets
-    settings_obj, secrets_obj = load_settings()
+    settings_obj = load_settings()
 
     # Choose which model to display
     data = secrets_obj if secrets else settings_obj
@@ -743,8 +741,7 @@ def show_settings(secrets: bool, mask: bool):
     for setting in get_settings_registry():
         # Get field description from the model
         description = setting.description
-        masked_value = "****" if setting.is_secret else data.get(setting.env_var, "")
-        table.add_row(setting.env_var, masked_value, description)
+        table.add_row(setting.env_var, data.get(setting.env_var, ""), description)
 
     # Display the table
     console.print(table)

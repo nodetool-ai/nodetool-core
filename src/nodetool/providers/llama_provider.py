@@ -49,10 +49,11 @@ class LlamaProvider(BaseProvider, OpenAICompat):
             cls._manager = LlamaServerManager()
         return cls._manager
 
-    def __init__(self, ttl_seconds: int = 300):
+    def __init__(self, secrets: dict[str, str], ttl_seconds: int = 300):
         """Initialize the provider and its server manager.
 
         Args:
+            secrets: Dictionary of secrets for the provider.
             ttl_seconds: Inactivity time-to-live for each managed llama-server.
         """
         super().__init__()
@@ -208,7 +209,7 @@ class LlamaProvider(BaseProvider, OpenAICompat):
 
         return fixed
 
-    def get_container_env(self) -> dict[str, str]:
+    def get_container_env(self, context: ProcessingContext) -> dict[str, str]:
         """Return environment variables for containerized execution.
 
         Returns:

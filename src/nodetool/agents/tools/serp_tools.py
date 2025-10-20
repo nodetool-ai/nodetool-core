@@ -13,8 +13,8 @@ from nodetool.agents.serp_providers.serp_providers import SerpProvider, ErrorRes
 T = TypeVar("T")
 
 
-def _serp_env_vars() -> Dict[str, str]:
-    env = Environment.get_environment()
+def _serp_env_vars(context: ProcessingContext) -> Dict[str, str]:
+    env = context.environment
     result: Dict[str, str] = {}
     for key in ["DATA_FOR_SEO_LOGIN", "DATA_FOR_SEO_PASSWORD", "SERPAPI_API_KEY"]:
         val = env.get(key)
@@ -48,8 +48,8 @@ class GoogleSearchTool(Tool):
     )
     """
 
-    def get_container_env(self) -> Dict[str, str]:
-        return _serp_env_vars()
+    def get_container_env(self, context: ProcessingContext) -> Dict[str, str]:
+        return _serp_env_vars(context)
 
     async def process(self, context: ProcessingContext, params: dict) -> Any:
         keyword = params.get("keyword")
@@ -58,7 +58,7 @@ class GoogleSearchTool(Tool):
 
         num_results = params.get("num_results", 10)
 
-        provider_instance, error_response = _get_configured_serp_provider()
+        provider_instance, error_response = _get_configured_serp_provider(context)
         if error_response:
             return error_response
         if (
@@ -109,8 +109,8 @@ class GoogleNewsTool(Tool):
     )
     """
 
-    def get_container_env(self) -> Dict[str, str]:
-        return _serp_env_vars()
+    def get_container_env(self, context: ProcessingContext) -> Dict[str, str]:
+        return _serp_env_vars(context)
 
     async def process(self, context: ProcessingContext, params: dict) -> Any:
         keyword = params.get("keyword")
@@ -119,7 +119,7 @@ class GoogleNewsTool(Tool):
 
         num_results = params.get("num_results", 10)
 
-        provider_instance, error_response = _get_configured_serp_provider()
+        provider_instance, error_response = _get_configured_serp_provider(context)
         if error_response:
             return error_response
         if not provider_instance:
@@ -171,8 +171,8 @@ class GoogleImagesTool(Tool):
     )
     """
 
-    def get_container_env(self) -> Dict[str, str]:
-        return _serp_env_vars()
+    def get_container_env(self, context: ProcessingContext) -> Dict[str, str]:
+        return _serp_env_vars(context)
 
     async def process(self, context: ProcessingContext, params: dict) -> Any:
         keyword = params.get("keyword")
@@ -182,7 +182,7 @@ class GoogleImagesTool(Tool):
         if not keyword and not image_url:
             return {"error": "One of 'keyword' or 'image_url' is required."}
 
-        provider_instance, error_response = _get_configured_serp_provider()
+        provider_instance, error_response = _get_configured_serp_provider(context)
         if error_response:
             return error_response
         if not provider_instance:
@@ -237,8 +237,8 @@ class GoogleFinanceTool(Tool):
     )
     """
 
-    def get_container_env(self) -> Dict[str, str]:
-        return _serp_env_vars()
+    def get_container_env(self, context: ProcessingContext) -> Dict[str, str]:
+        return _serp_env_vars(context)
 
     async def process(self, context: ProcessingContext, params: dict) -> Any:
         query = params.get("query")
@@ -247,7 +247,7 @@ class GoogleFinanceTool(Tool):
 
         window = params.get("window")  # Can be None
 
-        provider_instance, error_response = _get_configured_serp_provider()
+        provider_instance, error_response = _get_configured_serp_provider(context)
         if error_response:
             return error_response
         if not provider_instance:
@@ -300,8 +300,8 @@ class GoogleJobsTool(Tool):
     )
     """
 
-    def get_container_env(self) -> Dict[str, str]:
-        return _serp_env_vars()
+    def get_container_env(self, context: ProcessingContext) -> Dict[str, str]:
+        return _serp_env_vars(context)
 
     async def process(self, context: ProcessingContext, params: dict) -> Any:
         query = params.get("query")
@@ -311,7 +311,7 @@ class GoogleJobsTool(Tool):
         location = params.get("location")
         num_results = params.get("num_results", 10)
 
-        provider_instance, error_response = _get_configured_serp_provider()
+        provider_instance, error_response = _get_configured_serp_provider(context)
         if error_response:
             return error_response
         if not provider_instance:
@@ -362,8 +362,8 @@ class GoogleLensTool(Tool):
     )
     """
 
-    def get_container_env(self) -> Dict[str, str]:
-        return _serp_env_vars()
+    def get_container_env(self, context: ProcessingContext) -> Dict[str, str]:
+        return _serp_env_vars(context)
 
     async def process(self, context: ProcessingContext, params: dict) -> Any:
         image_url = params.get("image_url")
@@ -375,7 +375,7 @@ class GoogleLensTool(Tool):
 
         assert image_url is not None, "Image URL is required for Google Lens search."
 
-        provider_instance, error_response = _get_configured_serp_provider()
+        provider_instance, error_response = _get_configured_serp_provider(context)
         if error_response:
             return error_response
         if not provider_instance:
@@ -433,8 +433,8 @@ class GoogleMapsTool(Tool):
     )
     """
 
-    def get_container_env(self) -> Dict[str, str]:
-        return _serp_env_vars()
+    def get_container_env(self, context: ProcessingContext) -> Dict[str, str]:
+        return _serp_env_vars(context)
 
     async def process(self, context: ProcessingContext, params: dict) -> Any:
         query = params.get("query")
@@ -443,7 +443,7 @@ class GoogleMapsTool(Tool):
         if not query:
             return {"error": "Query is required for map_type 'search'."}
 
-        provider_instance, error_response = _get_configured_serp_provider()
+        provider_instance, error_response = _get_configured_serp_provider(context)
         if error_response:
             return error_response
         if not provider_instance:
@@ -529,15 +529,15 @@ class GoogleShoppingTool(Tool):
     )
     """
 
-    def get_container_env(self) -> Dict[str, str]:
-        return _serp_env_vars()
+    def get_container_env(self, context: ProcessingContext) -> Dict[str, str]:
+        return _serp_env_vars(context)
 
     async def process(self, context: ProcessingContext, params: dict) -> Any:
         query = params.get("query")
         if not query:
             return {"error": "Query is required for Google Shopping search."}
 
-        provider_instance, error_response = _get_configured_serp_provider()
+        provider_instance, error_response = _get_configured_serp_provider(context)
         if error_response:
             return error_response
         if not provider_instance:
@@ -568,7 +568,7 @@ class GoogleShoppingTool(Tool):
 
 
 # Helper function to get a configured SERP provider
-def _get_configured_serp_provider() -> (
+def _get_configured_serp_provider(context: ProcessingContext) -> (
     tuple[Optional[SerpProvider], Optional[ErrorResponse]]
 ):
     """
@@ -580,14 +580,14 @@ def _get_configured_serp_provider() -> (
         or (None, ErrorResponse) if no provider is configured or if a provider
         had an issue during its own basic configuration check (e.g. SerpApiProvider API key check).
     """
-    d4seo_login = Environment.get("DATA_FOR_SEO_LOGIN")
+    d4seo_login = context.environment.get("DATA_FOR_SEO_LOGIN")
     d4seo_password = Environment.get("DATA_FOR_SEO_PASSWORD")
     serpapi_key = Environment.get("SERPAPI_API_KEY")
 
     if serpapi_key:
-        return SerpApiProvider(), None
+        return SerpApiProvider(api_key=serpapi_key), None
     elif d4seo_login and d4seo_password:
-        return DataForSEOProvider(), None
+        return DataForSEOProvider(api_login=d4seo_login, api_password=d4seo_password), None
     else:
         return None, {
             "error": "No SERP provider is configured. Please set credentials for DataForSEO (DATA_FOR_SEO_LOGIN, DATA_FOR_SEO_PASSWORD) or SerpApi (SERPAPI_API_KEY)."

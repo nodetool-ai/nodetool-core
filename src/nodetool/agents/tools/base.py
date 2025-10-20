@@ -55,6 +55,6 @@ class Tool:
         # Default implementation returns params, but subclasses should override
         return params
 
-    def get_container_env(self) -> Dict[str, str]:
+    def get_container_env(self, context: ProcessingContext) -> Dict[str, str]:
         """Return environment variables needed when running inside Docker."""
         return {}

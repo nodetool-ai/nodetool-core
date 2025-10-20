@@ -11,7 +11,7 @@ from nodetool.ml.models.model_cache import _model_cache
 log = get_logger(__name__)
 
 
-async def get_all_video_models() -> List[VideoModel]:
+async def get_all_video_models(user_id: str) -> List[VideoModel]:
     """
     Get all video models from all registered providers.
     Results are cached for 6 hours to reduce API calls.
@@ -20,11 +20,14 @@ async def get_all_video_models() -> List[VideoModel]:
     get_available_video_models() method. Each provider is responsible for
     checking API keys and returning appropriate models.
 
+    Args:
+        user_id: The user ID to get the video models for
+
     Returns:
         List of all available VideoModel instances from all providers
     """
     # Check cache first
-    cache_key = "video_models:all"
+    cache_key = f"video_models:all:{user_id}"
     cached_models = _model_cache.get(cache_key)
     if cached_models is not None:
         log.info(f"Returning {len(cached_models)} cached video models")
@@ -33,7 +36,7 @@ async def get_all_video_models() -> List[VideoModel]:
     models = []
 
     # Get models from each registered provider
-    providers = list_providers()
+    providers = await list_providers(user_id)
     log.debug(f"Discovering video models from {len(providers)} providers: {providers}")
 
     for provider in providers:

@@ -9,18 +9,36 @@ class Setting:
     group: str
     description: str
     enum: List[str] | None
-    is_secret: bool
+
+
+@dataclass
+class Secret:
+    package_name: str
+    env_var: str
+    group: str
+    description: str
 
 
 _registry: List[Setting] = []
+_secrets_registry: List[Setting] = []
 
+def register_secret(
+    package_name: str,
+    env_var: str,
+    group: str,
+    description: str,
+) -> List[Setting]:
+    """Register a new secret.
+    """
+    secret = Secret(package_name=package_name, env_var=env_var, group=group, description=description)
+    _secrets_registry.append(secret)
+    return list(_secrets_registry)
 
 def register_setting(
     package_name: str,
     env_var: str,
     group: str,
     description: str,
-    is_secret: bool,
     enum: List[str] | None = None,
 ) -> List[Setting]:
     """Register a new setting.
@@ -35,8 +53,6 @@ def register_setting(
         Group the setting belongs to.
     description: str
         Human readable description of the setting.
-    is_secret: bool
-        Flag indicating if the setting contains secrets.
     enum: List[str] | None
         List of possible values for the setting.
 
@@ -51,7 +67,6 @@ def register_setting(
         group=group,
         description=description,
         enum=enum,
-        is_secret=is_secret,
     )
     _registry.append(setting)
     return list(_registry)
@@ -60,3 +75,7 @@ def register_setting(
 def get_settings_registry() -> List[Setting]:
     """Return the list of all registered settings."""
     return list(_registry)
+
+def get_secrets_registry() -> List[Secret]:
+    """Return the list of all registered secrets."""
+    return list(_secrets_registry)

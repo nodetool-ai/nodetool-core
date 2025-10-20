@@ -5,6 +5,9 @@ from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
 from uuid import uuid1
 from random import randint
+import atexit
+import signal
+import asyncio
 
 from nodetool.models.condition_builder import ConditionBuilder
 from nodetool.models.database_adapter import DatabaseAdapter
@@ -40,6 +43,64 @@ async def close_all_database_adapters():
         except Exception as e:
             log.warning(f"Error closing database adapter: {e}")
     _global_adapters.clear()
+
+
+def _shutdown_handler_sync():
+    """Synchronous shutdown handler for atexit and signals.
+
+    Attempts to run the async cleanup coroutine. If an event loop
+    is already running (e.g., in FastAPI), this will safely skip.
+
+    Note: We suppress logging here because logging may be shut down
+    during atexit, causing spurious "I/O operation on closed file" errors.
+    """
+    import logging
+
+    try:
+        # Try to get the running loop (will raise RuntimeError if none exists)
+        try:
+            loop = asyncio.get_running_loop()
+            # If we get here, a loop is running - we can't use asyncio.run()
+            # The async cleanup will be handled elsewhere (e.g., FastAPI lifespan)
+            return
+        except RuntimeError:
+            # No running loop, safe to create one
+            # Temporarily disable logging to avoid errors during atexit
+            logging.disable(logging.CRITICAL)
+            try:
+                asyncio.run(close_all_database_adapters())
+            finally:
+                logging.disable(logging.NOTSET)
+    except Exception:
+        # Suppress exceptions during atexit - logging may already be shut down
+        # and we don't want to break the shutdown process
+        pass
+
+
+# Register cleanup handlers to ensure database adapters are closed
+# when the Python process exits, regardless of whether explicit
+# shutdown methods were called
+atexit.register(_shutdown_handler_sync)
+
+# Handle SIGTERM (graceful shutdown)
+def _sigterm_handler(signum, frame):
+    _shutdown_handler_sync()
+    import sys
+    sys.exit(0)
+
+# Handle SIGINT (Ctrl+C)
+def _sigint_handler(signum, frame):
+    _shutdown_handler_sync()
+    import sys
+    sys.exit(130)  # Standard exit code for SIGINT
+
+try:
+    signal.signal(signal.SIGTERM, _sigterm_handler)
+    signal.signal(signal.SIGINT, _sigint_handler)
+except (ValueError, RuntimeError):
+    # signal.signal() can fail in certain contexts (e.g., non-main thread)
+    # This is safe to ignore
+    pass
 
 
 def create_time_ordered_uuid() -> str:

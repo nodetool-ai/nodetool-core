@@ -42,6 +42,7 @@ import mimetypes
 
 from nodetool.integrations.websocket.websocket_updates import websocket_updates
 from nodetool.api.openai import create_openai_compatible_router
+from nodetool.models.base_model import close_all_database_adapters
 import httpx
 
 _windows_policy = getattr(asyncio, "WindowsSelectorEventLoopPolicy", None)
@@ -251,6 +252,13 @@ def create_app(
         except Exception as e:
             log.error(f"Error during JobExecutionManager shutdown: {e}")
 
+        # Close all database connections
+        try:
+            await close_all_database_adapters()
+            log.info("Database adapters shutdown complete")
+        except Exception as e:
+            log.error(f"Error during database adapter shutdown: {e}")
+
         # Give a moment for cleanup to complete
         await asyncio.sleep(0.1)
         log.info("Server shutdown cleanup complete")
@@ -268,11 +276,12 @@ def create_app(
     )
 
     # Mount OpenAI-compatible endpoints with default provider set to "ollama"
-    app.include_router(
-        create_openai_compatible_router(
-            provider=Provider.Ollama.value,
+    if not Environment.is_production():
+        app.include_router(
+            create_openai_compatible_router(
+                provider=Provider.Ollama.value,
+            )
         )
-    )
 
     for router in routers:
         app.include_router(router)

@@ -12,6 +12,7 @@ import re
 from typing import Any, AsyncGenerator, AsyncIterator, List, Sequence, Dict
 from contextlib import asynccontextmanager
 
+from nodetool.workflows.processing_context import ProcessingContext
 from ollama import AsyncClient, Client
 from pydantic import BaseModel
 import tiktoken
@@ -110,7 +111,7 @@ class OllamaProvider(BaseProvider, OpenAICompat):
 
     provider_name: str = "ollama"
 
-    def __init__(self, log_file=None):
+    def __init__(self, secrets: dict[str, str], log_file=None):
         """Initialize the Ollama provider.
 
         Args:
@@ -131,7 +132,7 @@ class OllamaProvider(BaseProvider, OpenAICompat):
             f"OllamaProvider initialized. API URL present: {bool(self.api_url)}, log_file: {log_file}"
         )
 
-    def get_container_env(self) -> dict[str, str]:
+    def get_container_env(self, context: ProcessingContext) -> dict[str, str]:
         env_vars = {}
         if self.api_url:
             env_vars["OLLAMA_API_URL"] = self.api_url

@@ -362,3 +362,210 @@ The configuration system loads files in this specific order:
 - Configure proper database (PostgreSQL/Supabase)
 - Set up S3 storage with appropriate buckets
 - Enable Sentry for error tracking
+
+## Encrypted Secrets Management
+
+NodeTool Core provides a secure encrypted secrets storage system with per-user encryption and database persistence.
+
+### Overview
+
+Secrets are stored in an encrypted database with the following features:
+- **Per-user encryption** with unique derived keys
+- **User isolation** - users cannot access each other's secrets
+- **Encryption at rest** - all secrets encrypted using AES-256 (Fernet)
+- **Secure key management** - master keys stored in system keychain or AWS Secrets Manager
+
+### Architecture
+
+#### Components
+
+1. **Encryption Layer** (`src/nodetool/security/crypto.py`)
+   - `SecretCrypto` class for encryption/decryption
+   - Uses Fernet (AES-256 CBC with PKCS7 padding)
+   - Per-user key derivation: master_key + user_id → derived key (PBKDF2-SHA256, 100k iterations)
+
+2. **Master Key Management** (`src/nodetool/security/master_key.py`)
+   - `MasterKeyManager` class with sources (in priority order):
+     1. `SECRETS_MASTER_KEY` environment variable
+     2. AWS Secrets Manager (if `AWS_SECRETS_MASTER_KEY_NAME` set)
+     3. System keychain (macOS Keychain, Windows Credential Manager, Linux Secret Service)
+     4. Auto-generated and stored in keychain
+
+3. **Database Model** (`src/nodetool/models/secret.py`)
+   - `Secret` model for encrypted secrets
+   - Fields: id, user_id, key, encrypted_value, description, created_at, updated_at
+   - Unique constraint on (user_id, key)
+   - Methods: create, find, upsert, delete_secret, list_for_user, get_decrypted_value
+
+4. **API Endpoints** (`src/nodetool/api/settings.py`)
+   - `GET /api/settings/secrets` - List all possible secrets, marked as configured/unconfigured
+   - `GET /api/settings/secrets/{key}` - Get specific secret (with optional decryption)
+   - `PUT /api/settings/secrets/{key}` - Update or create secret
+   - `DELETE /api/settings/secrets/{key}` - Delete secret
+   - All endpoints require authentication via `Depends(current_user)`
+
+5. **Helper Functions** (`src/nodetool/security/secret_helper.py`)
+   - `get_secret(key, user_id)` - Get secret with fallback to environment
+   - `get_secret_required(key, user_id)` - Get or raise exception
+   - `get_secret_sync(key)` - Synchronous env-only lookup
+   - `has_secret(key, user_id)` - Check if secret exists
+
+6. **AWS Utility** (`src/nodetool/security/aws_secrets_util.py`)
+   - CLI tool for managing master keys in AWS Secrets Manager
+   - Commands: store, retrieve, generate, delete
+
+### Secret Resolution Priority
+
+When `get_secret(key, user_id)` is called, sources are checked in order:
+
+1. **Environment Variable** (highest priority)
+   - `os.environ.get(key)` - System-wide, not user-specific
+   - Useful for CI/CD, Docker deployments
+
+2. **Encrypted Database** (recommended)
+   - Query `Secret` model for user_id + key
+   - Per-user, encrypted at rest
+   - Managed via API or helper functions
+
+3. **secrets.yaml** (deprecated, no longer used for new secrets)
+
+### Usage Examples
+
+#### For Application Developers
+
+**Get a secret at runtime:**
+```python
+from nodetool.security import get_secret
+
+# In an async function with user context
+async def my_function(user_id: str):
+    api_key = await get_secret("OPENAI_API_KEY", user_id)
+    if api_key:
+        # Use the API key
+        ...
+```
+
+**Get a required secret (raises if not found):**
+```python
+from nodetool.security import get_secret_required
+
+async def my_function(user_id: str):
+    api_key = await get_secret_required("OPENAI_API_KEY", user_id)
+    # Guaranteed to have a value or exception is raised
+```
+
+**For system-wide secrets (env only):**
+```python
+from nodetool.security import get_secret_sync
+
+# Synchronous, checks only environment variables
+api_key = get_secret_sync("SYSTEM_API_KEY", default="default_value")
+```
+
+#### For End Users (via API)
+
+**List all possible secrets:**
+```bash
+curl http://localhost:8000/api/settings/secrets \
+  -H "Authorization: Bearer <token>"
+```
+
+**Set or update a secret:**
+```bash
+curl -X PUT http://localhost:8000/api/settings/secrets/OPENAI_API_KEY \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"value": "sk-...", "description": "My OpenAI API key"}'
+```
+
+**Get a secret (decrypted):**
+```bash
+curl "http://localhost:8000/api/settings/secrets/OPENAI_API_KEY?decrypt=true" \
+  -H "Authorization: Bearer <token>"
+```
+
+**Delete a secret:**
+```bash
+curl -X DELETE http://localhost:8000/api/settings/secrets/OPENAI_API_KEY \
+  -H "Authorization: Bearer <token>"
+```
+
+### Security Features
+
+#### Encryption
+- **Algorithm**: Fernet (AES-128 CBC + HMAC-SHA256)
+- **Key Derivation**: PBKDF2-SHA256 with 100,000 iterations
+- **Per-user salt**: Each user's secrets encrypted with unique derived key
+- **Master key**: Stored in system keychain or AWS Secrets Manager
+
+#### Authentication
+- **Development**: Defaults to user_id="1" (no auth)
+- **Production**: JWT authentication via Supabase
+- **User isolation**: Database queries filtered by authenticated user
+
+#### Access Control
+- Users can only access their own secrets
+- API endpoints require authentication (production)
+- Read/write operations are user-scoped
+
+### Production Deployment
+
+#### Using AWS Secrets Manager
+
+1. **Generate master key:**
+```bash
+python -m nodetool.security.aws_secrets_util generate \
+  --secret-name nodetool-master-key \
+  --region us-east-1
+```
+
+2. **Configure environment:**
+```bash
+export AWS_SECRETS_MASTER_KEY_NAME=nodetool-master-key
+export AWS_REGION=us-east-1
+```
+
+3. **Verify:**
+```bash
+python -m nodetool.security.aws_secrets_util retrieve \
+  --secret-name nodetool-master-key
+```
+
+#### Using Environment Variable
+
+```bash
+# Generate key
+export SECRETS_MASTER_KEY=$(python -c "from nodetool.security.crypto import SecretCrypto; print(SecretCrypto.generate_master_key())")
+
+# Backup key securely!
+echo $SECRETS_MASTER_KEY > /secure/location/master_key.txt
+```
+
+### Testing
+
+```bash
+# Test crypto utilities
+pytest tests/security/test_crypto.py -v
+
+# Test master key management
+pytest tests/security/test_master_key.py -v
+
+# Test Secret model
+pytest tests/models/test_secret.py -v
+
+# Test helper functions
+pytest tests/security/test_secret_helper.py -v
+
+# Test API endpoints
+pytest tests/api/test_settings_api.py -v
+```
+
+### Dependencies
+
+Secrets management requires:
+```toml
+dependencies = [
+    "cryptography>=43.0.0",
+    "keyring>=25.5.0",
+]
+```

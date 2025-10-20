@@ -69,6 +69,7 @@ from nodetool.workflows.torch_support import (
 from nodetool.integrations.vectorstores.chroma.async_chroma_client import (
     get_async_chroma_client,
 )
+from nodetool.metadata.types import Provider
 
 
 from io import BytesIO
@@ -321,6 +322,36 @@ class ProcessingContext:
         imap.login(email_address, app_password)
         self._gmail_connection = imap
         return imap
+
+    def get_secret(self, key: str) -> str:
+        """
+        Get a secret value.
+        """
+        from nodetool.security.secret_helper import get_secret
+        return get_secret(key, self.user_id)
+    
+    def get_secret_required(self, key: str) -> str:
+        """
+        Get a required secret value.
+        """
+        from nodetool.security.secret_helper import get_secret_required
+        return get_secret_required(key, self.user_id)
+
+    async def get_provider(self, provider_type: Provider):
+        """
+        Get an AI provider instance.
+
+        Args:
+            provider_type (Provider): The provider type enum
+
+        Returns:
+            BaseProvider: A provider instance
+
+        Raises:
+            ValueError: If the provider type is not supported
+        """
+        from nodetool.providers import get_provider
+        return await get_provider(provider_type, self.user_id)
 
     def copy(self):
         """

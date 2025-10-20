@@ -86,7 +86,6 @@ def dedupe_models(models: list[UnifiedModel]) -> list[UnifiedModel]:
 async def get_all_models(
     user: str = Depends(current_user),
 ) -> list[UnifiedModel]:
-    log.info("🔍 TRACE: /api/models/all endpoint called")
     reco_models = [
         model
         for model_list in get_recommended_models().values()
@@ -135,16 +134,12 @@ async def delete_ollama_model_endpoint(model_name: str) -> bool:
     return await _delete_ollama_model(model_name)
 
 
-async def get_language_models() -> list[LanguageModel]:
-    models = await get_all_language_models()
-    return models
-
 
 @router.get("/llm")
 async def get_language_models_endpoint(
     user: str = Depends(current_user),
 ) -> list[LanguageModel]:
-    return await get_language_models()
+    return await get_all_language_models(user)
 
 
 @router.get("/image")
@@ -154,7 +149,7 @@ async def get_image_models_endpoint(
     """
     Get all available image generation models from all providers.
     """
-    return await get_all_image_models()
+    return await get_all_image_models(user)
 
 
 @router.get("/tts")
@@ -164,7 +159,7 @@ async def get_tts_models_endpoint(
     """
     Get all available text-to-speech models from all providers.
     """
-    return await get_all_tts_models()
+    return await get_all_tts_models(user)
 
 
 @router.get("/asr")
@@ -174,7 +169,7 @@ async def get_asr_models_endpoint(
     """
     Get all available automatic speech recognition models from all providers.
     """
-    return await get_all_asr_models()
+    return await get_all_asr_models(user)
 
 
 @router.get("/video")
@@ -184,7 +179,7 @@ async def get_video_models_endpoint(
     """
     Get all available video generation models from all providers.
     """
-    return await get_all_video_models()
+    return await get_all_video_models(user)
 
 
 @router.get("/ollama_model_info")

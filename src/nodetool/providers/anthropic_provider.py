@@ -109,16 +109,15 @@ class AnthropicProvider(BaseProvider):
 
     provider_name: str = "anthropic"
 
-    def __init__(self):
+    @classmethod
+    def required_secrets(cls) -> list[str]:
+        return ["ANTHROPIC_API_KEY"]
+
+    def __init__(self, secrets: dict[str, str]):
         """Initialize the Anthropic provider with client credentials."""
         super().__init__()
-        env = Environment.get_environment()
-        self.api_key = env.get("ANTHROPIC_API_KEY")
-        if not self.api_key:
-            log.error("ANTHROPIC_API_KEY is not configured in the nodetool settings")
-            raise ApiKeyMissingError(
-                "ANTHROPIC_API_KEY is not configured in the nodetool settings"
-            )
+        assert "ANTHROPIC_API_KEY" in secrets, "ANTHROPIC_API_KEY is required"
+        self.api_key = secrets["ANTHROPIC_API_KEY"]
         log.debug("Creating Anthropic AsyncClient")
         self.client = anthropic.AsyncAnthropic(
             api_key=self.api_key,
@@ -134,10 +133,8 @@ class AnthropicProvider(BaseProvider):
         self.cost = 0.0
         log.debug("AnthropicProvider initialized with usage tracking")
 
-    def get_container_env(self) -> dict[str, str]:
-        env_vars = {"ANTHROPIC_API_KEY": self.api_key} if self.api_key else {}
-        log.debug(f"Container environment variables: {list(env_vars.keys())}")
-        return env_vars
+    def get_container_env(self, context: ProcessingContext) -> dict[str, str]:
+        return {"ANTHROPIC_API_KEY": self.api_key} if self.api_key else {}
 
     def get_context_length(self, model: str) -> int:
         """Get the maximum token limit for a given model."""

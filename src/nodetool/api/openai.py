@@ -5,7 +5,6 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from rich.console import Console
 
-from nodetool.api.model import get_language_models
 from nodetool.api.workflow import from_model
 from nodetool.chat.chat_sse_runner import ChatSSERunner
 from nodetool.models.workflow import Workflow as WorkflowModel
@@ -17,6 +16,7 @@ def create_openai_compatible_router(
     provider: str,
     default_model: str = "gpt-oss:20b",
     tools: List[str] | None = None,
+    user: str = "1",
 ) -> APIRouter:
     """Create an APIRouter exposing OpenAI-compatible endpoints.
 
@@ -83,7 +83,7 @@ def create_openai_compatible_router(
     async def openai_models():
         """Returns list of models filtered by provider in OpenAI format."""
         try:
-            all_models = await get_language_models()
+            all_models = await get_all_language_models(user)
             filtered = [m for m in all_models if m.provider.value == provider]
             data = [
                 {

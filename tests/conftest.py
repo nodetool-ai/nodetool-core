@@ -21,6 +21,7 @@ import io
 import uuid
 import PIL.Image
 import asyncio
+from nodetool.models.base_model import close_all_database_adapters
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -140,8 +141,15 @@ async def setup_and_teardown(request):
         # Ignore any errors during cleanup
         pass
 
-    # Close all database connections
-    # await close_all_database_adapters()
+    # Close all database connections to prevent SQLite lock issues and leaks
+    try:
+        await close_all_database_adapters()
+    except Exception:
+        # Ignore errors during adapter cleanup
+        pass
+
+    # Clear thread-local caches
+    Environment.clear_thread_caches()
 
     Environment.set_remote_auth(True)
 
