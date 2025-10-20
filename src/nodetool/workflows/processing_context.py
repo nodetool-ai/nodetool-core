@@ -226,6 +226,49 @@ class ProcessingContext:
             )
         return self._http_client
 
+    async def _http_request_with_retries(
+        self,
+        method: str,
+        url: str,
+        *,
+        max_retries: int = 3,
+        backoff_seconds: float = 0.5,
+        **kwargs,
+    ) -> httpx.Response:
+        """
+        Perform an HTTP request with basic retries for transient transport errors.
+
+        Retries are applied primarily to GET/HEAD requests where it is safe to do so.
+        """
+        _headers = HTTP_HEADERS.copy()
+        _headers.update(kwargs.get("headers", {}))
+        kwargs["headers"] = _headers
+
+        last_exc: Exception | None = None
+        for attempt in range(max_retries):
+            try:
+                response = await self.get_http_client().request(method, url, **kwargs)
+                log.info(f"{method.upper()} {url} {response.status_code}")
+                response.raise_for_status()
+                return response
+            except (httpx.TransportError, httpx.ReadTimeout) as e:
+                # Includes RemoteProtocolError (e.g., incomplete chunked read)
+                last_exc = e
+                if attempt == max_retries - 1:
+                    raise
+                delay = backoff_seconds * (2 ** attempt)
+                log.warning(
+                    f"{method.upper()} {url} transport error: {e}; retrying in {delay:.1f}s (attempt {attempt + 1}/{max_retries})"
+                )
+                await asyncio.sleep(delay)
+            except Exception:
+                # Non-transport errors: do not retry by default
+                raise
+        # Should not reach; raise last exception if present
+        if last_exc:
+            raise last_exc
+        raise RuntimeError("HTTP request failed without exception")
+
     def get_gmail_connection(self) -> imaplib.IMAP4_SSL:
         """
         Creates a Gmail connection configuration.
@@ -734,13 +777,7 @@ class ProcessingContext:
         Returns:
             httpx.Response: The response object.
         """
-        _headers = HTTP_HEADERS.copy()
-        _headers.update(kwargs.get("headers", {}))
-        kwargs["headers"] = _headers
-        response = await self.get_http_client().get(url, **kwargs)
-        log.info(f"GET {url} {response.status_code}")
-        response.raise_for_status()
-        return response
+        return await self._http_request_with_retries("GET", url, **kwargs)
 
     async def http_post(
         self,
@@ -847,13 +884,7 @@ class ProcessingContext:
         Returns:
             httpx.Response: The response object.
         """
-        _headers = HTTP_HEADERS.copy()
-        _headers.update(kwargs.get("headers", {}))
-        kwargs["headers"] = _headers
-        response = await self.get_http_client().head(url, **kwargs)
-        log.info(f"HEAD {url} {response.status_code}")
-        response.raise_for_status()
-        return response
+        return await self._http_request_with_retries("HEAD", url, **kwargs)
 
     async def download_file(self, url: str) -> IO:
         """
