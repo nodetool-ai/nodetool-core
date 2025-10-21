@@ -204,24 +204,18 @@ def create_app(
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         # Startup: pre-initialize storages to avoid first-request blocking
-        try:
-            # Offload potential filesystem setup to threads
-            await asyncio.to_thread(Environment.get_asset_storage)
-            await asyncio.to_thread(Environment.get_temp_storage)
-        except Exception as e:
-            log.warning(f"Storage pre-initialization failed: {e}")
+        # Offload potential filesystem setup to threads
+        await asyncio.to_thread(Environment.get_asset_storage)
+        await asyncio.to_thread(Environment.get_temp_storage)
 
         # Start job execution manager cleanup task
-        try:
-            from nodetool.workflows.job_execution_manager import (
-                JobExecutionManager,
-            )
+        from nodetool.workflows.job_execution_manager import (
+            JobExecutionManager,
+        )
 
-            job_manager = JobExecutionManager.get_instance()
-            await job_manager.start_cleanup_task()
-            log.info("JobExecutionManager cleanup task started")
-        except Exception as e:
-            log.error(f"Error starting JobExecutionManager: {e}")
+        job_manager = JobExecutionManager.get_instance()
+        await job_manager.start_cleanup_task()
+        log.info("JobExecutionManager cleanup task started")
 
         # Hand control back to the app
         yield
@@ -229,38 +223,21 @@ def create_app(
         # Shutdown: cleanup resources
         log.info("Server shutdown initiated - cleaning up resources")
 
-        try:
-            # Import here to avoid circular imports
-            from nodetool.integrations.websocket.websocket_updates import (
-                websocket_updates,
-            )
+        # Import here to avoid circular imports
+        from nodetool.integrations.websocket.websocket_updates import (
+            websocket_updates,
+        )
 
-            await websocket_updates.shutdown()
-            log.info("WebSocket updates shutdown complete")
-        except Exception as e:
-            log.error(f"Error during websocket updates shutdown: {e}")
+        await websocket_updates.shutdown()
+        log.info("WebSocket updates shutdown complete")
 
-        # Shutdown job execution manager
-        try:
-            from nodetool.workflows.job_execution_manager import (
-                JobExecutionManager,
-            )
+        job_manager = JobExecutionManager.get_instance()
+        await job_manager.shutdown()
+        log.info("JobExecutionManager shutdown complete")
 
-            job_manager = JobExecutionManager.get_instance()
-            await job_manager.shutdown()
-            log.info("JobExecutionManager shutdown complete")
-        except Exception as e:
-            log.error(f"Error during JobExecutionManager shutdown: {e}")
+        await close_all_database_adapters()
+        log.info("Database adapters shutdown complete")
 
-        # Close all database connections
-        try:
-            await close_all_database_adapters()
-            log.info("Database adapters shutdown complete")
-        except Exception as e:
-            log.error(f"Error during database adapter shutdown: {e}")
-
-        # Give a moment for cleanup to complete
-        await asyncio.sleep(0.1)
         log.info("Server shutdown cleanup complete")
 
     app = FastAPI(lifespan=lifespan)
@@ -449,7 +426,7 @@ def run_uvicorn_server(app: Any, host: str, port: int, reload: bool) -> None:
             import time
 
             def force_exit():
-                time.sleep(2)  # Give cleanup handlers time to run
+                time.sleep(1)  # Give cleanup handlers time to run
                 print("Forcing process termination...")
                 os._exit(0)
 

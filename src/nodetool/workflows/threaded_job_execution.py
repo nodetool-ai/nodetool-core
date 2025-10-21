@@ -40,11 +40,10 @@ class ThreadedJobExecution(JobExecution):
         request: RunJobRequest,
         job_model: Job,
         event_loop: ThreadedEventLoop,
-        future: Future,
     ):
         super().__init__(job_id, context, request, job_model, runner=runner)
         self.event_loop = event_loop
-        self.future = future
+        self.future: Future | None = None
 
     def push_input_value(self, input_name: str, value: Any, source_handle: str) -> None:
         """Push an input value to the job execution."""
@@ -61,12 +60,13 @@ class ThreadedJobExecution(JobExecution):
 
     def is_completed(self) -> bool:
         """Check if the job has completed (success, error, or cancelled)."""
-        return self.future.done()
+        return self.future is not None and self.future.done()
 
     def cancel(self) -> bool:
         """Cancel the running job."""
         if not self.is_completed():
-            self.future.cancel()
+            if self.future:
+                self.future.cancel()
             if self.runner:
                 self.runner.status = "cancelled"
             self._status = "cancelled"
@@ -78,6 +78,53 @@ class ThreadedJobExecution(JobExecution):
         if self.event_loop and self.event_loop.is_running:
             self.event_loop.stop()
             log.debug(f"Stopped event loop for job {self.job_id}")
+
+    async def execute(self) -> None:
+        """Execute the workflow.
+
+        Handles loading workflow graph, running the workflow, and updating
+        job status throughout the execution lifecycle.
+        """
+        try:
+            # Load workflow graph if not already loaded
+            if self.request.graph is None:
+                log.info(f"Loading workflow graph for {self.request.workflow_id}")
+                workflow = await self.context.get_workflow(self.request.workflow_id)
+                if workflow is None:
+                    raise ValueError(f"Workflow {self.request.workflow_id} not found")
+                self.request.graph = workflow.get_api_graph()
+
+            self._status = "running"
+            await self.runner.run(self.request, self.context)
+
+            # Update job status on completion
+            self._status = "completed"
+            await self.job_model.update(status="completed", finished_at=datetime.now())
+            log.info(f"Background job {self.job_id} completed successfully")
+
+        except asyncio.CancelledError:
+            self.runner.status = "cancelled"
+            self._status = "cancelled"
+            await self.job_model.update(status="cancelled", finished_at=datetime.now())
+            log.info(f"Background job {self.job_id} cancelled")
+            raise
+        except Exception as e:
+            self.runner.status = "error"
+            self._status = "error"
+            error_text = str(e).strip()
+            error_msg = (
+                f"{e.__class__.__name__}: {error_text}"
+                if error_text
+                else repr(e)
+            )
+            await self.job_model.update(
+                status="failed", error=error_msg, finished_at=datetime.now()
+            )
+            log.exception("Background job %s failed: %s", self.job_id, error_msg)
+            self.context.post_message(
+                JobUpdate(job_id=self.job_id, status="failed", error=error_msg)
+            )
+            raise
 
     @classmethod
     async def create_and_start(
@@ -108,10 +155,6 @@ class ThreadedJobExecution(JobExecution):
 
         log.info(f"Starting background job {job_id} for workflow {request.workflow_id}")
 
-        # Create the job instance first (before defining coroutine)
-        # so we can access it in the coroutine
-        job_instance: ThreadedJobExecution | None = None
-
         # Create the job record in database
         job_model = Job(
             id=job_id,
@@ -124,66 +167,18 @@ class ThreadedJobExecution(JobExecution):
         )
         await job_model.save()
 
-        # Define the execution coroutine
-        async def execute():
-            try:
-                # job_instance may not be assigned yet due to scheduling; avoid dereferencing it here
-                if request.graph is None:
-                    log.info(f"Loading workflow graph for {request.workflow_id}")
-                    workflow = await context.get_workflow(request.workflow_id)
-                    if workflow is None:
-                        raise ValueError(f"Workflow {request.workflow_id} not found")
-                    request.graph = workflow.get_api_graph()
-
-                if job_instance:
-                    job_instance._status = "running"
-                await runner.run(request, context)
-
-                # Update job status on completion
-                if job_instance:
-                    job_instance._status = "completed"
-                await job_model.update(status="completed", finished_at=datetime.now())
-                log.info(f"Background job {job_id} completed successfully")
-
-            except asyncio.CancelledError:
-                runner.status = "cancelled"
-                if job_instance:
-                    job_instance._status = "cancelled"
-                await job_model.update(status="cancelled", finished_at=datetime.now())
-                log.info(f"Background job {job_id} cancelled")
-                raise
-            except Exception as e:
-                runner.status = "error"
-                if job_instance:
-                    job_instance._status = "error"
-                error_text = str(e).strip()
-                error_msg = (
-                    f"{e.__class__.__name__}: {error_text}"
-                    if error_text
-                    else repr(e)
-                )
-                await job_model.update(
-                    status="failed", error=error_msg, finished_at=datetime.now()
-                )
-                log.exception("Background job %s failed: %s", job_id, error_msg)
-                context.post_message(
-                    JobUpdate(job_id=job_id, status="failed", error=error_msg)
-                )
-                raise
-
-        # Schedule execution on the persistent loop
-        future = event_loop.run_coroutine(execute())
-
-        # Create and return the background job instance
+        # Create the job instance
         job_instance = cls(
             job_id=job_id,
             runner=runner,
             context=context,
-            event_loop=event_loop,
-            future=future,
             request=request,
             job_model=job_model,
+            event_loop=event_loop,
         )
-        # Set status to running immediately (will be updated by execute() coroutine)
+
+        # Schedule execution on the persistent loop
+        job_instance.future = event_loop.run_coroutine(job_instance.execute())
         job_instance._status = "running"
+
         return job_instance
