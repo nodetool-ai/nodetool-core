@@ -373,6 +373,7 @@ def run_uvicorn_server(app: Any, host: str, port: int, reload: bool) -> None:
         ),
         "datefmt": os.getenv("NODETOOL_LOG_DATEFMT", "%Y-%m-%d %H:%M:%S"),
     }
+    log_level = Environment.get_log_level()
 
     uvicorn_log_config = {
         "version": 1,
@@ -382,24 +383,24 @@ def run_uvicorn_server(app: Any, host: str, port: int, reload: bool) -> None:
             "default": {
                 "class": "logging.StreamHandler",
                 "formatter": "default",
-                "level": os.getenv("NODETOOL_LOG_LEVEL", "INFO").upper(),
+                "level": log_level.upper(),
                 "stream": "ext://sys.stdout",
             }
         },
         "loggers": {
             "uvicorn": {
                 "handlers": ["default"],
-                "level": os.getenv("NODETOOL_LOG_LEVEL", "INFO").upper(),
+                "level": log_level.upper(),
                 "propagate": False,
             },
             "uvicorn.error": {
                 "handlers": ["default"],
-                "level": os.getenv("NODETOOL_LOG_LEVEL", "INFO").upper(),
+                "level": log_level.upper(),
                 "propagate": False,
             },
             "uvicorn.access": {
                 "handlers": ["default"],
-                "level": os.getenv("NODETOOL_LOG_LEVEL", "INFO").upper(),
+                "level": log_level.upper(),
                 "propagate": False,
             },
         },

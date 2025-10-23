@@ -55,22 +55,6 @@ log = get_logger(__name__)
 router = APIRouter(prefix="/api/models", tags=["models"])
 
 
-@router.get("/recommended")
-async def recommended_models(
-    user: str = Depends(current_user),
-) -> list[UnifiedModel]:
-    models = [
-        model
-        for model_list in get_recommended_models().values()
-        for model in model_list
-    ]
-    gguf_models = await load_gguf_models_from_file()
-    mlx_models = await load_mlx_models_from_file()
-    models.extend(gguf_models)
-    models.extend(mlx_models)
-    return [model for model in models if model is not None]
-
-
 def dedupe_models(models: list[UnifiedModel]) -> list[UnifiedModel]:
     seen_ids = set()
     deduped_models = []
@@ -82,10 +66,9 @@ def dedupe_models(models: list[UnifiedModel]) -> list[UnifiedModel]:
     return deduped_models
 
 
-@router.get("/all")
-async def get_all_models(
-    user: str = Depends(current_user),
-) -> list[UnifiedModel]:
+# Exported functions for direct use (e.g., by MCP server)
+async def get_all_models(user: str) -> list[UnifiedModel]:
+    """Get all available models of all types."""
     reco_models = [
         model
         for model_list in get_recommended_models().values()
@@ -100,8 +83,40 @@ async def get_all_models(
     all_models = (
         hf_models + ollama_models_unified + reco_models + gguf_models + mlx_models
     )
-    deduped_models = dedupe_models(all_models)
-    return deduped_models
+    return dedupe_models(all_models)
+
+
+async def recommended_models(user: str) -> list[UnifiedModel]:
+    """Get recommended models."""
+    models = [
+        model
+        for model_list in get_recommended_models().values()
+        for model in model_list
+    ]
+    gguf_models = await load_gguf_models_from_file()
+    mlx_models = await load_mlx_models_from_file()
+    models.extend(gguf_models)
+    models.extend(mlx_models)
+    return [model for model in models if model is not None]
+
+
+async def get_language_models(user: str = "1") -> list[LanguageModel]:
+    """Get all available language models."""
+    return await get_all_language_models(user)
+
+
+@router.get("/recommended")
+async def recommended_models_endpoint(
+    user: str = Depends(current_user),
+) -> list[UnifiedModel]:
+    return await recommended_models(user)
+
+
+@router.get("/all")
+async def get_all_models_endpoint(
+    user: str = Depends(current_user),
+) -> list[UnifiedModel]:
+    return await get_all_models(user)
 
 
 @router.get("/huggingface")
@@ -139,7 +154,7 @@ async def delete_ollama_model_endpoint(model_name: str) -> bool:
 async def get_language_models_endpoint(
     user: str = Depends(current_user),
 ) -> list[LanguageModel]:
-    return await get_all_language_models(user)
+    return await get_language_models(user)
 
 
 @router.get("/image")

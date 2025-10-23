@@ -10,6 +10,7 @@ from nodetool.deploy.self_hosted import (
     LocalExecutor,
     is_localhost,
 )
+from nodetool.deploy.proxy_run import ProxyRunGenerator
 from nodetool.config.deployment import (
     SelfHostedDeployment,
     SSHConfig,
@@ -144,6 +145,7 @@ class TestSelfHostedDeployer:
         manager.read_state = Mock(return_value=None)
         manager.write_state = Mock()
         manager.update_deployment_status = Mock()
+        manager.get_or_create_secret = Mock(return_value="test-proxy-token")
         return manager
 
     def test_init(self, basic_deployment, mock_state_manager):
@@ -215,62 +217,63 @@ class TestSelfHostedDeployer:
         )
 
         plan = deployer.plan()
+        expected_container = ProxyRunGenerator(basic_deployment).get_container_name()
 
         assert plan["deployment_name"] == "test"
         assert plan["host"] == "192.168.1.100"
         assert "Initial deployment" in plan["changes"][0]
-        assert "Container: nodetool-default" in plan["will_create"]
+        assert f"Proxy container: {expected_container}" in plan["will_create"]
         assert "/data/workspace" in str(plan["will_create"])
         assert "/data/hf-cache" in str(plan["will_create"])
+        assert any("/proxy" in item for item in plan["will_create"])
+        assert any("/acme" in item for item in plan["will_create"])
 
     def test_plan_existing_deployment_no_changes(
         self, basic_deployment, mock_state_manager
     ):
         """Test generating plan for existing deployment with no changes."""
-        with patch("nodetool.deploy.self_hosted.get_docker_run_hash") as mock_hash:
-            mock_hash.return_value = "abc123"
+        current_hash = ProxyRunGenerator(basic_deployment).generate_hash()
 
-            mock_state_manager.read_state.return_value = {
-                "last_deployed": "2024-01-15T10:30:00",
-                "docker_run_hash": "abc123",
-            }
+        mock_state_manager.read_state.return_value = {
+            "last_deployed": "2024-01-15T10:30:00",
+            "proxy_run_hash": current_hash,
+        }
 
-            deployer = SelfHostedDeployer(
-                deployment_name="test",
-                deployment=basic_deployment,
-                state_manager=mock_state_manager,
-            )
+        deployer = SelfHostedDeployer(
+            deployment_name="test",
+            deployment=basic_deployment,
+            state_manager=mock_state_manager,
+        )
 
-            plan = deployer.plan()
+        plan = deployer.plan()
 
-            # No configuration changes
-            config_changes = [
-                c for c in plan["changes"] if "configuration has changed" in c
-            ]
-            assert len(config_changes) == 0
+        # No configuration changes
+        config_changes = [
+            c for c in plan["changes"] if "configuration has changed" in c
+        ]
+        assert len(config_changes) == 0
 
     def test_plan_existing_deployment_with_changes(
         self, basic_deployment, mock_state_manager
     ):
         """Test generating plan for existing deployment with changes."""
-        with patch("nodetool.deploy.self_hosted.get_docker_run_hash") as mock_hash:
-            mock_hash.return_value = "new_hash"
+        current_hash = ProxyRunGenerator(basic_deployment).generate_hash()
 
-            mock_state_manager.read_state.return_value = {
-                "last_deployed": "2024-01-15T10:30:00",
-                "docker_run_hash": "old_hash",
-            }
+        mock_state_manager.read_state.return_value = {
+            "last_deployed": "2024-01-15T10:30:00",
+            "proxy_run_hash": "old_hash" if current_hash != "old_hash" else "other",
+        }
 
-            deployer = SelfHostedDeployer(
-                deployment_name="test",
-                deployment=basic_deployment,
-                state_manager=mock_state_manager,
-            )
+        deployer = SelfHostedDeployer(
+            deployment_name="test",
+            deployment=basic_deployment,
+            state_manager=mock_state_manager,
+        )
 
-            plan = deployer.plan()
+        plan = deployer.plan()
 
-            assert "configuration has changed" in plan["changes"][0]
-            assert "Container configuration" in plan["will_update"]
+        assert "configuration has changed" in plan["changes"][0]
+        assert "Proxy container" in plan["will_update"][0]
 
     def test_apply_dry_run(self, basic_deployment, mock_state_manager):
         """Test apply with dry_run=True returns plan."""
@@ -296,72 +299,65 @@ class TestSelfHostedDeployer:
         mock_ssh.execute = Mock(return_value=(0, "container_id_123", ""))
 
         with patch("nodetool.deploy.self_hosted.SSHConnection") as mock_ssh_cls:
-            with patch("nodetool.deploy.self_hosted.get_docker_run_hash") as mock_hash:
-                with patch(
-                    "nodetool.deploy.self_hosted.DockerRunGenerator"
-                ) as mock_gen_cls:
-                    mock_ssh_cls.return_value = mock_ssh
-                    mock_hash.return_value = "hash123"
+            with patch("nodetool.deploy.self_hosted.ProxyRunGenerator") as mock_gen_cls:
+                mock_ssh_cls.return_value = mock_ssh
 
-                    mock_gen = Mock()
-                    mock_gen.generate_command.return_value = "docker run ..."
-                    mock_gen.generate_hash.return_value = "hash123"
-                    mock_gen_cls.return_value = mock_gen
+                mock_gen = Mock()
+                mock_gen.generate_command.return_value = "docker run ..."
+                mock_gen.generate_hash.return_value = "hash123"
+                mock_gen.get_container_name.return_value = "nodetool-proxy-default"
+                mock_gen_cls.return_value = mock_gen
 
-                    deployer = SelfHostedDeployer(
-                        deployment_name="test",
-                        deployment=basic_deployment,
-                        state_manager=mock_state_manager,
-                    )
+                deployer = SelfHostedDeployer(
+                    deployment_name="test",
+                    deployment=basic_deployment,
+                    state_manager=mock_state_manager,
+                )
 
-                    result = deployer.apply(dry_run=False)
+                result = deployer.apply(dry_run=False)
 
-                    assert result["status"] == "success"
-                    assert len(result["errors"]) == 0
+                assert result["status"] == "success"
+                assert len(result["errors"]) == 0
 
-                    # Should update status to deploying, then running
-                    assert mock_state_manager.update_deployment_status.call_count == 1
-                    mock_state_manager.update_deployment_status.assert_called_with(
-                        "test", DeploymentStatus.DEPLOYING.value
-                    )
+                # Should update status to deploying
+                mock_state_manager.update_deployment_status.assert_called_once_with(
+                    "test", DeploymentStatus.DEPLOYING.value
+                )
 
-                    # Should write final state
-                    mock_state_manager.write_state.assert_called_once()
-                    state_args = mock_state_manager.write_state.call_args[0]
-                    assert state_args[0] == "test"
-                    assert state_args[1]["status"] == DeploymentStatus.RUNNING.value
+                # Should write final state
+                mock_state_manager.write_state.assert_called_once()
+                state_args = mock_state_manager.write_state.call_args[0]
+                assert state_args[0] == "test"
+                assert state_args[1]["status"] == DeploymentStatus.RUNNING.value
 
     def test_apply_localhost(self, localhost_deployment, mock_state_manager):
         """Test deployment to localhost."""
         with patch("nodetool.deploy.self_hosted.LocalExecutor") as mock_exec_cls:
-            with patch("nodetool.deploy.self_hosted.get_docker_run_hash") as mock_hash:
-                with patch(
-                    "nodetool.deploy.self_hosted.DockerRunGenerator"
-                ) as mock_gen_cls:
-                    mock_exec = Mock()
-                    mock_exec.__enter__ = Mock(return_value=mock_exec)
-                    mock_exec.__exit__ = Mock(return_value=False)
-                    mock_exec.mkdir = Mock()
-                    mock_exec.execute = Mock(return_value=(0, "container_id_123", ""))
+            with patch("nodetool.deploy.self_hosted.ProxyRunGenerator") as mock_gen_cls:
+                mock_exec = Mock()
+                mock_exec.__enter__ = Mock(return_value=mock_exec)
+                mock_exec.__exit__ = Mock(return_value=False)
+                mock_exec.mkdir = Mock()
+                mock_exec.execute = Mock(return_value=(0, "container_id_123", ""))
 
-                    mock_exec_cls.return_value = mock_exec
-                    mock_hash.return_value = "hash123"
+                mock_exec_cls.return_value = mock_exec
 
-                    mock_gen = Mock()
-                    mock_gen.generate_command.return_value = "docker run ..."
-                    mock_gen.generate_hash.return_value = "hash123"
-                    mock_gen_cls.return_value = mock_gen
+                mock_gen = Mock()
+                mock_gen.generate_command.return_value = "docker run ..."
+                mock_gen.generate_hash.return_value = "hash123"
+                mock_gen.get_container_name.return_value = "nodetool-proxy-default"
+                mock_gen_cls.return_value = mock_gen
 
-                    deployer = SelfHostedDeployer(
-                        deployment_name="test",
-                        deployment=localhost_deployment,
-                        state_manager=mock_state_manager,
-                    )
+                deployer = SelfHostedDeployer(
+                    deployment_name="test",
+                    deployment=localhost_deployment,
+                    state_manager=mock_state_manager,
+                )
 
-                    result = deployer.apply(dry_run=False)
+                result = deployer.apply(dry_run=False)
 
-                    assert result["status"] == "success"
-                    assert any("localhost" in str(step) for step in result["steps"])
+                assert result["status"] == "success"
+                assert any("localhost" in str(step) for step in result["steps"])
 
     def test_apply_failure(self, basic_deployment, mock_state_manager):
         """Test deployment failure."""
@@ -402,11 +398,13 @@ class TestSelfHostedDeployer:
         deployer._create_directories(mock_ssh, results)
 
         # Should create workspace and subdirectories
-        assert mock_ssh.mkdir.call_count == 5
+        assert mock_ssh.mkdir.call_count == 7
         mock_ssh.mkdir.assert_any_call("/data/workspace", parents=True)
         mock_ssh.mkdir.assert_any_call("/data/workspace/data", parents=True)
         mock_ssh.mkdir.assert_any_call("/data/workspace/assets", parents=True)
         mock_ssh.mkdir.assert_any_call("/data/workspace/temp", parents=True)
+        mock_ssh.mkdir.assert_any_call("/data/workspace/proxy", parents=True)
+        mock_ssh.mkdir.assert_any_call("/data/workspace/acme", parents=True)
         mock_ssh.mkdir.assert_any_call("/data/hf-cache", parents=True)
 
         assert len(results["steps"]) > 0
@@ -441,7 +439,7 @@ class TestSelfHostedDeployer:
         mock_ssh.mkdir.assert_any_call("/custom/cache", parents=True)
 
     def test_stop_existing_container_found(self, basic_deployment, mock_state_manager):
-        """Test stopping existing container."""
+        """Test stopping existing proxy container."""
         mock_ssh = Mock()
         # Container exists (check returns container ID)
         # Stop succeeds, remove succeeds
@@ -460,12 +458,12 @@ class TestSelfHostedDeployer:
         )
 
         results = {"steps": []}
-        deployer._stop_existing_container(mock_ssh, results)
+        deployer._stop_existing_proxy(mock_ssh, results)
 
         # Should check, stop, and remove
         assert mock_ssh.execute.call_count == 3
-        assert any("Stopped container" in step for step in results["steps"])
-        assert any("Removed container" in step for step in results["steps"])
+        assert any("Stopped proxy" in step for step in results["steps"])
+        assert any("Removed proxy" in step for step in results["steps"])
 
     def test_stop_existing_container_not_found(
         self, basic_deployment, mock_state_manager
@@ -482,11 +480,11 @@ class TestSelfHostedDeployer:
         )
 
         results = {"steps": []}
-        deployer._stop_existing_container(mock_ssh, results)
+        deployer._stop_existing_proxy(mock_ssh, results)
 
         # Should only check, not stop or remove
         assert mock_ssh.execute.call_count == 1
-        assert any("No existing container" in step for step in results["steps"])
+        assert any("No existing proxy container" in step for step in results["steps"])
 
     def test_stop_existing_container_error(self, basic_deployment, mock_state_manager):
         """Test handling error when checking for existing container."""
@@ -500,7 +498,7 @@ class TestSelfHostedDeployer:
         )
 
         results = {"steps": []}
-        deployer._stop_existing_container(mock_ssh, results)
+        deployer._stop_existing_proxy(mock_ssh, results)
 
         # Should log warning, not crash
         assert any("Warning" in step for step in results["steps"])
@@ -510,12 +508,13 @@ class TestSelfHostedDeployer:
         mock_ssh = Mock()
         mock_ssh.execute = Mock(return_value=(0, "container_id_abc123", ""))
 
-        with patch("nodetool.deploy.self_hosted.DockerRunGenerator") as mock_gen_cls:
+        with patch("nodetool.deploy.self_hosted.ProxyRunGenerator") as mock_gen_cls:
             mock_gen = Mock()
             mock_gen.generate_command.return_value = (
                 "docker run -d nodetool/nodetool:latest"
             )
             mock_gen.generate_hash.return_value = "hash123"
+            mock_gen.get_container_name.return_value = "nodetool-proxy-default"
             mock_gen_cls.return_value = mock_gen
 
             deployer = SelfHostedDeployer(
@@ -525,10 +524,10 @@ class TestSelfHostedDeployer:
             )
 
             results = {"steps": [], "errors": []}
-            hash_result = deployer._start_container(mock_ssh, results)
+            hash_result = deployer._start_proxy_container(mock_ssh, results)
 
             assert hash_result == "hash123"
-            assert any("Container started" in step for step in results["steps"])
+            assert any("Proxy container started" in step for step in results["steps"])
             assert len(results["errors"]) == 0
 
     def test_start_container_failure(self, basic_deployment, mock_state_manager):
@@ -537,11 +536,12 @@ class TestSelfHostedDeployer:
         error = SSHCommandError("Docker run failed", 1, "", "Image not found")
         mock_ssh.execute = Mock(side_effect=error)
 
-        with patch("nodetool.deploy.self_hosted.DockerRunGenerator") as mock_gen_cls:
+        with patch("nodetool.deploy.self_hosted.ProxyRunGenerator") as mock_gen_cls:
             mock_gen = Mock()
             mock_gen.generate_command.return_value = (
                 "docker run -d nodetool/nodetool:latest"
             )
+            mock_gen.get_container_name.return_value = "nodetool-proxy-default"
             mock_gen_cls.return_value = mock_gen
 
             deployer = SelfHostedDeployer(
@@ -553,7 +553,7 @@ class TestSelfHostedDeployer:
             results = {"steps": [], "errors": []}
 
             with pytest.raises(SSHCommandError):
-                deployer._start_container(mock_ssh, results)
+                deployer._start_proxy_container(mock_ssh, results)
 
             assert len(results["errors"]) > 0
             assert "Image not found" in results["errors"][0]
@@ -565,10 +565,10 @@ class TestSelfHostedDeployer:
             side_effect=[
                 (
                     0,
-                    "nodetool-default Up 2 minutes 0.0.0.0:8000->8000/tcp",
+                    "nodetool-proxy-default Up 2 minutes 0.0.0.0:80->80/tcp",
                     "",
                 ),  # status
-                (0, "healthy", ""),  # health
+                (0, "ok", ""),  # health curl
             ]
         )
 
@@ -580,10 +580,10 @@ class TestSelfHostedDeployer:
             )
 
             results = {"steps": []}
-            deployer._check_health(mock_ssh, results)
+            deployer._check_health(mock_ssh, results, "token-123")
 
             assert any("Container status" in step for step in results["steps"])
-            assert any("healthy" in step for step in results["steps"])
+            assert any("Health endpoint OK" in step for step in results["steps"])
 
     def test_check_health_container_not_running(
         self, basic_deployment, mock_state_manager
@@ -600,10 +600,10 @@ class TestSelfHostedDeployer:
             )
 
             results = {"steps": []}
-            deployer._check_health(mock_ssh, results)
+            deployer._check_health(mock_ssh, results, "token-123")
 
             assert any(
-                "not found in running state" in step for step in results["steps"]
+                "not running" in step for step in results["steps"]
             )
 
     def test_destroy_success(self, basic_deployment, mock_state_manager):
@@ -613,8 +613,8 @@ class TestSelfHostedDeployer:
         mock_ssh.__exit__ = Mock(return_value=False)
         mock_ssh.execute = Mock(
             side_effect=[
-                (0, "nodetool-default", ""),  # stop
-                (0, "nodetool-default", ""),  # rm
+                (0, "nodetool-proxy-default", ""),  # stop
+                (0, "nodetool-proxy-default", ""),  # rm
             ]
         )
 
@@ -649,7 +649,7 @@ class TestSelfHostedDeployer:
         mock_ssh.execute = Mock(
             side_effect=[
                 stop_error,  # stop
-                (0, "nodetool-default", ""),  # rm
+                (0, "nodetool-proxy-default", ""),  # rm
             ]
         )
 
@@ -675,7 +675,7 @@ class TestSelfHostedDeployer:
         rm_error = SSHCommandError("Remove failed", 1, "", "Error")
         mock_ssh.execute = Mock(
             side_effect=[
-                (0, "nodetool-default", ""),  # stop
+                (0, "nodetool-proxy-default", ""),  # stop
                 rm_error,  # rm
             ]
         )
@@ -799,7 +799,7 @@ class TestSelfHostedDeployer:
             mock_ssh.execute.assert_called_once()
             call_args = mock_ssh.execute.call_args[0][0]
             assert "--tail=100" in call_args
-            assert "nodetool-default" in call_args
+            assert "nodetool-proxy-default" in call_args
 
     def test_logs_with_follow(self, basic_deployment, mock_state_manager):
         """Test getting logs with follow option."""
@@ -876,6 +876,7 @@ class TestSelfHostedEdgeCases:
         mock_state_manager.read_state = Mock(return_value=None)
         mock_state_manager.write_state = Mock()
         mock_state_manager.update_deployment_status = Mock()
+        mock_state_manager.get_or_create_secret = Mock(return_value="edge-token")
 
         mock_ssh = Mock()
         mock_ssh.__enter__ = Mock(return_value=mock_ssh)
@@ -885,13 +886,14 @@ class TestSelfHostedEdgeCases:
 
         with patch("nodetool.deploy.self_hosted.SSHConnection") as mock_ssh_cls:
             with patch(
-                "nodetool.deploy.self_hosted.DockerRunGenerator"
+                "nodetool.deploy.self_hosted.ProxyRunGenerator"
             ) as mock_gen_cls:
                 mock_ssh_cls.return_value = mock_ssh
 
                 mock_gen = Mock()
                 mock_gen.generate_command.return_value = "docker run ..."
                 mock_gen.generate_hash.return_value = "hash123"
+                mock_gen.get_container_name.return_value = "nodetool-proxy-test"
                 mock_gen_cls.return_value = mock_gen
 
                 deployer = SelfHostedDeployer(

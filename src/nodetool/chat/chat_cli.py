@@ -20,10 +20,12 @@ import os
 import subprocess
 import traceback
 import sys
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Any
 from pathlib import Path
 import shutil  # Add shutil for cp and mv
 import re  # Add re for grep
+
+from nodetool.config.logging_config import configure_logging
 
 # New imports
 from nodetool.ml.models.language_models import get_all_language_models
@@ -40,10 +42,11 @@ from rich.align import Align
 from rich.columns import Columns  # Add Columns
 
 # Existing imports
-from nodetool.agents.agent import Agent
 from nodetool.providers import get_provider
-from nodetool.chat.regular_chat import process_regular_chat
-from nodetool.metadata.types import Message, ToolCall, LanguageModel
+from nodetool.messaging.agent_message_processor import AgentMessageProcessor
+from nodetool.messaging.message_processor import MessageProcessor
+from nodetool.messaging.regular_chat_processor import RegularChatProcessor
+from nodetool.metadata.types import Message, LanguageModel
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.agents.tools.browser_tools import BrowserTool, ScreenshotTool
 from nodetool.agents.tools.email_tools import (
@@ -76,7 +79,46 @@ from nodetool.agents.tools.filesystem_tools import (
     ReadFileTool,
     WriteFileTool,
 )
-from nodetool.workflows.types import Chunk
+from pydantic import ValidationError
+
+
+# Helper --------------------------------------------------------------------
+
+
+def _determine_chat_log_level(explicit_level: Optional[str] = None) -> str:
+    """Resolve the logging level for the chat CLI.
+
+    Precedence ordering (highest first):
+    1. Explicit `--log-level` argument passed into the CLI entrypoint
+    2. `NODETOOL_CHAT_LOG_LEVEL` environment variable
+    3. Generic `LOG_LEVEL` / `NODETOOL_LOG_LEVEL` environment variables
+    4. `DEBUG` environment toggle (truthy -> DEBUG)
+    5. Default to "ERROR" to keep interactive output tidy
+    """
+
+    def _normalize(value: str) -> str:
+        return value.upper().strip()
+
+    if explicit_level:
+        return _normalize(explicit_level)
+
+    chat_specific = os.getenv("NODETOOL_CHAT_LOG_LEVEL")
+    if chat_specific:
+        return _normalize(chat_specific)
+
+    generic_level = os.getenv("LOG_LEVEL")
+    if generic_level:
+        return _normalize(generic_level)
+
+    nodetool_level = os.getenv("NODETOOL_LOG_LEVEL")
+    if nodetool_level:
+        return _normalize(nodetool_level)
+
+    debug_flag = os.getenv("DEBUG")
+    if debug_flag and debug_flag.lower() not in {"", "0", "false", "no", "off"}:
+        return "DEBUG"
+
+    return "ERROR"
 
 
 class ChatCLI:
@@ -112,7 +154,6 @@ class ChatCLI:
         self.messages: list[Message] = []
         self.agent_mode = False
         self.debug_mode = False
-        self.agent = None
 
         # Store selected LanguageModel object and model ID preference
         self.language_models: List[LanguageModel] = []
@@ -251,58 +292,26 @@ class ChatCLI:
 
     async def initialize(self):
         """Initialize async components and workspace with visual feedback."""
-        # Load all available packages during startup
-        self.console.print("[bold cyan]Loading available packages...[/bold cyan]")
-        self.load_all_node_packages()
-
         # Initialize components with progress indicators
-        try:
-            self.language_models = await get_all_language_models()
-        except Exception as e:
-            self.console.print(
-                f"[bold red]Error fetching language models:[/bold red] {e}"
-            )
-            self.language_models = []
+        async def load_language_models():
+            self.language_models = await get_all_language_models("1")
 
-        # Find and set the selected model based on loaded settings or default
-        found_model = None
-        if self.model_id_from_settings:
-            for model in self.language_models:
-                if model.id == self.model_id_from_settings:
-                    found_model = model
-                    break
-            if not found_model:
-                self.console.print(
-                    f"[bold yellow]Warning:[/bold yellow] Saved model ID '{self.model_id_from_settings}' not found. ",
-                    end="",
-                )
+            # Find and set the selected model based on loaded settings or default
+            found_model = None
+            if self.model_id_from_settings:
+                for model in self.language_models:
+                    if model.id == self.model_id_from_settings:
+                        found_model = model
+                        break
+                if not found_model:
+                    self.console.print(
+                        f"[bold yellow]Warning:[/bold yellow] Saved model ID '{self.model_id_from_settings}' not found. ",
+                        end="",
+                    )
 
-        # If no model found from settings or no setting existed, try finding the default 'gpt-4o' or the first available model
-        if not found_model:
-            default_id_to_try = "gpt-4o"  # Fallback default
-            for model in self.language_models:
-                if model.id == default_id_to_try:
-                    found_model = model
-                    break
-            if found_model:
-                self.console.print(f"Using default model '{found_model.name}'.")
-            elif self.language_models:
-                # If default not found, pick the first available model
-                found_model = self.language_models[0]
-                self.console.print(f"Using first available model '{found_model.name}'.")
-            else:
-                self.console.print(
-                    "[bold red]Error:[/bold red] No language models available. Please check configuration."
-                )
-                # Set to None, subsequent operations should handle this
-                self.selected_model = None
-                return  # Cannot proceed without models
+            self.selected_model = found_model
 
-        self.selected_model = found_model
-        # Set other model defaults based on the primary selected one
-        self.planner_model_id = self.selected_model.id
-        self.summarization_model_id = self.selected_model.id
-        self.retrieval_model_id = self.selected_model.id
+        asyncio.create_task(load_language_models())
 
         # Initialize standard tools
         standard_tools = [
@@ -319,54 +328,12 @@ class ChatCLI:
             GoogleNewsTool(),
             GoogleSearchTool(),
             ListDirectoryTool(),
-            OpenAIImageGenerationTool(),
-            OpenAITextToSpeechTool(),
-            OpenAIWebSearchTool(),
             ReadFileTool(),
             WriteFileTool(),
             ScreenshotTool(),
             SearchEmailTool(),
         ]
         self.all_tools = standard_tools
-
-        # Initialize workflow tools
-        # workflow_tools: list[Any] = []
-        # try:
-        #     workflow_tools = await create_workflow_tools(
-        #         self.context.user_id, limit=200
-        #     )
-        # except Exception as err:
-        #     self.console.print(
-        #         f"[bold yellow]Warning:[/bold yellow] Failed to load workflow tools: {err}"
-        #     )
-        #     workflow_tools = []
-
-        # if workflow_tools:
-        #     self.console.print(
-        #         f"[bold green]Loaded {len(workflow_tools)} workflow tools[/bold green]"
-        #     )
-
-        # # Initialize node tools
-        # from nodetool.workflows.base_node import NODE_BY_TYPE
-        # from nodetool.agents.tools.node_tool import NodeTool
-
-        # node_tools = []
-        # for node_type, node_class in NODE_BY_TYPE.items():
-        #     try:
-        #         node_tool = NodeTool(node_class)
-        #         node_tools.append(node_tool)
-        #     except Exception as e:
-        #         self.console.print(
-        #             f"[bold yellow]Warning:[/bold yellow] Failed to create node tool for {node_type}: {e}"
-        #         )
-
-        # if node_tools:
-        #     self.console.print(
-        #         f"[bold green]Loaded {len(node_tools)} node tools[/bold green]"
-        #     )
-
-        # # Store all available tools (standard tools + workflow tools + node tools)
-        # self.all_tools = standard_tools + workflow_tools + node_tools
 
         # Initialize enabled_tools tracking if not already set
         for tool in self.all_tools:
@@ -460,47 +427,177 @@ class ChatCLI:
             complete_in_thread=True,
         )
 
-    def initialize_agent(self, objective: str):
-        """Initialize or reinitialize the agent with current settings."""
+    def _get_enabled_tool_names(self) -> list[str]:
+        """Return the names of currently enabled tools."""
+        return [tool.name for tool in self.tools]
+
+    def _create_user_message(self, content: str, *, agent_mode: bool) -> Message:
+        """Create a Message instance for user input with current configuration."""
         if not self.selected_model:
-            raise ValueError("Cannot initialize agent: No model selected or loaded.")
+            raise ValueError("No model selected")
 
-        # Get the provider instance using the selected model's provider type
-        provider_instance = get_provider(self.selected_model.provider)
+        tool_names = self._get_enabled_tool_names()
 
-        # Pass the selected model ID to the agent
-        agent = Agent(
-            name="Agent",
-            objective=objective,
-            provider=provider_instance,
-            model=self.selected_model.id,  # Use the ID of the selected model
-            tools=self.tools,
-            # planner_model, summarization_model, retrieval_model are not direct Agent args
-            # They might be configured differently or passed via context if needed
+        return Message(
+            role="user",
+            content=content,
+            provider=self.selected_model.provider,
+            model=self.selected_model.id,
+            agent_mode=agent_mode,
+            tools=tool_names if tool_names else None,
         )
-        return agent
+
+    def _should_store_message(self, message: Message) -> bool:
+        """Determine whether a processor message should be added to history."""
+        return message.role in {"assistant", "tool", "system", "user"}
+
+    async def _run_message_processor(
+        self,
+        processor: MessageProcessor,
+        chat_history: list[Message],
+        *,
+        processing_context: ProcessingContext | None = None,
+        **kwargs: Any,
+    ) -> None:
+        """Run a message processor and stream its output to the CLI."""
+
+        context = processing_context or self.context
+
+        async def process() -> None:
+            try:
+                await processor.process(
+                    chat_history=chat_history,
+                    processing_context=context,
+                    **kwargs,
+                )
+            except Exception as exc:  # pragma: no cover - defensive logging
+                traceback.print_exc()
+                await processor.send_message({"type": "error", "message": str(exc)})
+                processor.is_processing = False
+
+        processor_task = asyncio.create_task(process())
+        chunk_printed = False
+        stream_buffer: list[str] = []
+
+        try:
+            while processor.has_messages() or processor.is_processing:
+                message = await processor.get_message()
+                if message:
+                    message_type = message.get("type")
+
+                    if message_type == "chunk":
+                        content = message.get("content") or ""
+                        done = message.get("done", False)
+                        if content:
+                            chunk_printed = True
+                            stream_buffer.append(content)
+                            self.console.print(content, end="", highlight=False)
+                        if done and chunk_printed:
+                            self.console.print()
+                            chunk_printed = False
+
+                    elif message_type == "message":
+                        try:
+                            parsed = Message.model_validate(message)
+                        except ValidationError as validation_error:
+                            if self.debug_mode:
+                                self.console.print(
+                                    f"[bold red]Failed to parse message:[/bold red] {validation_error}"
+                                )
+                            continue
+
+                        if (
+                            self.debug_mode
+                            and parsed.tool_calls
+                            and parsed.role == "assistant"
+                        ):
+                            for tool_call in parsed.tool_calls:
+                                args_preview = json.dumps(tool_call.args)
+                                if len(args_preview) > 120:
+                                    args_preview = args_preview[:120] + "..."
+                                self.console.print(
+                                    f"\n[bold cyan][{tool_call.name}]:[/bold cyan] {args_preview}"
+                                )
+                        elif self.debug_mode and parsed.role == "tool":
+                            preview = parsed.content
+                            if isinstance(preview, str) and len(preview) > 200:
+                                preview = preview[:200] + "..."
+                            self.console.print(
+                                f"\n[bold magenta][Tool Result: {parsed.name}][/bold magenta] {preview}"
+                            )
+
+                        has_streaming_output = bool(stream_buffer)
+
+                        if (
+                            parsed.role == "assistant"
+                            and isinstance(parsed.content, str)
+                            and parsed.content
+                            and not has_streaming_output
+                        ):
+                            self.console.print(parsed.content)
+
+                        if self._should_store_message(parsed):
+                            self.messages.append(parsed)
+
+                        stream_buffer.clear()
+
+                    elif message_type == "error":
+                        error_msg = message.get("message", "Unknown error")
+                        self.console.print(
+                            f"[bold red]Error:[/bold red] {error_msg}"
+                        )
+                    else:
+                        if self.debug_mode:
+                            self.console.print(
+                                f"[yellow]Unhandled processor message:[/yellow] {message}"
+                            )
+                else:
+                    await asyncio.sleep(0.01)
+
+            await processor_task
+        finally:
+            if not processor_task.done():
+                processor_task.cancel()
+                try:
+                    await processor_task
+                except asyncio.CancelledError:
+                    pass
 
     async def process_agent_response(self, problem: str):
-        """Process a problem with the Agent and display the response with rich formatting."""
-        self.agent = self.initialize_agent(problem)
-        output = ""
+        """Process input in agent mode using the messaging processors."""
+        if not self.selected_model:
+            raise ValueError("Cannot process agent message without a selected model")
 
-        async for item in self.agent.execute(self.context):
-            if isinstance(item, Chunk):
-                output += item.content
-                # Print the chunk directly for real-time feedback
-                self.console.print(item.content, end="", highlight=False)
-            elif isinstance(item, ToolCall):
-                args = json.dumps(item.args)
-                if len(args) > 120:
-                    args = args[:120] + "..."
-                if self.debug_mode:
-                    self.console.print(
-                        f"\n[bold cyan][{item.name}]:[/bold cyan] {args}"
-                    )
+        user_message = self._create_user_message(problem, agent_mode=True)
+        self.messages.append(user_message)
 
-        # Print final newline to separate from prompt
-        self.console.print()
+        provider = await get_provider(self.selected_model.provider, user_id="1")
+        processor = AgentMessageProcessor(provider)
+
+        await self._run_message_processor(
+            processor=processor,
+            chat_history=list(self.messages),
+            processing_context=self.context,
+        )
+
+    async def process_regular_message(self, user_input: str) -> None:
+        """Process standard chat input using the regular message processor."""
+        if not self.selected_model:
+            raise ValueError("Cannot process chat message without a selected model")
+
+        user_message = self._create_user_message(user_input, agent_mode=False)
+        self.messages.append(user_message)
+
+        provider = await get_provider(self.selected_model.provider, user_id="1")
+        processor = RegularChatProcessor(provider)
+
+        await self._run_message_processor(
+            processor=processor,
+            chat_history=list(self.messages),
+            processing_context=self.context,
+            collections=user_message.collections,
+            graph=user_message.graph,
+        )
 
     def handle_workspace_command(self, cmd: str, args: List[str]) -> None:
         """Handle workspace-related commands using the process's CWD."""
@@ -1033,34 +1130,14 @@ class ChatCLI:
                     continue
 
                 # Process chat input
+                if not self.selected_model:
+                    self.console.print("[bold red]Error:[/bold red] No model selected")
+                    continue
+
                 if self.agent_mode:
                     await self.process_agent_response(user_input)
                 else:
-                    if not self.selected_model:
-                        self.console.print(
-                            "[bold red]Error:[/bold red] No model selected"
-                        )
-                        continue
-
-                    # Process regular chat without status wrapper to allow streaming output
-                    from rich.status import Status
-
-                    # Create a dummy status object for tool execution
-                    status = Status(
-                        "[bold green]Processing...",
-                        console=self.console,
-                        spinner="dots",
-                    )
-                    self.messages = await process_regular_chat(
-                        user_input=user_input,
-                        messages=self.messages,
-                        model=self.selected_model.id,
-                        provider=get_provider(self.selected_model.provider),
-                        status=status,
-                        context=self.context,
-                        console=self.console,
-                        debug_mode=self.debug_mode,
-                    )
+                    await self.process_regular_message(user_input)
 
             except KeyboardInterrupt:
                 self.console.print(

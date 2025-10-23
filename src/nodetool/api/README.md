@@ -1,3 +1,5 @@
+[← Back to Docs Index](../../../docs/index.md)
+
 # Nodetool API
 
 This directory contains the backend API server for the Nodetool application, built using FastAPI.

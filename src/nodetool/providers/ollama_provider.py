@@ -948,7 +948,6 @@ async def main():
 # Conditionally register the provider only if OLLAMA_API_URL is set
 if _ollama_api_url:
     register_provider(Provider.Ollama)(OllamaProvider)
-    log.info(f"Ollama provider registered with API URL: {_ollama_api_url}")
 else:
     log.debug("Ollama provider not registered: OLLAMA_API_URL not set")
 

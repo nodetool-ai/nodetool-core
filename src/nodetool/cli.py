@@ -319,10 +319,6 @@ def run(
             console.print("[red]Error: Workflow argument required (or use --stdin)[/]")
         sys.exit(1)
 
-    from nodetool.config.logging_config import configure_logging
-
-    configure_logging(level="DEBUG")
-
     # Execute the workflow
     if jsonl:
         # JSONL output mode (for subprocess/automation)
@@ -3223,6 +3219,336 @@ def sync_workflow(workflow_id: str, server_url: str):
 
 # Add sync group to the main CLI
 cli.add_command(sync)
+
+
+# ---- Proxy Commands ----
+
+
+@cli.command("proxy")
+@click.option(
+    "--config",
+    required=True,
+    type=click.Path(exists=True, resolve_path=True, file_okay=True, dir_okay=False),
+    help="Path to proxy configuration YAML file",
+)
+@click.option(
+    "--host",
+    default="0.0.0.0",
+    help="Host to bind to",
+)
+@click.option(
+    "--port",
+    default=443,
+    type=int,
+    help="Port to bind to",
+)
+@click.option(
+    "--no-tls",
+    is_flag=True,
+    help="Disable TLS (serve HTTP only)",
+)
+@click.option(
+    "--verbose",
+    "-v",
+    is_flag=True,
+    help="Enable verbose logging (DEBUG level)",
+)
+def proxy(
+    config: str,
+    host: str,
+    port: int,
+    no_tls: bool,
+    verbose: bool,
+):
+    """Start the async Docker reverse proxy server.
+
+    The proxy routes HTTP requests to Docker containers, starting them on-demand
+    and stopping them after an idle timeout. It supports Let's Encrypt ACME
+    for TLS certificate management.
+
+    Examples:
+      # Start proxy with HTTPS on port 443
+      nodetool proxy --config /etc/proxy/config.yaml
+
+      # Start proxy on HTTP port 8080 (no TLS)
+      nodetool proxy --config /etc/proxy/config.yaml --port 8080 --no-tls
+
+      # Start with verbose logging
+      nodetool proxy --config /etc/proxy/config.yaml --verbose
+    """
+    import asyncio
+
+    from nodetool.proxy.config import load_config_with_env
+    from nodetool.proxy.server import run_proxy_app
+
+    try:
+        # Configure logging if verbose
+        if verbose:
+            from nodetool.config.logging_config import configure_logging
+
+            configure_logging(level="DEBUG")
+            console.print("[cyan]🐛 Verbose logging enabled (DEBUG level)[/]")
+
+        # Load configuration
+        console.print(f"[cyan]Loading proxy configuration from {config}[/]")
+        proxy_config = load_config_with_env(config)
+
+        console.print(
+            f"[green]✅ Configuration loaded[/]\n"
+            f"Domain: {proxy_config.global_.domain}\n"
+            f"Services: {len(proxy_config.services)}\n"
+            f"Idle timeout: {proxy_config.global_.idle_timeout}s"
+        )
+
+        # Display services
+        if verbose:
+            table = Table(title="Configured Services")
+            table.add_column("Name", style="cyan")
+            table.add_column("Path", style="magenta")
+            table.add_column("Image", style="green")
+            table.add_column("Internal Port", style="yellow")
+            table.add_column("Host Port", style="blue")
+
+            for service in proxy_config.services:
+                table.add_row(
+                    service.name,
+                    service.path,
+                    service.image,
+                    str(service.internal_port),
+                    str(service.host_port or "auto"),
+                )
+            console.print(table)
+
+        # Run proxy
+        use_tls = not no_tls
+        if use_tls:
+            console.print(
+                f"[cyan]Starting proxy with TLS on {host}:{port}[/]"
+            )
+        else:
+            console.print(f"[cyan]Starting proxy on {host}:{port} (HTTP only)[/]")
+
+        asyncio.run(run_proxy_app(proxy_config, host=host, port=port, use_tls=use_tls))
+
+    except FileNotFoundError as e:
+        console.print(f"[red]❌ {e}[/]")
+        raise SystemExit(1)
+    except ValueError as e:
+        console.print(f"[red]❌ Configuration error: {e}[/]")
+        raise SystemExit(1)
+    except KeyboardInterrupt:
+        console.print("\n[yellow]⚠️ Proxy interrupted by user[/]")
+        raise SystemExit(0)
+    except Exception as e:
+        console.print(f"[red]❌ Error: {e}[/]")
+        raise SystemExit(1)
+
+@cli.command("proxy-daemon")
+@click.option(
+    "--config",
+    required=True,
+    type=click.Path(exists=True, resolve_path=True, file_okay=True, dir_okay=False),
+    help="Path to proxy configuration YAML file",
+)
+@click.option(
+    "--verbose",
+    "-v",
+    is_flag=True,
+    help="Enable verbose logging (DEBUG level)",
+)
+def proxy_daemon(config: str, verbose: bool):
+    """Run the FastAPI proxy with ACME HTTP + HTTPS listeners concurrently."""
+    import asyncio
+
+    from nodetool.proxy.config import load_config_with_env
+    from nodetool.proxy.server import run_proxy_daemon
+
+    if verbose:
+        from nodetool.config.logging_config import configure_logging
+
+        configure_logging(level="DEBUG")
+        console.print("[cyan]🐛 Verbose logging enabled (DEBUG level)[/]")
+
+    console.print(f"[cyan]Loading proxy configuration from {config}[/]")
+    proxy_config = load_config_with_env(config)
+
+    console.print(
+        f"[green]✅ Configuration loaded[/]\n"
+        f"Domain: {proxy_config.global_.domain}\n"
+        f"Services: {len(proxy_config.services)}\n"
+        f"HTTP port: {proxy_config.global_.listen_http}\n"
+        f"HTTPS port: {proxy_config.global_.listen_https}\n"
+        f"Connect mode: {proxy_config.global_.connect_mode}"
+    )
+
+    asyncio.run(run_proxy_daemon(proxy_config))
+
+
+@cli.command("proxy-status")
+@click.option(
+    "--config",
+    required=True,
+    type=click.Path(exists=True, resolve_path=True, file_okay=True, dir_okay=False),
+    help="Path to proxy configuration YAML file",
+)
+@click.option(
+    "--server-url",
+    default="http://localhost/status",
+    help="URL of proxy status endpoint",
+)
+@click.option(
+    "--bearer-token",
+    help="Bearer token for authentication (defaults to config value)",
+)
+def proxy_status(config: str, server_url: str, bearer_token: str):
+    """Check the status of proxy services.
+
+    Connects to the running proxy server and displays the status of all
+    managed containers (running, stopped, not created, etc.).
+
+    Examples:
+      # Check status using local config
+      nodetool proxy-status --config /etc/proxy/config.yaml
+
+      # Check remote proxy status
+      nodetool proxy-status --config /etc/proxy/config.yaml \\
+        --server-url https://proxy.example.com/status \\
+        --bearer-token MY_TOKEN
+    """
+    import asyncio
+
+    from nodetool.proxy.config import load_config_with_env
+
+    async def check_status():
+        import httpx
+
+        try:
+            # Load config for bearer token if not provided
+            if not bearer_token:
+                proxy_config = load_config_with_env(config)
+                token = proxy_config.global_.bearer_token
+            else:
+                token = bearer_token
+
+            # Fetch status from proxy
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.get(
+                    server_url,
+                    headers={"Authorization": f"Bearer {token}"},
+                )
+                response.raise_for_status()
+
+            # Parse and display status
+            status_data = response.json()
+
+            table = Table(title="Proxy Service Status")
+            table.add_column("Service", style="cyan")
+            table.add_column("Path", style="magenta")
+            table.add_column("Status", style="yellow")
+            table.add_column("Host Port", style="blue")
+            table.add_column("Last Access", style="green")
+
+            for service in status_data:
+                status = service["status"]
+                status_color = (
+                    "green" if status == "running" else "yellow" if status == "stopped" else "red"
+                )
+                status_text = f"[{status_color}]{status}[/{status_color}]"
+
+                last_access = service.get("last_access_epoch")
+                if last_access:
+                    import datetime
+
+                    dt = datetime.datetime.fromtimestamp(last_access)
+                    last_access_str = dt.strftime("%Y-%m-%d %H:%M:%S")
+                else:
+                    last_access_str = "Never"
+
+                table.add_row(
+                    service["name"],
+                    service["path"],
+                    status_text,
+                    str(service.get("host_port") or "-"),
+                    last_access_str,
+                )
+
+            console.print(table)
+
+        except httpx.ConnectError:
+            console.print(
+                f"[red]❌ Failed to connect to proxy at {server_url}[/]"
+            )
+            raise SystemExit(1)
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                console.print("[red]❌ Authentication failed (invalid bearer token)[/]")
+            else:
+                console.print(f"[red]❌ Proxy error: {e.response.status_code}[/]")
+            raise SystemExit(1)
+        except Exception as e:
+            console.print(f"[red]❌ Error: {e}[/]")
+            raise SystemExit(1)
+
+    asyncio.run(check_status())
+
+
+@cli.command("proxy-validate-config")
+@click.option(
+    "--config",
+    required=True,
+    type=click.Path(exists=True, resolve_path=True, file_okay=True, dir_okay=False),
+    help="Path to proxy configuration YAML file",
+)
+def proxy_validate_config(config: str):
+    """Validate proxy configuration file.
+
+    Loads and validates the proxy YAML configuration, checking for
+    errors in service definitions and global settings.
+
+    Examples:
+      # Validate configuration
+      nodetool proxy-validate-config --config /etc/proxy/config.yaml
+    """
+    from nodetool.proxy.config import load_config_with_env
+
+    try:
+        console.print(f"[cyan]Validating configuration: {config}[/]")
+        proxy_config = load_config_with_env(config)
+
+        console.print(
+            "[green]✅ Configuration is valid[/]\n"
+            f"Domain: {proxy_config.global_.domain}\n"
+            f"Services: {len(proxy_config.services)}\n"
+            f"Idle timeout: {proxy_config.global_.idle_timeout}s"
+        )
+
+        # Display services
+        table = Table(title="Services")
+        table.add_column("Name", style="cyan")
+        table.add_column("Path", style="magenta")
+        table.add_column("Image", style="green")
+        table.add_column("Internal Port", style="yellow")
+        table.add_column("Host Port", style="blue")
+
+        for service in proxy_config.services:
+            table.add_row(
+                service.name,
+                service.path,
+                service.image,
+                str(service.internal_port),
+                str(service.host_port or "auto"),
+            )
+        console.print(table)
+
+    except FileNotFoundError as e:
+        console.print(f"[red]❌ {e}[/]")
+        raise SystemExit(1)
+    except ValueError as e:
+        console.print(f"[red]❌ Configuration error: {e}[/]")
+        raise SystemExit(1)
+    except Exception as e:
+        console.print(f"[red]❌ Error: {e}[/]")
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":

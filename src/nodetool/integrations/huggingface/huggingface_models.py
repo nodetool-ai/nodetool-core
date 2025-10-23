@@ -316,11 +316,9 @@ async def read_cached_hf_models() -> List[UnifiedModel]:
     Returns:
         List[UnifiedModel]: A list of UnifiedModel objects found in the cache.
     """
-    log.info("🔍 TRACE: read_cached_hf_models() CALLED")
     cache_key = "cached_hf_models:all"
 
     # Check cache first
-    log.info(f"🔍 TRACE: Checking cache for key: {cache_key}")
     cached_result = _model_info_cache.get(cache_key)
     if cached_result is not None:
         log.info(

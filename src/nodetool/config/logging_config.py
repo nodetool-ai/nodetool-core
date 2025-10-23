@@ -101,6 +101,7 @@ def configure_logging(
     logging.getLogger().info(f"Configuring logging with level: {level}")
     logging.getLogger("nodetool.models.sqlite_adapter").setLevel(logging.WARNING)
     logging.getLogger("nodetool.chat.chat_websocket_runner").setLevel(logging.WARNING)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
     return level
 
 

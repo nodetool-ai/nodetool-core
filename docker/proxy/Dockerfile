@@ -1,0 +1,27 @@
+FROM python:3.11-slim AS base
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PROXY_CONFIG=/etc/nodetool/proxy.yaml
+
+WORKDIR /app
+
+# Install runtime dependencies
+COPY src/nodetool/proxy/requirements.txt /tmp/proxy-requirements.txt
+RUN pip install --no-cache-dir -r /tmp/proxy-requirements.txt
+
+# Copy only the proxy package into the image
+RUN mkdir -p /app/nodetool
+COPY src/nodetool/proxy /app/nodetool/proxy
+RUN touch /app/nodetool/__init__.py
+
+# Non-root user for better isolation
+RUN id proxy 2>/dev/null || useradd --create-home proxy
+RUN chown -R proxy /app
+USER proxy
+
+EXPOSE 80 443
+
+ENTRYPOINT ["python", "-m", "nodetool.proxy"]
+CMD ["--config", "/etc/nodetool/proxy.yaml"]

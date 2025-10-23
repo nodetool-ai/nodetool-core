@@ -1,3 +1,5 @@
+[← Back to Docs Index](../../../docs/index.md)
+
 # Nodetool Workflows
 
 This directory contains the core logic for defining, managing, and executing computational workflows within the Nodetool

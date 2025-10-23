@@ -1,3 +1,5 @@
+[← Back to Docs Index](../../../docs/index.md)
+
 # NodeTool Secret Management System
 
 This module provides secure, encrypted storage for sensitive data (API keys, passwords, tokens) in NodeTool.

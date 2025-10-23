@@ -28,13 +28,10 @@ async def get_all_language_models(user_id: str) -> List[LanguageModel]:
     Returns:
         List of all available LanguageModel instances from all providers
     """
-    log.info("🔍 TRACE: get_all_language_models() CALLED")
-
     # Check cache first
     cache_key = f"language_models:all:{user_id}"
     cached_models = _model_cache.get(cache_key)
     if cached_models is not None:
-        log.info(f"Returning {len(cached_models)} cached language models")
         return cached_models
 
     models = []

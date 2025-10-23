@@ -60,7 +60,7 @@ _provider_cache: dict[ProviderEnum, BaseProvider] = {}
 _provider_cache_lock = threading.Lock()
 
 
-async def get_provider(provider_type: ProviderEnum, user_id: str, **kwargs) -> BaseProvider:
+async def get_provider(provider_type: ProviderEnum, user_id: str = "1", **kwargs) -> BaseProvider:
     """
     Get a chat provider instance based on the provider type.
     Providers are cached after first creation.

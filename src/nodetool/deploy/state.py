@@ -6,6 +6,7 @@ locking, and timestamp tracking to ensure safe concurrent access.
 """
 
 import fcntl
+import secrets
 import time
 from contextlib import contextmanager
 from datetime import datetime
@@ -217,6 +218,51 @@ class StateManager:
                 states[name] = deployment.state.model_dump(mode="json")
 
             return states
+
+    def get_or_create_secret(
+        self,
+        deployment_name: str,
+        field_name: str,
+        byte_length: int = 32,
+    ) -> str:
+        """
+        Retrieve a secret from deployment state, generating and persisting it if missing.
+        """
+        with self.lock():
+            import yaml
+            from nodetool.config.deployment import DeploymentConfig
+
+            with open(self.config_path, "r") as f:
+                data = yaml.safe_load(f)
+            config = DeploymentConfig.model_validate(data)
+
+            deployment = config.deployments.get(deployment_name)
+            if deployment is None:
+                raise KeyError(f"Deployment '{deployment_name}' not found")
+
+            state_dict = deployment.state.model_dump()
+            existing = state_dict.get(field_name)
+            if existing:
+                return existing
+
+            secret_value = secrets.token_urlsafe(byte_length)
+            state_dict[field_name] = secret_value
+
+            deployment.state = deployment.state.__class__.model_validate(state_dict)
+
+            data = config.model_dump(mode="json", exclude_none=True)
+            temp_path = self.config_path.with_suffix(".tmp")
+            with open(temp_path, "w") as f:
+                yaml.dump(
+                    data,
+                    f,
+                    default_flow_style=False,
+                    sort_keys=False,
+                    allow_unicode=True,
+                )
+            temp_path.replace(self.config_path)
+
+            return secret_value
 
     def clear_state(self, deployment_name: str) -> None:
         """

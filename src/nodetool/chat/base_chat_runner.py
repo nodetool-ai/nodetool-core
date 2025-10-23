@@ -32,13 +32,11 @@ from nodetool.models.thread import Thread
 from nodetool.metadata.types import Message as ApiMessage, Provider
 from nodetool.types.graph import Graph
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.messaging.message_processors import (
-    MessageProcessor,
-    RegularChatProcessor,
-    HelpMessageProcessor,
-    AgentMessageProcessor,
-    WorkflowMessageProcessor,
-)
+from nodetool.messaging.message_processor import MessageProcessor
+from nodetool.messaging.regular_chat_processor import RegularChatProcessor
+from nodetool.messaging.help_message_processor import HelpMessageProcessor
+from nodetool.messaging.agent_message_processor import AgentMessageProcessor
+from nodetool.messaging.workflow_message_processor import WorkflowMessageProcessor
 
 log = get_logger(__name__)
 

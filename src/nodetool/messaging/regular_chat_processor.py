@@ -24,10 +24,9 @@ from nodetool.workflows.types import (
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.types.graph import Graph
 from nodetool.providers.base import BaseProvider
-from .base import MessageProcessor
+from .message_processor import MessageProcessor
 
 log = get_logger(__name__)
-# log.setLevel(logging.DEBUG)
 
 REGULAR_SYSTEM_PROMPT = """
 You are a helpful assistant.
@@ -91,8 +90,6 @@ class RegularChatProcessor(MessageProcessor):
         last_message = chat_history[-1]
         content = ""
         unprocessed_messages = []
-
-        print("last_message", last_message)
 
         if last_message.tools:
             tools = await asyncio.gather(

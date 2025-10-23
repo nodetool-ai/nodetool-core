@@ -1,3 +1,5 @@
+[← Back to Docs Index](../../../docs/index.md)
+
 # Nodetool Chat Providers
 
 This directory contains implementations for various chat completion providers used by the `nodetool.chat` module. These

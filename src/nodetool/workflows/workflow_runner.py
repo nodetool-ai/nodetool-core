@@ -61,7 +61,6 @@ from nodetool.workflows.torch_support import (
 
 log = get_logger(__name__)
 # Log level is controlled by env (DEBUG/NODETOOL_LOG_LEVEL)
-log.setLevel(logging.DEBUG)
 
 MAX_RETRIES = 2
 BASE_DELAY = 1  # seconds

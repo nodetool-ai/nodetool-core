@@ -20,10 +20,9 @@ from nodetool.metadata.types import (
 )
 from nodetool.workflows.types import OutputUpdate
 from nodetool.workflows.processing_context import ProcessingContext
-from .base import MessageProcessor
+from .message_processor import MessageProcessor
 
 log = get_logger(__name__)
-# Log level is controlled by env (DEBUG/NODETOOL_LOG_LEVEL)
 
 
 class WorkflowMessageProcessor(MessageProcessor):

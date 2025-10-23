@@ -28,10 +28,9 @@ from nodetool.agents.tools.help_tools import (
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.providers.base import BaseProvider
 from nodetool.agents.tools.base import Tool
-from .base import MessageProcessor
+from .message_processor import MessageProcessor
 
 log = get_logger(__name__)
-# Log level is controlled by env (DEBUG/NODETOOL_LOG_LEVEL)
 
 SYSTEM_PROMPT = """
 You are a helpful assistant that provides help for Nodetool.

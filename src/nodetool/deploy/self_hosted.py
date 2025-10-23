@@ -13,17 +13,16 @@ from typing import Dict, Any, Optional, Tuple
 import time
 import subprocess
 import os
+import shlex
+import shutil
+from pathlib import Path
 
 from nodetool.config.deployment import (
     SelfHostedDeployment,
     DeploymentStatus,
 )
 from nodetool.deploy.ssh import SSHConnection, SSHCommandError
-from nodetool.deploy.docker_run import (
-    DockerRunGenerator,
-    get_docker_run_hash,
-    get_container_name,
-)
+from nodetool.deploy.proxy_run import ProxyRunGenerator
 from nodetool.deploy.state import StateManager
 
 
@@ -108,6 +107,11 @@ class SelfHostedDeployer:
         self.state_manager = state_manager or StateManager()
         self.is_localhost = is_localhost(deployment.host)
 
+        if getattr(self.deployment, "proxy", None) is None:
+            raise ValueError(
+                "Self-hosted deployment must include a proxy specification"
+            )
+
     def _get_executor(self):
         """Get appropriate executor (SSH or local) based on host."""
         if self.is_localhost:
@@ -140,28 +144,32 @@ class SelfHostedDeployer:
             "will_destroy": [],
         }
 
+        proxy_generator = ProxyRunGenerator(self.deployment)
+        container_name = proxy_generator.get_container_name()
+
         # Get current state
         current_state = self.state_manager.read_state(self.deployment_name)
-        container_name = get_container_name(self.deployment)
+        current_hash = None
+        if current_state:
+            current_hash = current_state.get("proxy_run_hash")
 
-        # Check if this is initial deployment
+        new_hash = proxy_generator.generate_hash()
+
         if not current_state or not current_state.get("last_deployed"):
             plan["changes"].append("Initial deployment - will create all resources")
-            plan["will_create"].append(f"Container: {container_name}")
-        else:
-            # Check if docker run configuration has changed
-            current_hash = current_state.get("docker_run_hash")
-            new_hash = get_docker_run_hash(self.deployment)
+            plan["will_create"].append(f"Proxy container: {container_name}")
+        elif current_hash != new_hash:
+            plan["changes"].append("Proxy container configuration has changed")
+            plan["will_update"].append("Proxy container")
 
-            if current_hash != new_hash:
-                plan["changes"].append("Docker run configuration has changed")
-                plan["will_update"].append("Container configuration")
-
-        # Always list what will be ensured
         plan["will_create"].extend(
             [
                 f"Directory: {self.deployment.paths.workspace}",
                 f"Directory: {self.deployment.paths.hf_cache}",
+                f"Directory: {self.deployment.paths.workspace}/proxy",
+                f"Directory: {self.deployment.paths.workspace}/acme",
+                f"Docker network: {self.deployment.proxy.docker_network}",
+                f"Container: {container_name}",
             ]
         )
 
@@ -200,25 +208,32 @@ class SelfHostedDeployer:
                 # Step 1: Create directories
                 self._create_directories(executor, results)
 
-                # Step 2: Stop existing container if running
-                self._stop_existing_container(executor, results)
+                # Step 2: Render proxy configuration and ensure network
+                bearer_token = self._write_proxy_yaml(executor, results)
+                self._ensure_network(executor, results)
+                self._sync_tls_files(executor, results)
+                self._ensure_proxy_image(executor, results)
 
-                # Step 3: Start container
-                docker_run_hash = self._start_container(executor, results)
+                # Step 3: Stop existing proxy container if present
+                self._stop_existing_proxy(executor, results)
 
-                # Step 4: Check health
-                self._check_health(executor, results)
+                # Step 4: Start proxy container
+                proxy_run_hash = self._start_proxy_container(executor, results)
+
+                # Step 5: Check health endpoints
+                self._check_health(executor, results, bearer_token)
 
                 # Update state with success
-                container_name = get_container_name(self.deployment)
+                container_name = ProxyRunGenerator(self.deployment).get_container_name()
                 self.state_manager.write_state(
                     self.deployment_name,
                     {
                         "status": DeploymentStatus.RUNNING.value,
-                        "docker_run_hash": docker_run_hash,
+                        "proxy_run_hash": proxy_run_hash,
+                        "proxy_bearer_token": bearer_token,
                         "container_name": container_name,
                         "container_id": None,  # Will be populated on next status check
-                        "url": f"http://{self.deployment.host}:{self.deployment.container.port}",
+                        "url": self.deployment.get_server_url(),
                     },
                 )
 
@@ -248,92 +263,347 @@ class SelfHostedDeployer:
         ssh.mkdir(f"{workspace_path}/data", parents=True)
         ssh.mkdir(f"{workspace_path}/assets", parents=True)
         ssh.mkdir(f"{workspace_path}/temp", parents=True)
+        ssh.mkdir(f"{workspace_path}/proxy", parents=True)
+        ssh.mkdir(f"{workspace_path}/acme", parents=True)
 
         # Create HF cache directory
         ssh.mkdir(self.deployment.paths.hf_cache, parents=True)
         results["steps"].append(f"  Created: {self.deployment.paths.hf_cache}")
 
-    def _stop_existing_container(
-        self, ssh: SSHConnection, results: Dict[str, Any]
-    ) -> None:
-        """Stop and remove existing container if it exists."""
-        results["steps"].append("Checking for existing container...")
+    def _write_proxy_yaml(self, ssh, results: Dict[str, Any]) -> str:
+        """Render proxy.yaml to the workspace and return the bearer token."""
+        import yaml
 
-        container_name = get_container_name(self.deployment)
+        proxy = self.deployment.proxy
+        token = proxy.bearer_token
+        if not token:
+            token = self.state_manager.get_or_create_secret(
+                self.deployment_name, "proxy_bearer_token"
+            )
 
-        # Check if container exists
-        check_command = f"docker ps -a -q -f name={container_name}"
-        try:
-            exit_code, stdout, stderr = ssh.execute(check_command, check=False)
-            if stdout.strip():
-                results["steps"].append(f"  Found existing container: {container_name}")
+        config = {
+            "global": {
+                "domain": proxy.domain,
+                "email": proxy.email,
+                "bearer_token": token,
+                "idle_timeout": proxy.idle_timeout,
+                "listen_http": proxy.listen_http,
+                "listen_https": proxy.listen_https,
+                "acme_webroot": proxy.acme_webroot,
+                "tls_certfile": proxy.tls_certfile,
+                "tls_keyfile": proxy.tls_keyfile,
+                "log_level": proxy.log_level,
+                "docker_network": proxy.docker_network,
+                "connect_mode": proxy.connect_mode,
+                "http_redirect_to_https": proxy.http_redirect_to_https,
+            },
+            "services": [
+                service.model_dump(exclude_none=True) for service in proxy.services
+            ],
+        }
 
-                # Stop container
-                stop_command = f"docker stop {container_name}"
-                ssh.execute(stop_command, check=False, timeout=30)
-                results["steps"].append(f"  Stopped container: {container_name}")
+        yaml_payload = yaml.safe_dump(config, sort_keys=False)
+        proxy_path = f"{self.deployment.paths.workspace}/proxy/proxy.yaml"
+        self._write_text_file(ssh, proxy_path, yaml_payload, mode="644")
+        results["steps"].append(f"  Wrote proxy config: {proxy_path}")
+        return token
 
-                # Remove container
-                rm_command = f"docker rm {container_name}"
-                ssh.execute(rm_command, check=False, timeout=30)
-                results["steps"].append(f"  Removed container: {container_name}")
+    def _sync_tls_files(self, ssh, results: Dict[str, Any]) -> None:
+        """Copy TLS files from the deployer machine to the remote host when configured."""
+        if not self.deployment.proxy:
+            return
+
+        proxy = self.deployment.proxy
+        items = []
+        if proxy.tls_certfile:
+            items.append(("certificate", proxy.local_tls_certfile, proxy.tls_certfile))
+        if proxy.tls_keyfile:
+            items.append(("private key", proxy.local_tls_keyfile, proxy.tls_keyfile))
+
+        for label, local_path, remote_path in items:
+            if not remote_path:
+                continue
+            if local_path is None:
+                results["steps"].append(
+                    f"  TLS {label} expected on host at {remote_path}; skipping copy (no local path provided)."
+                )
+                continue
+
+            src = Path(local_path).expanduser()
+            if not src.exists():
+                results["steps"].append(f"  TLS {label} local file not found: {src}")
+                continue
+
+            if self.is_localhost:
+                self._copy_file_local(src, Path(remote_path), results, label)
             else:
-                results["steps"].append("  No existing container found")
-        except Exception as e:
-            results["steps"].append(f"  Warning: Error checking container: {e}")
+                self._copy_file_to_remote(src, remote_path, results, label)
 
-    def _start_container(self, ssh: SSHConnection, results: Dict[str, Any]) -> str:
-        """Start Docker container using docker run."""
-        results["steps"].append("Starting container...")
+        if proxy.auto_certbot:
+            self._ensure_certbot_certs(ssh, results)
 
-        generator = DockerRunGenerator(self.deployment)
-        docker_run_command = generator.generate_command()
-        docker_run_hash = generator.generate_hash()
+    def _copy_file_local(self, src: Path, dest: Path, results: Dict[str, Any], label: str) -> None:
+        dest = dest.expanduser()
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dest)
+        os.chmod(dest, 0o600)
+        results["steps"].append(f"  Synced TLS {label}: {dest}")
 
-        results["steps"].append(f"  Command: {docker_run_command[:100]}...")
+    def _copy_file_to_remote(self, src: Path, dest: str, results: Dict[str, Any], label: str) -> None:
+        ssh_config = self.deployment.ssh
+        if not ssh_config:
+            raise RuntimeError("SSH configuration required to copy TLS files to remote host")
+
+        remote_dir = os.path.dirname(dest)
+        ssh.execute(f"mkdir -p {shlex.quote(remote_dir)}", check=False, timeout=30)
+
+        scp_cmd = ["scp", "-o", "StrictHostKeyChecking=no"]
+        if ssh_config.key_path:
+            scp_cmd += ["-i", os.path.expanduser(ssh_config.key_path)]
+        if ssh_config.port and ssh_config.port != 22:
+            scp_cmd += ["-P", str(ssh_config.port)]
+        scp_cmd += [str(src), f"{ssh_config.user}@{self.deployment.host}:{dest}"]
+
+        result = subprocess.run(scp_cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"Failed to copy TLS {label} to remote host: {result.stderr.strip()}"
+            )
+
+        ssh.execute(f"chmod 600 {shlex.quote(dest)}", check=False, timeout=30)
+        results["steps"].append(f"  Synced TLS {label}: {dest}")
+
+    def _ensure_certbot_certs(self, ssh, results: Dict[str, Any]) -> None:
+        proxy = self.deployment.proxy
+        if not proxy or not proxy.auto_certbot:
+            return
+
+        if not proxy.tls_certfile or not proxy.tls_keyfile:
+            raise RuntimeError(
+                "auto_certbot requires tls_certfile and tls_keyfile to be specified"
+            )
+        if not proxy.domain or not proxy.email:
+            raise RuntimeError("auto_certbot requires domain and email to be set")
+
+        results["steps"].append("  Ensuring TLS certificates via certbot...")
+        ssh.execute(f"mkdir -p {shlex.quote(proxy.acme_webroot)}", check=False, timeout=30)
+
+        certbot_cmd = " ".join(
+            [
+                "certbot certonly",
+                "--agree-tos",
+                "--non-interactive",
+                f"--email {shlex.quote(proxy.email)}",
+                f"--webroot -w {shlex.quote(proxy.acme_webroot)}",
+                "--keep-until-expiring",
+                f"-d {shlex.quote(proxy.domain)}",
+            ]
+        )
+
+        exit_code, stdout, stderr = ssh.execute(certbot_cmd, check=False, timeout=600)
+        if exit_code != 0:
+            raise RuntimeError(
+                "certbot failed to obtain certificate: "
+                f"{(stderr or stdout).strip() or 'see remote logs'}"
+            )
+
+        check_cmd = (
+            f"test -f {shlex.quote(proxy.tls_certfile)} "
+            f"-a -f {shlex.quote(proxy.tls_keyfile)}"
+        )
+        exit_code, _, _ = ssh.execute(check_cmd, check=False)
+        if exit_code != 0:
+            raise RuntimeError(
+                "Certbot completed but certificate/key files were not found on host"
+            )
+
+        ssh.execute(f"chmod 600 {shlex.quote(proxy.tls_certfile)}", check=False)
+        ssh.execute(f"chmod 600 {shlex.quote(proxy.tls_keyfile)}", check=False)
+        results["steps"].append("  Certbot certificates ready.")
+
+    def _write_text_file(self, ssh, path: str, content: str, mode: str = "644") -> None:
+        """Write text content to remote path using a here-doc."""
+        sentinel = "__NODETOOL_PROXY_EOF__"
+        command = (
+            f"umask 077 && cat <<'{sentinel}' > \"{path}\"\n"
+            f"{content}\n"
+            f"{sentinel}\n"
+            f"chmod {mode} \"{path}\""
+        )
+        ssh.execute(command, check=True, timeout=30)
+
+    def _ensure_network(self, ssh, results: Dict[str, Any]) -> None:
+        """Ensure the proxy network exists."""
+        network = self.deployment.proxy.docker_network
+        command = (
+            f"docker network inspect {network} >/dev/null 2>&1 "
+            f"|| docker network create {network}"
+        )
+        ssh.execute(command, check=False, timeout=30)
+        results["steps"].append(f"  Ensured docker network: {network}")
+
+    def _ensure_proxy_image(self, ssh, results: Dict[str, Any]) -> None:
+        """Ensure the proxy image exists on the target host, pushing it if necessary."""
+        image = self.deployment.proxy.image
+        if not image:
+            return
+
+        results["steps"].append(f"Checking proxy image: {image}")
+        cmd = f"docker images -q {image}"
+        exit_code, stdout, stderr = ssh.execute(cmd, check=False)
+        if stdout.strip():
+            results["steps"].append(f"  Proxy image already present.")
+            return
+
+        if self.is_localhost:
+            raise RuntimeError(
+                f"Proxy image '{image}' not found locally. Build or pull it before deploying."
+            )
+
+        results["steps"].append("  Proxy image missing on host; pushing from local Docker daemon...")
+        self._push_image_to_remote(image)
+
+        exit_code, stdout, stderr = ssh.execute(cmd, check=False)
+        if stdout.strip():
+            results["steps"].append("  Proxy image transferred successfully.")
+        else:
+            raise RuntimeError(f"Failed to transfer proxy image '{image}' to remote host.")
+
+    def _push_image_to_remote(self, image: str) -> None:
+        """Push a local Docker image to the remote host via docker save/load over SSH."""
+        ssh_config = self.deployment.ssh
+        if not ssh_config:
+            raise RuntimeError("SSH configuration required to push proxy image.")
+
+        # Verify image exists locally
+        inspect_cmd = ["docker", "image", "inspect", image]
+        inspect_result = subprocess.run(
+            inspect_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE
+        )
+        if inspect_result.returncode != 0:
+            raise RuntimeError(
+                f"Proxy image '{image}' not found locally. Build or pull it before deploying."
+            )
+
+        ssh_cmd = ["ssh", "-o", "StrictHostKeyChecking=no"]
+        if ssh_config.key_path:
+            ssh_cmd += ["-i", os.path.expanduser(ssh_config.key_path)]
+        if ssh_config.port and ssh_config.port != 22:
+            ssh_cmd += ["-p", str(ssh_config.port)]
+        ssh_cmd.append(f"{ssh_config.user}@{self.deployment.host}")
+        ssh_cmd += ["docker", "load"]
+
+        save_proc = subprocess.Popen(
+            ["docker", "save", image],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        load_proc = subprocess.Popen(
+            ssh_cmd,
+            stdin=save_proc.stdout,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        if save_proc.stdout:
+            save_proc.stdout.close()
+        stdout, stderr = load_proc.communicate()
+        save_stdout, save_stderr = save_proc.communicate()
+
+        if save_proc.returncode != 0:
+            raise RuntimeError(
+                f"Failed to export proxy image '{image}': {save_stderr.decode().strip()}"
+            )
+
+        if load_proc.returncode != 0:
+            raise RuntimeError(
+                f"Failed to push proxy image to remote host: {stderr.decode().strip()}"
+            )
+
+    def _stop_existing_proxy(self, ssh, results: Dict[str, Any]) -> None:
+        """Stop and remove the existing proxy container if present."""
+        results["steps"].append("Checking for existing proxy container...")
+
+        container_name = ProxyRunGenerator(self.deployment).get_container_name()
+        check_command = f"docker ps -a -q -f name={container_name}"
 
         try:
-            exit_code, stdout, stderr = ssh.execute(
-                docker_run_command, check=True, timeout=300
-            )
-            container_id = stdout.strip()
+            exit_code, stdout, _ = ssh.execute(check_command, check=False)
+            if stdout.strip():
+                results["steps"].append(f"  Found existing proxy: {container_name}")
+                ssh.execute(f"docker stop {container_name}", check=False, timeout=60)
+                results["steps"].append(f"  Stopped proxy: {container_name}")
+                ssh.execute(f"docker rm {container_name}", check=False, timeout=60)
+                results["steps"].append(f"  Removed proxy: {container_name}")
+            else:
+                results["steps"].append("  No existing proxy container found")
+        except Exception as exc:
+            results["steps"].append(f"  Warning: could not inspect proxy container: {exc}")
+
+    def _start_proxy_container(self, ssh, results: Dict[str, Any]) -> str:
+        """Start the proxy container."""
+        results["steps"].append("Starting proxy container...")
+
+        generator = ProxyRunGenerator(self.deployment)
+        command = generator.generate_command()
+        proxy_hash = generator.generate_hash()
+        results["steps"].append(f"  Command: {command[:120]}...")
+
+        try:
+            exit_code, stdout, stderr = ssh.execute(command, check=True, timeout=300)
+            container_id = stdout.strip() or "<unknown>"
             results["steps"].append(
-                f"  Container started successfully: {container_id[:12]}"
+                f"  Proxy container started: {container_id[:12]}"
             )
-        except SSHCommandError as e:
-            results["errors"].append(f"Failed to start container: {e.stderr}")
+        except SSHCommandError as exc:
+            results["errors"].append(f"Failed to start proxy container: {exc.stderr}")
             raise
 
-        return docker_run_hash
+        return proxy_hash
 
-    def _check_health(self, ssh: SSHConnection, results: Dict[str, Any]) -> None:
-        """Check health of deployed container."""
-        results["steps"].append("Checking container health...")
+    def _check_health(self, ssh, results: Dict[str, Any], bearer_token: Optional[str]) -> None:
+        """Check proxy container health and HTTP endpoints."""
+        results["steps"].append("Checking proxy health...")
 
-        container_name = get_container_name(self.deployment)
-
-        # Wait a bit for container to start
+        container_name = ProxyRunGenerator(self.deployment).get_container_name()
         time.sleep(5)
 
-        # Check container status
-        command = f"docker ps -f name={container_name} --format '{{{{.Names}}}} {{{{.Status}}}} {{{{.Ports}}}}'"
+        status_cmd = (
+            f"docker ps -f name={container_name} "
+            "--format '{{{{.Names}}}} {{{{.Status}}}} {{{{.Ports}}}}'"
+        )
 
         try:
-            exit_code, stdout, stderr = ssh.execute(command, check=False)
+            _, stdout, _ = ssh.execute(status_cmd, check=False)
             if stdout.strip():
                 results["steps"].append(f"  Container status: {stdout.strip()}")
             else:
-                results["steps"].append(
-                    "  Warning: Container not found in running state"
-                )
+                results["steps"].append("  Warning: proxy container not running")
+        except Exception as exc:
+            results["steps"].append(f"  Warning: could not retrieve status: {exc}")
 
-            # Check health status if available
-            health_command = f"docker inspect --format='{{{{.State.Health.Status}}}}' {container_name}"
-            exit_code, health_stdout, _ = ssh.execute(health_command, check=False)
-            if health_stdout.strip() and health_stdout.strip() != "<no value>":
-                results["steps"].append(f"  Health status: {health_stdout.strip()}")
-        except Exception as e:
-            results["steps"].append(f"  Warning: Could not check status: {e}")
+        health_url = f"http://127.0.0.1:{self.deployment.proxy.listen_http}/healthz"
+        try:
+            ssh.execute(f"curl -fsS {health_url}", check=True, timeout=20)
+            results["steps"].append(f"  Health endpoint OK: {health_url}")
+        except SSHCommandError as exc:
+            results["steps"].append(f"  Warning: health check failed: {exc.stderr.strip()}")
+
+        # Check HTTPS status endpoint when TLS configured
+        if self.deployment.proxy.tls_certfile and self.deployment.proxy.tls_keyfile:
+            token = bearer_token or ""
+            status_url = f"https://{self.deployment.proxy.domain}/status"
+            curl_cmd = (
+                f"curl -fsS -H 'Authorization: Bearer {token}' "
+                f"--resolve {self.deployment.proxy.domain}:443:127.0.0.1 "
+                f"{status_url}"
+            )
+            try:
+                ssh.execute(curl_cmd, check=True, timeout=30)
+                results["steps"].append(f"  Status endpoint OK: {status_url}")
+            except SSHCommandError as exc:
+                results["steps"].append(
+                    f"  Warning: HTTPS status check failed: {exc.stderr.strip()}"
+                )
 
     def destroy(self) -> Dict[str, Any]:
         """
@@ -351,7 +621,7 @@ class SelfHostedDeployer:
 
         try:
             with self._get_executor() as ssh:
-                container_name = get_container_name(self.deployment)
+                container_name = ProxyRunGenerator(self.deployment).get_container_name()
 
                 # Stop container
                 stop_command = f"docker stop {container_name}"
@@ -398,7 +668,7 @@ class SelfHostedDeployer:
         status_info = {
             "deployment_name": self.deployment_name,
             "host": self.deployment.host,
-            "container_name": get_container_name(self.deployment),
+            "container_name": ProxyRunGenerator(self.deployment).get_container_name(),
         }
 
         # Get state from state manager
@@ -411,7 +681,7 @@ class SelfHostedDeployer:
         # Try to get live status from host (remote or local)
         try:
             with self._get_executor() as ssh:
-                container_name = get_container_name(self.deployment)
+                container_name = ProxyRunGenerator(self.deployment).get_container_name()
 
                 # Get container status
                 command = (
@@ -449,7 +719,7 @@ class SelfHostedDeployer:
             Log output as string
         """
         with self._get_executor() as ssh:
-            container_name = get_container_name(self.deployment)
+            container_name = ProxyRunGenerator(self.deployment).get_container_name()
 
             command = f"docker logs --tail={tail}"
 

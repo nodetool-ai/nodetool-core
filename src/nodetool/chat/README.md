@@ -1,3 +1,5 @@
+[← Back to Docs Index](../../../docs/index.md)
+
 # Nodetool Chat Module
 
 This directory contains the functionality for Nodetool's interactive chat interface, enabling conversational interaction
