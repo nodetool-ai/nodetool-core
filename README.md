@@ -1,3 +1,5 @@
+[← Back to Docs Index](docs/index.md)
+
 # NodeTool Core <img src="https://img.shields.io/badge/version-0.6.0-blue.svg" alt="Version Badge">
 
 <h3>AI Workflow Engine</h3>
@@ -76,11 +78,9 @@ See [docs/cli.md](docs/cli.md) for all commands.
 
 ## 📖 Documentation
 
-- [Concepts and Architecture](https://docs.nodetool.ai/concepts/)
-- [Getting Started Guide](https://docs.nodetool.ai/getting-started/)
-- [API Reference](https://docs.nodetool.ai/api-reference/)
-- [Examples](https://docs.nodetool.ai/examples/)
-- [Advanced Usage](https://docs.nodetool.ai/advanced/)
+- [Concepts and Architecture](concepts/)
+- [Examples](examples/)
+- [Advanced Usage](advanced/)
 
 ## 🏗️ Architecture
 
@@ -390,11 +390,6 @@ Configuration is loaded in this order (later sources override earlier ones):
 | Variable            | Description              | Default                               |
 | ------------------- | ------------------------ | ------------------------------------- |
 | `DB_PATH`           | SQLite database path     | `~/.config/nodetool/nodetool.sqlite3` |
-| `POSTGRES_DB`       | PostgreSQL database name | -                                     |
-| `POSTGRES_USER`     | PostgreSQL username      | -                                     |
-| `POSTGRES_PASSWORD` | PostgreSQL password      | -                                     |
-| `POSTGRES_HOST`     | PostgreSQL host          | -                                     |
-| `POSTGRES_PORT`     | PostgreSQL port          | -                                     |
 | `SUPABASE_URL`      | Supabase project URL     | -                                     |
 | `SUPABASE_KEY`      | Supabase service key     | -                                     |
 
@@ -447,7 +442,6 @@ Configuration is loaded in this order (later sources override earlier ones):
 | Variable         | Description                         | Default |
 | ---------------- | ----------------------------------- | ------- |
 | `RUNPOD_API_KEY` | RunPod API key for cloud deployment | -       |
-| `SENTRY_DSN`     | Sentry error tracking DSN           | -       |
 | `MEMCACHE_HOST`  | Memcache server host                | -       |
 | `MEMCACHE_PORT`  | Memcache server port                | -       |
 
@@ -455,9 +449,7 @@ Configuration is loaded in this order (later sources override earlier ones):
 
 The system automatically detects the environment from:
 
-1. `ENV` environment variable
-1. `PYTEST_CURRENT_TEST` (automatically sets test environment)
-1. Defaults to "development"
+`ENV` environment variable. Defaults to "development"
 
 For a complete template with all options, see `.env.example` in the repository.
 

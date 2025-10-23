@@ -1,3 +1,5 @@
+[← Back to Docs Index](docs/index.md)
+
 # Repository Guidelines
 
 ## Project Structure & Module Organization

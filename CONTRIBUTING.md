@@ -1,3 +1,5 @@
+[← Back to Docs Index](docs/index.md)
+
 # Contributing to Nodetool Core
 
 Thank you for considering contributing to Nodetool Core! This document provides guidelines and instructions for
