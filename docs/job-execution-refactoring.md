@@ -1,4 +1,9 @@
+[← Back to Docs Index](index.md)
+
 # Job Execution System Refactoring
+
+> **Note**  
+> This document records the design changes introduced during the job execution refactor. For the up-to-date execution strategies and operational guidance, see `src/nodetool/workflows/threaded_job_execution.py`, `src/nodetool/workflows/subprocess_job_execution.py`, and `src/nodetool/workflows/docker_job_execution.py`, as well as the [Deployment Guide](deployment.md).
 
 ## Summary
 

@@ -1,3 +1,5 @@
+[← Back to Docs Index](index.md)
+
 # Docker Resource Management
 
 This guide explains how to configure and manage resource constraints for Docker-based job execution in multi-user
@@ -124,7 +126,7 @@ async def schedule_job(request):
 
 Allocate resources based on user tier:
 
-````python
+```python
 # Higher priority = more resources
 RESOURCE_TIERS = {
     "premium": {
@@ -146,6 +148,7 @@ RESOURCE_TIERS = {
         "gpu_memory_limit": None
     }
 }
+```
 
 ### 3. Queue-Based GPU Access
 
@@ -201,7 +204,7 @@ async def run_job_with_gpu(request):
             await asyncio.sleep(1)
     finally:
         scheduler.release_gpu(gpu_id)
-````
+```
 
 ## Production Scheduler Example
 
@@ -364,6 +367,6 @@ docker inspect <container_id> | grep -A 5 "MemoryStats"
 
 - [Docker Execution Guide](docker-execution.md) - Main documentation
 - [Docker Testing Guide](docker-testing.md) - Testing and debugging
-- [Deployment Guide](deployment.md) - Production deployment
+- [Self-Hosted Deployment](self_hosted.md) - Production deployment
 - [Docker Resource Constraints](https://docs.docker.com/config/containers/resource_constraints/)
 - [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/)

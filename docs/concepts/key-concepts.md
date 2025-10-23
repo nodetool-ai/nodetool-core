@@ -1,3 +1,5 @@
+[← Back to Docs Index](../index.md)
+
 # Key Concepts
 
 NodeTool workflows are represented as **Directed Acyclic Graphs (DAGs)**. Each node performs a unit of work and passes

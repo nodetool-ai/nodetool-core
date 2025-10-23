@@ -1,3 +1,5 @@
+[← Back to Docs Index](index.md)
+
 # Providers
 
 The NodeTool provider system offers a unified interface for interacting with various AI service providers. This
@@ -401,7 +403,7 @@ async def test_generate_message():
 
 ## See Also
 
-- [Chat Providers](chat-providers.md) - Detailed chat-specific provider information
+- [Chat Module](chat.md) - Chat orchestration and tooling overview
 - [Chat API](chat-api.md) - WebSocket API for chat interactions
 - [Agents](agents.md) - Using providers with the agent system
 - [Workflow API](workflow-api.md) - Building workflows with providers

@@ -1,3 +1,5 @@
+[← Back to Docs Index](index.md)
+
 # Docker Job Execution
 
 Docker job execution provides isolated, containerized workflow execution for nodetool. This is ideal for production
@@ -182,7 +184,7 @@ NodeUpdate(node_id="input_text", status="completed")
 
 - [Docker Testing Guide](docker-testing.md) - Testing commands and examples
 - [Docker Resource Management](docker-resource-management.md) - Multi-user deployment
-- [Deployment Guide](deployment.md) - Production deployment
+- [Self-Hosted Deployment](self_hosted.md) - Production deployment architecture
 - [CLI Reference](cli.md) - Command-line interface
 
 ## References

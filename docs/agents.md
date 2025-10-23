@@ -1,3 +1,5 @@
+[← Back to Docs Index](index.md)
+
 # Agent System
 
 NodeTool includes an agent framework that breaks complex objectives into smaller subtasks. Agents use language models

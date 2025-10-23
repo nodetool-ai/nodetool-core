@@ -1,3 +1,5 @@
+[← Back to Docs Index](index.md)
+
 # Chat CLI
 
 The `nodetool chat` command starts an interactive terminal interface for conversing with language models and running

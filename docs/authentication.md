@@ -1,3 +1,5 @@
+[← Back to Docs Index](index.md)
+
 # NodeTool Worker Authentication
 
 The NodeTool worker uses token-based authentication to secure all endpoints when deployed.

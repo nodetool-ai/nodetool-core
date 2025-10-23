@@ -1,3 +1,5 @@
+[← Back to Docs Index](index.md)
+
 # NodeTool Chat Server
 
 The NodeTool CLI now includes a `chat-server` command that allows you to run standalone chat servers using either

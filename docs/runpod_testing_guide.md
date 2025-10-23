@@ -1,3 +1,5 @@
+[← Back to Docs Index](index.md)
+
 # RunPod Workflow Testing Guide
 
 This guide explains how to test your deployed NodeTool workflows on RunPod serverless infrastructure using the
@@ -5,7 +7,7 @@ integrated CLI commands.
 
 ## Prerequisites
 
-1. **Deployed Workflow**: You must have already deployed a workflow using `nodetool deploy`
+1. **Deployed Workflow**: You must have already deployed a workflow using `nodetool deploy` (see the [Deployment Guide](deployment.md)).
 1. **RunPod API Key**: Get this from your [RunPod account settings](https://www.runpod.io/console/user/settings)
 1. **Endpoint ID**: This is returned when you deploy your workflow with `nodetool deploy`
 

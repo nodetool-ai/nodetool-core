@@ -1,3 +1,5 @@
+[← Back to Docs Index](index.md)
+
 # Chat API
 
 NodeTool provides both OpenAI-compatible HTTP endpoints and WebSocket endpoints for chat interactions.

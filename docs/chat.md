@@ -1,3 +1,5 @@
+[← Back to Docs Index](index.md)
+
 # Chat Module
 
 The chat module provides an interactive command line interface and utilities for conversational AI. It supports multiple

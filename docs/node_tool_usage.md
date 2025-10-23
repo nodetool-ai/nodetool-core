@@ -1,3 +1,5 @@
+[← Back to Docs Index](index.md)
+
 # NodeTool Usage Guide
 
 The `NodeTool` class provides a way to wrap individual `BaseNode` instances as tools for use by agents, enabling

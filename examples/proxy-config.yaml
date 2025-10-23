@@ -1,0 +1,140 @@
+# Nodetool Async Docker Reverse Proxy Configuration
+#
+# This configuration file defines the global settings and services
+# managed by the reverse proxy.
+#
+# For more information, see: docs/PROXY.md
+
+global:
+  # Domain name for TLS certificates (required)
+  domain: "example.com"
+
+  # Email address for Let's Encrypt notifications (required)
+  email: "admin@example.com"
+
+  # Bearer token for authentication (required)
+  # Use a strong, randomly generated token (32+ characters)
+  # Example: openssl rand -hex 32
+  bearer_token: "your-secure-bearer-token-here-change-this"
+
+  # Idle timeout in seconds before stopping unused containers (default: 300)
+  # Containers will be stopped if they haven't been accessed for this duration
+  idle_timeout: 300
+
+  # HTTP port for ACME HTTP-01 challenge validation (default: 80)
+  # Used only during Let's Encrypt certificate issuance/renewal
+  listen_http: 80
+
+  # HTTPS port for proxied traffic (default: 443)
+  listen_https: 443
+
+  # Path to ACME challenge directory (required for Let's Encrypt)
+  # Certbot will write challenge tokens here
+  acme_webroot: "/var/www/acme"
+
+  # Path to TLS certificate file (optional, only needed for HTTPS)
+  # Example: /etc/letsencrypt/live/example.com/fullchain.pem
+  tls_certfile: "/etc/letsencrypt/live/example.com/fullchain.pem"
+
+  # Path to TLS private key file (optional, only needed for HTTPS)
+  # Example: /etc/letsencrypt/live/example.com/privkey.pem
+  tls_keyfile: "/etc/letsencrypt/live/example.com/privkey.pem"
+
+  # Logging level: DEBUG, INFO, WARNING, ERROR (default: INFO)
+  log_level: "INFO"
+
+# Services managed by the proxy
+# Each service defines a Docker container to manage
+services:
+  # Example 1: Simple web application
+  # All containers must listen on port 8000 internally
+  - name: "web-app"
+    # URL path prefix for routing to this service
+    path: "/web"
+    # Docker image name (with optional tag)
+    # Container must expose port 8000
+    image: "nginx:latest"
+    # Host port for the container (optional)
+    # If omitted, Docker will assign a random ephemeral port
+    # host_port: 18000
+
+  # Example 2: API service with environment variables
+  - name: "api-server"
+    path: "/api"
+    image: "myregistry/api-service:v1.0.0"
+    host_port: 15000
+    # Environment variables passed to the container
+    environment:
+      DEBUG: "false"
+      LOG_LEVEL: "info"
+      DATABASE_URL: "postgresql://localhost/mydb"
+
+  # Example 3: WebSocket service with resource limits
+  - name: "websocket-handler"
+    path: "/ws"
+    image: "ws-server:latest"
+    # Memory limit for the container (e.g., "512m", "1g", "2g")
+    mem_limit: "1g"
+    # CPU limit (e.g., 0.5 means 50% of one CPU, 2.0 means 2 CPUs)
+    cpus: 1.0
+    environment:
+      WS_WORKERS: "4"
+
+  # Example 4: Application with volume mounts
+  # - name: "data-service"
+  #   path: "/data"
+  #   image: "data-processor:latest"
+  #   host_port: 18080
+  #   # Volume mounts (host:container format)
+  #   volumes:
+  #     /data/input: /app/input
+  #     /data/output: /app/output
+
+  # Example 5: Root path service (catch-all)
+  # - name: "root-service"
+  #   path: "/"
+  #   image: "default-app:latest"
+
+# Notes:
+#
+# 1. Internal Port:
+#    - All containers must listen on port 8000 internally
+#    - This is a fixed constraint; services cannot use other ports
+#    - Configure your Docker images to expose port 8000
+#
+# 2. Path Matching:
+#    - Routes use longest-prefix matching
+#    - /api will match /api, /api/users, /api/users/123, etc.
+#    - Root path "/" will match anything not matched by other paths
+#
+# 3. Port Configuration:
+#    - host_port is optional; omit for automatic port assignment
+#    - Use fixed ports for predictability and monitoring
+#    - Ensure no port conflicts between services
+#
+# 4. Environment Variables:
+#    - Values must be strings (quote numbers: "8080" not 8080)
+#    - Sensitive values can use environment variable expansion:
+#      DATABASE_PASSWORD: "${DB_PASSWORD}"
+#
+# 5. Docker Images:
+#    - Use specific tags, not "latest" for production
+#    - Ensure images are available (pulled from registry or local)
+#    - Images must be configured to listen on port 8000
+#
+# 6. Idle Timeout:
+#    - Global idle_timeout applies to all services
+#    - Shorter timeout: more aggressive resource cleanup
+#    - Longer timeout: faster response when accessed
+#
+# 7. TLS Certificates:
+#    - Obtain initial certificate with certbot:
+#      sudo certbot certonly --webroot -w /var/www/acme -d example.com
+#    - Set tls_certfile and tls_keyfile paths
+#    - Renewal happens automatically via cron
+#
+# 8. Bearer Token:
+#    - Required for authentication on protected endpoints
+#    - Generate with: openssl rand -hex 32
+#    - Keep secure; never commit to version control
+#    - Can be overridden with PROXY_GLOBAL_BEARER_TOKEN env var

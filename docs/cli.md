@@ -1,117 +1,142 @@
-# nodetool CLI
+[← Back to Docs Index](index.md)
 
-The command line interface allows you to manage servers, workers and packages from the terminal. Use
-`python -m nodetool.cli --help` to see the global options and `--help` after any command for details.
+# NodeTool CLI
 
-## Commands
+The `nodetool` CLI manages local development workflows, servers, deployments, and admin tooling. Install the project and run `nodetool --help` (or `python -m nodetool.cli --help`) to see the top-level command list. Every sub-command exposes its own `--help` flag with detailed usage.
 
-### serve
+## Getting Help
 
-`nodetool serve [OPTIONS]`
+- `nodetool --help` — list all top-level commands and groups.
+- `nodetool <command> --help` — show command-specific options (e.g. `nodetool serve --help`).
+- `nodetool <group> --help` — list sub-commands for grouped tooling (e.g. `nodetool deploy --help`).
 
-Serve the Nodetool API server.
+## Core Runtime Commands
 
-Options:
+### `nodetool serve`
 
-- `--host` Host address to serve on (default: `127.0.0.1`)
-- `--port` Port to serve on (default: `8000`)
-- `--worker-url` URL of the worker to connect to
-- `--static-folder` Path to the static folder to serve
-- `--apps-folder` Path to the apps folder
-- `--force-fp16` Force FP16
-- `--reload` Reload the server on changes
-- `--production` Run in production mode
-- `--remote-auth` Use a single local user for authentication
+Runs the FastAPI backend.
 
-### worker
+- `--host` (default `127.0.0.1`) — bind address.
+- `--port` (default `8000`) — listen port.
+- `--static-folder` / `--apps-folder` — serve local static assets or app bundles.
+- `--force-fp16` — force FP16 for ComfyUI integrations if available.
+- `--reload` — enable auto-reload (development only).
+- `--production` — run with production toggles.
+- `--remote-auth` — enable remote authentication when supported.
+- `--verbose` / `-v` — set log level to DEBUG.
 
-`nodetool worker [OPTIONS]`
+### `nodetool worker`
 
-Start a Nodetool worker instance.
+Starts a deployable worker process with OpenAI-compatible endpoints.
 
-Options:
+- `--host` (default `0.0.0.0`) and `--port` (default `8000`).
+- `--remote-auth` — require Supabase-backed auth.
+- `--default-model` — fallback model identifier (default `gpt-oss:20b`).
+- `--provider` — provider key for the default model (default `ollama`).
+- `--tools` — comma-separated tool list (e.g. `google_search,browser`).
+- `--workflow` — supply one or more workflow JSON files.
+- `--verbose` — enable DEBUG logging.
 
-- `--host` Host address (default: `127.0.0.1`)
-- `--port` Port (default: `8001`)
-- `--force-fp16`
-- `--reload`
+### `nodetool run`
 
-### run
+Executes a workflow by ID, by file, or from a JSON payload.
 
-`nodetool run WORKFLOW_ID`
+- Positional `WORKFLOW` argument — optional workflow ID or path.
+- `--jsonl` — print raw JSONL job updates (automation-friendly).
+- `--stdin` — read an entire `RunJobRequest` JSON from stdin.
+- `--user-id` / `--auth-token` — override request metadata when calling workers.
 
-Run a workflow by its ID.
+## Chat Utilities
 
-### chat
+### `nodetool chat-server`
 
-`nodetool chat`
+Launches a WebSocket/SSE compatible chat server with optional tool support.
 
-Start a nodetool chat session.
+- `--host` (default `127.0.0.1`) and `--port` (default `8080`).
+- `--remote-auth` — enable Supabase-backed authentication.
+- `--default-model`, `--provider`, `--tools`, and `--workflow` mirror the worker command.
+- `--verbose` — enable DEBUG logging.
 
-### chat-server
+See also the dedicated [Chat Server](chat-server.md) guide.
 
-`nodetool chat-server [OPTIONS]`
+### `nodetool chat-client`
 
-Start a chat server using WebSocket or SSE protocol.
+Connects to the OpenAI API, a local NodeTool chat server, or a RunPod endpoint.
 
-Options:
+- `--server-url` — override the default OpenAI URL.
+- `--runpod-endpoint` — convenience shortcut for RunPod serverless IDs.
+- `--auth-token` — set HTTP authentication token (falls back to environment variables).
+- `--message` — send a single message in non-interactive mode.
+- `--model` / `--provider` — choose model details for local servers.
 
-- `--host` Host address to serve on (default: `127.0.0.1`)
-- `--port` Port to serve on (default: `8080`)
-- `--protocol` Protocol to use: `websocket` or `sse` (default: `websocket`)
-- `--remote-auth` Use remote authentication (Supabase)
-- `--no-database` Run without database (in-memory for WebSocket, history in request for SSE)
+## Developer Tools
 
-See [Chat Server](chat-server.md) for detailed documentation and usage examples.
+### `nodetool mcp`
 
-### explorer
+Starts the NodeTool [Model Context Protocol](https://modelcontextprotocol.io/) server implementation for IDE integrations.
 
-`nodetool explorer --dir DIR`
+### `nodetool codegen`
 
-Explore files in an interactive text UI.
+Regenerates DSL modules from node definitions. It wipes and recreates corresponding `src/nodetool/dsl/<namespace>/` directories before writing the generated files.
 
-### codegen
+## Settings & Packages
 
-`nodetool codegen`
+### `nodetool settings`
 
-Generate DSL modules from node definitions.
+- `settings show` — display the current settings table (reads `settings.yaml`).
+- `settings edit [--secrets]` — open the editable YAML file (`settings.yaml` or `secrets.yaml`) in `$EDITOR`.
 
-## Settings commands
+### `nodetool package`
 
-### settings show
+Manage package metadata for node libraries.
 
-`nodetool settings show [--secrets] [--mask]`
+- `package list [--available]` — show installed packages or registry entries.
+- `package scan [--verbose]` — discover nodes in the current project and update metadata.
+- `package init` — scaffold a new package (writes `pyproject.toml` and metadata folder).
+- `package docs [--output-dir DIR] [--compact] [--verbose]` — generate Markdown docs for package nodes.
+- See the [Package Registry Guide](packages.md) for publishing and metadata details.
 
-Show current settings or secrets.
+## Administration & Deployment
 
-### settings edit
+### `nodetool admin`
 
-`nodetool settings edit [--secrets] [--key KEY] [--value VALUE]`
+Maintenance utilities for model assets and caches.
 
-Edit settings or secrets.
+- `admin download-hf` — download Hugging Face models locally or via a remote server.
+- `admin download-ollama` — pre-pull Ollama model blobs.
+- `admin scan-cache` — inspect cache usage.
+- `admin delete-hf` — remove cached Hugging Face repositories.
+- `admin cache-size` — report aggregate cache sizes.
 
-## Package commands
+### `nodetool deploy`
 
-### package list
+Controls deployments described in `deployment.yaml`.
 
-`nodetool package list [--available]`
+- `deploy init` — create a new configuration skeleton.
+- `deploy add` / `deploy edit` — interactively manage deployment entries.
+- `deploy list` / `deploy show` — inspect configured deployments.
+- `deploy plan` — preview pending changes.
+- `deploy apply` — apply configuration to the target environment.
+- `deploy status`, `deploy logs`, `deploy destroy` — observe or tear down deployments.
 
-List installed or available packages.
+The [Self-Hosted Deployment](self_hosted.md) guide covers architecture and runtime expectations in more depth.
 
-### package scan
+### `nodetool sync`
 
-`nodetool package scan [--verbose]`
+Synchronise database entries with a remote NodeTool server.
 
-Scan the current directory for nodes and create package metadata.
+- `sync workflow --id <WORKFLOW_ID> --server-url <URL>` — push a local workflow to a remote deployment.
 
-### package init
+### Proxy Utilities
 
-`nodetool package init`
+The proxy commands manage the Docker-aware reverse proxy used in self-hosted setups.
 
-Initialize a new Nodetool project.
+- `nodetool proxy` — run the proxy with a supplied configuration.
+- `nodetool proxy-daemon` — manage the proxy as a background process via the deployer.
+- `nodetool proxy-status` — query the health/status endpoint.
+- `nodetool proxy-validate-config` — lint a configuration file before deployment.
 
-### package docs
+## Tips
 
-`nodetool package docs [--output-dir DIR] [--compact] [--verbose]`
-
-Generate documentation for the package nodes.
+- Commands that contact remote services load `.env` files automatically via `python-dotenv`; ensure environment variables are present.
+- Use `--verbose` where available to surface DEBUG-level logging when troubleshooting.

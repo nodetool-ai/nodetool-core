@@ -9,14 +9,6 @@ NodeTool Core is a Python library that provides a powerful, flexible, and easy-t
 It uses a node-based approach, where each node represents a specific operation, and nodes are connected together to form
 a workflow.
 
-## Getting Started
-
-If you're new to NodeTool Core, we recommend starting with these guides:
-
-- [Installation](getting-started/installation.md) - How to install NodeTool Core
-- [Quick Start](getting-started/quick-start.md) - Build your first workflow
-- [Key Concepts](concepts/key-concepts.md) - Learn about the core concepts
-
 ## Main Features
 
 NodeTool Core provides a wide range of features:
@@ -32,26 +24,32 @@ NodeTool Core provides a wide range of features:
 
 The documentation is organized into the following sections:
 
-- [**Getting Started**](getting-started/index.md) - Guides for new users
 - [**Concepts**](concepts/index.md) - Core concepts and architecture
-- [**API Reference**](api-reference/index.md) - Detailed API documentation
 - [**API Server**](api-server.md) - Overview of the FastAPI backend
 - [**Workflow API**](workflow-api.md) - How to call workflows programmatically
-- [**Chat WebSocket API**](chat-api.md) - Real time chat endpoint
+- [**Chat API**](chat-api.md) - Real time chat endpoint
 - [**CLI Reference**](cli.md) - Command line usage
+- [**Configuration**](configuration.md) - Environment, settings, and secrets
+- [**Storage**](storage.md) - Asset stores and caches
 - [**Chat CLI**](chat-cli.md) - Interactive chat application
 - [**Chat Server**](chat-server.md) - Standalone chat server with WebSocket and SSE support
 - [**Agents**](agents.md) - Multi-step agent framework
 - [**Chat Module**](chat.md) - Conversational interface
-- [**Chat Providers**](chat-providers.md) - Supported LLM backends
 - [**Providers**](providers.md) - Multi-modal AI provider system and generic nodes
+- [**Messaging**](messaging.md) - Chat processors and streaming events
+- [**DSL & Nodes**](dsl.md) - Authoring nodes and using the DSL
+- [**Packages**](packages.md) - Creating and publishing node packages
+- [**Indexing**](indexing.md) - Vector store ingestion workflows
+- [**Docker Execution**](docker-execution.md) - Containerized workflow execution
+- [**Self-Hosted Deployment**](self_hosted.md) - Proxy-based infrastructure guide
+- [**Deployment Guide**](deployment.md) - RunPod, Cloud Run, and self-hosted automation
+- [**Proxy Reference**](proxy.md) - TLS, routing, and status endpoints
+- [**Runpod Testing Guide**](runpod_testing_guide.md) - Validate cloud deployments
 - [**Examples**](../examples/README.md) - Example workflows
-- [**Runpod Deployment**](runpod-deployment.md) - Runpod Deployment
-- [**Runpod Testing Guide**](runpod_testing_guide.md) - Runpod Testing Guide
 
 ## Community
 
-- [GitHub Repository](https://github.com/yourusername/nodetool-core)
+- [GitHub Repository](https://github.com/nodetool-ai/nodetool-core)
 - [Discord Community](https://discord.gg/nodetool)
 - [Twitter](https://twitter.com/nodetool)
 

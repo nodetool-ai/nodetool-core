@@ -1,3 +1,5 @@
+[← Back to Docs Index](index.md)
+
 # Workflow API Guide
 
 NodeTool exposes an HTTP and WebSocket API so you can integrate workflows into your own applications. This page collects
