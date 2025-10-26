@@ -1,20 +1,30 @@
-from nodetool.workflows.types import Error, OutputUpdate
-from pydantic import BaseModel, Field
 import uuid
+from typing import Any, Generic, TypeVar
 
+from pydantic import BaseModel, Field, ConfigDict
+
+from nodetool.dsl.handles import OutputsProxy
+from nodetool.metadata.types import OutputSlot
 from nodetool.types.graph import Graph, Node
+from nodetool.workflows.base_node import get_node_class
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.run_workflow import run_workflow
 from nodetool.workflows.processing_context import (
     AssetOutputMode,
     ProcessingContext,
 )
+from nodetool.workflows.types import Error, OutputUpdate
 
 
-class GraphNode(BaseModel):
+OutputT = TypeVar("OutputT")
+
+
+class GraphNode(BaseModel, Generic[OutputT]):
     """
     Represents a node in a graph DSL.
     """
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
 
@@ -26,8 +36,31 @@ class GraphNode(BaseModel):
     def get_node_type(cls) -> str:
         return cls.__annotations__["node_type"]
 
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        cls.model_rebuild(force=True)
 
-def graph(*nodes):
+    @property
+    def out(self) -> OutputsProxy[OutputT]:
+        """Expose output handles for this node."""
+        return OutputsProxy(self)
+
+    def find_output_instance(self, name: str) -> OutputSlot | None:
+        """
+        Look up a statically-declared output slot on the underlying node class.
+
+        Dynamic outputs (declared at runtime) are not discoverable here and will
+        therefore return ``None``.
+        """
+        node_cls = get_node_class(self.get_node_type())
+        if node_cls is None:
+            return None
+        if hasattr(node_cls, "find_output"):
+            return node_cls.find_output(name)
+        return None
+
+
+def graph(*graph_nodes: "GraphNode[Any]"):
     """
     Create a graph representation based on the given nodes.
 
@@ -41,7 +74,7 @@ def graph(*nodes):
     from nodetool.dsl.graph_node_converter import GraphNodeConverter
 
     g = GraphNodeConverter()
-    for node in nodes:
+    for node in graph_nodes:
         g.add(node)
     nodes = [
         Node(

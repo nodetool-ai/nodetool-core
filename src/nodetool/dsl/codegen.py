@@ -191,6 +191,48 @@ def field_default(default_value: Any) -> str:
     return repr(default_value)
 
 
+def _is_optional_annotation(field_type: type | GenericAlias | UnionType) -> bool:
+    """
+    Detect whether an annotation includes ``None`` (Optional/Union with None).
+    """
+    if isinstance(field_type, UnionType):
+        return any(arg is type(None) for arg in field_type.__args__)
+
+    origin = typing.get_origin(field_type)
+    if origin is Union:
+        return any(arg is type(None) for arg in typing.get_args(field_type))
+
+    return False
+
+
+def _strip_optional_from_str(type_str: str) -> str:
+    """
+    Remove ``None`` members from a pipe-separated union string representation.
+    """
+    parts = [part.strip() for part in type_str.split("|")]
+    without_none = [part for part in parts if part != "None"]
+    return " | ".join(without_none) if without_none else "None"
+
+
+def _connect_annotation(field_type: type | GenericAlias | UnionType, field) -> str:
+    """
+    Render the Connect[...] annotation for a field, preserving optionality.
+    """
+    base_str = type_to_string(field_type)
+    optional = _is_optional_annotation(field_type)
+
+    if not optional and getattr(field, "is_required", True) is False and field.default is None:
+        optional = True
+
+    if optional:
+        base_str = _strip_optional_from_str(base_str)
+
+    connect_str = f"Connect[{base_str}]"
+    if optional:
+        connect_str += " | None"
+    return connect_str
+
+
 def generate_class_source(node_cls: type[BaseNode]) -> str:
     """
     Generate the source code for a graph node class based on the provided node class.
@@ -212,8 +254,38 @@ def generate_class_source(node_cls: type[BaseNode]) -> str:
         The generated class will have the same name as the original class but will
         inherit from GraphNode instead of BaseNode.
     """
-    imports = ""
-    class_body = f"class {node_cls.__name__}(GraphNode):\n"
+    return_type = None
+    typed_output_annotations: dict[str, str] = {}
+
+    try:
+        return_type = node_cls.return_type()
+        if return_type is not None:
+            annotations = getattr(return_type, "__annotations__", None)
+            if annotations and not (
+                isinstance(return_type, type) and issubclass(return_type, BaseModel)
+            ):
+                for field_name, field_type in annotations.items():
+                    try:
+                        typed_output_annotations[field_name] = type_to_string(field_type)
+                    except Exception:
+                        typed_output_annotations[field_name] = "typing.Any"
+    except Exception:
+        return_type = None
+
+    imports = (
+        "import typing\n"
+        "from pydantic import Field\n"
+        "from nodetool.dsl.handles import Connect, OutputHandle, OutputsProxy, connect_field\n"
+    )
+
+    output_annotation = "typing.Any"
+    if return_type is not None:
+        try:
+            output_annotation = type_to_string(return_type)
+        except Exception:
+            output_annotation = "typing.Any"
+
+    class_body = f"class {node_cls.__name__}(GraphNode[{output_annotation}]):\n"
 
     # Add class docstring if it exists
     if node_cls.__doc__:
@@ -244,19 +316,39 @@ def generate_class_source(node_cls: type[BaseNode]) -> str:
                     field_def = f"Field(default={enum_full_path}({repr(field.default)}), description={repr(field.description)})"
                 class_body += f"    {field_name}: {enum_full_path} = {field_def}\n"
             else:
-                new_field_type = (
-                    f"{type_to_string(field_type)} | GraphNode | tuple[GraphNode, str]"  # type: ignore
-                )
-                field_def = f"Field(default={field_default(field.default)}, description={repr(field.description)})"
+                new_field_type = _connect_annotation(field_type, field)
+                field_def = f"connect_field(default={field_default(field.default)}, description={repr(field.description)})"
                 class_body += f"    {field_name}: {new_field_type} = {field_def}\n"
         except Exception as e:
             print(f"Error generating field {field_name} for {node_cls.__name__}: {e}")
             raise e
 
+    if typed_output_annotations:
+        class_body += "\n    @property\n"
+        class_body += (
+            f'    def out(self) -> "{node_cls.__name__}Outputs":\n'
+            f"        return {node_cls.__name__}Outputs(self)\n"
+        )
+
     class_body += "\n    @classmethod\n"
     class_body += f'    def get_node_type(cls): return "{node_type}"\n'
 
-    return imports + "\n" + class_body
+    outputs_class = ""
+    if typed_output_annotations:
+        outputs_class = (
+            f"\n\nclass {node_cls.__name__}Outputs(OutputsProxy[{output_annotation}]):\n"
+        )
+        for slot_name, slot_type in typed_output_annotations.items():
+            outputs_class += "    @property\n"
+            outputs_class += (
+                f"    def {slot_name}(self) -> OutputHandle[{slot_type}]:\n"
+                f"        return typing.cast(OutputHandle[{slot_type}], self['{slot_name}'])\n\n"
+            )
+        if outputs_class.endswith("\n\n"):
+            outputs_class = outputs_class[:-1]
+
+    rebuild = f"\n{node_cls.__name__}.model_rebuild(force=True)\n"
+    return imports + "\n" + class_body + outputs_class + rebuild
 
 
 def create_dsl_modules(source_path: str, target_path: str):
