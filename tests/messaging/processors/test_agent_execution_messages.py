@@ -13,7 +13,7 @@ from uuid import uuid4
 
 from nodetool.models.message import Message as DBMessage
 from nodetool.metadata.types import Message as ApiMessage, Provider
-from nodetool.messaging.processors.agent import AgentMessageProcessor
+from nodetool.messaging.agent_message_processor import AgentMessageProcessor
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import (
     TaskUpdate,

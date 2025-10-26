@@ -162,6 +162,13 @@ async def setup_and_teardown(request):
 def _set_dummy_api_keys(monkeypatch):
     """Provide dummy API keys so provider constructors don't fail in unit tests.
 
+    This fixture provides environment variables for backward compatibility and for
+    code paths that check environment variables directly.
+
+    RECOMMENDED: For provider tests, use BaseProviderTest.create_provider() instead,
+    which dynamically fetches secrets using provider_class.required_secrets() and
+    builds the secrets dict. This is cleaner and doesn't rely on env vars.
+
     These tests mock network calls; real keys are not required. Setting the env vars
     prevents providers from raising ApiKeyMissingError during initialization.
     """
@@ -171,6 +178,10 @@ def _set_dummy_api_keys(monkeypatch):
     )
     monkeypatch.setenv("GEMINI_API_KEY", os.getenv("GEMINI_API_KEY", "test-gemini-key"))
     monkeypatch.setenv("HF_TOKEN", os.getenv("HF_TOKEN", "test-hf-token"))
+    monkeypatch.setenv("OLLAMA_API_URL", os.getenv("OLLAMA_API_URL", "http://localhost:11434"))
+    monkeypatch.setenv("REPLICATE_API_TOKEN", os.getenv("REPLICATE_API_TOKEN", "test-replicate-token"))
+    monkeypatch.setenv("ELEVENLABS_API_KEY", os.getenv("ELEVENLABS_API_KEY", "test-elevenlabs-key"))
+    monkeypatch.setenv("FAL_API_KEY", os.getenv("FAL_API_KEY", "test-fal-key"))
 
 
 @pytest.fixture(scope="function")

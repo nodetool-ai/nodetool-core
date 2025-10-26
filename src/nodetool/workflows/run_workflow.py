@@ -141,8 +141,14 @@ async def run_workflow(
                     request.graph = getattr(workflow, "graph")
                 else:
                     raise Exception("Workflow object does not provide a graph")
-            # Call with minimal positional args for compatibility with test runners
-            await runner.run(request, context)
+            # Execute runner with configured options
+            await runner.run(
+                request,
+                context,
+                send_job_updates=send_job_updates,
+                initialize_graph=initialize_graph,
+                validate_graph=validate_graph,
+            )
         except asyncio.CancelledError:
             if runner.status == "running":
                 runner.status = "cancelled"

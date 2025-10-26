@@ -57,7 +57,7 @@ result = asyncio.run(run_graph(graph(workflow)))
 ## Graph Utilities
 
 - `graph(*nodes)` (`src/nodetool/dsl/graph.py:26`) – converts DSL instances to a `Graph` model.
-- `run_graph(graph)` (`src/nodetool/dsl/graph.py:53`) – executes the graph via the workflow engine, streaming outputs as they become available.
+- `run_graph(graph, asset_output_mode=None)` (`src/nodetool/dsl/graph.py:53`) – executes the graph via the workflow engine; pass an `AssetOutputMode` to control how assets are serialized.
 - Helper functions like `graph_result()` simplify unit testing DSL examples.
 
 ## Exposing Nodes as Tools

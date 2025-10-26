@@ -39,7 +39,7 @@ class TestDynamicLanguageModels:
             "nodetool.ml.models.language_models.list_providers",
             return_value=[mock_provider],
         ):
-            models = await get_all_language_models()
+            models = await get_all_language_models(user_id="test-user")
 
             assert isinstance(models, list)
             assert len(models) > 0
@@ -65,9 +65,9 @@ class TestDynamicLanguageModels:
             return_value=[mock_provider],
         ):
             # First call
-            models1 = await get_all_language_models()
+            models1 = await get_all_language_models(user_id="test-user")
             # Second call should use cache
-            models2 = await get_all_language_models()
+            models2 = await get_all_language_models(user_id="test-user")
 
             # Should only call the provider once due to caching
             assert mock_provider.get_available_language_models.call_count == 1
@@ -105,7 +105,7 @@ class TestDynamicLanguageModels:
             "nodetool.ml.models.language_models.list_providers",
             return_value=[mock_provider1, mock_provider2],
         ):
-            models = await get_all_language_models()
+            models = await get_all_language_models(user_id="test-user")
 
             assert len(models) == 2
             model_ids = {model.id for model in models}
@@ -138,7 +138,7 @@ class TestDynamicLanguageModels:
             return_value=[mock_provider1, mock_provider2],
         ):
             # Should not raise, even though provider1 fails
-            models = await get_all_language_models()
+            models = await get_all_language_models(user_id="test-user")
 
             # Should still get models from the working provider
             # Note: This assumes the implementation handles errors gracefully

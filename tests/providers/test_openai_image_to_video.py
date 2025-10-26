@@ -18,6 +18,14 @@ from nodetool.metadata.types import VideoModel, Provider
 class TestOpenAIImageToVideoDimensions:
     """Test suite for automatic dimension matching in image-to-video generation."""
 
+    def create_provider(self) -> OpenAIProvider:
+        """Create an OpenAIProvider instance with test secrets.
+
+        Returns:
+            An initialized OpenAIProvider with test API key
+        """
+        return OpenAIProvider(secrets={"OPENAI_API_KEY": "test-key"})
+
     def create_test_image(self, width: int, height: int, color: str = "red") -> bytes:
         """Create a test image with specified dimensions.
 
@@ -36,7 +44,7 @@ class TestOpenAIImageToVideoDimensions:
 
     def test_extract_image_dimensions_landscape(self):
         """Test extracting dimensions from a landscape image."""
-        provider = OpenAIProvider()
+        provider = self.create_provider()
         image = self.create_test_image(1920, 1080)
 
         width, height = provider._extract_image_dimensions(image)
@@ -46,7 +54,7 @@ class TestOpenAIImageToVideoDimensions:
 
     def test_extract_image_dimensions_portrait(self):
         """Test extracting dimensions from a portrait image."""
-        provider = OpenAIProvider()
+        provider = self.create_provider()
         image = self.create_test_image(1080, 1920)
 
         width, height = provider._extract_image_dimensions(image)
@@ -56,7 +64,7 @@ class TestOpenAIImageToVideoDimensions:
 
     def test_extract_image_dimensions_square(self):
         """Test extracting dimensions from a square image."""
-        provider = OpenAIProvider()
+        provider = self.create_provider()
         image = self.create_test_image(1024, 1024)
 
         width, height = provider._extract_image_dimensions(image)
@@ -66,7 +74,7 @@ class TestOpenAIImageToVideoDimensions:
 
     def test_extract_image_dimensions_invalid(self):
         """Test that invalid image data raises ValueError."""
-        provider = OpenAIProvider()
+        provider = self.create_provider()
         invalid_image = b"not a valid image"
 
         with pytest.raises(ValueError, match="Failed to extract image dimensions"):
@@ -74,7 +82,7 @@ class TestOpenAIImageToVideoDimensions:
 
     def test_snap_to_valid_video_dimensions_16_9_landscape(self):
         """Test snapping 16:9 landscape dimensions."""
-        provider = OpenAIProvider()
+        provider = self.create_provider()
 
         # Test exact match
         result = provider._snap_to_valid_video_dimensions(1280, 720)
@@ -90,7 +98,7 @@ class TestOpenAIImageToVideoDimensions:
 
     def test_snap_to_valid_video_dimensions_9_16_portrait(self):
         """Test snapping 9:16 portrait dimensions."""
-        provider = OpenAIProvider()
+        provider = self.create_provider()
 
         # Test exact match
         result = provider._snap_to_valid_video_dimensions(720, 1280)
@@ -102,7 +110,7 @@ class TestOpenAIImageToVideoDimensions:
 
     def test_snap_to_valid_video_dimensions_4_3_aspect_ratio(self):
         """Test snapping 4:3 aspect ratio dimensions."""
-        provider = OpenAIProvider()
+        provider = self.create_provider()
 
         # 4:3 should map to closest 16:9 landscape
         result = provider._snap_to_valid_video_dimensions(800, 600)
@@ -118,7 +126,7 @@ class TestOpenAIImageToVideoDimensions:
         For 1:1 ratio, both landscape and portrait are equally valid,
         but we prefer landscape (720p) over portrait as it's more common.
         """
-        provider = OpenAIProvider()
+        provider = self.create_provider()
 
         result = provider._snap_to_valid_video_dimensions(1024, 1024)
         # Square should map to one of the valid sizes
@@ -127,7 +135,7 @@ class TestOpenAIImageToVideoDimensions:
 
     def test_snap_to_valid_video_dimensions_wide_aspect_ratio(self):
         """Test snapping ultra-wide aspect ratios."""
-        provider = OpenAIProvider()
+        provider = self.create_provider()
 
         # 21:9 ultra-wide should map to 1280x720 (landscape)
         result = provider._snap_to_valid_video_dimensions(2560, 1080)
@@ -135,7 +143,7 @@ class TestOpenAIImageToVideoDimensions:
 
     def test_snap_to_valid_video_dimensions_small_image(self):
         """Test snapping small image dimensions."""
-        provider = OpenAIProvider()
+        provider = self.create_provider()
 
         # Small landscape image
         result = provider._snap_to_valid_video_dimensions(640, 360)
@@ -148,8 +156,7 @@ class TestOpenAIImageToVideoDimensions:
     @pytest.mark.asyncio
     async def test_image_to_video_uses_image_dimensions(self):
         """Test that image_to_video extracts and uses image dimensions."""
-        provider = OpenAIProvider()
-        provider.api_key = "test-key"
+        provider = self.create_provider()
 
         # Create a test image with specific dimensions
         test_image = self.create_test_image(1920, 1080)
@@ -200,8 +207,7 @@ class TestOpenAIImageToVideoDimensions:
     @pytest.mark.asyncio
     async def test_image_to_video_preserves_aspect_ratio(self):
         """Test that different aspect ratios are preserved when snapping."""
-        provider = OpenAIProvider()
-        provider.api_key = "test-key"
+        provider = self.create_provider()
 
         test_cases = [
             # (width, height, expected_size)
@@ -247,8 +253,7 @@ class TestOpenAIImageToVideoDimensions:
     @pytest.mark.asyncio
     async def test_image_to_video_invalid_image_raises_error(self):
         """Test that invalid image data raises a clear error."""
-        provider = OpenAIProvider()
-        provider.api_key = "test-key"
+        provider = self.create_provider()
 
         invalid_image = b"not a valid image"
 

@@ -17,7 +17,7 @@ NodeTool’s chat stack routes user prompts through a pipeline of message proces
 3. Processors leverage providers (`BaseProvider`) and the workflow system:
    - Agent mode uses the agent runtime (`src/nodetool/agents/agent.py`) to plan subtasks and call registered tools.
    - Workflow mode triggers `run_workflow()` and streams `NodeUpdate`, `Chunk`, and `OutputUpdate` messages.
-4. The `Chat WebSocket API` (`docs/chat-api.md`) delivers structured events to clients; each processor translates internal updates into WebSocket payloads (e.g., `AgentMessageProcessor.process()` in `src/nodetool/messaging/processors/agent.py:47`).
+4. The `Chat WebSocket API` (`docs/chat-api.md`) delivers structured events to clients; each processor translates internal updates into WebSocket payloads (e.g., `AgentMessageProcessor.process()` in `src/nodetool/messaging/agent_message_processor.py:47`).
 
 ## Extending the Pipeline
 

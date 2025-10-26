@@ -154,26 +154,21 @@ class TestHuggingFaceProvider(BaseProviderTest):
     def provider_name(self):
         return "huggingface"
 
-    def create_provider(self, **kwargs):
-        """Create a HuggingFaceProvider instance with mocked environment."""
-        import os
+    def _get_custom_test_secrets(self) -> Dict[str, str]:
+        """Override to provide HuggingFace-specific test secrets."""
+        return {
+            "HF_TOKEN": "hf_test_token_12345",
+        }
 
-        # Set a dummy HF_TOKEN for testing
-        original_token = os.environ.get("HF_TOKEN")
-        os.environ["HF_TOKEN"] = "hf_test_token_12345"
-
-        try:
-            # Default to using hf-inference provider for tests
-            if "inference_provider" not in kwargs:
-                kwargs["inference_provider"] = "hf-inference"
-            provider = HuggingFaceProvider(**kwargs)
-            return provider
-        finally:
-            # Restore original token
-            if original_token is None:
-                os.environ.pop("HF_TOKEN", None)
-            else:
-                os.environ["HF_TOKEN"] = original_token
+    def _get_provider_kwargs(self) -> Dict[str, Any]:
+        """Override to add HuggingFace-specific kwargs."""
+        # Get the base kwargs from registration
+        kwargs = super()._get_provider_kwargs()
+        # Ensure we have the inference_provider for tests
+        # (use hf-inference as default for unit tests, as it doesn't need a running server)
+        if "inference_provider" not in kwargs:
+            kwargs["inference_provider"] = "hf-inference"
+        return kwargs
 
     def create_huggingface_response(
         self, content: str = "Hello, world!"

@@ -19,7 +19,7 @@ async def test_get_all_tts_models_returns_only_tts_models():
 
     This ensures TTS providers correctly return only TTS models.
     """
-    models = await get_all_tts_models()
+    models = await get_all_tts_models(user_id="test-user")
 
     # All returned models must be TTSModel instances
     for model in models:
@@ -39,7 +39,7 @@ async def test_tts_models_fastapi_serialization():
     This simulates what FastAPI does internally when validating the response
     against the list[TTSModel] type annotation.
     """
-    models = await get_all_tts_models()
+    models = await get_all_tts_models(user_id="test-user")
 
     # Simulate FastAPI serialization
     for model in models:
@@ -60,7 +60,7 @@ async def test_tts_models_have_required_fields():
     """
     Test that all TTS models have required fields populated.
     """
-    models = await get_all_tts_models()
+    models = await get_all_tts_models(user_id="test-user")
 
     for model in models:
         # ID and name should not be empty

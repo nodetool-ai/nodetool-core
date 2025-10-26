@@ -10,6 +10,13 @@ class RepoFile:
         self.__dict__.update(data)
 
 
+class RepoFolder:
+    """Minimal structure representing a folder in a HF repo."""
+
+    def __init__(self, **data):
+        self.__dict__.update(data)
+
+
 class HfApi:
     """Minimal stub for huggingface_hub.HfApi."""
 

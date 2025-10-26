@@ -18,7 +18,10 @@ from nodetool.models.workflow import Workflow as WorkflowModel
 from nodetool.types.graph import Edge, Node, get_input_schema, get_output_schema
 from nodetool.workflows.base_node import BaseNode, ToolResultNode
 from nodetool.workflows.graph import Graph
-from nodetool.workflows.processing_context import ProcessingContext
+from nodetool.workflows.processing_context import (
+    AssetOutputMode,
+    ProcessingContext,
+)
 from nodetool.workflows.run_workflow import run_workflow
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.types import (
@@ -207,6 +210,9 @@ class GraphTool(Tool):
                 message_queue=isolated_queue,
                 device=context.device,
                 workspace_dir=context.workspace_dir,
+                asset_output_mode=getattr(
+                    context, "asset_output_mode", AssetOutputMode.TEMP_URL
+                ),
             )
 
             # Collect all messages from workflow execution
@@ -239,8 +245,6 @@ class GraphTool(Tool):
                                 result[key] += value
                             else:
                                 result[key] = value
-
-            result = await context.upload_assets_to_temp(result)
 
             print("result", result)
 
@@ -298,8 +302,6 @@ class WorkflowTool(Tool):
                     if hasattr(value, "model_dump"):
                         value = value.model_dump()
                     results[msg.node_name] = value
-
-            results = await context.upload_assets_to_temp(results)
 
             log.debug(f"Workflow tool {self.name} returned: {results}")
 

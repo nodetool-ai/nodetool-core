@@ -12,8 +12,12 @@ import PIL.Image
 import pandas as pd
 from pydub import AudioSegment
 import importlib.util
+from pathlib import Path
 
-from nodetool.workflows.processing_context import ProcessingContext
+from nodetool.workflows.processing_context import (
+    AssetOutputMode,
+    ProcessingContext,
+)
 from nodetool.metadata.types import (
     AssetRef,
     ImageRef,
@@ -133,6 +137,101 @@ class TestAssetConversion:
 
         result = await context.asset_to_bytes(asset_ref)
         assert result == test_data
+
+
+class TestAssetOutputModes:
+    """Test asset normalization across output modes."""
+
+    @pytest.mark.asyncio
+    async def test_normalize_python_mode(self, context: ProcessingContext):
+        context.asset_output_mode = AssetOutputMode.PYTHON
+        image_ref = ImageRef(data=b"raw-bytes")
+
+        result = await context.normalize_output_value(image_ref)
+
+        assert result is image_ref  # untouched in python mode
+
+    @pytest.mark.asyncio
+    async def test_normalize_data_uri_mode(
+        self, context: ProcessingContext, sample_image
+    ):
+        context.asset_output_mode = AssetOutputMode.DATA_URI
+        buffer = BytesIO()
+        sample_image.save(buffer, format="PNG")
+        image_ref = ImageRef(data=buffer.getvalue())
+
+        result = await context.normalize_output_value(image_ref)
+
+        assert isinstance(result, ImageRef)
+        assert result.uri is not None
+        assert result.uri.startswith("data:image/png;base64,")
+        assert result.data is None  # payload moved into data URI
+
+    @pytest.mark.asyncio
+    async def test_normalize_temp_url_mode(self, context: ProcessingContext):
+        context.asset_output_mode = AssetOutputMode.TEMP_URL
+        image_ref = ImageRef(data=b"image-bytes")
+
+        result = await context.normalize_output_value({"image": image_ref})
+
+        assert result["image"]["type"] == "image"
+        assert result["image"]["asset_id"] is None
+        assert result["image"]["uri"].startswith(
+            Environment.get_temp_storage_api_url()
+        )
+
+    @pytest.mark.asyncio
+    async def test_normalize_storage_url_mode(self, context: ProcessingContext):
+        context.asset_output_mode = AssetOutputMode.STORAGE_URL
+        image_ref = ImageRef(asset_id="asset-123")
+
+        with patch.object(
+            context,
+            "get_asset_url",
+            AsyncMock(return_value="https://storage.example/asset-123.png"),
+        ):
+            result = await context.normalize_output_value(image_ref)
+
+        assert result["type"] == "image"
+        assert result["asset_id"] == "asset-123"
+        assert result["uri"] == "https://storage.example/asset-123.png"
+
+    @pytest.mark.asyncio
+    async def test_normalize_workspace_mode(self, context: ProcessingContext, tmp_path):
+        context.workspace_dir = str(tmp_path)
+        context.asset_output_mode = AssetOutputMode.WORKSPACE
+        image_ref = ImageRef(data=b"workspace-bytes")
+
+        result = await context.normalize_output_value(image_ref)
+
+        assert result["type"] == "image"
+        assert result["asset_id"] is None
+        output_path = Path(result["path"])
+        assert output_path.exists()
+        assert output_path.read_bytes() == b"workspace-bytes"
+        assert output_path.parent == tmp_path / "assets"
+
+    @pytest.mark.asyncio
+    async def test_normalize_raw_mode(self, context: ProcessingContext):
+        context.asset_output_mode = AssetOutputMode.RAW
+        image_ref = ImageRef(data=b"image-bytes")
+
+        result = await context.normalize_output_value(image_ref)
+
+        assert isinstance(result, ImageRef)
+        assert result.data == b"image-bytes"
+        assert result.uri is None
+
+    def test_context_mode_defaults(self):
+        assert ProcessingContext().asset_output_mode == AssetOutputMode.PYTHON
+        assert (
+            ProcessingContext(encode_assets_as_base64=True).asset_output_mode
+            == AssetOutputMode.DATA_URI
+        )
+        assert (
+            ProcessingContext(upload_assets_to_s3=True).asset_output_mode
+            == AssetOutputMode.STORAGE_URL
+        )
 
 
 class TestImageMethods:

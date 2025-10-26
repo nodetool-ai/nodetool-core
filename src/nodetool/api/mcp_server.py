@@ -30,7 +30,10 @@ from nodetool.models.asset import Asset as AssetModel
 from nodetool.config.environment import Environment
 from nodetool.models.job import Job as JobModel
 from nodetool.workflows.job_execution_manager import JobExecutionManager
-from nodetool.workflows.processing_context import ProcessingContext
+from nodetool.workflows.processing_context import (
+    AssetOutputMode,
+    ProcessingContext,
+)
 from nodetool.api.model import (
     get_all_models,
     recommended_models,
@@ -183,14 +186,23 @@ async def run_workflow_tool(
     result = {}
     preview = {}
     save = {}
-    context = ProcessingContext()
-    async for msg in run_workflow(request):
+    context = ProcessingContext(asset_output_mode=AssetOutputMode.TEMP_URL)
+    async for msg in run_workflow(request, context=context):
         if isinstance(msg, PreviewUpdate):
-            preview[msg.node_id] = await context.upload_assets_to_temp(msg.value)
+            value = msg.value
+            if hasattr(value, "model_dump"):
+                value = value.model_dump()
+            preview[msg.node_id] = value
         elif isinstance(msg, SaveUpdate):
-            save[msg.name] = await context.upload_assets_to_temp(msg.value)
+            value = msg.value
+            if hasattr(value, "model_dump"):
+                value = value.model_dump()
+            save[msg.name] = value
         elif isinstance(msg, OutputUpdate):
-            result[msg.node_name] = await context.upload_assets_to_temp(msg.value)
+            value = msg.value
+            if hasattr(value, "model_dump"):
+                value = value.model_dump()
+            result[msg.node_name] = value
         elif isinstance(msg, JobUpdate):
             if msg.status == "error":
                 raise Exception(msg.error)
@@ -273,9 +285,13 @@ async def run_graph(
 
     # Run workflow
     result = {}
-    async for msg in run_workflow(request):
+    context = ProcessingContext(asset_output_mode=AssetOutputMode.TEMP_URL)
+    async for msg in run_workflow(request, context=context):
         if isinstance(msg, OutputUpdate):
-            result[msg.node_name] = msg.value
+            value = msg.value
+            if hasattr(value, "model_dump"):
+                value = value.model_dump()
+            result[msg.node_name] = value
         elif isinstance(msg, JobUpdate):
             if msg.status == "error":
                 raise Exception(msg.error)
@@ -1412,6 +1428,7 @@ async def start_background_job(
         user_id=user_id,
         auth_token=auth_token,
         workflow_id=workflow_id,
+        asset_output_mode=AssetOutputMode.TEMP_URL,
     )
 
     # Start job in background via JobExecutionManager
@@ -2275,7 +2292,7 @@ async def run_agent(
         ```
     """
     try:
-        context = ProcessingContext()
+        context = ProcessingContext(asset_output_mode=AssetOutputMode.TEMP_URL)
 
         # Map tool names to tool instances
         tool_instances = []

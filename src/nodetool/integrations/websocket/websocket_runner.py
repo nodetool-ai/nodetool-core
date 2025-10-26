@@ -12,7 +12,10 @@ from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
 from nodetool.ml.core.model_manager import ModelManager
 from nodetool.types.job import JobUpdate
-from nodetool.workflows.processing_context import ProcessingContext
+from nodetool.workflows.processing_context import (
+    AssetOutputMode,
+    ProcessingContext,
+)
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.workflow_runner import WorkflowRunner
 from nodetool.workflows.types import Chunk, Error
@@ -247,11 +250,17 @@ class WebSocketRunner:
             )
 
             # Create processing context
+            asset_mode = (
+                AssetOutputMode.DATA_URI
+                if self.mode == WebSocketMode.TEXT
+                else AssetOutputMode.TEMP_URL
+            )
             context = ProcessingContext(
                 user_id=req.user_id,
                 auth_token=req.auth_token,
                 workflow_id=req.workflow_id,
                 encode_assets_as_base64=self.mode == WebSocketMode.TEXT,
+                asset_output_mode=asset_mode,
             )
 
             # Start job in background via JobExecutionManager

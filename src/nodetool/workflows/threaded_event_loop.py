@@ -309,6 +309,7 @@ class ThreadedEventLoop:
 
             # Clear per-thread caches now that the loop is stopping, to avoid cross-workflow leaks
             try:
+                from nodetool.config.environment import Environment
                 Environment.clear_thread_caches()
                 log.debug("Cleared thread-local caches via Environment.")
             except Exception as e:

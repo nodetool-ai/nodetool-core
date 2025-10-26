@@ -1280,15 +1280,10 @@ class HuggingFaceProvider(BaseProvider):
                 negative_prompt=params.negative_prompt or None,
                 num_inference_steps=params.num_inference_steps,
                 guidance_scale=params.guidance_scale,
-                target_size={
+                target_size={  # pyright: ignore[reportArgumentType]
                     "width": params.target_width,
                     "height": params.target_height,
-                }
-                if hasattr(params, "target_width")
-                and params.target_width
-                and hasattr(params, "target_height")
-                and params.target_height
-                else None,
+                } if params.target_width and params.target_height else None
             )
 
             log.debug("HuggingFace image-to-image API call successful")
@@ -1424,7 +1419,7 @@ class HuggingFaceProvider(BaseProvider):
 
             # Use the text_to_video method from AsyncInferenceClient
             video_bytes = await self.client.text_to_video(
-                text=params.prompt,
+                prompt=params.prompt,
                 model=params.model.id,
                 **api_params,
             )

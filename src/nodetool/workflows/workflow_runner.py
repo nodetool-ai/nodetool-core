@@ -984,22 +984,28 @@ class WorkflowRunner:
         This method handles the specific processing logic for output nodes, which
         implement the `process` method.
         """
+        log.debug("Processing OutputNode inputs: %s", list(inputs.keys()))
+        value = None
         if "value" in inputs:
             value = inputs["value"]
+        elif inputs:
+            # Fallback: use the first provided handle value (common for auto-generated output nodes)
+            value = next(iter(inputs.values()))
+
+        if value is not None:
             # Emit a running update for OutputNode for consistency with other nodes
             await node.send_update(context, "running", properties=["name"])
+            # Get the type of the output for metadata purposes
+            output_type = node.__class__.__name__.replace("Output", "").lower()
+            value = await context.normalize_output_value(value)
+
             if node.name in self.outputs:
                 if self.outputs[node.name] and self.outputs[node.name][-1] == value:
-                    # Skip duplicate
                     pass
                 else:
                     self.outputs[node.name].append(value)
             else:
                 self.outputs[node.name] = [value]
-
-            # Get the type of the output for metadata purposes
-            output_type = node.__class__.__name__.replace("Output", "").lower()
-            value = await context.embed_assets_in_data(value)
 
             # Send the new OutputUpdate message
             context.post_message(

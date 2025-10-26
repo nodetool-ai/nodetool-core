@@ -69,7 +69,7 @@ class VllmProvider(BaseProvider, OpenAICompat):
 
     provider_name: str = "vllm"
 
-    def __init__(self) -> None:
+    def __init__(self, secrets: dict[str, str]) -> None:
         """Initialize the vLLM provider with environment configuration."""
         super().__init__()
         env = Environment.get_environment()
@@ -80,7 +80,7 @@ class VllmProvider(BaseProvider, OpenAICompat):
                 "VLLM_BASE_URL environment variable must be set to use vLLM provider"
             )
         self._base_url: str = base_url.rstrip("/")
-        self._api_key: str | None = env.get("VLLM_API_KEY")
+        self._api_key: str | None = secrets.get("VLLM_API_KEY")
         timeout_raw = env.get("VLLM_HTTP_TIMEOUT", 600)
         try:
             self._timeout = float(timeout_raw)

@@ -108,6 +108,17 @@ HTTP_HEADERS = {
 }
 
 
+class AssetOutputMode(str, Enum):
+    """Controls how assets are materialized when emitting workflow messages."""
+
+    PYTHON = "python"
+    DATA_URI = "data_uri"
+    TEMP_URL = "temp_url"
+    STORAGE_URL = "storage_url"
+    WORKSPACE = "workspace"
+    RAW = "raw"
+
+
 class ProcessingContext:
     """
     The processing context is the workflow's interface to the outside world.
@@ -146,6 +157,7 @@ class ProcessingContext:
         device: str | None = None,
         encode_assets_as_base64: bool = False,
         upload_assets_to_s3: bool = False,
+        asset_output_mode: "AssetOutputMode | None" = None,
         chroma_client: ClientAPI | None = None,
         workspace_dir: str | None = None,
         http_client: httpx.AsyncClient | None = None,
@@ -168,6 +180,15 @@ class ProcessingContext:
         assert self.auth_token is not None, "Auth token is required"
         self.encode_assets_as_base64 = encode_assets_as_base64
         self.upload_assets_to_s3 = upload_assets_to_s3
+        if asset_output_mode is None:
+            if encode_assets_as_base64:
+                self.asset_output_mode = AssetOutputMode.DATA_URI
+            elif upload_assets_to_s3:
+                self.asset_output_mode = AssetOutputMode.STORAGE_URL
+            else:
+                self.asset_output_mode = AssetOutputMode.PYTHON
+        else:
+            self.asset_output_mode = asset_output_mode
         self.chroma_client = chroma_client
         if http_client is not None:
             self._http_client = http_client
@@ -2082,6 +2103,159 @@ class ProcessingContext:
 
         return encode_assets_as_uri(value)
 
+    def _is_asset_dict(self, value: dict[str, Any]) -> bool:
+        """Best-effort detection for dicts shaped like serialized AssetRefs."""
+        return (
+            "type" in value
+            and value["type"] in asset_types
+            and "uri" in value
+            and "asset_id" in value
+        )
+
+    def _guess_asset_mime_ext(self, asset: AssetRef) -> tuple[str, str]:
+        """Return (mime, extension) defaults for a given asset type."""
+        if isinstance(asset, ImageRef):
+            return "image/png", "png"
+        if isinstance(asset, AudioRef):
+            return "audio/mp3", "mp3"
+        if isinstance(asset, VideoRef):
+            return "video/mp4", "mp4"
+        if isinstance(asset, TextRef):
+            return "text/plain", "txt"
+        return "application/octet-stream", "bin"
+
+    async def _asset_to_data_uri(self, asset: AssetRef) -> AssetRef:
+        """Convert an AssetRef into a data URI."""
+        if isinstance(asset, DataframeRef):
+            return asset
+        data_bytes = await self.asset_to_bytes(asset)
+        mime, _ = self._guess_asset_mime_ext(asset)
+        uri = f"data:{mime};base64,{base64.b64encode(data_bytes).decode('utf-8')}"
+        return asset.model_copy(update={"uri": uri, "data": None})
+
+    async def _asset_to_storage_url(self, asset: AssetRef) -> dict[str, Any] | AssetRef:
+        """Ensure asset is accessible via persistent storage URL."""
+        if isinstance(asset, DataframeRef):
+            return await self.embed_assets_in_data(asset)
+
+        if asset.asset_id:
+            try:
+                url = await self.get_asset_url(asset.asset_id)
+                return {"type": asset.type, "uri": url, "asset_id": asset.asset_id}
+            except Exception:
+                log.debug("Falling back to upload for asset_id %s", asset.asset_id)
+
+        if asset.uri and asset.uri.startswith(("http://", "https://")):
+            return {"type": asset.type, "uri": asset.uri, "asset_id": asset.asset_id}
+
+        data_bytes = await self.asset_to_bytes(asset)
+        storage = Environment.get_asset_storage()
+        _, ext = self._guess_asset_mime_ext(asset)
+        key = uuid.uuid4().hex + f".{ext}"
+        uri = await storage.upload(key, BytesIO(data_bytes))
+        return {"type": asset.type, "uri": uri, "asset_id": asset.asset_id}
+
+    async def _asset_to_temp_url(self, asset: AssetRef) -> dict[str, Any] | AssetRef:
+        """Upload an AssetRef to temp storage and return reference dict."""
+        if isinstance(asset, DataframeRef):
+            return await self.embed_assets_in_data(asset)
+
+        data_bytes = await self.asset_to_bytes(asset)
+        storage = Environment.get_temp_storage()
+        _, ext = self._guess_asset_mime_ext(asset)
+        key = uuid.uuid4().hex + f".{ext}"
+        uri = await storage.upload(key, BytesIO(data_bytes))
+        return {"type": asset.type, "uri": uri, "asset_id": asset.asset_id}
+
+    async def _asset_to_workspace_file(self, asset: AssetRef) -> dict[str, Any] | AssetRef:
+        """Persist asset to local workspace and return file path reference."""
+        if isinstance(asset, DataframeRef):
+            return await self.embed_assets_in_data(asset)
+
+        if not self.workspace_dir:
+            raise ValueError("workspace_dir is required for workspace asset output")
+
+        data_bytes = await self.asset_to_bytes(asset)
+        _, ext = self._guess_asset_mime_ext(asset)
+        assets_dir = Path(self.workspace_dir) / "assets"
+        assets_dir.mkdir(parents=True, exist_ok=True)
+        file_path = assets_dir / f"{uuid.uuid4().hex}.{ext}"
+        file_path.write_bytes(data_bytes)
+        return {
+            "type": asset.type,
+            "path": str(file_path),
+            "asset_id": asset.asset_id,
+        }
+
+    async def assets_to_data_uri(self, value: Any) -> Any:
+        """Recursively convert AssetRefs within value to data URIs."""
+        if isinstance(value, AssetRef):
+            return await self._asset_to_data_uri(value)
+        elif isinstance(value, dict):
+            keys = list(value.keys())
+            results = await asyncio.gather(
+                *[self.assets_to_data_uri(value[k]) for k in keys]
+            )
+            return {k: r for k, r in zip(keys, results)}
+        elif isinstance(value, list):
+            results = await asyncio.gather(
+                *[self.assets_to_data_uri(item) for item in value]
+            )
+            return list(results)
+        elif isinstance(value, tuple):
+            results = await asyncio.gather(
+                *[self.assets_to_data_uri(item) for item in value]
+            )
+            return tuple(results)
+        else:
+            return value
+
+    async def assets_to_storage_url(self, value: Any) -> Any:
+        """Recursively materialize AssetRefs as persistent storage URLs."""
+        if isinstance(value, AssetRef):
+            return await self._asset_to_storage_url(value)
+        elif isinstance(value, dict):
+            keys = list(value.keys())
+            results = await asyncio.gather(
+                *[self.assets_to_storage_url(value[k]) for k in keys]
+            )
+            return {k: r for k, r in zip(keys, results)}
+        elif isinstance(value, list):
+            results = await asyncio.gather(
+                *[self.assets_to_storage_url(item) for item in value]
+            )
+            return list(results)
+        elif isinstance(value, tuple):
+            results = await asyncio.gather(
+                *[self.assets_to_storage_url(item) for item in value]
+            )
+            return tuple(results)
+        else:
+            return value
+
+    async def assets_to_workspace_files(self, value: Any) -> Any:
+        """Recursively persist AssetRefs to the workspace directory."""
+        if isinstance(value, AssetRef):
+            return await self._asset_to_workspace_file(value)
+        elif isinstance(value, dict):
+            keys = list(value.keys())
+            results = await asyncio.gather(
+                *[self.assets_to_workspace_files(value[k]) for k in keys]
+            )
+            return {k: r for k, r in zip(keys, results)}
+        elif isinstance(value, list):
+            results = await asyncio.gather(
+                *[self.assets_to_workspace_files(item) for item in value]
+            )
+            return list(results)
+        elif isinstance(value, tuple):
+            results = await asyncio.gather(
+                *[self.assets_to_workspace_files(item) for item in value]
+            )
+            return tuple(results)
+        else:
+            return value
+
     async def embed_assets_in_data(self, value: Any) -> Any:
         """
         Recursively embeds any memory:// assets in the given value.
@@ -2124,63 +2298,30 @@ class ProcessingContext:
         Returns:
             Any: The value with all AssetRef objects uploaded to S3 and replaced with their URLs
         """
-
-        def get_ext(value: Any) -> str:
-            if isinstance(value, ImageRef):
-                return "png"
-            elif isinstance(value, AudioRef):
-                return "mp3"
-            elif isinstance(value, VideoRef):
-                return "mp4"
-            else:
-                return "bin"
-
-        async def upload_asset(value: AssetRef) -> dict[str, Any]:
-            log.info(f"Uploading asset {value.uri} to temp storage")
-            # Always normalize to bytes via the canonical encoder
-            data = await self.asset_to_bytes(value)
-
-            if data is not None:
-                storage = Environment.get_temp_storage()
-                ext = get_ext(value)
-                key = uuid.uuid4().hex + "." + ext
-                uri = await storage.upload(
-                    key,
-                    BytesIO(data),
-                )
-                log.info(f"Uploaded {len(data)} bytes to {uri}")
-                return {
-                    "type": value.type,
-                    "uri": uri,
-                    "asset_id": value.asset_id,
-                }
-            else:
-                return {
-                    "type": value.type,
-                    "uri": value.uri,
-                    "asset_id": value.asset_id,
-                }
-
         if isinstance(value, AssetRef):
-            return await upload_asset(value)
+            return await self._asset_to_temp_url(value)
         elif isinstance(value, dict):
-            if (
-                "type" in value
-                and "uri" in value
-                and "asset_id" in value
-                and "data" in value
-                and value["type"] in asset_types
-            ):
+            if self._is_asset_dict(value):
                 asset_ref = AssetRef(
                     type=value["type"],
-                    uri=value["uri"],
-                    asset_id=value["asset_id"],
-                    data=value["data"],
+                    uri=value.get("uri") or "",
+                    asset_id=value.get("asset_id"),
+                    data=value.get("data"),
                 )
-                return await upload_asset(asset_ref)
+                uploaded = await self._asset_to_temp_url(asset_ref)
+                if isinstance(uploaded, dict):
+                    merged = dict(value)
+                    merged["uri"] = uploaded.get("uri")
+                    merged["asset_id"] = uploaded.get("asset_id")
+                    merged["type"] = uploaded.get("type", merged.get("type"))
+                    merged.pop("data", None)
+                    return merged
+                else:
+                    return uploaded
             keys = list(value.keys())
-            tasks = [self.upload_assets_to_temp(value[k]) for k in keys]
-            results = await asyncio.gather(*tasks)
+            results = await asyncio.gather(
+                *[self.upload_assets_to_temp(value[k]) for k in keys]
+            )
             return {k: r for k, r in zip(keys, results)}
         elif isinstance(value, list):
             results = await asyncio.gather(
@@ -2194,6 +2335,25 @@ class ProcessingContext:
             return tuple(results)
         else:
             return value
+
+    async def normalize_output_value(self, value: Any) -> Any:
+        """
+        Normalize workflow outputs according to the configured asset output mode.
+        """
+        mode = self.asset_output_mode
+        if mode == AssetOutputMode.PYTHON:
+            return value
+        if mode == AssetOutputMode.DATA_URI:
+            return await self.assets_to_data_uri(value)
+        if mode == AssetOutputMode.TEMP_URL:
+            return await self.upload_assets_to_temp(value)
+        if mode == AssetOutputMode.STORAGE_URL:
+            return await self.assets_to_storage_url(value)
+        if mode == AssetOutputMode.WORKSPACE:
+            return await self.assets_to_workspace_files(value)
+        if mode == AssetOutputMode.RAW:
+            return await self.embed_assets_in_data(value)
+        return value
 
     def get_system_font_path(self, font_name: str = "Arial.ttf") -> str:
         """

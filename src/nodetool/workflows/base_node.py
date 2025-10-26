@@ -981,19 +981,6 @@ class BaseNode(BaseModel):
             properties (list[str], optional): The properties to send to the client. Defaults to None.
         """
 
-        async def encode_asset_to_data(value: Any) -> Any:
-            if isinstance(value, dict):
-                if "uri" in value and value["uri"].startswith("memory://"):
-                    return await context.asset_to_data(AssetRef(uri=value["uri"]))
-                else:
-                    return {k: await encode_asset_to_data(v) for k, v in value.items()}
-            elif isinstance(value, list):
-                return [await encode_asset_to_data(v) for v in value]
-            if isinstance(value, AssetRef):
-                if value.uri.startswith("memory://"):  # type: ignore
-                    return await context.asset_to_data(AssetRef(uri=value.uri))
-            return value
-
         props = self.properties_for_client()
         if properties is not None:
             for p in properties:
@@ -1005,10 +992,11 @@ class BaseNode(BaseModel):
                 elif isinstance(value, ComfyModel):
                     value_without_model = value.model_dump()
                     del value_without_model["model"]
-                    props[p] = value_without_model
-                elif isinstance(value, AssetRef):
-                    # we only send assets with data in results
-                    props[p] = await encode_asset_to_data(value)
+                    props[p] = await context.normalize_output_value(value_without_model)
+                elif isinstance(value, AssetRef) or isinstance(
+                    value, (dict, list, tuple)
+                ):
+                    props[p] = await context.normalize_output_value(value)
                 else:
                     props[p] = value
 
@@ -1017,12 +1005,9 @@ class BaseNode(BaseModel):
         )
 
         if result_for_client:
-            if context.encode_assets_as_base64:
-                for key, value in result_for_client.items():
-                    if isinstance(value, AssetRef):
-                        result_for_client[key] = value.encode_data_to_uri()
-            else:
-                result_for_client = await encode_asset_to_data(result_for_client)
+            result_for_client = await context.normalize_output_value(
+                result_for_client
+            )
 
         update = NodeUpdate(
             node_id=self.id,
@@ -1555,14 +1540,18 @@ class ToolResultNode(BaseNode):
 
         if self.has_input():
             async for handle, value in self.iter_any_input():
-                yield {"result": {handle: value}}
+                result_payload = await context.normalize_output_value({handle: value})
+                yield {"result": result_payload}
                 context.post_message(
-                    ToolResultUpdate(node_id=self.id, result={handle: value})
+                    ToolResultUpdate(node_id=self.id, result=result_payload)
                 )
         else:
-            yield {"result": self._dynamic_properties}
+            result_payload = await context.normalize_output_value(
+                self._dynamic_properties
+            )
+            yield {"result": result_payload}
             context.post_message(
-                ToolResultUpdate(node_id=self.id, result=self._dynamic_properties)
+                ToolResultUpdate(node_id=self.id, result=result_payload)
             )
 
 
@@ -1613,6 +1602,11 @@ class OutputNode(BaseNode):
         yielded = False
         async for handle, value in self.iter_any_input():
             yielded = True
+            normalized = (
+                await context.normalize_output_value(value)
+                if hasattr(context, "normalize_output_value")
+                else value
+            )
             # For streaming, preserve per-item semantics but align naming to tests
             context.post_message(
                 OutputUpdate(
@@ -1620,12 +1614,17 @@ class OutputNode(BaseNode):
                     node_name=self.name,
                     output_name=self.name,
                     output_type=output_type,
-                    value=value,
+                    value=normalized,
                 )
             )
-            yield {"output": value}
+            yield {"output": normalized}
 
         if not yielded:
+            normalized_value = (
+                await context.normalize_output_value(self.value)
+                if hasattr(context, "normalize_output_value")
+                else self.value
+            )
             # No inbound sources or no items arrived before EOS -> fallback to property
             context.post_message(
                 OutputUpdate(
@@ -1633,10 +1632,10 @@ class OutputNode(BaseNode):
                     node_name=self.name,
                     output_name=self.name,
                     output_type=output_type,
-                    value=self.value,
+                    value=normalized_value,
                 )
             )
-            yield {"output": self.value}
+            yield {"output": normalized_value}
 
     @classmethod
     def is_streaming_input(cls) -> bool:  # type: ignore[override]
@@ -1698,7 +1697,7 @@ class Preview(BaseNode):
         from nodetool.workflows.types import PreviewUpdate
 
         async for _handle, value in self.iter_any_input():
-            result = await context.embed_assets_in_data(value)
+            result = await context.normalize_output_value(value)
             context.post_message(PreviewUpdate(node_id=self.id, value=result))
 
     @classmethod

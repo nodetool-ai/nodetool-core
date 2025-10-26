@@ -4,7 +4,7 @@ from nodetool.chat.chat_websocket_runner import ChatWebSocketRunner
 from nodetool.chat.base_chat_runner import BaseChatRunner
 from nodetool.providers.base import MockProvider
 from nodetool.metadata.types import Message, ToolCall, Provider
-from nodetool.messaging.processors.help import HelpMessageProcessor
+from nodetool.messaging.help_message_processor import HelpMessageProcessor
 from nodetool.workflows.processing_context import ProcessingContext
 
 

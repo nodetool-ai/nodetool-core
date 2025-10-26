@@ -5,14 +5,30 @@ This satisfies imports made during unit tests without requiring the real
 huggingface_hub dependency.
 """
 
-from .hf_api import HfApi, RepoFile  # noqa: F401
+from .hf_api import HfApi, RepoFile, RepoFolder  # noqa: F401
 
 
 class AsyncInferenceClient:
-    """Stub for AsyncInferenceClient from huggingface_hub."""
+    """Stub for AsyncInferenceClient from huggingface_hub.
+
+    This stub provides minimal method stubs to allow unit tests to mock API calls.
+    The actual implementation is mocked in tests via unittest.mock.patch.
+    """
 
     def __init__(self, *args, **kwargs):
         pass
+
+    async def chat_completion(self, *args, **kwargs):
+        """Stub for chat_completion method - will be mocked in tests."""
+        raise NotImplementedError("This stub should be mocked in tests")
+
+    async def text_generation(self, *args, **kwargs):
+        """Stub for text_generation method - will be mocked in tests."""
+        raise NotImplementedError("This stub should be mocked in tests")
+
+    async def get_model_status(self, *args, **kwargs):
+        """Stub for get_model_status method - will be mocked in tests."""
+        raise NotImplementedError("This stub should be mocked in tests")
 
 
 class CacheNotFound(Exception):

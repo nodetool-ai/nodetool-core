@@ -23,8 +23,8 @@ from typing import Any, Dict, List, Type
 from unittest.mock import MagicMock
 
 from nodetool.agents.tools.base import Tool
-from nodetool.providers.base import BaseProvider
-from nodetool.metadata.types import Message, MessageTextContent, ToolCall
+from nodetool.providers.base import BaseProvider, get_registered_provider, _PROVIDER_REGISTRY
+from nodetool.metadata.types import Message, MessageTextContent, ToolCall, Provider as ProviderEnum
 from nodetool.workflows.types import Chunk
 from nodetool.workflows.processing_context import ProcessingContext
 
@@ -158,7 +158,28 @@ class BaseProviderTest(ABC):
     - Error handling
     - Context length management
     - Usage tracking
+
+    Secrets Management:
+    - Dynamically fetches required secrets from provider_class.required_secrets()
+    - Automatically builds secrets dict with test values
+    - Supports per-subclass secret customization via get_test_secret()
+
+    Provider Kwargs:
+    - Automatically fetches provider-specific kwargs from registration
+    - Can be overridden in subclasses via get_provider_kwargs()
     """
+
+    # Test secret values for common providers
+    _DEFAULT_TEST_SECRETS = {
+        "OPENAI_API_KEY": "test-openai-key",
+        "ANTHROPIC_API_KEY": "test-anthropic-key",
+        "GEMINI_API_KEY": "test-gemini-key",
+        "HF_TOKEN": "test-hf-token",
+        "OLLAMA_API_URL": "http://localhost:11434",
+        "REPLICATE_API_TOKEN": "test-replicate-token",
+        "ELEVENLABS_API_KEY": "test-elevenlabs-key",
+        "FAL_API_KEY": "test-fal-key",
+    }
 
     @property
     @abstractmethod
@@ -172,9 +193,103 @@ class BaseProviderTest(ABC):
         """Return the provider name for identification."""
         pass
 
+    def get_test_secret(self, secret_name: str) -> str:
+        """
+        Get a test value for a secret.
+
+        Override this method in subclasses to provide custom test secrets.
+
+        Args:
+            secret_name: The name of the secret (e.g., "OPENAI_API_KEY")
+
+        Returns:
+            Test value for the secret
+        """
+        # Check subclass-specific overrides first
+        custom_secrets = self._get_custom_test_secrets()
+        if secret_name in custom_secrets:
+            return custom_secrets[secret_name]
+
+        # Fall back to default test secrets
+        if secret_name in self._DEFAULT_TEST_SECRETS:
+            return self._DEFAULT_TEST_SECRETS[secret_name]
+
+        # Generate a generic test value if not found
+        return f"test-{secret_name.lower()}"
+
+    def _get_custom_test_secrets(self) -> Dict[str, str]:
+        """
+        Get custom test secrets for this provider.
+
+        Override this method in subclasses to provide custom test values.
+
+        Returns:
+            Dict of custom test secrets for this provider
+        """
+        return {}
+
+    def _get_required_secrets_dict(self) -> Dict[str, str]:
+        """
+        Build a secrets dict with test values for all required secrets.
+
+        Returns:
+            Dict mapping secret names to test values
+        """
+        secrets = {}
+        for secret_name in self.provider_class.required_secrets():
+            secrets[secret_name] = self.get_test_secret(secret_name)
+        return secrets
+
+    def _get_provider_kwargs(self) -> Dict[str, Any]:
+        """
+        Get provider-specific kwargs from the registration system.
+
+        This method fetches kwargs that were registered with the provider
+        at initialization time. Subclasses can override this to add or
+        modify kwargs.
+
+        Returns:
+            Dict of provider-specific kwargs
+        """
+        # Import providers to ensure they're registered
+        from nodetool.providers import import_providers
+        import_providers()
+
+        # Find the provider in the registry by comparing classes
+        for provider_enum, (cls, kwargs) in _PROVIDER_REGISTRY.items():
+            if cls is self.provider_class:
+                return dict(kwargs)  # Return a copy to avoid mutations
+
+        return {}
+
     def create_provider(self, **kwargs) -> BaseProvider:
-        """Create a provider instance with optional configuration."""
-        return self.provider_class(**kwargs)
+        """
+        Create a provider instance with test secrets and provider kwargs.
+
+        This method:
+        1. Gets required secrets from the provider class
+        2. Creates test values for those secrets
+        3. Gets provider-specific kwargs from registration
+        4. Merges any kwargs passed to this method
+        5. Creates the provider with secrets and merged kwargs
+
+        Args:
+            **kwargs: Additional or overriding kwargs for the provider
+
+        Returns:
+            An initialized provider instance
+        """
+        # Get required secrets and build the secrets dict
+        secrets = self._get_required_secrets_dict()
+
+        # Get provider-specific kwargs from registration
+        provider_kwargs = self._get_provider_kwargs()
+
+        # Merge with passed kwargs (passed kwargs override registered ones)
+        provider_kwargs.update(kwargs)
+
+        # Create and return the provider
+        return self.provider_class(secrets=secrets, **provider_kwargs)
 
     def create_simple_messages(self, content: str = "Hello") -> List[Message]:
         """Create simple test messages."""

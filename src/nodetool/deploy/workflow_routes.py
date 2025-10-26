@@ -18,7 +18,7 @@ from fastapi.responses import StreamingResponse
 from nodetool.config.logging_config import get_logger
 from nodetool.types.job import JobUpdate
 from nodetool.types.workflow import Workflow
-from nodetool.workflows.processing_context import ProcessingContext
+from nodetool.workflows.processing_context import AssetOutputMode, ProcessingContext
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.run_workflow import run_workflow
 from nodetool.workflows.types import OutputUpdate
@@ -95,14 +95,14 @@ def create_workflow_router() -> APIRouter:
             params = await request.json()
             req = RunJobRequest(params=params, workflow_id=id)
 
-            context = ProcessingContext(upload_assets_to_s3=True)
+            context = ProcessingContext(asset_output_mode=AssetOutputMode.DATA_URI)
 
             results: Dict[str, object] = {}
             async for msg in run_workflow(req, context=context, use_thread=True):
                 if isinstance(msg, JobUpdate) and msg.status == "error":
                     raise HTTPException(status_code=500, detail=msg.error)
                 if isinstance(msg, OutputUpdate):
-                    value = context.encode_assets_as_uri(msg.value)
+                    value = msg.value
                     if hasattr(value, "model_dump"):
                         value = value.model_dump()
                     results[msg.node_name] = value
@@ -123,7 +123,7 @@ def create_workflow_router() -> APIRouter:
             params = await request.json()
             req = RunJobRequest(params=params, workflow_id=id)
 
-            context = ProcessingContext(upload_assets_to_s3=True)
+            context = ProcessingContext(asset_output_mode=AssetOutputMode.DATA_URI)
 
             async def generate_sse():
                 results: Dict[str, object] = {}
@@ -142,7 +142,7 @@ def create_workflow_router() -> APIRouter:
                                 yield f"data: {json.dumps(error_data)}\n\n"
                                 return
                         elif isinstance(msg, OutputUpdate):
-                            value = context.encode_assets_as_uri(msg.value)
+                            value = msg.value
                             if hasattr(value, "model_dump"):
                                 value = value.model_dump()
                             results[msg.node_name] = value

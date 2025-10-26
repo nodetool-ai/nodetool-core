@@ -801,7 +801,7 @@ async def main():
     from nodetool.agents.tools.math_tools import CalculatorTool
     from nodetool.workflows.processing_context import ProcessingContext
 
-    provider = OllamaProvider()
+    provider = OllamaProvider(secrets={})
     tools = [CalculatorTool()]
     context = ProcessingContext()
 

@@ -13,53 +13,28 @@ from asyncio import subprocess as aio_subprocess
 from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from uuid import uuid4
 
 from nodetool.config.logging_config import get_logger
 from nodetool.models.job import Job
 from nodetool.types.job import JobUpdate
-from nodetool.types.prediction import Prediction
 from nodetool.workflows.job_execution import JobExecution
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.types import (
-    Chunk,
-    EdgeUpdate,
     Error as WorkflowError,
-    LogUpdate,
-    NodeProgress,
-    NodeUpdate,
-    Notification,
-    OutputUpdate,
-    PlanningUpdate,
-    PreviewUpdate,
-    SubTaskResult,
-    TaskUpdate,
-    ToolCallUpdate,
-    ToolResultUpdate,
+    ProcessingMessage,
 )
 
 log = get_logger(__name__)
 
+def type_to_name(type: type[ProcessingMessage]) -> str:
+    return type.__annotations__["type"].__args__[0]
+
 
 MESSAGE_TYPE_MAP: dict[str, Any] = {
-    "job_update": JobUpdate,
-    "node_update": NodeUpdate,
-    "edge_update": EdgeUpdate,
-    "node_progress": NodeProgress,
-    "chunk": Chunk,
-    "notification": Notification,
-    "log_update": LogUpdate,
-    "task_update": TaskUpdate,
-    "tool_call_update": ToolCallUpdate,
-    "tool_result_update": ToolResultUpdate,
-    "planning_update": PlanningUpdate,
-    "output_update": OutputUpdate,
-    "preview_update": PreviewUpdate,
-    "subtask_result": SubTaskResult,
-    "prediction": Prediction,
-    "error": WorkflowError,
+    type_to_name(message_type): message_type for message_type in ProcessingMessage.__args__
 }
 
 

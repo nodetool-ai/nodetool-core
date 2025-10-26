@@ -993,7 +993,7 @@ class OpenAIProvider(BaseProvider):
                 log.debug("Returning assistant message with tool calls")
                 return ChatCompletionAssistantMessageParam(
                     role=message.role,
-                    content=content,
+                    content=content, # type: ignore
                     tool_calls=tool_calls,  # type: ignore
                 )
         else:
@@ -2021,7 +2021,7 @@ class OpenAIProvider(BaseProvider):
         # Create the request payload with input_reference
         return await client.videos.create(
             model=model_id,  # type: ignore
-            prompt=prompt if prompt else Omit,
+            prompt=prompt or "",
             input_reference=(filename, image, mime_type),  # type: ignore
             size=size if size else Omit,  # type: ignore
             seconds=str(seconds) if seconds else Omit,  # type: ignore

@@ -5,6 +5,10 @@ import uuid
 from nodetool.types.graph import Graph, Node
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.run_workflow import run_workflow
+from nodetool.workflows.processing_context import (
+    AssetOutputMode,
+    ProcessingContext,
+)
 
 
 class GraphNode(BaseModel):
@@ -50,20 +54,34 @@ def graph(*nodes):
     return Graph(nodes=nodes, edges=g.edges)
 
 
-async def run_graph(graph: Graph, user_id: str = "1", auth_token: str = "token"):
+async def run_graph(
+    graph: Graph,
+    user_id: str = "1",
+    auth_token: str = "token",
+    asset_output_mode: AssetOutputMode | None = None,
+):
     """
     Run the workflow with the given graph.
 
     Args:
       graph (Graph): The graph object representing the workflow.
+      asset_output_mode (AssetOutputMode | None): Optional asset output mode applied to the run.
 
     Returns:
       Any: The result of the workflow execution.
     """
     req = RunJobRequest(user_id=user_id, auth_token=auth_token, graph=graph)
 
+    context = None
+    if asset_output_mode is not None:
+        context = ProcessingContext(
+            user_id=user_id,
+            auth_token=auth_token,
+            asset_output_mode=asset_output_mode,
+        )
+
     res = {}
-    async for msg in run_workflow(req):
+    async for msg in run_workflow(req, context=context):
         if isinstance(msg, OutputUpdate):
             res[msg.node_name] = msg.value
         elif isinstance(msg, Error):
@@ -71,21 +89,23 @@ async def run_graph(graph: Graph, user_id: str = "1", auth_token: str = "token")
     return res
 
 
-async def graph_result(example, return_first_output=True):
+async def graph_result(
+    example,
+    asset_output_mode: AssetOutputMode | None = None,
+):
     """
     Helper function to run a graph and return its result.
 
     Args:
         example: The graph example to run
-        return_first_output: If True, returns the first output value. If False, returns all outputs.
+        asset_output_mode: Optional asset output mode applied to execution.
 
     Returns:
         The result of running the graph
     """
-    result = await run_graph(graph(example))
+    result = await run_graph(
+        graph(example),
+        asset_output_mode=asset_output_mode,
+    )
     assert result is not None, "Result is None"
-    if return_first_output:
-        first_key = list(result.keys())[0]
-        return result[first_key]
-    else:
-        return result
+    return result

@@ -8,6 +8,7 @@ from typing import Any, AsyncGenerator, AsyncIterator, List, Sequence
 from google.genai import Client
 from google.genai.client import AsyncClient
 from google.genai.types import (
+    ImageOrDict,
     Tool,
     Blob,
     FunctionDeclaration,
@@ -1215,7 +1216,7 @@ class GeminiProvider(BaseProvider):
 
             response = await client.models.generate_content(
                 model=model,
-                contents=contents,
+                contents=contents, # type: ignore
                 config=config,
             )
 
@@ -1358,7 +1359,7 @@ class GeminiProvider(BaseProvider):
             if not hasattr(generated_video, "video") or not generated_video.video:
                 raise RuntimeError("No video file reference in generated video")
 
-            video_bytes = await client.files.download(file=generated_video.video)
+            video_bytes = await client.files.download(file=generated_video.video) # type: ignore
 
             if not video_bytes:
                 raise RuntimeError("No video bytes returned after download")
@@ -1424,7 +1425,7 @@ class GeminiProvider(BaseProvider):
             # Convert image bytes to PIL Image for Gemini API
             from PIL import Image
 
-            pil_image = Image.open(BytesIO(image))
+            pil_image: PIL.Image.Image = Image.open(BytesIO(image))
             log.debug(
                 f"Loaded input image: {pil_image.size}, format: {pil_image.format}"
             )
@@ -1459,7 +1460,10 @@ class GeminiProvider(BaseProvider):
             operation = await client.models.generate_videos(
                 model=model_id,
                 prompt=prompt,
-                image=pil_image,  # Pass PIL Image directly
+                image={
+                "image_bytes": image,
+                "mime_type": "image/png",
+            },
                 config=config,
             )
 
@@ -1505,7 +1509,7 @@ class GeminiProvider(BaseProvider):
             if not hasattr(generated_video, "video") or not generated_video.video:
                 raise RuntimeError("No video file reference in generated video")
 
-            video_bytes = await client.files.download(file=generated_video.video)
+            video_bytes = await client.files.download(file=generated_video.video) # type: ignore
 
             if not video_bytes:
                 raise RuntimeError("No video bytes returned after download")
