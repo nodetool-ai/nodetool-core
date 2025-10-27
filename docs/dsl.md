@@ -54,6 +54,40 @@ workflow = Concatenate(first="Hello ", second="world")
 result = asyncio.run(run_graph(graph(workflow)))
 ```
 
+### Wiring Outputs
+
+DSL wrappers expose node outputs through the `.out` attribute:
+
+- **Single-output nodes** expose `.out` as the `OutputHandle` for their only slot. No additional `.output` accessor is required.
+- **TypedDict outputs** (nodes whose `OutputType` is a `TypedDict`) keep their generated proxy classes so you can access each handle: e.g. `agent.out.text`, `agent.out.audio`.
+- **Dynamic-output nodes** (router-style nodes) still return an `OutputsProxy`, which permits attribute or dictionary-style access to dynamic slots.
+
+```python
+from nodetool.dsl.nodetool.text import Template
+from nodetool.dsl.nodetool.agents import Agent
+
+prompt = Template(string="Explain {{ topic }}", topic="retrieval-augmented generation")
+assistant = Agent(prompt=prompt.out, model=my_llm)
+
+# Single output → direct handle
+answer_handle = assistant.out.text
+
+# TypedDict nodes still expose structured handles
+sources_handle = some_search_node.out.sources
+```
+
+### Dynamic Properties
+
+Dynamic nodes (those with `_is_dynamic = True`, such as `Template`) accept extra keyword arguments in their DSL wrappers. Extra kwargs are routed to the underlying node's `dynamic_properties`, and they can be connected just like regular fields:
+
+```python
+prompt = Template(string="{{ greeting }} {{ name }}!", greeting="Hello")
+prompt_with_connection = Template(
+    string="Summary: {{ body }}",
+    body=fetch_document.out,  # connects to a dynamic property slot
+)
+```
+
 ## Graph Utilities
 
 - `graph(*nodes)` (`src/nodetool/dsl/graph.py:26`) – converts DSL instances to a `Graph` model.

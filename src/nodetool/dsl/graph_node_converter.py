@@ -60,6 +60,16 @@ class GraphNodeConverter:
 
         node_data: dict[str, Any] = {}
         pending_connections: list[tuple[OutputHandle[Any], str]] = []
+        dynamic_property_values: dict[str, Any] = {}
+        node_is_dynamic = False
+
+        if hasattr(node_cls, "is_dynamic"):
+            try:
+                node_is_dynamic = bool(node_cls.is_dynamic())  # type: ignore[attr-defined]
+            except Exception:
+                node_is_dynamic = bool(getattr(node_cls, "_is_dynamic", False))
+        else:
+            node_is_dynamic = bool(getattr(node_cls, "_is_dynamic", False))
 
         for field_name in graph_node.model_fields.keys():
             if field_name == "id":
@@ -92,7 +102,40 @@ class GraphNodeConverter:
 
             node_data[field_name] = value
 
-        node_instance = node_cls(id=str(graph_node.id), **node_data)
+        extra_items: dict[str, Any] = {}
+        if hasattr(graph_node, "model_extra") and graph_node.model_extra:
+            extra_items = dict(graph_node.model_extra)  # type: ignore[assignment]
+        elif hasattr(graph_node, "__pydantic_extra__") and getattr(
+            graph_node, "__pydantic_extra__"
+        ):
+            extra_items = dict(getattr(graph_node, "__pydantic_extra__"))
+
+        for extra_name, value in extra_items.items():
+            if extra_name == "id":
+                continue
+
+            if isinstance(value, OutputHandle):
+                pending_connections.append((value, extra_name))
+                continue
+
+            if isinstance(value, GraphNode):
+                raise TypeError(
+                    f"Cannot assign node '{value.__class__.__name__}' directly to "
+                    f"dynamic property '{extra_name}' of '{graph_node.__class__.__name__}'."
+                )
+
+            if not node_is_dynamic:
+                raise ValueError(
+                    f"{node_cls.__name__} does not support dynamic property '{extra_name}'."
+                )
+
+            dynamic_property_values[extra_name] = value
+
+        init_kwargs: dict[str, Any] = dict(node_data)
+        if dynamic_property_values:
+            init_kwargs["dynamic_properties"] = dynamic_property_values
+
+        node_instance = node_cls(id=str(graph_node.id), **init_kwargs)
         self.nodes[graph_node.id] = node_instance
 
         for handle, target_field in pending_connections:
@@ -134,20 +177,35 @@ class GraphNodeConverter:
 
         dst_properties = dst_cls.properties_dict()
         dst_prop = dst_properties.get(dst_field)
-        if dst_prop is None:
+
+        dst_is_dynamic = False
+        if hasattr(dst_cls, "is_dynamic"):
+            try:
+                dst_is_dynamic = bool(dst_cls.is_dynamic())  # type: ignore[attr-defined]
+            except Exception:
+                dst_is_dynamic = bool(getattr(dst_cls, "_is_dynamic", False))
+        else:
+            dst_is_dynamic = bool(getattr(dst_cls, "_is_dynamic", False))
+
+        if dst_prop is None and not dst_is_dynamic:
             raise ValueError(
                 f"Target property '{dst_field}' not found on {dst_cls.__name__}"
             )
 
-        if (
-            slot_type.type != "any"
-            and dst_prop.type.type != "any"
-            and not self._tm_compatible(slot_type, dst_prop.type)
-        ):
-            raise TypeError(
-                f"Type mismatch {src_cls.__name__}.{src_slot}:{slot_type.type} → "
-                f"{dst_cls.__name__}.{dst_field}:{dst_prop.type.type}"
-            )
+        if dst_prop is not None:
+            if (
+                slot_type.type != "any"
+                and dst_prop.type.type != "any"
+                and not self._tm_compatible(slot_type, dst_prop.type)
+            ):
+                raise TypeError(
+                    f"Type mismatch {src_cls.__name__}.{src_slot}:{slot_type.type} → "
+                    f"{dst_cls.__name__}.{dst_field}:{dst_prop.type.type}"
+                )
+        else:
+            # Ensure dynamic nodes record the presence of the dynamic property so it is
+            # persisted in the graph payload, even when connected.
+            dst_base.dynamic_properties.setdefault(dst_field, None)
 
         self.edges.append(
             Edge(

@@ -24,14 +24,14 @@ from enum import Enum
 log = get_logger(__name__)
 
 
-async def retry_on_locked(func, max_retries=5, initial_delay=0.01):
+async def retry_on_locked(func, max_retries=10, initial_delay=0.01):
     """Retry a database operation if it fails due to database lock.
 
     Uses exponential backoff with jitter to avoid thundering herd.
 
     Args:
         func: Async function to execute
-        max_retries: Maximum number of retry attempts
+        max_retries: Maximum number of retry attempts (default 10 for better coverage)
         initial_delay: Initial delay in seconds (doubled each retry)
     """
     last_exception = None
@@ -57,7 +57,7 @@ async def retry_on_locked(func, max_retries=5, initial_delay=0.01):
                     f"Database locked, retrying in {jitter:.3f}s (attempt {attempt + 1}/{max_retries})"
                 )
                 await asyncio.sleep(jitter)
-                delay *= 2  # Exponential backoff
+                delay *= 2  # Exponential backoff (max ~5 seconds by final retry)
             else:
                 log.error(f"Database operation failed after {max_retries} retries: {e}")
                 raise

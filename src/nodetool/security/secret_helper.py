@@ -76,12 +76,9 @@ async def get_secret_required(key: str, user_id: str) -> str:
         return await secret.get_decrypted_value()
 
     log.debug(f"Secret '{key}' not found for user {user_id}")
-    return None
-    if value is None:
-        raise ValueError(
-            f"Required secret '{key}' not found, please set it in the settings menu."
-        )
-    return value
+    raise ValueError(
+        f"Required secret '{key}' not found, please set it in the settings menu."
+    )
 
 
 def get_secret_sync(key: str, default: Optional[str] = None) -> Optional[str]:

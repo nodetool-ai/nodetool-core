@@ -261,52 +261,6 @@ class ThreadedEventLoop:
         try:
             self._loop.run_forever()
         finally:
-            log.debug(
-                "run_forever completed. Starting final cleanup in event loop thread."
-            )
-            # This part runs after run_forever() returns (i.e., after loop.stop() is processed from _shutdown_loop)
-            # _shutdown_loop should have handled cancellation of tasks. This is a final sweep.
-            try:
-                # Ensure all tasks are truly finished if possible.
-                all_tasks_final_sweep = asyncio.all_tasks(self._loop)
-                # Exclude current task if any (though at this point, run_forever is done)
-                tasks_to_gather_final = [
-                    t for t in all_tasks_final_sweep if t is not asyncio.current_task()
-                ]
-
-                if tasks_to_gather_final:
-                    log.debug(
-                        f"_run_event_loop finally: {len(tasks_to_gather_final)} tasks found. Gathering before close."
-                    )
-                    # This gather is to ensure any final exceptions/cancellations are processed by tasks
-                    # before the loop is hard closed.
-                    self._loop.run_until_complete(
-                        asyncio.gather(*tasks_to_gather_final, return_exceptions=True)
-                    )
-                    log.debug("_run_event_loop finally: Final gather completed.")
-            except RuntimeError as e:
-                if (
-                    "cannot call run_until_complete() event loop is already running"
-                    in str(e)
-                ):
-                    log.warning(
-                        "_run_event_loop finally: Loop was unexpectedly still running during final cleanup sweep."
-                    )
-                elif "Event loop is closed" in str(e):
-                    log.debug(
-                        "_run_event_loop finally: Loop was already closed during final task cleanup."
-                    )
-                else:
-                    log.error(
-                        f"_run_event_loop finally: RuntimeError during final task cleanup: {e}",
-                        exc_info=True,
-                    )
-            except Exception as e:
-                log.error(
-                    f"_run_event_loop finally: Exception during final task cleanup: {e}",
-                    exc_info=True,
-                )
-
             # Clear per-thread caches now that the loop is stopping, to avoid cross-workflow leaks
             try:
                 from nodetool.config.environment import Environment

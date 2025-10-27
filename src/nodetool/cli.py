@@ -77,29 +77,32 @@ def cli():
 
 @cli.command("mcp")
 def mcp():
-    """Start a nodetool MCP server."""
+    """Start the NodeTool Model Context Protocol (MCP) server.
+
+    Enables IDE integrations (e.g., Claude Code, other MCP-compatible IDEs) to
+    access NodeTool workflows and capabilities."""
     from nodetool.api.mcp_server import mcp
 
     mcp.run()
 
 
 @cli.command("serve")
-@click.option("--host", default="127.0.0.1", help="Host address to serve on.")
-@click.option("--port", default=8000, help="Port to serve on.", type=int)
+@click.option("--host", default="127.0.0.1", help="Host address to bind to (use 0.0.0.0 for all interfaces).")
+@click.option("--port", default=8000, help="Port to listen on.", type=int)
 @click.option(
     "--static-folder",
     default=None,
-    help="Path to the static folder to serve.",
+    help="Path to folder containing static web assets (e.g., compiled React UI).",
     type=click.Path(exists=True, resolve_path=True, file_okay=False, dir_okay=True),
 )
-@click.option("--apps-folder", default=None, help="Path to the apps folder.")
-@click.option("--force-fp16", is_flag=True, help="Force FP16.")
-@click.option("--reload", is_flag=True, help="Reload the server on changes.")
-@click.option("--production", is_flag=True, help="Run in production mode.")
+@click.option("--apps-folder", default=None, help="Path to folder containing app bundles.")
+@click.option("--force-fp16", is_flag=True, help="Force FP16 precision for ComfyUI integrations (GPU optimization).")
+@click.option("--reload", is_flag=True, help="Enable auto-reload on file changes (development only).")
+@click.option("--production", is_flag=True, help="Enable production mode with stricter validation and optimizations.")
 @click.option(
     "--remote-auth",
     is_flag=True,
-    help="Use single local user with id 1 for authentication. Will be ingnored on production.",
+    help="Enable remote authentication (Supabase-backed auth).",
 )
 @click.option(
     "--verbose",
@@ -118,7 +121,10 @@ def serve(
     production: bool = False,
     verbose: bool = False,
 ):
-    """Serve the Nodetool API server."""
+    """Run the FastAPI backend server for the NodeTool platform.
+
+    Serves the REST API, WebSocket endpoints, and optionally static assets or app bundles.
+    """
     from nodetool.api.server import create_app, run_uvicorn_server
 
     # Configure logging level based on verbose flag
@@ -395,32 +401,32 @@ def chat():
 
 
 @cli.command("worker")
-@click.option("--host", default="0.0.0.0", help="Host address to serve on.")
-@click.option("--port", default=8000, help="Port to serve on.", type=int)
+@click.option("--host", default="0.0.0.0", help="Host address to bind to (listen on all interfaces for deployments).")
+@click.option("--port", default=8000, help="Port to listen on.", type=int)
 @click.option(
-    "--remote-auth", is_flag=True, help="Use remote authentication (Supabase)."
+    "--remote-auth", is_flag=True, help="Enable remote authentication (Supabase-backed auth)."
 )
 @click.option(
     "--default-model",
     default="gpt-oss:20b",
-    help="Default AI model to use when not specified by client.",
+    help="Fallback model when client doesn't specify one.",
 )
 @click.option(
     "--provider",
     default="ollama",
-    help="AI provider to use.",
+    help="AI provider for the default model (e.g., openai, anthropic, ollama).",
 )
 @click.option(
     "--tools",
     default="",
-    help="Comma-separated list of tools to use (e.g., 'google_search,browser').",
+    help="Comma-separated list of tools to enable (e.g., google_search,browser).",
 )
 @click.option(
     "--workflow",
     "workflows",
     multiple=True,
     type=click.Path(exists=True, resolve_path=True, file_okay=True, dir_okay=False),
-    help="One or more workflow files to use.",
+    help="One or more workflow JSON files to register with the worker.",
 )
 @click.option(
     "--verbose",
@@ -438,9 +444,9 @@ def worker(
     workflows: list[str],
     verbose: bool = False,
 ):
-    """Start a NodeTool worker (deployable server).
+    """Start a deployable worker process with OpenAI-compatible endpoints.
 
-    The worker provides OpenAI-compatible endpoints, workflow execution,
+    Used for running NodeTool as a backend service with chat/completion API support.
     admin operations, and collection management. It can be deployed anywhere.
 
     Examples:
@@ -492,32 +498,32 @@ def worker(
 
 
 @cli.command("chat-server")
-@click.option("--host", default="127.0.0.1", help="Host address to serve on.")
-@click.option("--port", default=8080, help="Port to serve on.", type=int)
+@click.option("--host", default="127.0.0.1", help="Host address to bind to.")
+@click.option("--port", default=8080, help="Port to listen on.", type=int)
 @click.option(
-    "--remote-auth", is_flag=True, help="Use remote authentication (Supabase)."
+    "--remote-auth", is_flag=True, help="Enable remote authentication (Supabase-backed auth)."
 )
 @click.option(
     "--default-model",
     default="gpt-oss:20b",
-    help="Default AI model to use when not specified by client.",
+    help="Default AI model to use when client doesn't specify one.",
 )
 @click.option(
     "--provider",
     default="ollama",
-    help="AI provider to use.",
+    help="AI provider for the default model.",
 )
 @click.option(
     "--tools",
     default="",
-    help="Comma-separated list of tools to use (e.g., 'google_search,google_news,google_images').",
+    help="Comma-separated list of tools (e.g., google_search,browser,google_news).",
 )
 @click.option(
     "--workflow",
     "workflows",
     multiple=True,
     type=click.Path(exists=True, resolve_path=True, file_okay=True, dir_okay=False),
-    help="One or more workflow files to use.",
+    help="One or more workflow JSON files to register.",
 )
 @click.option(
     "--verbose",
@@ -535,10 +541,12 @@ def chat_server(
     workflows: list[str],
     verbose: bool = False,
 ):
-    """Start a chat server SSE protocol.
+    """Launch a WebSocket and Server-Sent Events (SSE) compatible chat server.
+
+    Provides an OpenAI-compatible chat completion interface with optional tool support and custom workflows.
 
     Examples:
-      # Start WebSocket server on default port 8080
+      # Start chat server on default port 8080
       nodetool chat-server
 
       # Start chat server on port 3000
@@ -584,22 +592,22 @@ def chat_server(
 @cli.command("chat-client")
 @click.option(
     "--server-url",
-    help="URL of the chat server to connect to. If not provided, uses OpenAI API directly.",
+    help="Override default OpenAI URL to point to a local chat server or custom endpoint.",
 )
 @click.option(
     "--runpod-endpoint",
-    help="RunPod endpoint to use. Convenience option to not specify --server-url.",
+    help="RunPod serverless endpoint ID (e.g., abc123xyz) — convenience shortcut.",
 )
-@click.option("--auth-token", help="Authentication token")
-@click.option("--message", help="Send a single message (non-interactive mode).")
+@click.option("--auth-token", help="HTTP authentication token for server (falls back to RUNPOD_API_KEY env var).")
+@click.option("--message", help="Send a single message in non-interactive mode (no conversation loop).")
 @click.option(
     "--model",
     default="gpt-4o-mini",
-    help="AI model to use (default: gpt-4o-mini for OpenAI, gpt-oss:20b for local server).",
+    help="Model to use (e.g., gpt-4o, gpt-oss:20b).",
 )
 @click.option(
     "--provider",
-    help="AI provider to use when connecting to local server (e.g., 'openai', 'anthropic', 'ollama').",
+    help="AI provider when connecting to local server (e.g., openai, anthropic, ollama).",
 )
 def chat_client(
     server_url: Optional[str],
@@ -609,10 +617,10 @@ def chat_client(
     provider: Optional[str],
     runpod_endpoint: Optional[str],
 ):
-    """Connect to OpenAI API or a NodeTool chat server using OpenAI Chat Completions API.
+    """Interactive or non-interactive client for connecting to chat services.
 
-    By default (no --server-url), connects directly to OpenAI API.
-    With --server-url, connects to a NodeTool chat server with OpenAI compatibility.
+    Supports OpenAI API, local NodeTool chat server, or RunPod serverless endpoints.
+    Supports streaming responses and multi-turn conversations.
 
     Examples:
       # Interactive chat with OpenAI API (default)
@@ -662,9 +670,92 @@ def chat_client(
     asyncio.run(run_chat_client(server_url, auth_token, message, model, provider))
 
 
+@cli.group()
+def secrets():
+    """Manage encrypted secrets stored in the database with per-user encryption."""
+    pass
+
+
+@secrets.command("list")
+@click.option("--user-id", "-u", default="1", help="User ID to list secrets for.")
+@click.option("--limit", default=100, show_default=True, type=int, help="Maximum number of secrets to return.")
+def secrets_list(user_id: str, limit: int) -> None:
+    """List stored secret metadata without revealing values."""
+    import asyncio
+    from nodetool.models.secret import Secret
+
+    async def _list() -> list[Secret]:
+        items, _ = await Secret.list_for_user(user_id=user_id, limit=limit)
+        return items
+
+    secrets_for_user = asyncio.run(_list())
+
+    if not secrets_for_user:
+        console.print(f"[yellow]No secrets stored for user {user_id}.[/]")
+        return
+
+    table = Table(title=f"Secrets for user {user_id}")
+    table.add_column("Key", style="cyan")
+    table.add_column("Updated At", style="green")
+
+    for secret in secrets_for_user:
+        updated = secret.updated_at.isoformat() if secret.updated_at else "N/A"
+        table.add_row(secret.key, updated)
+
+    console.print(table)
+
+
+@secrets.command("store")
+@click.argument("key")
+@click.option("--user-id", "-u", default="1", help="User ID that owns the secret.")
+@click.option("--description", "-d", default=None, help="Optional description for the secret.")
+@click.option(
+    "--no-confirm",
+    is_flag=True,
+    help="Store the secret without requiring a second confirmation of the value.",
+)
+def secrets_store(
+    key: str,
+    user_id: str,
+    description: Optional[str],
+    no_confirm: bool,
+) -> None:
+    """Store or update a secret value by securely prompting for input."""
+    import asyncio
+    from nodetool.models.secret import Secret
+
+    prompt_kwargs = {"hide_input": True}
+    if not no_confirm:
+        prompt_kwargs["confirmation_prompt"] = True
+
+    secret_value = click.prompt(f"Enter value for secret '{key}'", **prompt_kwargs)
+
+    if secret_value is None or secret_value == "":
+        console.print("[red]Secret value cannot be empty.[/]")
+        return
+
+    async def _store() -> None:
+        await Secret.upsert(
+            user_id=user_id,
+            key=key,
+            value=secret_value,
+            description=description,
+        )
+
+    asyncio.run(_store())
+
+    # Clear the reference to the value as soon as it is stored
+    secret_value = None
+
+    console.print(f"[green]Secret '{key}' stored for user {user_id}.[/]")
+
+
 @cli.command("codegen")
 def codegen_cmd():
-    """Generate DSL modules from node definitions."""
+    """Regenerate DSL (Domain-Specific Language) modules from node definitions.
+
+    Scans node packages and generates Python code for type-safe workflow creation.
+    Completely wipes and recreates src/nodetool/dsl/<namespace>/ directories."""
     # Add the src directory to the Python path to allow relative imports
     src_dir = os.path.abspath("src")
     if src_dir not in sys.path:
@@ -709,7 +800,7 @@ def codegen_cmd():
 
 @cli.group()
 def settings():
-    """Commands for managing NodeTool settings and secrets."""
+    """Commands for viewing and editing configuration settings and secrets files."""
     pass
 
 
@@ -789,7 +880,7 @@ def edit_settings(secrets: bool = False):
 # Package Commands Group
 @click.group()
 def package():
-    """Commands for managing Nodetool packages."""
+    """Commands for managing NodeTool packages and generating documentation."""
     pass
 
 
@@ -1068,7 +1159,9 @@ cli.add_command(settings)
 
 @cli.group()
 def admin():
-    """Commands for admin operations (model downloads, cache management, health checks)."""
+    """Maintenance utilities for model assets and caches.
+
+    Manage HuggingFace and Ollama model downloads, cache inspection, and cleanup."""
     pass
 
 
@@ -1480,7 +1573,9 @@ def _handle_list_options(
 
 @cli.command("list-gcp-options")
 def list_gcp_options():
-    """List available Google Cloud Run options."""
+    """List available Google Cloud Run configuration options for deployments.
+
+    Shows available regions, CPU options, memory options, and Docker registry options."""
     from nodetool.deploy.google_cloud_run_api import (
         CloudRunRegion,
         CloudRunCPU,
@@ -1593,7 +1688,9 @@ def env_for_deploy(
 
 @cli.group()
 def deploy():
-    """Manage deployments via deployment.yaml configuration."""
+    """Controls deployments described in deployment.yaml.
+
+    Manage cloud and self-hosted deployments (RunPod, Google Cloud Run, self-hosted Docker, etc.)."""
     pass
 
 
@@ -2372,7 +2469,9 @@ def deploy_workflows():
 @click.argument("deployment_name")
 @click.argument("workflow_id")
 def deploy_workflows_sync(deployment_name: str, workflow_id: str):
-    """Sync a workflow to a deployed instance."""
+    """Sync a local workflow to a deployed instance.
+
+    Automatically downloads referenced models (HuggingFace, Ollama) and syncs assets."""
     import asyncio
     from io import BytesIO
     from nodetool.deploy.manager import DeploymentManager
@@ -3031,7 +3130,7 @@ def deploy_database_delete(deployment_name: str, table: str, key: str, force: bo
 
 @deploy.group("collections")
 def deploy_collections():
-    """Manage collections on deployed instances."""
+    """Manage vector database collections on deployed instances."""
     pass
 
 
@@ -3039,7 +3138,9 @@ def deploy_collections():
 @click.argument("deployment_name")
 @click.argument("collection_name")
 def deploy_collections_sync(deployment_name: str, collection_name: str):
-    """Sync a collection to a deployed instance."""
+    """Sync a local ChromaDB collection to a deployed instance.
+
+    Creates collection on remote if needed and syncs all documents, embeddings, and metadata."""
     import asyncio
 
     from nodetool.deploy.manager import DeploymentManager
@@ -3169,19 +3270,21 @@ cli.add_command(deploy)
 
 @cli.group()
 def sync():
-    """Commands to sync local database items with a remote NodeTool server."""
+    """Synchronize database entries with a remote NodeTool server.
+
+    Push local workflows and data to remote deployments."""
     pass
 
 
 @sync.command("workflow")
-@click.option("--id", "workflow_id", required=True, help="Workflow ID to sync")
+@click.option("--id", "workflow_id", required=True, help="Workflow ID to sync.")
 @click.option(
     "--server-url",
     required=True,
-    help="Remote NodeTool server base URL (e.g., http://localhost:8000)",
+    help="Remote server base URL (e.g., http://localhost:8000).",
 )
 def sync_workflow(workflow_id: str, server_url: str):
-    """Sync a local workflow to a remote database via admin routes."""
+    """Push a local workflow to a remote NodeTool server."""
     import asyncio
 
     from nodetool.deploy.admin_client import AdminHTTPClient

@@ -5,7 +5,7 @@ from pydantic import Field
 from typing import cast
 
 from nodetool.dsl.graph import GraphNode, graph
-from nodetool.dsl.handles import Connect, OutputHandle, OutputsProxy, connect_field
+from nodetool.dsl.handles import Connect, OutputHandle, OutputsProxy, DynamicOutputsProxy, connect_field
 from nodetool.workflows.base_node import BaseNode
 from typing import TypedDict
 
@@ -28,6 +28,12 @@ class StaticProducer(GraphNode[float]):
     def get_node_type(cls):
         return StaticProducerNode.get_node_type()
 
+    @property
+    def out(self) -> typing.Union[OutputHandle[float], OutputsProxy[float]]:
+        if self._node_supports_dynamic_outputs():
+            return typing.cast(OutputsProxy[float], OutputsProxy(self))
+        return typing.cast(OutputHandle[float], self._single_output_handle())
+
 
 class ValueConsumerNode(BaseNode):
     """Node that consumes a numeric value."""
@@ -41,6 +47,12 @@ class ValueConsumer(GraphNode[float]):
     @classmethod
     def get_node_type(cls):
         return ValueConsumerNode.get_node_type()
+
+    @property
+    def out(self) -> typing.Union[OutputHandle[float], OutputsProxy[float]]:
+        if self._node_supports_dynamic_outputs():
+            return typing.cast(OutputsProxy[float], OutputsProxy(self))
+        return typing.cast(OutputHandle[float], self._single_output_handle())
 
 
 class DynamicRouterNode(BaseNode):
@@ -93,6 +105,14 @@ class DynamicRouter(GraphNode[dict[str, str]]):
     def get_node_type(cls):
         return DynamicRouterNode.get_node_type()
 
+    @property
+    def out(
+        self,
+    ) -> typing.Union[OutputHandle[dict[str, str]], OutputsProxy[dict[str, str]]]:
+        if self._node_supports_dynamic_outputs():
+            return typing.cast(OutputsProxy[dict[str, str]], DynamicOutputsProxy(self))
+        return typing.cast(OutputHandle[dict[str, str]], self._single_output_handle())
+
 
 class Add(GraphNode[float]):
     lhs: Connect[float] = connect_field(default=0.0)
@@ -102,6 +122,12 @@ class Add(GraphNode[float]):
     def get_node_type(cls):
         return AddNode.get_node_type()
 
+    @property
+    def out(self) -> typing.Union[OutputHandle[float], OutputsProxy[float]]:
+        if self._node_supports_dynamic_outputs():
+            return typing.cast(OutputsProxy[float], OutputsProxy(self))
+        return typing.cast(OutputHandle[float], self._single_output_handle())
+
 
 class Multiply(GraphNode[float]):
     lhs: Connect[float] = connect_field(default=1.0)
@@ -110,6 +136,12 @@ class Multiply(GraphNode[float]):
     @classmethod
     def get_node_type(cls):
         return MultiplyNode.get_node_type()
+
+    @property
+    def out(self) -> typing.Union[OutputHandle[float], OutputsProxy[float]]:
+        if self._node_supports_dynamic_outputs():
+            return typing.cast(OutputsProxy[float], OutputsProxy(self))
+        return typing.cast(OutputHandle[float], self._single_output_handle())
 
 
 class DictProducer(GraphNode[DictOutput]):
@@ -142,7 +174,7 @@ DictProducer.model_rebuild(force=True)
 
 def test_static_output_handle_produces_edge():
     producer = StaticProducer(a=1.0, b=2.0)
-    handle = producer.out.output
+    handle = producer.out
     assert handle.py_type is float
 
     consumer = ValueConsumer(value=handle)
@@ -174,19 +206,18 @@ def test_dynamic_output_handle_allows_unknown_slots():
     assert edge.targetHandle == "value"
 
 
+
 def test_static_node_unknown_slot_errors():
     producer = StaticProducer(a=1.0, b=2.0)
-    consumer = ValueConsumer(value=producer.out.unknown_slot)
-
-    with pytest.raises(ValueError):
-        graph(consumer)
+    with pytest.raises(AttributeError):
+        _ = producer.out.unknown_slot
 
 
 def test_math_pipeline_edges():
     producer = StaticProducer(a=2.0, b=3.0)
-    producer_handle = cast(OutputHandle[float], producer.out.output)
+    producer_handle = cast(OutputHandle[float], producer.out)
     adder = Add(lhs=producer_handle, rhs=1.0)
-    adder_handle = cast(OutputHandle[float], adder.out.output)
+    adder_handle = cast(OutputHandle[float], adder.out)
     assert adder_handle.py_type is float
 
     multiplier = Multiply(lhs=adder_handle, rhs=producer_handle)

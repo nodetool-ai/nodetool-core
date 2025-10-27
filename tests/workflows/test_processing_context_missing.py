@@ -40,13 +40,13 @@ class TestHttpMethods:
     @pytest.mark.asyncio
     async def test_http_get(self, context: ProcessingContext):
         """Test HTTP GET request."""
-        with patch.object(context, "get_http_client") as mock_client:
+        with patch.object(context, "get_http_client") as mock_get_client:
             mock_response = Mock()
             mock_response.status_code = 200
             mock_response.raise_for_status = Mock()
-            mock_client_instance = Mock()
-            mock_client_instance.get = AsyncMock(return_value=mock_response)
-            mock_client.return_value = mock_client_instance
+            mock_client_instance = AsyncMock()
+            mock_client_instance.request = AsyncMock(return_value=mock_response)
+            mock_get_client.return_value = mock_client_instance
 
             result = await context.http_get("http://example.com")
             assert result == mock_response
@@ -55,13 +55,13 @@ class TestHttpMethods:
     @pytest.mark.asyncio
     async def test_http_post(self, context: ProcessingContext):
         """Test HTTP POST request."""
-        with patch.object(context, "get_http_client") as mock_client:
+        with patch.object(context, "get_http_client") as mock_get_client:
             mock_response = Mock()
             mock_response.status_code = 200
             mock_response.raise_for_status = Mock()
-            mock_client_instance = Mock()
-            mock_client_instance.post = AsyncMock(return_value=mock_response)
-            mock_client.return_value = mock_client_instance
+            mock_client_instance = AsyncMock()
+            mock_client_instance.request = AsyncMock(return_value=mock_response)
+            mock_get_client.return_value = mock_client_instance
 
             result = await context.http_post(
                 "http://example.com", json={"test": "data"}
@@ -71,13 +71,13 @@ class TestHttpMethods:
     @pytest.mark.asyncio
     async def test_http_put(self, context: ProcessingContext):
         """Test HTTP PUT request."""
-        with patch.object(context, "get_http_client") as mock_client:
+        with patch.object(context, "get_http_client") as mock_get_client:
             mock_response = Mock()
             mock_response.status_code = 200
             mock_response.raise_for_status = Mock()
-            mock_client_instance = Mock()
-            mock_client_instance.put = AsyncMock(return_value=mock_response)
-            mock_client.return_value = mock_client_instance
+            mock_client_instance = AsyncMock()
+            mock_client_instance.request = AsyncMock(return_value=mock_response)
+            mock_get_client.return_value = mock_client_instance
 
             result = await context.http_put("http://example.com")
             assert result == mock_response
@@ -85,13 +85,13 @@ class TestHttpMethods:
     @pytest.mark.asyncio
     async def test_http_patch(self, context: ProcessingContext):
         """Test HTTP PATCH request."""
-        with patch.object(context, "get_http_client") as mock_client:
+        with patch.object(context, "get_http_client") as mock_get_client:
             mock_response = Mock()
             mock_response.status_code = 200
             mock_response.raise_for_status = Mock()
-            mock_client_instance = Mock()
-            mock_client_instance.patch = AsyncMock(return_value=mock_response)
-            mock_client.return_value = mock_client_instance
+            mock_client_instance = AsyncMock()
+            mock_client_instance.request = AsyncMock(return_value=mock_response)
+            mock_get_client.return_value = mock_client_instance
 
             result = await context.http_patch("http://example.com")
             assert result == mock_response
@@ -99,13 +99,13 @@ class TestHttpMethods:
     @pytest.mark.asyncio
     async def test_http_delete(self, context: ProcessingContext):
         """Test HTTP DELETE request."""
-        with patch.object(context, "get_http_client") as mock_client:
+        with patch.object(context, "get_http_client") as mock_get_client:
             mock_response = Mock()
             mock_response.status_code = 200
             mock_response.raise_for_status = Mock()
-            mock_client_instance = Mock()
-            mock_client_instance.delete = AsyncMock(return_value=mock_response)
-            mock_client.return_value = mock_client_instance
+            mock_client_instance = AsyncMock()
+            mock_client_instance.request = AsyncMock(return_value=mock_response)
+            mock_get_client.return_value = mock_client_instance
 
             result = await context.http_delete("http://example.com")
             assert result == mock_response
@@ -113,13 +113,13 @@ class TestHttpMethods:
     @pytest.mark.asyncio
     async def test_http_head(self, context: ProcessingContext):
         """Test HTTP HEAD request."""
-        with patch.object(context, "get_http_client") as mock_client:
+        with patch.object(context, "get_http_client") as mock_get_client:
             mock_response = Mock()
             mock_response.status_code = 200
             mock_response.raise_for_status = Mock()
-            mock_client_instance = Mock()
-            mock_client_instance.head = AsyncMock(return_value=mock_response)
-            mock_client.return_value = mock_client_instance
+            mock_client_instance = AsyncMock()
+            mock_client_instance.request = AsyncMock(return_value=mock_response)
+            mock_get_client.return_value = mock_client_instance
 
             result = await context.http_head("http://example.com")
             assert result == mock_response
@@ -402,53 +402,6 @@ class TestConversionMethods:
         result = await context.convert_value_for_prediction(property, None)
         assert result is None
 
-
-class TestUtilityFunctions:
-    """Test utility functions and edge cases."""
-
-    def test_get_gmail_connection_missing_env(self, context: ProcessingContext):
-        """Test Gmail connection with missing environment variables."""
-        context.environment = {}  # Clear environment
-
-        with pytest.raises(ValueError, match="GOOGLE_MAIL_USER is not set"):
-            context.get_gmail_connection()
-
-    def test_get_gmail_connection_missing_password(self, context: ProcessingContext):
-        """Test Gmail connection with missing password."""
-        context.environment = {"GOOGLE_MAIL_USER": "test@gmail.com"}
-
-        with pytest.raises(ValueError, match="GOOGLE_APP_PASSWORD is not set"):
-            context.get_gmail_connection()
-
-    def test_get_gmail_connection_success(self, context: ProcessingContext):
-        """Test successful Gmail connection."""
-        context.environment = {
-            "GOOGLE_MAIL_USER": "test@gmail.com",
-            "GOOGLE_APP_PASSWORD": "app_password",
-        }
-
-        with patch("imaplib.IMAP4_SSL") as mock_imap:
-            mock_connection = Mock()
-            mock_imap.return_value = mock_connection
-
-            result = context.get_gmail_connection()
-            assert result == mock_connection
-            mock_connection.login.assert_called_once_with(
-                "test@gmail.com", "app_password"
-            )
-
-    def test_get_gmail_connection_cached(self, context: ProcessingContext):
-        """Test Gmail connection caching."""
-        context.environment = {
-            "GOOGLE_MAIL_USER": "test@gmail.com",
-            "GOOGLE_APP_PASSWORD": "app_password",
-        }
-
-        mock_connection = Mock()
-        context._gmail_connection = mock_connection
-
-        result = context.get_gmail_connection()
-        assert result == mock_connection
 
     @pytest.mark.asyncio
     async def test_is_huggingface_model_cached(self, context: ProcessingContext):

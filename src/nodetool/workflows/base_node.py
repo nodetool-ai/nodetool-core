@@ -419,6 +419,7 @@ class BaseNode(BaseModel):
         self._sync_mode = sync_mode
         self._inbox = None
 
+
     def required_inputs(self):
         return []
 

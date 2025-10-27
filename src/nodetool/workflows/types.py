@@ -2,7 +2,7 @@ from pydantic import BaseModel
 from enum import Enum
 
 from typing import Any, Literal
-from nodetool.metadata.types import BaseType, Task, SubTask
+from nodetool.metadata.types import BaseType, Chunk, Task, SubTask
 from nodetool.types.job import JobUpdate
 from nodetool.types.prediction import Prediction
 
@@ -205,22 +205,6 @@ class NodeProgress(BaseModel):
     progress: int
     total: int
     chunk: str = ""
-
-
-class Chunk(BaseType):
-    """
-    A message representing a chunk of streamed content from a provider.
-
-    Used for streaming partial results in text generation, audio processing,
-    or other operations where results are produced incrementally.
-    """
-
-    type: Literal["chunk"] = "chunk"
-    node_id: str | None = None
-    content_type: Literal["text", "audio", "image", "video", "document"] = "text"
-    content: str = ""
-    content_metadata: dict[str, Any] = {}
-    done: bool = False
 
 
 class Error(BaseModel):

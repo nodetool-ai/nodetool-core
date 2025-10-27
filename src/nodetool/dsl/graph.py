@@ -1,9 +1,9 @@
 import uuid
-from typing import Any, Generic, TypeVar
+from typing import Any, Generic, TypeVar, cast
 
 from pydantic import BaseModel, Field, ConfigDict
 
-from nodetool.dsl.handles import OutputsProxy
+from nodetool.dsl.handles import OutputHandle, OutputsProxy, DynamicOutputsProxy
 from nodetool.metadata.types import OutputSlot
 from nodetool.types.graph import Graph, Node
 from nodetool.workflows.base_node import get_node_class
@@ -24,7 +24,7 @@ class GraphNode(BaseModel, Generic[OutputT]):
     Represents a node in a graph DSL.
     """
 
-    model_config = ConfigDict(arbitrary_types_allowed=True)
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
 
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
 
@@ -40,10 +40,48 @@ class GraphNode(BaseModel, Generic[OutputT]):
         super().__init_subclass__(**kwargs)
         cls.model_rebuild(force=True)
 
+    def _node_supports_dynamic_outputs(self) -> bool:
+        node_cls = get_node_class(self.get_node_type())
+        if node_cls is None:
+            return False
+
+        if hasattr(node_cls, "supports_dynamic_outputs"):
+            try:
+                if node_cls.supports_dynamic_outputs():  # type: ignore[attr-defined]
+                    return True
+            except Exception:
+                pass
+
+        return bool(getattr(node_cls, "_supports_dynamic_outputs", False))
+
+    def _single_output_handle(self) -> OutputHandle[OutputT]:
+        slot = self.find_output_instance("output")
+        py_type: Any | None = None
+
+        if slot is not None and hasattr(slot.type, "get_python_type"):
+            try:
+                py_type = slot.type.get_python_type()
+            except Exception:
+                py_type = None
+
+        if slot is None:
+            node_type = getattr(self, "get_node_type", lambda: "unknown")()
+            raise TypeError(
+                f"{self.__class__.__name__} (node type '{node_type}') has no output 'output'"
+            )
+
+        return cast(OutputHandle[OutputT], OutputHandle(self, "output", py_type))
+
+    def _outputs_proxy(self) -> OutputsProxy:
+        if self._node_supports_dynamic_outputs():
+            return DynamicOutputsProxy(self)
+        else:
+            return OutputsProxy(self)
+
     @property
-    def out(self) -> OutputsProxy[OutputT]:
-        """Expose output handles for this node."""
-        return OutputsProxy(self)
+    def output(self) -> OutputHandle[OutputT]:
+        """Default single output handle when available."""
+        return self._single_output_handle()
 
     def find_output_instance(self, name: str) -> OutputSlot | None:
         """
@@ -81,6 +119,9 @@ def graph(*graph_nodes: "GraphNode[Any]"):
             id=n._id,
             type=n.get_node_type(),
             data=n.model_dump(),
+            dynamic_properties=dict(n.dynamic_properties),
+            dynamic_outputs=dict(n.dynamic_outputs),
+            sync_mode=n.get_sync_mode(),
         )
         for n in g.nodes.values()
     ]

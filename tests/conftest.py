@@ -118,6 +118,19 @@ async def setup_and_teardown(request):
     except Exception:
         pass
 
+    # Add a small delay to allow background threads to finish cleanup
+    # This prevents database lock errors when background job event loops are shutting down
+    await asyncio.sleep(0.5)
+
+    # Close all database connections to prevent SQLite lock issues and leaks
+    # Do this BEFORE clearing tables to avoid lock conflicts
+    try:
+        await close_all_database_adapters()
+    except Exception:
+        # Ignore errors during adapter cleanup
+        pass
+
+    # Re-open adapters for table cleanup (they'll be closed again below)
     # Clear all database tables for test isolation
     try:
         from nodetool.models.asset import Asset
@@ -131,9 +144,18 @@ async def setup_and_teardown(request):
         for model_class in [Message, Job, Prediction, Asset, Workflow, Thread]:
             try:
                 adapter = await model_class.adapter()
-                # Delete all rows from the table
-                await adapter.connection.execute(f"DELETE FROM {adapter.table_name}")
-                await adapter.connection.commit()
+                # Delete all rows from the table with retry for locks
+                max_retries = 5
+                for attempt in range(max_retries):
+                    try:
+                        await adapter.connection.execute(f"DELETE FROM {adapter.table_name}")
+                        await adapter.connection.commit()
+                        break
+                    except Exception as e:
+                        if "locked" in str(e).lower() and attempt < max_retries - 1:
+                            await asyncio.sleep(0.1 * (2 ** attempt))  # Exponential backoff
+                        else:
+                            raise
             except Exception:
                 # Ignore errors if table doesn't exist or other issues
                 pass

@@ -1549,6 +1549,22 @@ MessageContent = (
     | MessageDocumentContent
 )
 
+class Chunk(BaseType):
+    """
+    A message representing a chunk of streamed content from a provider.
+
+    Used for streaming partial results in text generation, audio processing,
+    or other operations where results are produced incrementally.
+    """
+
+    type: Literal["chunk"] = "chunk"
+    node_id: str | None = None
+    content_type: Literal["text", "audio", "image", "video", "document"] = "text"
+    content: str = ""
+    content_metadata: dict[str, Any] = {}
+    done: bool = False
+
+
 
 class MessageFile(BaseModel):
     type: Literal["file"] = "file"

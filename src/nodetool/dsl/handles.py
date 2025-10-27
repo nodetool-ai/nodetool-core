@@ -53,9 +53,14 @@ class OutputsProxy(Generic[TOutput]):
 
     def __getattr__(self, name: str) -> "OutputHandle[Any]":
         slot = self._node.find_output_instance(name)
-        py_type = None
+        if slot is None:
+            node_type = getattr(self._node, "get_node_type", lambda: "unknown")()
+            raise TypeError(
+                f"{self._node.__class__.__name__} (node type '{node_type}') has no output '{name}'"
+            )
 
-        if slot is not None and hasattr(slot.type, "get_python_type"):
+        py_type = None
+        if hasattr(slot.type, "get_python_type"):
             try:
                 py_type = slot.type.get_python_type()
             except Exception:
@@ -66,6 +71,15 @@ class OutputsProxy(Generic[TOutput]):
     def __getitem__(self, name: str) -> "OutputHandle[Any]":
         return self.__getattr__(name)
 
+
+class DynamicOutputsProxy(OutputsProxy[TOutput]):
+    """Outputs proxy that tolerates dynamically declared slots."""
+
+    def __getattr__(self, name: str) -> "OutputHandle[Any]":
+        try:
+            return super().__getattr__(name)
+        except TypeError:
+            return OutputHandle[Any](self._node, name, None)
 
 if TYPE_CHECKING:
     from typing_extensions import TypeAliasType
@@ -173,4 +187,10 @@ def connect_field(
     )
 
 
-__all__ = ["OutputHandle", "OutputsProxy", "Connect", "connect_field"]
+__all__ = [
+    "OutputHandle",
+    "OutputsProxy",
+    "DynamicOutputsProxy",
+    "Connect",
+    "connect_field",
+]

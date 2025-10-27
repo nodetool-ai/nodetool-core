@@ -310,7 +310,7 @@ class ProcessingContext:
             raise last_exc
         raise RuntimeError("HTTP request failed without exception")
 
-    def get_gmail_connection(self) -> imaplib.IMAP4_SSL:
+    async def get_gmail_connection(self) -> imaplib.IMAP4_SSL:
         """
         Creates a Gmail connection configuration.
 
@@ -324,32 +324,24 @@ class ProcessingContext:
         Raises:
             ValueError: If email_address or app_password is empty
         """
+        from nodetool.security.secret_helper import get_secret_required
         if hasattr(self, "_gmail_connection"):
             return self._gmail_connection
 
-        email_address = self.environment.get("GOOGLE_MAIL_USER")
-        app_password = self.environment.get("GOOGLE_APP_PASSWORD")
-        if not email_address:
-            raise ValueError("GOOGLE_MAIL_USER is not set")
-        if not app_password:
-            raise ValueError("GOOGLE_APP_PASSWORD is not set")
-
-        if not email_address:
-            raise ValueError("Email address is required")
-        if not app_password:
-            raise ValueError("App password is required")
+        email_address = await get_secret_required("GOOGLE_MAIL_USER", self.user_id)
+        app_password = await get_secret_required("GOOGLE_APP_PASSWORD", self.user_id)
 
         imap = imaplib.IMAP4_SSL("imap.gmail.com", 993)
         imap.login(email_address, app_password)
         self._gmail_connection = imap
         return imap
 
-    def get_secret(self, key: str) -> str:
+    async def get_secret(self, key: str) -> str | None:
         """
         Get a secret value.
         """
         from nodetool.security.secret_helper import get_secret
-        return get_secret(key, self.user_id)
+        return await get_secret(key, self.user_id)
     
     def get_secret_required(self, key: str) -> str:
         """

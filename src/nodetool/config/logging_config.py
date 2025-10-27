@@ -98,7 +98,6 @@ def configure_logging(
     logging.getLogger().propagate = propagate_root
     # Ensure noisy third-party loggers stay at INFO regardless of root level
     logging.getLogger("aiosqlite").setLevel(logging.INFO)
-    logging.getLogger().info(f"Configuring logging with level: {level}")
     logging.getLogger("nodetool.models.sqlite_adapter").setLevel(logging.WARNING)
     logging.getLogger("nodetool.chat.chat_websocket_runner").setLevel(logging.WARNING)
     logging.getLogger("httpx").setLevel(logging.WARNING)

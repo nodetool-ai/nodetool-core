@@ -1,14 +1,14 @@
-"""Generic agent evaluation framework (subprocess-only).
+"""Generic agent evaluation framework with subprocess batch mode.
 
 This module provides a reusable, provider-agnostic evaluator that invokes
-agents via a standardized CLI runner in isolated subprocesses. It measures
-token usage and runtime, and computes correctness via a pluggable result
-checker.
+agents via a standardized CLI runner in isolated subprocesses for batch runs.
+It measures token usage and runtime, and computes correctness via a pluggable
+result checker. For quick spot-checks it also exposes a helper that can execute
+a single (model, problem) pair in-process without going through the CLI runner.
 
 Key components:
-- AgentEvaluator: Orchestrates parallel, subprocess-based evaluations.
-- BuildAgentFn: Kept for API compatibility with existing call sites; not used
-  by the evaluator directly when running in subprocess mode.
+- AgentEvaluator: Orchestrates parallel, subprocess-based evaluations, and
+  provides an in-process helper for ad-hoc single runs.
 - ResultCheckerFn: Callback to determine correctness of a result relative to an
   expected value.
 
@@ -19,12 +19,13 @@ through a JSON file written by the CLI runner.
 
 import asyncio
 import asyncio.subprocess as asp
-import os
-import time
 import json
+import os
+import random
 import sys
+import time
 from dataclasses import dataclass
-from typing import Any, Callable, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Awaitable, Callable, Iterable, List, Optional, Protocol, Sequence, Tuple, cast
 
 
 ProviderKey = str
@@ -70,12 +71,50 @@ class EvaluationResult:
     logs: List[LogEntry]
 
 
-BuildAgentFn = Callable[..., Any]
+@dataclass
+class SingleAgentRunResult:
+    """Outcome returned by a single in-process agent execution."""
+
+    result: Any
+    usage: Usage | dict[str, Any] | None = None
+
+
+@dataclass
+class SingleRunReport:
+    """Structured report produced by run_single_agent_random_problem."""
+
+    log: LogEntry
+    usage: Usage
+    problem: Any
+    expected: Any
+
+
+class ChoiceGenerator(Protocol):
+    """Protocol for objects providing a choice() helper."""
+
+    def choice(self, seq: Sequence[Any]) -> Any:
+        ...
+
+
+class SingleAgentRunner(Protocol):
+    """Callable that executes a single agent in-process."""
+
+    def __call__(
+        self,
+        *,
+        provider_key: ProviderKey,
+        model: ModelName,
+        problem: Any,
+        tools: Optional[Sequence[Any]] = None,
+    ) -> Awaitable[SingleAgentRunResult]:
+        ...
+
+
 ResultCheckerFn = Callable[[Any, Any], bool]
 
 
-# Note: The in-process execution helpers have been removed. All execution goes
-# through the standardized CLI runner invoked as a subprocess.
+# Batch execution continues to use subprocesses. The helper method
+# run_single_agent_random_problem provides an opt-in in-process path.
 
 
 class AgentEvaluator:
@@ -85,8 +124,9 @@ class AgentEvaluator:
     - models: sequence of (provider_key, model_name) pairs
     - problems: iterable of problems. Each item can be either a problem payload or
       a tuple/list (problem_payload, expected_value)
-    - build_agent_fn: flexible callback to build the agent. Kept for API compatibility, not used directly by the evaluator
     - result_checker: callback that returns True/False for (result, expected)
+    - single_agent_runner: optional in-process executor used by
+      run_single_agent_random_problem
     - concurrency: max concurrent subprocesses
     """
 
@@ -102,14 +142,102 @@ class AgentEvaluator:
         ] = None,
         subprocess_runner_path: Optional[str] = None,
         subprocess_agent: Optional[str] = None,
+        single_agent_runner: Optional[SingleAgentRunner] = None,
     ) -> None:
         self.models = list(models)
         self.problems = list(problems)
         self.result_checker = result_checker
+        self.tools = list(tools) if tools is not None else []
         self.concurrency = int(concurrency)
         self.on_update = on_update
         self.subprocess_runner_path = subprocess_runner_path
         self.subprocess_agent = subprocess_agent
+        self.single_agent_runner = single_agent_runner
+
+    async def run_single_agent_random_problem(
+        self,
+        provider_key: ProviderKey,
+        model: ModelName,
+        *,
+        run_agent_fn: Optional[SingleAgentRunner] = None,
+        rng: Optional[ChoiceGenerator] = None,
+    ) -> SingleRunReport:
+        """Execute a single agent for a random problem in-process.
+
+        Args:
+            provider_key: Provider identifier for the agent.
+            model: Model name to use with the provider.
+            run_agent_fn: Optional override callable that executes the agent.
+                If omitted, the evaluator must have been constructed with
+                single_agent_runner.
+            rng: Optional random generator to control problem selection.
+
+        Returns:
+            SingleRunReport with log entry, usage, original problem payload,
+            and expected value (if any).
+        """
+        if not self.problems:
+            raise ValueError("No problems available to evaluate.")
+
+        chooser = cast(ChoiceGenerator, rng or random)
+        problem_entry = chooser.choice(self.problems)
+        if isinstance(problem_entry, (tuple, list)) and len(problem_entry) >= 2:
+            problem_payload, expected = problem_entry[0], problem_entry[1]
+        else:
+            problem_payload, expected = problem_entry, None
+
+        runner = run_agent_fn or self.single_agent_runner
+        if runner is None:
+            raise RuntimeError(
+                "Provide run_agent_fn or configure single_agent_runner to execute agents in-process."
+            )
+
+        start_time = time.perf_counter()
+        outcome = await runner(
+            provider_key=provider_key,
+            model=model,
+            problem=problem_payload,
+            tools=self.tools if self.tools else None,
+        )
+        elapsed_seconds = time.perf_counter() - start_time
+
+        if not isinstance(outcome, SingleAgentRunResult):
+            raise TypeError(
+                "Single agent runner must return a SingleAgentRunResult instance."
+            )
+
+        def _coerce_usage(raw_usage: Usage | dict[str, Any] | None) -> Usage:
+            if raw_usage is None:
+                return Usage()
+            if isinstance(raw_usage, Usage):
+                return raw_usage
+            if isinstance(raw_usage, dict):
+                return Usage(
+                    input_tokens=int(raw_usage.get("input_tokens", 0)),
+                    output_tokens=int(raw_usage.get("output_tokens", 0)),
+                )
+
+        usage = _coerce_usage(outcome.usage)
+        is_correct: Optional[bool] = None
+        if expected is not None:
+            is_correct = bool(self.result_checker(outcome.result, expected))
+
+        problem_text = str(
+            problem_payload[0]
+            if isinstance(problem_payload, (tuple, list)) and len(problem_payload) >= 1
+            else problem_payload
+        )
+        log_entry = LogEntry(
+            provider_key=provider_key,
+            model=model,
+            problem=problem_text,
+            result=outcome.result,
+            correct=(True if is_correct else (False if expected is not None else None)),
+            runtime_seconds=float(elapsed_seconds),
+        )
+        return SingleRunReport(
+            log=log_entry, usage=usage, problem=problem_payload, expected=expected
+        )
 
     async def evaluate(self) -> EvaluationResult:
         """Run the evaluation across all (model, problem) pairs.
@@ -121,7 +249,7 @@ class AgentEvaluator:
         lock = asyncio.Lock()
         if not (self.subprocess_runner_path and self.subprocess_agent):
             raise RuntimeError(
-                "AgentEvaluator is subprocess-only. Provide subprocess_runner_path and subprocess_agent."
+                "AgentEvaluator.evaluate requires subprocess_runner_path and subprocess_agent."
             )
         sem = asyncio.Semaphore(self.concurrency)
 
@@ -174,26 +302,16 @@ class AgentEvaluator:
                     await proc.wait()
                 elapsed_seconds = time.perf_counter() - start_time
                 # Read JSON output
-                result = None
+                result: Any | None = None
                 input_toks = 0
                 output_toks = 0
-                try:
-                    if os.path.exists(output_json_path):
-                        with open(output_json_path, "r", encoding="utf-8") as f:
-                            payload = json.load(f)
-                        result = payload.get("result")
-                        input_toks = int(payload.get("input_tokens", 0))
-                        output_toks = int(payload.get("output_tokens", 0))
-                except Exception:
-                    result = None
-                    input_toks = 0
-                    output_toks = 0
-            is_correct: Optional[bool] = None
-            if result is not None:
-                try:
-                    is_correct = bool(self.result_checker(result, expected))
-                except Exception:
-                    is_correct = False
+                if os.path.exists(output_json_path):
+                    with open(output_json_path, "r", encoding="utf-8") as f:
+                        payload = json.load(f)
+                    result = payload.get("result")
+                    input_toks = int(payload.get("input_tokens", 0))
+                    output_toks = int(payload.get("output_tokens", 0))
+                is_correct = bool(self.result_checker(result, expected))
             async with lock:
                 s = stats[model]
                 s.input_tokens += int(input_toks)

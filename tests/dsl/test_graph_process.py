@@ -79,4 +79,4 @@ async def test_graph_result_allows_asset_mode(monkeypatch):
     monkeypatch.setattr("nodetool.dsl.graph.graph", fake_graph)
 
     result = await graph_result("example", asset_output_mode=AssetOutputMode.WORKSPACE)
-    assert result == {"type": "image", "path": "/tmp/example.png"}
+    assert result == {"Output": {"type": "image", "path": "/tmp/example.png"}}

@@ -113,6 +113,10 @@ def type_to_string(field_type: type | GenericAlias | UnionType) -> str:
         return f"{type_to_string(field_type.__args__[0])} | None"
     if field_type == Union:
         return " | ".join(field_type.__args__)
+    module = getattr(field_type, "__module__", "")
+    qualname = getattr(field_type, "__qualname__", field_type.__name__)
+    if module != "builtins" and "." in qualname:
+        return f"{module}.{qualname}"
     return field_type.__name__
 
 
@@ -227,7 +231,7 @@ def _connect_annotation(field_type: type | GenericAlias | UnionType, field) -> s
     if optional:
         base_str = _strip_optional_from_str(base_str)
 
-    connect_str = f"Connect[{base_str}]"
+    connect_str = f"{base_str} | OutputHandle[{base_str}]"
     if optional:
         connect_str += " | None"
     return connect_str
@@ -272,11 +276,26 @@ def generate_class_source(node_cls: type[BaseNode]) -> str:
     except Exception:
         return_type = None
 
+    supports_dynamic_outputs = False
+    if hasattr(node_cls, "supports_dynamic_outputs"):
+        try:
+            supports_dynamic_outputs = bool(node_cls.supports_dynamic_outputs())  # type: ignore[attr-defined]
+        except Exception:
+            supports_dynamic_outputs = False
+    if not supports_dynamic_outputs:
+        supports_dynamic_outputs = bool(getattr(node_cls, "_supports_dynamic_outputs", False))
+
+    handle_imports = ["OutputHandle", "OutputsProxy", "connect_field"]
+    if supports_dynamic_outputs:
+        handle_imports.insert(2, "DynamicOutputsProxy")
+
     imports = (
         "import typing\n"
         "from pydantic import Field\n"
-        "from nodetool.dsl.handles import Connect, OutputHandle, OutputsProxy, connect_field\n"
+        f"from nodetool.dsl.handles import {', '.join(handle_imports)}\n"
     )
+
+    imports += f"import {node_cls.__module__}\n"
 
     output_annotation = "typing.Any"
     if return_type is not None:
@@ -323,11 +342,25 @@ def generate_class_source(node_cls: type[BaseNode]) -> str:
             print(f"Error generating field {field_name} for {node_cls.__name__}: {e}")
             raise e
 
+    proxy_base = "DynamicOutputsProxy" if supports_dynamic_outputs else "OutputsProxy"
+
     if typed_output_annotations:
         class_body += "\n    @property\n"
         class_body += (
             f'    def out(self) -> "{node_cls.__name__}Outputs":\n'
             f"        return {node_cls.__name__}Outputs(self)\n"
+        )
+    elif supports_dynamic_outputs:
+        class_body += "\n    @property\n"
+        class_body += (
+            "    def out(self) -> DynamicOutputsProxy:\n"
+            "        return typing.cast(DynamicOutputsProxy, self._outputs_proxy())\n"
+        )
+    else:
+        class_body += "\n    @property\n"
+        class_body += (
+            f"    def output(self) -> OutputHandle[{output_annotation}]:\n"
+            f"        return typing.cast(OutputHandle[{output_annotation}], self._single_output_handle())\n"
         )
 
     class_body += "\n    @classmethod\n"
@@ -336,13 +369,14 @@ def generate_class_source(node_cls: type[BaseNode]) -> str:
     outputs_class = ""
     if typed_output_annotations:
         outputs_class = (
-            f"\n\nclass {node_cls.__name__}Outputs(OutputsProxy[{output_annotation}]):\n"
+            f"\n\nclass {node_cls.__name__}Outputs({proxy_base}):\n"
         )
         for slot_name, slot_type in typed_output_annotations.items():
+            cleaned_slot_type = _strip_optional_from_str(slot_type)
             outputs_class += "    @property\n"
             outputs_class += (
-                f"    def {slot_name}(self) -> OutputHandle[{slot_type}]:\n"
-                f"        return typing.cast(OutputHandle[{slot_type}], self['{slot_name}'])\n\n"
+                f"    def {slot_name}(self) -> OutputHandle[{cleaned_slot_type}]:\n"
+                f"        return typing.cast(OutputHandle[{cleaned_slot_type}], self['{slot_name}'])\n\n"
             )
         if outputs_class.endswith("\n\n"):
             outputs_class = outputs_class[:-1]
