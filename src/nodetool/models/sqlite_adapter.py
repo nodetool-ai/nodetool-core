@@ -256,6 +256,7 @@ class SQLiteAdapter(DatabaseAdapter):
     - A query interface that uses the `ConditionBuilder` system for constructing
       complex WHERE clauses.
     - Index creation, deletion, and listing.
+    - Query timeout support to prevent long-running operations from blocking shutdown.
 
     Helper functions (`convert_to_sqlite_format`, `convert_from_sqlite_format`, etc.)
     manage the data type conversions.
@@ -266,6 +267,8 @@ class SQLiteAdapter(DatabaseAdapter):
     table_schema: Dict[str, Any]
     indexes: List[Dict[str, Any]]
     _connection: aiosqlite.Connection
+    query_timeout: Optional[float]
+    _is_shutting_down: bool
 
     def __init__(
         self,
@@ -274,14 +277,63 @@ class SQLiteAdapter(DatabaseAdapter):
         table_schema: Dict[str, Any],
         indexes: List[Dict[str, Any]],
         connection: aiosqlite.Connection,
+        query_timeout: Optional[float] = None,
     ):
-        """Initializes the SQLite adapter with an existing connection."""
+        """Initializes the SQLite adapter with an existing connection.
+
+        Args:
+            db_path: Path to the SQLite database file.
+            fields: Dictionary of Pydantic field info.
+            table_schema: Dictionary defining the table schema.
+            indexes: List of index configurations.
+            connection: Existing aiosqlite.Connection instance.
+            query_timeout: Optional timeout in seconds for queries. If None, queries
+                          will not have a timeout (except during shutdown).
+        """
         self.db_path = db_path
         self.table_name = table_schema["table_name"]
         self.table_schema = table_schema
         self.fields = fields
         self.indexes = indexes
         self._connection = connection
+        self.query_timeout = query_timeout
+        self._is_shutting_down = False
+
+    async def _execute_with_timeout(self, coro, timeout: Optional[float] = None):
+        """Execute a coroutine with optional timeout.
+
+        Uses the adapter's configured query_timeout if no specific timeout is provided.
+        During shutdown, applies a short timeout to prevent hanging.
+
+        Args:
+            coro: The coroutine to execute.
+            timeout: Optional timeout in seconds. If None, uses self.query_timeout.
+                    During shutdown, uses a 5-second timeout regardless.
+
+        Returns:
+            The result of the coroutine.
+
+        Raises:
+            asyncio.TimeoutError: If the operation exceeds the timeout.
+        """
+        # Determine effective timeout
+        effective_timeout = timeout
+        if effective_timeout is None and self.query_timeout is not None:
+            effective_timeout = self.query_timeout
+        if self._is_shutting_down and (effective_timeout is None or effective_timeout > 5.0):
+            effective_timeout = 5.0
+
+        if effective_timeout is None:
+            return await coro
+        else:
+            try:
+                return await asyncio.wait_for(coro, timeout=effective_timeout)
+            except asyncio.TimeoutError:
+                log.error(
+                    f"Query timeout ({effective_timeout}s) on table {self.table_name}. "
+                    f"Shutting down: {self._is_shutting_down}"
+                )
+                raise
 
     async def auto_migrate(
         self,
@@ -475,8 +527,10 @@ class SQLiteAdapter(DatabaseAdapter):
         query = f"INSERT OR REPLACE INTO {self.table_name} ({columns}) VALUES ({placeholders})"
 
         async def _save():
-            await self.connection.execute(query, values)
-            await self.connection.commit()
+            await self._execute_with_timeout(
+                self.connection.execute(query, values)
+            )
+            await self._execute_with_timeout(self.connection.commit())
 
         await retry_on_locked(_save)
 
@@ -493,11 +547,17 @@ class SQLiteAdapter(DatabaseAdapter):
         primary_key = self.get_primary_key()
         cols = ", ".join(self.fields.keys())
         query = f"SELECT {cols} FROM {self.table_name} WHERE {primary_key} = ?"
-        cursor = await self.connection.execute(query, (key,))
-        item = await cursor.fetchone()
-        if item is None:
-            return None
-        return convert_from_sqlite_attributes(dict(item), self.fields)
+
+        async def _get():
+            cursor = await self._execute_with_timeout(
+                self.connection.execute(query, (key,))
+            )
+            item = await self._execute_with_timeout(cursor.fetchone())
+            if item is None:
+                return None
+            return convert_from_sqlite_attributes(dict(item), self.fields)
+
+        return await _get()
 
     async def delete(self, primary_key: Any) -> None:
         """Deletes an item from the database table by its primary key.
@@ -509,8 +569,10 @@ class SQLiteAdapter(DatabaseAdapter):
         query = f"DELETE FROM {self.table_name} WHERE {pk_column} = ?"
 
         async def _delete():
-            await self.connection.execute(query, (primary_key,))
-            await self.connection.commit()
+            await self._execute_with_timeout(
+                self.connection.execute(query, (primary_key,))
+            )
+            await self._execute_with_timeout(self.connection.commit())
 
         await retry_on_locked(_delete)
 
@@ -582,15 +644,20 @@ class SQLiteAdapter(DatabaseAdapter):
 
         query = f"SELECT {cols} FROM {self.table_name} WHERE {where_clause} ORDER BY {order_by} LIMIT {limit}"
 
-        cursor = await self.connection.execute(query, params)
-        rows = await cursor.fetchall()
-        res = [convert_from_sqlite_attributes(dict(row), self.fields) for row in rows]
+        async def _query():
+            cursor = await self._execute_with_timeout(
+                self.connection.execute(query, params)
+            )
+            rows = await self._execute_with_timeout(cursor.fetchall())
+            res = [convert_from_sqlite_attributes(dict(row), self.fields) for row in rows]
 
-        if len(res) == 0 or len(res) < limit:
-            return res, ""
+            if len(res) == 0 or len(res) < limit:
+                return res, ""
 
-        last_evaluated_key = str(res[-1].get(pk))
-        return res, last_evaluated_key
+            last_evaluated_key = str(res[-1].get(pk))
+            return res, last_evaluated_key
+
+        return await _query()
 
     async def execute_sql(
         self, sql: str, params: Optional[dict[str, Any]] = None
@@ -605,15 +672,20 @@ class SQLiteAdapter(DatabaseAdapter):
             A list of dictionaries, where each dictionary represents a row
             returned by the query.
         """
-        cursor = await self.connection.execute(sql, params or {})
-        if cursor.description:
-            columns = [col[0] for col in cursor.description]
-            rows = await cursor.fetchall()
-            return [
-                convert_from_sqlite_attributes(dict(zip(columns, row)), self.fields)
-                for row in rows
-            ]
-        return []
+        async def _execute():
+            cursor = await self._execute_with_timeout(
+                self.connection.execute(sql, params or {})
+            )
+            if cursor.description:
+                columns = [col[0] for col in cursor.description]
+                rows = await self._execute_with_timeout(cursor.fetchall())
+                return [
+                    convert_from_sqlite_attributes(dict(zip(columns, row)), self.fields)
+                    for row in rows
+                ]
+            return []
+
+        return await _execute()
 
     async def create_index(
         self, index_name: str, columns: List[str], unique: bool = False
@@ -673,6 +745,21 @@ class SQLiteAdapter(DatabaseAdapter):
             raise e
 
     async def close(self):
-        """Close the database connection."""
+        """Close the database connection.
+
+        Sets a shutdown flag to apply short timeouts to any in-flight queries,
+        then closes the connection with a timeout to prevent hanging.
+        """
+        self._is_shutting_down = True
+
         if self._connection:
-            await self._connection.close()
+            try:
+                # Close with timeout to prevent hanging during shutdown
+                await asyncio.wait_for(
+                    self._connection.close(),
+                    timeout=5.0
+                )
+            except asyncio.TimeoutError:
+                log.warning(f"Timeout closing connection for table {self.table_name}")
+            except Exception as e:
+                log.warning(f"Error closing connection for table {self.table_name}: {e}")

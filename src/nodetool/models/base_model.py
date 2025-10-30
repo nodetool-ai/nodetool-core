@@ -45,10 +45,31 @@ async def close_all_database_adapters():
     _global_adapters.clear()
 
 
+async def _shutdown_async():
+    """Async shutdown handler for proper cleanup of all database resources.
+
+    Clears thread caches and closes all database adapters with proper
+    awaiting and timeout handling.
+    """
+    from nodetool.config.environment import Environment
+
+    try:
+        # Clear thread caches async (with proper connection close timeout)
+        await Environment.clear_thread_caches_async()
+    except Exception as e:
+        log.warning(f"Error during thread cache cleanup: {e}")
+
+    try:
+        # Close all database adapters
+        await close_all_database_adapters()
+    except Exception as e:
+        log.warning(f"Error closing database adapters: {e}")
+
+
 def _shutdown_handler_sync():
     """Synchronous shutdown handler for atexit and signals.
 
-    Attempts to run the async cleanup coroutine. If an event loop
+    Attempts to run the async cleanup coroutine with timeout. If an event loop
     is already running (e.g., in FastAPI), this will safely skip.
 
     Note: We suppress logging here because logging may be shut down
@@ -68,7 +89,10 @@ def _shutdown_handler_sync():
             # Temporarily disable logging to avoid errors during atexit
             logging.disable(logging.CRITICAL)
             try:
-                asyncio.run(close_all_database_adapters())
+                # Run async shutdown with timeout to prevent hanging
+                asyncio.run(_shutdown_async())
+            except asyncio.TimeoutError:
+                log.warning("Shutdown timeout - some resources may not have been properly closed")
             finally:
                 logging.disable(logging.NOTSET)
     except Exception:

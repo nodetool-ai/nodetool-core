@@ -719,29 +719,85 @@ class Environment(object):
                 storage = MemoryStorage(base_url=cls.get_storage_api_url())
                 _test_asset_storage = storage
                 setattr(cls._tls(), "asset_storage", storage)
-            elif (
-                cls.is_production() or cls.get_s3_access_key_id() is not None or use_s3
-            ):
-                cls.get_logger().info("Using S3 storage for asset storage")
-                setattr(
-                    cls._tls(),
-                    "asset_storage",
-                    cls.get_s3_storage(cls.get_asset_bucket(), cls.get_asset_domain()),
-                )
             else:
-                from nodetool.storage.file_storage import FileStorage
+                # Prefer Supabase storage when configured
+                supabase_url = cls.get_supabase_url()
+                supabase_key = cls.get_supabase_key()
+                if supabase_url and supabase_key:
+                    try:
+                        from nodetool.storage.supabase_storage import (
+                            SupabaseStorage,
+                        )
+                        from supabase import AsyncClient as SupabaseAsyncClient  # type: ignore
 
-                cls.get_logger().info(
-                    f"Using folder {cls.get_asset_folder()} for asset storage with base url {cls.get_storage_api_url()}"
-                )
-                setattr(
-                    cls._tls(),
-                    "asset_storage",
-                    FileStorage(
-                        base_path=cls.get_asset_folder(),
-                        base_url=cls.get_storage_api_url(),
-                    ),
-                )
+                        cls.get_logger().info("Using Supabase storage for asset storage")
+                        client = SupabaseAsyncClient(supabase_url, supabase_key)
+                        setattr(
+                            cls._tls(),
+                            "asset_storage",
+                            SupabaseStorage(
+                                bucket_name=cls.get_asset_bucket(),
+                                supabase_url=supabase_url,
+                                client=client,
+                            ),
+                        )
+                    except Exception as e:
+                        cls.get_logger().error(
+                            f"Failed to initialize Supabase storage, falling back. Error: {e}"
+                        )
+                        # Fallback to S3 or File
+                        if (
+                            cls.is_production()
+                            or cls.get_s3_access_key_id() is not None
+                            or use_s3
+                        ):
+                            cls.get_logger().info("Using S3 storage for asset storage")
+                            setattr(
+                                cls._tls(),
+                                "asset_storage",
+                                cls.get_s3_storage(
+                                    cls.get_asset_bucket(), cls.get_asset_domain()
+                                ),
+                            )
+                        else:
+                            from nodetool.storage.file_storage import FileStorage
+
+                            cls.get_logger().info(
+                                f"Using folder {cls.get_asset_folder()} for asset storage with base url {cls.get_storage_api_url()}"
+                            )
+                            setattr(
+                                cls._tls(),
+                                "asset_storage",
+                                FileStorage(
+                                    base_path=cls.get_asset_folder(),
+                                    base_url=cls.get_storage_api_url(),
+                                ),
+                            )
+                elif (
+                    cls.is_production()
+                    or cls.get_s3_access_key_id() is not None
+                    or use_s3
+                ):
+                    cls.get_logger().info("Using S3 storage for asset storage")
+                    setattr(
+                        cls._tls(),
+                        "asset_storage",
+                        cls.get_s3_storage(cls.get_asset_bucket(), cls.get_asset_domain()),
+                    )
+                else:
+                    from nodetool.storage.file_storage import FileStorage
+
+                    cls.get_logger().info(
+                        f"Using folder {cls.get_asset_folder()} for asset storage with base url {cls.get_storage_api_url()}"
+                    )
+                    setattr(
+                        cls._tls(),
+                        "asset_storage",
+                        FileStorage(
+                            base_path=cls.get_asset_folder(),
+                            base_url=cls.get_storage_api_url(),
+                        ),
+                    )
 
         asset_storage = getattr(cls._tls(), "asset_storage")
         assert asset_storage is not None
@@ -847,40 +903,156 @@ class Environment(object):
         """
         if not hasattr(cls._tls(), "temp_storage"):
             if not cls.is_production():
-                from nodetool.storage.memory_storage import MemoryStorage
+                # Prefer Supabase for temp if available
+                supabase_url = cls.get_supabase_url()
+                supabase_key = cls.get_supabase_key()
+                if supabase_url and supabase_key and cls.get_asset_temp_bucket():
+                    try:
+                        from nodetool.storage.supabase_storage import (
+                            SupabaseStorage,
+                        )
+                        from supabase import AsyncClient as SupabaseAsyncClient  # type: ignore
 
-                cls.get_logger().info("Using memory storage for temp storage")
-                setattr(
-                    cls._tls(),
-                    "temp_storage",
-                    MemoryStorage(base_url=cls.get_temp_storage_api_url()),
-                )
+                        cls.get_logger().info("Using Supabase storage for temp storage")
+                        client = SupabaseAsyncClient(supabase_url, supabase_key)
+                        setattr(
+                            cls._tls(),
+                            "temp_storage",
+                            SupabaseStorage(
+                                bucket_name=cls.get_asset_temp_bucket(),
+                                supabase_url=supabase_url,
+                                client=client,
+                            ),
+                        )
+                    except Exception as e:
+                        cls.get_logger().error(
+                            f"Failed to initialize Supabase temp storage, using memory. Error: {e}"
+                        )
+                        from nodetool.storage.memory_storage import MemoryStorage
+
+                        cls.get_logger().info("Using memory storage for temp storage")
+                        setattr(
+                            cls._tls(),
+                            "temp_storage",
+                            MemoryStorage(base_url=cls.get_temp_storage_api_url()),
+                        )
+                else:
+                    from nodetool.storage.memory_storage import MemoryStorage
+
+                    cls.get_logger().info("Using memory storage for temp storage")
+                    setattr(
+                        cls._tls(),
+                        "temp_storage",
+                        MemoryStorage(base_url=cls.get_temp_storage_api_url()),
+                    )
             else:
-                assert (
-                    cls.get_s3_access_key_id() is not None or use_s3
-                ), "S3 access key ID is required"
-                assert (
-                    cls.get_asset_temp_bucket() is not None
-                ), "Asset temp bucket is required"
-                assert (
-                    cls.get_asset_temp_domain() is not None
-                ), "Asset temp domain is required"
-                cls.get_logger().info("Using S3 storage for temp asset storage")
-                setattr(
-                    cls._tls(),
-                    "temp_storage",
-                    cls.get_s3_storage(
-                        cls.get_asset_temp_bucket(), cls.get_asset_temp_domain()
-                    ),
-                )
+                # Production: prefer Supabase if configured, else S3
+                supabase_url = cls.get_supabase_url()
+                supabase_key = cls.get_supabase_key()
+                if supabase_url and supabase_key and cls.get_asset_temp_bucket():
+                    try:
+                        from nodetool.storage.supabase_storage import (
+                            SupabaseStorage,
+                        )
+                        from supabase import AsyncClient as SupabaseAsyncClient  # type: ignore
+
+                        cls.get_logger().info("Using Supabase storage for temp asset storage")
+                        client = SupabaseAsyncClient(supabase_url, supabase_key)
+                        setattr(
+                            cls._tls(),
+                            "temp_storage",
+                            SupabaseStorage(
+                                bucket_name=cls.get_asset_temp_bucket(),
+                                supabase_url=supabase_url,
+                                client=client,
+                            ),
+                        )
+                    except Exception as e:
+                        cls.get_logger().error(
+                            f"Failed to initialize Supabase temp storage, falling back to S3. Error: {e}"
+                        )
+                        assert (
+                            cls.get_s3_access_key_id() is not None or use_s3
+                        ), "S3 access key ID is required"
+                        assert (
+                            cls.get_asset_temp_bucket() is not None
+                        ), "Asset temp bucket is required"
+                        assert (
+                            cls.get_asset_temp_domain() is not None
+                        ), "Asset temp domain is required"
+                        cls.get_logger().info("Using S3 storage for temp asset storage")
+                        setattr(
+                            cls._tls(),
+                            "temp_storage",
+                            cls.get_s3_storage(
+                                cls.get_asset_temp_bucket(), cls.get_asset_temp_domain()
+                            ),
+                        )
+                else:
+                    assert (
+                        cls.get_s3_access_key_id() is not None or use_s3
+                    ), "S3 access key ID is required"
+                    assert (
+                        cls.get_asset_temp_bucket() is not None
+                    ), "Asset temp bucket is required"
+                    assert (
+                        cls.get_asset_temp_domain() is not None
+                    ), "Asset temp domain is required"
+                    cls.get_logger().info("Using S3 storage for temp asset storage")
+                    setattr(
+                        cls._tls(),
+                        "temp_storage",
+                        cls.get_s3_storage(
+                            cls.get_asset_temp_bucket(), cls.get_asset_temp_domain()
+                        ),
+                    )
 
         temp_storage = getattr(cls._tls(), "temp_storage")
         assert temp_storage is not None
         return temp_storage
 
     @classmethod
+    async def clear_thread_caches_async(cls):
+        """Async version of clear_thread_caches for proper connection cleanup.
+
+        Call this during graceful shutdown to ensure database connections are
+        properly closed before the process exits.
+        """
+        tls = cls._tls()
+
+        # Close SQLite connection if it exists
+        if hasattr(tls, "sqlite_connection") and tls.sqlite_connection is not None:
+            try:
+                import asyncio
+                import threading
+
+                cls.get_logger().debug(
+                    f"Closing SQLite connection for thread {threading.get_ident()}"
+                )
+                # Properly await the close operation with timeout
+                try:
+                    await asyncio.wait_for(
+                        tls.sqlite_connection.close(),
+                        timeout=5.0
+                    )
+                except asyncio.TimeoutError:
+                    cls.get_logger().warning(
+                        f"Timeout closing SQLite connection for thread {threading.get_ident()}"
+                    )
+                except Exception as e:
+                    cls.get_logger().warning(f"Error closing SQLite connection: {e}")
+            except Exception:
+                pass
+            finally:
+                tls.sqlite_connection = None
+
+    @classmethod
     def clear_thread_caches(cls):
-        """Clear per-thread caches to avoid cross-workflow leaks."""
+        """Clear per-thread caches to avoid cross-workflow leaks.
+
+        This is a synchronous version for use in contexts where async cleanup
+        isn't available. For proper cleanup, use clear_thread_caches_async.
+        """
         tls = cls._tls()
 
         # Close SQLite connection if it exists
@@ -895,6 +1067,7 @@ class Environment(object):
                 # If we're in an async context, schedule the close
                 try:
                     loop = asyncio.get_running_loop()
+                    # Schedule the close but don't wait (we can't await in sync context)
                     loop.create_task(tls.sqlite_connection.close())
                 except RuntimeError:
                     # No running loop, connection will be closed when GC'd
