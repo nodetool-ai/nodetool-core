@@ -61,7 +61,7 @@ class Secret(DBModel):
             The newly created Secret instance.
         """
         # Get master key and encrypt the value
-        master_key = MasterKeyManager.get_master_key()
+        master_key = await MasterKeyManager.get_master_key()
         encrypted_value = SecretCrypto.encrypt(value, master_key, user_id)
 
         return await super().create(
@@ -126,7 +126,7 @@ class Secret(DBModel):
         Raises:
             Exception: If decryption fails (e.g., wrong master key).
         """
-        master_key = MasterKeyManager.get_master_key()
+        master_key = await MasterKeyManager.get_master_key()
         return SecretCrypto.decrypt(self.encrypted_value, master_key, self.user_id)
 
     async def update_value(self, new_value: str) -> None:
@@ -136,7 +136,7 @@ class Secret(DBModel):
         Args:
             new_value: The new plaintext value to encrypt and store.
         """
-        master_key = MasterKeyManager.get_master_key()
+        master_key = await MasterKeyManager.get_master_key()
         self.encrypted_value = SecretCrypto.encrypt(new_value, master_key, self.user_id)
         await self.save()
 

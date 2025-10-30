@@ -1,3 +1,5 @@
+import asyncio
+from abc import ABC, abstractmethod
 import uuid
 from typing import Any, Generic, TypeVar, cast
 
@@ -6,7 +8,7 @@ from pydantic import BaseModel, Field, ConfigDict
 from nodetool.dsl.handles import OutputHandle, OutputsProxy, DynamicOutputsProxy
 from nodetool.metadata.types import OutputSlot
 from nodetool.types.graph import Graph, Node
-from nodetool.workflows.base_node import get_node_class
+from nodetool.workflows.base_node import BaseNode
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.run_workflow import run_workflow
 from nodetool.workflows.processing_context import (
@@ -19,7 +21,7 @@ from nodetool.workflows.types import Error, OutputUpdate
 OutputT = TypeVar("OutputT")
 
 
-class GraphNode(BaseModel, Generic[OutputT]):
+class GraphNode(BaseModel, Generic[OutputT], ABC):
     """
     Represents a node in a graph DSL.
     """
@@ -27,21 +29,50 @@ class GraphNode(BaseModel, Generic[OutputT]):
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
 
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    sync_mode: str = "on_any"
 
     @classmethod
-    def set_node_type(cls, node_type: str):
-        cls.__annotations__["node_type"] = node_type
+    @abstractmethod
+    def get_node_class(cls) -> type[BaseNode]:
+        """
+        Return the underlying BaseNode class used when materialising this DSL node.
+        """
+        raise NotImplementedError
 
     @classmethod
     def get_node_type(cls) -> str:
-        return cls.__annotations__["node_type"]
+        """
+        Return the node type string for compatibility with workflow graph serialisation.
+        """
+        return cls.get_node_class().get_node_type()
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
+        # Ensure the forward reference in nodetool.dsl.handles resolves at runtime.
+        try:
+            import nodetool.dsl.handles as handles_module  # noqa: F401
+        except Exception:
+            handles_module = None
+        else:
+            if not hasattr(handles_module, "GraphNode"):
+                setattr(handles_module, "GraphNode", GraphNode)
+
         cls.model_rebuild(force=True)
 
+    def __init__(self, *, sync_mode: str | None = None, **data: Any) -> None:
+        # Ensure Pydantic has rebuilt the model before instantiation so declared
+        # fields are treated as standard properties rather than extras.
+        self.__class__.model_rebuild(force=True)
+        if sync_mode is not None:
+            if sync_mode not in ("on_any", "zip_all"):
+                raise ValueError(
+                    f"Invalid sync_mode '{sync_mode}'. Expected 'on_any' or 'zip_all'."
+                )
+            data["sync_mode"] = sync_mode
+        super().__init__(**data)
+
     def _node_supports_dynamic_outputs(self) -> bool:
-        node_cls = get_node_class(self.get_node_type())
+        node_cls = self.get_node_class()
         if node_cls is None:
             return False
 
@@ -78,11 +109,6 @@ class GraphNode(BaseModel, Generic[OutputT]):
         else:
             return OutputsProxy(self)
 
-    @property
-    def output(self) -> OutputHandle[OutputT]:
-        """Default single output handle when available."""
-        return self._single_output_handle()
-
     def find_output_instance(self, name: str) -> OutputSlot | None:
         """
         Look up a statically-declared output slot on the underlying node class.
@@ -90,7 +116,7 @@ class GraphNode(BaseModel, Generic[OutputT]):
         Dynamic outputs (declared at runtime) are not discoverable here and will
         therefore return ``None``.
         """
-        node_cls = get_node_class(self.get_node_type())
+        node_cls = self.get_node_class()
         if node_cls is None:
             return None
         if hasattr(node_cls, "find_output"):
@@ -98,7 +124,18 @@ class GraphNode(BaseModel, Generic[OutputT]):
         return None
 
 
-def graph(*graph_nodes: "GraphNode[Any]"):
+class SingleOutputGraphNode(GraphNode[OutputT], Generic[OutputT]):
+    """
+    Provides the ``output`` property for nodes that expose a single output handle.
+    """
+
+    @property
+    def output(self) -> OutputHandle[OutputT]:
+        """Default single output handle when available."""
+        return self._single_output_handle()
+
+
+def create_graph(*graph_nodes: "GraphNode[Any]"):
     """
     Create a graph representation based on the given nodes.
 
@@ -128,11 +165,9 @@ def graph(*graph_nodes: "GraphNode[Any]"):
     return Graph(nodes=nodes, edges=g.edges)
 
 
-async def run_graph(
+async def run_graph_async(
     graph: Graph,
-    user_id: str = "1",
-    auth_token: str = "token",
-    asset_output_mode: AssetOutputMode | None = None,
+    **kwargs
 ):
     """
     Run the workflow with the given graph.
@@ -144,15 +179,12 @@ async def run_graph(
     Returns:
       Any: The result of the workflow execution.
     """
-    req = RunJobRequest(user_id=user_id, auth_token=auth_token, graph=graph)
+    req = RunJobRequest(**kwargs, graph=graph)
 
-    context = None
-    if asset_output_mode is not None:
-        context = ProcessingContext(
-            user_id=user_id,
-            auth_token=auth_token,
-            asset_output_mode=asset_output_mode,
-        )
+    if "context" in kwargs:
+        context = kwargs["context"]
+    else:
+        context = ProcessingContext(**kwargs)
 
     res = {}
     async for msg in run_workflow(req, context=context):
@@ -163,23 +195,15 @@ async def run_graph(
     return res
 
 
-async def graph_result(
-    example,
-    asset_output_mode: AssetOutputMode | None = None,
-):
+def run_graph(graph: Graph, **kwargs):
     """
-    Helper function to run a graph and return its result.
+    Run the workflow with the given graph.
 
     Args:
-        example: The graph example to run
-        asset_output_mode: Optional asset output mode applied to execution.
+      graph (Graph): The graph object representing the workflow.
+      **kwargs: Additional keyword arguments to pass to the workflow runner.
 
     Returns:
-        The result of running the graph
+      Any: The result of the workflow execution.
     """
-    result = await run_graph(
-        graph(example),
-        asset_output_mode=asset_output_mode,
-    )
-    assert result is not None, "Result is None"
-    return result
+    return asyncio.run(run_graph_async(graph, **kwargs))

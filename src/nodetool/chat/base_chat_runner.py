@@ -426,7 +426,7 @@ class BaseChatRunner(ABC):
         if not last_message.provider or last_message.provider == Provider.Empty:
             raise ValueError("No provider specified in the current conversation")
 
-        provider = get_provider(last_message.provider)
+        provider = await get_provider(last_message.provider)
         log.debug(
             f"Using provider {provider.__class__.__name__} for model {last_message.model}"
         )
@@ -437,7 +437,6 @@ class BaseChatRunner(ABC):
             assert last_message.model, "Model is required"
             assert last_message.provider, "Provider is required"
 
-            provider = get_provider(last_message.provider)
             processor = HelpMessageProcessor(provider)
 
             await self._run_processor(
@@ -473,7 +472,7 @@ class BaseChatRunner(ABC):
         assert last_message.model, "Model is required for agent mode"
         assert last_message.provider, "Provider is required for agent mode"
 
-        provider = get_provider(last_message.provider)
+        provider = await get_provider(last_message.provider)
         processor = AgentMessageProcessor(provider)
         processing_context = ProcessingContext(user_id=self.user_id)
 

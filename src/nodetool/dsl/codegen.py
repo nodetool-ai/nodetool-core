@@ -285,6 +285,8 @@ def generate_class_source(node_cls: type[BaseNode]) -> str:
     if not supports_dynamic_outputs:
         supports_dynamic_outputs = bool(getattr(node_cls, "_supports_dynamic_outputs", False))
 
+    supports_dynamic_properties = bool(getattr(node_cls, "_is_dynamic", False))
+
     handle_imports = ["OutputHandle", "OutputsProxy", "connect_field"]
     if supports_dynamic_outputs:
         handle_imports.insert(2, "DynamicOutputsProxy")
@@ -296,6 +298,7 @@ def generate_class_source(node_cls: type[BaseNode]) -> str:
     )
 
     imports += f"import {node_cls.__module__}\n"
+    imports += "from nodetool.workflows.base_node import BaseNode\n"
 
     output_annotation = "typing.Any"
     if return_type is not None:
@@ -304,15 +307,32 @@ def generate_class_source(node_cls: type[BaseNode]) -> str:
         except Exception:
             output_annotation = "typing.Any"
 
-    class_body = f"class {node_cls.__name__}(GraphNode[{output_annotation}]):\n"
+    is_single_output_node = not typed_output_annotations and not supports_dynamic_outputs
+
+    base_classes = [f"GraphNode[{output_annotation}]"]
+    if is_single_output_node:
+        base_classes.insert(0, f"SingleOutputGraphNode[{output_annotation}]")
+
+    class_body = f"class {node_cls.__name__}({', '.join(base_classes)}):\n"
 
     # Add class docstring if it exists
     if node_cls.__doc__:
-        class_body += f'    """{node_cls.__doc__}"""\n\n'
+        class_body += f'    """{node_cls.__doc__}'
+        if supports_dynamic_properties:
+            class_body += "\n\n    This node supports dynamic properties. Additional properties can be passed\n"
+            class_body += "    as keyword arguments during initialization and will be stored in the node's\n"
+            class_body += "    dynamic_properties dictionary.\n"
+            class_body += "\n    Example:\n"
+            class_body += f"        node = {node_cls.__name__}(prop1=value1, prop2=value2)\n"
+        class_body += '"""\n\n'
+    elif supports_dynamic_properties:
+        class_body += '    """\n'
+        class_body += "    This node supports dynamic properties. Additional properties can be passed\n"
+        class_body += "    as keyword arguments during initialization and will be stored in the node's\n"
+        class_body += "    dynamic_properties dictionary.\n"
+        class_body += '    """\n\n'
 
     fields = node_cls.inherited_fields()
-    node_type = node_cls.get_node_type()
-
     # First, add enum types as class attributes
     for field_name, field_type in node_cls.field_types().items():
         if field_name not in fields:
@@ -342,6 +362,21 @@ def generate_class_source(node_cls: type[BaseNode]) -> str:
             print(f"Error generating field {field_name} for {node_cls.__name__}: {e}")
             raise e
 
+    # Add __init__ method for dynamic properties support
+    if supports_dynamic_properties:
+        class_body += "\n    def __init__(self, **kwargs: typing.Any) -> None:\n"
+        class_body += '        """\n'
+        class_body += f"        Initialize a {node_cls.__name__} node.\n"
+        class_body += "\n        Extra keyword arguments beyond the defined fields will be treated as\n"
+        class_body += "        dynamic properties and automatically passed to the underlying BaseNode\n"
+        class_body += "        as dynamic_properties.\n"
+        class_body += "\n        Args:\n"
+        class_body += "            **kwargs: Field values and dynamic properties.\n"
+        class_body += '        """\n'
+        class_body += "        # Separate known fields from dynamic properties\n"
+        class_body += "        from pydantic import ConfigDict\n"
+        class_body += "        super().__init__(**kwargs)\n"
+
     proxy_base = "DynamicOutputsProxy" if supports_dynamic_outputs else "OutputsProxy"
 
     if typed_output_annotations:
@@ -356,15 +391,16 @@ def generate_class_source(node_cls: type[BaseNode]) -> str:
             "    def out(self) -> DynamicOutputsProxy:\n"
             "        return typing.cast(DynamicOutputsProxy, self._outputs_proxy())\n"
         )
-    else:
-        class_body += "\n    @property\n"
-        class_body += (
-            f"    def output(self) -> OutputHandle[{output_annotation}]:\n"
-            f"        return typing.cast(OutputHandle[{output_annotation}], self._single_output_handle())\n"
-        )
+
+    original_node_reference = f"{node_cls.__module__}.{node_cls.__qualname__}"
 
     class_body += "\n    @classmethod\n"
-    class_body += f'    def get_node_type(cls): return "{node_type}"\n'
+    class_body += "    def get_node_class(cls) -> type[BaseNode]:\n"
+    class_body += f"        return {original_node_reference}\n"
+
+    class_body += "\n    @classmethod\n"
+    class_body += "    def get_node_type(cls):\n"
+    class_body += "        return cls.get_node_class().get_node_type()\n"
 
     outputs_class = ""
     if typed_output_annotations:
@@ -381,8 +417,7 @@ def generate_class_source(node_cls: type[BaseNode]) -> str:
         if outputs_class.endswith("\n\n"):
             outputs_class = outputs_class[:-1]
 
-    rebuild = f"\n{node_cls.__name__}.model_rebuild(force=True)\n"
-    return imports + "\n" + class_body + outputs_class + rebuild
+    return imports + "\n" + class_body + outputs_class
 
 
 def create_dsl_modules(source_path: str, target_path: str):
@@ -471,7 +506,7 @@ def create_dsl_modules(source_path: str, target_path: str):
             + "from typing import Any\n"
             + "import nodetool.metadata.types\n"
             + "import nodetool.metadata.types as types\n"
-            + "from nodetool.dsl.graph import GraphNode\n\n"
+            + "from nodetool.dsl.graph import GraphNode, SingleOutputGraphNode\n\n"
             + source_code
         )
 

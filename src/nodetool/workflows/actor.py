@@ -47,6 +47,7 @@ from nodetool.workflows.inbox import NodeInbox
 from nodetool.workflows.types import NodeUpdate
 from nodetool.workflows.workflow_runner import WorkflowRunner
 from nodetool.workflows.io import NodeInputs, NodeOutputs
+import logging
 
 
 class NodeActor:
@@ -74,7 +75,7 @@ class NodeActor:
         self.inbox = inbox
         self._task: asyncio.Task | None = None
         self.logger = get_logger(__name__)
-        # Log level is controlled by env (DEBUG/NODETOOL_LOG_LEVEL)
+        self.logger.setLevel(logging.DEBUG)
 
     def _inbound_handles(self) -> set[str]:
         """Return the set of inbound input handles for this node."""
@@ -351,6 +352,7 @@ class NodeActor:
         safe_properties = [
             name for name in inputs.keys() if node.find_property(name) is not None
         ]
+
         await node.send_update(context, "running", properties=safe_properties)
 
         requires_gpu = node.requires_gpu()
@@ -374,20 +376,26 @@ class NodeActor:
                 )
 
                 await acquire_gpu_lock(node, context)
+
                 try:
                     self.runner.log_vram_usage(
                         f"Node {node.get_title()} ({node._id}) VRAM before GPU processing"
                     )
+
                     await node.preload_model(context)
+
                     self.runner.log_vram_usage(
                         f"Node {node.get_title()} ({node._id}) VRAM after preload_model"
                     )
+
                     await node.move_to_device(self.runner.device)
+
                     self.runner.log_vram_usage(
                         f"Node {node.get_title()} ({node._id}) VRAM after move to {self.runner.device}"
                     )
 
                     await node.run(context, node_inputs, outputs)  # type: ignore[arg-type]
+
                     self.runner.log_vram_usage(
                         f"Node {node.get_title()} ({node._id}) VRAM after run completion"
                     )
@@ -642,27 +650,45 @@ class NodeActor:
         """Entry point: choose streaming vs non-streaming path and execute."""
         node = self.node
         ctx = self.context
+        self.logger.info(
+            "Executing node: %s (%s) [%s]",
+            node.get_title(),
+            node._id,
+            node.get_node_type(),
+        )
+        completed_successfully = False
         try:
             streaming_input = node.__class__.is_streaming_input()
             streaming_output = node.__class__.is_streaming_output()
 
             if streaming_input:
                 await self._run_streaming_input_node()
-                return
-
-            if streaming_output:
+            elif streaming_output:
                 await self._run_streaming_output_batched_node()
-                return
-
-            await self._run_buffered_node()
+            else:
+                await self._run_buffered_node()
+            completed_successfully = True
 
         except asyncio.CancelledError:
+            self.logger.info(
+                "Node execution cancelled: %s (%s) [%s]",
+                node.get_title(),
+                node._id,
+                node.get_node_type(),
+            )
             # Ensure downstream EOS is marked on cooperative cancellation
             try:
                 await self._mark_downstream_eos()
             finally:
                 raise
         except Exception as e:
+            self.logger.error(
+                "Node execution failed: %s (%s) [%s] – %s",
+                node.get_title(),
+                node._id,
+                node.get_node_type(),
+                e,
+            )
             # Post error update and propagate; ensure EOS downstream
             try:
                 ctx.post_message(
@@ -677,3 +703,10 @@ class NodeActor:
             finally:
                 await self._mark_downstream_eos()
             raise
+        else:
+            self.logger.info(
+                "Node execution completed: %s (%s) [%s]",
+                node.get_title(),
+                node._id,
+                node.get_node_type(),
+            )

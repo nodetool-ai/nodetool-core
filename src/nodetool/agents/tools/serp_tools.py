@@ -58,7 +58,7 @@ class GoogleSearchTool(Tool):
 
         num_results = params.get("num_results", 10)
 
-        provider_instance, error_response = _get_configured_serp_provider(context)
+        provider_instance, error_response = await _get_configured_serp_provider(context)
         if error_response:
             return error_response
         if (
@@ -119,7 +119,7 @@ class GoogleNewsTool(Tool):
 
         num_results = params.get("num_results", 10)
 
-        provider_instance, error_response = _get_configured_serp_provider(context)
+        provider_instance, error_response = await _get_configured_serp_provider(context)
         if error_response:
             return error_response
         if not provider_instance:
@@ -182,7 +182,7 @@ class GoogleImagesTool(Tool):
         if not keyword and not image_url:
             return {"error": "One of 'keyword' or 'image_url' is required."}
 
-        provider_instance, error_response = _get_configured_serp_provider(context)
+        provider_instance, error_response = await _get_configured_serp_provider(context)
         if error_response:
             return error_response
         if not provider_instance:
@@ -247,7 +247,7 @@ class GoogleFinanceTool(Tool):
 
         window = params.get("window")  # Can be None
 
-        provider_instance, error_response = _get_configured_serp_provider(context)
+        provider_instance, error_response = await _get_configured_serp_provider(context)
         if error_response:
             return error_response
         if not provider_instance:
@@ -311,7 +311,7 @@ class GoogleJobsTool(Tool):
         location = params.get("location")
         num_results = params.get("num_results", 10)
 
-        provider_instance, error_response = _get_configured_serp_provider(context)
+        provider_instance, error_response = await _get_configured_serp_provider(context)
         if error_response:
             return error_response
         if not provider_instance:
@@ -375,7 +375,7 @@ class GoogleLensTool(Tool):
 
         assert image_url is not None, "Image URL is required for Google Lens search."
 
-        provider_instance, error_response = _get_configured_serp_provider(context)
+        provider_instance, error_response = await _get_configured_serp_provider(context)
         if error_response:
             return error_response
         if not provider_instance:
@@ -443,7 +443,7 @@ class GoogleMapsTool(Tool):
         if not query:
             return {"error": "Query is required for map_type 'search'."}
 
-        provider_instance, error_response = _get_configured_serp_provider(context)
+        provider_instance, error_response = await _get_configured_serp_provider(context)
         if error_response:
             return error_response
         if not provider_instance:
@@ -537,7 +537,7 @@ class GoogleShoppingTool(Tool):
         if not query:
             return {"error": "Query is required for Google Shopping search."}
 
-        provider_instance, error_response = _get_configured_serp_provider(context)
+        provider_instance, error_response = await _get_configured_serp_provider(context)
         if error_response:
             return error_response
         if not provider_instance:
@@ -568,7 +568,7 @@ class GoogleShoppingTool(Tool):
 
 
 # Helper function to get a configured SERP provider
-def _get_configured_serp_provider(context: ProcessingContext) -> (
+async def _get_configured_serp_provider(context: ProcessingContext) -> (
     tuple[Optional[SerpProvider], Optional[ErrorResponse]]
 ):
     """
@@ -580,9 +580,9 @@ def _get_configured_serp_provider(context: ProcessingContext) -> (
         or (None, ErrorResponse) if no provider is configured or if a provider
         had an issue during its own basic configuration check (e.g. SerpApiProvider API key check).
     """
-    d4seo_login = context.environment.get("DATA_FOR_SEO_LOGIN")
-    d4seo_password = Environment.get("DATA_FOR_SEO_PASSWORD")
-    serpapi_key = Environment.get("SERPAPI_API_KEY")
+    d4seo_login = await context.get_secret("DATA_FOR_SEO_LOGIN")
+    d4seo_password = await context.get_secret("DATA_FOR_SEO_PASSWORD")
+    serpapi_key = await context.get_secret("SERPAPI_API_KEY")
 
     if serpapi_key:
         return SerpApiProvider(api_key=serpapi_key), None

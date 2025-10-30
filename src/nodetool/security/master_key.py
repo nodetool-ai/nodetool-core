@@ -84,7 +84,7 @@ class MasterKeyManager:
             return None
 
     @classmethod
-    def get_master_key(cls) -> str:
+    async def get_master_key(cls) -> str:
         """
         Get the master encryption key.
 
@@ -94,6 +94,8 @@ class MasterKeyManager:
         Raises:
             RuntimeError: If the master key cannot be retrieved or generated.
         """
+        import asyncio
+
         # Return cached key if available
         if cls._cached_master_key is not None:
             return cls._cached_master_key
@@ -117,9 +119,9 @@ class MasterKeyManager:
             else:
                 log.warning("Failed to retrieve master key from AWS Secrets Manager, falling back to keychain")
 
-        # 3. Try to get from system keychain
+        # 3. Try to get from system keychain (using asyncio.to_thread to avoid blocking event loop)
         try:
-            stored_key = keyring.get_password(KEYRING_SERVICE, KEYRING_USERNAME)
+            stored_key = await asyncio.to_thread(keyring.get_password, KEYRING_SERVICE, KEYRING_USERNAME)
             if stored_key:
                 log.info("Using master key from system keychain")
                 cls._cached_master_key = stored_key
@@ -132,7 +134,7 @@ class MasterKeyManager:
         new_key = SecretCrypto.generate_master_key()
 
         try:
-            keyring.set_password(KEYRING_SERVICE, KEYRING_USERNAME, new_key)
+            await asyncio.to_thread(keyring.set_password, KEYRING_SERVICE, KEYRING_USERNAME, new_key)
             log.info("Master key successfully stored in system keychain")
         except KeyringError as e:
             log.error(f"Failed to store master key in system keychain: {e}")

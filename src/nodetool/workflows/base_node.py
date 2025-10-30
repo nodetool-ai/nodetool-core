@@ -1453,23 +1453,42 @@ class BaseNode(BaseModel):
           and emit via `outputs`.
         """
         if self.is_streaming_output():
+            log.debug(f"run() streaming mode: node={self.get_title()} ({self.id})")
             agen = self.gen_process(context)
             # Iterate yielded items and forward to outputs
+            item_count = 0
             async for item in agen:
+                item_count += 1
                 if not isinstance(item, dict):
                     raise TypeError(
                         "Streaming nodes must yield dictionaries mapping output names to values."
                     )
 
+                log.debug(
+                    f"run() streaming item {item_count}: node={self.get_title()} ({self.id}), "
+                    f"item_keys={list(item.keys())}"
+                )
                 for slot_name, value in item.items():
                     if not isinstance(slot_name, str):
                         raise TypeError(
                             "Streaming nodes must use string keys for output names."
                         )
                     if value is not None:
+                        log.debug(
+                            f"run() calling emit: node={self.get_title()} ({self.id}), "
+                            f"slot={slot_name}, value_type={type(value).__name__}, "
+                            f"value_len={len(str(value))}"
+                        )
                         await outputs.emit(slot_name, value)
+                    else:
+                        log.debug(
+                            f"run() skipping None value: node={self.get_title()} ({self.id}), "
+                            f"slot={slot_name}"
+                        )
+            log.debug(f"run() streaming complete: node={self.get_title()} ({self.id}), total_items={item_count}")
         else:
             # Buffered path: single call to process() and emit converted outputs
+            log.debug(f"run() buffered mode: node={self.get_title()} ({self.id})")
             result = await self.process(context)
             if result is not None:
                 converted = await self.convert_output(context, result)

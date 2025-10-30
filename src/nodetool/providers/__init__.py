@@ -7,7 +7,7 @@ language models (OpenAI, Anthropic, Ollama) and image generation services
 implement the corresponding methods.
 """
 
-import threading
+import asyncio
 
 # Base provider class and testing utilities
 from nodetool.providers.base import (
@@ -57,7 +57,7 @@ def import_providers():
 
 # Provider instance cache
 _provider_cache: dict[ProviderEnum, BaseProvider] = {}
-_provider_cache_lock = threading.Lock()
+_provider_cache_lock = asyncio.Lock()
 
 
 async def get_provider(provider_type: ProviderEnum, user_id: str = "1", **kwargs) -> BaseProvider:
@@ -74,7 +74,7 @@ async def get_provider(provider_type: ProviderEnum, user_id: str = "1", **kwargs
     Raises:
         ValueError: If the provider type is not supported
     """
-    with _provider_cache_lock:
+    async with _provider_cache_lock:
         if provider_type in _provider_cache:
             return _provider_cache[provider_type]
 

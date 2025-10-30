@@ -7,7 +7,7 @@ from nodetool.dsl.handles import OutputHandle
 from nodetool.metadata.type_metadata import TypeMetadata
 from nodetool.metadata.typecheck import typecheck
 from nodetool.types.graph import Edge
-from nodetool.workflows.base_node import BaseNode, get_node_class
+from nodetool.workflows.base_node import BaseNode
 
 
 class GraphNodeConverter:
@@ -50,7 +50,7 @@ class GraphNodeConverter:
         if graph_node.id in self.nodes:
             return self.nodes[graph_node.id]
 
-        node_cls = get_node_class(graph_node.get_node_type())
+        node_cls = graph_node.get_node_class()
         if node_cls is None:
             raise ValueError(
                 f"Node class {graph_node.get_node_type()} not found"
@@ -152,8 +152,8 @@ class GraphNodeConverter:
         src_graph_node = handle.node
         src_slot = handle.name
 
-        src_cls = get_node_class(src_graph_node.get_node_type())
-        dst_cls = get_node_class(dst_graph_node.get_node_type())
+        src_cls = src_graph_node.get_node_class()
+        dst_cls = dst_graph_node.get_node_class()
 
         if src_cls is None or dst_cls is None:
             raise ValueError(
