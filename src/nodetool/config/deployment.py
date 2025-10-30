@@ -452,7 +452,7 @@ class DefaultsConfig(BaseModel):
     chat_provider: str = "llama_cpp"
     default_model: str = ""
     log_level: str = "INFO"
-    remote_auth: bool = False
+    auth_provider: str = "local"  # none, local, static, supabase
     # Can add more defaults as needed
     extra: Dict[str, Any] = {}
 
@@ -623,7 +623,7 @@ def merge_defaults_with_env(
     env["CHAT_PROVIDER"] = defaults.chat_provider
     env["DEFAULT_MODEL"] = defaults.default_model
     env["LOG_LEVEL"] = defaults.log_level
-    env["REMOTE_AUTH"] = str(defaults.remote_auth).lower()
+    env["AUTH_PROVIDER"] = defaults.auth_provider
 
     # Add extra defaults
     env.update(defaults.extra)

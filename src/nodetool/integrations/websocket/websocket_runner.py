@@ -208,7 +208,7 @@ class WebSocketRunner:
         if user_id is not None:
             self.user_id = user_id
 
-        if Environment.use_remote_auth():
+        if Environment.enforce_auth():
             if not self.user_id:
                 token = self.auth_token
                 if not token:
@@ -220,7 +220,7 @@ class WebSocketRunner:
                 user_provider = Environment.get_user_auth_provider()
                 if not user_provider:
                     await websocket.close(
-                        code=1008, reason="Remote authentication not configured"
+                        code=1008, reason="Authentication provider not configured"
                     )
                     log.warning(
                         "WebSocketRunner connection rejected: Remote auth not configured"

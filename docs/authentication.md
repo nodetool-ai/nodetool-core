@@ -54,10 +54,10 @@ ______________________________________________________________________
 
 ## Using the Token
 
-All API requests (except `/health` and `/ping`) require authentication when
-running in production or when remote authentication is enabled. In local
-development (default `ENV=development` and `REMOTE_AUTH=0`) the worker and API
-server accept requests without a token for convenience.
+ All API requests (except `/health` and `/ping`) require authentication when
+ `AUTH_PROVIDER` is `static` or `supabase`. In local development (default
+ `ENV=development` and `AUTH_PROVIDER=local`) the worker and API server accept
+ requests without a token for convenience.
 
 When authentication is enforced, send the static token in the header:
 
@@ -100,36 +100,42 @@ curl -H "Authorization: Bearer $TOKEN" \
 
 ______________________________________________________________________
 
-## Remote Authentication (Supabase)
+## Authentication Providers
 
-Enable Supabase-backed user authentication by setting:
+Choose the auth strategy via `AUTH_PROVIDER`:
 
 ```bash
-export REMOTE_AUTH=1
+# Valid values:
+#  none      – no authentication; requests run as user "1"
+#  local     – development convenience; requests run as user "1"
+#  static    – pre-shared token only (worker token)
+#  supabase  – validate Supabase JWTs
+
+export AUTH_PROVIDER=supabase
+```
+
+Supabase configuration (when `AUTH_PROVIDER=supabase`):
+
+```bash
 export SUPABASE_URL=https://your-project.supabase.co
 export SUPABASE_KEY=your-service-role-key
 ```
 
-With remote authentication on:
+Behavior:
 
-- **Clients use the same header**: `Authorization: Bearer <token>`
-- The token can be either the static worker token or a Supabase JWT
-- Supabase tokens map requests to the actual Supabase user ID
-- Static tokens remain valid for compatibility (user ID defaults to `"1"`)
+- HTTP and WebSocket endpoints enforce auth when `AUTH_PROVIDER` is `static` or `supabase`.
+- With `supabase`, clients send `Authorization: Bearer <supabase_jwt>`. Static worker tokens also work for admin endpoints where applicable.
+- With `local` or `none`, endpoints do not enforce auth and default to user `"1"`.
 
-JWT validations are cached in-memory (default 60 seconds) to reduce latency:
+Caching (Supabase):
 
 ```bash
-# Optional tuning
-export REMOTE_AUTH_CACHE_TTL=30     # seconds (0 disables caching)
-export REMOTE_AUTH_CACHE_MAX=1000   # cache size
+# Optional tuning (fallback to REMOTE_AUTH_* keys for compatibility)
+export AUTH_CACHE_TTL=30     # seconds (0 disables caching)
+export AUTH_CACHE_MAX=1000   # cache size
 ```
 
-> **WebSockets:** Use the same `Authorization` header. A compatibility fallback via
-> query string (`?api_key=<token>`) remains supported.
-
-If you need to force JWT-only access, run the worker/API server with
-`REMOTE_AUTH=1` and omit the static token from clients.
+> WebSockets use the same `Authorization` header semantics as HTTP when auth is enforced.
 
 ______________________________________________________________________
 

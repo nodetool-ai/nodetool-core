@@ -109,6 +109,39 @@ Self-hosted targets pair a NodeTool worker container with the Docker-aware proxy
 
 Apply with `nodetool deploy apply <name>`; the deployer copies proxy files, restarts containers when configuration changes, and runs health checks before reporting success.
 
+## Using Supabase
+
+Supabase can provide both authentication and object storage in your deployment.
+
+1) Configure environment variables in your deployment target:
+
+```
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_KEY=your-service-role-key
+ASSET_BUCKET=assets
+# Optional for temporary assets
+ASSET_TEMP_BUCKET=assets-temp
+
+# Select authentication provider (none|local|static|supabase)
+AUTH_PROVIDER=supabase
+```
+
+2) Create the buckets in Supabase Storage (e.g. `assets`, `assets-temp`).
+
+- For direct public URLs, set the buckets to public in the Supabase dashboard.
+- For private buckets, extend the adapter to sign URLs or front with a proxy that performs signing.
+
+3) Deploy and verify:
+
+- Logs should show “Using Supabase storage for asset storage”.
+- Run a workflow that saves an image/dataframe and confirm links resolve under `…/storage/v1/object/public/<bucket>/…`.
+- If using Supabase auth (`AUTH_PROVIDER=supabase`), send `Authorization: Bearer <supabase_jwt>`.
+
+Notes:
+
+- If S3 variables are set alongside Supabase, NodeTool prefers Supabase when `SUPABASE_URL`/`SUPABASE_KEY` are present.
+- For local development without Supabase/S3, NodeTool uses the filesystem backend.
+
 ## Related Documentation
 
 - [Self-Hosted Deployment](self_hosted.md) – proxy architecture and container layout  

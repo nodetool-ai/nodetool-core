@@ -39,7 +39,7 @@ DEFAULT_ENV = {
     "OLLAMA_API_URL": "http://127.0.0.1:11434",
     "ENV": "development",
     "LOG_LEVEL": "INFO",
-    "REMOTE_AUTH": "0",
+    "AUTH_PROVIDER": "local",  # valid: none, local, static, supabase
     "DEBUG": None,
     "AWS_REGION": "us-east-1",
     "NODETOOL_API_URL": None,
@@ -214,18 +214,41 @@ class Environment(object):
         return os.environ.get("PYTEST_CURRENT_TEST") is not None
 
     @classmethod
+    # REMOTE_AUTH deprecated in favor of AUTH_PROVIDER
+    @classmethod
     def set_remote_auth(cls, remote_auth: bool):
+        """Compatibility shim: map legacy REMOTE_AUTH to AUTH_PROVIDER.
+
+        remote_auth=True  -> AUTH_PROVIDER=supabase
+        remote_auth=False -> AUTH_PROVIDER=local
         """
-        Set the remote auth flag.
-        """
-        os.environ["REMOTE_AUTH"] = "1" if remote_auth else "0"
+        os.environ["AUTH_PROVIDER"] = "supabase" if remote_auth else "local"
 
     @classmethod
     def use_remote_auth(cls):
+        """Compatibility shim for legacy checks (returns True for Supabase)."""
+        return cls.get_auth_provider_kind() == "supabase"
+
+    @classmethod
+    def get_auth_provider_kind(cls) -> str:
+        """Return the configured auth provider: none, local, static, supabase.
+
+        Defaults to "local" in development. If an unknown value is provided,
+        falls back to "local".
         """
-        A single local user with id 1 is used for authentication when this evaluates to False.
+        kind = str(cls.get("AUTH_PROVIDER", "local")).lower()
+        if kind not in ("none", "local", "static", "supabase"):
+            kind = "local"
+        return kind
+
+    @classmethod
+    def enforce_auth(cls) -> bool:
+        """Whether HTTP/WebSocket endpoints should enforce authentication.
+
+        - none/local: no enforcement (developer convenience)
+        - static/supabase: enforce
         """
-        return cls.is_production() or cls.get("REMOTE_AUTH") == "1"
+        return cls.get_auth_provider_kind() in ("static", "supabase")
 
     @classmethod
     def get_static_auth_provider(cls):
@@ -264,19 +287,51 @@ class Environment(object):
             return default
 
     @classmethod
-    def get_remote_auth_cache_ttl(cls) -> int:
+    def get_auth_cache_ttl(cls) -> int:
+        # Backward compatible with REMOTE_AUTH_CACHE_TTL
+        ttl = os.environ.get("AUTH_CACHE_TTL")
+        if ttl is not None:
+            try:
+                return int(ttl)
+            except ValueError:
+                pass
         return cls._get_int_setting("REMOTE_AUTH_CACHE_TTL", 60)
 
     @classmethod
-    def get_remote_auth_cache_max(cls) -> int:
+    def get_auth_cache_max(cls) -> int:
+        # Backward compatible with REMOTE_AUTH_CACHE_MAX
+        mx = os.environ.get("AUTH_CACHE_MAX")
+        if mx is not None:
+            try:
+                return int(mx)
+            except ValueError:
+                pass
         return cls._get_int_setting("REMOTE_AUTH_CACHE_MAX", 2000)
 
     @classmethod
     def get_user_auth_provider(cls):
+        """Return the configured user authentication provider.
+
+        Providers:
+        - none: returns None, auth not enforced.
+        - local: LocalAuthProvider (always user "1").
+        - static: StaticTokenAuthProvider (shared token; also used for worker auth).
+        - supabase: SupabaseAuthProvider (validates Supabase JWTs).
         """
-        Return the Supabase authentication provider if configured.
-        """
-        if cls._user_auth_provider is None:
+        if cls._user_auth_provider is not None:
+            return cls._user_auth_provider
+
+        kind = cls.get_auth_provider_kind()
+        if kind == "none":
+            cls._user_auth_provider = None
+        elif kind == "local":
+            from nodetool.security.providers.local import LocalAuthProvider
+
+            cls._user_auth_provider = LocalAuthProvider()
+        elif kind == "static":
+            # Reuse static token provider for user auth path
+            cls._user_auth_provider = cls.get_static_auth_provider()
+        elif kind == "supabase":
             supabase_url = cls.get("SUPABASE_URL")
             supabase_key = cls.get("SUPABASE_KEY")
             if supabase_url and supabase_key:
@@ -285,9 +340,13 @@ class Environment(object):
                 cls._user_auth_provider = SupabaseAuthProvider(
                     supabase_url=supabase_url,
                     supabase_key=supabase_key,
-                    cache_ttl=cls.get_remote_auth_cache_ttl(),
-                    cache_max=cls.get_remote_auth_cache_max(),
+                    cache_ttl=cls.get_auth_cache_ttl(),
+                    cache_max=cls.get_auth_cache_max(),
                 )
+            else:
+                cls._user_auth_provider = None
+        else:
+            cls._user_auth_provider = None
         return cls._user_auth_provider
 
     @classmethod

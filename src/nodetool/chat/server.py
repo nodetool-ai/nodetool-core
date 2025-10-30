@@ -319,7 +319,6 @@ if platform.system() == "Windows" and _windows_policy is not None:
 
 
 def create_chat_server(
-    remote_auth: bool,
     provider: str,
     default_model: str = "gpt-oss:20b",
     tools: list[str] = [],
@@ -328,15 +327,13 @@ def create_chat_server(
     """Create a FastAPI chat server instance.
 
     Args:
-        remote_auth: Whether to use remote authentication
         provider: Provider to use
         default_model: Default model to use when not specified by client
 
     Returns:
         FastAPI application instance
     """
-    # Set authentication mode
-    Environment.set_remote_auth(remote_auth)
+    # Authentication strategy is configured via AUTH_PROVIDER env var
 
     app = FastAPI(title="NodeTool Chat Server", version="1.0.0")
 
@@ -371,7 +368,6 @@ def create_chat_server(
 def run_chat_server(
     host: str,
     port: int,
-    remote_auth: bool,
     provider: str,
     default_model: str = "gpt-oss:20b",
     tools: list[str] = [],
@@ -393,17 +389,14 @@ def run_chat_server(
 
     dotenv.load_dotenv()
 
-    app = create_chat_server(remote_auth, provider, default_model, tools, workflows)
+    app = create_chat_server(provider, default_model, tools, workflows)
 
     console.print(f"🚀 Starting OpenAI-compatible chat server on {host}:{port}")
     console.print(
         f"Chat completions endpoint: http://{host}:{port}/v1/chat/completions"
     )
     console.print(f"Models endpoint: http://{host}:{port}/v1/models")
-    console.print(
-        "Authentication mode:",
-        "Remote (Supabase)" if remote_auth else "Local (user_id=1)",
-    )
+    console.print("Auth provider:", Environment.get_auth_provider_kind())
     console.print("Default model:", f"{default_model} (provider: {provider})")
     console.print("Tools:", tools)
     console.print("Workflows:", [w.name for w in workflows])

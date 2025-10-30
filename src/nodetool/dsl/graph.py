@@ -183,8 +183,16 @@ async def run_graph_async(
 
     if "context" in kwargs:
         context = kwargs["context"]
+    elif "asset_output_mode" in kwargs:
+        # Only construct a ProcessingContext when the caller supplied an explicit
+        # asset_output_mode. Otherwise defer to run_workflow defaults (context=None).
+        context = ProcessingContext(
+            user_id=kwargs.get("user_id"),
+            auth_token=kwargs.get("auth_token"),
+            asset_output_mode=kwargs.get("asset_output_mode"),
+        )
     else:
-        context = ProcessingContext(**kwargs)
+        context = None
 
     res = {}
     async for msg in run_workflow(req, context=context):
@@ -195,9 +203,9 @@ async def run_graph_async(
     return res
 
 
-def run_graph(graph: Graph, **kwargs):
+async def run_graph(graph: Graph, **kwargs):
     """
-    Run the workflow with the given graph.
+    Run the workflow with the given graph (async).
 
     Args:
       graph (Graph): The graph object representing the workflow.
@@ -206,4 +214,26 @@ def run_graph(graph: Graph, **kwargs):
     Returns:
       Any: The result of the workflow execution.
     """
+    return await run_graph_async(graph, **kwargs)
+
+
+def run_graph_sync(graph: Graph, **kwargs):
+    """
+    Synchronous helper to run a workflow. Prefer `await run_graph(...)` in async contexts.
+    """
     return asyncio.run(run_graph_async(graph, **kwargs))
+
+
+def graph(*nodes: "GraphNode[Any]") -> Graph:
+    """Convenience wrapper mapping DSL nodes to a Graph model."""
+    return create_graph(*nodes)
+
+
+async def graph_result(node: "GraphNode[Any] | Any", **kwargs):
+    """
+    Build a graph from a single DSL node and execute it.
+
+    For convenience in tests and simple scripts; forwards kwargs to `run_graph`.
+    """
+    g = graph(node)
+    return await run_graph(g, **kwargs)

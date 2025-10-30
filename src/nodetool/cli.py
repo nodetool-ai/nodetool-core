@@ -101,9 +101,10 @@ def mcp():
 @click.option("--reload", is_flag=True, help="Enable auto-reload on file changes (development only).")
 @click.option("--production", is_flag=True, help="Enable production mode with stricter validation and optimizations.")
 @click.option(
-    "--remote-auth",
-    is_flag=True,
-    help="Enable remote authentication (Supabase-backed auth).",
+    "--auth-provider",
+    type=click.Choice(["none", "local", "static", "supabase"], case_sensitive=False),
+    default=None,
+    help="Select authentication provider (overrides ENV AUTH_PROVIDER)",
 )
 @click.option(
     "--verbose",
@@ -117,7 +118,7 @@ def serve(
     static_folder: str | None = None,
     reload: bool = False,
     force_fp16: bool = False,
-    remote_auth: bool = False,
+    auth_provider: str | None = None,
     apps_folder: str | None = None,
     production: bool = False,
     verbose: bool = False,
@@ -143,7 +144,8 @@ def serve(
     except ImportError:
         pass
 
-    Environment.set_remote_auth(remote_auth)
+    if auth_provider:
+        os.environ["AUTH_PROVIDER"] = auth_provider.lower()
 
     if not reload:
         app = create_app(static_folder=static_folder, apps_folder=apps_folder)
@@ -405,7 +407,10 @@ def chat():
 @click.option("--host", default="0.0.0.0", help="Host address to bind to (listen on all interfaces for deployments).")
 @click.option("--port", default=8000, help="Port to listen on.", type=int)
 @click.option(
-    "--remote-auth", is_flag=True, help="Enable remote authentication (Supabase-backed auth)."
+    "--auth-provider",
+    type=click.Choice(["none", "local", "static", "supabase"], case_sensitive=False),
+    default=None,
+    help="Select authentication provider (overrides ENV AUTH_PROVIDER)",
 )
 @click.option(
     "--default-model",
@@ -535,7 +540,7 @@ def worker(
 def chat_server(
     host: str,
     port: int,
-    remote_auth: bool,
+    auth_provider: str | None,
     provider: str,
     default_model: str,
     tools: str,
@@ -585,9 +590,10 @@ def chat_server(
         [tool.strip() for tool in tools.split(",") if tool.strip()] if tools else []
     )
 
-    run_chat_server(
-        host, port, remote_auth, provider, default_model, tools_list, loaded_workflows
-    )
+    if auth_provider:
+        os.environ["AUTH_PROVIDER"] = auth_provider.lower()
+
+    run_chat_server(host, port, provider, default_model, tools_list, loaded_workflows)
 
 
 @cli.command("chat-client")

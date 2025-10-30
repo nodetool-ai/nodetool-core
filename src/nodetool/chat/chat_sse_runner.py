@@ -101,8 +101,8 @@ class ChatSSERunner(BaseChatRunner):
         """
         log.debug("Initializing SSE connection")
 
-        # Check if remote authentication is required
-        if Environment.use_remote_auth():
+        # Check if authentication is enforced
+        if Environment.enforce_auth():
             if user_id:
                 # Upstream gateway already resolved the user; no need to revalidate.
                 self.user_id = user_id
@@ -118,7 +118,7 @@ class ChatSSERunner(BaseChatRunner):
                 if not is_valid:
                     raise ValueError("Invalid authentication token")
         else:
-            # In local development without remote auth, use provided user_id or default
+            # In local development without enforced auth, use provided user_id or default
             self.user_id = user_id or "1"
             log.debug("Skipping authentication in local development mode")
 

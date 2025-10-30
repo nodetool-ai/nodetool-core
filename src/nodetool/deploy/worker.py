@@ -71,7 +71,6 @@ log = get_logger(__name__)
 
 
 def create_worker_app(
-    remote_auth: bool = False,
     provider: str = "ollama",
     default_model: str = "gpt-oss:20b",
     tools: List[str] = [],
@@ -84,7 +83,6 @@ def create_worker_app(
     admin operations, and collection management.
 
     Args:
-        remote_auth: Whether to use remote authentication (Supabase)
         provider: Default AI provider to use (ollama, openai, anthropic, etc.)
         default_model: Default model to use when not specified by client
         tools: List of tool names to enable (e.g., ['google_search', 'browser'])
@@ -95,16 +93,12 @@ def create_worker_app(
 
     Example:
         >>> app = create_worker_app(
-        ...     remote_auth=False,
         ...     provider="ollama",
         ...     default_model="llama3.2:latest",
         ...     tools=["google_search"]
         ... )
     """
-    # Set authentication mode
-    Environment.set_remote_auth(remote_auth)
-
-    if (Environment.is_production() or remote_auth) and not os.environ.get(
+    if Environment.is_production() and not os.environ.get(
         "SECRETS_MASTER_KEY"
     ):
         raise RuntimeError(
@@ -120,11 +114,11 @@ def create_worker_app(
     # Add authentication middleware
     static_provider = Environment.get_static_auth_provider()
     user_provider = Environment.get_user_auth_provider()
-    enforce_auth = Environment.use_remote_auth()
+    enforce_auth = Environment.enforce_auth()
     auth_middleware = create_http_auth_middleware(
         static_provider=static_provider,
         user_provider=user_provider,
-        use_remote_auth=Environment.use_remote_auth(),
+        use_remote_auth=(Environment.get_auth_provider_kind() == "supabase"),
         enforce_auth=enforce_auth,
     )
     app.middleware("http")(auth_middleware)
@@ -179,7 +173,6 @@ def create_worker_app(
 def run_worker(
     host: str = "0.0.0.0",
     port: int = 8000,
-    remote_auth: bool = False,
     provider: str = "ollama",
     default_model: str = "gpt-oss:20b",
     tools: List[str] = [],
@@ -219,7 +212,7 @@ def run_worker(
         os.environ.get("DEBUG"),
     )
 
-    app = create_worker_app(remote_auth, provider, default_model, tools, workflows)
+    app = create_worker_app(provider, default_model, tools, workflows)
 
     # Get authentication info
     auth_token = get_worker_auth_token()
@@ -316,10 +309,7 @@ def run_worker(
         f"  Delete: curl{auth_header} -X DELETE 'http://{host}:{port}/admin/assets/{{asset_id}}?user_id=1'"
     )
     console.print("")
-    console.print(
-        "User authentication:",
-        "Remote (Supabase)" if remote_auth else "Local (user_id=1)",
-    )
+    console.print("Auth provider:", Environment.get_auth_provider_kind())
     console.print("Default model:", f"{default_model} (provider: {provider})")
     console.print("Tools:", tools)
     console.print("Workflows:", [w.name for w in workflows])
@@ -342,7 +332,6 @@ if __name__ == "__main__":
     # Get configuration from environment
     provider = os.getenv("CHAT_PROVIDER", "ollama")
     default_model = os.getenv("DEFAULT_MODEL", "gpt-oss:20b")
-    remote_auth = os.getenv("REMOTE_AUTH", "false").lower() == "true"
     tools_str = os.getenv("NODETOOL_TOOLS", "")
     tools = (
         [tool.strip() for tool in tools_str.split(",") if tool.strip()]
@@ -352,7 +341,6 @@ if __name__ == "__main__":
     port = int(os.getenv("PORT", 8000))
 
     run_worker(
-        remote_auth=remote_auth,
         provider=provider,
         default_model=default_model,
         tools=tools,

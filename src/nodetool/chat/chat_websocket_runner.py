@@ -101,15 +101,15 @@ class ChatWebSocketRunner(BaseChatRunner):
         """
         log.debug("Initializing WebSocket connection")
 
-        # Check if remote authentication is required
-        if Environment.use_remote_auth():
+        # Check if authentication is enforced
+        if Environment.enforce_auth():
             if user_id:
                 self.user_id = user_id
                 log.debug(
                     "Remote auth enabled for WebSocket; using provided user_id without revalidation"
                 )
             else:
-                # In production or when remote auth is enabled, authentication is required
+                # In production or when auth is enforced, authentication is required
                 if not self.auth_token:
                     await websocket.close(code=1008, reason="Missing authentication")
                     log.warning("WebSocket connection rejected: Missing authentication")
@@ -123,7 +123,7 @@ class ChatWebSocketRunner(BaseChatRunner):
                     log.warning("WebSocket connection rejected: Invalid authentication")
                     return
         else:
-            # In local development without remote auth, set a default user ID
+            # In local development without enforced auth, set a default user ID
             self.user_id = user_id or "1"
             log.debug("Skipping authentication in local development mode")
 

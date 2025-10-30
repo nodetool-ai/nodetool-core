@@ -9,7 +9,8 @@ NodeTool stores user assets, workflow artifacts, and temporary files through plu
 | Backend | Module | When it is used | Notes |
 |---------|--------|-----------------|-------|
 | In-memory | `src/nodetool/storage/memory_storage.py` | Tests (`Environment.is_test()`) | Keeps data in process-local dictionaries. |
-| Local filesystem | `src/nodetool/storage/file_storage.py` | Default for development when no S3 credentials are present | Stores assets under `Environment.get_asset_folder()` (defaults to `~/.config/nodetool/assets`). URLs are served via the API (`/storage/*`). |
+| Local filesystem | `src/nodetool/storage/file_storage.py` | Default for development when no cloud storage is configured | Stores assets under `Environment.get_asset_folder()` (defaults to `~/.config/nodetool/assets`). URLs are served via the API (`/storage/*`). |
+| Supabase Storage | `src/nodetool/storage/supabase_storage.py` | When `SUPABASE_URL` and `SUPABASE_KEY` are set | Uses a Supabase bucket for asset storage. Public buckets are recommended for direct URLs. |
 | Amazon S3 / S3-compatible | `src/nodetool/storage/s3_storage.py` | Production, or when `S3_ACCESS_KEY_ID` or `S3_SECRET_ACCESS_KEY` are provided | Requires `S3_*` environment variables and optional custom endpoint for MinIO/Wasabi. |
 
 `Environment.get_asset_storage(use_s3=True)` forces S3 even in development (useful for smoke tests).
@@ -18,8 +19,8 @@ NodeTool stores user assets, workflow artifacts, and temporary files through plu
 
 | Variable | Description |
 |----------|-------------|
-| `ASSET_BUCKET` | Bucket name (S3) or folder name (local). |
-| `ASSET_DOMAIN` | Public domain serving assets (S3 only, used to build presigned URLs). |
+| `ASSET_BUCKET` | Bucket name (S3) or Supabase Storage bucket name, or folder name (local). |
+| `ASSET_DOMAIN` | Public domain serving assets (S3 only). Not used for Supabase. |
 | `ASSET_TEMP_BUCKET` / `ASSET_TEMP_DOMAIN` | Optional separate bucket for temporary assets. |
 | `FONT_PATH`, `COMFY_FOLDER`, `CHROMA_PATH` | Additional paths for specific nodes (registered in `src/nodetool/config/settings.py:17`). |
 
@@ -36,7 +37,33 @@ For S3-compatible services, set:
 
 - Memory storage in tests.
 - Local filesystem under `~/.config/nodetool/temp`.
+- Supabase bucket when `SUPABASE_URL`/`SUPABASE_KEY` and `ASSET_TEMP_BUCKET` are set.
 - S3 bucket when configured.
+
+## Supabase Storage
+
+When `SUPABASE_URL` and `SUPABASE_KEY` are set, NodeTool prefers Supabase for asset and temp storage.
+
+- Adapter: `SupabaseStorage` (`src/nodetool/storage/supabase_storage.py`)
+- Selection: handled by `Environment.get_asset_storage()` / `get_temp_storage()`
+- Public URLs: `get_url(key)` returns a public URL. Use a public bucket or add a CDN edge.
+- Private buckets: you can extend the adapter to use signed URLs (Supabase’s `create_signed_url`).
+
+Minimum configuration:
+
+```
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_KEY=your-service-role-key
+ASSET_BUCKET=assets
+# Optional temp bucket used by get_temp_storage
+ASSET_TEMP_BUCKET=assets-temp
+```
+
+Recommendations:
+
+- Create the buckets (`assets`, `assets-temp`) in the Supabase dashboard.
+- Make them public to allow direct links via `get_url`. For private buckets, add a signing step.
+- Scope the service role key to server-side environments only. Do not expose it to browsers.
 
 Use the temporary storage for intermediate files that do not need long-term retention.
 

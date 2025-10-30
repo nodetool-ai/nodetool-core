@@ -30,8 +30,8 @@ nodetool chat-server --port 3000 --protocol sse
 ### With Authentication
 
 ```bash
-# Enable remote authentication (requires Supabase configuration)
-nodetool chat-server --remote-auth
+# Select auth provider (requires env for Supabase)
+nodetool chat-server --auth-provider supabase
 ```
 
 ### Database-Free Mode
@@ -63,7 +63,7 @@ Send messages in this format:
 }
 ```
 
-Authentication (preferred header, required in production or when REMOTE_AUTH=1):
+Authentication (preferred header, required when auth is enforced):
 
 ```
 Authorization: Bearer YOUR_AUTH_TOKEN

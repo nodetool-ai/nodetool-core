@@ -91,6 +91,28 @@ nodetool settings edit --secrets # encrypt sensitive values (optional)
 
 Use `.env.<env>.local` for machine-specific overrides and keep secrets out of version control. When deploying, provide environment variables via your orchestrator or the `deployment.yaml` `env` section—NodeTool will merge them automatically at runtime.
 
+## Supabase Settings
+
+NodeTool integrates with Supabase for both user authentication and asset storage.
+
+Set the following to enable Supabase:
+
+- `SUPABASE_URL` – your project URL, e.g. `https://<ref>.supabase.co`
+- `SUPABASE_KEY` – a service role key (server-side only)
+- `ASSET_BUCKET` – Supabase Storage bucket used for assets (e.g. `assets`)
+- `ASSET_TEMP_BUCKET` – optional bucket for temporary assets (e.g. `assets-temp`)
+
+Behavior:
+
+- When `SUPABASE_URL`/`SUPABASE_KEY` are set, `Environment.get_asset_storage()` and `get_temp_storage()` prefer Supabase buckets.
+- If not set, NodeTool falls back to S3 (when `S3_*` are provided) or local filesystem.
+- Authentication strategy is controlled via `AUTH_PROVIDER` (see [Authentication](authentication.md#authentication-providers)).
+
+Security notes:
+
+- Use the service role key only in worker/server environments. Do not expose it to clients.
+- Public buckets make `get_url()` links directly accessible. For private buckets, add a signing step.
+
 ## Related Documentation
 
 - [Storage Guide](storage.md) – how asset storage backends are selected.  

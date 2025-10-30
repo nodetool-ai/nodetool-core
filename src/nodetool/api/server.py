@@ -262,11 +262,11 @@ def create_app(
 
     static_provider = Environment.get_static_auth_provider()
     user_provider = Environment.get_user_auth_provider()
-    enforce_auth = Environment.use_remote_auth()
+    enforce_auth = Environment.enforce_auth()
     auth_middleware = create_http_auth_middleware(
         static_provider=static_provider,
         user_provider=user_provider,
-        use_remote_auth=Environment.use_remote_auth(),
+        use_remote_auth=(Environment.get_auth_provider_kind() == "supabase"),
         enforce_auth=enforce_auth,
     )
     app.middleware("http")(auth_middleware)
@@ -328,13 +328,13 @@ def create_app(
         if static_result.ok and static_result.user_id:
             return token, static_result.user_id
 
-        if Environment.use_remote_auth():
+        if Environment.get_auth_provider_kind() == "supabase":
             if not user_provider:
                 await websocket.close(
-                    code=1008, reason="Remote authentication not configured"
+                    code=1008, reason="Authentication provider not configured"
                 )
                 log.warning(
-                    "WebSocket connection rejected: Remote auth not configured"
+                    "WebSocket connection rejected: Auth provider not configured"
                 )
                 return None, None
             user_result = await user_provider.verify_token(token)
