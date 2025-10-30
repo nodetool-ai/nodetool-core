@@ -7,6 +7,7 @@ per-user encryption isolation.
 
 from typing import Optional
 from datetime import datetime
+from datetime import timezone
 from nodetool.models.base_model import DBModel, DBField, DBIndex, create_time_ordered_uuid
 from nodetool.models.condition_builder import Field
 from nodetool.security.crypto import SecretCrypto
@@ -116,6 +117,12 @@ class Secret(DBModel):
 
         return await cls.query(condition, limit=limit)
 
+    @classmethod
+    async def list_all(cls, limit: int = 1000) -> list["Secret"]:
+        """Return all secrets (best effort, limited by the provided limit)."""
+        secrets, _ = await cls.query(limit=limit)
+        return secrets
+
     async def get_decrypted_value(self) -> str:
         """
         Decrypt and return the secret value.
@@ -139,6 +146,46 @@ class Secret(DBModel):
         master_key = await MasterKeyManager.get_master_key()
         self.encrypted_value = SecretCrypto.encrypt(new_value, master_key, self.user_id)
         await self.save()
+
+    @classmethod
+    async def upsert_encrypted(
+        cls,
+        user_id: str,
+        key: str,
+        encrypted_value: str,
+        description: Optional[str] = None,
+        created_at: Optional[datetime] = None,
+        updated_at: Optional[datetime] = None,
+    ) -> "Secret":
+        """
+        Create or update a secret using a pre-encrypted value.
+
+        This is used when migrating secrets between instances that share the same
+        master key. The encrypted blob is persisted as-is without decrypting.
+        """
+        existing = await cls.find(user_id, key)
+        if created_at is None:
+            created_at = datetime.now(timezone.utc)
+        if updated_at is None:
+            updated_at = datetime.now(timezone.utc)
+
+        if existing:
+            existing.encrypted_value = encrypted_value
+            existing.updated_at = updated_at
+            if description is not None:
+                existing.description = description
+            await existing.save()
+            return existing
+
+        return await super().create(
+            id=create_time_ordered_uuid(),
+            user_id=user_id,
+            key=key,
+            encrypted_value=encrypted_value,
+            description=description,
+            created_at=created_at,
+            updated_at=updated_at,
+        )
 
     @classmethod
     async def upsert(

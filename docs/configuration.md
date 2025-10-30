@@ -44,7 +44,23 @@ Secrets saved through the CLI are encrypted before being written to disk. The ma
 3. Local system keyring (macOS Keychain, Windows Credential Manager, or Secret Service).
 4. Generates a new key and stores it in the keyring (`MasterKeyManager.get_master_key()`).
 
-For shared deployments you can pre-provision the master key (via environment variable or AWS Secrets Manager) to ensure consistent decryption across nodes.
+For shared deployments you **must** pre-provision the master key (via `SECRETS_MASTER_KEY` environment variable or AWS Secrets Manager) so every worker can decrypt secrets generated locally. Worker and API processes will refuse to start in production when the variable is missing.
+
+### Migrating Secrets to a Worker
+
+1. Export the master key once and set it on every worker instance:
+   ```bash
+   export SECRETS_MASTER_KEY="$(nodetool python -c 'from nodetool.security.master_key import MasterKeyManager; import asyncio; print(asyncio.run(MasterKeyManager.get_master_key()))')"
+   ```
+   (or copy the value from your deployment pipeline/secrets manager)
+2. The `nodetool deploy apply` command automatically synchronizes all secrets from your local database to the target worker right after a successful deploy. If you ever need to do it manually, POST the encrypted payload to the new admin endpoint:
+   ```bash
+   curl -H "Authorization: Bearer $WORKER_TOKEN" \
+        -H "Content-Type: application/json" \
+        -X POST https://your-worker.example.com/admin/secrets/import \
+        --data-binary @secrets-export.json
+   ```
+   The worker stores the ciphertext verbatim, so both sides must share the same master key.
 
 ## Runtime Environment Detection
 

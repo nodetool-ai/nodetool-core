@@ -25,6 +25,7 @@ from nodetool.packages.registry import get_nodetool_package_source_folders
 from nodetool.security.http_auth import create_http_auth_middleware
 
 from . import (
+    admin_secrets,
     asset,
     font,
     collection,
@@ -109,6 +110,7 @@ class ExtensionRouterRegistry:
 
 
 DEFAULT_ROUTERS = [
+    admin_secrets.router,
     asset.router,
     message.router,
     thread.router,
@@ -200,6 +202,11 @@ def create_app(
 
     # Check if Ollama is available and set OLLAMA_API_URL if not already set
     setup_ollama_url()
+
+    if Environment.is_production() and not os.environ.get("SECRETS_MASTER_KEY"):
+        raise RuntimeError(
+            "SECRETS_MASTER_KEY environment variable must be set for production API deployments."
+        )
 
     # Use FastAPI lifespan API instead of deprecated on_event hooks
     @asynccontextmanager

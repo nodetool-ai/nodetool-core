@@ -3,8 +3,9 @@ import sys
 import shutil
 import atexit
 import warnings
+import asyncio
 import click
-from typing import Optional
+from typing import Optional, Dict, Any, List
 
 from nodetool.api.workflow import from_model
 from nodetool.config.environment import Environment
@@ -1683,7 +1684,104 @@ def env_for_deploy(
         if _v is not None and str(_v) != "" and _k not in env:
             env[_k] = str(_v)
 
+    master_key = os.environ.get("SECRETS_MASTER_KEY")
+    if master_key:
+        env.setdefault("SECRETS_MASTER_KEY", master_key)
+
     return env
+
+
+def _populate_master_key_env(deployment: Any, master_key: str) -> None:
+    from nodetool.config.deployment import (
+        SelfHostedDeployment,
+        RunPodDeployment,
+        GCPDeployment,
+    )
+
+    def _inject(env: Optional[Dict[str, str]]) -> Dict[str, str]:
+        env = dict(env) if env else {}
+        env["SECRETS_MASTER_KEY"] = master_key
+        return env
+
+    if isinstance(deployment, SelfHostedDeployment):
+        deployment.container.environment = _inject(deployment.container.environment)
+        if deployment.proxy and deployment.proxy.services:
+            for service in deployment.proxy.services:
+                service.environment = _inject(service.environment)
+    elif isinstance(deployment, (RunPodDeployment, GCPDeployment)):
+        deployment.environment = _inject(getattr(deployment, "environment", None))
+
+
+async def _export_encrypted_secrets_payload(limit: int = 1000) -> List[Dict[str, Any]]:
+    from nodetool.models.secret import Secret
+
+    secrets = await Secret.list_all(limit=limit)
+    payload: List[Dict[str, Any]] = []
+    for secret in secrets:
+        payload.append(
+            {
+                "user_id": secret.user_id,
+                "key": secret.key,
+                "encrypted_value": secret.encrypted_value,
+                "description": secret.description,
+                "created_at": secret.created_at.isoformat()
+                if secret.created_at
+                else None,
+                "updated_at": secret.updated_at.isoformat()
+                if secret.updated_at
+                else None,
+            }
+        )
+    return payload
+
+
+async def _import_secrets_to_worker(
+    server_url: str, auth_token: str, payload: List[Dict[str, Any]]
+) -> Dict[str, Any]:
+    from nodetool.deploy.admin_client import AdminHTTPClient
+
+    client = AdminHTTPClient(server_url, auth_token)
+    return await client.import_secrets(payload)
+
+
+def _sync_secrets_to_deployment(name: str, deployment: Any) -> None:
+    server_url = getattr(deployment, "get_server_url", lambda: None)()
+    if not server_url:
+        console.print(
+            f"[yellow]Skipping secret sync for '{name}': server URL unavailable.[/]"
+        )
+        return
+
+    auth_token = getattr(deployment, "worker_auth_token", None)
+    if not auth_token:
+        env: Optional[Dict[str, str]] = None
+        if hasattr(deployment, "environment") and getattr(deployment, "environment"):
+            env = deployment.environment
+        elif hasattr(deployment, "container") and getattr(
+            deployment.container, "environment", None
+        ):
+            env = deployment.container.environment
+        if env:
+            auth_token = env.get("WORKER_AUTH_TOKEN")
+
+    if not auth_token:
+        console.print(
+            f"[yellow]Skipping secret sync for '{name}': worker auth token unavailable.[/]"
+        )
+        return
+
+    secrets_payload = asyncio.run(_export_encrypted_secrets_payload())
+    if not secrets_payload:
+        console.print(f"[green]No local secrets to sync for '{name}'.[/]")
+        return
+
+    try:
+        asyncio.run(_import_secrets_to_worker(server_url, auth_token, secrets_payload))
+        console.print(f"[green]Synced {len(secrets_payload)} secret(s) to '{name}'.[/]")
+    except Exception as exc:  # noqa: BLE001
+        console.print(
+            f"[yellow]Warning: failed to sync secrets for '{name}': {exc}[/]"
+        )
 
 
 @cli.group()
@@ -2287,9 +2385,25 @@ def deploy_plan(name: str):
 def deploy_apply(name: str, dry_run: bool):
     """Apply deployment configuration to target platform."""
     from nodetool.deploy.manager import DeploymentManager
-
     try:
         manager = DeploymentManager()
+
+        deployment = manager.get_deployment(name)
+
+        master_key = os.environ.get("SECRETS_MASTER_KEY")
+        if not master_key:
+            if dry_run:
+                console.print(
+                    "[yellow]SECRETS_MASTER_KEY not set; using placeholder for dry run.[/]"
+                )
+                master_key = "dry-run-placeholder"
+            else:
+                console.print(
+                    "[red]SECRETS_MASTER_KEY must be set in the environment before deploying.[/]"
+                )
+                sys.exit(1)
+
+        _populate_master_key_env(deployment, master_key)
 
         if dry_run:
             console.print("[yellow]Dry run mode - no changes will be made[/]")
@@ -2314,6 +2428,9 @@ def deploy_apply(name: str, dry_run: bool):
         if results["status"] == "success":
             console.print()
             console.print("[bold green]✅ Deployment successful![/]")
+
+            if not dry_run:
+                _sync_secrets_to_deployment(name, deployment)
 
     except KeyError:
         console.print(f"[red]Deployment '{name}' not found[/]")

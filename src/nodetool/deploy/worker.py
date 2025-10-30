@@ -104,6 +104,13 @@ def create_worker_app(
     # Set authentication mode
     Environment.set_remote_auth(remote_auth)
 
+    if (Environment.is_production() or remote_auth) and not os.environ.get(
+        "SECRETS_MASTER_KEY"
+    ):
+        raise RuntimeError(
+            "SECRETS_MASTER_KEY environment variable must be set for deployed workers."
+        )
+
     app = FastAPI(
         title="NodeTool Worker",
         version="1.0.0",

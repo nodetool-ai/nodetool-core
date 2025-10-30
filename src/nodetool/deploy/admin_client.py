@@ -216,6 +216,20 @@ class AdminHTTPClient:
                         f"Failed to delete item: {response.status} {await response.text()}"
                     )
 
+    async def import_secrets(self, secrets: list[dict[str, Any]]) -> Dict[str, Any]:
+        """Import encrypted secrets into the remote worker."""
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{self.base_url}/admin/secrets/import",
+                headers=self.headers,
+                json=secrets,
+            ) as response:
+                if response.status != 200:
+                    raise Exception(
+                        f"Failed to import secrets: {response.status} {await response.text()}"
+                    )
+                return await response.json()
+
     async def download_huggingface_model(
         self,
         repo_id: str,
