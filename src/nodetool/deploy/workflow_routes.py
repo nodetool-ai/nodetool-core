@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 from typing import Dict
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
 from nodetool.config.logging_config import get_logger
@@ -24,6 +24,7 @@ from nodetool.workflows.run_workflow import run_workflow
 from nodetool.workflows.types import OutputUpdate
 from nodetool.models.workflow import Workflow as WorkflowModel
 from nodetool.api.workflow import WorkflowList, from_model, WorkflowRequest
+from nodetool.api.utils import current_user
 
 
 log = get_logger(__name__)
@@ -44,12 +45,12 @@ def create_workflow_router() -> APIRouter:
     router = APIRouter()
 
     @router.get("/workflows")
-    async def list_workflows() -> WorkflowList:
+    async def list_workflows(user: str = Depends(current_user)) -> WorkflowList:
         """List all workflows in the database."""
         # List all workflows without user restriction (admin mode)
         # Use paginate to get all workflows
         workflows, next_key = await WorkflowModel.paginate(
-            user_id="1",  # Default user for non-authenticated mode
+            user_id=user,
             limit=1000,  # Large page size to get all workflows
         )
         return WorkflowList(workflows=[from_model(w) for w in workflows], next=next_key)
@@ -58,10 +59,13 @@ def create_workflow_router() -> APIRouter:
     async def update_workflow(
         id: str,
         workflow_request: WorkflowRequest,
+        user: str = Depends(current_user),
     ) -> Workflow:
         workflow = await WorkflowModel.get(id)
+        if workflow and workflow.user_id != user:
+            raise HTTPException(status_code=403, detail="Workflow access denied")
         if not workflow:
-            workflow = WorkflowModel(id=id, user_id="1")
+            workflow = WorkflowModel(id=id, user_id=user)
         if workflow_request.graph is None:
             raise HTTPException(status_code=400, detail="Invalid workflow")
         workflow.name = workflow_request.name
@@ -81,21 +85,27 @@ def create_workflow_router() -> APIRouter:
         return updated_workflow
 
     @router.delete("/workflows/{id}")
-    async def delete_workflow(id: str):
+    async def delete_workflow(id: str, user: str = Depends(current_user)):
         """Delete a workflow from the database."""
         workflow = await WorkflowModel.get(id)
         if not workflow:
             raise HTTPException(status_code=404, detail="Workflow not found")
+        if workflow.user_id != user:
+            raise HTTPException(status_code=403, detail="Workflow access denied")
         await workflow.delete()
         return {"status": "ok", "message": f"Workflow {id} deleted"}
 
     @router.post("/workflows/{id}/run")
-    async def execute_workflow(id: str, request: Request):
+    async def execute_workflow(
+        id: str, request: Request, user: str = Depends(current_user)
+    ):
         try:
             params = await request.json()
-            req = RunJobRequest(params=params, workflow_id=id)
+            req = RunJobRequest(params=params, workflow_id=id, user_id=user)
 
-            context = ProcessingContext(asset_output_mode=AssetOutputMode.DATA_URI)
+            context = ProcessingContext(
+                user_id=user, asset_output_mode=AssetOutputMode.DATA_URI
+            )
 
             results: Dict[str, object] = {}
             async for msg in run_workflow(req, context=context, use_thread=True):
@@ -118,12 +128,16 @@ def create_workflow_router() -> APIRouter:
             raise HTTPException(status_code=500, detail=str(e))
 
     @router.post("/workflows/{id}/run/stream")
-    async def execute_workflow_stream(id: str, request: Request):
+    async def execute_workflow_stream(
+        id: str, request: Request, user: str = Depends(current_user)
+    ):
         try:
             params = await request.json()
-            req = RunJobRequest(params=params, workflow_id=id)
+            req = RunJobRequest(params=params, workflow_id=id, user_id=user)
 
-            context = ProcessingContext(asset_output_mode=AssetOutputMode.DATA_URI)
+            context = ProcessingContext(
+                user_id=user, asset_output_mode=AssetOutputMode.DATA_URI
+            )
 
             async def generate_sse():
                 results: Dict[str, object] = {}

@@ -1,63 +1,70 @@
-from fastapi import (
-    HTTPException,
-    Header,
-    status,
-    Cookie,
-)
+from fastapi import HTTPException, Request, status
 from typing import Optional
 from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
 from nodetool.metadata.types import HuggingFaceModel
+from nodetool.security.auth_provider import TokenType
 
 log = get_logger(__name__)
 
 
-async def current_user(
-    authorization: Optional[str] = Header(None),
-    auth_cookie: Optional[str] = Cookie(None),
-) -> str:
+async def current_user(request: Request) -> str:
+    """
+    Resolve the current user ID using the configured authentication providers.
+    """
+    user_id = getattr(request.state, "user_id", None)
+    if user_id:
+        return str(user_id)
+
+    static_provider = Environment.get_static_auth_provider()
+    token = static_provider.extract_token_from_headers(request.headers)
+
+    # Local development fallback when authentication is disabled.
     if not Environment.use_remote_auth():
+        if token:
+            static_result = await static_provider.verify_token(token)
+            if static_result.ok and static_result.user_id:
+                request.state.user_id = static_result.user_id
+                request.state.token_type = static_result.token_type or TokenType.STATIC
+                return static_result.user_id
         return "1"
 
-    jwt_token = None
-    if authorization:
-        parts = authorization.split()
-        if len(parts) == 2 and parts[0].lower() == "bearer":
-            jwt_token = parts[1]
-    elif auth_cookie:
-        jwt_token = auth_cookie
-
-    if not jwt_token:
+    if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authentication credentials were not provided.",
         )
 
+    static_result = await static_provider.verify_token(token)
+    if static_result.ok and static_result.user_id:
+        request.state.user_id = static_result.user_id
+        request.state.token_type = static_result.token_type or TokenType.STATIC
+        return static_result.user_id
+
+    user_provider = Environment.get_user_auth_provider()
+    if not user_provider:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Remote authentication is enabled but no provider is configured.",
+        )
+
     try:
-        supabase = await Environment.get_supabase_client()
-        user_response = await supabase.auth.get_user(jwt=jwt_token)
-
-        if not user_response or not hasattr(user_response, "user"):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid authentication response.",
-            )
-
-        supabase_user = user_response.user
-        if not supabase_user or not supabase_user.id:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid token or user session.",
-            )
-
-        return str(supabase_user.id)
-
-    except Exception as e:
-        log.error(f"Supabase auth error during token validation: {e}")
+        user_result = await user_provider.verify_token(token)
+        if user_result.ok and user_result.user_id:
+            request.state.user_id = user_result.user_id
+            request.state.token_type = user_result.token_type or TokenType.USER
+            return user_result.user_id
+    except Exception as exc:  # noqa: BLE001
+        log.error(f"Error validating remote authentication token: {exc}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Failed to validate authentication token.",
-        )
+        ) from exc
+
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Failed to validate authentication token.",
+    )
 
 
 async def abort(status_code: int, detail: Optional[str] = None) -> None:

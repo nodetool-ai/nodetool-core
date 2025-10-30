@@ -16,7 +16,7 @@ from nodetool.workflows.processing_context import (
     AssetOutputMode,
     ProcessingContext,
 )
-from nodetool.workflows.run_job_request import RunJobRequest
+from nodetool.workflows.run_job_request import RunJobRequest, ExecutionStrategy
 from nodetool.workflows.workflow_runner import WorkflowRunner
 from nodetool.workflows.types import Chunk, Error
 from nodetool.workflows.job_execution_manager import (
@@ -182,22 +182,61 @@ class WebSocketRunner:
     mode: WebSocketMode = WebSocketMode.BINARY
     active_jobs: Dict[str, JobStreamContext] = {}
 
-    def __init__(
-        self,
-    ):
+    def __init__(self, auth_token: str | None = None, user_id: str | None = None):
         """
         Initializes a new instance of the WebSocketRunner class.
         """
         self.mode = WebSocketMode.BINARY
         self.active_jobs = {}
+        self.auth_token = auth_token or ""
+        self.user_id = user_id or ""
 
-    async def connect(self, websocket: WebSocket):
+    async def connect(
+        self,
+        websocket: WebSocket,
+        user_id: str | None = None,
+        auth_token: str | None = None,
+    ):
         """
         Establishes the WebSocket connection.
 
         Args:
             websocket (WebSocket): The WebSocket connection.
         """
+        if auth_token is not None:
+            self.auth_token = auth_token
+        if user_id is not None:
+            self.user_id = user_id
+
+        if Environment.use_remote_auth():
+            if not self.user_id:
+                token = self.auth_token
+                if not token:
+                    await websocket.close(code=1008, reason="Missing authentication")
+                    log.warning(
+                        "WebSocketRunner connection rejected: Missing authentication token"
+                    )
+                    return
+                user_provider = Environment.get_user_auth_provider()
+                if not user_provider:
+                    await websocket.close(
+                        code=1008, reason="Remote authentication not configured"
+                    )
+                    log.warning(
+                        "WebSocketRunner connection rejected: Remote auth not configured"
+                    )
+                    return
+                result = await user_provider.verify_token(token)
+                if not result.ok or not result.user_id:
+                    await websocket.close(code=1008, reason="Invalid authentication")
+                    log.warning(
+                        "WebSocketRunner connection rejected: Invalid authentication"
+                    )
+                    return
+                self.user_id = result.user_id
+        else:
+            self.user_id = self.user_id or "1"
+
         await websocket.accept()
         self.websocket = websocket
         log.info("WebSocket connection established")
@@ -650,8 +689,16 @@ class WebSocketRunner:
         if command.command == CommandType.CLEAR_MODELS:
             return await self.clear_models()
         elif command.command == CommandType.RUN_JOB:
+            if self.user_id:
+                command.data.setdefault("user_id", self.user_id)
+            if self.auth_token:
+                command.data.setdefault("auth_token", self.auth_token)
             req = RunJobRequest(**command.data)
-            req.execution_strategy = Environment.get_default_execution_strategy()
+            strategy = Environment.get_default_execution_strategy()
+            try:
+                req.execution_strategy = ExecutionStrategy(str(strategy))
+            except Exception:
+                req.execution_strategy = ExecutionStrategy.THREADED
             log.info(
                 f"Starting workflow: {req.workflow_id} with strategy: {req.execution_strategy}"
             )
@@ -751,7 +798,11 @@ class WebSocketRunner:
             websocket (WebSocket): The WebSocket connection.
         """
         try:
-            await self.connect(websocket)
+            await self.connect(
+                websocket,
+                user_id=self.user_id or None,
+                auth_token=self.auth_token or None,
+            )
             log.debug("WebSocketRunner loop started")
             while True:
                 assert self.websocket, "WebSocket is not connected"

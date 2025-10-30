@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import json
 from typing import Any, Dict, List, Optional
-from fastapi import APIRouter, HTTPException, Request, UploadFile, File, Header, Body
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Header, Body
 from fastapi.responses import StreamingResponse
 import chromadb
 
@@ -36,6 +36,7 @@ from nodetool.indexing.service import index_file_to_collection
 from nodetool.indexing.ingestion import find_input_nodes
 from pydantic import BaseModel
 from nodetool.types.asset import Asset, AssetList
+from nodetool.api.utils import current_user
 
 
 # Collection-related Pydantic models
@@ -388,6 +389,7 @@ def create_admin_router() -> APIRouter:
     # Asset management endpoints
     @router.get("/admin/assets", response_model=AssetList)
     async def list_assets(
+        user: str = Depends(current_user),
         user_id: Optional[str] = "1",
         parent_id: Optional[str] = None,
         content_type: Optional[str] = None,
@@ -396,14 +398,15 @@ def create_admin_router() -> APIRouter:
     ) -> AssetList:
         """List assets (admin endpoint - no user restrictions)."""
         try:
+            effective_user = user_id or user
             if page_size is None or page_size > 10000:
                 page_size = 10000
 
-            if content_type is None and parent_id is None and user_id:
-                parent_id = user_id
+            if content_type is None and parent_id is None:
+                parent_id = effective_user
 
             assets, next_cursor = await AssetModel.paginate(
-                user_id=user_id or "1",
+                user_id=effective_user,
                 parent_id=parent_id,
                 content_type=content_type,
                 limit=page_size,
@@ -418,6 +421,7 @@ def create_admin_router() -> APIRouter:
 
     @router.post("/admin/assets", response_model=Asset)
     async def create_asset(
+        user: str = Depends(current_user),
         data: Dict[str, Any] = Body(...),
     ) -> Asset:
         """Create a new asset (admin endpoint - no user restrictions)."""
@@ -429,7 +433,7 @@ def create_admin_router() -> APIRouter:
                 kwargs["id"] = asset_id
 
             asset = await AssetModel.create(
-                user_id=data.get("user_id", "1"),
+                user_id=data.get("user_id", user),
                 name=data.get("name", ""),
                 content_type=data.get("content_type", ""),
                 parent_id=data.get("parent_id"),
@@ -442,10 +446,14 @@ def create_admin_router() -> APIRouter:
             raise HTTPException(status_code=500, detail=str(e))
 
     @router.get("/admin/assets/{asset_id}", response_model=Asset)
-    async def get_asset(asset_id: str, user_id: Optional[str] = "1") -> Asset:
+    async def get_asset(
+        asset_id: str,
+        user: str = Depends(current_user),
+        user_id: Optional[str] = "1",
+    ) -> Asset:
         """Get a single asset by ID (admin endpoint - no user restrictions)."""
         try:
-            uid = user_id or "1"
+            uid = user_id or user
 
             # Handle special case for user root folder
             if asset_id == uid:
@@ -472,12 +480,14 @@ def create_admin_router() -> APIRouter:
             raise HTTPException(status_code=500, detail=str(e))
 
     @router.delete("/admin/assets/{asset_id}")
-    async def delete_asset(asset_id: str):
+    async def delete_asset(asset_id: str, user: str = Depends(current_user)):
         """Delete an asset (recursive for folders) (admin endpoint - no user restrictions)."""
         try:
             asset = await AssetModel.get(asset_id)
             if asset is None:
                 raise HTTPException(status_code=404, detail="Asset not found")
+            if asset.user_id != user:
+                raise HTTPException(status_code=403, detail="Asset access denied")
 
             deleted_asset_ids = []
 

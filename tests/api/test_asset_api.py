@@ -116,12 +116,14 @@ async def test_create(client: TestClient, headers: dict[str, str], user_id: str)
 
 
 @pytest.mark.asyncio
-async def test_storage_stream_content_length(client: TestClient, user_id: str):
+async def test_storage_stream_content_length(
+    client: TestClient, headers: dict[str, str], user_id: str
+):
     image = await make_image(user_id)
     storage = Environment.get_asset_storage()
     expected_size = len(storage.storage[image.file_name])
 
-    response = client.get(f"/api/storage/{image.file_name}")
+    response = client.get(f"/api/storage/{image.file_name}", headers=headers)
     assert response.status_code == 200
     assert response.headers.get("Content-Length") == str(expected_size)
 

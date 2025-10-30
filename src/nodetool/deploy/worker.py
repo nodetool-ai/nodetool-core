@@ -42,8 +42,7 @@ import platform
 from typing import List
 
 import uvicorn
-from fastapi import FastAPI, HTTPException, Request, status
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, HTTPException
 from rich.console import Console
 
 from nodetool.config.environment import Environment
@@ -64,6 +63,7 @@ from nodetool.deploy.auth import (
     get_token_source,
     DEPLOYMENT_CONFIG_FILE,
 )
+from nodetool.security.http_auth import create_http_auth_middleware
 
 
 console = Console()
@@ -111,53 +111,16 @@ def create_worker_app(
     )
 
     # Add authentication middleware
-    @app.middleware("http")
-    async def authenticate_requests(request: Request, call_next):
-        """
-        Middleware to authenticate all requests.
-        Excludes health check endpoints from authentication.
-        """
-        # Allow health check endpoints without authentication
-        if request.url.path in ["/health", "/ping"]:
-            return await call_next(request)
-
-        # All other endpoints require authentication
-        auth_header = request.headers.get("authorization")
-
-        if not auth_header:
-            return JSONResponse(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                content={
-                    "detail": "Authorization header required. Use 'Authorization: Bearer YOUR_TOKEN'"
-                },
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-
-        # Parse Bearer token
-        parts = auth_header.split()
-        if len(parts) != 2 or parts[0].lower() != "bearer":
-            return JSONResponse(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                content={
-                    "detail": "Invalid authorization header format. Use 'Authorization: Bearer YOUR_TOKEN'"
-                },
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-
-        provided_token = parts[1]
-        expected_token = get_worker_auth_token()
-
-        # Verify token
-        if provided_token != expected_token:
-            return JSONResponse(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                content={"detail": "Invalid authentication token"},
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-
-        # Token is valid, proceed with request
-        response = await call_next(request)
-        return response
+    static_provider = Environment.get_static_auth_provider()
+    user_provider = Environment.get_user_auth_provider()
+    enforce_auth = Environment.use_remote_auth()
+    auth_middleware = create_http_auth_middleware(
+        static_provider=static_provider,
+        user_provider=user_provider,
+        use_remote_auth=Environment.use_remote_auth(),
+        enforce_auth=enforce_auth,
+    )
+    app.middleware("http")(auth_middleware)
 
     @app.on_event("startup")
     async def startup_event():

@@ -1,13 +1,16 @@
 from typing import List
 
 import json
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from rich.console import Console
 
 from nodetool.api.workflow import from_model
 from nodetool.chat.chat_sse_runner import ChatSSERunner
 from nodetool.models.workflow import Workflow as WorkflowModel
+from nodetool.api.utils import current_user
+from nodetool.config.environment import Environment
+from nodetool.ml.models.language_models import get_all_language_models
 
 console = Console()
 
@@ -16,7 +19,6 @@ def create_openai_compatible_router(
     provider: str,
     default_model: str = "gpt-oss:20b",
     tools: List[str] | None = None,
-    user: str = "1",
 ) -> APIRouter:
     """Create an APIRouter exposing OpenAI-compatible endpoints.
 
@@ -30,20 +32,19 @@ def create_openai_compatible_router(
     tools = tools or []
 
     @router.post("/chat/completions")
-    async def openai_chat_completions(request: Request):
+    async def openai_chat_completions(
+        request: Request, user: str = Depends(current_user)
+    ):
         """OpenAI-compatible chat completions endpoint mirroring /chat/sse behaviour."""
         try:
             data = await request.json()
-            auth_header = request.headers.get("authorization", "")
-            auth_token = (
-                auth_header.replace("Bearer ", "")
-                if auth_header.startswith("Bearer ")
-                else None
-            )
+            static_provider = Environment.get_static_auth_provider()
+            auth_token = static_provider.extract_token_from_headers(request.headers)
             if auth_token:
                 data["auth_token"] = auth_token
+            data["user_id"] = user
 
-            workflows, _ = await WorkflowModel.paginate(limit=1000)
+            workflows, _ = await WorkflowModel.paginate(user_id=user, limit=1000)
 
             runner = ChatSSERunner(
                 auth_token,
@@ -51,6 +52,7 @@ def create_openai_compatible_router(
                 default_provider=provider,
                 workflows=[from_model(workflow) for workflow in workflows],
             )
+            runner.user_id = user
 
             # Determine if the client requested streaming (default true)
             stream = data.get("stream", True)
@@ -80,7 +82,7 @@ def create_openai_compatible_router(
             raise HTTPException(status_code=500, detail=str(e)) from e
 
     @router.get("/models")
-    async def openai_models():
+    async def openai_models(user: str = Depends(current_user)):
         """Returns list of models filtered by provider in OpenAI format."""
         try:
             all_models = await get_all_language_models(user)

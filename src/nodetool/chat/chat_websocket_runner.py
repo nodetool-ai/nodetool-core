@@ -89,7 +89,7 @@ class ChatWebSocketRunner(BaseChatRunner):
         self.tool_bridge = ToolBridge()
         self.client_tools_manifest: dict[str, dict] = {}
 
-    async def connect(self, websocket: WebSocket):
+    async def connect(self, websocket: WebSocket, user_id: str | None = None):
         """
         Accepts and establishes a new WebSocket connection.
 
@@ -103,24 +103,32 @@ class ChatWebSocketRunner(BaseChatRunner):
 
         # Check if remote authentication is required
         if Environment.use_remote_auth():
-            # In production or when remote auth is enabled, authentication is required
-            if not self.auth_token:
-                # Close connection with 401 Unauthorized status code
-                await websocket.close(code=1008, reason="Missing authentication")
-                log.warning("WebSocket connection rejected: Missing authentication")
-                return
+            if user_id:
+                self.user_id = user_id
+                log.debug(
+                    "Remote auth enabled for WebSocket; using provided user_id without revalidation"
+                )
+            else:
+                # In production or when remote auth is enabled, authentication is required
+                if not self.auth_token:
+                    await websocket.close(code=1008, reason="Missing authentication")
+                    log.warning("WebSocket connection rejected: Missing authentication")
+                    return
 
-            # Validate token using Supabase
-            log.debug("Validating provided auth token")
-            is_valid = await self.validate_token(self.auth_token)
-            if not is_valid:
-                await websocket.close(code=1008, reason="Invalid authentication")
-                log.warning("WebSocket connection rejected: Invalid authentication")
-                return
+                # Validate token using Supabase
+                log.debug("Validating provided auth token for WebSocket connection")
+                is_valid = await self.validate_token(self.auth_token)
+                if not is_valid:
+                    await websocket.close(code=1008, reason="Invalid authentication")
+                    log.warning("WebSocket connection rejected: Invalid authentication")
+                    return
         else:
             # In local development without remote auth, set a default user ID
-            self.user_id = "1"
+            self.user_id = user_id or "1"
             log.debug("Skipping authentication in local development mode")
+
+        if not self.user_id:
+            self.user_id = "1"
 
         await websocket.accept()
         self.websocket = websocket
@@ -295,7 +303,7 @@ class ChatWebSocketRunner(BaseChatRunner):
         Args:
             websocket (WebSocket): The FastAPI WebSocket object for the connection.
         """
-        await self.connect(websocket)
+        await self.connect(websocket, user_id=self.user_id)
 
         assert self.websocket is not None, "WebSocket is not connected"
 

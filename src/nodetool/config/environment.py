@@ -3,7 +3,7 @@ import threading
 import tempfile
 from pathlib import Path
 from nodetool.config.logging_config import get_logger
-from typing import Any, Optional, Dict
+from typing import Any, Optional, Dict, TYPE_CHECKING
 
 from nodetool.storage.abstract_node_cache import AbstractNodeCache
 from nodetool.config.settings import (
@@ -19,6 +19,10 @@ _test_asset_storage = None
 _test_temp_storage = None
 _test_db_path = None
 _test_db_file = None
+
+if TYPE_CHECKING:
+    from nodetool.security.providers.static_token import StaticTokenAuthProvider
+    from nodetool.security.providers.supabase import SupabaseAuthProvider
 
 DEFAULT_ENV = {
     "ASSET_BUCKET": "images",
@@ -123,6 +127,8 @@ class Environment(object):
     _sqlite_connection: Any = None
     remote_auth: bool = True
     _thread_local: threading.local = threading.local()
+    _static_auth_provider: "StaticTokenAuthProvider | None" = None
+    _user_auth_provider: "SupabaseAuthProvider | None" = None
 
     @classmethod
     def _tls(cls) -> threading.local:
@@ -222,6 +228,69 @@ class Environment(object):
         return cls.is_production() or cls.get("REMOTE_AUTH") == "1"
 
     @classmethod
+    def get_static_auth_provider(cls):
+        """
+        Return the static token authentication provider.
+        """
+        if cls._static_auth_provider is None:
+            from nodetool.deploy.auth import get_worker_auth_token
+            from nodetool.security.providers.static_token import StaticTokenAuthProvider
+
+            token = get_worker_auth_token()
+            if not token:
+                raise ValueError(
+                    "WORKER_AUTH_TOKEN is required for static authentication."
+                )
+            cls._static_auth_provider = StaticTokenAuthProvider(static_token=token)
+        return cls._static_auth_provider
+
+    @classmethod
+    def _get_int_setting(cls, key: str, default: int) -> int:
+        value = os.environ.get(key)
+        if value is not None:
+            try:
+                return int(value)
+            except ValueError:
+                return default
+        if cls.settings is None:
+            cls.load_settings()
+        assert cls.settings is not None
+        raw = cls.settings.get(key)
+        if raw is None:
+            return default
+        try:
+            return int(raw)
+        except (TypeError, ValueError):
+            return default
+
+    @classmethod
+    def get_remote_auth_cache_ttl(cls) -> int:
+        return cls._get_int_setting("REMOTE_AUTH_CACHE_TTL", 60)
+
+    @classmethod
+    def get_remote_auth_cache_max(cls) -> int:
+        return cls._get_int_setting("REMOTE_AUTH_CACHE_MAX", 2000)
+
+    @classmethod
+    def get_user_auth_provider(cls):
+        """
+        Return the Supabase authentication provider if configured.
+        """
+        if cls._user_auth_provider is None:
+            supabase_url = cls.get("SUPABASE_URL")
+            supabase_key = cls.get("SUPABASE_KEY")
+            if supabase_url and supabase_key:
+                from nodetool.security.providers.supabase import SupabaseAuthProvider
+
+                cls._user_auth_provider = SupabaseAuthProvider(
+                    supabase_url=supabase_url,
+                    supabase_key=supabase_key,
+                    cache_ttl=cls.get_remote_auth_cache_ttl(),
+                    cache_max=cls.get_remote_auth_cache_max(),
+                )
+        return cls._user_auth_provider
+
+    @classmethod
     def is_debug(cls):
         """
         Is debug flag on?
@@ -271,7 +340,10 @@ class Environment(object):
         """
         The execution strategy is the strategy that we use to execute the workflow.
         """
-        return cls.get("DEFAULT_EXECUTION_STRATEGY")
+        strategy = cls.get("DEFAULT_EXECUTION_STRATEGY", None)
+        if strategy:
+            return strategy
+        return cls.get("JOB_EXECUTION_STRATEGY", "threaded")
 
     @classmethod
     def get_node_cache(cls) -> AbstractNodeCache:
@@ -843,6 +915,11 @@ class Environment(object):
                     delattr(tls, attr)
                 except Exception:
                     pass
+
+        if cls._user_auth_provider is not None:
+            cls._user_auth_provider.clear_caches()
+            cls._user_auth_provider = None
+        cls._static_auth_provider = None
 
     @classmethod
     def get_supabase_url(cls):

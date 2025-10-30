@@ -22,6 +22,7 @@ import uuid
 import PIL.Image
 import asyncio
 from nodetool.models.base_model import close_all_database_adapters
+from nodetool.deploy.auth import get_worker_auth_token
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -391,8 +392,8 @@ def headers(user_id: str):
 
     This fixture is scoped to the function, so it will be created once for each test function.
     """
-    test_auth_token = "test_token"
-    return {"Authorization": f"Bearer {test_auth_token}"}
+    token = get_worker_auth_token()
+    return {"Authorization": f"Bearer {token}"}
 
 
 def make_node(id, type: str, data: dict[str, Any]):

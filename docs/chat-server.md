@@ -63,7 +63,13 @@ Send messages in this format:
 }
 ```
 
-Authentication via query parameter:
+Authentication (preferred header, required in production or when REMOTE_AUTH=1):
+
+```
+Authorization: Bearer YOUR_AUTH_TOKEN
+```
+
+WebSocket query fallback (legacy clients):
 
 ```
 ws://127.0.0.1:8080/chat?token=YOUR_AUTH_TOKEN

@@ -126,7 +126,7 @@ async def summarize_thread(
         raise HTTPException(status_code=404, detail="Thread not found")
 
     # Use the provided provider and model for LLM call
-    provider = get_provider(Provider(req.provider))
+    provider = await get_provider(Provider(req.provider), user_id=user)
     print(provider)
 
     # Make the LLM call

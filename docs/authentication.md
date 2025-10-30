@@ -54,7 +54,12 @@ ______________________________________________________________________
 
 ## Using the Token
 
-All API requests (except `/health` and `/ping`) require authentication:
+All API requests (except `/health` and `/ping`) require authentication when
+running in production or when remote authentication is enabled. In local
+development (default `ENV=development` and `REMOTE_AUTH=0`) the worker and API
+server accept requests without a token for convenience.
+
+When authentication is enforced, send the static token in the header:
 
 ```bash
 # Get token from config file
@@ -92,6 +97,39 @@ curl -H "Authorization: Bearer $TOKEN" \
   -X PUT http://localhost:8000/admin/storage/assets/image.png \
   --data-binary @image.png
 ```
+
+______________________________________________________________________
+
+## Remote Authentication (Supabase)
+
+Enable Supabase-backed user authentication by setting:
+
+```bash
+export REMOTE_AUTH=1
+export SUPABASE_URL=https://your-project.supabase.co
+export SUPABASE_KEY=your-service-role-key
+```
+
+With remote authentication on:
+
+- **Clients use the same header**: `Authorization: Bearer <token>`
+- The token can be either the static worker token or a Supabase JWT
+- Supabase tokens map requests to the actual Supabase user ID
+- Static tokens remain valid for compatibility (user ID defaults to `"1"`)
+
+JWT validations are cached in-memory (default 60 seconds) to reduce latency:
+
+```bash
+# Optional tuning
+export REMOTE_AUTH_CACHE_TTL=30     # seconds (0 disables caching)
+export REMOTE_AUTH_CACHE_MAX=1000   # cache size
+```
+
+> **WebSockets:** Use the same `Authorization` header. A compatibility fallback via
+> query string (`?api_key=<token>`) remains supported.
+
+If you need to force JWT-only access, run the worker/API server with
+`REMOTE_AUTH=1` and omit the static token from clients.
 
 ______________________________________________________________________
 

@@ -22,6 +22,7 @@ from nodetool.config.logging_config import configure_logging, get_logger
 
 from nodetool.metadata.types import Provider
 from nodetool.packages.registry import get_nodetool_package_source_folders
+from nodetool.security.http_auth import create_http_auth_middleware
 
 from . import (
     asset,
@@ -252,6 +253,17 @@ def create_app(
         max_age=3600,
     )
 
+    static_provider = Environment.get_static_auth_provider()
+    user_provider = Environment.get_user_auth_provider()
+    enforce_auth = Environment.use_remote_auth()
+    auth_middleware = create_http_auth_middleware(
+        static_provider=static_provider,
+        user_provider=user_provider,
+        use_remote_auth=Environment.use_remote_auth(),
+        enforce_auth=enforce_auth,
+    )
+    app.middleware("http")(auth_middleware)
+
     # Mount OpenAI-compatible endpoints with default provider set to "ollama"
     if not Environment.is_production():
         app.include_router(
@@ -292,26 +304,58 @@ def create_app(
     if not Environment.is_production():
         app.add_websocket_route("/hf/download", huggingface_download_endpoint)
 
+    async def _authenticate_websocket(websocket: WebSocket):
+        if not enforce_auth:
+            static = Environment.get_static_auth_provider()
+            return None, static.user_id
+
+        token = static_provider.extract_token_from_ws(
+            websocket.headers, websocket.query_params
+        )
+        if not token:
+            await websocket.close(code=1008, reason="Missing authentication")
+            log.warning("WebSocket connection rejected: Missing authentication header")
+            return None, None
+
+        static_result = await static_provider.verify_token(token)
+        if static_result.ok and static_result.user_id:
+            return token, static_result.user_id
+
+        if Environment.use_remote_auth():
+            if not user_provider:
+                await websocket.close(
+                    code=1008, reason="Remote authentication not configured"
+                )
+                log.warning(
+                    "WebSocket connection rejected: Remote auth not configured"
+                )
+                return None, None
+            user_result = await user_provider.verify_token(token)
+            if user_result.ok and user_result.user_id:
+                return token, user_result.user_id
+            await websocket.close(code=1008, reason="Invalid authentication")
+            log.warning("WebSocket connection rejected: Invalid Supabase token")
+            return None, None
+
+        await websocket.close(code=1008, reason="Invalid authentication")
+        log.warning("WebSocket connection rejected: Invalid token")
+        return None, None
+
     @app.websocket("/predict")
     async def websocket_endpoint(websocket: WebSocket):
-        await WebSocketRunner().run(websocket)
+        token, user_id = await _authenticate_websocket(websocket)
+        if user_id is None:
+            return
+        runner = WebSocketRunner(auth_token=token or "", user_id=user_id)
+        await runner.run(websocket)
 
     @app.websocket("/chat")
     async def chat_websocket_endpoint(websocket: WebSocket):
-        # Extract authentication information
-        auth_header = websocket.headers.get("authorization")
-        auth_token = None
-
-        # Extract bearer token if present
-        if auth_header and auth_header.startswith("Bearer "):
-            auth_token = auth_header.replace("Bearer ", "")
-
-        # Check for API key in query params as fallback
-        if not auth_token:
-            auth_token = websocket.query_params.get("api_key")
-
-        # Create runner with authentication token
-        chat_runner = ChatWebSocketRunner(auth_token=auth_token)
+        token, user_id = await _authenticate_websocket(websocket)
+        if user_id is None:
+            return
+        chat_runner = ChatWebSocketRunner(auth_token=token or "")
+        chat_runner.user_id = user_id
         await chat_runner.run(websocket)
 
     # WebSocket endpoint for periodic system updates (e.g., system stats)

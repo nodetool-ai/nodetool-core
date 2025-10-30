@@ -103,19 +103,28 @@ class ChatSSERunner(BaseChatRunner):
 
         # Check if remote authentication is required
         if Environment.use_remote_auth():
-            # In production or when remote auth is enabled, authentication is required
-            if not self.auth_token:
-                raise ValueError("Missing authentication token")
+            if user_id:
+                # Upstream gateway already resolved the user; no need to revalidate.
+                self.user_id = user_id
+                log.debug("Remote auth enabled; using provided user_id without revalidation")
+            else:
+                # In production or when remote auth is enabled, authentication is required
+                if not self.auth_token:
+                    raise ValueError("Missing authentication token")
 
-            # Validate token using Supabase
-            log.debug("Validating provided auth token")
-            is_valid = await self.validate_token(self.auth_token)
-            if not is_valid:
-                raise ValueError("Invalid authentication token")
+                # Validate token using Supabase
+                log.debug("Validating provided auth token")
+                is_valid = await self.validate_token(self.auth_token)
+                if not is_valid:
+                    raise ValueError("Invalid authentication token")
         else:
             # In local development without remote auth, use provided user_id or default
             self.user_id = user_id or "1"
             log.debug("Skipping authentication in local development mode")
+
+        if not self.user_id:
+            # Ensure user_id is set for downstream processing
+            self.user_id = "1"
 
         self.is_connected = True
         log.info("SSE connection established for chat")
