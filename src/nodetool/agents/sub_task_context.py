@@ -176,6 +176,7 @@ import asyncio
 import base64
 import binascii
 import datetime
+import logging
 import re
 from nodetool.providers import BaseProvider
 from nodetool.agents.tools.base import Tool
@@ -207,8 +208,10 @@ from typing import (
 from nodetool.config.logging_config import get_logger
 
 from jinja2 import Environment, BaseLoader
+from jsonschema import ValidationError, validate as jsonschema_validate
 
 log = get_logger(__name__)
+log.setLevel(logging.DEBUG)
 
 
 DEFAULT_MAX_TOKEN_LIMIT: int = 4096
@@ -467,6 +470,7 @@ class FinishTaskTool(Tool):
 
         # Validate and prepare the result schema
         result_schema = _validate_and_sanitize_schema(output_schema, "The task result")
+        self.result_schema = result_schema
 
         # Final input schema for the tool
         self.input_schema = {
@@ -505,6 +509,7 @@ class FinishSubTaskTool(Tool):
         result_schema = _validate_and_sanitize_schema(
             output_schema, "The subtask result"
         )
+        self.result_schema = result_schema
 
         # Final input schema for the tool
         self.input_schema = {
@@ -713,6 +718,20 @@ class SubTaskContext:
             int: The approximate token count for the single message.
         """
         return count_message_tokens(msg, encoding=self.encoding)
+
+    def _normalize_tool_result(self, value: Any) -> Any:
+        """
+        Convert tool results into JSON-serializable primitives recursively.
+        """
+        if hasattr(value, "model_dump"):
+            return self._normalize_tool_result(value.model_dump())
+        if isinstance(value, dict):
+            return {key: self._normalize_tool_result(val) for key, val in value.items()}
+        if isinstance(value, list):
+            return [self._normalize_tool_result(item) for item in value]
+        if isinstance(value, (str, int, float, bool)) or value is None:
+            return value
+        return str(value)
 
     def get_result(self) -> Any | None:
         """
@@ -1132,6 +1151,49 @@ class SubTaskContext:
 
         raise ValueError(f"Tool '{tool_call.name}' not found in available tools.")
 
+    def _validate_finish_tool_result(
+        self, tool_result: Any, tool_call: ToolCall
+    ) -> tuple[bool, Optional[str], Optional[Dict[str, Any]], Any]:
+        """
+        Validate finish tool results against the declared schema.
+        """
+        tool_instance: Optional[Tool] = None
+        for tool in self.tools:
+            if tool.name == tool_call.name:
+                tool_instance = tool
+                break
+
+        schema: Optional[Dict[str, Any]] = None
+        if tool_instance is not None:
+            schema = getattr(tool_instance, "result_schema", None)
+            if schema is None:
+                schema = (
+                    getattr(tool_instance, "input_schema", {})
+                    .get("properties", {})
+                    .get("result")
+                )
+
+        normalized_result = self._normalize_tool_result(tool_result)
+
+        if not schema:
+            log.debug(
+                "No result schema available for finish tool %s; skipping validation",
+                tool_call.name,
+            )
+            return True, None, None, normalized_result
+
+        try:
+            jsonschema_validate(normalized_result, schema)
+            return True, None, schema, normalized_result
+        except ValidationError as exc:
+            error_detail = exc.message
+            json_path = getattr(exc, "json_path", None)
+            if json_path:
+                error_detail = f"{json_path}: {exc.message}"
+            return False, error_detail, schema, normalized_result
+        except Exception as exc:  # pragma: no cover - unexpected errors
+            return False, str(exc), schema, normalized_result
+
     async def _handle_tool_call(self, tool_call: ToolCall) -> Message:
         """
         Handle a tool call by executing it, processing its result, and returning a message for history.
@@ -1156,8 +1218,44 @@ class SubTaskContext:
                 f"Tool {tool_call.name} execution completed"
             )
 
+        is_finish_tool = tool_call.name in ("finish_task", "finish_subtask")
+        is_valid_finish = True
+        finish_error_detail: Optional[str] = None
+        expected_schema: Optional[Dict[str, Any]] = None
+        normalized_result: Any = None
+
+        if is_finish_tool:
+            (
+                is_valid_finish,
+                finish_error_detail,
+                expected_schema,
+                normalized_result,
+            ) = self._validate_finish_tool_result(tool_result, tool_call)
+
+            if not is_valid_finish:
+                if self.display_manager:
+                    self.display_manager.warning(
+                        f"{tool_call.name} result failed validation: {finish_error_detail}"
+                    )
+                log.warning(
+                    "Finish tool %s result failed schema validation: %s",
+                    tool_call.name,
+                    finish_error_detail,
+                )
+                error_payload: Dict[str, Any] = {
+                    "error": "finish_tool_validation_failed",
+                    "detail": finish_error_detail
+                    or "Result did not match the expected schema.",
+                    "resolution": "Adjust the result to match the expected schema and call the finish tool again.",
+                }
+                if expected_schema is not None:
+                    error_payload["expected_schema"] = expected_schema
+                if normalized_result is not None:
+                    error_payload["submitted_result"] = normalized_result
+                tool_result = error_payload
+
         # 3. Handle binary artifacts (images, audio)
-        if isinstance(tool_result, dict):
+        if isinstance(tool_result, dict) and (not is_finish_tool or is_valid_finish):
             if "image" in tool_result:
                 tool_result = self._handle_binary_artifact(
                     tool_result, tool_call.name, "image"
@@ -1168,7 +1266,13 @@ class SubTaskContext:
                 )
 
         # 4. Process special tool side-effects (e.g., finish_task, browser navigation)
-        self._process_special_tool_side_effects(tool_result, tool_call)
+        if not is_finish_tool or is_valid_finish:
+            self._process_special_tool_side_effects(tool_result, tool_call)
+        else:
+            log.debug(
+                "Skipping special side effects for %s due to validation failure",
+                tool_call.name,
+            )
 
         # Log tool result only to subtask tree (not phase)
         if tool_call.name not in ("finish_subtask", "finish_task"):
@@ -1302,19 +1406,12 @@ class SubTaskContext:
     ) -> str:
         """Serializes the tool result to a JSON string for message history."""
 
-        def model_dump(obj: Any) -> Any:
-            if getattr(obj, "model_dump", None) is not None:
-                return obj.model_dump()
-            elif isinstance(obj, list):
-                return [model_dump(item) for item in obj]
-            else:
-                return str(obj)
-
         try:
             if tool_result is None:
                 return "Tool returned no output."
-            return json.dumps(model_dump(tool_result), ensure_ascii=False)
-        except TypeError as e:
+            normalized = self._normalize_tool_result(tool_result)
+            return json.dumps(normalized, ensure_ascii=False)
+        except (TypeError, ValueError) as e:
             log.error(
                 f"Failed to serialize tool result for '{tool_name}' to JSON: {e}. Result: {tool_result}"
             )

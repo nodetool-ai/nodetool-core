@@ -1609,6 +1609,11 @@ class TaskPlanner:
                 log.debug(
                     "%s: Successfully parsed schema dict: %s", sub_context, schema_dict
                 )
+
+                if not isinstance(schema_dict, dict):
+                    raise ValueError(
+                        f"Output schema must be a JSON object, got {type(schema_dict)}"
+                    )
             else:  # Invalid type for schema string
                 error_msg = f"Output schema must be a JSON string or None, got {type(current_schema_str)}"
                 log.error("%s: %s", sub_context, error_msg)
@@ -1640,6 +1645,11 @@ class TaskPlanner:
                 current_schema_str,
                 e,
             )
+            schema_dict = {
+                "type": "string",
+                "description": "Subtask result",
+            }
+            final_schema_str = json.dumps(schema_dict)
 
         log.debug(
             "%s: Schema processing completed, errors=%d, final_schema_str=%s",

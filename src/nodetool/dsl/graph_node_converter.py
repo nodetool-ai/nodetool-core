@@ -7,7 +7,7 @@ from nodetool.dsl.handles import OutputHandle
 from nodetool.metadata.type_metadata import TypeMetadata
 from nodetool.metadata.typecheck import typecheck
 from nodetool.types.graph import Edge
-from nodetool.workflows.base_node import BaseNode
+from nodetool.workflows.base_node import BaseNode, type_metadata
 
 
 class GraphNodeConverter:
@@ -111,7 +111,7 @@ class GraphNodeConverter:
             extra_items = dict(getattr(graph_node, "__pydantic_extra__"))
 
         for extra_name, value in extra_items.items():
-            if extra_name == "id":
+            if extra_name in {"id", "dynamic_outputs"}:
                 continue
 
             if isinstance(value, OutputHandle):
@@ -134,6 +134,33 @@ class GraphNodeConverter:
         init_kwargs: dict[str, Any] = dict(node_data)
         if dynamic_property_values:
             init_kwargs["dynamic_properties"] = dynamic_property_values
+
+        dynamic_outputs_payload: dict[str, TypeMetadata] | None = None
+        raw_dynamic_outputs = getattr(graph_node, "dynamic_outputs", None)
+
+        if graph_node._node_supports_dynamic_outputs():
+            outputs: dict[str, TypeMetadata] = {}
+            if raw_dynamic_outputs:
+                for name, metadata in dict(raw_dynamic_outputs).items():
+                    if isinstance(metadata, TypeMetadata):
+                        outputs[name] = metadata
+                    elif isinstance(metadata, dict):
+                        outputs[name] = TypeMetadata(**metadata)
+                    else:
+                        try:
+                            outputs[name] = type_metadata(metadata)
+                        except Exception as exc:  # pragma: no cover - defensive path
+                            raise TypeError(
+                                "Dynamic outputs must be defined using Python types or TypeMetadata."
+                            ) from exc
+            dynamic_outputs_payload = outputs
+        elif raw_dynamic_outputs not in (None, {}):
+            raise ValueError(
+                f"{node_cls.__name__} does not support dynamic outputs."
+            )
+
+        if dynamic_outputs_payload is not None:
+            init_kwargs["dynamic_outputs"] = dynamic_outputs_payload
 
         node_instance = node_cls(id=str(graph_node.id), **init_kwargs)
         self.nodes[graph_node.id] = node_instance

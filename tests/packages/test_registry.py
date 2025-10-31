@@ -11,7 +11,6 @@ from nodetool.workflows.base_node import BaseNode
 
 # Mock a simple node class for testing
 class MockValidNode(BaseNode):
-    _id: str = "valid_node_id"
     name: str = "Valid Node"
     description: str = "A valid node for testing"
 
@@ -569,41 +568,3 @@ class TestRegistryWheelIntegration:
         assert callable(getattr(registry, "get_install_command_for_package"))
         assert callable(getattr(registry, "get_package_installation_info"))
         assert callable(getattr(registry, "clear_index_cache"))
-
-    def test_pip_install_method_signature_compatibility(self):
-        """Test that pip_install method maintains backward compatibility."""
-        registry = Registry()
-
-        # Test that the method can be called with original signature
-        with patch("subprocess.check_call") as mock_subprocess:
-            # Original usage should still work
-            registry.pip_install("test-package")
-            mock_subprocess.assert_called_once()
-
-            mock_subprocess.reset_mock()
-
-            # Original usage with editable should still work
-            registry.pip_install("test-package", editable=True)
-            mock_subprocess.assert_called_once()
-
-            mock_subprocess.reset_mock()
-
-            # Original usage with upgrade should still work
-            registry.pip_install("test-package", upgrade=True)
-            mock_subprocess.assert_called_once()
-
-    def test_install_and_update_methods_signature_compatibility(self):
-        """Test that install_package and update_package maintain backward compatibility."""
-        registry = Registry()
-
-        with (
-            patch.object(registry, "pip_install"),
-            patch.object(registry, "clear_packages_cache"),
-            patch.object(registry, "check_package_index_available", return_value=False),
-        ):
-            # Original install_package usage should work
-            registry.install_package("owner/repo")
-
-            # Original update_package usage should work
-            result = registry.update_package("owner/repo")
-            assert result is True

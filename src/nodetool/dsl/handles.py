@@ -8,6 +8,8 @@ from pydantic.fields import PydanticUndefined
 
 if TYPE_CHECKING:  # pragma: no cover
     from nodetool.dsl.graph import GraphNode
+else:  # pragma: no cover - runtime hint to satisfy ForwardRef resolution
+    GraphNode = Any
 
 
 T = TypeVar("T")

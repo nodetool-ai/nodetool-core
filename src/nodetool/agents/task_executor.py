@@ -120,6 +120,12 @@ class TaskExecutor:
         for key, value in self.inputs.items():
             context.set(key, value)
 
+        # Remember which subtask is the designated finisher so dynamic additions can slot before it.
+        if self.task.subtasks:
+            finish_subtask_id = context.get("__finish_subtask_id")
+            if not finish_subtask_id:
+                context.set("__finish_subtask_id", self.task.subtasks[-1].id)
+
         # Continue until all tasks are complete or we reach max steps
         while not self._all_tasks_complete() and steps_taken < self.max_steps:
             steps_taken += 1

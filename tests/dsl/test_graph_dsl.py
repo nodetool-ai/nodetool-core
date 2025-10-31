@@ -126,6 +126,15 @@ class DictProducerNode(BaseNode):
 class DynamicRouter(GraphNode[dict[str, str]]):
     seed: Connect[str] = connect_field(default="")
 
+    def __init__(
+        self,
+        *,
+        dynamic_outputs: dict[str, typing.Any] | None = None,
+        **kwargs: typing.Any,
+    ) -> None:
+        outputs = {} if dynamic_outputs is None else dict(dynamic_outputs)
+        super().__init__(dynamic_outputs=outputs, **kwargs)
+
     @classmethod
     def get_node_class(cls) -> type[BaseNode]:
         return DynamicRouterNode
@@ -287,6 +296,19 @@ def test_dynamic_output_handle_allows_unknown_slots():
     edge = g.edges[0]
     assert edge.sourceHandle == "branch_a"
     assert edge.targetHandle == "value"
+
+
+def test_dynamic_outputs_forwarded_to_base_node():
+    router = DynamicRouter(
+        seed="seed",
+        dynamic_outputs={"branch_a": str},
+    )
+
+    g = create_graph(router)
+
+    assert len(g.nodes) == 1
+    node = g.nodes[0]
+    assert node.dynamic_outputs["branch_a"].type == "str"
 
 
 

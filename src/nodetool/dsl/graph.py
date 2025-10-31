@@ -1,12 +1,15 @@
 import asyncio
 from abc import ABC, abstractmethod
+import logging
 import uuid
 from typing import Any, Generic, TypeVar, cast
 
+from nodetool.config.logging_config import get_logger
+from nodetool.types.job import JobUpdate
 from pydantic import BaseModel, Field, ConfigDict
 
 from nodetool.dsl.handles import OutputHandle, OutputsProxy, DynamicOutputsProxy
-from nodetool.metadata.types import OutputSlot
+from nodetool.metadata.types import OutputSlot, ToolCall
 from nodetool.types.graph import Graph, Node
 from nodetool.workflows.base_node import BaseNode
 from nodetool.workflows.run_job_request import RunJobRequest
@@ -15,7 +18,10 @@ from nodetool.workflows.processing_context import (
     AssetOutputMode,
     ProcessingContext,
 )
-from nodetool.workflows.types import Error, OutputUpdate
+from nodetool.workflows.types import Error, NodeUpdate, OutputUpdate, PlanningUpdate, TaskUpdate, ToolCallUpdate
+
+log = get_logger(__name__)
+log.setLevel(logging.DEBUG)
 
 
 OutputT = TypeVar("OutputT")
@@ -48,14 +54,6 @@ class GraphNode(BaseModel, Generic[OutputT], ABC):
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
-        # Ensure the forward reference in nodetool.dsl.handles resolves at runtime.
-        try:
-            import nodetool.dsl.handles as handles_module  # noqa: F401
-        except Exception:
-            handles_module = None
-        else:
-            if not hasattr(handles_module, "GraphNode"):
-                setattr(handles_module, "GraphNode", GraphNode)
 
         cls.model_rebuild(force=True)
 
@@ -76,27 +74,17 @@ class GraphNode(BaseModel, Generic[OutputT], ABC):
         if node_cls is None:
             return False
 
-        if hasattr(node_cls, "supports_dynamic_outputs"):
-            try:
-                if node_cls.supports_dynamic_outputs():  # type: ignore[attr-defined]
-                    return True
-            except Exception:
-                pass
-
-        return bool(getattr(node_cls, "_supports_dynamic_outputs", False))
+        return node_cls.supports_dynamic_outputs()
 
     def _single_output_handle(self) -> OutputHandle[OutputT]:
         slot = self.find_output_instance("output")
         py_type: Any | None = None
 
-        if slot is not None and hasattr(slot.type, "get_python_type"):
-            try:
-                py_type = slot.type.get_python_type()
-            except Exception:
-                py_type = None
+        if slot is not None:
+            py_type = slot.type.get_python_type()
 
         if slot is None:
-            node_type = getattr(self, "get_node_type", lambda: "unknown")()
+            node_type = self.get_node_type()
             raise TypeError(
                 f"{self.__class__.__name__} (node type '{node_type}') has no output 'output'"
             )
@@ -198,6 +186,16 @@ async def run_graph_async(
     async for msg in run_workflow(req, context=context):
         if isinstance(msg, OutputUpdate):
             res[msg.node_name] = msg.value
+        elif isinstance(msg, PlanningUpdate):
+            log.debug("planning: %s", msg.content)
+        elif isinstance(msg, TaskUpdate):
+            log.debug("task: %s", msg.event)
+        elif isinstance(msg, NodeUpdate):
+            log.debug("node update: %s %s", msg.node_name, msg.status)
+        elif isinstance(msg, ToolCallUpdate):
+            log.debug("tool call: %s", msg.message)
+        elif isinstance(msg, JobUpdate):
+            log.debug("job update: %s", msg.status)
         elif isinstance(msg, Error):
             raise Exception(msg.error)
     return res

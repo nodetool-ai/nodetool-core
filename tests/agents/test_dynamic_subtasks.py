@@ -15,7 +15,7 @@ from nodetool.agents.tools.task_tools import AddSubtaskTool, ListSubtasksTool
 
 
 @pytest.mark.asyncio
-async def test_add_subtask_tool_basic():
+async def test_add_subtask_tool_basic(tmp_path):
     """Test that AddSubtaskTool successfully adds a new subtask to the task."""
     # Create a basic task
     task = Task(
@@ -35,7 +35,7 @@ async def test_add_subtask_tool_basic():
     add_tool = AddSubtaskTool(task=task)
 
     # Create a processing context
-    context = ProcessingContext()
+    context = ProcessingContext(workspace_dir=str(tmp_path))
 
     # Add a new subtask
     result = await add_tool.process(
@@ -60,7 +60,48 @@ async def test_add_subtask_tool_basic():
 
 
 @pytest.mark.asyncio
-async def test_list_subtasks_tool():
+async def test_add_subtask_preserves_finish_position(tmp_path):
+    """Ensure dynamically added subtasks are inserted before the designated finish subtask."""
+    task = Task(
+        id="test_task",
+        title="Test Task",
+        description="A test task for finish positioning",
+        subtasks=[
+            SubTask(
+                id="subtask_1",
+                content="Initial work",
+                output_schema='{"type": "object"}',
+            ),
+            SubTask(
+                id="finish_subtask",
+                content="Aggregate results",
+                output_schema='{"type": "object"}',
+            ),
+        ],
+    )
+
+    context = ProcessingContext(workspace_dir=str(tmp_path))
+    context.set("__finish_subtask_id", "finish_subtask")
+
+    add_tool = AddSubtaskTool(task=task)
+    result = await add_tool.process(
+        context,
+        {
+            "content": "New dynamic subtask",
+        },
+    )
+
+    dynamic_id = result["subtask_id"]
+    assert [st.id for st in task.subtasks] == [
+        "subtask_1",
+        dynamic_id,
+        "finish_subtask",
+    ]
+    assert task.subtasks[-1].id == "finish_subtask"
+
+
+@pytest.mark.asyncio
+async def test_list_subtasks_tool(tmp_path):
     """Test that ListSubtasksTool correctly lists all subtasks."""
     # Create a task with multiple subtasks
     task = Task(
@@ -87,7 +128,7 @@ async def test_list_subtasks_tool():
     list_tool = ListSubtasksTool(task=task)
 
     # Create a processing context
-    context = ProcessingContext()
+    context = ProcessingContext(workspace_dir=str(tmp_path))
 
     # List subtasks
     result = await list_tool.process(context, {})
@@ -102,7 +143,7 @@ async def test_list_subtasks_tool():
 
 
 @pytest.mark.asyncio
-async def test_dynamic_subtask_execution():
+async def test_dynamic_subtask_execution(tmp_path):
     """
     Test that the TaskExecutor detects dynamically added subtasks.
     """
@@ -122,7 +163,7 @@ async def test_dynamic_subtask_execution():
     )
 
     # Create processing context
-    context = ProcessingContext()
+    context = ProcessingContext(workspace_dir=str(tmp_path))
 
     # Create task executor
     executor = TaskExecutor(
@@ -157,7 +198,7 @@ async def test_dynamic_subtask_execution():
 
 
 @pytest.mark.asyncio
-async def test_subtask_dependencies_with_dynamic_addition():
+async def test_subtask_dependencies_with_dynamic_addition(tmp_path):
     """
     Test that dynamically added subtasks with dependencies are handled correctly.
     """
@@ -178,7 +219,7 @@ async def test_subtask_dependencies_with_dynamic_addition():
 
     # Manually add a second subtask that depends on the first
     add_tool = AddSubtaskTool(task=task)
-    context = ProcessingContext()
+    context = ProcessingContext(workspace_dir=str(tmp_path))
 
     result = await add_tool.process(
         context,
@@ -200,7 +241,7 @@ async def test_subtask_dependencies_with_dynamic_addition():
 
 
 @pytest.mark.asyncio
-async def test_output_schema_validation():
+async def test_output_schema_validation(tmp_path):
     """Test that output schema is properly validated in AddSubtaskTool."""
     task = Task(
         id="test_task",
@@ -209,7 +250,7 @@ async def test_output_schema_validation():
     )
 
     add_tool = AddSubtaskTool(task=task)
-    context = ProcessingContext()
+    context = ProcessingContext(workspace_dir=str(tmp_path))
 
     # Test with valid JSON schema
     result = await add_tool.process(

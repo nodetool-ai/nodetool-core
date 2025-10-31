@@ -9,11 +9,96 @@ import importlib
 import shutil
 import typing
 from pydantic import BaseModel
+from jinja2 import BaseLoader, Environment
 import subprocess
 
 from nodetool.metadata.types import BaseType
 from nodetool.metadata.utils import is_enum_type
 from nodetool.workflows.base_node import BaseNode
+
+
+_JINJA_ENV = Environment(loader=BaseLoader(), trim_blocks=True, lstrip_blocks=True)
+
+_CLASS_TEMPLATE = _JINJA_ENV.from_string(
+    """{% for line in imports %}
+{{ line }}
+{% endfor %}
+
+class {{ class_name }}({{ base_classes | join(', ') }}):
+{% if class_docstring_lines %}
+    \"\"\"
+{% for line in class_docstring_lines %}
+{% if line %}
+    {{ line }}
+{% else %}
+    
+{% endif %}
+{% endfor %}
+    \"\"\"
+
+{% endif %}
+{% if enum_attributes %}
+{% for enum in enum_attributes %}
+    {{ enum.name }}: typing.ClassVar[type] = {{ enum.module }}.{{ enum.qualname }}
+{% endfor %}
+
+{% endif %}
+{% if fields %}
+{% for field in fields %}
+{% if field.is_enum %}
+    {{ field.name }}: {{ field.annotation }} = Field(default={{ field.default_expression }}, description={{ field.description_expression }})
+{% else %}
+    {{ field.name }}: {{ field.annotation }} = connect_field(default={{ field.default_expression }}, description={{ field.description_expression }})
+{% endif %}
+{% endfor %}
+
+{% endif %}
+{% if init_method %}
+    def __init__{{ init_method.signature }}:
+{% if init_method.doc_lines %}
+        \"\"\"
+{% for line in init_method.doc_lines %}
+{% if line %}
+        {{ line }}
+{% else %}
+        
+{% endif %}
+{% endfor %}
+        \"\"\"
+
+{% endif %}
+{% for line in init_method.body_lines %}
+        {{ line }}
+{% endfor %}
+
+{% endif %}
+{% if out_property %}
+    @property
+    def out(self){% if out_property.return_annotation %} -> {{ out_property.return_annotation }}{% endif %}:
+{% for line in out_property.body_lines %}
+        {{ line }}
+{% endfor %}
+
+{% endif %}
+    @classmethod
+    def get_node_class(cls) -> type[BaseNode]:
+        return {{ original_node_reference }}
+
+    @classmethod
+    def get_node_type(cls):
+        return cls.get_node_class().get_node_type()
+{% if outputs_class %}
+
+class {{ outputs_class.name }}({{ outputs_class.base }}):
+{% for prop in outputs_class.properties %}
+    @property
+    def {{ prop.name }}(self) -> OutputHandle[{{ prop.type_annotation }}]:
+        return typing.cast(OutputHandle[{{ prop.type_annotation }}], self['{{ prop.name }}'])
+
+{% endfor %}
+{% endif %}
+"""
+)
 
 
 """
@@ -276,29 +361,20 @@ def generate_class_source(node_cls: type[BaseNode]) -> str:
     except Exception:
         return_type = None
 
-    supports_dynamic_outputs = False
-    if hasattr(node_cls, "supports_dynamic_outputs"):
-        try:
-            supports_dynamic_outputs = bool(node_cls.supports_dynamic_outputs())  # type: ignore[attr-defined]
-        except Exception:
-            supports_dynamic_outputs = False
-    if not supports_dynamic_outputs:
-        supports_dynamic_outputs = bool(getattr(node_cls, "_supports_dynamic_outputs", False))
-
-    supports_dynamic_properties = bool(getattr(node_cls, "_is_dynamic", False))
+    supports_dynamic_outputs = node_cls.supports_dynamic_outputs()
+    supports_dynamic_properties = node_cls.is_dynamic()
 
     handle_imports = ["OutputHandle", "OutputsProxy", "connect_field"]
     if supports_dynamic_outputs:
         handle_imports.insert(2, "DynamicOutputsProxy")
 
-    imports = (
-        "import typing\n"
-        "from pydantic import Field\n"
-        f"from nodetool.dsl.handles import {', '.join(handle_imports)}\n"
-    )
-
-    imports += f"import {node_cls.__module__}\n"
-    imports += "from nodetool.workflows.base_node import BaseNode\n"
+    import_lines = [
+        "import typing",
+        "from pydantic import Field",
+        f"from nodetool.dsl.handles import {', '.join(handle_imports)}",
+        f"import {node_cls.__module__}",
+        "from nodetool.workflows.base_node import BaseNode",
+    ]
 
     output_annotation = "typing.Any"
     if return_type is not None:
@@ -313,111 +389,185 @@ def generate_class_source(node_cls: type[BaseNode]) -> str:
     if is_single_output_node:
         base_classes.insert(0, f"SingleOutputGraphNode[{output_annotation}]")
 
-    class_body = f"class {node_cls.__name__}({', '.join(base_classes)}):\n"
-
-    # Add class docstring if it exists
+    class_docstring_lines: list[str] = []
     if node_cls.__doc__:
-        class_body += f'    """{node_cls.__doc__}'
-        if supports_dynamic_properties:
-            class_body += "\n\n    This node supports dynamic properties. Additional properties can be passed\n"
-            class_body += "    as keyword arguments during initialization and will be stored in the node's\n"
-            class_body += "    dynamic_properties dictionary.\n"
-            class_body += "\n    Example:\n"
-            class_body += f"        node = {node_cls.__name__}(prop1=value1, prop2=value2)\n"
-        class_body += '"""\n\n'
-    elif supports_dynamic_properties:
-        class_body += '    """\n'
-        class_body += "    This node supports dynamic properties. Additional properties can be passed\n"
-        class_body += "    as keyword arguments during initialization and will be stored in the node's\n"
-        class_body += "    dynamic_properties dictionary.\n"
-        class_body += '    """\n\n'
+        class_docstring_lines.extend(node_cls.__doc__.rstrip().split("\n"))
 
-    fields = node_cls.inherited_fields()
-    # First, add enum types as class attributes
+    if supports_dynamic_properties:
+        class_docstring_lines.extend(
+            [
+                "",
+                "This node supports dynamic properties. Additional properties can be passed",
+                "as keyword arguments during initialization and will be stored in the node's",
+                "dynamic_properties dictionary.",
+                "",
+                "Example:",
+                f"    node = {node_cls.__name__}(prop1=value1, prop2=value2)",
+            ]
+        )
+
+    fields_info = node_cls.inherited_fields()
+    enum_attributes: list[dict[str, str]] = []
+    field_entries: list[dict[str, Any]] = []
+    additional_imports: list[str] = []
+
     for field_name, field_type in node_cls.field_types().items():
-        if field_name not in fields:
+        if field_name not in fields_info:
             continue
         if is_enum_type(field_type):
-            imports += f"import {field_type.__module__}\n"
-            class_body += f"    {field_type.__name__}: typing.ClassVar[type] = {field_type.__module__}.{field_type.__qualname__}\n"
+            additional_imports.append(f"import {field_type.__module__}")
+            enum_attributes.append(
+                {
+                    "name": field_type.__name__,
+                    "module": field_type.__module__,
+                    "qualname": field_type.__qualname__,
+                }
+            )
 
-    # Then add the fields
     for field_name, field_type in node_cls.field_types().items():
-        try:
-            if field_name not in fields:
-                continue
-            field = fields[field_name]
-            if is_enum_type(field_type):
-                enum_full_path = f"{field_type.__module__}.{field_type.__qualname__}"
-                if isinstance(field.default, Enum):
-                    field_def = f"Field(default={enum_full_path}.{field.default.name}, description={repr(field.description)})"
-                else:
-                    field_def = f"Field(default={enum_full_path}({repr(field.default)}), description={repr(field.description)})"
-                class_body += f"    {field_name}: {enum_full_path} = {field_def}\n"
-            else:
-                new_field_type = _connect_annotation(field_type, field)
-                field_def = f"connect_field(default={field_default(field.default)}, description={repr(field.description)})"
-                class_body += f"    {field_name}: {new_field_type} = {field_def}\n"
-        except Exception as e:
-            print(f"Error generating field {field_name} for {node_cls.__name__}: {e}")
-            raise e
+        if field_name not in fields_info:
+            continue
 
-    # Add __init__ method for dynamic properties support
-    if supports_dynamic_properties:
-        class_body += "\n    def __init__(self, **kwargs: typing.Any) -> None:\n"
-        class_body += '        """\n'
-        class_body += f"        Initialize a {node_cls.__name__} node.\n"
-        class_body += "\n        Extra keyword arguments beyond the defined fields will be treated as\n"
-        class_body += "        dynamic properties and automatically passed to the underlying BaseNode\n"
-        class_body += "        as dynamic_properties.\n"
-        class_body += "\n        Args:\n"
-        class_body += "            **kwargs: Field values and dynamic properties.\n"
-        class_body += '        """\n'
-        class_body += "        # Separate known fields from dynamic properties\n"
-        class_body += "        from pydantic import ConfigDict\n"
-        class_body += "        super().__init__(**kwargs)\n"
+        field = fields_info[field_name]
+        description_expr = repr(field.description)
+
+        if is_enum_type(field_type):
+            enum_full_path = f"{field_type.__module__}.{field_type.__qualname__}"
+            if isinstance(field.default, Enum):
+                default_expr = f"{enum_full_path}.{field.default.name}"
+            else:
+                default_expr = f"{enum_full_path}({repr(field.default)})"
+
+            field_entries.append(
+                {
+                    "name": field_name,
+                    "annotation": enum_full_path,
+                    "is_enum": True,
+                    "default_expression": default_expr,
+                    "description_expression": description_expr,
+                }
+            )
+        else:
+            try:
+                annotation = _connect_annotation(field_type, field)
+            except Exception as exc:  # pragma: no cover
+                print(f"Error generating field {field_name} for {node_cls.__name__}: {exc}")
+                raise
+
+            field_entries.append(
+                {
+                    "name": field_name,
+                    "annotation": annotation,
+                    "is_enum": False,
+                    "default_expression": field_default(field.default),
+                    "description_expression": description_expr,
+                }
+            )
+
+    import_lines = list(dict.fromkeys(import_lines + additional_imports))
+
+    init_method: dict[str, Any] | None = None
+    if supports_dynamic_properties or supports_dynamic_outputs:
+        if supports_dynamic_outputs:
+            signature = "(self, *, dynamic_outputs: dict[str, typing.Any] | None = None, **kwargs: typing.Any) -> None"
+            body_lines = [
+                "outputs = {} if dynamic_outputs is None else dict(dynamic_outputs)",
+                "super().__init__(dynamic_outputs=outputs, **kwargs)",
+            ]
+        else:
+            signature = "(self, **kwargs: typing.Any) -> None"
+            body_lines = ["super().__init__(**kwargs)"]
+
+        doc_lines = [f"Initialize a {node_cls.__name__} node."]
+
+        if supports_dynamic_properties:
+            doc_lines.extend(
+                [
+                    "",
+                    "Extra keyword arguments beyond the defined fields will be treated as",
+                    "dynamic properties and automatically passed to the underlying BaseNode",
+                    "as dynamic_properties.",
+                ]
+            )
+
+        if supports_dynamic_outputs:
+            doc_lines.extend(
+                [
+                    "",
+                    "Dynamic outputs declared here will be forwarded to the underlying node",
+                    "so they are available when the workflow executes. Provide Python types",
+                    "such as str or list[int] for each output.",
+                ]
+            )
+
+        doc_lines.extend(["", "Args:"])
+
+        if supports_dynamic_outputs:
+            doc_lines.append(
+                "    dynamic_outputs: Optional mapping from output names to Python types."
+            )
+
+        if supports_dynamic_properties:
+            doc_lines.append("    **kwargs: Field values and dynamic properties.")
+        else:
+            doc_lines.append("    **kwargs: Field values for the node.")
+
+        init_method = {
+            "signature": signature,
+            "doc_lines": doc_lines,
+            "body_lines": body_lines,
+        }
 
     proxy_base = "DynamicOutputsProxy" if supports_dynamic_outputs else "OutputsProxy"
 
+    out_property: dict[str, Any] | None = None
     if typed_output_annotations:
-        class_body += "\n    @property\n"
-        class_body += (
-            f'    def out(self) -> "{node_cls.__name__}Outputs":\n'
-            f"        return {node_cls.__name__}Outputs(self)\n"
-        )
+        out_property = {
+            "return_annotation": f"\"{node_cls.__name__}Outputs\"",
+            "body_lines": [f"return {node_cls.__name__}Outputs(self)"],
+        }
     elif supports_dynamic_outputs:
-        class_body += "\n    @property\n"
-        class_body += (
-            "    def out(self) -> DynamicOutputsProxy:\n"
-            "        return typing.cast(DynamicOutputsProxy, self._outputs_proxy())\n"
-        )
+        out_property = {
+            "return_annotation": "DynamicOutputsProxy",
+            "body_lines": [
+                "return typing.cast(DynamicOutputsProxy, self._outputs_proxy())",
+            ],
+        }
+
+    outputs_class: dict[str, Any] | None = None
+    if typed_output_annotations:
+        properties = []
+        for slot_name, slot_type in typed_output_annotations.items():
+            cleaned_slot_type = _strip_optional_from_str(slot_type)
+            properties.append(
+                {
+                    "name": slot_name,
+                    "type_annotation": cleaned_slot_type,
+                }
+            )
+
+        outputs_class = {
+            "name": f"{node_cls.__name__}Outputs",
+            "base": proxy_base,
+            "properties": properties,
+        }
 
     original_node_reference = f"{node_cls.__module__}.{node_cls.__qualname__}"
 
-    class_body += "\n    @classmethod\n"
-    class_body += "    def get_node_class(cls) -> type[BaseNode]:\n"
-    class_body += f"        return {original_node_reference}\n"
+    rendered = _CLASS_TEMPLATE.render(
+        imports=import_lines,
+        class_name=node_cls.__name__,
+        base_classes=base_classes,
+        class_docstring_lines=class_docstring_lines,
+        enum_attributes=enum_attributes,
+        fields=field_entries,
+        init_method=init_method,
+        out_property=out_property,
+        original_node_reference=original_node_reference,
+        outputs_class=outputs_class,
+    )
 
-    class_body += "\n    @classmethod\n"
-    class_body += "    def get_node_type(cls):\n"
-    class_body += "        return cls.get_node_class().get_node_type()\n"
-
-    outputs_class = ""
-    if typed_output_annotations:
-        outputs_class = (
-            f"\n\nclass {node_cls.__name__}Outputs({proxy_base}):\n"
-        )
-        for slot_name, slot_type in typed_output_annotations.items():
-            cleaned_slot_type = _strip_optional_from_str(slot_type)
-            outputs_class += "    @property\n"
-            outputs_class += (
-                f"    def {slot_name}(self) -> OutputHandle[{cleaned_slot_type}]:\n"
-                f"        return typing.cast(OutputHandle[{cleaned_slot_type}], self['{slot_name}'])\n\n"
-            )
-        if outputs_class.endswith("\n\n"):
-            outputs_class = outputs_class[:-1]
-
-    return imports + "\n" + class_body + outputs_class
+    return rendered.rstrip() + "\n"
 
 
 def create_dsl_modules(source_path: str, target_path: str):

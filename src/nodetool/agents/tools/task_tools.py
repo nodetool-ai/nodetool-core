@@ -16,6 +16,9 @@ from nodetool.config.logging_config import get_logger
 log = get_logger(__name__)
 
 
+DEFAULT_MAX_TOOL_CALLS = 25
+
+
 class AddSubtaskTool(Tool):
     """
     Dynamically add a new subtask to the current task plan.
@@ -36,7 +39,7 @@ class AddSubtaskTool(Tool):
     - input_tasks: List of subtask IDs that must complete before this subtask runs (optional)
     - input_files: List of file paths that must exist before this subtask runs (optional)
     - output_schema: JSON schema describing the expected output structure (optional)
-    - max_tool_calls: Maximum number of tool calls allowed for this subtask (default: 10)
+    - max_tool_calls: Maximum number of tool calls allowed for this subtask (default: 25)
 
     The subtask will be added to the task plan and executed when its dependencies are met.
     """
@@ -68,7 +71,7 @@ class AddSubtaskTool(Tool):
             "max_tool_calls": {
                 "type": "integer",
                 "description": "Maximum number of tool calls allowed for this subtask",
-                "default": 10,
+                "default": DEFAULT_MAX_TOOL_CALLS,
             },
         },
         "required": ["content"],
@@ -133,7 +136,22 @@ class AddSubtaskTool(Tool):
         # Add to the task's subtask list
         # This is thread-safe because we're just appending to a list
         # The TaskExecutor will pick it up in the next iteration
-        self.task.subtasks.append(new_subtask)
+        finish_subtask_id = context.get("__finish_subtask_id")
+        if finish_subtask_id:
+            insert_index = next(
+                (
+                    idx
+                    for idx, existing in enumerate(self.task.subtasks)
+                    if existing.id == finish_subtask_id
+                ),
+                None,
+            )
+            if insert_index is not None:
+                self.task.subtasks.insert(insert_index, new_subtask)
+            else:
+                self.task.subtasks.append(new_subtask)
+        else:
+            self.task.subtasks.append(new_subtask)
 
         log.info(f"Added new subtask {subtask_id}: {new_subtask.content}")
 
