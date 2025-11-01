@@ -61,7 +61,7 @@ class NodetoolDockerRunner(StreamRunnerBase):
                                    This helps prevent VRAM monopolization
         """
         super().__init__(
-            image="nodetool",
+            image="nodetool:latest",
             mode="docker",
             timeout_seconds=0,  # No timeout for workflow execution
             network_disabled=False,  # Workflows may need network access

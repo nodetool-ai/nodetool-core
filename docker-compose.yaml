@@ -1,5 +1,6 @@
 services:
   api:
+    image: nodetool:latest
     restart: unless-stopped
     build:
       context: .
@@ -15,6 +16,7 @@ services:
     - '8000'
     environment:
       ENV: ${ENV:-development}
+      JOB_EXECUTION_STRATEGY: ${JOB_EXECUTION_STRATEGY:-threaded}
       ASSET_BUCKET: ${ASSET_BUCKET}
       ASSET_DOMAIN: ${ASSET_DOMAIN}
       ASSET_TEMP_BUCKET: ${ASSET_TEMP_BUCKET}
@@ -89,12 +91,3 @@ services:
     ports:
     - 80:80
     - 443:443
-
-  # Build the nodetool image for the api service to use
-  nodetool:
-    build:
-      context: .
-      dockerfile: Dockerfile.agent
-    image: nodetool
-    profiles:
-    - build-only
