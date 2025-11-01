@@ -16,6 +16,7 @@ from nodetool.deploy.docker import (
 )
 from nodetool.deploy.runpod_api import GPUType
 from nodetool.dsl.codegen import create_dsl_modules
+from nodetool.dsl.export import graph_to_dsl_py
 from nodetool.deploy.progress import ProgressManager
 
 # Add Rich for better tables and terminal output
@@ -501,6 +502,72 @@ def worker(
     run_worker(
         host, port, remote_auth, provider, default_model, tools_list, loaded_workflows
     )
+
+
+@cli.command("dsl-export")
+@click.argument("workflow_id", required=True, type=str)
+@click.option(
+    "--output",
+    "-o",
+    default=None,
+    help="Path to write the generated DSL Python file. Prints to stdout if omitted.",
+    type=click.Path(resolve_path=True, dir_okay=False, file_okay=True),
+)
+@click.option(
+    "--user-id",
+    default="1",
+    show_default=True,
+    help="User ID for database lookup of saved workflows.",
+)
+def dsl_export(workflow_id: str, output: str | None, user_id: str):
+    """Export a workflow to Python DSL code using its WORKFLOW_ID.
+
+    Looks up the workflow by ID in the database; if not found, falls back to
+    installed example workflows. Emits Python code that mirrors the graph using
+    DSL node wrappers and connections.
+    """
+    import asyncio
+    from typing import Any
+    from nodetool.models.workflow import Workflow as WorkflowModel
+    from nodetool.packages.registry import Registry
+
+    async def _load_graph() -> Any:
+        # Try database first
+        wf = await WorkflowModel.find(user_id, workflow_id)
+        if wf:
+            return wf.get_api_graph()
+
+        # Fallback to examples
+        registry = Registry.get_instance()
+        examples = registry.list_examples()
+        match = next((ex for ex in examples if ex.id == workflow_id), None)
+        if not match:
+            raise ValueError(f"Workflow '{workflow_id}' not found in database or examples.")
+
+        # Load full example workflow
+        ex_full = registry.load_example(match.package_name or "", match.name)
+        if not ex_full or not ex_full.graph:
+            raise ValueError(f"Failed to load example workflow '{workflow_id}'.")
+        return ex_full.graph
+
+    try:
+        graph = asyncio.run(_load_graph())
+        code = graph_to_dsl_py(graph)
+    except Exception as e:
+        click.echo(f"Error exporting workflow '{workflow_id}': {e}", err=True)
+        raise SystemExit(1)
+
+    if output:
+        try:
+            with open(output, "w", encoding="utf-8") as f:
+                f.write(code)
+            click.echo(f"✅ Wrote DSL to {output}")
+        except Exception as e:
+            click.echo(f"Error writing file '{output}': {e}", err=True)
+            raise SystemExit(1)
+    else:
+        # Print to stdout
+        click.echo(code)
 
 
 @cli.command("chat-server")
