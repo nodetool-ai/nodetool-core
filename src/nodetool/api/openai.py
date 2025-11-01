@@ -83,18 +83,17 @@ def create_openai_compatible_router(
 
     @router.get("/models")
     async def openai_models(user: str = Depends(current_user)):
-        """Returns list of models filtered by provider in OpenAI format."""
+        """Returns list of models in OpenAI format."""
         try:
             all_models = await get_all_language_models(user)
-            filtered = [m for m in all_models if m.provider.value == provider]
             data = [
                 {
                     "id": m.id or m.name,
                     "object": "model",
                     "created": 0,
-                    "owned_by": provider,
+                    "owned_by": m.provider.value,
                 }
-                for m in filtered
+                for m in all_models
             ]
             return {"object": "list", "data": data}
         except Exception as e:  # noqa: BLE001
