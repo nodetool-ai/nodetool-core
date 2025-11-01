@@ -488,8 +488,7 @@ DEPLOYMENT_CONFIG_FILE = "deployment.yaml"
 
 def get_deployment_config_path() -> Path:
     """Get the path to the deployment configuration file."""
-    config_dir = get_system_file_path("config")
-    return Path(config_dir) / DEPLOYMENT_CONFIG_FILE
+    return get_system_file_path(DEPLOYMENT_CONFIG_FILE)
 
 
 def load_deployment_config() -> DeploymentConfig:

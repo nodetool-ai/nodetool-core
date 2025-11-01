@@ -215,7 +215,7 @@ Key points:
 3. Verify status (using the rendered token):
 
    ```bash
-   TOKEN=$(yq '.deployments.localhost.proxy.bearer_token' ~/.config/nodetool/config/deployment.yaml)
+   TOKEN=$(yq '.deployments.localhost.proxy.bearer_token' ~/.config/nodetool/deployment.yaml)
    curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/status
    ```
 
