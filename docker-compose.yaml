@@ -59,8 +59,10 @@ services:
     ipc: host
     environment:
       HUGGING_FACE_HUB_TOKEN: ${HF_TOKEN:-}
+      VLLM_CACHE_ROOT: /root/.cache/vllm
     volumes:
     - ${HF_HOME}:/root/.cache/huggingface
+    - ${VLLM_CACHE_ROOT}:/root/.cache/vllm
     command:
     - --host
     - 0.0.0.0
@@ -70,6 +72,8 @@ services:
     - ${VLLM_MODEL}
     - --max-model-len
     - ${VLLM_MAX_MODEL_LEN:-8192}
+    - --gpu-memory-utilization
+    - ${VLLM_GPU_MEMORY:-0.9}
     ports:
     - ${VLLM_PORT:-8888}:8888
     deploy:
