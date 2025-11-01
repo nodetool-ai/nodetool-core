@@ -49,8 +49,8 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: |
-            georgi/nodetool
-            ghcr.io/nodetool-ai/nodetool
+            georgi/nodetool-proxy
+            ghcr.io/nodetool-ai/nodetool-proxy
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
@@ -61,13 +61,14 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
+          file: ./Dockerfile.proxy
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: |
-            type=registry,ref=georgi/nodetool:buildcache
-            type=registry,ref=ghcr.io/nodetool-ai/nodetool:buildcache
+            type=registry,ref=georgi/nodetool-proxy:buildcache
+            type=registry,ref=ghcr.io/nodetool-ai/nodetool-proxy:buildcache
           cache-to: |
-            type=registry,ref=georgi/nodetool:buildcache,mode=max
-            type=registry,ref=ghcr.io/nodetool-ai/nodetool:buildcache,mode=max
+            type=registry,ref=georgi/nodetool-proxy:buildcache,mode=max
+            type=registry,ref=ghcr.io/nodetool-ai/nodetool-proxy:buildcache,mode=max
