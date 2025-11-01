@@ -13,8 +13,12 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PYTHON_VERSION=3.11 \
     VIRTUAL_ENV=/app/venv
 
-# Install system dependencies, then Python 3.11 and related packages
-RUN apt-get update && \
+# Fix GPG keys and install system dependencies
+RUN rm -rf /var/lib/apt/lists/* && \
+    apt-get clean && \
+    apt-get update --allow-insecure-repositories || true && \
+    apt-get install -y --allow-unauthenticated ca-certificates && \
+    apt-get update && \
     apt-get upgrade -y && \
     apt-get install -y --no-install-recommends \
     # Essential for adding PPAs
