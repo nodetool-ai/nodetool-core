@@ -37,7 +37,7 @@ DEFAULT_ENV = {
     "MEMCACHE_HOST": None,
     "MEMCACHE_PORT": None,
     "DB_PATH": str(get_system_file_path("nodetool.sqlite3")),
-    "OLLAMA_API_URL": "http://127.0.0.1:11434",
+    "OLLAMA_API_URL": None,  # Must be explicitly configured; defaults to None to avoid connection errors in containers
     "ENV": "development",
     "LOG_LEVEL": "INFO",
     "AUTH_PROVIDER": "local",  # valid: none, local, static, supabase
