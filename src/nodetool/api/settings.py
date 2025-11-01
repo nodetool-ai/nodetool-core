@@ -198,11 +198,6 @@ async def get_secret(
     Returns:
         Secret metadata and optionally the decrypted value.
     """
-    if Environment.is_production():
-        raise HTTPException(
-            status_code=403, detail="Secrets cannot be read in production"
-        )
-
     secret = await Secret.find(user, key)
 
     if not secret:
@@ -235,11 +230,6 @@ async def update_secret(
     If the secret exists, updates its value and description.
     If the secret does not exist, creates it (only if it's in the settings registry).
     """
-    if Environment.is_production():
-        raise HTTPException(
-            status_code=403, detail="Secrets cannot be updated in production"
-        )
-
     # Validate that the key is in the secrets registry
     secrets_registry = get_secrets_registry()
     secret_setting = next((s for s in secrets_registry if s.env_var == key), None)
@@ -283,11 +273,6 @@ async def delete_secret(
     """
     Delete a secret.
     """
-    if Environment.is_production():
-        raise HTTPException(
-            status_code=403, detail="Secrets cannot be deleted in production"
-        )
-
     success = await Secret.delete_secret(user, key)
 
     if not success:

@@ -122,12 +122,12 @@ DEFAULT_ROUTERS = [
     font.router,
     debug.router,
     job.router,
+    settings.router
 ]
 
 
 if not Environment.is_production():
     DEFAULT_ROUTERS.append(file.router)
-    DEFAULT_ROUTERS.append(settings.router)
     DEFAULT_ROUTERS.append(collection.router)
 
 
