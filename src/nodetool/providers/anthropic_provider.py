@@ -115,7 +115,6 @@ class AnthropicProvider(BaseProvider):
 
     def __init__(self, secrets: dict[str, str]):
         """Initialize the Anthropic provider with client credentials."""
-        super().__init__()
         assert "ANTHROPIC_API_KEY" in secrets, "ANTHROPIC_API_KEY is required"
         self.api_key = secrets["ANTHROPIC_API_KEY"]
         log.debug("Creating Anthropic AsyncClient")

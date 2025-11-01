@@ -118,7 +118,6 @@ class OllamaProvider(BaseProvider, OpenAICompat):
             log_file (str, optional): Path to a file where API calls and responses will be logged.
                 If None, no logging will be performed.
         """
-        super().__init__()
         self.api_url = Environment.get("OLLAMA_API_URL")
         self.usage = {
             "prompt_tokens": 0,

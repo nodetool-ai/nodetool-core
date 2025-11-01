@@ -102,7 +102,7 @@ async def list_providers(user_id: str) -> list["BaseProvider"]:
     import_providers()
 
     # Get models from each registered chat provider
-    provider_enums = list(_PROVIDER_REGISTRY.keys())
+    provider_enums = list[ProviderEnum](_PROVIDER_REGISTRY.keys())
     providers = []
     for provider_enum in provider_enums:
         provider_cls, kwargs = get_registered_provider(provider_enum)

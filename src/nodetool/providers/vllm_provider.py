@@ -71,7 +71,6 @@ class VllmProvider(BaseProvider, OpenAICompat):
 
     def __init__(self, secrets: dict[str, str]) -> None:
         """Initialize the vLLM provider with environment configuration."""
-        super().__init__()
         env = Environment.get_environment()
         # No default URL - VLLM_BASE_URL must be explicitly set
         base_url = env.get("VLLM_BASE_URL")

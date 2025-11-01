@@ -148,16 +148,8 @@ class BaseProvider(ABC):
     def required_secrets(cls) -> list[str]:
         return []
 
-    def __init__(self) -> None:
-        self.usage = {
-            "prompt_tokens": 0,
-            "completion_tokens": 0,
-            "total_tokens": 0,
-            "cached_prompt_tokens": 0,
-            "reasoning_tokens": 0,
-            "total_requests": 0,
-            "total_images": 0,
-        }
+    def __init__(self, secrets: dict[str, str] = {}):
+        self.usage = {}
 
     def get_capabilities(self) -> Set[ProviderCapability]:
         """Determine supported capabilities based on implemented methods."""

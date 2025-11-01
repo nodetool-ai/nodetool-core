@@ -202,6 +202,10 @@ class DockerManager:
                         e,
                     )
 
+            # Wait for application to be ready by checking logs for startup message
+            log.debug(f"Waiting for {name} to be ready...")
+            self._wait_for_startup(container, timeout=30)
+
             # Inspect container to find published host port
             container.reload()
             port_map = container.attrs.get("NetworkSettings", {}).get("Ports") or {}
@@ -223,6 +227,47 @@ class DockerManager:
         host_port = await asyncio.to_thread(_ensure)
         log.debug(f"Service {name} running on port {host_port}")
         return host_port
+
+    def _wait_for_startup(self, container, timeout: int = 30) -> None:
+        """
+        Wait for container application to be ready by checking logs for startup message.
+
+        Args:
+            container: Docker container object.
+            timeout: Maximum time to wait in seconds.
+
+        Raises:
+            RuntimeError: If startup message not found within timeout.
+        """
+        start_time = time.time()
+        last_log_index = 0
+
+        while time.time() - start_time < timeout:
+            try:
+                logs = container.logs(timestamps=False).decode("utf-8")
+                # Check for uvicorn startup message
+                if "Uvicorn running on" in logs or "Application startup complete" in logs:
+                    log.debug(f"Container {container.name} is ready")
+                    return
+
+                # Check if container exited with error
+                container.reload()
+                if container.status != "running":
+                    error_logs = container.logs(stderr=True).decode("utf-8")
+                    raise RuntimeError(
+                        f"Container {container.name} exited: {error_logs[-500:]}"
+                    )
+
+                time.sleep(0.5)
+            except Exception as e:
+                if "exited" not in str(e).lower():
+                    log.debug(f"Error checking startup: {e}")
+                time.sleep(0.5)
+
+        raise RuntimeError(
+            f"Container {container.name} did not start within {timeout}s. "
+            f"Last logs: {logs[-500:] if logs else 'no logs'}"
+        )
 
     async def stop_container_if_running(self, name: str) -> bool:
         """

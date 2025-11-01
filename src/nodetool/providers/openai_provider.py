@@ -117,7 +117,6 @@ class OpenAIProvider(BaseProvider):
 
         Reads ``OPENAI_API_KEY`` from environment and prepares usage tracking.
         """
-        super().__init__()
         assert "OPENAI_API_KEY" in secrets, "OPENAI_API_KEY is required"
         self.api_key = secrets["OPENAI_API_KEY"]
         self.client = None

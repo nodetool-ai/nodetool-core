@@ -77,7 +77,3 @@ async def get_all_language_models(user_id: str) -> List[LanguageModel]:
         )
 
     return models
-
-
-if __name__ == "__main__":
-    print(asyncio.run(get_all_language_models()))
