@@ -67,7 +67,7 @@ services:
     - --port
     - ${VLLM_PORT:-8888}
     - --model
-    - ${VLLM_MODEL:-openai/gpt-oss-20b}
+    - ${VLLM_MODEL}
     - --max-model-len
     - ${VLLM_MAX_MODEL_LEN:-8192}
     ports:
