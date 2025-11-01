@@ -5,6 +5,7 @@ from pathlib import Path
 from nodetool.config.logging_config import get_logger
 from typing import Any, Optional, Dict, TYPE_CHECKING
 
+from nodetool.security.auth_provider import AuthProvider
 from nodetool.storage.abstract_node_cache import AbstractNodeCache
 from nodetool.config.settings import (
     get_system_data_path,
@@ -184,7 +185,7 @@ class Environment(object):
     remote_auth: bool = True
     _thread_local: threading.local = threading.local()
     _static_auth_provider: "StaticTokenAuthProvider | None" = None
-    _user_auth_provider: "SupabaseAuthProvider | None" = None
+    _user_auth_provider: "AuthProvider | None" = None
 
     @classmethod
     def _tls(cls) -> threading.local:

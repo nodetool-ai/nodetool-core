@@ -1,7 +1,10 @@
 # syntax=docker/dockerfile:1
 FROM nvidia/cuda:12.1.0-base-ubuntu22.04 AS base
 COPY --from=ghcr.io/astral-sh/uv:0.8.5 /uv /uvx /bin/
-COPY --from=ghcr.io/ggml-org/llama.cpp:server-cuda /llama-server /usr/local/bin/llama-server
+
+# Note: llama-server is optional and may not be available on all platforms
+# If you need llama-server support, you can add this line manually:
+# COPY --from=ghcr.io/ggml-org/llama.cpp:server-cuda /llama-server /usr/local/bin/llama-server
 
 # Environment variables
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -90,32 +93,14 @@ WORKDIR /app
 # Set USE_LOCAL_WHEELS=1 to use local wheel files from ./dist/
 ARG USE_LOCAL_WHEELS=0
 
-# Install external dependencies first (cached layer - rarely changes)
-RUN echo "Installing external nodetool packages..." && \
-    if [ "$USE_LOCAL_WHEELS" = "1" ]; then \
-        echo "Using local wheel files from ./dist/" && \
-        uv pip install --python $VIRTUAL_ENV/bin/python --no-cache-dir \
-        --find-links /app/dist \
-        --extra-index-url https://download.pytorch.org/whl/cu121 \
-        --index-strategy unsafe-best-match \
-        nodetool-base \
-        nodetool-huggingface; \
-    else \
-        echo "Using package index" && \
-        uv pip install --python $VIRTUAL_ENV/bin/python --no-cache-dir \
-        --extra-index-url https://nodetool-ai.github.io/nodetool-registry/simple/ \
-        --extra-index-url https://download.pytorch.org/whl/cu121 \
-        --index-strategy unsafe-best-match \
-        nodetool-base \
-        nodetool-huggingface; \
-    fi
+# Install external dependencies from GitHub releases (latest versions)
+RUN echo "Installing external nodetool packages from GitHub releases..." && \
+    uv pip install --python $VIRTUAL_ENV/bin/python --no-cache-dir \
+    --extra-index-url https://download.pytorch.org/whl/cu126 \
+    git+https://github.com/nodetool-ai/nodetool-core.git@main \
+    git+https://github.com/nodetool-ai/nodetool-base.git@main \
+    git+https://github.com/nodetool-ai/nodetool-huggingface.git@main
 
-# Copy source code (invalidates cache on code changes)
-COPY . /app
-
-# Install local package without dependencies (fast - no dependency resolution)
-RUN echo "Installing local nodetool-core..." && \
-    uv pip install --python $VIRTUAL_ENV/bin/python --no-cache-dir --no-deps /app
 
 # RUN /app/venv/bin/playwright install
 

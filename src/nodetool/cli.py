@@ -674,7 +674,7 @@ def chat_client(
         if not model:
             model = "gpt-oss:20b"
 
-    asyncio.run(run_chat_client(server_url, auth_token, message, model, provider))
+    asyncio.run(run_chat_client(server_url, auth_token, message, model))
 
 
 @cli.group()
@@ -2390,22 +2390,24 @@ def deploy_plan(name: str):
 )
 def deploy_apply(name: str, dry_run: bool):
     """Apply deployment configuration to target platform."""
+    import asyncio
     from nodetool.deploy.manager import DeploymentManager
+    from nodetool.security.master_key import MasterKeyManager
+
     try:
         manager = DeploymentManager()
 
         deployment = manager.get_deployment(name)
 
-        master_key = os.environ.get("SECRETS_MASTER_KEY")
-        if not master_key:
-            if dry_run:
+        # Get master key from keychain (same as local system)
+        if dry_run:
+            master_key = "dry-run-placeholder"
+        else:
+            try:
+                master_key = asyncio.run(MasterKeyManager.get_master_key())
+            except Exception as e:
                 console.print(
-                    "[yellow]SECRETS_MASTER_KEY not set; using placeholder for dry run.[/]"
-                )
-                master_key = "dry-run-placeholder"
-            else:
-                console.print(
-                    "[red]SECRETS_MASTER_KEY must be set in the environment before deploying.[/]"
+                    f"[red]Failed to retrieve master key from keychain: {e}[/]"
                 )
                 sys.exit(1)
 

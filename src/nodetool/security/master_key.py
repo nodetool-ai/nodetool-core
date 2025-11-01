@@ -7,15 +7,13 @@ or AWS Secrets Manager.
 """
 
 import os
+import logging
 from typing import Optional
 import keyring
 from keyring.errors import KeyringError
 import boto3
 from botocore.exceptions import ClientError
-from nodetool.config.logging_config import get_logger
 from nodetool.security.crypto import SecretCrypto
-
-log = get_logger(__name__)
 
 # Keyring service name for storing the master key
 KEYRING_SERVICE = "nodetool"
@@ -34,6 +32,15 @@ class MasterKeyManager:
     """
 
     _cached_master_key: Optional[str] = None
+    _logger: Optional[logging.Logger] = None
+
+    @classmethod
+    def _get_logger(cls) -> logging.Logger:
+        """Get or initialize the logger lazily to avoid circular imports."""
+        if cls._logger is None:
+            from nodetool.config.logging_config import get_logger
+            cls._logger = get_logger(__name__)
+        return cls._logger
 
     @classmethod
     def _get_from_aws_secrets(cls, secret_name: str) -> Optional[str]:
@@ -72,15 +79,15 @@ class MasterKeyManager:
             except ClientError as e:
                 error_code = e.response["Error"]["Code"]
                 if error_code == "ResourceNotFoundException":
-                    log.warning(f"AWS secret '{secret_name}' not found")
+                    cls._get_logger().warning(f"AWS secret '{secret_name}' not found")
                 elif error_code == "AccessDeniedException":
-                    log.error(f"Access denied to AWS secret '{secret_name}'")
+                    cls._get_logger().error(f"Access denied to AWS secret '{secret_name}'")
                 else:
-                    log.error(f"Error retrieving AWS secret: {e}")
+                    cls._get_logger().error(f"Error retrieving AWS secret: {e}")
                 return None
 
         except Exception as e:
-            log.error(f"Unexpected error retrieving AWS secret: {e}")
+            cls._get_logger().error(f"Unexpected error retrieving AWS secret: {e}")
             return None
 
     @classmethod
@@ -103,41 +110,41 @@ class MasterKeyManager:
         # 1. Check environment variable first (explicit key)
         env_key = os.environ.get("SECRETS_MASTER_KEY")
         if env_key:
-            log.info("Using master key from SECRETS_MASTER_KEY environment variable")
+            cls._get_logger().info("Using master key from SECRETS_MASTER_KEY environment variable")
             cls._cached_master_key = env_key
             return env_key
 
         # 2. Check AWS Secrets Manager if configured
         aws_secret_name = os.environ.get("AWS_SECRETS_MASTER_KEY_NAME")
         if aws_secret_name:
-            log.info(f"Attempting to retrieve master key from AWS Secrets Manager: {aws_secret_name}")
+            cls._get_logger().info(f"Attempting to retrieve master key from AWS Secrets Manager: {aws_secret_name}")
             aws_key = cls._get_from_aws_secrets(aws_secret_name)
             if aws_key:
-                log.info("Using master key from AWS Secrets Manager")
+                cls._get_logger().info("Using master key from AWS Secrets Manager")
                 cls._cached_master_key = aws_key
                 return aws_key
             else:
-                log.warning("Failed to retrieve master key from AWS Secrets Manager, falling back to keychain")
+                cls._get_logger().warning("Failed to retrieve master key from AWS Secrets Manager, falling back to keychain")
 
         # 3. Try to get from system keychain (using asyncio.to_thread to avoid blocking event loop)
         try:
             stored_key = await asyncio.to_thread(keyring.get_password, KEYRING_SERVICE, KEYRING_USERNAME)
             if stored_key:
-                log.info("Using master key from system keychain")
+                cls._get_logger().info("Using master key from system keychain")
                 cls._cached_master_key = stored_key
                 return stored_key
         except KeyringError as e:
-            log.warning(f"Could not access system keychain: {e}")
+            cls._get_logger().warning(f"Could not access system keychain: {e}")
 
         # 4. Generate new master key and store in keychain
-        log.info("Generating new master key and storing in system keychain")
+        cls._get_logger().info("Generating new master key and storing in system keychain")
         new_key = SecretCrypto.generate_master_key()
 
         try:
             await asyncio.to_thread(keyring.set_password, KEYRING_SERVICE, KEYRING_USERNAME, new_key)
-            log.info("Master key successfully stored in system keychain")
+            cls._get_logger().info("Master key successfully stored in system keychain")
         except KeyringError as e:
-            log.error(f"Failed to store master key in system keychain: {e}")
+            cls._get_logger().error(f"Failed to store master key in system keychain: {e}")
             raise RuntimeError(
                 "Failed to store master key in system keychain. "
                 "Please set SECRETS_MASTER_KEY environment variable manually or configure AWS_SECRETS_MASTER_KEY_NAME."
@@ -165,9 +172,9 @@ class MasterKeyManager:
         try:
             keyring.set_password(KEYRING_SERVICE, KEYRING_USERNAME, master_key)
             cls._cached_master_key = master_key
-            log.info("Master key updated successfully in system keychain")
+            cls._get_logger().info("Master key updated successfully in system keychain")
         except KeyringError as e:
-            log.error(f"Failed to update master key in system keychain: {e}")
+            cls._get_logger().error(f"Failed to update master key in system keychain: {e}")
             raise RuntimeError(
                 "Failed to update master key in system keychain"
             ) from e
@@ -188,9 +195,9 @@ class MasterKeyManager:
         try:
             keyring.delete_password(KEYRING_SERVICE, KEYRING_USERNAME)
             cls._cached_master_key = None
-            log.warning("Master key deleted from system keychain")
+            cls._get_logger().warning("Master key deleted from system keychain")
         except KeyringError as e:
-            log.error(f"Failed to delete master key from system keychain: {e}")
+            cls._get_logger().error(f"Failed to delete master key from system keychain: {e}")
             raise RuntimeError(
                 "Failed to delete master key from system keychain"
             ) from e

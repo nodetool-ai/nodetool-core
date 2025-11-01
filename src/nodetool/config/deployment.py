@@ -117,6 +117,9 @@ class ServiceSpec(BaseModel):
     name: str = Field(..., description="Unique service identifier")
     path: str = Field(..., description="Path prefix to proxy (e.g., /app)")
     image: str = Field(..., description="Docker image for the service")
+    auth_token: Optional[str] = Field(
+        default=None, description="Bearer token for upstream service authentication"
+    )
     environment: Optional[Dict[str, str]] = Field(
         default=None, description="Environment variables for the service"
     )

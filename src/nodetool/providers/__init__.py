@@ -97,6 +97,8 @@ async def get_provider(provider_type: ProviderEnum, user_id: str = "1", **kwargs
 
 async def list_providers(user_id: str) -> list["BaseProvider"]:
     """List all registered providers for a given user."""
+    import logging
+    logger = logging.getLogger(__name__)
     import_providers()
 
     # Get models from each registered chat provider
@@ -105,16 +107,23 @@ async def list_providers(user_id: str) -> list["BaseProvider"]:
     for provider_enum in provider_enums:
         provider_cls, kwargs = get_registered_provider(provider_enum)
         required_secrets = provider_cls.required_secrets()
+
+        # Skip provider if required secrets are missing
         secrets = {}
         for secret in required_secrets:
             secret_value = await get_secret(secret, user_id)
             if not secret_value:
                 continue
             secrets[secret] = secret_value
+
         if len(required_secrets) > 0 and len(secrets) == 0:
+            logger.debug(f"Skipping provider {provider_enum.value}: missing required secrets {required_secrets}")
             continue
+
+        # Initialize and register provider
         provider = provider_cls(secrets=secrets, **kwargs)
         providers.append(provider)
+
     return providers
 
 

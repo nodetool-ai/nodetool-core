@@ -281,6 +281,15 @@ class SelfHostedDeployer:
                 self.deployment_name, "proxy_bearer_token"
             )
 
+        # Build services list with auth tokens
+        services = []
+        for service in proxy.services:
+            service_dict = service.model_dump(exclude_none=True)
+            # Add worker auth token if not already set
+            if not service_dict.get("auth_token") and self.deployment.worker_auth_token:
+                service_dict["auth_token"] = self.deployment.worker_auth_token
+            services.append(service_dict)
+
         config = {
             "global": {
                 "domain": proxy.domain,
@@ -297,9 +306,7 @@ class SelfHostedDeployer:
                 "connect_mode": proxy.connect_mode,
                 "http_redirect_to_https": proxy.http_redirect_to_https,
             },
-            "services": [
-                service.model_dump(exclude_none=True) for service in proxy.services
-            ],
+            "services": services,
         }
 
         yaml_payload = yaml.safe_dump(config, sort_keys=False)
@@ -705,6 +712,7 @@ class SelfHostedDeployer:
 
     def logs(
         self,
+        service: Optional[str] = None,
         follow: bool = False,
         tail: int = 100,
     ) -> str:
@@ -712,6 +720,7 @@ class SelfHostedDeployer:
         Get logs from deployed container.
 
         Args:
+            service: Specific service to get logs for (None = proxy container)
             follow: Follow log output (not recommended for programmatic use)
             tail: Number of lines to show from end of logs (default: 100)
 

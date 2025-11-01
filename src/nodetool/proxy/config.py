@@ -22,6 +22,7 @@ class ServiceConfig(BaseModel):
     path: str = Field(..., description="Path prefix for routing (e.g., /app1)")
     image: str = Field(..., description="Docker image name (e.g., myregistry/myapp:latest)")
     host_port: Optional[int] = Field(None, ge=1, le=65535, description="Fixed host port (optional)")
+    auth_token: Optional[str] = Field(None, description="Bearer token for upstream service authentication")
     environment: Optional[Dict[str, str]] = Field(None, description="Environment variables for container")
     volumes: Optional[Dict[str, Union[str, Dict[str, str]]]] = Field(None, description="Volume mounts for container")
     mem_limit: Optional[str] = Field(None, description="Memory limit (e.g., '1g', '512m')")

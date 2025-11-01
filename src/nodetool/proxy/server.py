@@ -156,6 +156,10 @@ class AsyncReverseProxy:
         # Filter request headers
         upstream_headers = filter_request_headers(dict(request.headers))
 
+        # Add service auth token if configured
+        if service.auth_token:
+            upstream_headers["Authorization"] = f"Bearer {service.auth_token}"
+
         # Stream request body to upstream
         async def request_body_iter():
             async for chunk in request.stream():

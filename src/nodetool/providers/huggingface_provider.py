@@ -425,7 +425,9 @@ class HuggingFaceProvider(BaseProvider):
     def __init__(self, secrets: dict[str, str], inference_provider: PROVIDER_T):
         """Initialize the HuggingFace provider with AsyncInferenceClient."""
         super().__init__()
-        assert "HF_TOKEN" in secrets, "HF_TOKEN is required"
+        if "HF_TOKEN" not in secrets or not secrets["HF_TOKEN"]:
+            log.warning("HF_TOKEN not found in secrets, HuggingFace provider will not be initialized")
+            raise ValueError("HF_TOKEN is required but not provided")
         self.api_key = secrets["HF_TOKEN"]
         self.inference_provider = inference_provider
         self.provider_name = f"huggingface_{inference_provider}"
