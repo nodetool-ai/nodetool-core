@@ -76,6 +76,18 @@ python -m nodetool.cli --help
 
 See [docs/cli.md](docs/cli.md) for all commands.
 
+### Exporting Workflows as DSL
+
+Generate a runnable Python script for a workflow that sends the graph to the
+`/chat` WebSocket:
+
+```python
+from nodetool.workflows.export_dsl import workflow_to_dsl_code
+
+dsl_code = workflow_to_dsl_code(workflow)
+print(dsl_code)
+```
+
 ## 📖 Documentation
 
 - [Concepts and Architecture](concepts/)
