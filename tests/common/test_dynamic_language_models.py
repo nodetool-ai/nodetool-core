@@ -10,15 +10,6 @@ from nodetool.providers.base import BaseProvider
 class TestDynamicLanguageModels:
     """Test the dynamic language model fetching system."""
 
-    @pytest.fixture(autouse=True)
-    def setup_and_teardown(self):
-        """Clear cache before and after each test."""
-        from nodetool.ml.models.model_cache import _model_cache
-
-        _model_cache.clear()
-        yield
-        _model_cache.clear()
-
     @pytest.mark.asyncio
     async def test_get_all_language_models_basic(self):
         """Test that get_all_language_models returns a list of LanguageModel objects."""

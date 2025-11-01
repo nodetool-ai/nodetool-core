@@ -30,13 +30,6 @@ async def get_all_asr_models(user_id: str) -> List[ASRModel]:
     Returns:
         List of all available ASRModel instances from all providers
     """
-    # Check cache first
-    cache_key = f"asr_models:all:{user_id}"
-    cached_models = _model_cache.get(cache_key)
-    if cached_models is not None:
-        log.info(f"Returning {len(cached_models)} cached ASR models")
-        return cached_models
-
     from nodetool.providers import list_providers
 
     models = []
@@ -49,13 +42,4 @@ async def get_all_asr_models(user_id: str) -> List[ASRModel]:
 
     log.info(f"Discovered {len(models)} total ASR models")
 
-    # Cache the results
-    _model_cache.set(cache_key, models)
-
     return models
-
-
-if __name__ == "__main__":
-    import asyncio
-
-    print(asyncio.run(get_all_asr_models()))
