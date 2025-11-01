@@ -223,7 +223,7 @@ class SelfHostedDeployment(BaseModel):
                 image=values.image.full_name,
             )
             values.proxy = ProxySpec(
-                image="nodetool/proxy:latest",
+                image="nodetool-proxy:latest",
                 domain=values.host,
                 email="admin@example.com",
                 services=[default_service],
