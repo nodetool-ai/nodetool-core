@@ -76,6 +76,9 @@ storage and production deployment with cloud services.
 def load_dotenv_files():
     """Load environment variables from .env files based on current environment."""
     from dotenv import load_dotenv
+    from nodetool.config.logging_config import get_logger
+
+    logger = get_logger(__name__)
 
     # Get the project root directory (where .env files should be located)
     current_file = Path(__file__)
@@ -85,6 +88,7 @@ def load_dotenv_files():
 
     # Determine environment - check ENV var first, then default to development
     env_name = os.environ.get("ENV", "development")
+    logger.debug(f"Loading environment: {env_name}")
 
     # Load .env files in order of precedence (later files override earlier ones)
     env_files = [
@@ -93,8 +97,11 @@ def load_dotenv_files():
         project_root / f".env.{env_name}.local",  # Local overrides (gitignored)
     ]
 
+    loaded_files = []
     for env_file in env_files:
         if env_file.exists():
+            logger.info(f"Loading environment file: {env_file}")
+            loaded_files.append(str(env_file))
             # Be resilient to stubbed/mocked load_dotenv in tests that may not
             # accept keyword arguments.
             try:
@@ -104,6 +111,55 @@ def load_dotenv_files():
                     load_dotenv(env_file)  # type: ignore[call-arg]
                 except TypeError:
                     load_dotenv()  # type: ignore[misc]
+        else:
+            logger.debug(f"Environment file not found: {env_file}")
+
+    if loaded_files:
+        logger.info(f"Loaded {len(loaded_files)} environment file(s): {loaded_files}")
+    else:
+        logger.warning("No environment files found - using defaults and system environment variables only")
+
+    # Log key non-secret environment variables that were loaded
+    safe_log_vars = [
+        "ENV",
+        "LOG_LEVEL",
+        "DEBUG",
+        "AUTH_PROVIDER",
+        "ASSET_BUCKET",
+        "ASSET_DOMAIN",
+        "POSTGRES_DB",
+        "POSTGRES_HOST",
+        "POSTGRES_PORT",
+        "SUPABASE_URL",
+        "DB_PATH",
+        "OLLAMA_API_URL",
+        "CHROMA_PATH",
+        "S3_REGION",
+        "S3_ENDPOINT_URL",
+        "JOB_EXECUTION_STRATEGY",
+    ]
+
+    loaded_vars = {}
+    for var in safe_log_vars:
+        value = os.environ.get(var)
+        if value:
+            # Mask URLs for privacy
+            if var.endswith("_URL") or var.endswith("_ENDPOINT_URL"):
+                # Show protocol and domain only
+                try:
+                    from urllib.parse import urlparse
+                    parsed = urlparse(value)
+                    masked = f"{parsed.scheme}://{parsed.netloc}"
+                    loaded_vars[var] = masked
+                except Exception:
+                    loaded_vars[var] = "***"
+            else:
+                loaded_vars[var] = value
+
+    if loaded_vars:
+        logger.debug(f"Environment variables loaded: {loaded_vars}")
+    else:
+        logger.debug("No notable environment variables found")
 
 
 class Environment(object):
@@ -533,39 +589,71 @@ class Environment(object):
     ):
         """
         The database adapter is the adapter that we use to connect to the database.
+        Adapters are cached per table name to avoid repeated initialization.
         """
+        logger = cls.get_logger()
+        table_name = table_schema.get("table_name", "unknown")
+
+        # Check thread-local adapter cache first
+        tls = cls._tls()
+        if not hasattr(tls, "adapters"):
+            tls.adapters = {}
+
+        if table_name in tls.adapters:
+            logger.debug(f"Using cached adapter for table '{table_name}'")
+            return tls.adapters[table_name]
+
         if cls.get("POSTGRES_DB", None) is not None:
             from nodetool.models.postgres_adapter import PostgresAdapter  # type: ignore
 
-            return PostgresAdapter(
-                db_params=cls.get_postgres_params(),
+            postgres_params = cls.get_postgres_params()
+            logger.info(
+                f"Initializing PostgreSQL adapter for table '{table_name}' "
+                f"(host={postgres_params.get('host')}, db={postgres_params.get('database')})"
+            )
+            adapter = PostgresAdapter(
+                db_params=postgres_params,
                 fields=fields,
                 table_schema=table_schema,
                 indexes=indexes,
             )
+            tls.adapters[table_name] = adapter
+            return adapter
         elif cls.get("SUPABASE_URL", None) is not None:
             from nodetool.models.supabase_adapter import SupabaseAdapter  # type: ignore
 
-            return SupabaseAdapter(
-                supabase_url=cls.get_supabase_url(),
+            supabase_url = cls.get_supabase_url()
+            logger.info(
+                f"Initializing Supabase adapter for table '{table_name}' "
+                f"(url={supabase_url})"
+            )
+            adapter = SupabaseAdapter(
+                supabase_url=supabase_url,
                 supabase_key=cls.get_supabase_key(),
                 fields=fields,
                 table_schema=table_schema,
             )
+            tls.adapters[table_name] = adapter
+            return adapter
         elif cls.get_db_path() is not None:
             from nodetool.models.sqlite_adapter import SQLiteAdapter  # type: ignore
             import aiosqlite
 
+            db_path = cls.get_db_path()
+            logger.info(
+                f"Initializing SQLite adapter for table '{table_name}' "
+                f"(path={db_path})"
+            )
+
             # Use thread-local storage for SQLite connections to avoid database locks
-            tls = cls._tls()
             if not hasattr(tls, "sqlite_connection") or tls.sqlite_connection is None:
                 import threading
 
-                cls.get_logger().debug(
+                logger.debug(
                     f"Creating new SQLite connection for thread {threading.get_ident()}"
                 )
                 tls.sqlite_connection = await aiosqlite.connect(
-                    cls.get_db_path(), timeout=30
+                    db_path, timeout=30
                 )
                 tls.sqlite_connection.row_factory = aiosqlite.Row
                 # Configure SQLite for better concurrency and deadlock avoidance
@@ -577,15 +665,15 @@ class Environment(object):
                 # Increase cache size for better performance (negative means KB)
                 await tls.sqlite_connection.execute("PRAGMA cache_size=-64000")  # 64MB
                 await tls.sqlite_connection.commit()
+                logger.debug("SQLite PRAGMA configuration applied")
                 # await tls.sqlite_connection.set_trace_callback(log.debug)
 
-            db_path = cls.get_db_path()
             # Only create directories for file paths, not URIs or :memory:
             if db_path != ":memory:" and not db_path.startswith("file:"):
                 os.makedirs(os.path.dirname(db_path), exist_ok=True)
 
             adapter = SQLiteAdapter(
-                db_path=cls.get_db_path(),
+                db_path=db_path,
                 connection=tls.sqlite_connection,
                 fields=fields,
                 table_schema=table_schema,
@@ -593,10 +681,16 @@ class Environment(object):
             )
 
             await adapter.auto_migrate()
+            logger.info(f"SQLite adapter initialized and migrated for table '{table_name}'")
 
+            tls.adapters[table_name] = adapter
             return adapter
 
         else:
+            logger.error(
+                "No database adapter configured. "
+                "Set one of: POSTGRES_DB, SUPABASE_URL, or DB_PATH"
+            )
             raise Exception("No database adapter configured")
 
     @classmethod
@@ -783,55 +877,22 @@ class Environment(object):
                 supabase_url = cls.get_supabase_url()
                 supabase_key = cls.get_supabase_key()
                 if supabase_url and supabase_key:
-                    try:
-                        from nodetool.storage.supabase_storage import (
-                            SupabaseStorage,
-                        )
-                        from supabase import AsyncClient as SupabaseAsyncClient  # type: ignore
+                    from nodetool.storage.supabase_storage import (
+                        SupabaseStorage,
+                    )
+                    from supabase import AsyncClient as SupabaseAsyncClient  # type: ignore
 
-                        cls.get_logger().info("Using Supabase storage for asset storage")
-                        client = SupabaseAsyncClient(supabase_url, supabase_key)
-                        setattr(
-                            cls._tls(),
-                            "asset_storage",
-                            SupabaseStorage(
-                                bucket_name=cls.get_asset_bucket(),
-                                supabase_url=supabase_url,
-                                client=client,
-                            ),
-                        )
-                    except Exception as e:
-                        cls.get_logger().error(
-                            f"Failed to initialize Supabase storage, falling back. Error: {e}"
-                        )
-                        # Fallback to S3 or File
-                        if (
-                            cls.is_production()
-                            or cls.get_s3_access_key_id() is not None
-                            or use_s3
-                        ):
-                            cls.get_logger().info("Using S3 storage for asset storage")
-                            setattr(
-                                cls._tls(),
-                                "asset_storage",
-                                cls.get_s3_storage(
-                                    cls.get_asset_bucket(), cls.get_asset_domain()
-                                ),
-                            )
-                        else:
-                            from nodetool.storage.file_storage import FileStorage
-
-                            cls.get_logger().info(
-                                f"Using folder {cls.get_asset_folder()} for asset storage with base url {cls.get_storage_api_url()}"
-                            )
-                            setattr(
-                                cls._tls(),
-                                "asset_storage",
-                                FileStorage(
-                                    base_path=cls.get_asset_folder(),
-                                    base_url=cls.get_storage_api_url(),
-                                ),
-                            )
+                    cls.get_logger().info("Using Supabase storage for asset storage")
+                    client = SupabaseAsyncClient(supabase_url, supabase_key)
+                    setattr(
+                        cls._tls(),
+                        "asset_storage",
+                        SupabaseStorage(
+                            bucket_name=cls.get_asset_bucket(),
+                            supabase_url=supabase_url,
+                            client=client,
+                        ),
+                    )
                 elif (
                     cls.is_production()
                     or cls.get_s3_access_key_id() is not None
@@ -1141,6 +1202,7 @@ class Environment(object):
             "memory_uri_cache",
             "asset_storage",
             "temp_storage",
+            "adapters",
         ):
             if hasattr(tls, attr):
                 try:
@@ -1166,3 +1228,14 @@ class Environment(object):
         The Supabase service key.
         """
         return cls.get("SUPABASE_KEY")
+
+
+async def test():
+    client = await Environment.get_supabase_client()
+    bucket = client.storage.from_("assets")
+    info = await bucket.info("cfe027d2b6e811f0b6ce0000516a875d_thumb.jpg")
+    print(info)
+
+if __name__ == "__main__":
+    import asyncio
+    asyncio.run(test())

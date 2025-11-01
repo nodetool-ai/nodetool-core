@@ -12,9 +12,10 @@ This module encapsulates endpoints under /admin, including:
 
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any, Dict, List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Header, Body
+from fastapi import APIRouter, Depends, HTTPException, Request, Body
 from fastapi.responses import StreamingResponse
 import chromadb
 
@@ -74,16 +75,16 @@ class IndexResponse(BaseModel):
     error: Optional[str] = None
 
 
-def asset_from_model(asset: AssetModel) -> Asset:
+async def asset_from_model(asset: AssetModel) -> Asset:
     """Convert AssetModel to Asset API response."""
     storage = Environment.get_asset_storage()
     if asset.content_type != "folder":
-        get_url = storage.get_url(asset.file_name)
+        get_url = await storage.get_url(asset.file_name)
     else:
         get_url = None
 
     if asset.has_thumbnail:
-        thumb_url = storage.get_url(asset.thumb_file_name)
+        thumb_url = await storage.get_url(asset.thumb_file_name)
     else:
         thumb_url = None
 
@@ -413,7 +414,7 @@ def create_admin_router() -> APIRouter:
                 start_key=cursor,
             )
 
-            assets = [asset_from_model(asset) for asset in assets]
+            assets = await asyncio.gather(*[asset_from_model(asset) for asset in assets])
 
             return AssetList(next=next_cursor, assets=assets)
         except Exception as e:  # noqa: BLE001
@@ -441,7 +442,7 @@ def create_admin_router() -> APIRouter:
                 metadata=data.get("metadata"),
                 **kwargs,
             )
-            return asset_from_model(asset)
+            return await asset_from_model(asset)
         except Exception as e:  # noqa: BLE001
             raise HTTPException(status_code=500, detail=str(e))
 
@@ -473,7 +474,7 @@ def create_admin_router() -> APIRouter:
             asset = await AssetModel.get(asset_id)
             if asset is None:
                 raise HTTPException(status_code=404, detail="Asset not found")
-            return asset_from_model(asset)
+            return await asset_from_model(asset)
         except HTTPException:
             raise
         except Exception as e:  # noqa: BLE001

@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+import asyncio
 import datetime
 import os
 from io import BytesIO
@@ -32,18 +33,18 @@ from nodetool.media.common.media_utils import (
 )
 
 
-def from_model(asset: AssetModel):
+async def from_model(asset: AssetModel):
     storage = Environment.get_asset_storage()
     if asset.content_type != "folder":
         # Note: Pre-signed URLs from storage providers (S3, etc.) typically
         # include their own cache headers. If using file storage, consider
         # implementing a separate endpoint with proper cache headers.
-        get_url = storage.get_url(asset.file_name)
+        get_url = await storage.get_url(asset.file_name)
     else:
         get_url = None
 
     if asset.has_thumbnail:
-        thumb_url = storage.get_url(asset.thumb_file_name)
+        thumb_url = await storage.get_url(asset.thumb_file_name)
     else:
         thumb_url = None
 
@@ -111,7 +112,7 @@ async def index(
         start_key=cursor,
     )
 
-    assets = [from_model(asset) for asset in assets]
+    assets = await asyncio.gather(*[from_model(asset) for asset in assets])
 
     return AssetList(next=next_cursor, assets=assets)
 
@@ -173,7 +174,7 @@ async def search_assets_global(
         # Convert to AssetWithPath objects
         assets_with_path = []
         for i, asset in enumerate(assets):
-            asset_data = from_model(asset)
+            asset_data = await from_model(asset)
             folder_info = (
                 folder_paths[i]
                 if i < len(folder_paths)
@@ -357,7 +358,7 @@ async def get(id: str, user: str = Depends(current_user)) -> Asset:
     if asset is None:
         log.info("Asset not found: %s", id)
         raise HTTPException(status_code=404, detail="Asset not found")
-    return from_model(asset)
+    return await from_model(asset)
 
 
 @router.put("/{id}")
@@ -390,7 +391,7 @@ async def update(
         await storage.upload(asset.file_name, BytesIO(data_bytes))
 
     await asset.save()
-    return from_model(asset)
+    return await from_model(asset)
 
 
 @router.delete("/{id}")
@@ -527,7 +528,7 @@ async def create(
             await asset.delete()
         raise HTTPException(status_code=500, detail="Error uploading asset")
 
-    return from_model(asset)
+    return await from_model(asset)
 
 
 @router.post("/download")
@@ -700,4 +701,4 @@ async def get_by_filename(filename: str, user: str = Depends(current_user)) -> A
         log.info("Asset not found with filename: %s", filename)
         raise HTTPException(status_code=404, detail="Asset not found")
 
-    return from_model(asset)
+    return await from_model(asset)

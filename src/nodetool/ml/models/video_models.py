@@ -55,8 +55,3 @@ async def get_all_video_models(user_id: str) -> List[VideoModel]:
     _model_cache.set(cache_key, models)
 
     return models
-
-
-if __name__ == "__main__":
-    models = asyncio.run(get_all_video_models())
-    print(models)

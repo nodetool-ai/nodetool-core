@@ -86,7 +86,7 @@ class NodeSearchParams(BaseModel):
     )
 
 
-def _asset_to_dict(asset: AssetModel) -> dict[str, Any]:
+async def _asset_to_dict(asset: AssetModel) -> dict[str, Any]:
     """
     Convert an Asset model to a dictionary for MCP responses.
 
@@ -100,13 +100,13 @@ def _asset_to_dict(asset: AssetModel) -> dict[str, Any]:
 
     # Generate URLs for non-folder assets
     if asset.content_type != "folder":
-        get_url = storage.get_url(asset.file_name)
+        get_url = await storage.get_url(asset.file_name)
     else:
         get_url = None
 
     # Generate thumbnail URL if applicable
     if asset.has_thumbnail:
-        thumb_url = storage.get_url(asset.thumb_file_name)
+        thumb_url = await storage.get_url(asset.thumb_file_name)
     else:
         thumb_url = None
 

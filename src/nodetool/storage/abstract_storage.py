@@ -5,7 +5,7 @@ from datetime import datetime
 
 class AbstractStorage(ABC):
     @abstractmethod
-    def get_url(self, key: str) -> str:
+    async def get_url(self, key: str) -> str:
         pass
 
     @abstractmethod

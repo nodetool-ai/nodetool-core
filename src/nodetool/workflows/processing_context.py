@@ -343,12 +343,12 @@ class ProcessingContext:
         from nodetool.security.secret_helper import get_secret
         return await get_secret(key, self.user_id)
     
-    def get_secret_required(self, key: str) -> str:
+    async def get_secret_required(self, key: str) -> str:
         """
         Get a required secret value.
         """
         from nodetool.security.secret_helper import get_secret_required
-        return get_secret_required(key, self.user_id)
+        return await get_secret_required(key, self.user_id)
 
     async def get_provider(self, provider_type: Provider):
         """
@@ -1469,7 +1469,7 @@ class ProcessingContext:
                 parent_id=parent_id,
             )
             storage = Environment.get_asset_storage()
-            url = storage.get_url(asset.file_name)
+            url = await storage.get_url(asset.file_name)
             return AudioRef(asset_id=asset.id, uri=url)
         else:
             return AudioRef(data=buffer.read())
@@ -1660,7 +1660,7 @@ class ProcessingContext:
                 name=name, content_type="image/png", content=buffer, parent_id=parent_id
             )
             storage = Environment.get_asset_storage()
-            url = storage.get_url(asset.file_name)
+            url = await storage.get_url(asset.file_name)
             return ImageRef(asset_id=asset.id, uri=url)
         else:
             buffer.seek(0)
@@ -1856,7 +1856,7 @@ class ProcessingContext:
                 name, content_type, buffer, parent_id=parent_id
             )
             storage = Environment.get_asset_storage()
-            url = storage.get_url(asset.file_name)
+            url = await storage.get_url(asset.file_name)
             return TextRef(asset_id=asset.id, uri=url)
 
     async def video_from_frames(
@@ -1924,7 +1924,7 @@ class ProcessingContext:
                 name, "video/mpeg", buffer, parent_id=parent_id
             )
             storage = Environment.get_asset_storage()
-            url = storage.get_url(asset.file_name)
+            url = await storage.get_url(asset.file_name)
             return VideoRef(asset_id=asset.id, uri=url)
         else:
             return VideoRef(data=buffer.read())
@@ -2005,7 +2005,7 @@ class ProcessingContext:
             asset = await self.create_asset(name, "application/model", stream)
 
             storage = Environment.get_asset_storage()
-            url = storage.get_url(asset.file_name)
+            url = await storage.get_url(asset.file_name)
             return ModelRef(uri=url, asset_id=asset.id, **kwargs)
 
     async def convert_value_for_prediction(

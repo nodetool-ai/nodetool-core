@@ -98,4 +98,4 @@ async def test_delete(storage):
 
 @pytest.mark.asyncio
 async def test_get_url(storage):
-    assert storage.get_url(file_name) == f"https://nodetool.test/{file_name}"
+    assert await storage.get_url(file_name) == f"https://nodetool.test/{file_name}"

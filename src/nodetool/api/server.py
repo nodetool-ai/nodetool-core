@@ -193,12 +193,61 @@ def create_app(
     from nodetool.config.environment import load_dotenv_files
 
     load_dotenv_files()
+
+    # Log loaded environment configuration
+    env_name = os.environ.get("ENV", "development")
+    log_level = os.environ.get("LOG_LEVEL", "INFO")
+    debug = os.environ.get("DEBUG")
+
     log.info(
-        "dotenv: ENV=%s | LOG_LEVEL=%s | DEBUG=%s",
-        os.environ.get("ENV"),
-        os.environ.get("LOG_LEVEL"),
-        os.environ.get("DEBUG"),
+        "Environment configuration loaded: ENV=%s | LOG_LEVEL=%s | DEBUG=%s",
+        env_name,
+        log_level,
+        debug,
     )
+
+    # Log key configuration details
+    supabase_url = os.environ.get("SUPABASE_URL")
+    postgres_db = os.environ.get("POSTGRES_DB")
+    db_path = os.environ.get("DB_PATH")
+    auth_provider = os.environ.get("AUTH_PROVIDER", "local")
+
+    if supabase_url:
+        log.info(f"Database: Supabase ({supabase_url})")
+    elif postgres_db:
+        postgres_host = os.environ.get("POSTGRES_HOST", "localhost")
+        log.info(f"Database: PostgreSQL ({postgres_host}/{postgres_db})")
+    elif db_path:
+        log.info(f"Database: SQLite ({db_path})")
+    else:
+        log.warning("No database configured (SUPABASE_URL, POSTGRES_DB, or DB_PATH)")
+
+    log.info(f"Authentication provider: {auth_provider}")
+
+    # Log storage configuration
+    asset_bucket = os.environ.get("ASSET_BUCKET", "images")
+    asset_temp_bucket = os.environ.get("ASSET_TEMP_BUCKET")
+    asset_domain = os.environ.get("ASSET_DOMAIN")
+    s3_endpoint = os.environ.get("S3_ENDPOINT_URL")
+
+    if supabase_url:
+        log.info(f"Asset storage: Supabase")
+        log.debug(f"  - Asset bucket: {asset_bucket}")
+        if asset_temp_bucket:
+            log.debug(f"  - Temp bucket: {asset_temp_bucket}")
+        if asset_domain:
+            log.debug(f"  - Domain: {asset_domain}")
+    elif s3_endpoint:
+        log.info(f"Asset storage: S3 (endpoint={s3_endpoint})")
+        log.debug(f"  - Asset bucket: {asset_bucket}")
+        if asset_temp_bucket:
+            log.debug(f"  - Temp bucket: {asset_temp_bucket}")
+        log.debug(f"  - Region: {os.environ.get('S3_REGION', 'us-east-1')}")
+        if asset_domain:
+            log.debug(f"  - Domain: {asset_domain}")
+    else:
+        log.info(f"Asset storage: File-based")
+        log.debug(f"  - Asset bucket: {asset_bucket}")
 
     # Check if Ollama is available and set OLLAMA_API_URL if not already set
     setup_ollama_url()

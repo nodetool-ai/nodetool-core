@@ -78,7 +78,7 @@ def storage() -> SupabaseStorage:
     return SupabaseStorage(
         bucket_name="assets",
         supabase_url="https://example.supabase.co",
-        client=client,
+        client=client, # type: ignore
     )
 
 
@@ -129,8 +129,9 @@ async def test_delete(storage: SupabaseStorage):
     assert not await storage.file_exists(key)
 
 
-def test_get_url(storage: SupabaseStorage):
+@pytest.mark.asyncio
+async def test_get_url(storage: SupabaseStorage):
     key = "images/photo.png"
     url = storage.get_url(key)
-    assert url == f"https://example.supabase.co/storage/v1/object/public/assets/{key}"
+    assert await url == f"https://example.supabase.co/storage/v1/object/public/assets/{key}"
 

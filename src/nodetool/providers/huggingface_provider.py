@@ -914,18 +914,7 @@ class HuggingFaceProvider(BaseProvider):
 
         # Create streaming completion using chat_completion method
         log.debug("Starting streaming API call")
-        import sys
-        sys.stderr.write(f"[HF PROVIDER] Starting chat_completion for model={model}\n")
-        sys.stderr.flush()
-        try:
-            stream = await self.client.chat_completion(model=model, **request_params)
-            log.debug("Streaming response initialized")
-            sys.stderr.write(f"[HF PROVIDER] chat_completion returned, now iterating stream\n")
-            sys.stderr.flush()
-        except Exception as e:
-            sys.stderr.write(f"[HF PROVIDER] ERROR in chat_completion: {e}\n")
-            sys.stderr.flush()
-            raise
+        stream = await self.client.chat_completion(model=model, **request_params)
 
         # Track tool calls during streaming
         accumulated_tool_calls = {}
@@ -934,8 +923,6 @@ class HuggingFaceProvider(BaseProvider):
         try:
             async for chunk in stream:
                 chunk_count += 1
-                sys.stderr.write(f"[HF PROVIDER] Received chunk #{chunk_count}\n")
-                sys.stderr.flush()
 
                 if hasattr(chunk, "usage") and getattr(chunk, "usage", None):
                     log.debug("Updating usage stats from streaming chunk")
