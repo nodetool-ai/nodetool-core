@@ -143,8 +143,8 @@ def graph_to_dsl_py(graph: ApiGraph) -> str:
     if not isinstance(graph, ApiGraph):
         raise TypeError("graph_to_dsl_py accepts only nodetool.types.graph.Graph instances")
 
-    api_nodes = list[ApiNode](graph.nodes)
-    api_edges = list[ApiEdge](graph.edges)
+    api_nodes = list(graph.nodes)
+    api_edges = list(graph.edges)
 
     incoming: dict[str, dict[str, ApiEdge]] = {}
     for edge in api_edges:
@@ -159,13 +159,13 @@ def graph_to_dsl_py(graph: ApiGraph) -> str:
 
     def declare_for_node(node: ApiNode) -> None:
         namespace, cls_name = _split_type(node.type)
-        module = f"nodetool.dsl.{namespace}" if namespace else "nodetool.dsl"
         base = _sanitize_ident(_snake_case(cls_name)) or "node"
         counters.setdefault(base, 0)
         counters[base] += 1
         suffix = str(counters[base])
         var = f"{base}_{suffix}"
         var_names[node.id] = var
+        module = f"nodetool.dsl.{namespace}" if namespace else "nodetool.dsl"
         module_to_classes.setdefault(module, [])
         if cls_name not in module_to_classes[module]:
             module_to_classes[module].append(cls_name)
@@ -220,7 +220,7 @@ def graph_to_dsl_py(graph: ApiGraph) -> str:
             if src_var is None:
                 continue
             if edge.sourceHandle == "output":
-                src_expr = f"{src_var}.out"
+                src_expr = f"{src_var}.output"
             else:
                 src_expr = f"{src_var}.out[{_literal(edge.sourceHandle)}]"
             kwargs.append(f"{_sanitize_ident(handle)}={src_expr}")
@@ -237,4 +237,210 @@ def graph_to_dsl_py(graph: ApiGraph) -> str:
     return "\n".join(lines)
 
 
-__all__ = ["graph_to_dsl_py"]
+def graph_to_gradio_py(
+    graph: ApiGraph,
+    *,
+    app_title: str = "NodeTool Workflow",
+    theme: str | None = None,
+    description: str | None = None,
+    allow_flagging: bool = False,
+    queue: bool = True,
+) -> str:
+    """
+    Generate Python source that reconstructs the graph (using the DSL)
+    *and* wraps it in a minimal Gradio app capable of running the workflow.
+
+    The generated script includes:
+        - The DSL build-out produced by :func:`graph_to_dsl_py`.
+        - A runtime shim that exposes heuristic inputs/outputs via Gradio and
+          executes the workflow with ``WorkflowRunner`` + ``ProcessingContext``.
+
+    Heuristics:
+        - Inputs: zero in-degree nodes, ``*Input`` types, or types containing
+          ``.input.``; free (non-wired) properties surface as widgets, preferring
+          a ``value`` property when present.
+        - Outputs: zero out-degree nodes, ``*Output`` types, or types containing
+          ``.output.``; values are read from ``.value`` (or ``.output``).
+
+    Returns:
+        str: A standalone Python script. Save it (e.g., to ``app.py``)
+             and start the UI with ``python app.py``.
+    """
+    if not isinstance(graph, ApiGraph):
+        raise TypeError("graph_to_gradio_py accepts only nodetool.types.graph.Graph instances")
+
+    api_nodes = list(graph.nodes)
+    api_edges = list(graph.edges)
+
+    incoming: dict[str, dict[str, ApiEdge]] = {}
+    outgoing_count: dict[str, int] = {node.id: 0 for node in api_nodes}
+    for edge in api_edges:
+        incoming.setdefault(edge.target, {})[edge.targetHandle] = edge
+        if edge.source in outgoing_count:
+            outgoing_count[edge.source] += 1
+
+    order = _topo_order(api_nodes, api_edges)
+    node_by_id = {node.id: node for node in api_nodes}
+
+    var_names: dict[str, str] = {}
+    counters: dict[str, int] = {}
+
+    def declare_for_node(node: ApiNode) -> None:
+        namespace, cls_name = _split_type(node.type)
+        base = _sanitize_ident(_snake_case(cls_name)) or "node"
+        counters.setdefault(base, 0)
+        counters[base] += 1
+        suffix = str(counters[base])
+        var = f"{base}_{suffix}"
+        var_names[node.id] = var
+
+    for node_id in order:
+        declare_for_node(node_by_id[node_id])
+
+    def is_input_like(node: ApiNode) -> bool:
+        _, cls_name = _split_type(node.type)
+        return (
+            node.id not in incoming
+            or cls_name.endswith("Input")
+            or ".input." in node.type
+        )
+
+    def is_output_like(node: ApiNode) -> bool:
+        _, cls_name = _split_type(node.type)
+        return (
+            outgoing_count.get(node.id, 0) == 0
+            or cls_name.endswith("Output")
+            or ".output." in node.type
+        )
+
+    def free_fields(node: ApiNode) -> list[tuple[str, object]]:
+        """
+        Return non-wired properties for a node (prefer a single 'value' field).
+        """
+        fields: list[tuple[str, object]] = []
+        used = set((incoming.get(node.id) or {}).keys())
+        data_attr = node.data if isinstance(node.data, Mapping) else {}
+        dyn_attr = node.dynamic_properties if isinstance(node.dynamic_properties, Mapping) else {}
+
+        if "value" in data_attr and "value" not in used:
+            return [("value", data_attr.get("value"))]
+
+        for key in sorted(data_attr.keys()):
+            if key not in used:
+                fields.append((key, data_attr[key]))
+        for key in sorted(dyn_attr.keys()):
+            if key not in used:
+                fields.append((key, dyn_attr[key]))
+        return fields
+
+    def guess_component_kind(node_type: str, field_name: str, default: object) -> str:
+        """
+        Return a canonical widget kind: 'text', 'number', 'checkbox',
+        'image', 'audio', 'video', 'file', 'json', 'dataframe'.
+        """
+        _, cls_name = _split_type(node_type)
+        cls_lower = cls_name.lower()
+        field_lower = field_name.lower()
+        if any(key in cls_lower for key in ["imageinput", "imageoutput", "imageref", "image"]) or field_lower in {"image", "img"}:
+            return "image"
+        if any(key in cls_lower for key in ["audioinput", "audiooutput", "audioref", "audio"]) or field_lower == "audio":
+            return "audio"
+        if any(key in cls_lower for key in ["videoinput", "videooutput", "videoref", "video"]) or field_lower == "video":
+            return "video"
+        if any(key in cls_lower for key in ["dataframe", "table", "csv"]):
+            return "dataframe"
+        if any(key in cls_lower for key in ["document", "file", "filepath"]) or field_lower in {"path", "file", "filename"}:
+            return "file"
+        if isinstance(default, bool) or "booleaninput" in cls_lower or "booleanoutput" in cls_lower:
+            return "checkbox"
+        if isinstance(default, (int, float)) or "integerinput" in cls_lower or "floatinput" in cls_lower or field_lower in {"number", "count"}:
+            return "number"
+        if isinstance(default, (list, dict)):
+            return "json"
+        return "text"
+
+    input_specs: list[dict[str, object]] = []
+    output_specs: list[dict[str, object]] = []
+
+    for node_id in order:
+        node = node_by_id[node_id]
+        if is_input_like(node):
+            for field, default in free_fields(node):
+                input_specs.append(
+                    {
+                        "var": var_names[node_id],
+                        "field": field,
+                        "label": f"{node.type.split('.')[-1]}:{field}",
+                        "kind": guess_component_kind(node.type, field, default),
+                        "default": default,
+                    }
+                )
+        if is_output_like(node):
+            output_specs.append(
+                {
+                    "var": var_names[node_id],
+                    "label": node.type.split(".")[-1],
+                    "kind": guess_component_kind(node.type, "value", None),
+                }
+            )
+
+    dsl_src = graph_to_dsl_py(graph)
+
+    def input_spec_literal(spec: dict[str, object]) -> str:
+        return (
+            "InputSpec("
+            f"var={_literal(spec['var'])}, "
+            f"field={_literal(spec['field'])}, "
+            f"label={_literal(spec['label'])}, "
+            f"kind={_literal(spec['kind'])}, "
+            f"default={_literal(spec.get('default'))}"
+            ")"
+        )
+
+    def output_spec_literal(spec: dict[str, object]) -> str:
+        return (
+            "OutputSpec("
+            f"var={_literal(spec['var'])}, "
+            f"label={_literal(spec['label'])}, "
+            f"kind={_literal(spec['kind'])}"
+            ")"
+        )
+
+    input_specs_py = "[" + ", ".join(input_spec_literal(spec) for spec in input_specs) + "]" if input_specs else "[]"
+    output_specs_py = "[" + ", ".join(output_spec_literal(spec) for spec in output_specs) + "]" if output_specs else "[]"
+
+    lines: list[str] = []
+    lines.append("# This file was generated from an API graph using nodetool.dsl.export.graph_to_gradio_py")
+    lines.append("# It reconstructs the workflow and exposes it as a Gradio app.")
+    lines.append("")
+    lines.append(dsl_src.rstrip())
+    lines.append("")
+    lines.append("from nodetool.dsl.gradio_app import GradioAppConfig, InputSpec, OutputSpec, create_gradio_app")
+    lines.append("")
+    lines.append(f"INPUT_SPECS = {input_specs_py}")
+    lines.append(f"OUTPUT_SPECS = {output_specs_py}")
+    lines.append("")
+    lines.append(
+        "APP_CONFIG = GradioAppConfig("
+        f"title={_literal(app_title)}, "
+        f"theme={_literal(theme)}, "
+        f"description={_literal(description)}, "
+        f"allow_flagging={_literal(allow_flagging)}, "
+        f"queue={_literal(queue)}"
+        ")"
+    )
+    lines.append("")
+    lines.append("if __name__ == '__main__':")
+    lines.append("    application = create_gradio_app(")
+    lines.append("        workflow=workflow,")
+    lines.append("        input_specs=INPUT_SPECS,")
+    lines.append("        output_specs=OUTPUT_SPECS,")
+    lines.append("        namespace=globals(),")
+    lines.append("        config=APP_CONFIG,")
+    lines.append("    )")
+    lines.append("    application.launch(allow_flagging=APP_CONFIG.allow_flagging)")
+    lines.append("")
+    return "\n".join(lines)
+
+
+__all__ = ["graph_to_dsl_py", "graph_to_gradio_py"]

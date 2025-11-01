@@ -16,7 +16,8 @@ from nodetool.deploy.docker import (
 )
 from nodetool.deploy.runpod_api import GPUType
 from nodetool.dsl.codegen import create_dsl_modules
-from nodetool.dsl.export import graph_to_dsl_py
+from nodetool.dsl.export import graph_to_dsl_py, graph_to_gradio_py
+from nodetool.types.graph import Graph as ApiGraph
 from nodetool.deploy.progress import ProgressManager
 
 # Add Rich for better tables and terminal output
@@ -34,12 +35,56 @@ progress_manager = ProgressManager(console=console)
 
 
 def cleanup_progress():
-    """Cleanup function to ensure progress bars are stopped on exit."""
+    """Cleanup function to ensure progress bars are stopped on exit and resources are freed."""
     progress_manager.stop()
+    # Clean up thread-local resources to avoid hanging on exit
+    try:
+        Environment.sync_shutdown()
+    except Exception as e:
+        logger = get_logger("nodetool")
+        logger.debug(f"Error during environment shutdown: {e}")
 
 
 # Register cleanup function
 atexit.register(cleanup_progress)
+
+
+def _load_api_graph_for_export(workflow_id: str, user_id: str) -> ApiGraph:
+    """
+    Retrieve a workflow graph for export, searching the database first and
+    falling back to bundled examples.
+    """
+    from nodetool.models.workflow import Workflow as WorkflowModel
+    from nodetool.packages.registry import Registry
+
+    async def _load() -> ApiGraph:
+        workflow = await WorkflowModel.find(user_id, workflow_id)
+        if workflow:
+            graph_obj = workflow.get_api_graph()
+            if graph_obj is None:
+                raise ValueError(f"Workflow '{workflow_id}' has no associated graph.")
+            if isinstance(graph_obj, ApiGraph):
+                return graph_obj
+            if hasattr(graph_obj, "model_dump"):
+                return ApiGraph.model_validate(graph_obj.model_dump())  # type: ignore[arg-type]
+            return ApiGraph.model_validate(graph_obj)  # type: ignore[arg-type]
+
+        registry = Registry.get_instance()
+        examples = registry.list_examples()
+        match = next((ex for ex in examples if ex.id == workflow_id), None)
+        if not match:
+            raise ValueError(f"Workflow '{workflow_id}' not found in database or examples.")
+
+        example = registry.load_example(match.package_name or "", match.name)
+        if not example or not example.graph:
+            raise ValueError(f"Failed to load example workflow '{workflow_id}'.")
+        if isinstance(example.graph, ApiGraph):
+            return example.graph
+        if hasattr(example.graph, "model_dump"):
+            return ApiGraph.model_validate(example.graph.model_dump())  # type: ignore[arg-type]
+        return ApiGraph.model_validate(example.graph)  # type: ignore[arg-type]
+
+    return asyncio.run(_load())
 
 warnings.filterwarnings("ignore")
 log = get_logger(__name__)
@@ -526,32 +571,8 @@ def dsl_export(workflow_id: str, output: str | None, user_id: str):
     installed example workflows. Emits Python code that mirrors the graph using
     DSL node wrappers and connections.
     """
-    import asyncio
-    from typing import Any
-    from nodetool.models.workflow import Workflow as WorkflowModel
-    from nodetool.packages.registry import Registry
-
-    async def _load_graph() -> Any:
-        # Try database first
-        wf = await WorkflowModel.find(user_id, workflow_id)
-        if wf:
-            return wf.get_api_graph()
-
-        # Fallback to examples
-        registry = Registry.get_instance()
-        examples = registry.list_examples()
-        match = next((ex for ex in examples if ex.id == workflow_id), None)
-        if not match:
-            raise ValueError(f"Workflow '{workflow_id}' not found in database or examples.")
-
-        # Load full example workflow
-        ex_full = registry.load_example(match.package_name or "", match.name)
-        if not ex_full or not ex_full.graph:
-            raise ValueError(f"Failed to load example workflow '{workflow_id}'.")
-        return ex_full.graph
-
     try:
-        graph = asyncio.run(_load_graph())
+        graph = _load_api_graph_for_export(workflow_id, user_id)
         code = graph_to_dsl_py(graph)
     except Exception as e:
         click.echo(f"Error exporting workflow '{workflow_id}': {e}", err=True)
@@ -567,6 +588,87 @@ def dsl_export(workflow_id: str, output: str | None, user_id: str):
             raise SystemExit(1)
     else:
         # Print to stdout
+        click.echo(code)
+
+
+@cli.command("gradio-export")
+@click.argument("workflow_id", required=True, type=str)
+@click.option(
+    "--output",
+    "-o",
+    default=None,
+    help="Path to write the generated Gradio app script. Prints to stdout if omitted.",
+    type=click.Path(resolve_path=True, dir_okay=False, file_okay=True),
+)
+@click.option(
+    "--user-id",
+    default="1",
+    show_default=True,
+    help="User ID for database lookup of saved workflows.",
+)
+@click.option(
+    "--title",
+    "app_title",
+    default="NodeTool Workflow",
+    show_default=True,
+    help="Title displayed in the generated Gradio Blocks app.",
+)
+@click.option(
+    "--theme",
+    default=None,
+    help="Optional Gradio theme name (e.g., \"soft\").",
+)
+@click.option(
+    "--description",
+    default=None,
+    help="Optional Markdown description shown at the top of the app.",
+)
+@click.option(
+    "--allow-flagging/--no-allow-flagging",
+    default=False,
+    show_default=True,
+    help="Enable or disable Gradio's flagging UI.",
+)
+@click.option(
+    "--queue/--no-queue",
+    default=True,
+    show_default=True,
+    help="Enable Gradio queueing for the Run button.",
+)
+def gradio_export(
+    workflow_id: str,
+    output: str | None,
+    user_id: str,
+    app_title: str,
+    theme: str | None,
+    description: str | None,
+    allow_flagging: bool,
+    queue: bool,
+):
+    """Export a workflow as a standalone Gradio app script."""
+    try:
+        graph = _load_api_graph_for_export(workflow_id, user_id)
+        code = graph_to_gradio_py(
+            graph,
+            app_title=app_title,
+            theme=theme or None,
+            description=description or None,
+            allow_flagging=allow_flagging,
+            queue=queue,
+        )
+    except Exception as e:
+        click.echo(f"Error exporting Gradio app for workflow '{workflow_id}': {e}", err=True)
+        raise SystemExit(1)
+
+    if output:
+        try:
+            with open(output, "w", encoding="utf-8") as f:
+                f.write(code)
+            click.echo(f"✅ Wrote Gradio app to {output}")
+        except Exception as e:
+            click.echo(f"Error writing file '{output}': {e}", err=True)
+            raise SystemExit(1)
+    else:
         click.echo(code)
 
 

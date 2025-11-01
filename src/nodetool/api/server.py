@@ -295,6 +295,13 @@ def create_app(
         await close_all_database_adapters()
         log.info("Database adapters shutdown complete")
 
+        # Shutdown thread-local connections to prevent hanging on exit
+        try:
+            await Environment.async_shutdown()
+            log.info("Environment thread-local connections shutdown complete")
+        except Exception as e:
+            log.warning(f"Error during environment shutdown: {e}")
+
         log.info("Server shutdown cleanup complete")
 
     app = FastAPI(lifespan=lifespan)

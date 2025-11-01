@@ -34,7 +34,7 @@ def test_export_with_connection_and_props():
     assert first_idx != -1 and second_idx != -1 and first_idx < second_idx
 
     # Connected handle and preserved literal property
-    assert "create_note_1 = CreateNote(title='T', content=read_notes_1.out)" in code
+    assert "create_note_1 = CreateNote(title='T', content=read_notes_1.output)" in code
     assert "workflow = graph(read_notes_1, create_note_1)" in code
 
 
@@ -59,4 +59,3 @@ def test_export_dynamic_outputs_and_properties():
     assert "tag='personal'" in code
     # regular prop included
     assert "title='Draft'" in code
-

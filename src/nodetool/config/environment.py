@@ -186,9 +186,16 @@ class Environment(object):
     _thread_local: threading.local = threading.local()
     _static_auth_provider: "StaticTokenAuthProvider | None" = None
     _user_auth_provider: "AuthProvider | None" = None
+    _all_thread_locals: Dict[int, threading.local] = {}  # Track all thread-local instances for cleanup
+    _cleanup_lock = threading.Lock()
 
     @classmethod
     def _tls(cls) -> threading.local:
+        thread_id = threading.get_ident()
+        # Track this thread for later cleanup
+        with cls._cleanup_lock:
+            if thread_id not in cls._all_thread_locals:
+                cls._all_thread_locals[thread_id] = cls._thread_local
         return cls._thread_local
 
     @classmethod
@@ -1133,71 +1140,70 @@ class Environment(object):
         return temp_storage
 
     @classmethod
-    async def clear_thread_caches_async(cls):
-        """Async version of clear_thread_caches for proper connection cleanup.
+    async def shutdown_all_connections(cls):
+        """Async shutdown for all thread-local connections.
 
-        Call this during graceful shutdown to ensure database connections are
-        properly closed before the process exits.
+        Call this during graceful shutdown to close all database connections
+        from all threads before the process exits.
         """
-        tls = cls._tls()
+        import asyncio
 
-        # Close SQLite connection if it exists
-        if hasattr(tls, "sqlite_connection") and tls.sqlite_connection is not None:
-            try:
-                import asyncio
-                import threading
+        logger = cls.get_logger()
+        logger.info("Shutting down all thread-local database connections...")
 
-                cls.get_logger().debug(
-                    f"Closing SQLite connection for thread {threading.get_ident()}"
-                )
-                # Properly await the close operation with timeout
+        tasks = []
+        with cls._cleanup_lock:
+            # Collect all close tasks without holding the lock during awaits
+            thread_ids = list(cls._all_thread_locals.keys())
+
+        for thread_id in thread_ids:
+            with cls._cleanup_lock:
+                if thread_id not in cls._all_thread_locals:
+                    continue
+                tls = cls._all_thread_locals[thread_id]
+
+            if hasattr(tls, "sqlite_connection") and tls.sqlite_connection is not None:
                 try:
-                    await asyncio.wait_for(
-                        tls.sqlite_connection.close(),
-                        timeout=5.0
-                    )
-                except asyncio.TimeoutError:
-                    cls.get_logger().warning(
-                        f"Timeout closing SQLite connection for thread {threading.get_ident()}"
-                    )
+                    logger.debug(f"Closing SQLite connection for thread {thread_id}")
+                    tasks.append(tls.sqlite_connection.close())
                 except Exception as e:
-                    cls.get_logger().warning(f"Error closing SQLite connection: {e}")
-            except Exception:
-                pass
-            finally:
-                tls.sqlite_connection = None
+                    logger.warning(f"Error scheduling close for thread {thread_id}: {e}")
+
+        # Wait for all closes with timeout
+        if tasks:
+            try:
+                await asyncio.wait_for(
+                    asyncio.gather(*tasks, return_exceptions=True),
+                    timeout=10.0
+                )
+                logger.info("All database connections closed successfully")
+            except asyncio.TimeoutError:
+                logger.error("Timeout waiting for database connections to close")
+            except Exception as e:
+                logger.error(f"Error closing database connections: {e}")
 
     @classmethod
     def clear_thread_caches(cls):
         """Clear per-thread caches to avoid cross-workflow leaks.
 
-        This is a synchronous version for use in contexts where async cleanup
-        isn't available. For proper cleanup, use clear_thread_caches_async.
+        This synchronously clears cached resources.
+        For proper async connection closure, use shutdown_all_connections() during shutdown.
         """
+        import threading
+
+        thread_id = threading.get_ident()
         tls = cls._tls()
 
-        # Close SQLite connection if it exists
-        if hasattr(tls, "sqlite_connection") and tls.sqlite_connection is not None:
+        # Abandon SQLite connection without awaiting (can't close async connection in sync context)
+        # The connection will eventually be garbage collected and closed
+        if hasattr(tls, "sqlite_connection"):
             try:
-                import asyncio
-                import threading
-
-                cls.get_logger().debug(
-                    f"Closing SQLite connection for thread {threading.get_ident()}"
-                )
-                # If we're in an async context, schedule the close
-                try:
-                    loop = asyncio.get_running_loop()
-                    # Schedule the close but don't wait (we can't await in sync context)
-                    loop.create_task(tls.sqlite_connection.close())
-                except RuntimeError:
-                    # No running loop, connection will be closed when GC'd
-                    pass
-            except Exception:
-                pass
-            finally:
+                cls.get_logger().debug(f"Clearing SQLite connection for thread {thread_id}")
                 tls.sqlite_connection = None
+            except Exception as e:
+                cls.get_logger().debug(f"Error clearing SQLite connection: {e}")
 
+        # Clear other cached resources
         for attr in (
             "node_cache",
             "memory_uri_cache",
@@ -1212,9 +1218,16 @@ class Environment(object):
                     pass
 
         if cls._user_auth_provider is not None:
-            cls._user_auth_provider.clear_caches()
+            try:
+                cls._user_auth_provider.clear_caches()
+            except Exception:
+                pass
             cls._user_auth_provider = None
         cls._static_auth_provider = None
+
+        # Remove from tracking
+        with cls._cleanup_lock:
+            cls._all_thread_locals.pop(thread_id, None)
 
     @classmethod
     def get_supabase_url(cls):
@@ -1229,6 +1242,30 @@ class Environment(object):
         The Supabase service key.
         """
         return cls.get("SUPABASE_KEY")
+
+    @classmethod
+    async def async_shutdown(cls):
+        """
+        Graceful async shutdown hook.
+        Call this when your app is shutting down to properly close all resources.
+
+        Usage:
+            await Environment.async_shutdown()
+        """
+        await cls.shutdown_all_connections()
+
+    @classmethod
+    def sync_shutdown(cls):
+        """
+        Graceful sync shutdown hook for non-async contexts.
+        Call this when your app is shutting down to properly close all resources.
+
+        Usage:
+            Environment.sync_shutdown()
+        """
+        # Clear current thread caches synchronously
+        cls.clear_thread_caches()
+        cls.get_logger().info("Environment shutdown complete")
 
 
 async def test():

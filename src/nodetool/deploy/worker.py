@@ -150,6 +150,13 @@ def create_worker_app(
     async def shutdown_event():
         console.print("NodeTool worker shutting down...")
 
+        # Shutdown thread-local connections to prevent hanging on exit
+        try:
+            await Environment.async_shutdown()
+            log.info("Environment thread-local connections shutdown complete")
+        except Exception as e:
+            log.warning(f"Error during environment shutdown: {e}")
+
     @app.get("/health")
     async def health_check():
         """Health check endpoint."""
