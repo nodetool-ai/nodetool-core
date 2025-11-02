@@ -15,7 +15,7 @@ class MemoryStorage(AbstractStorage):
         self.mtimes = {}
         self.base_url = base_url
 
-    def get_url(self, key: str):
+    async def get_url(self, key: str):
         return f"{self.base_url}/{key}"
 
     async def file_exists(self, file_name: str) -> bool:
