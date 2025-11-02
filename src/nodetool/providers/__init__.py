@@ -36,6 +36,7 @@ def import_providers():
         anthropic_provider,
         gemini_provider,
         llama_provider,
+        comfy_provider,
         ollama_provider,
         openai_provider,
         fake_provider,

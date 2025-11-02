@@ -407,3 +407,53 @@ async def test_generate_message():
 - [Chat API](chat-api.md) - WebSocket API for chat interactions
 - [Agents](agents.md) - Using providers with the agent system
 - [Workflow API](workflow-api.md) - Building workflows with providers
+#### ComfyUI (`comfy_provider.py`)
+
+Capabilities: Local image generation via a running ComfyUI server
+
+- TEXT_TO_IMAGE: Uses ComfyUI graph with CheckpointLoaderSimple → CLIPTextEncode → KSampler → VAEDecode → SaveImageWebsocket
+- IMAGE_TO_IMAGE: Uploads input to ComfyUI via POST /upload/image, then runs LoadImage → VAEEncode → KSampler → VAEDecode → SaveImageWebsocket
+
+Configuration (settings/env):
+
+- `COMFYUI_ADDR` — server address (default `127.0.0.1:8188`)
+
+Model discovery:
+
+- Provider implements `get_available_image_models()` by calling `GET http://COMFYUI_ADDR/models/checkpoints` and returns `ImageModel` entries.
+
+Usage example:
+
+```python
+from nodetool.providers.comfy_provider import ComfyProvider
+
+provider = ComfyProvider()
+
+# List local checkpoints discovered by ComfyUI
+models = await provider.get_available_image_models()
+
+# Text to Image
+images = provider.text_to_image(
+    "masterpiece best quality man",
+    checkpoint="dreamshaper_8.safetensors",
+    width=512,
+    height=512,
+    steps=20,
+)
+with open("out.png", "wb") as f:
+    f.write(images[0])
+
+# Image to Image
+images2 = provider.image_to_image(
+    "/path/to/image.png",
+    "cinematic lighting, dramatic shadows",
+    checkpoint="dreamshaper_8.safetensors",
+    strength=0.6,
+    steps=20,
+)
+```
+
+Notes:
+
+- Requires `websocket-client` for WebSocket streaming of images. The provider always streams via `SaveImageWebsocket`.
+- Ensure the specified checkpoint exists under your ComfyUI `models/checkpoints` folder. The provider requires an explicit `checkpoint` argument; there is no environment default.

@@ -39,6 +39,17 @@ register_setting(
         "This allows nodetool to access resources from your ComfyUI setup without duplicating files."
     ),
 )
+
+# ComfyUI settings
+register_setting(
+    package_name="nodetool",
+    env_var="COMFYUI_ADDR",
+    group="ComfyUI",
+    description=(
+        "ComfyUI server address for API/WebSocket access (e.g., 127.0.0.1:8188). "
+        "Used by the Comfy provider and scripts."
+    ),
+)
 register_setting(
     package_name="nodetool",
     env_var="CHROMA_PATH",

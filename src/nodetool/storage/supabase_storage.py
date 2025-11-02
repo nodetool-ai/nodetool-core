@@ -73,9 +73,46 @@ class SupabaseStorage(AbstractStorage):
 
     async def upload(self, key: str, content: IO) -> str:
         content.seek(0)
-        await self.bucket.upload(key, content) # type: ignore
-        res = await self.bucket.create_signed_url(key, 3600*24)
-        return res["signedURL"]
+
+        # storage3 expects a filesystem path; if we get a file-like object, write to temp file first
+        file_obj = content
+        tmp_path = None
+        try:
+            if isinstance(getattr(content, "name", None), str):
+                try:
+                    # Some file objects have a valid name pointing to disk – use it directly
+                    await self.bucket.upload(key, content.name)
+                except (TypeError, ValueError):
+                    tmp_path = await self._write_temp_file(content)
+                    await self.bucket.upload(key, tmp_path)
+            else:
+                tmp_path = await self._write_temp_file(content)
+                await self.bucket.upload(key, tmp_path)
+
+            res = await self.bucket.create_signed_url(key, 3600 * 24)
+            return res["signedURL"]
+        finally:
+            if tmp_path:
+                import os
+
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+
+    async def _write_temp_file(self, content: IO) -> str:
+        import tempfile
+
+        content.seek(0)
+        with tempfile.NamedTemporaryFile(delete=False) as tmp:
+            while True:
+                chunk = content.read(8192)
+                if not chunk:
+                    break
+                tmp.write(chunk)
+            tmp_path = tmp.name
+        content.seek(0)
+        return tmp_path
 
     def upload_sync(self, key: str, content: IO) -> str:
         return asyncio.run(self.upload(key, content))
