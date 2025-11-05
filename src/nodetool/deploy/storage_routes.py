@@ -18,9 +18,9 @@ from email.utils import parsedate_to_datetime
 from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
 
-from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
 from nodetool.types.content_types import EXTENSION_TO_CONTENT_TYPE
+from nodetool.runtime.resources import require_scope
 
 log = get_logger(__name__)
 
@@ -157,49 +157,49 @@ def create_admin_storage_router() -> APIRouter:
     @router.head("/admin/storage/assets/{key}")
     async def admin_head_asset(key: str):
         """Returns metadata for an asset file."""
-        storage = Environment.get_asset_storage()
+        storage = require_scope().get_asset_storage()
         return await _head_file(storage, key)
 
     @router.get("/admin/storage/assets/{key}")
     async def admin_get_asset(key: str, request: Request):
         """Returns an asset file as a stream with range support."""
-        storage = Environment.get_asset_storage()
+        storage = require_scope().get_asset_storage()
         return await _get_file(storage, key, request)
 
     @router.put("/admin/storage/assets/{key}")
     async def admin_put_asset(key: str, request: Request):
         """Uploads or updates an asset file."""
-        storage = Environment.get_asset_storage()
+        storage = require_scope().get_asset_storage()
         return await _put_file(storage, key, request)
 
     @router.delete("/admin/storage/assets/{key}")
     async def admin_delete_asset(key: str):
         """Deletes an asset file."""
-        storage = Environment.get_asset_storage()
+        storage = require_scope().get_asset_storage()
         return await _delete_file(storage, key)
 
     @router.head("/admin/storage/temp/{key}")
     async def admin_head_temp(key: str):
         """Returns metadata for a temp file."""
-        storage = Environment.get_temp_storage()
+        storage = require_scope().get_temp_storage()
         return await _head_file(storage, key)
 
     @router.get("/admin/storage/temp/{key}")
     async def admin_get_temp(key: str, request: Request):
         """Returns a temp file as a stream with range support."""
-        storage = Environment.get_temp_storage()
+        storage = require_scope().get_temp_storage()
         return await _get_file(storage, key, request)
 
     @router.put("/admin/storage/temp/{key}")
     async def admin_put_temp(key: str, request: Request):
         """Uploads or updates a temp file."""
-        storage = Environment.get_temp_storage()
+        storage = require_scope().get_temp_storage()
         return await _put_file(storage, key, request)
 
     @router.delete("/admin/storage/temp/{key}")
     async def admin_delete_temp(key: str):
         """Deletes a temp file."""
-        storage = Environment.get_temp_storage()
+        storage = require_scope().get_temp_storage()
         return await _delete_file(storage, key)
 
     return router
@@ -215,25 +215,25 @@ def create_public_storage_router() -> APIRouter:
     @router.head("/storage/assets/{key}")
     async def public_head_asset(key: str):
         """Returns metadata for an asset file (public)."""
-        storage = Environment.get_asset_storage()
+        storage = require_scope().get_asset_storage()
         return await _head_file(storage, key)
 
     @router.get("/storage/assets/{key}")
     async def public_get_asset(key: str, request: Request):
         """Returns an asset file as a stream with range support (public)."""
-        storage = Environment.get_asset_storage()
+        storage = require_scope().get_asset_storage()
         return await _get_file(storage, key, request)
 
     @router.head("/storage/temp/{key}")
     async def public_head_temp(key: str):
         """Returns metadata for a temp file (public)."""
-        storage = Environment.get_temp_storage()
+        storage = require_scope().get_temp_storage()
         return await _head_file(storage, key)
 
     @router.get("/storage/temp/{key}")
     async def public_get_temp(key: str, request: Request):
         """Returns a temp file as a stream with range support (public)."""
-        storage = Environment.get_temp_storage()
+        storage = require_scope().get_temp_storage()
         return await _get_file(storage, key, request)
 
     return router

@@ -117,10 +117,7 @@ class JobExecutionManager:
             # Remove job from registry and cleanup its resources
             stored_job = self._jobs.pop(job_id, None)
             if stored_job:
-                cleanup_result = stored_job.cleanup_resources()
-                # Handle both sync and async cleanup_resources methods
-                if asyncio.iscoroutine(cleanup_result):
-                    await cleanup_result
+                stored_job.cleanup_resources()
 
     def list_jobs(self, user_id: Optional[str] = None) -> list[JobExecution]:
         """

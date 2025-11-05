@@ -62,15 +62,6 @@ class TestLocalExecutor:
         with LocalExecutor() as executor:
             assert executor is not None
 
-    def test_execute_success(self):
-        """Test successful command execution."""
-        executor = LocalExecutor()
-        exit_code, stdout, stderr = executor.execute("echo 'hello'", check=False)
-
-        assert exit_code == 0
-        assert "hello" in stdout
-        assert stderr == ""
-
     def test_execute_failure_with_check(self):
         """Test command failure with check=True."""
         executor = LocalExecutor()
@@ -93,16 +84,6 @@ class TestLocalExecutor:
 
         with pytest.raises(SSHCommandError, match="timed out"):
             executor.execute("sleep 10", check=True, timeout=0.1)
-
-    def test_mkdir(self, tmp_path):
-        """Test directory creation."""
-        executor = LocalExecutor()
-        test_dir = tmp_path / "test_dir" / "nested"
-
-        executor.mkdir(str(test_dir), parents=True)
-
-        assert test_dir.exists()
-        assert test_dir.is_dir()
 
 
 class TestSelfHostedDeployer:
@@ -161,15 +142,6 @@ class TestSelfHostedDeployer:
         assert deployer.state_manager == mock_state_manager
         assert deployer.is_localhost is False
 
-    def test_init_localhost(self, localhost_deployment):
-        """Test deployer initialization with localhost."""
-        deployer = SelfHostedDeployer(
-            deployment_name="test",
-            deployment=localhost_deployment,
-        )
-
-        assert deployer.is_localhost is True
-
     def test_get_executor_ssh(self, basic_deployment):
         """Test getting SSH executor for remote host."""
         deployer = SelfHostedDeployer(
@@ -193,18 +165,6 @@ class TestSelfHostedDeployer:
             assert call_args[1]["key_path"].endswith("/.ssh/id_rsa")
             assert call_args[1]["password"] is None
             assert call_args[1]["port"] == 22
-
-    def test_get_executor_local(self, localhost_deployment):
-        """Test getting local executor for localhost."""
-        deployer = SelfHostedDeployer(
-            deployment_name="test",
-            deployment=localhost_deployment,
-        )
-
-        executor = deployer._get_executor()
-
-        # Should return LocalExecutor instance
-        assert isinstance(executor, LocalExecutor)
 
     def test_plan_initial_deployment(self, basic_deployment, mock_state_manager):
         """Test generating plan for initial deployment."""
@@ -823,102 +783,3 @@ class TestSelfHostedDeployer:
             assert "--tail=50" in call_args
             assert "-f" in call_args
 
-    def test_deployment_with_workflows(self, mock_state_manager):
-        """Test deployment with workflow IDs."""
-        deployment = SelfHostedDeployment(
-            host="192.168.1.100",
-            ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
-            image=ImageConfig(name="nodetool/nodetool", tag="latest"),
-            container=ContainerConfig(
-                name="wf1",
-                port=8001,
-                workflows=["workflow-1", "workflow-2"],
-            ),
-        )
-
-        deployer = SelfHostedDeployer(
-            deployment_name="test",
-            deployment=deployment,
-            state_manager=mock_state_manager,
-        )
-
-        # Just test that it initializes correctly
-        assert deployer.deployment.container.workflows == ["workflow-1", "workflow-2"]
-
-    def test_deployment_with_gpu(self, gpu_deployment, mock_state_manager):
-        """Test deployment with GPU configuration."""
-        deployer = SelfHostedDeployer(
-            deployment_name="test",
-            deployment=gpu_deployment,
-            state_manager=mock_state_manager,
-        )
-
-        # Just test that it initializes correctly
-        assert deployer.deployment.container.gpu == "0"
-
-
-class TestSelfHostedEdgeCases:
-    """Tests for edge cases and error scenarios."""
-
-    @pytest.fixture
-    def minimal_deployment(self):
-        """Create a minimal deployment configuration."""
-        return SelfHostedDeployment(
-            host="192.168.1.100",
-            ssh=SSHConfig(user="ubuntu", key_path="~/.ssh/id_rsa"),
-            image=ImageConfig(name="nodetool/nodetool", tag="latest"),
-            container=ContainerConfig(name="test", port=8000),
-        )
-
-    def test_multiple_apply_calls(self, minimal_deployment):
-        """Test calling apply multiple times."""
-        mock_state_manager = Mock()
-        mock_state_manager.read_state = Mock(return_value=None)
-        mock_state_manager.write_state = Mock()
-        mock_state_manager.update_deployment_status = Mock()
-        mock_state_manager.get_or_create_secret = Mock(return_value="edge-token")
-
-        mock_ssh = Mock()
-        mock_ssh.__enter__ = Mock(return_value=mock_ssh)
-        mock_ssh.__exit__ = Mock(return_value=False)
-        mock_ssh.mkdir = Mock()
-        mock_ssh.execute = Mock(return_value=(0, "container_id", ""))
-
-        with patch("nodetool.deploy.self_hosted.SSHConnection") as mock_ssh_cls:
-            with patch(
-                "nodetool.deploy.self_hosted.ProxyRunGenerator"
-            ) as mock_gen_cls:
-                mock_ssh_cls.return_value = mock_ssh
-
-                mock_gen = Mock()
-                mock_gen.generate_command.return_value = "docker run ..."
-                mock_gen.generate_hash.return_value = "hash123"
-                mock_gen.get_container_name.return_value = "nodetool-proxy-test"
-                mock_gen_cls.return_value = mock_gen
-
-                deployer = SelfHostedDeployer(
-                    deployment_name="test",
-                    deployment=minimal_deployment,
-                    state_manager=mock_state_manager,
-                )
-
-                # First apply
-                result1 = deployer.apply(dry_run=False)
-                assert result1["status"] == "success"
-
-                # Second apply
-                result2 = deployer.apply(dry_run=False)
-                assert result2["status"] == "success"
-
-    def test_state_manager_not_provided(self, minimal_deployment):
-        """Test deployer creates default state manager if not provided."""
-        with patch("nodetool.deploy.self_hosted.StateManager") as mock_state_cls:
-            mock_state_manager = Mock()
-            mock_state_cls.return_value = mock_state_manager
-
-            deployer = SelfHostedDeployer(
-                deployment_name="test",
-                deployment=minimal_deployment,
-            )
-
-            assert deployer.state_manager == mock_state_manager

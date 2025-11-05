@@ -59,9 +59,9 @@ async def test_upload(memory_storage):
 @pytest.mark.asyncio
 async def test_upload_stream(memory_storage):
     content = b"hello, world"
-    url = memory_storage.upload_stream("test.txt", [content])
+    url = await memory_storage.upload_stream("test.txt", [content])
     assert url == "http://localhost:8000/test.txt"
-    assert memory_storage.file_exists("test.txt")
+    assert await memory_storage.file_exists("test.txt")
     stream = io.BytesIO()
     await memory_storage.download("test.txt", stream)
     stream.seek(0)

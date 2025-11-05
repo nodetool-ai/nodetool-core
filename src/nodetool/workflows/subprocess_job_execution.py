@@ -26,6 +26,7 @@ from nodetool.workflows.types import (
     Error as WorkflowError,
     ProcessingMessage,
 )
+from nodetool.runtime.resources import ResourceScope
 
 log = get_logger(__name__)
 
@@ -696,6 +697,7 @@ class SubprocessJobExecution(JobExecution):
         log.info(f"Starting subprocess job {job_id} for workflow {request.workflow_id}")
 
         # Create job record in database
+        # Use a temporary ResourceScope for the initial database operation
         job_model = Job(
             id=job_id,
             workflow_id=request.workflow_id,
@@ -705,7 +707,10 @@ class SubprocessJobExecution(JobExecution):
             graph=request.graph.model_dump() if request.graph else {},
             params=request.params or {},
         )
-        await job_model.save()
+
+        # In test mode, inherit db_path from current scope if available
+        async with ResourceScope():
+            await job_model.save()
 
         # Prepare request JSON
         request_dict = request.model_dump()

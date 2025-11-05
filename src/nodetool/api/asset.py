@@ -19,8 +19,8 @@ from nodetool.types.asset import (
     AssetSearchResult,
 )
 from nodetool.api.utils import current_user
-from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
+from nodetool.runtime.resources import require_scope
 from typing import Dict, List, Optional, Tuple, Union
 from nodetool.models.asset import Asset as AssetModel
 from nodetool.models.workflow import Workflow
@@ -34,7 +34,7 @@ from nodetool.media.common.media_utils import (
 
 
 async def from_model(asset: AssetModel):
-    storage = Environment.get_asset_storage()
+    storage = require_scope().get_asset_storage()
     if asset.content_type != "folder":
         # Note: Pre-signed URLs from storage providers (S3, etc.) typically
         # include their own cache headers. If using file storage, consider
@@ -385,7 +385,7 @@ async def update(
     if req.size is not None:
         asset.size = req.size
     if req.data:
-        storage = Environment.get_asset_storage()
+        storage = require_scope().get_asset_storage()
         data_bytes = req.data.encode("utf-8")
         asset.size = len(data_bytes)  # Update size when data is updated
         await storage.upload(asset.file_name, BytesIO(data_bytes))
@@ -450,7 +450,7 @@ async def delete_folder(user_id: str, folder_id: str) -> List[str]:
 async def delete_single_asset(asset: AssetModel):
     try:
         await asset.delete()
-        storage = Environment.get_asset_storage()
+        storage = require_scope().get_asset_storage()
         try:
             await storage.delete(asset.thumb_file_name)
         except Exception as e:
@@ -496,7 +496,7 @@ async def create(
             file_content = await file.read()
             file_size = len(file_content)  # Calculate actual file size
             file_io = BytesIO(file_content)
-            storage = Environment.get_asset_storage()
+            storage = require_scope().get_asset_storage()
 
             if "video" in req.content_type:
                 thumbnail = await create_video_thumbnail(file_io, 512, 512)
@@ -545,7 +545,7 @@ async def download_assets(
         raise HTTPException(status_code=400, detail="No asset IDs provided")
 
     zip_buffer = BytesIO()
-    storage = Environment.get_asset_storage()
+    storage = require_scope().get_asset_storage()
 
     # This dictionary will hold all assets to be included in the zip, plus their parents for path construction.
     all_assets_with_parents: Dict[str, AssetModel] = {}

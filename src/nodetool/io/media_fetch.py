@@ -9,6 +9,7 @@ import numpy as np
 import httpx
 
 from nodetool.config.environment import Environment
+from nodetool.runtime.resources import require_scope
 from nodetool.media.image.image_utils import (
     numpy_to_pil_image,
     pil_to_png_bytes,
@@ -139,7 +140,7 @@ def _fetch_http_uri_sync(uri: str) -> Tuple[str, bytes]:
 def _fetch_memory_uri(uri: str) -> Tuple[str, bytes]:
     obj = None
     try:
-        obj = Environment.get_memory_uri_cache().get(uri)
+        obj = require_scope().get_memory_uri_cache().get(uri)
     except Exception:
         obj = None
     if obj is None:

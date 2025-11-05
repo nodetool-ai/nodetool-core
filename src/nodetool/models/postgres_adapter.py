@@ -512,12 +512,13 @@ class PostgresAdapter(DatabaseAdapter):
                 ]
             )
 
+        fetch_limit = limit + 1
         query = SQL("SELECT {} FROM {} WHERE {} ORDER BY {} LIMIT {}").format(
             cols,
             Identifier(self.table_name),
             where_clause,
             order_by,
-            SQL(str(limit)),
+            SQL(str(fetch_limit)),
         )
 
         pool = await self._get_pool()
@@ -530,10 +531,13 @@ class PostgresAdapter(DatabaseAdapter):
                     for row in rows
                 ]
 
-        if len(res) == 0 or len(res) < limit:
+        if len(res) <= limit:
             return res, ""
 
+        extra_record = res.pop()
         last_evaluated_key = str(res[-1].get(pk))
+        if not last_evaluated_key:
+            last_evaluated_key = str(extra_record.get(pk))
         return res, last_evaluated_key
 
     @asynccontextmanager
@@ -646,12 +650,6 @@ class PostgresAdapter(DatabaseAdapter):
         except psycopg.Error as e:
             print(f"PostgreSQL error during index listing: {e}")
             raise e
-
-    async def close(self):
-        """Closes the database connection pool."""
-        if self._pool is not None:
-            await self._pool.close()
-            self._pool = None
 
     def __del__(self):
         """Cleanup method when the adapter object is garbage collected."""

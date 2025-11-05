@@ -5,6 +5,7 @@ import json
 from fastapi.websockets import WebSocketState
 import msgpack
 from typing import AsyncGenerator, Dict, Optional
+from nodetool.runtime.resources import get_user_auth_provider
 from nodetool.types.wrap_primitive_types import wrap_primitive_types
 from pydantic import BaseModel
 from fastapi import WebSocket, WebSocketDisconnect
@@ -25,6 +26,7 @@ from nodetool.workflows.job_execution_manager import (
 )
 from nodetool.models.job import Job
 import gc
+from nodetool.runtime.resources import ResourceScope
 
 log = get_logger(__name__)
 
@@ -217,7 +219,7 @@ class WebSocketRunner:
                         "WebSocketRunner connection rejected: Missing authentication token"
                     )
                     return
-                user_provider = Environment.get_user_auth_provider()
+                user_provider = get_user_auth_provider()
                 if not user_provider:
                     await websocket.close(
                         code=1008, reason="Authentication provider not configured"
@@ -292,7 +294,7 @@ class WebSocketRunner:
             asset_mode = (
                 AssetOutputMode.DATA_URI
                 if self.mode == WebSocketMode.TEXT
-                else AssetOutputMode.TEMP_URL
+                else AssetOutputMode.RAW
             )
             context = ProcessingContext(
                 user_id=req.user_id,
@@ -450,17 +452,18 @@ class WebSocketRunner:
             job_execution = job_manager.get_job(job_id)
 
             if job_execution is None:
-                db_job = await Job.get(job_id)
-                if db_job and db_job.status in {"running", "starting", "queued"}:
-                    log.warning(
-                        "WebSocketRunner: Job missing from manager; marking as failed",
-                        extra={"job_id": job_id},
-                    )
-                    await db_job.update(
-                        status="failed",
-                        error="Job worker unavailable during reconnect",
-                        finished_at=datetime.now(),
-                    )
+                async with ResourceScope():
+                    db_job = await Job.get(job_id)
+                    if db_job and db_job.status in {"running", "starting", "queued"}:
+                        log.warning(
+                            "WebSocketRunner: Job missing from manager; marking as failed",
+                            extra={"job_id": job_id},
+                        )
+                        await db_job.update(
+                            status="failed",
+                            error="Job worker unavailable during reconnect",
+                            finished_at=datetime.now(),
+                        )
                 log.warning(
                     "WebSocketRunner: Job not found during reconnect",
                     extra={"job_id": job_id},

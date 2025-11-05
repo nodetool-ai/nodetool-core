@@ -15,7 +15,7 @@ class MemoryStorage(AbstractStorage):
         self.mtimes = {}
         self.base_url = base_url
 
-    async def get_url(self, key: str):
+    async def get_url(self, key: str) -> str:
         return f"{self.base_url}/{key}"
 
     async def file_exists(self, file_name: str) -> bool:
@@ -36,13 +36,13 @@ class MemoryStorage(AbstractStorage):
         else:
             raise FileNotFoundError(f"File {key} not found")
 
-    def upload_stream(self, key: str, content: Iterator[bytes]) -> str:
+    async def upload_stream(self, key: str, content: Iterator[bytes]) -> str:
         bytes_io = io.BytesIO()
         for chunk in content:
             bytes_io.write(chunk)
         bytes_io.seek(0)
         self.storage[key] = bytes_io.getvalue()
-        return self.get_url(key)
+        return f"{self.base_url}/{key}"
 
     async def download(self, key: str, stream: io.BytesIO):
         if key in self.storage:
@@ -52,11 +52,11 @@ class MemoryStorage(AbstractStorage):
 
     async def upload(self, key: str, content: io.BytesIO) -> str:
         self.storage[key] = content.read()
-        return self.get_url(key)
+        return f"{self.base_url}/{key}"
 
     def upload_sync(self, key: str, content: io.BytesIO) -> str:
         self.storage[key] = content.read()
-        return self.get_url(key)
+        return f"{self.base_url}/{key}"
 
     async def delete(self, file_name: str):
         if file_name in self.storage:

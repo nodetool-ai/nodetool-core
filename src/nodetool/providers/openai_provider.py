@@ -1151,6 +1151,9 @@ class OpenAIProvider(BaseProvider):
         async for chunk in completion:
             chunk: ChatCompletionChunk = chunk
             chunk_count += 1
+            print("*********************")
+            print(chunk.model_dump())
+            print("*********************")
 
             # Track usage information (only available in the final chunk)
             if chunk.usage:

@@ -76,8 +76,8 @@ def convert_from_supabase_format(value: Any, py_type: Type | None) -> Any:
 
 
 def convert_from_supabase_attributes(
-    attributes: Dict[str, Any], fields: Dict[str, FieldInfo]
-) -> Dict[str, Any]:
+    attributes: dict[str, Any], fields: Dict[str, FieldInfo]
+) -> dict[str, Any]:
     """Converts a dictionary of attributes from Supabase types."""
     return {
         key: (
@@ -103,17 +103,14 @@ class SupabaseAdapter(DatabaseAdapter):
 
     def __init__(
         self,
-        supabase_url: str,
-        supabase_key: str,
+        client: SupabaseAsyncClient,
         fields: Dict[str, FieldInfo],
         table_schema: Dict[str, Any],
         # indexes: List[Dict[str, Any]], # Index management might differ
     ):
         """Initializes the Supabase adapter."""
         # Instantiate async client; direct constructor avoids needing to await factory
-        self.supabase_client: SupabaseAsyncClient = SupabaseAsyncClient(
-            supabase_url, supabase_key
-        )
+        self.client = client
         self.table_name = table_schema["table_name"]
         self.table_schema = table_schema
         self.fields = fields
@@ -166,15 +163,15 @@ class SupabaseAdapter(DatabaseAdapter):
         }
 
         try:
-            response: APIResponse = await (
-                self.supabase_client.table(self.table_name)
+            response = await (
+                self.client.table(self.table_name)
                 .upsert(
                     supabase_item  # , on_conflict=pk # 'on_conflict' is often implicit based on PK
                 )
                 .execute()
             )
 
-            if not response.data:
+            if not response.data:  # type: ignore
                 # Handle potential errors if needed, PostgREST errors might be in response directly
                 # or raise exceptions depending on the client version/config.
                 log.error(
@@ -193,16 +190,16 @@ class SupabaseAdapter(DatabaseAdapter):
         select_columns = ", ".join(self.fields.keys())
 
         try:
-            response: APIResponse = await (
-                self.supabase_client.table(self.table_name)
+            response = await (
+                self.client.table(self.table_name)
                 .select(select_columns)
                 .eq(pk, key)
                 .limit(1)
                 .execute()
             )
 
-            if response.data:
-                return convert_from_supabase_attributes(response.data[0], self.fields)
+            if response.data:  # type: ignore
+                return convert_from_supabase_attributes(dict(response.data[0]), self.fields)  # type: ignore[reportArgumentType]
             else:
                 # Check for errors in response if necessary
                 return None
@@ -216,14 +213,14 @@ class SupabaseAdapter(DatabaseAdapter):
         """Deletes an item from Supabase by its primary key."""
         pk = self._get_primary_key()
         try:
-            response: APIResponse = await (
-                self.supabase_client.table(self.table_name)
+            response = await (
+                self.client.table(self.table_name)
                 .delete()
                 .eq(pk, primary_key)
                 .execute()
             )
             # Check response for errors if needed
-            if not response.data:  # Or check status code/error attribute
+            if not response.data:  # type: ignore
                 log.warning(
                     f"Potential issue deleting item {primary_key} from {self.table_name}. Response: {response}"
                 )
@@ -313,7 +310,7 @@ class SupabaseAdapter(DatabaseAdapter):
             select_columns = ", ".join(self.fields.keys())
 
         # Base query
-        query = self.supabase_client.table(self.table_name).select(select_columns)
+        query = self.client.table(self.table_name).select(select_columns)
 
         # Apply conditions (potentially complex with AND/OR groups)
         if condition is not None:
@@ -329,19 +326,29 @@ class SupabaseAdapter(DatabaseAdapter):
         else:
             query = query.order(pk, desc=reverse)
 
-        query = query.limit(limit)
+        fetch_limit = limit + 1
+        query = query.limit(fetch_limit)
 
         # Execute
         try:
-            response: APIResponse = await query.execute()
-            if response.data:
-                results = [
-                    convert_from_supabase_attributes(dict(row), self.fields)
-                    for row in response.data
-                ]
-                return results, ""
-            else:
+            response = await query.execute()
+
+            if not response.data:  # type: ignore
                 return [], ""
+
+            results = [
+                convert_from_supabase_attributes(dict(row), self.fields)  # type: ignore[reportArgumentType]
+                for row in response.data  # type: ignore
+            ]
+
+            if len(results) <= limit:
+                return results, ""
+
+            extra_record = results.pop()
+            last_evaluated_key = str(results[-1].get(pk))
+            if not last_evaluated_key:
+                last_evaluated_key = str(extra_record.get(pk))
+            return results, last_evaluated_key
         except Exception as e:
             log.exception(f"Error querying Supabase table {self.table_name}: {e}")
             raise  # Or return [], ""
@@ -362,13 +369,9 @@ class SupabaseAdapter(DatabaseAdapter):
         """Lists indexes using raw SQL querying pg_catalog."""
         raise NotImplementedError("Index listing is not supported for Supabase.")
 
-    async def close(self) -> None:
+
+    async def auto_migrate(self):
         """
-        Close the database connection and clean up resources.
+        Automatically migrate the table to current schema.
         """
-        # Supabase client typically manages its own connection lifecycle
-        # Check if the client has a close method or similar cleanup
-        if hasattr(self.supabase_client, "close"):
-            await self.supabase_client.close()
-        # For most Supabase client implementations, explicit cleanup isn't required
-        # as connections are managed automatically
+        log.info("Skipping auto-migrate for supabase. Requires manual sql migration.")

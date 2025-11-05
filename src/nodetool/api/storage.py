@@ -11,8 +11,8 @@ from email.utils import parsedate_to_datetime
 from fastapi.responses import StreamingResponse
 from nodetool.api.utils import current_user
 from nodetool.types.content_types import EXTENSION_TO_CONTENT_TYPE
-from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
+from nodetool.runtime.resources import require_scope
 
 
 log = get_logger(__name__)
@@ -144,7 +144,7 @@ async def head(key: str):
     """
     Returns the metadata for the file with the given key.
     """
-    storage = Environment.get_asset_storage()
+    storage = require_scope().get_asset_storage()
     return await _head_file(storage, key)
 
 
@@ -153,7 +153,7 @@ async def get(key: str, request: Request):
     """
     Returns the file as a stream for the given key, supporting range queries.
     """
-    storage = Environment.get_asset_storage()
+    storage = require_scope().get_asset_storage()
     return await _get_file(storage, key, request)
 
 
@@ -162,7 +162,7 @@ async def update(key: str, request: Request, user: str = Depends(current_user)):
     """
     Updates or creates the file for the given key.
     """
-    storage = Environment.get_asset_storage()
+    storage = require_scope().get_asset_storage()
     return await _put_file(storage, key, request)
 
 
@@ -171,7 +171,7 @@ async def delete(key: str, user: str = Depends(current_user)):
     """
     Deletes the asset for the given key.
     """
-    storage = Environment.get_asset_storage()
+    storage = require_scope().get_asset_storage()
     return await _delete_file(storage, key)
 
 
@@ -181,7 +181,7 @@ async def temp_head(key: str):
     """
     Returns the metadata for the temp file with the given key.
     """
-    storage = Environment.get_temp_storage()
+    storage = require_scope().get_temp_storage()
     return await _head_file(storage, key)
 
 
@@ -190,7 +190,7 @@ async def temp_get(key: str, request: Request):
     """
     Returns the temp file as a stream for the given key, supporting range queries.
     """
-    storage = Environment.get_temp_storage()
+    storage = require_scope().get_temp_storage()
     return await _get_file(storage, key, request)
 
 
@@ -199,7 +199,7 @@ async def temp_update(key: str, request: Request, user: str = Depends(current_us
     """
     Updates or creates the temp file for the given key.
     """
-    storage = Environment.get_temp_storage()
+    storage = require_scope().get_temp_storage()
     return await _put_file(storage, key, request)
 
 
@@ -208,5 +208,5 @@ async def temp_delete(key: str, user: str = Depends(current_user)):
     """
     Deletes the temp asset for the given key.
     """
-    storage = Environment.get_temp_storage()
+    storage = require_scope().get_temp_storage()
     return await _delete_file(storage, key)

@@ -177,10 +177,12 @@ class TestAssetMethods:
         """Test successful asset creation."""
         content = BytesIO(b"test content")
 
-        with patch.object(Environment, "get_asset_storage") as mock_storage:
+        with patch("nodetool.workflows.processing_context.require_scope") as mock_require_scope:
             mock_storage_instance = Mock()
             mock_storage_instance.upload = AsyncMock()
-            mock_storage.return_value = mock_storage_instance
+            mock_scope = Mock()
+            mock_scope.get_asset_storage.return_value = mock_storage_instance
+            mock_require_scope.return_value = mock_scope
 
             result = await context.create_asset(
                 name="test.txt", content_type="text/plain", content=content
@@ -200,7 +202,7 @@ class TestAssetMethods:
         """Test successful asset download."""
         test_content = b"test file content"
 
-        with patch.object(Environment, "get_asset_storage") as mock_storage:
+        with patch("nodetool.workflows.processing_context.require_scope") as mock_require_scope:
             mock_storage_instance = Mock()
             mock_storage_instance.download = AsyncMock()
 
@@ -208,7 +210,9 @@ class TestAssetMethods:
                 io_obj.write(test_content)
 
             mock_storage_instance.download.side_effect = mock_download
-            mock_storage.return_value = mock_storage_instance
+            mock_scope = Mock()
+            mock_scope.get_asset_storage.return_value = mock_storage_instance
+            mock_require_scope.return_value = mock_scope
 
             result = await context.download_asset(sample_asset.id)
 
@@ -426,10 +430,12 @@ class TestUtilityMethods:
 
     def test_asset_storage_url(self, context: ProcessingContext):
         """Test asset storage URL generation."""
-        with patch.object(Environment, "get_asset_storage") as mock_storage:
+        with patch("nodetool.workflows.processing_context.require_scope") as mock_require_scope:
             mock_storage_instance = Mock()
             mock_storage_instance.get_url.return_value = "http://test.com/file.png"
-            mock_storage.return_value = mock_storage_instance
+            mock_scope = Mock()
+            mock_scope.get_asset_storage.return_value = mock_storage_instance
+            mock_require_scope.return_value = mock_scope
 
             url = context.asset_storage_url("test_key")
             assert url == "http://test.com/file.png"

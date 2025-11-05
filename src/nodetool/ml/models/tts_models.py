@@ -7,11 +7,18 @@ This module provides functionality to discover and list all available TTS models
 across all registered providers that support the TEXT_TO_SPEECH capability.
 """
 
+import asyncio
+import time
 from nodetool.config.logging_config import get_logger
 from typing import List
 from nodetool.metadata.types import TTSModel
 
 log = get_logger(__name__)
+
+# Cache for TTS models (per user_id) with timestamp
+_tts_models_cache: dict[str, tuple[List[TTSModel], float]] = {}
+_tts_models_cache_lock = asyncio.Lock()
+_TTS_MODELS_CACHE_TTL = 6 * 3600  # 6 hours in seconds
 
 
 async def get_all_tts_models(user_id: str) -> List[TTSModel]:
@@ -29,6 +36,14 @@ async def get_all_tts_models(user_id: str) -> List[TTSModel]:
     Returns:
         List of all available TTSModel instances from all providers
     """
+    # Check cache first
+    async with _tts_models_cache_lock:
+        if user_id in _tts_models_cache:
+            cached_models, cache_time = _tts_models_cache[user_id]
+            if time.time() - cache_time < _TTS_MODELS_CACHE_TTL:
+                log.debug(f"Returning cached TTS models for user {user_id}")
+                return cached_models
+
     from nodetool.providers import list_providers
 
     models = []
@@ -40,5 +55,9 @@ async def get_all_tts_models(user_id: str) -> List[TTSModel]:
         )
 
     log.info(f"Discovered {len(models)} total TTS models")
+
+    # Cache the result
+    async with _tts_models_cache_lock:
+        _tts_models_cache[user_id] = (models, time.time())
 
     return models

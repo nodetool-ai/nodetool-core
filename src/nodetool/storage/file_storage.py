@@ -16,7 +16,7 @@ class FileStorage(AbstractStorage):
         self.base_url = base_url
         os.makedirs(base_path, exist_ok=True)
 
-    async def get_url(self, key: str):
+    async def get_url(self, key: str) -> str:
         return f"{self.base_url}/{key}"
 
     def generate_presigned_url(

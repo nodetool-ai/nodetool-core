@@ -22,7 +22,7 @@ class S3Storage(AbstractStorage):
         self.domain = domain
         self.s3 = client
 
-    def get_url(self, key: str):
+    async def get_url(self, key: str):
         """
         Get the URL for the given S3 object.
         """
@@ -81,7 +81,7 @@ class S3Storage(AbstractStorage):
         Uploads a blob to the bucket.
         """
         await asyncio.to_thread(self.s3.upload_fileobj, content, self.bucket_name, key)
-        return self.get_url(key)
+        return await self.get_url(key)
 
     async def download_stream(self, key: str) -> AsyncIterator[bytes]:
         """

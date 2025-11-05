@@ -1,6 +1,7 @@
 import asyncio
 from asyncio import AbstractEventLoop
 from concurrent.futures import Future
+import contextvars
 import threading
 from typing import Callable, Coroutine, Any, Optional, TypeVar
 from nodetool.config.logging_config import get_logger
@@ -282,10 +283,44 @@ class ThreadedEventLoop:
             log.debug(f"Event loop thread {threading.get_ident()} finished.")
 
     def run_coroutine(self, coro: Coroutine[Any, Any, T]) -> Future[T]:
-        """Schedule a coroutine to run in this event loop."""
+        """Schedule a coroutine to run in this event loop.
+
+        Propagates contextvars from the caller thread to the loop thread,
+        ensuring that context (e.g., ResourceScope) is preserved across
+        thread boundaries.
+        """
         if self._loop is None:
             raise RuntimeError("Not started. Use start() or context manager.")
-        return asyncio.run_coroutine_threadsafe(coro, self._loop)  # type: ignore
+
+        # Capture the current context in the caller thread
+        outer_ctx = contextvars.copy_context()
+
+        # Create a Future to return to the caller
+        result_future: Future[T] = Future()
+
+        def run_with_context():
+            """Wrapper to run the coroutine with the captured context."""
+            # Create and schedule the task with the captured context
+            task = self._loop.create_task(coro)
+
+            def on_done(t):
+                """Callback when the task completes."""
+                try:
+                    exc = t.exception()
+                    if exc is not None:
+                        result_future.set_exception(exc)
+                    else:
+                        result_future.set_result(t.result())
+                except asyncio.CancelledError:
+                    result_future.cancel()
+                except Exception as e:
+                    result_future.set_exception(e)
+
+            task.add_done_callback(on_done)
+
+        # Schedule the wrapper with context propagation
+        self._loop.call_soon_threadsafe(outer_ctx.run, run_with_context)
+        return result_future
 
     def run_in_executor(self, func: Callable[..., T], *args: Any) -> asyncio.Future[T]:
         """Run a synchronous function in the default executor of this event loop."""

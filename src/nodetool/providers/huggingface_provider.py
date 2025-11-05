@@ -710,6 +710,9 @@ class HuggingFaceProvider(BaseProvider):
             f"Input: {len(messages)} messages, {len(tools)} tools, max_tokens: {max_tokens}"
         )
 
+        if len(messages) == 0:
+            raise ValueError("Empty messsages")
+
         # Convert messages to HuggingFace format
         log.debug("Converting messages to HuggingFace format")
         hf_messages = []

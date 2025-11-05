@@ -11,8 +11,12 @@ class _FakeBucket:
         self.base_url = base_url.rstrip("/")
         self._store = store.setdefault(name, {})  # per-bucket dict
 
-    async def upload(self, path: str, content: bytes, *args, **kwargs):
-        now = datetime.now(timezone.utc).isoformat()
+    async def upload(self, path: str, file_path: str, *args, **kwargs):
+        # Read the file content from the provided file path
+        with open(file_path, "rb") as f:
+            content = f.read()
+        # Format datetime to match Supabase format (with Z instead of +00:00)
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
         self._store[path] = {
             "bytes": content,
             "updated_at": now,
@@ -25,6 +29,25 @@ class _FakeBucket:
         if not entry:
             raise FileNotFoundError(path)
         return entry["bytes"]
+
+    async def exists(self, path: str) -> bool:
+        """Check if a file exists."""
+        return path in self._store
+
+    async def info(self, path: str) -> dict:
+        """Get file metadata."""
+        entry = self._store.get(path)
+        if not entry:
+            raise FileNotFoundError(path)
+        return {
+            "id": "fake-uuid",
+            "name": path.split("/")[-1] if "/" in path else path,
+            "bucket_id": self.name,
+            "size": entry.get("size"),
+            "content_type": "application/octet-stream",
+            "last_modified": entry.get("updated_at"),
+            "created_at": entry.get("updated_at"),
+        }
 
     async def remove(self, paths):
         for p in paths:
@@ -47,8 +70,14 @@ class _FakeBucket:
                 )
         return res
 
-    def get_public_url(self, path: str):
+    async def get_public_url(self, path: str):
         return f"{self.base_url}/storage/v1/object/public/{self.name}/{path}"
+
+    async def create_signed_url(self, path: str, expires_in: int):
+        """Create a signed URL for the given path."""
+        return {
+            "signedURL": f"{self.base_url}/storage/v1/object/sign/{self.name}/{path}?token=fake_token"
+        }
 
 
 class _FakeStorage:
@@ -87,7 +116,7 @@ async def test_upload_and_exists(storage: SupabaseStorage):
     key = "images/test.jpg"
     data = b"hello world"
     url = await storage.upload(key, io.BytesIO(data))
-    assert url.endswith(key)
+    assert key in url
     assert await storage.file_exists(key)
 
 
@@ -132,6 +161,6 @@ async def test_delete(storage: SupabaseStorage):
 @pytest.mark.asyncio
 async def test_get_url(storage: SupabaseStorage):
     key = "images/photo.png"
-    url = storage.get_url(key)
-    assert await url == f"https://example.supabase.co/storage/v1/object/public/assets/{key}"
+    url = await storage.get_url(key)
+    assert url == f"https://example.supabase.co/storage/v1/object/public/assets/{key}"
 

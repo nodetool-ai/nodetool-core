@@ -27,19 +27,20 @@ from nodetool.types.graph import get_input_schema, get_output_schema
 from nodetool.packages.registry import Registry
 import asyncio
 from nodetool.config.logging_config import get_logger
+from nodetool.runtime.resources import require_scope
 
 log = get_logger(__name__)
 router = APIRouter(prefix="/api/workflows", tags=["workflows"])
 
 
-def find_thumbnail(workflow: WorkflowModel) -> str | None:
+async def find_thumbnail(workflow: WorkflowModel) -> str | None:
     if workflow.thumbnail:
-        return Environment.get_asset_storage().get_url(workflow.thumbnail)
+        return await require_scope().get_asset_storage().get_url(workflow.thumbnail)
     else:
         return None
 
 
-def from_model(
+async def from_model(
     workflow: WorkflowModel,
     *,
     api_graph: Graph | None = None,
@@ -66,7 +67,7 @@ def from_model(
         tags=workflow.tags,
         description=workflow.description or "",
         thumbnail=workflow.thumbnail or "",
-        thumbnail_url=find_thumbnail(workflow),
+        thumbnail_url=await find_thumbnail(workflow),
         graph=api_graph,
         input_schema=input_schema,
         output_schema=output_schema,
@@ -114,7 +115,7 @@ async def create(
                 )
 
             # Create a new workflow based on the example
-            workflow = from_model(
+            workflow = await from_model(
                 await WorkflowModel.create(
                     name=workflow_request.name,
                     package_name=workflow_request.package_name,
@@ -133,7 +134,7 @@ async def create(
         except ValueError as e:
             raise HTTPException(status_code=404, detail=str(e))
     elif workflow_request.graph:
-        workflow = from_model(
+        workflow = await from_model(
             await WorkflowModel.create(
                 name=workflow_request.name,
                 package_name=workflow_request.package_name,
@@ -152,7 +153,7 @@ async def create(
             edges, nodes = read_graph(workflow_request.comfy_workflow)
         except Exception as e:
             raise HTTPException(status_code=400, detail=str(e))
-        workflow = from_model(
+        workflow = await from_model(
             await WorkflowModel.create(
                 name=workflow_request.name,
                 description=workflow_request.description,
@@ -191,8 +192,9 @@ async def index(
         columns=column_list,
         run_mode=run_mode,
     )
+    workflow_responses = await asyncio.gather(*[from_model(workflow) for workflow in workflows])
     return WorkflowList(
-        workflows=[from_model(workflow) for workflow in workflows], next=cursor
+        workflows=workflow_responses, next=cursor
     )
 
 
@@ -207,8 +209,9 @@ async def public(
     workflows, cursor = await WorkflowModel.paginate(
         limit=limit, start_key=cursor, columns=column_list
     )
+    workflow_responses = await asyncio.gather(*[from_model(workflow) for workflow in workflows])
     return WorkflowList(
-        workflows=[from_model(workflow) for workflow in workflows], next=cursor
+        workflows=workflow_responses, next=cursor
     )
 
 
@@ -219,7 +222,7 @@ async def get_public_workflow(id: str) -> Workflow:
         raise HTTPException(status_code=404, detail="Workflow not found")
     if workflow.access != "public":
         raise HTTPException(status_code=404, detail="Workflow not found")
-    return from_model(workflow)
+    return await from_model(workflow)
 
 
 @router.get("/tools")
@@ -448,7 +451,7 @@ async def get_workflow(id: str, user: str = Depends(current_user)) -> Workflow:
         raise HTTPException(status_code=404, detail="Workflow not found")
     if workflow.access != "public" and workflow.user_id != user:
         raise HTTPException(status_code=404, detail="Workflow not found")
-    return from_model(workflow)
+    return await from_model(workflow)
 
 
 @router.put("/{id}")
@@ -479,7 +482,7 @@ async def update_workflow(
     workflow.run_mode = workflow_request.run_mode
     workflow.updated_at = datetime.now()
     await workflow.save()
-    updated_workflow = from_model(workflow)
+    updated_workflow = await from_model(workflow)
 
     return updated_workflow
 

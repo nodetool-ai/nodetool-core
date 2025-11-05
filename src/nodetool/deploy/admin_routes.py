@@ -26,7 +26,6 @@ from nodetool.deploy.admin_operations import (
     calculate_cache_size,
     delete_hf_model,
 )
-from nodetool.config.environment import Environment
 from nodetool.models.asset import Asset as AssetModel
 from nodetool.models.database_adapter import DatabaseAdapter
 from nodetool.models.workflow import Workflow
@@ -38,6 +37,7 @@ from nodetool.indexing.ingestion import find_input_nodes
 from pydantic import BaseModel
 from nodetool.types.asset import Asset, AssetList
 from nodetool.api.utils import current_user
+from nodetool.runtime.resources import require_scope
 
 
 # Collection-related Pydantic models
@@ -77,7 +77,7 @@ class IndexResponse(BaseModel):
 
 async def asset_from_model(asset: AssetModel) -> Asset:
     """Convert AssetModel to Asset API response."""
-    storage = Environment.get_asset_storage()
+    storage = require_scope().get_asset_storage()
     if asset.content_type != "folder":
         get_url = await storage.get_url(asset.file_name)
     else:
@@ -525,7 +525,7 @@ def create_admin_router() -> APIRouter:
             async def delete_single_asset(a: AssetModel):
                 try:
                     await a.delete()
-                    storage = Environment.get_asset_storage()
+                    storage = require_scope().get_asset_storage()
                     try:
                         await storage.delete(a.thumb_file_name)
                     except Exception:  # noqa: BLE001

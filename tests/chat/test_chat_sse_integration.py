@@ -63,7 +63,7 @@ class TestOpenAIChatSSEIntegration:
         except Exception:
             pass
 
-    @patch.object(Environment, "use_remote_auth", return_value=False)
+    @patch.object(Environment, "enforce_auth", return_value=False)
     def test_openai_chat_completions_request(self, mock_auth):
         """Test making an OpenAI-compatible chat completions request"""
         request_data = {
@@ -139,7 +139,7 @@ data: [DONE]
 async def test_direct_openai_sse_usage():
     """Test using OpenAI-compatible SSE runner directly without FastAPI"""
 
-    with patch.object(Environment, "use_remote_auth", return_value=False):
+    with patch.object(Environment, "enforce_auth", return_value=False):
         runner = ChatSSERunner()
 
         # Mock handle_message to generate some events
@@ -210,7 +210,7 @@ class OpenAISSEClient:
 async def test_openai_sse_streaming_performance():
     """Test OpenAI-compatible SSE streaming performance with multiple messages"""
 
-    with patch.object(Environment, "use_remote_auth", return_value=False):
+    with patch.object(Environment, "enforce_auth", return_value=False):
         runner = ChatSSERunner()
 
         # Track timing

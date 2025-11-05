@@ -52,7 +52,6 @@ async def db_adapter():
 
     # Create the adapter
     adapter = SQLiteAdapter(
-        db_path=":memory:",
         connection=connection,
         fields=TestModel.db_fields(),
         table_schema=TestModel.get_table_schema(),
@@ -70,7 +69,8 @@ async def db_adapter():
 
     yield adapter
 
-    await adapter.close()
+    # Close the connection
+    await connection.close()
 
 
 @pytest.mark.asyncio

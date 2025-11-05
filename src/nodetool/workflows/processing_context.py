@@ -56,6 +56,7 @@ from nodetool.metadata.types import (
 )
 from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
+from nodetool.runtime.resources import require_scope
 from nodetool.workflows.base_node import BaseNode
 from nodetool.workflows.property import Property
 from nodetool.workflows.torch_support import (
@@ -164,7 +165,6 @@ class ProcessingContext:
         tool_bridge: Any | None = None,
         ui_tool_names: set[str] | None = None,
         client_tools_manifest: dict[str, dict] | None = None,
-        memory_uri_cache: dict[str, Any] | None = None,
     ):
         self.user_id = user_id or "1"
         self.auth_token = auth_token or "local_token"
@@ -199,8 +199,6 @@ class ProcessingContext:
         self.tool_bridge = tool_bridge
         self.ui_tool_names = ui_tool_names or set()
         self.client_tools_manifest = client_tools_manifest or {}
-        # Use global node_cache for memory:// storage to enable portability
-        self.memory_uri_cache = memory_uri_cache if memory_uri_cache is not None else {}
         # Store current status for each node and edge for reconnection
         self.node_statuses: dict[str, ProcessingMessage] = {}
         self.edge_statuses: dict[str, ProcessingMessage] = {}
@@ -211,32 +209,39 @@ class ProcessingContext:
 
     def _memory_get(self, key: str) -> Any | None:
         """
-        Retrieve an object stored under a URI (e.g., memory://<id>) from the global
-        memory URI cache. Local per-instance memory is avoided for portability
-        across processes.
+        Retrieve an object from the ResourceScope's memory URI cache.
+
+        Uses the current ResourceScope's memory URI cache for proper
+        per-execution isolation.
         """
         import threading
 
         thread_id = threading.get_ident()
-        value = self.memory_uri_cache.get(key)
-        if value is not None and isinstance(value, tuple) and len(value) == 2:
-            # Extract actual value from (value, expiry) tuple stored by MemoryUriCache
-            value = value[0]
-        log.debug(
-            f"Memory GET '{key}' on thread {thread_id}: {'HIT' if value is not None else 'MISS'}"
-        )
-        return value
+        try:
+            value = require_scope().get_memory_uri_cache().get(key)
+            log.debug(
+                f"Memory GET '{key}' on thread {thread_id}: {'HIT' if value is not None else 'MISS'}"
+            )
+            return value
+        except RuntimeError:
+            # No scope bound - return None
+            log.warning(f"Memory GET '{key}' failed: no ResourceScope bound")
+            return None
 
     def _memory_set(self, key: str, value: Any) -> None:
         """
-        Store an object under a URI (e.g., memory://<id>) in the global memory
-        URI cache.
+        Store an object under a URI (e.g., memory://<id>) in the ResourceScope's
+        memory URI cache.
         """
         import threading
 
         thread_id = threading.get_ident()
         log.info(f"Setting memory URI cache: {key} on thread {thread_id}")
-        self.memory_uri_cache[key] = value
+        try:
+            require_scope().get_memory_uri_cache().set(key, value)
+        except RuntimeError:
+            # No scope bound - log warning
+            log.warning(f"Memory SET '{key}' failed: no ResourceScope bound")
 
     def get_http_client(self):
         if not hasattr(self, "_http_client"):
@@ -387,7 +392,6 @@ class ProcessingContext:
             client_tools_manifest=(
                 self.client_tools_manifest.copy() if self.client_tools_manifest else {}
             ),
-            memory_uri_cache=self.memory_uri_cache,
         )
 
     def get(self, key: str, default: Any = None) -> Any:
@@ -468,7 +472,7 @@ class ProcessingContext:
         Args:
             key (str): The key of the asset.
         """
-        return Environment.get_asset_storage().get_url(key)
+        return require_scope().get_asset_storage().get_url(key)
 
     def generate_node_cache_key(
         self,
@@ -488,7 +492,7 @@ class ProcessingContext:
             Any: The cached result, or None if not found.
         """
         key = self.generate_node_cache_key(node)
-        val = Environment.get_node_cache().get(key)
+        val = require_scope().get_node_cache().get(key)
         return val
 
     def cache_result(self, node: BaseNode, result: Any, ttl: int = 3600):
@@ -506,7 +510,7 @@ class ProcessingContext:
             key = self.generate_node_cache_key(node)
 
             cache_value = detach_tensors_recursively(result)
-            Environment.get_node_cache().set(key, cache_value, ttl)
+            require_scope().get_node_cache().set(key, cache_value, ttl)
 
     async def find_asset(self, asset_id: str):
         """
@@ -753,9 +757,7 @@ class ProcessingContext:
         )
 
         # Upload the content to storage
-        from nodetool.config.environment import Environment
-
-        storage = Environment.get_asset_storage()
+        storage = require_scope().get_asset_storage()
         await storage.upload(asset.file_name, BytesIO(content_bytes))
 
         return asset
@@ -825,7 +827,7 @@ class ProcessingContext:
         if not asset:
             raise ValueError(f"Asset {asset_id} not found")
         io = BytesIO()
-        await Environment.get_asset_storage().download(asset.file_name, io)
+        await require_scope().get_asset_storage().download(asset.file_name, io)
         io.seek(0)
         return io
 
@@ -1007,7 +1009,7 @@ class ProcessingContext:
 
         # Check URI cache first for downloaded content
         try:
-            cached = Environment.get_memory_uri_cache().get(url)
+            cached = require_scope().get_memory_uri_cache().get(url)
             if isinstance(cached, (bytes, bytearray)):
                 return BytesIO(bytes(cached))
         except Exception:
@@ -1018,7 +1020,7 @@ class ProcessingContext:
 
         # Store downloaded bytes in URI cache for 5 minutes
         try:
-            Environment.get_memory_uri_cache().set(url, bytes(content))
+            require_scope().get_memory_uri_cache().set(url, bytes(content))
         except Exception:
             pass
 
@@ -1468,7 +1470,7 @@ class ProcessingContext:
                 content=buffer,
                 parent_id=parent_id,
             )
-            storage = Environment.get_asset_storage()
+            storage = require_scope().get_asset_storage()
             url = await storage.get_url(asset.file_name)
             return AudioRef(asset_id=asset.id, uri=url)
         else:
@@ -1659,7 +1661,7 @@ class ProcessingContext:
             asset = await self.create_asset(
                 name=name, content_type="image/png", content=buffer, parent_id=parent_id
             )
-            storage = Environment.get_asset_storage()
+            storage = require_scope().get_asset_storage()
             url = await storage.get_url(asset.file_name)
             return ImageRef(asset_id=asset.id, uri=url)
         else:
@@ -1855,7 +1857,7 @@ class ProcessingContext:
             asset = await self.create_asset(
                 name, content_type, buffer, parent_id=parent_id
             )
-            storage = Environment.get_asset_storage()
+            storage = require_scope().get_asset_storage()
             url = await storage.get_url(asset.file_name)
             return TextRef(asset_id=asset.id, uri=url)
 
@@ -1923,7 +1925,7 @@ class ProcessingContext:
             asset = await self.create_asset(
                 name, "video/mpeg", buffer, parent_id=parent_id
             )
-            storage = Environment.get_asset_storage()
+            storage = require_scope().get_asset_storage()
             url = await storage.get_url(asset.file_name)
             return VideoRef(asset_id=asset.id, uri=url)
         else:
@@ -2004,7 +2006,7 @@ class ProcessingContext:
             stream.seek(0)
             asset = await self.create_asset(name, "application/model", stream)
 
-            storage = Environment.get_asset_storage()
+            storage = require_scope().get_asset_storage()
             url = await storage.get_url(asset.file_name)
             return ModelRef(uri=url, asset_id=asset.id, **kwargs)
 
@@ -2141,7 +2143,7 @@ class ProcessingContext:
             return {"type": asset.type, "uri": asset.uri, "asset_id": asset.asset_id}
 
         data_bytes = await self.asset_to_bytes(asset)
-        storage = Environment.get_asset_storage()
+        storage = require_scope().get_asset_storage()
         _, ext = self._guess_asset_mime_ext(asset)
         key = uuid.uuid4().hex + f".{ext}"
         uri = await storage.upload(key, BytesIO(data_bytes))
@@ -2153,7 +2155,7 @@ class ProcessingContext:
             return await self.embed_assets_in_data(asset)
 
         data_bytes = await self.asset_to_bytes(asset)
-        storage = Environment.get_temp_storage()
+        storage = require_scope().get_temp_storage()
         _, ext = self._guess_asset_mime_ext(asset)
         key = uuid.uuid4().hex + f".{ext}"
         uri = await storage.upload(key, BytesIO(data_bytes))
@@ -2505,7 +2507,7 @@ class ProcessingContext:
         # AbstractNodeCache does not support partial clears by pattern.
         # For now, perform a full clear when requested.
         try:
-            Environment.get_node_cache().clear()
+            require_scope().get_node_cache().clear()
         except Exception:
             pass
 

@@ -3,9 +3,9 @@ import zipfile
 from io import BytesIO
 from fastapi.testclient import TestClient
 import pytest
-from nodetool.config.environment import Environment
 from nodetool.models.asset import Asset
 from nodetool.types.asset import AssetCreateRequest, AssetUpdateRequest
+from nodetool.runtime.resources import require_scope
 import sys
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
@@ -39,7 +39,8 @@ async def test_delete(client: TestClient, headers: dict[str, str], user_id: str)
     response = client.delete(f"/api/assets/{image.id}", headers=headers)
     assert response.status_code == 200
     assert await Asset.find(user_id, image.id) is None
-    assert not await Environment.get_asset_storage().file_exists(image.file_name)
+    storage = require_scope().get_asset_storage()
+    assert not await storage.file_exists(image.file_name)
 
 
 @pytest.mark.asyncio
@@ -120,7 +121,7 @@ async def test_storage_stream_content_length(
     client: TestClient, headers: dict[str, str], user_id: str
 ):
     image = await make_image(user_id)
-    storage = Environment.get_asset_storage()
+    storage = require_scope().get_asset_storage()
     expected_size = len(storage.storage[image.file_name])
 
     response = client.get(f"/api/storage/{image.file_name}", headers=headers)

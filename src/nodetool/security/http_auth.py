@@ -19,7 +19,6 @@ def _make_response(detail: str, status_code: int = 401) -> JSONResponse:
 def create_http_auth_middleware(
     static_provider: AuthProvider,
     user_provider: Optional[AuthProvider],
-    use_remote_auth: bool,
     exempt_paths: Iterable[str] = ("/health", "/ping"),
     enforce_auth: bool = True,
 ):
@@ -45,11 +44,7 @@ def create_http_auth_middleware(
             request.state.token_type = static_result.token_type or TokenType.STATIC
             return await call_next(request)
 
-        if use_remote_auth:
-            if not user_provider:
-                return _make_response(
-                    "Remote authentication enabled but no user auth provider configured."
-                )
+        if user_provider:
             user_result = await user_provider.verify_token(token)
             if user_result.ok:
                 request.state.user_id = user_result.user_id

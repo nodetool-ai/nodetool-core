@@ -53,17 +53,6 @@ from nodetool.io.uri_utils import fetch_uri_bytes_and_mime
 
 log = get_logger(__name__)
 
-
-def get_genai_client() -> AsyncClient:
-    env = Environment.get_environment()
-    api_key = env.get("GEMINI_API_KEY")
-    if not api_key:
-        raise ApiKeyMissingError(
-            "GEMINI_API_KEY is not configured in the nodetool settings"
-        )
-    return Client(api_key=api_key).aio
-
-
 @register_provider(Provider.Gemini)
 class GeminiProvider(BaseProvider):
     provider_name: str = "gemini"
@@ -78,11 +67,14 @@ class GeminiProvider(BaseProvider):
         self.api_key = secrets["GEMINI_API_KEY"]
         self.usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
         self.cost = 0.0
+        self._client: AsyncClient | None = None
         log.debug(f"GeminiProvider initialized. API key present: {bool(self.api_key)}")
 
     def get_client(self) -> AsyncClient:
-        """Return an async Gemini client. Extracted for ease of testing/mocking."""
-        return get_genai_client()
+        """Return an async Gemini client. Cached to reuse the same aiohttp session."""
+        if self._client is None:
+            self._client = Client(api_key=self.api_key).aio
+        return self._client
 
     def get_container_env(self, context: ProcessingContext) -> dict[str, str]:
         return {"GEMINI_API_KEY": self.api_key} if self.api_key else {}

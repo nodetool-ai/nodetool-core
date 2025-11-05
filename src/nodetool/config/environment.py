@@ -3,10 +3,8 @@ import threading
 import tempfile
 from pathlib import Path
 from nodetool.config.logging_config import get_logger
-from typing import Any, Optional, Dict, TYPE_CHECKING
+from typing import Any, Optional, Dict
 
-from nodetool.security.auth_provider import AuthProvider
-from nodetool.storage.abstract_node_cache import AbstractNodeCache
 from nodetool.config.settings import (
     get_system_data_path,
     load_settings,
@@ -14,16 +12,6 @@ from nodetool.config.settings import (
     get_system_file_path,
     SETTINGS_FILE,
 )
-
-# Global test storage instances to avoid thread-local issues in tests
-_test_asset_storage = None
-_test_temp_storage = None
-_test_db_path = None
-_test_db_file = None
-
-if TYPE_CHECKING:
-    from nodetool.security.providers.static_token import StaticTokenAuthProvider
-    from nodetool.security.providers.supabase import SupabaseAuthProvider
 
 DEFAULT_ENV = {
     "ASSET_BUCKET": "images",
@@ -89,6 +77,10 @@ def load_dotenv_files():
 
     # Determine environment - check ENV var first, then default to development
     env_name = os.environ.get("ENV", "development")
+    if env_name == "test":
+        logger.info("Not loading env file for tests")
+        return
+
     logger.debug(f"Loading environment: {env_name}")
 
     # Load .env files in order of precedence (later files override earlier ones)
@@ -103,15 +95,7 @@ def load_dotenv_files():
         if env_file.exists():
             logger.info(f"Loading environment file: {env_file}")
             loaded_files.append(str(env_file))
-            # Be resilient to stubbed/mocked load_dotenv in tests that may not
-            # accept keyword arguments.
-            try:
-                load_dotenv(env_file, override=False)  # type: ignore[arg-type]
-            except TypeError:
-                try:
-                    load_dotenv(env_file)  # type: ignore[call-arg]
-                except TypeError:
-                    load_dotenv()  # type: ignore[misc]
+            load_dotenv(env_file, override=False)  # type: ignore[arg-type]
         else:
             logger.debug(f"Environment file not found: {env_file}")
 
@@ -182,21 +166,6 @@ class Environment(object):
 
     settings: Optional[Dict[str, Any]] = None
     _sqlite_connection: Any = None
-    remote_auth: bool = True
-    _thread_local: threading.local = threading.local()
-    _static_auth_provider: "StaticTokenAuthProvider | None" = None
-    _user_auth_provider: "AuthProvider | None" = None
-    _all_thread_locals: Dict[int, threading.local] = {}  # Track all thread-local instances for cleanup
-    _cleanup_lock = threading.Lock()
-
-    @classmethod
-    def _tls(cls) -> threading.local:
-        thread_id = threading.get_ident()
-        # Track this thread for later cleanup
-        with cls._cleanup_lock:
-            if thread_id not in cls._all_thread_locals:
-                cls._all_thread_locals[thread_id] = cls._thread_local
-        return cls._thread_local
 
     @classmethod
     def load_settings(cls):
@@ -278,22 +247,6 @@ class Environment(object):
         return os.environ.get("PYTEST_CURRENT_TEST") is not None
 
     @classmethod
-    # REMOTE_AUTH deprecated in favor of AUTH_PROVIDER
-    @classmethod
-    def set_remote_auth(cls, remote_auth: bool):
-        """Compatibility shim: map legacy REMOTE_AUTH to AUTH_PROVIDER.
-
-        remote_auth=True  -> AUTH_PROVIDER=supabase
-        remote_auth=False -> AUTH_PROVIDER=local
-        """
-        os.environ["AUTH_PROVIDER"] = "supabase" if remote_auth else "local"
-
-    @classmethod
-    def use_remote_auth(cls):
-        """Compatibility shim for legacy checks (returns True for Supabase)."""
-        return cls.get_auth_provider_kind() == "supabase"
-
-    @classmethod
     def get_auth_provider_kind(cls) -> str:
         """Return the configured auth provider: none, local, static, supabase.
 
@@ -313,23 +266,6 @@ class Environment(object):
         - static/supabase: enforce
         """
         return cls.get_auth_provider_kind() in ("static", "supabase")
-
-    @classmethod
-    def get_static_auth_provider(cls):
-        """
-        Return the static token authentication provider.
-        """
-        if cls._static_auth_provider is None:
-            from nodetool.deploy.auth import get_worker_auth_token
-            from nodetool.security.providers.static_token import StaticTokenAuthProvider
-
-            token = get_worker_auth_token()
-            if not token:
-                raise ValueError(
-                    "WORKER_AUTH_TOKEN is required for static authentication."
-                )
-            cls._static_auth_provider = StaticTokenAuthProvider(static_token=token)
-        return cls._static_auth_provider
 
     @classmethod
     def _get_int_setting(cls, key: str, default: int) -> int:
@@ -373,47 +309,6 @@ class Environment(object):
         return cls._get_int_setting("REMOTE_AUTH_CACHE_MAX", 2000)
 
     @classmethod
-    def get_user_auth_provider(cls):
-        """Return the configured user authentication provider.
-
-        Providers:
-        - none: returns None, auth not enforced.
-        - local: LocalAuthProvider (always user "1").
-        - static: StaticTokenAuthProvider (shared token; also used for worker auth).
-        - supabase: SupabaseAuthProvider (validates Supabase JWTs).
-        """
-        if cls._user_auth_provider is not None:
-            return cls._user_auth_provider
-
-        kind = cls.get_auth_provider_kind()
-        if kind == "none":
-            cls._user_auth_provider = None
-        elif kind == "local":
-            from nodetool.security.providers.local import LocalAuthProvider
-
-            cls._user_auth_provider = LocalAuthProvider()
-        elif kind == "static":
-            # Reuse static token provider for user auth path
-            cls._user_auth_provider = cls.get_static_auth_provider()
-        elif kind == "supabase":
-            supabase_url = cls.get("SUPABASE_URL")
-            supabase_key = cls.get("SUPABASE_KEY")
-            if supabase_url and supabase_key:
-                from nodetool.security.providers.supabase import SupabaseAuthProvider
-
-                cls._user_auth_provider = SupabaseAuthProvider(
-                    supabase_url=supabase_url,
-                    supabase_key=supabase_key,
-                    cache_ttl=cls.get_auth_cache_ttl(),
-                    cache_max=cls.get_auth_cache_max(),
-                )
-            else:
-                cls._user_auth_provider = None
-        else:
-            cls._user_auth_provider = None
-        return cls._user_auth_provider
-
-    @classmethod
     def is_debug(cls):
         """
         Is debug flag on?
@@ -455,10 +350,6 @@ class Environment(object):
         return os.environ.get("MEMCACHE_PORT")
 
     @classmethod
-    def set_node_cache(cls, node_cache: AbstractNodeCache):
-        setattr(cls._tls(), "node_cache", node_cache)
-
-    @classmethod
     def get_default_execution_strategy(cls):
         """
         The execution strategy is the strategy that we use to execute the workflow.
@@ -469,83 +360,12 @@ class Environment(object):
         return cls.get("JOB_EXECUTION_STRATEGY", "threaded")
 
     @classmethod
-    def get_node_cache(cls) -> AbstractNodeCache:
-        memcache_host = cls.get_memcache_host()
-        memcache_port = cls.get_memcache_port()
-
-        if not hasattr(cls._tls(), "node_cache"):
-            if memcache_host and memcache_port:
-                from nodetool.storage.memcache_node_cache import MemcachedNodeCache
-
-                setattr(
-                    cls._tls(),
-                    "node_cache",
-                    MemcachedNodeCache(host=memcache_host, port=int(memcache_port)),
-                )
-            else:
-                from nodetool.storage.memory_node_cache import MemoryNodeCache
-
-                setattr(cls._tls(), "node_cache", MemoryNodeCache())
-
-        return getattr(cls._tls(), "node_cache")
-
-    @classmethod
-    def set_memory_uri_cache(cls, uri_cache: AbstractNodeCache):
-        """Override the default in-process memory URI cache (mainly for testing)."""
-        setattr(cls._tls(), "memory_uri_cache", uri_cache)
-
-    @classmethod
-    def set_thread_memory_cache(cls, cache: dict):
-        """Set a specific dictionary to be used as the memory cache for the current thread."""
-        if not hasattr(cls._tls(), "memory_uri_cache_override"):
-            cls._tls().memory_uri_cache_override = {}
-        cls._tls().memory_uri_cache_override = cache
-
-    @classmethod
-    def clear_thread_memory_cache(cls):
-        """Clear the thread-specific memory cache override."""
-        if hasattr(cls._tls(), "memory_uri_cache_override"):
-            delattr(cls._tls(), "memory_uri_cache_override")
-
-    @classmethod
-    def get_memory_uri_cache(cls) -> AbstractNodeCache:
-        """
-        Global cache for objects addressed by URIs.
-
-        - Used for memory:// objects and downloaded http(s) blobs
-        - Defaults to a simple in-memory TTL cache (5 minutes)
-        """
-        if hasattr(cls._tls(), "memory_uri_cache_override"):
-            # If an override is set for this thread, wrap it in a compatible AbstractNodeCache interface.
-            # This allows ProcessingContext's shared dict to be used wherever
-            # Environment.get_memory_uri_cache() is called.
-            from nodetool.storage.memory_uri_cache import MemoryUriCache
-
-            cache_dict = getattr(cls._tls(), "memory_uri_cache_override")
-            return MemoryUriCache(initial_data=cache_dict, default_ttl=300)
-
-        if not hasattr(cls._tls(), "memory_uri_cache"):
-            # Lazy import to avoid import cycles
-            from nodetool.storage.memory_uri_cache import MemoryUriCache
-
-            setattr(cls._tls(), "memory_uri_cache", MemoryUriCache(default_ttl=300))
-        return getattr(cls._tls(), "memory_uri_cache")
-
-    @classmethod
     def get_db_path(cls):
         """
-        The database url is the url of the database.
+        The database url is the url of the slite database.
         """
         if cls.is_test():
-            # Use a temporary file-based database for tests
-            global _test_db_path, _test_db_file
-            if _test_db_path is None:
-                _test_db_file = tempfile.NamedTemporaryFile(
-                    suffix=".db", prefix="nodetool_test_", delete=False
-                )
-                _test_db_path = _test_db_file.name
-                _test_db_file.close()
-            return _test_db_path
+            raise Exception("NOPE")
         else:
             return cls.get("DB_PATH")
 
@@ -563,21 +383,6 @@ class Environment(object):
         }
 
     @classmethod
-    def get_supabase_client(cls):
-        """
-        Get the supabase client.
-        """
-        from supabase import create_async_client
-
-        supabase_url = cls.get_supabase_url()
-        supabase_key = cls.get_supabase_key()
-
-        if supabase_url is None or supabase_key is None:
-            raise Exception("Supabase URL or key is not set")
-
-        return create_async_client(supabase_url, supabase_key)
-
-    @classmethod
     def has_database(cls):
         """
         Check if the database is configured.
@@ -587,119 +392,6 @@ class Environment(object):
             or cls.get("SUPABASE_URL", None) is not None
             or cls.get_db_path() is not None
         )
-
-    @classmethod
-    async def get_database_adapter(
-        cls,
-        fields: dict[str, Any],
-        table_schema: dict[str, Any],
-        indexes: list[dict[str, Any]],
-    ):
-        """
-        The database adapter is the adapter that we use to connect to the database.
-        Adapters are cached per table name to avoid repeated initialization.
-        """
-        logger = cls.get_logger()
-        table_name = table_schema.get("table_name", "unknown")
-
-        # Check thread-local adapter cache first
-        tls = cls._tls()
-        if not hasattr(tls, "adapters"):
-            tls.adapters = {}
-
-        if table_name in tls.adapters:
-            logger.debug(f"Using cached adapter for table '{table_name}'")
-            return tls.adapters[table_name]
-
-        if cls.get("POSTGRES_DB", None) is not None:
-            from nodetool.models.postgres_adapter import PostgresAdapter  # type: ignore
-
-            postgres_params = cls.get_postgres_params()
-            logger.info(
-                f"Initializing PostgreSQL adapter for table '{table_name}' "
-                f"(host={postgres_params.get('host')}, db={postgres_params.get('database')})"
-            )
-            adapter = PostgresAdapter(
-                db_params=postgres_params,
-                fields=fields,
-                table_schema=table_schema,
-                indexes=indexes,
-            )
-            tls.adapters[table_name] = adapter
-            return adapter
-        elif cls.get("SUPABASE_URL", None) is not None:
-            from nodetool.models.supabase_adapter import SupabaseAdapter  # type: ignore
-
-            supabase_url = cls.get_supabase_url()
-            logger.info(
-                f"Initializing Supabase adapter for table '{table_name}' "
-                f"(url={supabase_url})"
-            )
-            adapter = SupabaseAdapter(
-                supabase_url=supabase_url,
-                supabase_key=cls.get_supabase_key(),
-                fields=fields,
-                table_schema=table_schema,
-            )
-            tls.adapters[table_name] = adapter
-            return adapter
-        elif cls.get_db_path() is not None:
-            from nodetool.models.sqlite_adapter import SQLiteAdapter  # type: ignore
-            import aiosqlite
-
-            db_path = cls.get_db_path()
-            logger.info(
-                f"Initializing SQLite adapter for table '{table_name}' "
-                f"(path={db_path})"
-            )
-
-            # Use thread-local storage for SQLite connections to avoid database locks
-            if not hasattr(tls, "sqlite_connection") or tls.sqlite_connection is None:
-                import threading
-
-                logger.debug(
-                    f"Creating new SQLite connection for thread {threading.get_ident()}"
-                )
-                tls.sqlite_connection = await aiosqlite.connect(
-                    db_path, timeout=30
-                )
-                tls.sqlite_connection.row_factory = aiosqlite.Row
-                # Configure SQLite for better concurrency and deadlock avoidance
-                await tls.sqlite_connection.execute("PRAGMA journal_mode=WAL")
-                await tls.sqlite_connection.execute(
-                    "PRAGMA busy_timeout=5000"
-                )  # 5 seconds
-                await tls.sqlite_connection.execute("PRAGMA synchronous=NORMAL")
-                # Increase cache size for better performance (negative means KB)
-                await tls.sqlite_connection.execute("PRAGMA cache_size=-64000")  # 64MB
-                await tls.sqlite_connection.commit()
-                logger.debug("SQLite PRAGMA configuration applied")
-                # await tls.sqlite_connection.set_trace_callback(log.debug)
-
-            # Only create directories for file paths, not URIs or :memory:
-            if db_path != ":memory:" and not db_path.startswith("file:"):
-                os.makedirs(os.path.dirname(db_path), exist_ok=True)
-
-            adapter = SQLiteAdapter(
-                db_path=db_path,
-                connection=tls.sqlite_connection,
-                fields=fields,
-                table_schema=table_schema,
-                indexes=indexes,
-            )
-
-            await adapter.auto_migrate()
-            logger.info(f"SQLite adapter initialized and migrated for table '{table_name}'")
-
-            tls.adapters[table_name] = adapter
-            return adapter
-
-        else:
-            logger.error(
-                "No database adapter configured. "
-                "Set one of: POSTGRES_DB, SUPABASE_URL, or DB_PATH"
-            )
-            raise Exception("No database adapter configured")
 
     @classmethod
     def get_s3_endpoint_url(cls):
@@ -831,132 +523,6 @@ class Environment(object):
         return str(get_system_file_path("assets"))
 
     @classmethod
-    def get_s3_storage(cls, bucket: str, domain: str):
-        """
-        Get the S3 service.
-        """
-        from nodetool.storage.s3_storage import S3Storage
-        import boto3
-
-        endpoint_url = cls.get_s3_endpoint_url()
-        access_key_id = cls.get_s3_access_key_id()
-        secret_access_key = cls.get_s3_secret_access_key()
-
-        assert access_key_id is not None, "AWS access key ID is required"
-        assert secret_access_key is not None, "AWS secret access key is required"
-        assert endpoint_url is not None, "S3 endpoint URL is required"
-
-        client = boto3.client(
-            "s3",
-            region_name=cls.get_s3_region(),
-            endpoint_url=endpoint_url,
-            aws_access_key_id=access_key_id,
-            aws_secret_access_key=secret_access_key,
-        )
-
-        return S3Storage(
-            bucket_name=bucket,
-            domain=domain,
-            endpoint_url=endpoint_url,
-            client=client,
-        )
-
-    @classmethod
-    def get_asset_storage(cls, use_s3: bool = False):
-        """
-        Get the storage adapter for assets.
-        """
-        global _test_asset_storage
-
-        if cls.is_test() and _test_asset_storage is not None:
-            return _test_asset_storage
-
-        if not hasattr(cls._tls(), "asset_storage"):
-            if cls.is_test():
-                from nodetool.storage.memory_storage import MemoryStorage
-
-                cls.get_logger().info("Using memory storage for asset storage")
-
-                storage = MemoryStorage(base_url=cls.get_storage_api_url())
-                _test_asset_storage = storage
-                setattr(cls._tls(), "asset_storage", storage)
-            else:
-                # Prefer Supabase storage when configured
-                supabase_url = cls.get_supabase_url()
-                supabase_key = cls.get_supabase_key()
-                if supabase_url and supabase_key:
-                    from nodetool.storage.supabase_storage import (
-                        SupabaseStorage,
-                    )
-                    from supabase import AsyncClient as SupabaseAsyncClient  # type: ignore
-
-                    cls.get_logger().info("Using Supabase storage for asset storage")
-                    client = SupabaseAsyncClient(supabase_url, supabase_key)
-                    setattr(
-                        cls._tls(),
-                        "asset_storage",
-                        SupabaseStorage(
-                            bucket_name=cls.get_asset_bucket(),
-                            supabase_url=supabase_url,
-                            client=client,
-                        ),
-                    )
-                elif (
-                    cls.is_production()
-                    or cls.get_s3_access_key_id() is not None
-                    or use_s3
-                ):
-                    cls.get_logger().info("Using S3 storage for asset storage")
-                    setattr(
-                        cls._tls(),
-                        "asset_storage",
-                        cls.get_s3_storage(cls.get_asset_bucket(), cls.get_asset_domain()),
-                    )
-                else:
-                    from nodetool.storage.file_storage import FileStorage
-
-                    cls.get_logger().info(
-                        f"Using folder {cls.get_asset_folder()} for asset storage with base url {cls.get_storage_api_url()}"
-                    )
-                    setattr(
-                        cls._tls(),
-                        "asset_storage",
-                        FileStorage(
-                            base_path=cls.get_asset_folder(),
-                            base_url=cls.get_storage_api_url(),
-                        ),
-                    )
-
-        asset_storage = getattr(cls._tls(), "asset_storage")
-        assert asset_storage is not None
-        return asset_storage
-
-    @classmethod
-    def set_asset_storage(cls, asset_storage):
-        """Override the default asset storage (mainly for testing)."""
-        setattr(cls._tls(), "asset_storage", asset_storage)
-
-    @classmethod
-    def clear_test_storage(cls):
-        """Clear global test storage instances and clean up test database."""
-        global _test_asset_storage, _test_temp_storage, _test_db_path, _test_db_file
-        _test_asset_storage = None
-        _test_temp_storage = None
-
-        # Clean up test database file
-        if _test_db_path is not None:
-            try:
-                if os.path.exists(_test_db_path):
-                    os.unlink(_test_db_path)
-            except Exception as e:
-                # Log but don't fail - file might be locked or already deleted
-                logger = cls.get_logger()
-                logger.debug(
-                    f"Could not delete test database file {_test_db_path}: {e}"
-                )
-            _test_db_path = None
-            _test_db_file = None
-
     @classmethod
     def get_logger(cls):
         """Return the shared nodetool logger using centralized config."""
@@ -990,27 +556,6 @@ class Environment(object):
             return torch.device("cpu")
 
     @classmethod
-    def initialize_sentry(cls):
-        """
-        Initialize Sentry error tracking if SENTRY_DSN is configured.
-        """
-        sentry_dsn = cls.get("SENTRY_DSN", None)
-        if sentry_dsn:
-            import sentry_sdk  # type: ignore
-
-            sentry_sdk.init(
-                dsn=sentry_dsn,
-                environment=cls.get_env(),
-                # Set traces_sample_rate to 1.0 to capture 100%
-                # of transactions for performance monitoring.
-                traces_sample_rate=1.0,
-                # Set profiles_sample_rate to 1.0 to profile 100%
-                # of sampled transactions.
-                profiles_sample_rate=1.0,
-            )
-            cls.get_logger().info("Sentry initialized")
-
-    @classmethod
     def get_asset_temp_bucket(cls):
         """
         The temp asset bucket is the S3 bucket where temporary assets are stored.
@@ -1023,211 +568,6 @@ class Environment(object):
         The temp asset domain is the domain where temporary assets are stored.
         """
         return cls.get("ASSET_TEMP_DOMAIN")
-
-    @classmethod
-    def get_temp_storage(cls, use_s3: bool = False):
-        """
-        Get the storage adapter for temporary assets.
-        """
-        if not hasattr(cls._tls(), "temp_storage"):
-            if not cls.is_production():
-                # Prefer Supabase for temp if available
-                supabase_url = cls.get_supabase_url()
-                supabase_key = cls.get_supabase_key()
-                if supabase_url and supabase_key and cls.get_asset_temp_bucket():
-                    try:
-                        from nodetool.storage.supabase_storage import (
-                            SupabaseStorage,
-                        )
-                        from supabase import AsyncClient as SupabaseAsyncClient  # type: ignore
-
-                        cls.get_logger().info("Using Supabase storage for temp storage")
-                        client = SupabaseAsyncClient(supabase_url, supabase_key)
-                        setattr(
-                            cls._tls(),
-                            "temp_storage",
-                            SupabaseStorage(
-                                bucket_name=cls.get_asset_temp_bucket(),
-                                supabase_url=supabase_url,
-                                client=client,
-                            ),
-                        )
-                    except Exception as e:
-                        cls.get_logger().error(
-                            f"Failed to initialize Supabase temp storage, using memory. Error: {e}"
-                        )
-                        from nodetool.storage.memory_storage import MemoryStorage
-
-                        cls.get_logger().info("Using memory storage for temp storage")
-                        setattr(
-                            cls._tls(),
-                            "temp_storage",
-                            MemoryStorage(base_url=cls.get_temp_storage_api_url()),
-                        )
-                else:
-                    from nodetool.storage.memory_storage import MemoryStorage
-
-                    cls.get_logger().info("Using memory storage for temp storage")
-                    setattr(
-                        cls._tls(),
-                        "temp_storage",
-                        MemoryStorage(base_url=cls.get_temp_storage_api_url()),
-                    )
-            else:
-                # Production: prefer Supabase if configured, else S3
-                supabase_url = cls.get_supabase_url()
-                supabase_key = cls.get_supabase_key()
-                if supabase_url and supabase_key and cls.get_asset_temp_bucket():
-                    try:
-                        from nodetool.storage.supabase_storage import (
-                            SupabaseStorage,
-                        )
-                        from supabase import AsyncClient as SupabaseAsyncClient  # type: ignore
-
-                        cls.get_logger().info("Using Supabase storage for temp asset storage")
-                        client = SupabaseAsyncClient(supabase_url, supabase_key)
-                        setattr(
-                            cls._tls(),
-                            "temp_storage",
-                            SupabaseStorage(
-                                bucket_name=cls.get_asset_temp_bucket(),
-                                supabase_url=supabase_url,
-                                client=client,
-                            ),
-                        )
-                    except Exception as e:
-                        cls.get_logger().error(
-                            f"Failed to initialize Supabase temp storage, falling back to S3. Error: {e}"
-                        )
-                        assert (
-                            cls.get_s3_access_key_id() is not None or use_s3
-                        ), "S3 access key ID is required"
-                        assert (
-                            cls.get_asset_temp_bucket() is not None
-                        ), "Asset temp bucket is required"
-                        assert (
-                            cls.get_asset_temp_domain() is not None
-                        ), "Asset temp domain is required"
-                        cls.get_logger().info("Using S3 storage for temp asset storage")
-                        setattr(
-                            cls._tls(),
-                            "temp_storage",
-                            cls.get_s3_storage(
-                                cls.get_asset_temp_bucket(), cls.get_asset_temp_domain()
-                            ),
-                        )
-                else:
-                    assert (
-                        cls.get_s3_access_key_id() is not None or use_s3
-                    ), "S3 access key ID is required"
-                    assert (
-                        cls.get_asset_temp_bucket() is not None
-                    ), "Asset temp bucket is required"
-                    assert (
-                        cls.get_asset_temp_domain() is not None
-                    ), "Asset temp domain is required"
-                    cls.get_logger().info("Using S3 storage for temp asset storage")
-                    setattr(
-                        cls._tls(),
-                        "temp_storage",
-                        cls.get_s3_storage(
-                            cls.get_asset_temp_bucket(), cls.get_asset_temp_domain()
-                        ),
-                    )
-
-        temp_storage = getattr(cls._tls(), "temp_storage")
-        assert temp_storage is not None
-        return temp_storage
-
-    @classmethod
-    async def shutdown_all_connections(cls):
-        """Async shutdown for all thread-local connections.
-
-        Call this during graceful shutdown to close all database connections
-        from all threads before the process exits.
-        """
-        import asyncio
-
-        logger = cls.get_logger()
-        logger.info("Shutting down all thread-local database connections...")
-
-        tasks = []
-        with cls._cleanup_lock:
-            # Collect all close tasks without holding the lock during awaits
-            thread_ids = list(cls._all_thread_locals.keys())
-
-        for thread_id in thread_ids:
-            with cls._cleanup_lock:
-                if thread_id not in cls._all_thread_locals:
-                    continue
-                tls = cls._all_thread_locals[thread_id]
-
-            if hasattr(tls, "sqlite_connection") and tls.sqlite_connection is not None:
-                try:
-                    logger.debug(f"Closing SQLite connection for thread {thread_id}")
-                    tasks.append(tls.sqlite_connection.close())
-                except Exception as e:
-                    logger.warning(f"Error scheduling close for thread {thread_id}: {e}")
-
-        # Wait for all closes with timeout
-        if tasks:
-            try:
-                await asyncio.wait_for(
-                    asyncio.gather(*tasks, return_exceptions=True),
-                    timeout=10.0
-                )
-                logger.info("All database connections closed successfully")
-            except asyncio.TimeoutError:
-                logger.error("Timeout waiting for database connections to close")
-            except Exception as e:
-                logger.error(f"Error closing database connections: {e}")
-
-    @classmethod
-    def clear_thread_caches(cls):
-        """Clear per-thread caches to avoid cross-workflow leaks.
-
-        This synchronously clears cached resources.
-        For proper async connection closure, use shutdown_all_connections() during shutdown.
-        """
-        import threading
-
-        thread_id = threading.get_ident()
-        tls = cls._tls()
-
-        # Abandon SQLite connection without awaiting (can't close async connection in sync context)
-        # The connection will eventually be garbage collected and closed
-        if hasattr(tls, "sqlite_connection"):
-            try:
-                cls.get_logger().debug(f"Clearing SQLite connection for thread {thread_id}")
-                tls.sqlite_connection = None
-            except Exception as e:
-                cls.get_logger().debug(f"Error clearing SQLite connection: {e}")
-
-        # Clear other cached resources
-        for attr in (
-            "node_cache",
-            "memory_uri_cache",
-            "asset_storage",
-            "temp_storage",
-            "adapters",
-        ):
-            if hasattr(tls, attr):
-                try:
-                    delattr(tls, attr)
-                except Exception:
-                    pass
-
-        if cls._user_auth_provider is not None:
-            try:
-                cls._user_auth_provider.clear_caches()
-            except Exception:
-                pass
-            cls._user_auth_provider = None
-        cls._static_auth_provider = None
-
-        # Remove from tracking
-        with cls._cleanup_lock:
-            cls._all_thread_locals.pop(thread_id, None)
 
     @classmethod
     def get_supabase_url(cls):
@@ -1244,36 +584,14 @@ class Environment(object):
         return cls.get("SUPABASE_KEY")
 
     @classmethod
-    async def async_shutdown(cls):
+    def clear_thread_caches(cls):
         """
-        Graceful async shutdown hook.
-        Call this when your app is shutting down to properly close all resources.
+        Clear any thread-local caches.
 
-        Usage:
-            await Environment.async_shutdown()
+        This method is called when cleaning up thread resources to prevent
+        memory leaks and cross-workflow contamination.
         """
-        await cls.shutdown_all_connections()
+        # Currently no thread-local caches in Environment
+        # This method exists to prevent errors when called from threaded_event_loop
+        pass
 
-    @classmethod
-    def sync_shutdown(cls):
-        """
-        Graceful sync shutdown hook for non-async contexts.
-        Call this when your app is shutting down to properly close all resources.
-
-        Usage:
-            Environment.sync_shutdown()
-        """
-        # Clear current thread caches synchronously
-        cls.clear_thread_caches()
-        cls.get_logger().info("Environment shutdown complete")
-
-
-async def test():
-    client = await Environment.get_supabase_client()
-    bucket = client.storage.from_("assets")
-    info = await bucket.info("cfe027d2b6e811f0b6ce0000516a875d_thumb.jpg")
-    print(info)
-
-if __name__ == "__main__":
-    import asyncio
-    asyncio.run(test())

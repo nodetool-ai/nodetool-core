@@ -13,6 +13,7 @@ from nodetool.models.job import Job
 from nodetool.workflows.docker_job_execution import DockerJobExecution
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.run_job_request import RunJobRequest
+from nodetool.workflows.types import PreviewUpdate
 from nodetool.types.graph import Graph, Node, Edge
 
 
@@ -407,5 +408,128 @@ async def test_docker_job_container_id():
 
         # Verify it's a valid container ID (hex string)
         assert all(c in "0123456789abcdef" for c in job.container_id.lower())
+    finally:
+        await job.cleanup_resources()
+
+
+@pytest.mark.asyncio
+async def test_docker_job_preview_update_messages():
+    """Test that PreviewUpdate messages are properly forwarded from Docker containers."""
+    # Create a workflow with a Preview node
+    graph = Graph(
+        nodes=[
+            Node(
+                id="input_text",
+                type="nodetool.input.StringInput",
+                data={
+                    "name": "text",
+                    "label": "Input Text",
+                    "value": "",
+                },
+            ),
+            Node(
+                id="format_text",
+                type="nodetool.text.FormatText",
+                data={
+                    "template": "Preview test: {{ text }}",
+                },
+            ),
+            Node(
+                id="preview_node",
+                type="nodetool.workflows.base_node.Preview",
+                data={
+                    "name": "test_preview",
+                    "value": "",
+                },
+            ),
+            Node(
+                id="output_result",
+                type="nodetool.output.StringOutput",
+                data={
+                    "name": "result",
+                    "value": "",
+                },
+            ),
+        ],
+        edges=[
+            Edge(
+                id="edge_input_to_format",
+                source="input_text",
+                sourceHandle="output",
+                target="format_text",
+                targetHandle="text",
+            ),
+            Edge(
+                id="edge_format_to_preview",
+                source="format_text",
+                sourceHandle="output",
+                target="preview_node",
+                targetHandle="value",
+            ),
+            Edge(
+                id="edge_preview_to_output",
+                source="preview_node",
+                sourceHandle="output",
+                target="output_result",
+                targetHandle="value",
+            ),
+        ],
+    )
+
+    request = RunJobRequest(
+        user_id="test_user",
+        auth_token="test_token",
+        graph=graph,
+        params={"text": "Hello Preview!"},
+    )
+
+    context = ProcessingContext(
+        user_id=request.user_id,
+        auth_token=request.auth_token,
+    )
+
+    messages = []
+    preview_messages = []
+
+    job = await DockerJobExecution.create_and_start(request, context)
+
+    try:
+        # Wait for completion and collect messages
+        max_wait = 30
+        for _ in range(max_wait):
+            while context.has_messages():
+                msg = await context.pop_message_async()
+                messages.append(msg)
+                if isinstance(msg, PreviewUpdate):
+                    preview_messages.append(msg)
+            if job.is_completed():
+                break
+            await asyncio.sleep(1)
+
+        # Collect any remaining messages
+        while context.has_messages():
+            msg = await context.pop_message_async()
+            messages.append(msg)
+            if isinstance(msg, PreviewUpdate):
+                preview_messages.append(msg)
+
+        # Should have received messages
+        assert len(messages) > 0, "Should have received some messages"
+
+        # Should have received at least one PreviewUpdate message
+        assert (
+            len(preview_messages) > 0
+        ), f"Should have received PreviewUpdate messages. Got message types: {[type(m).__name__ for m in messages]}"
+
+        # Verify the PreviewUpdate has the correct node_id
+        assert any(
+            pm.node_id == "preview_node" for pm in preview_messages
+        ), f"PreviewUpdate should have correct node_id. Got: {[pm.node_id for pm in preview_messages]}"
+
+        # Verify the preview value contains our text
+        assert any(
+            "Preview test: Hello Preview!" in str(pm.value) for pm in preview_messages
+        ), f"PreviewUpdate should contain our text. Got values: {[pm.value for pm in preview_messages]}"
+
     finally:
         await job.cleanup_resources()

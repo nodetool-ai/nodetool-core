@@ -30,7 +30,7 @@ class TestChatSSERunner:
 
     async def test_connect_local_development(self):
         """Test connection in local development mode"""
-        with patch.object(Environment, "use_remote_auth", return_value=False):
+        with patch.object(Environment, "enforce_auth", return_value=False):
             await self.runner.connect(user_id="custom_user")
 
             # Verify connection state
@@ -39,7 +39,7 @@ class TestChatSSERunner:
 
     async def test_connect_default_user_id(self):
         """Test connection with default user ID in local mode"""
-        with patch.object(Environment, "use_remote_auth", return_value=False):
+        with patch.object(Environment, "enforce_auth", return_value=False):
             await self.runner.connect()
 
             # Verify default user ID
@@ -47,7 +47,7 @@ class TestChatSSERunner:
 
     async def test_connect_with_valid_auth(self):
         """Test connection with valid authentication"""
-        with patch.object(Environment, "use_remote_auth", return_value=True):
+        with patch.object(Environment, "enforce_auth", return_value=True):
             with patch.object(
                 self.runner, "validate_token", return_value=True
             ) as mock_validate:
@@ -61,13 +61,13 @@ class TestChatSSERunner:
         """Test connection with missing authentication"""
         runner = ChatSSERunner()  # No auth token
 
-        with patch.object(Environment, "use_remote_auth", return_value=True):
+        with patch.object(Environment, "enforce_auth", return_value=True):
             with pytest.raises(ValueError, match="Missing authentication token"):
                 await runner.connect()
 
     async def test_connect_invalid_auth(self):
         """Test connection with invalid authentication"""
-        with patch.object(Environment, "use_remote_auth", return_value=True):
+        with patch.object(Environment, "enforce_auth", return_value=True):
             with patch.object(self.runner, "validate_token", return_value=False):
                 with pytest.raises(ValueError, match="Invalid authentication token"):
                     await self.runner.connect()

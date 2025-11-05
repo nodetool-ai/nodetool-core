@@ -233,7 +233,7 @@ class MasterKeyManager:
         return os.environ.get("AWS_SECRETS_MASTER_KEY_NAME") is not None
 
     @classmethod
-    def export_master_key(cls) -> str:
+    async def export_master_key(cls) -> str:
         """
         Export the current master key for backup purposes.
 
@@ -243,4 +243,4 @@ class MasterKeyManager:
         Returns:
             The master key as a base64-encoded string.
         """
-        return cls.get_master_key()
+        return await cls.get_master_key()

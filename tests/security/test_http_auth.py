@@ -19,7 +19,6 @@ class DummyUserProvider(AuthProvider):
 
 
 def build_app(
-    use_remote_auth: bool,
     user_provider: AuthProvider | None = None,
     enforce_auth: bool = True,
 ) -> FastAPI:
@@ -30,7 +29,6 @@ def build_app(
         create_http_auth_middleware(
             static_provider=static_provider,
             user_provider=user_provider,
-            use_remote_auth=use_remote_auth,
             enforce_auth=enforce_auth,
         )
     )
@@ -43,7 +41,7 @@ def build_app(
 
 
 def test_static_token_required():
-    app = build_app(use_remote_auth=False, enforce_auth=True)
+    app = build_app(enforce_auth=True)
     client = TestClient(app)
 
     # Missing header -> 401
@@ -59,7 +57,7 @@ def test_static_token_required():
 
 def test_remote_auth_falls_back_to_user_provider():
     user_provider = DummyUserProvider()
-    app = build_app(use_remote_auth=True, user_provider=user_provider)
+    app = build_app(user_provider=user_provider)
     client = TestClient(app)
 
     # Static token still accepted

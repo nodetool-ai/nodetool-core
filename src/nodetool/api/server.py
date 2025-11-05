@@ -14,6 +14,7 @@ from nodetool.integrations.huggingface.huggingface_cache import (
 )
 from nodetool.integrations.websocket.websocket_runner import WebSocketRunner
 from nodetool.chat.chat_websocket_runner import ChatWebSocketRunner
+from nodetool.api.middleware import ResourceScopeMiddleware
 
 from fastapi import APIRouter, FastAPI, Request, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
@@ -44,7 +45,6 @@ import mimetypes
 
 from nodetool.integrations.websocket.websocket_updates import websocket_updates
 from nodetool.api.openai import create_openai_compatible_router
-from nodetool.models.base_model import close_all_database_adapters
 import httpx
 
 _windows_policy = getattr(asyncio, "WindowsSelectorEventLoopPolicy", None)
@@ -81,7 +81,26 @@ mimetypes.add_type("application/xml", ".xml")
 mimetypes.add_type("text/plain", ".txt")
 
 
-Environment.initialize_sentry()
+def initialize_sentry():
+    """
+    Initialize Sentry error tracking if SENTRY_DSN is configured.
+    """
+    sentry_dsn = Environment.get("SENTRY_DSN", None)
+    if sentry_dsn:
+        import sentry_sdk  # type: ignore
+
+        sentry_sdk.init(
+            dsn=sentry_dsn,
+            environment=Environment.get_env(),
+            # Set traces_sample_rate to 1.0 to capture 100%
+            # of transactions for performance monitoring.
+            traces_sample_rate=1.0,
+            # Set profiles_sample_rate to 1.0 to profile 100%
+            # of sampled transactions.
+            profiles_sample_rate=1.0,
+        )
+
+initialize_sentry()
 
 log = get_logger(__name__)
 
@@ -260,10 +279,16 @@ def create_app(
     # Use FastAPI lifespan API instead of deprecated on_event hooks
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        # Startup: pre-initialize storages to avoid first-request blocking
-        # Offload potential filesystem setup to threads
-        await asyncio.to_thread(Environment.get_asset_storage)
-        await asyncio.to_thread(Environment.get_temp_storage)
+        # Run database migrations before starting
+        from nodetool.models.migrations import run_startup_migrations
+
+        if not Environment.is_test():
+            try:
+                await run_startup_migrations()
+                log.info("Database migrations completed successfully")
+            except Exception as e:
+                log.error(f"Failed to run database migrations: {e}", exc_info=True)
+                raise
 
         # Start job execution manager cleanup task
         from nodetool.workflows.job_execution_manager import (
@@ -292,17 +317,11 @@ def create_app(
         await job_manager.shutdown()
         log.info("JobExecutionManager shutdown complete")
 
-        await close_all_database_adapters()
-        log.info("Database adapters shutdown complete")
+        # Shutdown SQLite connection pools with WAL checkpointing
+        from nodetool.runtime.db_sqlite import shutdown_all_sqlite_pools
 
-        # Shutdown thread-local connections to prevent hanging on exit
-        try:
-            await Environment.async_shutdown()
-            log.info("Environment thread-local connections shutdown complete")
-        except Exception as e:
-            log.warning(f"Error during environment shutdown: {e}")
-
-        log.info("Server shutdown cleanup complete")
+        await shutdown_all_sqlite_pools()
+        log.info("SQLite connection pools shutdown complete")
 
     app = FastAPI(lifespan=lifespan)
 
@@ -316,16 +335,20 @@ def create_app(
         max_age=3600,
     )
 
-    static_provider = Environment.get_static_auth_provider()
-    user_provider = Environment.get_user_auth_provider()
+    from nodetool.runtime.resources import get_static_auth_provider, get_user_auth_provider
+
+    static_provider = get_static_auth_provider()
+    user_provider = get_user_auth_provider()
     enforce_auth = Environment.enforce_auth()
     auth_middleware = create_http_auth_middleware(
         static_provider=static_provider,
         user_provider=user_provider,
-        use_remote_auth=(Environment.get_auth_provider_kind() == "supabase"),
         enforce_auth=enforce_auth,
     )
     app.middleware("http")(auth_middleware)
+
+    if not Environment.is_test():
+        app.add_middleware(ResourceScopeMiddleware)
 
     # Mount OpenAI-compatible endpoints with default provider set to "ollama"
     if not Environment.is_production():
@@ -350,12 +373,6 @@ def create_app(
             print(f"Request validation error: {exc}")
             return JSONResponse({"detail": exc.errors()}, status_code=422)
 
-    if apps_folder:
-        print(f"Mounting apps folder: {apps_folder}")
-        app.mount("/apps", StaticFiles(directory=apps_folder, html=True), name="apps")
-
-    # Pre-initialization and shutdown cleanup handled via lifespan above
-
     @app.get("/health")
     async def health_check() -> str:
         return "OK"
@@ -369,7 +386,7 @@ def create_app(
 
     async def _authenticate_websocket(websocket: WebSocket):
         if not enforce_auth:
-            static = Environment.get_static_auth_provider()
+            static = get_static_auth_provider()
             return None, static.user_id
 
         token = static_provider.extract_token_from_ws(

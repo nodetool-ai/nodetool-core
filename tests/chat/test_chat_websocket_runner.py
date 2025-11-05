@@ -43,7 +43,7 @@ class TestChatWebSocketRunner:
     # Authentication Tests
     async def test_local_development_no_auth_required(self):
         """Test that authentication is bypassed in local development mode"""
-        with patch.object(Environment, "use_remote_auth", return_value=False):
+        with patch.object(Environment, "enforce_auth", return_value=False):
             runner = ChatWebSocketRunner()
             websocket = Mock()
             websocket.accept = AsyncMock()
@@ -62,7 +62,7 @@ class TestChatWebSocketRunner:
 
     async def test_missing_auth_token_when_required(self):
         """Test that missing auth token is rejected when authentication is required"""
-        with patch.object(Environment, "use_remote_auth", return_value=True):
+        with patch.object(Environment, "enforce_auth", return_value=True):
             runner = ChatWebSocketRunner()  # No auth token provided
             websocket = Mock()
             websocket.close = AsyncMock()
@@ -78,7 +78,7 @@ class TestChatWebSocketRunner:
 
     async def test_invalid_auth_token(self):
         """Test that invalid auth token is rejected"""
-        with patch.object(Environment, "use_remote_auth", return_value=True):
+        with patch.object(Environment, "enforce_auth", return_value=True):
             runner = ChatWebSocketRunner(auth_token="invalid_token")
             websocket = Mock()
             websocket.close = AsyncMock()
@@ -96,7 +96,7 @@ class TestChatWebSocketRunner:
 
     async def test_valid_auth_token(self):
         """Test that valid auth token is accepted"""
-        with patch.object(Environment, "use_remote_auth", return_value=True):
+        with patch.object(Environment, "enforce_auth", return_value=True):
             runner = ChatWebSocketRunner(auth_token="valid_token")
             websocket = Mock()
             websocket.accept = AsyncMock()
@@ -273,8 +273,8 @@ class TestChatWebSocketRunner:
             ):
                 await wait_for(self.runner.run(websocket))
 
-                # Verify connect was called
-                mock_connect.assert_called_once_with(websocket)
+                # Verify connect was called with websocket and user_id
+                mock_connect.assert_called_once_with(websocket, user_id=None)
 
     # Message Handling Tests
     async def test_receive_messages_stop_command(self):

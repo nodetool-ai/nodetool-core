@@ -124,9 +124,9 @@ class DatabaseAdapter(ABC):
         """
         pass
 
-    @abstractmethod
-    async def close(self) -> None:
+
+    async def auto_migrate(self):
         """
-        Close the database connection and clean up resources.
+        Automatically migrate the table to current schema.
         """
         pass

@@ -24,6 +24,7 @@ from nodetool.workflows.types import (
     JobUpdate,
     NodeUpdate,
     NodeProgress,
+    ProcessingMessage,
 )
 
 log = get_logger(__name__)
@@ -244,21 +245,29 @@ class NodetoolDockerRunner(StreamRunnerBase):
         return result
 
 
+def type_to_name(type: type[ProcessingMessage]) -> str:
+    """Extract the literal type name from a ProcessingMessage type."""
+    return type.__annotations__["type"].__args__[0]
+
+
+# Build a complete map of all message types dynamically
+MESSAGE_TYPE_MAP: dict[str, Any] = {
+    type_to_name(message_type): message_type
+    for message_type in ProcessingMessage.__args__  # type: ignore
+}
+
+
 def _deserialize_processing_message(msg_dict: dict[str, Any]) -> Any:
     """Deserialize a processing message from dict to appropriate type."""
     msg_type = msg_dict.get("type")
     if msg_type is None:
         return None
 
-    MESSAGE_TYPE_MAP = {
-        "job_update": JobUpdate,
-        "node_update": NodeUpdate,
-        "node_progress": NodeProgress,
-    }
-
     msg_class = MESSAGE_TYPE_MAP.get(msg_type)
     if msg_class:
         try:
+            if hasattr(msg_class, "model_validate"):
+                return msg_class.model_validate(msg_dict)
             return msg_class(**msg_dict)
         except Exception as e:
             log.warning(f"Failed to deserialize {msg_type}: {e}")
@@ -536,6 +545,7 @@ class DockerJobExecution(JobExecution):
         )
 
         # Create job record in database
+        # Use a temporary ResourceScope for the initial database operation
         job_model = Job(
             id=job_id,
             workflow_id=request.workflow_id,
@@ -545,7 +555,11 @@ class DockerJobExecution(JobExecution):
             graph=request.graph.model_dump() if request.graph else {},
             params=request.params or {},
         )
-        await job_model.save()
+
+        # In test mode, inherit db_path from current scope if available
+        from nodetool.runtime.resources import ResourceScope, maybe_scope
+        async with ResourceScope():
+            await job_model.save()
 
         # Prepare request JSON
         request_dict = request.model_dump()

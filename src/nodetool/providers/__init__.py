@@ -8,6 +8,8 @@ implement the corresponding methods.
 """
 
 import asyncio
+import time
+from typing import Optional
 
 # Base provider class and testing utilities
 from nodetool.providers.base import (
@@ -27,7 +29,7 @@ from nodetool.providers.fake_provider import (
 )
 from nodetool.metadata.types import Provider as ProviderEnum
 from nodetool.workflows.types import Chunk
-from nodetool.security.secret_helper import get_secret
+from nodetool.security.secret_helper import get_secret, get_secrets_batch
 
 
 def import_providers():
@@ -59,6 +61,11 @@ def import_providers():
 # Provider instance cache
 _provider_cache: dict[ProviderEnum, BaseProvider] = {}
 _provider_cache_lock = asyncio.Lock()
+
+# Provider list cache (per user_id) with timestamp
+_provider_list_cache: dict[str, tuple[list["BaseProvider"], float]] = {}
+_provider_list_cache_lock = asyncio.Lock()
+_PROVIDER_LIST_CACHE_TTL = 60.0  # Cache for 60 seconds
 
 
 async def get_provider(provider_type: ProviderEnum, user_id: str = "1", **kwargs) -> BaseProvider:
@@ -97,34 +104,73 @@ async def get_provider(provider_type: ProviderEnum, user_id: str = "1", **kwargs
 
 
 async def list_providers(user_id: str) -> list["BaseProvider"]:
-    """List all registered providers for a given user."""
+    """
+    List all registered providers for a given user.
+
+    Results are cached for 60 seconds to avoid repeated database queries
+    for secrets lookup.
+
+    Args:
+        user_id: The user ID to get providers for
+
+    Returns:
+        List of initialized provider instances for this user
+    """
     import logging
     logger = logging.getLogger(__name__)
+
+    # Check cache first
+    async with _provider_list_cache_lock:
+        if user_id in _provider_list_cache:
+            cached_providers, cache_time = _provider_list_cache[user_id]
+            if time.time() - cache_time < _PROVIDER_LIST_CACHE_TTL:
+                logger.debug(f"Returning cached providers for user {user_id}")
+                return cached_providers
+
     import_providers()
 
     # Get models from each registered chat provider
     provider_enums = list[ProviderEnum](_PROVIDER_REGISTRY.keys())
-    providers = []
+
+    # Collect all required secrets across all providers
+    all_required_secrets = set()
+    provider_secret_map = {}  # provider_enum -> list of required secrets
     for provider_enum in provider_enums:
         provider_cls, kwargs = get_registered_provider(provider_enum)
         required_secrets = provider_cls.required_secrets()
+        provider_secret_map[provider_enum] = (provider_cls, kwargs, required_secrets)
+        all_required_secrets.update(required_secrets)
+
+    # Batch fetch all secrets in one query
+    if all_required_secrets:
+        secrets_dict = await get_secrets_batch(list(all_required_secrets), user_id)
+    else:
+        secrets_dict = {}
+
+    # Initialize providers with their secrets
+    providers = []
+    for provider_enum, (provider_cls, kwargs, required_secrets) in provider_secret_map.items():
+        # Collect this provider's secrets
+        provider_secrets = {}
+        for secret in required_secrets:
+            secret_value = secrets_dict.get(secret)
+            if secret_value:
+                provider_secrets[secret] = secret_value
 
         # Skip provider if required secrets are missing
-        secrets = {}
-        for secret in required_secrets:
-            secret_value = await get_secret(secret, user_id)
-            if not secret_value:
-                continue
-            secrets[secret] = secret_value
-
-        if len(required_secrets) > 0 and len(secrets) == 0:
+        if len(required_secrets) > 0 and len(provider_secrets) == 0:
             logger.debug(f"Skipping provider {provider_enum.value}: missing required secrets {required_secrets}")
             continue
 
         # Initialize and register provider
-        provider = provider_cls(secrets=secrets, **kwargs)
+        provider = provider_cls(secrets=provider_secrets, **kwargs)
         providers.append(provider)
 
+    # Cache the result
+    async with _provider_list_cache_lock:
+        _provider_list_cache[user_id] = (providers, time.time())
+
+    logger.debug(f"Cached {len(providers)} providers for user {user_id}")
     return providers
 
 

@@ -65,6 +65,7 @@ class DockerManager:
         # Ensure network exists (if configured)
         if self.network_name:
             def _ensure_network():
+                assert self.network_name
                 try:
                     return self.docker.networks.get(self.network_name)
                 except NotFound:
@@ -230,43 +231,82 @@ class DockerManager:
 
     def _wait_for_startup(self, container, timeout: int = 30) -> None:
         """
-        Wait for container application to be ready by checking logs for startup message.
+        Wait for container application to be ready by checking port connectivity.
 
         Args:
             container: Docker container object.
             timeout: Maximum time to wait in seconds.
 
         Raises:
-            RuntimeError: If startup message not found within timeout.
+            RuntimeError: If container fails to start or port is not accessible within timeout.
         """
+        import socket
+
         start_time = time.time()
-        last_log_index = 0
+        internal_port = ServiceConfig.INTERNAL_PORT
 
         while time.time() - start_time < timeout:
             try:
-                logs = container.logs(timestamps=False).decode("utf-8")
-                # Check for uvicorn startup message
-                if "Uvicorn running on" in logs or "Application startup complete" in logs:
-                    log.debug(f"Container {container.name} is ready")
-                    return
+                container.reload()
 
                 # Check if container exited with error
-                container.reload()
                 if container.status != "running":
                     error_logs = container.logs(stderr=True).decode("utf-8")
                     raise RuntimeError(
                         f"Container {container.name} exited: {error_logs[-500:]}"
                     )
 
-                time.sleep(0.5)
+                # Get the host port to test connectivity
+                port_map = container.attrs.get("NetworkSettings", {}).get("Ports") or {}
+                key = f"{internal_port}/tcp"
+
+                # If port is published to host, test connectivity
+                if key in port_map and port_map[key]:
+                    host_port = int(port_map[key][0]["HostPort"])
+
+                    # Try to connect to the port
+                    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    sock.settimeout(1)
+                    try:
+                        result = sock.connect_ex(("127.0.0.1", host_port))
+                        sock.close()
+
+                        if result == 0:
+                            log.debug(f"Container {container.name} is ready (port {host_port} accepting connections)")
+                            return
+                    except Exception:
+                        pass
+                    finally:
+                        sock.close()
+
+                # For docker_dns mode or if port check fails, fall back to container running check
+                # If container has been running for 2 seconds, consider it started
+                if container.status == "running":
+                    container_start = container.attrs.get("State", {}).get("StartedAt")
+                    if container_start:
+                        # Container is running, give it a brief moment then accept
+                        time.sleep(0.5)
+                        container.reload()
+                        if container.status == "running":
+                            log.debug(f"Container {container.name} is ready (running)")
+                            return
+
+                time.sleep(0.3)
             except Exception as e:
                 if "exited" not in str(e).lower():
                     log.debug(f"Error checking startup: {e}")
-                time.sleep(0.5)
+                time.sleep(0.3)
 
+        # Final check - if container is still running, accept it
+        container.reload()
+        if container.status == "running":
+            log.debug(f"Container {container.name} is running after timeout")
+            return
+
+        logs = container.logs(tail=50).decode("utf-8", errors="ignore")
         raise RuntimeError(
             f"Container {container.name} did not start within {timeout}s. "
-            f"Last logs: {logs[-500:] if logs else 'no logs'}"
+            f"Last logs: {logs[-500:]}"
         )
 
     async def stop_container_if_running(self, name: str) -> bool:

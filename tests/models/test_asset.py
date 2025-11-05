@@ -1,4 +1,5 @@
 from datetime import datetime
+from nodetool.runtime.resources import require_scope
 import pytest
 from nodetool.models.asset import (
     Asset,

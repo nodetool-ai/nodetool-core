@@ -103,7 +103,11 @@ class DummyAsyncBuilder:
         return self
 
     async def execute(self):
-        return SimpleNamespace(data=self._response_data)
+        # Apply limit if set
+        data = self._response_data
+        if self.last_limit is not None:
+            data = data[:self.last_limit]
+        return SimpleNamespace(data=data)
 
 
 def build_adapter_with_mocked_client(response_data):
@@ -112,13 +116,12 @@ def build_adapter_with_mocked_client(response_data):
         mock_client = MockClient.return_value
         mock_client.table.return_value = builder
         adapter = SupabaseAdapter(
-            supabase_url="https://example.supabase.co",
-            supabase_key="service_key",
+            client=mock_client, # type: ignore
             fields=TestModel.db_fields(),
             table_schema=TestModel.get_table_schema(),
         )
     # Ensure the adapter uses our builder for any subsequent calls
-    adapter.supabase_client.table.return_value = builder  # type: ignore[attr-defined]
+    adapter.client.table.return_value = builder  # type: ignore[attr-defined]
     return adapter, builder
 
 
@@ -183,7 +186,8 @@ async def test_delete_executes_without_error():
 
 @pytest.mark.asyncio
 async def test_query_with_filters_order_and_limit():
-    items = [
+    # Create 5 items, but filter will match only 3 (age > 26: ages 27, 28, 29)
+    all_items = [
         {
             "id": str(i),
             "name": f"User {i}",
@@ -198,7 +202,9 @@ async def test_query_with_filters_order_and_limit():
         }
         for i in range(5)
     ]
-    adapter, builder = build_adapter_with_mocked_client(response_data=items)
+    # Mock returns only filtered items (age > 26)
+    filtered_items = [item for item in all_items if item["age"] > 26]
+    adapter, builder = build_adapter_with_mocked_client(response_data=filtered_items)
 
     results, last_key = await adapter.query(
         condition=Field("age").greater_than(26),
@@ -211,7 +217,8 @@ async def test_query_with_filters_order_and_limit():
     assert last_key == ""
     # Order and limit captured on builder
     assert builder.last_order == ("age", True)
-    assert builder.last_limit == 3
+    # Adapter adds 1 to limit for pagination detection
+    assert builder.last_limit == 4
     # Filter methods applied
     assert "gt" in builder.called_methods
 

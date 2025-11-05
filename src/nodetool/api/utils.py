@@ -16,7 +16,9 @@ async def current_user(request: Request = None) -> str:
         if user_id:
             return str(user_id)
 
-    static_provider = Environment.get_static_auth_provider()
+    from nodetool.runtime.resources import get_static_auth_provider
+
+    static_provider = get_static_auth_provider()
     token = None
     if request is not None:
         token = static_provider.extract_token_from_headers(request.headers)
@@ -50,7 +52,9 @@ async def current_user(request: Request = None) -> str:
         request.state.token_type = static_result.token_type or TokenType.STATIC
         return static_result.user_id
 
-    user_provider = Environment.get_user_auth_provider()
+    from nodetool.runtime.resources import get_user_auth_provider
+
+    user_provider = get_user_auth_provider()
     if not user_provider:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

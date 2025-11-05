@@ -7,6 +7,7 @@ allowing AI assistants to interact with NodeTool workflows, nodes, and assets.
 """
 
 from fastmcp import FastMCP, Context
+import asyncio
 from typing import Any, Optional
 from nodetool.types.job import JobUpdate
 from nodetool.workflows.types import (
@@ -54,6 +55,7 @@ from huggingface_hub.constants import HF_HUB_CACHE
 from nodetool.models.thread import Thread
 from nodetool.models.message import Message as DBMessage
 from nodetool.providers import get_provider
+from nodetool.runtime.resources import require_scope
 from io import BytesIO
 import base64
 from dataclasses import asdict
@@ -96,7 +98,7 @@ async def _asset_to_dict(asset: AssetModel) -> dict[str, Any]:
     Returns:
         Dictionary with asset information including URLs
     """
-    storage = Environment.get_asset_storage()
+    storage = require_scope().get_asset_storage()
 
     # Generate URLs for non-folder assets
     if asset.content_type != "folder":
@@ -674,7 +676,6 @@ async def export_workflow_digraph(
         Dictionary with DOT format string and workflow metadata
     """
     import re
-    import asyncio
 
     # First try to find in database
     workflow_model = await WorkflowModel.find("1", workflow_id)
@@ -702,7 +703,7 @@ async def export_workflow_digraph(
         # Load the example workflow
         example_workflow = await asyncio.to_thread(
             example_registry.load_example,
-            matching_example.package_name,
+            matching_example.package_name or "",
             matching_example.name,
         )
 
@@ -841,8 +842,6 @@ async def list_workflows(
         - list_workflows(workflow_type="example") # List example workflows
         - list_workflows(workflow_type="example", query="image") # Search examples
     """
-    import asyncio
-
     result = []
     next_key = None
 
@@ -1132,7 +1131,7 @@ async def list_assets(
 
         results = []
         for i, asset in enumerate(assets):
-            asset_dict = _asset_to_dict(asset)
+            asset_dict = await _asset_to_dict(asset)
             folder_info = (
                 folder_paths[i]
                 if i < len(folder_paths)
@@ -1166,7 +1165,7 @@ async def list_assets(
         start_key=start_key,
     )
 
-    results = [_asset_to_dict(asset) for asset in assets]
+    results = await asyncio.gather(*[_asset_to_dict(asset) for asset in assets])
     for r in results:
         r["source"] = "user"
 
@@ -1903,9 +1902,8 @@ async def download_file_from_storage(
         raise ValueError("Invalid key: path separators not allowed")
 
     # Get appropriate storage
-    storage = (
-        Environment.get_temp_storage() if temp else Environment.get_asset_storage()
-    )
+    scope = require_scope()
+    storage = scope.get_temp_storage() if temp else scope.get_asset_storage()
 
     # Check if file exists
     if not await storage.file_exists(key):
@@ -1949,9 +1947,8 @@ async def get_file_metadata(
         raise ValueError("Invalid key: path separators not allowed")
 
     # Get appropriate storage
-    storage = (
-        Environment.get_temp_storage() if temp else Environment.get_asset_storage()
-    )
+    scope = require_scope()
+    storage = scope.get_temp_storage() if temp else scope.get_asset_storage()
 
     # Check if file exists
     if not await storage.file_exists(key):
@@ -1989,9 +1986,8 @@ async def list_storage_files(
         limit = 200
 
     # Get appropriate storage
-    storage = (
-        Environment.get_temp_storage() if temp else Environment.get_asset_storage()
-    )
+    scope = require_scope()
+    storage = scope.get_temp_storage() if temp else scope.get_asset_storage()
 
     # Try to list files (not all storage backends support this)
     try:

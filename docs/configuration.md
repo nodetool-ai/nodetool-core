@@ -66,7 +66,7 @@ For shared deployments you **must** pre-provision the master key (via `SECRETS_M
 
 `Environment.is_production()` and `Environment.is_test()` determine which services to instantiate:
 
-- Production and any environment with S3 credentials default to S3-backed storage (`Environment.get_asset_storage()` in `src/nodetool/config/environment.py:637`).
+- Production and any environment with S3 credentials default to S3-backed storage (see `ResourceScope.get_asset_storage()` in `src/nodetool/runtime/resources.py`).
 - Tests automatically provision in-memory storage and isolated SQLite databases.
 - `ENV` defaults to `development` and can be switched with `Environment.set_env()` or the `ENV` environment variable.
 
@@ -104,7 +104,7 @@ Set the following to enable Supabase:
 
 Behavior:
 
-- When `SUPABASE_URL`/`SUPABASE_KEY` are set, `Environment.get_asset_storage()` and `get_temp_storage()` prefer Supabase buckets.
+- When `SUPABASE_URL`/`SUPABASE_KEY` are set, `ResourceScope.get_asset_storage()` and `get_temp_storage()` prefer Supabase buckets.
 - If not set, NodeTool falls back to S3 (when `S3_*` are provided) or local filesystem.
 - Authentication strategy is controlled via `AUTH_PROVIDER` (see [Authentication](authentication.md#authentication-providers)).
 

@@ -103,6 +103,54 @@ def get_secret_sync(key: str, default: Optional[str] = None) -> Optional[str]:
     return value
 
 
+async def get_secrets_batch(
+    keys: list[str], user_id: str
+) -> dict[str, Optional[str]]:
+    """
+    Get multiple secrets for a user in a single database query.
+
+    This is more efficient than calling get_secret() multiple times when you need
+    multiple secrets, as it reduces database round-trips.
+
+    Args:
+        keys: List of secret keys to retrieve.
+        user_id: The user ID.
+
+    Returns:
+        Dictionary mapping keys to their values (or None if not found).
+        Environment variables take precedence over database values.
+    """
+    result = {}
+
+    # First check environment variables
+    keys_to_query = []
+    for key in keys:
+        env_value = os.environ.get(key)
+        if env_value:
+            log.debug(f"Secret '{key}' found in environment variable")
+            result[key] = env_value
+        else:
+            keys_to_query.append(key)
+            result[key] = None  # Initialize to None
+
+    # If all secrets were in environment, return early
+    if not keys_to_query:
+        return result
+
+    # Query database for remaining secrets
+    from nodetool.models.condition_builder import Field
+
+    condition = Field("user_id").equals(user_id)
+    secrets, _ = await Secret.query(condition, limit=len(keys_to_query) * 2)
+
+    for secret in secrets:
+        if secret.key in keys_to_query:
+            log.debug(f"Secret '{secret.key}' found in database for user {user_id}")
+            result[secret.key] = await secret.get_decrypted_value()
+
+    return result
+
+
 async def has_secret(key: str, user_id: str) -> bool:
     """
     Check if a secret exists for a user.

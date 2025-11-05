@@ -262,7 +262,6 @@ class SQLiteAdapter(DatabaseAdapter):
     manage the data type conversions.
     """
 
-    db_path: str
     table_name: str
     table_schema: Dict[str, Any]
     indexes: List[Dict[str, Any]]
@@ -272,7 +271,6 @@ class SQLiteAdapter(DatabaseAdapter):
 
     def __init__(
         self,
-        db_path: str,
         fields: Dict[str, FieldInfo],
         table_schema: Dict[str, Any],
         indexes: List[Dict[str, Any]],
@@ -282,7 +280,6 @@ class SQLiteAdapter(DatabaseAdapter):
         """Initializes the SQLite adapter with an existing connection.
 
         Args:
-            db_path: Path to the SQLite database file.
             fields: Dictionary of Pydantic field info.
             table_schema: Dictionary defining the table schema.
             indexes: List of index configurations.
@@ -290,7 +287,6 @@ class SQLiteAdapter(DatabaseAdapter):
             query_timeout: Optional timeout in seconds for queries. If None, queries
                           will not have a timeout (except during shutdown).
         """
-        self.db_path = db_path
         self.table_name = table_schema["table_name"]
         self.table_schema = table_schema
         self.fields = fields
@@ -338,6 +334,12 @@ class SQLiteAdapter(DatabaseAdapter):
     async def auto_migrate(
         self,
     ):
+        """Run automatic migration for this table.
+
+        Checks if migration has already been completed this session to avoid
+        redundant work. Uses per-table locking to prevent concurrent migrations.
+        """
+        # Perform migration
         if await self.table_exists():
             await self.migrate_table()
         else:
@@ -642,7 +644,8 @@ class SQLiteAdapter(DatabaseAdapter):
                 condition.root
             )  # Pass the root group
 
-        query = f"SELECT {cols} FROM {self.table_name} WHERE {where_clause} ORDER BY {order_by} LIMIT {limit}"
+        fetch_limit = limit + 1
+        query = f"SELECT {cols} FROM {self.table_name} WHERE {where_clause} ORDER BY {order_by} LIMIT {fetch_limit}"
 
         async def _query():
             cursor = await self._execute_with_timeout(
@@ -651,10 +654,15 @@ class SQLiteAdapter(DatabaseAdapter):
             rows = await self._execute_with_timeout(cursor.fetchall())
             res = [convert_from_sqlite_attributes(dict(row), self.fields) for row in rows]
 
-            if len(res) == 0 or len(res) < limit:
+            if len(res) <= limit:
                 return res, ""
 
+            # Pop the extra record used to detect another page
+            extra_record = res.pop()
             last_evaluated_key = str(res[-1].get(pk))
+            # Guard: if extra record does not advance, fall back to extra key
+            if not last_evaluated_key:
+                last_evaluated_key = str(extra_record.get(pk))
             return res, last_evaluated_key
 
         return await _query()
@@ -743,23 +751,3 @@ class SQLiteAdapter(DatabaseAdapter):
         except aiosqlite.Error as e:
             print(f"SQLite error during index listing: {e}")
             raise e
-
-    async def close(self):
-        """Close the database connection.
-
-        Sets a shutdown flag to apply short timeouts to any in-flight queries,
-        then closes the connection with a timeout to prevent hanging.
-        """
-        self._is_shutting_down = True
-
-        if self._connection:
-            try:
-                # Close with timeout to prevent hanging during shutdown
-                await asyncio.wait_for(
-                    self._connection.close(),
-                    timeout=5.0
-                )
-            except asyncio.TimeoutError:
-                log.warning(f"Timeout closing connection for table {self.table_name}")
-            except Exception as e:
-                log.warning(f"Error closing connection for table {self.table_name}: {e}")

@@ -11,6 +11,7 @@ import asyncio
 
 from nodetool.models.condition_builder import ConditionBuilder
 from nodetool.models.database_adapter import DatabaseAdapter
+from nodetool.runtime.resources import maybe_scope
 
 """
 Database Model Base Classes and Utilities
@@ -29,102 +30,6 @@ Key Components:
 
 
 log = get_logger(__name__)
-
-# Global registry to track all database adapters for cleanup
-_global_adapters: list[DatabaseAdapter] = []
-
-
-async def close_all_database_adapters():
-    """Close all registered database adapters and clear the registry."""
-    global _global_adapters
-    for adapter in _global_adapters:
-        try:
-            await adapter.close()
-        except Exception as e:
-            log.warning(f"Error closing database adapter: {e}")
-    _global_adapters.clear()
-
-
-async def _shutdown_async():
-    """Async shutdown handler for proper cleanup of all database resources.
-
-    Clears thread caches and closes all database adapters with proper
-    awaiting and timeout handling.
-    """
-    from nodetool.config.environment import Environment
-
-    try:
-        # Clear thread caches async (with proper connection close timeout)
-        await Environment.clear_thread_caches_async()
-    except Exception as e:
-        log.warning(f"Error during thread cache cleanup: {e}")
-
-    try:
-        # Close all database adapters
-        await close_all_database_adapters()
-    except Exception as e:
-        log.warning(f"Error closing database adapters: {e}")
-
-
-def _shutdown_handler_sync():
-    """Synchronous shutdown handler for atexit and signals.
-
-    Attempts to run the async cleanup coroutine with timeout. If an event loop
-    is already running (e.g., in FastAPI), this will safely skip.
-
-    Note: We suppress logging here because logging may be shut down
-    during atexit, causing spurious "I/O operation on closed file" errors.
-    """
-    import logging
-
-    try:
-        # Try to get the running loop (will raise RuntimeError if none exists)
-        try:
-            loop = asyncio.get_running_loop()
-            # If we get here, a loop is running - we can't use asyncio.run()
-            # The async cleanup will be handled elsewhere (e.g., FastAPI lifespan)
-            return
-        except RuntimeError:
-            # No running loop, safe to create one
-            # Temporarily disable logging to avoid errors during atexit
-            logging.disable(logging.CRITICAL)
-            try:
-                # Run async shutdown with timeout to prevent hanging
-                asyncio.run(_shutdown_async())
-            except asyncio.TimeoutError:
-                log.warning("Shutdown timeout - some resources may not have been properly closed")
-            finally:
-                logging.disable(logging.NOTSET)
-    except Exception:
-        # Suppress exceptions during atexit - logging may already be shut down
-        # and we don't want to break the shutdown process
-        pass
-
-
-# Register cleanup handlers to ensure database adapters are closed
-# when the Python process exits, regardless of whether explicit
-# shutdown methods were called
-atexit.register(_shutdown_handler_sync)
-
-# Handle SIGTERM (graceful shutdown)
-def _sigterm_handler(signum, frame):
-    _shutdown_handler_sync()
-    import sys
-    sys.exit(0)
-
-# Handle SIGINT (Ctrl+C)
-def _sigint_handler(signum, frame):
-    _shutdown_handler_sync()
-    import sys
-    sys.exit(130)  # Standard exit code for SIGINT
-
-try:
-    signal.signal(signal.SIGTERM, _sigterm_handler)
-    signal.signal(signal.SIGINT, _sigint_handler)
-except (ValueError, RuntimeError):
-    # signal.signal() can fail in certain contexts (e.g., non-main thread)
-    # This is safe to ignore
-    pass
 
 
 def create_time_ordered_uuid() -> str:
@@ -178,15 +83,27 @@ class DBModel(BaseModel):
 
     @classmethod
     async def adapter(cls) -> DatabaseAdapter:
-        if not hasattr(cls, "__adapter"):
-            cls.__adapter = await Environment.get_database_adapter(
-                fields=cls.db_fields(),
-                table_schema=cls.get_table_schema(),
-                indexes=cls.get_indexes(),
-            )
-            # Register adapter globally for cleanup
-            _global_adapters.append(cls.__adapter)
-        return cls.__adapter
+        """Get a database adapter for this model.
+
+        Uses scope-based adapter if a ResourceScope is bound, with fallback
+        to Environment.get_database_adapter() for backward compatibility with
+        pre-scope operations (e.g., job record creation).
+
+        This prevents class-level adapter caching which can leak adapters
+        across loops/threads. Instead, adapters are memoized per-scope or
+        per-thread.
+
+        Returns:
+            A DatabaseAdapter instance for this model's table
+        """
+        # Try to get adapter from current ResourceScope if one is bound
+        scope = maybe_scope()
+        if scope and scope.db:
+            return await scope.db.adapter_for_model(cls)
+
+        raise Exception(
+            f"No ResourceScope bound for {cls.__name__}"
+        )
 
     @classmethod
     def has_indexes(cls) -> bool:

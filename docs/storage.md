@@ -2,7 +2,7 @@
 
 # Storage Guide
 
-NodeTool stores user assets, workflow artifacts, and temporary files through pluggable backends defined in `src/nodetool/storage`. The active backend is selected at runtime by `Environment.get_asset_storage()` (`src/nodetool/config/environment.py:631`).
+NodeTool stores user assets, workflow artifacts, and temporary files through pluggable backends defined in `src/nodetool/storage`. The active backend is selected per execution by `ResourceScope.get_asset_storage()` / `get_temp_storage()` (`src/nodetool/runtime/resources.py`), accessed via `require_scope()`.
 
 ## Asset Storage Backends
 
@@ -13,7 +13,7 @@ NodeTool stores user assets, workflow artifacts, and temporary files through plu
 | Supabase Storage | `src/nodetool/storage/supabase_storage.py` | When `SUPABASE_URL` and `SUPABASE_KEY` are set | Uses a Supabase bucket for asset storage. Public buckets are recommended for direct URLs. |
 | Amazon S3 / S3-compatible | `src/nodetool/storage/s3_storage.py` | Production, or when `S3_ACCESS_KEY_ID` or `S3_SECRET_ACCESS_KEY` are provided | Requires `S3_*` environment variables and optional custom endpoint for MinIO/Wasabi. |
 
-`Environment.get_asset_storage(use_s3=True)` forces S3 even in development (useful for smoke tests).
+`require_scope().get_asset_storage(use_s3=True)` forces S3 even in development (useful for smoke tests).
 
 ### Required Environment Variables
 
@@ -33,7 +33,7 @@ For S3-compatible services, set:
 
 ## Temporary Storage
 
-`Environment.get_temp_storage()` returns a location for scratch files, mirroring asset storage:
+`require_scope().get_temp_storage()` returns a location for scratch files, mirroring asset storage:
 
 - Memory storage in tests.
 - Local filesystem under `~/.config/nodetool/temp`.
@@ -45,7 +45,7 @@ For S3-compatible services, set:
 When `SUPABASE_URL` and `SUPABASE_KEY` are set, NodeTool prefers Supabase for asset and temp storage.
 
 - Adapter: `SupabaseStorage` (`src/nodetool/storage/supabase_storage.py`)
-- Selection: handled by `Environment.get_asset_storage()` / `get_temp_storage()`
+- Selection: handled by `ResourceScope.get_asset_storage()` / `get_temp_storage()`
 - Public URLs: `get_url(key)` returns a public URL. Use a public bucket or add a CDN edge.
 - Private buckets: you can extend the adapter to use signed URLs (Supabase’s `create_signed_url`).
 

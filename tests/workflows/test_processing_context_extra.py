@@ -34,8 +34,9 @@ def test_generate_node_cache_key():
 
 
 def test_cache_result_and_get_cached_result():
+    from nodetool.runtime.resources import require_scope
     node = SourceNode(id="n1", value=1.0)
     ctx = ProcessingContext(user_id="user", auth_token="token", graph=Graph())
-    Environment.get_node_cache().clear()
+    require_scope().get_node_cache().clear()
     ctx.cache_result(node, 42)
     assert ctx.get_cached_result(node) == 42

@@ -1,3 +1,4 @@
+import threading
 from typing import Any
 from unittest.mock import Mock
 from nodetool.models.workflow import Workflow
@@ -17,168 +18,143 @@ from nodetool.models.job import Job
 from nodetool.models.asset import Asset
 from nodetool.workflows.base_node import BaseNode, InputNode
 from nodetool.workflows.processing_context import ProcessingContext
+import gc
 import io
 import uuid
 import PIL.Image
 import asyncio
-from nodetool.models.base_model import close_all_database_adapters
 from nodetool.deploy.auth import get_worker_auth_token
+from nodetool.runtime.resources import ResourceScope, require_scope
+from nodetool.config.logging_config import configure_logging
+
+configure_logging("DEBUG")
 
 
-@pytest.fixture(scope="session", autouse=True)
-def _silence_aiosqlite_logging():
-    """Reduce noisy aiosqlite logs during tests."""
-    import logging
 
-    for name in (
-        "aiosqlite",
-        "aiosqlite.core",
-        "aiosqlite.cursor",
-        "aiosqlite.connection",
-    ):
-        logger = logging.getLogger(name)
-        logger.setLevel(logging.ERROR)
-        logger.propagate = False
+
+# @pytest.fixture(scope="session", autouse=True)
+# def _silence_aiosqlite_logging():
+#     """Reduce noisy aiosqlite logs during tests."""
+#     import logging
+
+#     for name in (
+#         "aiosqlite",
+#         "aiosqlite.core",
+#         "aiosqlite.cursor",
+#         "aiosqlite.connection",
+#     ):
+#         logger = logging.getLogger(name)
+#         logger.setLevel(logging.ERROR)
+#         logger.propagate = False
+
+
+@pytest_asyncio.fixture(scope="session")
+async def test_db_pool():
+    """Create test database once for entire session with connection pool.
+
+    This fixture:
+    - Creates a single temporary database file
+    - Runs migrations once at session start
+    - Creates a persistent connection pool
+    - Cleans up pool at session end
+
+    Yields:
+        tuple: (pool, db_path) for use in tests
+    """
+    from nodetool.runtime.db_sqlite import SQLiteConnectionPool
+    from nodetool.models.migrations import run_startup_migrations
+    import tempfile
+    import os
+
+    # Create a temporary database file for the entire test session
+    temp_db = tempfile.NamedTemporaryFile(
+        suffix='.sqlite3',
+        prefix='nodetool_test_session_',
+        delete=False
+    )
+    db_path = temp_db.name
+    temp_db.close()
+
+    pool = None
+    try:
+        # Create connection pool (will be reused across all tests)
+        pool = await SQLiteConnectionPool.get_shared(db_path)
+        # Run migrations once for the session
+        await run_startup_migrations(pool)
+
+        yield pool
+
+    finally:
+        # Clean up pool at session end
+        if pool is not None:
+            try:
+                await pool.close_all()
+                SQLiteConnectionPool._pools.pop(db_path, None)
+            except Exception as e:
+                import logging
+                logging.warning(f"Error cleaning up session connection pool: {e}")
+
+        # Remove temporary database file
+        try:
+            os.unlink(db_path)
+        except Exception:
+            pass
+
+
+async def _truncate_all_tables(pool):
+    """Truncate all tables to reset database state between tests."""
+    connection = await pool.acquire()
+    try:
+        # Get list of all tables
+        cursor = await connection.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'nodetool_%'"
+        )
+        tables = await cursor.fetchall()
+
+        # Truncate each table
+        for table in tables:
+            table_name = table[0]
+            await connection.execute(f"DELETE FROM {table_name}")
+
+        await connection.commit()
+    finally:
+        await pool.release(connection)
 
 
 @pytest_asyncio.fixture(autouse=True, scope="function")
-async def setup_and_teardown(request):
+async def setup_and_teardown(request, test_db_pool):
+    """Set up ResourceScope with table truncation for test isolation.
+
+    This fixture:
+    - Uses shared database and connection pool across all tests
+    - Provides ResourceScope for each test
+    - Truncates all tables after test to ensure clean state
+    - Much faster than creating new database per test
+    """
     if request.node.get_closest_marker("no_setup"):
         yield
         return
 
-    Environment.set_remote_auth(False)
-    Environment.clear_test_storage()
-
-    # Reset JobExecutionManager singleton for test isolation
-    # This prevents tests from interfering with each other
     from nodetool.workflows.job_execution_manager import JobExecutionManager
 
-    if JobExecutionManager._instance is not None:
-        manager = JobExecutionManager.get_instance()
-        # Cancel all jobs and clean up their resources
-        for job_id in list(manager._jobs.keys()):
+    # Use ResourceScope with the shared test database
+    async with ResourceScope(pool=test_db_pool):
+        try:
+            yield
+        finally:
+            # Clean up JobExecutionManager after test
             try:
-                job = manager._jobs.get(job_id)
-                if job:
-                    if not job.is_completed():
-                        cancel_result = job.cancel()
-                        if asyncio.iscoroutine(cancel_result):
-                            await cancel_result
-                    cleanup_result = job.cleanup_resources()
-                    if asyncio.iscoroutine(cleanup_result):
-                        await cleanup_result
+                if JobExecutionManager._instance is not None:
+                    await JobExecutionManager.get_instance().shutdown()
             except Exception:
                 pass
-        # Clear jobs dict
-        manager._jobs.clear()
-        # Cancel cleanup task if running
-        if manager._cleanup_task and not manager._cleanup_task.done():
-            manager._cleanup_task.cancel()
-            try:
-                await manager._cleanup_task
-            except asyncio.CancelledError:
-                pass
-        manager._cleanup_task = None
 
-    yield
-
-    # Clean up JobExecutionManager after test
+    # Truncate all tables to reset state for next test
     try:
-        from nodetool.workflows.job_execution_manager import JobExecutionManager
-
-        if JobExecutionManager._instance is not None:
-            manager = JobExecutionManager.get_instance()
-            # Cancel all jobs and clean up their resources
-            for job_id in list(manager._jobs.keys()):
-                try:
-                    job = manager._jobs.get(job_id)
-                    if job:
-                        if not job.is_completed():
-                            cancel_result = job.cancel()
-                            if asyncio.iscoroutine(cancel_result):
-                                await cancel_result
-                        cleanup_result = job.cleanup_resources()
-                        if asyncio.iscoroutine(cleanup_result):
-                            await cleanup_result
-                except Exception as e:
-                    # Log but don't fail on cleanup errors
-                    import logging
-
-                    logging.debug(f"Error cleaning up job {job_id}: {e}")
-            # Clear jobs dict
-            manager._jobs.clear()
-            # Cancel cleanup task if running
-            if manager._cleanup_task and not manager._cleanup_task.done():
-                manager._cleanup_task.cancel()
-                try:
-                    await manager._cleanup_task
-                except asyncio.CancelledError:
-                    pass
-            manager._cleanup_task = None
-    except Exception:
-        pass
-
-    # Add a small delay to allow background threads to finish cleanup
-    # This prevents database lock errors when background job event loops are shutting down
-    await asyncio.sleep(0.5)
-
-    # Close all database connections to prevent SQLite lock issues and leaks
-    # Do this BEFORE clearing tables to avoid lock conflicts
-    try:
-        await close_all_database_adapters()
-    except Exception:
-        # Ignore errors during adapter cleanup
-        pass
-
-    # Re-open adapters for table cleanup (they'll be closed again below)
-    # Clear all database tables for test isolation
-    try:
-        from nodetool.models.asset import Asset
-        from nodetool.models.job import Job
-        from nodetool.models.thread import Thread
-        from nodetool.models.message import Message
-        from nodetool.models.workflow import Workflow
-        from nodetool.models.prediction import Prediction
-
-        # Clear tables in order (respecting foreign key constraints if any)
-        for model_class in [Message, Job, Prediction, Asset, Workflow, Thread]:
-            try:
-                adapter = await model_class.adapter()
-                # Delete all rows from the table with retry for locks
-                max_retries = 5
-                for attempt in range(max_retries):
-                    try:
-                        await adapter.connection.execute(f"DELETE FROM {adapter.table_name}")
-                        await adapter.connection.commit()
-                        break
-                    except Exception as e:
-                        if "locked" in str(e).lower() and attempt < max_retries - 1:
-                            await asyncio.sleep(0.1 * (2 ** attempt))  # Exponential backoff
-                        else:
-                            raise
-            except Exception:
-                # Ignore errors if table doesn't exist or other issues
-                pass
-    except Exception:
-        # Ignore any errors during cleanup
-        pass
-
-    # Close all database connections to prevent SQLite lock issues and leaks
-    try:
-        await close_all_database_adapters()
-    except Exception:
-        # Ignore errors during adapter cleanup
-        pass
-
-    # Clear thread-local caches
-    Environment.clear_thread_caches()
-
-    Environment.set_remote_auth(True)
-
-    # Avoid manual cancellation of event‑loop tasks here; pytest-asyncio/anyio
-    # manages loop lifecycle. Force-cancelling unknown tasks can corrupt the
-    # loop state and trigger errors like missing _ssock on loop close.
+        await _truncate_all_tables(test_db_pool)
+    except Exception as e:
+        import logging
+        logging.warning(f"Error truncating tables: {e}")
 
 
 @pytest.fixture(autouse=True)
@@ -207,14 +183,16 @@ def _set_dummy_api_keys(monkeypatch):
     monkeypatch.setenv("FAL_API_KEY", os.getenv("FAL_API_KEY", "test-fal-key"))
 
 
-@pytest.fixture(scope="function")
+@pytest.fixture(scope="session")
 def event_loop():
-    """Provide a fresh asyncio event loop per test and close it safely.
+    """Provide a shared asyncio event loop for the entire test session.
 
+    Session-scoped to support session-scoped async fixtures (test_db_pool).
     Ensures the loop runs at least one cycle before close so the internal
     self-pipe is initialized, preventing AttributeError on close in CPython 3.11.
     """
     loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
     try:
         yield loop
     finally:
@@ -254,7 +232,7 @@ async def upload_test_image(image: Asset, width: int = 512, height: int = 512):
         width (int, optional): Width of the test image. Defaults to 512.
         height (int, optional): Height of the test image. Defaults to 512.
     """
-    storage = Environment.get_asset_storage()
+    storage = require_scope().get_asset_storage()
     assert isinstance(storage, MemoryStorage)
     img = PIL.Image.new("RGB", (width, height))
     content = io.BytesIO(pil_to_bytes(img))
@@ -317,7 +295,7 @@ async def make_text(
         content_type="text/plain",
         workflow_id=workflow_id,
     )
-    storage = Environment.get_asset_storage()
+    storage = require_scope().get_asset_storage()
     await storage.upload(asset.file_name, io.BytesIO(content.encode()))
     return asset
 
@@ -472,3 +450,46 @@ async def workflow(user_id: str):
         },
     )
     return wf
+
+def pytest_sessionfinish(session, exitstatus):
+    """Clean up resources after all tests complete to prevent hanging."""
+    import logging
+    import os
+    import time
+
+    # Force garbage collection
+    gc.collect()
+
+    # Close any lingering event loops
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            loop.stop()
+        if not loop.is_closed():
+            loop.close()
+    except RuntimeError:
+        pass  # No event loop in current thread
+
+    # Log any non-daemon threads that might prevent exit
+    main_thread = threading.main_thread()
+    non_daemon_threads = [
+        t for t in threading.enumerate()
+        if t != main_thread and t.is_alive() and not t.daemon
+    ]
+
+    if non_daemon_threads:
+        logging.warning(
+            f"Found {len(non_daemon_threads)} non-daemon threads that may prevent exit: "
+            f"{[t.name for t in non_daemon_threads]}"
+        )
+        # Force exit if there are hanging threads
+        # Give threads a brief moment to clean up, then force exit
+        def force_exit_thread():
+            time.sleep(1)
+            os._exit(exitstatus)
+
+        exit_thread = threading.Thread(target=force_exit_thread, daemon=True)
+        exit_thread.start()
+
+    # Shutdown any thread pools or executors
+    gc.collect()

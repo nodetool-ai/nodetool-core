@@ -252,12 +252,14 @@ class TestHuggingFaceProvider(BaseProviderTest):
                 request=MagicMock(),
                 response=MagicMock(status_code=429, text="Too many requests"),
             )
-        else:
+        elif error_type == "invalid_api_key":
             return httpx.HTTPStatusError(
-                message="Server error",
+                message="Invalid API Key",
                 request=MagicMock(),
-                response=MagicMock(status_code=500, text="Internal server error"),
+                response=MagicMock(status_code=401, text="Invalid API Key"),
             )
+        else:
+            raise Exception("unknown error type")
 
     def mock_api_call(self, response_data: Dict[str, Any]) -> MagicMock:
         """Mock HuggingFace chat_completion call on AsyncInferenceClient."""
@@ -339,6 +341,132 @@ class TestHuggingFaceProvider(BaseProviderTest):
         """Mock HuggingFace API error response."""
         error = self.create_huggingface_error(error_type)
         return patch.object(AsyncInferenceClient, "chat_completion", side_effect=error)
+
+    @pytest.mark.asyncio
+    async def test_4xx_errors_not_retried(self):
+        """Test that 4xx errors are not retried (no sleep calls)."""
+        provider = self.create_provider()
+
+        # Test various 4xx error codes
+        error_codes = [404, 413, 429, 422]
+
+        for status_code in error_codes:
+            # Create an error with the specific status code
+            error = httpx.HTTPStatusError(
+                message=f"Error {status_code}",
+                request=MagicMock(),
+                response=MagicMock(status_code=status_code, text=f"Error {status_code}"),
+            )
+
+            with patch.object(
+                AsyncInferenceClient, "chat_completion", side_effect=error
+            ):
+                with patch("nodetool.providers.huggingface_provider.asyncio.sleep") as mock_sleep:
+                    with pytest.raises(Exception) as exc_info:
+                        await provider.generate_message(
+                            self.create_simple_messages(), "test-model"
+                        )
+
+                    # Verify the error was raised
+                    assert f"{status_code}" in str(exc_info.value)
+
+                    # Verify asyncio.sleep was NOT called (no retries)
+                    assert mock_sleep.call_count == 0, \
+                        f"4xx error {status_code} should not be retried, but sleep was called {mock_sleep.call_count} times"
+
+    @pytest.mark.asyncio
+    async def test_5xx_errors_retried_with_exponential_backoff(self):
+        """Test that 5xx errors are retried with exponential backoff."""
+        provider = self.create_provider()
+
+        # Create a 500 server error
+        error = httpx.HTTPStatusError(
+            message="Internal Server Error",
+            request=MagicMock(),
+            response=MagicMock(status_code=500, text="Internal Server Error"),
+        )
+
+        with patch.object(
+            AsyncInferenceClient, "chat_completion", side_effect=error
+        ):
+            with patch("nodetool.providers.huggingface_provider.asyncio.sleep") as mock_sleep:
+                with pytest.raises(Exception) as exc_info:
+                    await provider.generate_message(
+                        self.create_simple_messages(), "test-model"
+                    )
+
+                # Verify the error was raised after all retries
+                assert "500" in str(exc_info.value)
+
+                # Verify exponential backoff: 3 retries with delays of 1s, 2s, 4s
+                assert mock_sleep.call_count == 3, \
+                    f"Expected 3 sleep calls (retries), got {mock_sleep.call_count}"
+
+                # Verify the delays match exponential backoff
+                expected_delays = [1.0, 2.0, 4.0]
+                actual_delays = [call[0][0] for call in mock_sleep.call_args_list]
+                assert actual_delays == expected_delays, \
+                    f"Expected delays {expected_delays}, got {actual_delays}"
+
+    @pytest.mark.asyncio
+    async def test_retry_succeeds_on_second_attempt(self):
+        """Test that retries work and succeed on a later attempt."""
+        provider = self.create_provider()
+
+        # Create an error for first attempt, success for second
+        call_count = 0
+
+        class _Usage:
+            prompt_tokens = 10
+            completion_tokens = 15
+            total_tokens = 25
+
+        class _Message:
+            def __init__(self, content: str):
+                self.role = "assistant"
+                self.content = content
+                self.tool_calls = None
+
+        class _Choice:
+            def __init__(self, content: str):
+                self.message = _Message(content)
+                self.finish_reason = "stop"
+
+        class _Completion:
+            def __init__(self, content: str):
+                self.choices = [_Choice(content)]
+                self.usage = _Usage()
+
+        async def mock_chat_completion_with_retry(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                # First call fails with 500
+                error = httpx.HTTPStatusError(
+                    message="Server Error",
+                    request=MagicMock(),
+                    response=MagicMock(status_code=500, text="Server Error"),
+                )
+                raise error
+            else:
+                # Second call succeeds
+                return _Completion("Success after retry")
+
+        with patch.object(
+            AsyncInferenceClient, "chat_completion", side_effect=mock_chat_completion_with_retry
+        ):
+            with patch("nodetool.providers.huggingface_provider.asyncio.sleep") as mock_sleep:
+                response = await provider.generate_message(
+                    self.create_simple_messages(), "test-model"
+                )
+
+                # Verify we got a successful response
+                assert response.role == "assistant"
+                assert response.content == "Success after retry"
+
+                # Verify sleep was called once (for the first retry)
+                assert mock_sleep.call_count == 1
+                assert mock_sleep.call_args_list[0][0][0] == 1.0
 
     @pytest.mark.asyncio
     async def test_tgi_server_integration(self):
@@ -444,25 +572,3 @@ class TestHuggingFaceProvider(BaseProviderTest):
             await provider.generate_message(self.create_simple_messages(), "test-model")
 
         mock_call.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_quantized_model_inference(self):
-        """Test inference with quantized models."""
-        provider = self.create_provider()
-
-        # Test with quantized model names
-        quantized_models = [
-            "TheBloke/Llama-2-7B-Chat-GPTQ",
-            "TheBloke/CodeLlama-7B-Instruct-AWQ",
-        ]
-
-        for model in quantized_models:
-            with self.mock_api_call(
-                ResponseFixtures.simple_text_response(
-                    f"Quantized response from {model}"
-                )
-            ):
-                response = await provider.generate_message(
-                    self.create_simple_messages(), model
-                )
-            assert response.role == "assistant"

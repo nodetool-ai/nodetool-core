@@ -10,6 +10,7 @@ from uuid import uuid4
 
 from nodetool.config.logging_config import get_logger
 from nodetool.models.job import Job
+from nodetool.runtime.resources import ResourceScope
 from nodetool.types.job import JobUpdate
 from nodetool.workflows.job_execution import JobExecution
 from nodetool.workflows.processing_context import ProcessingContext
@@ -84,23 +85,37 @@ class ThreadedJobExecution(JobExecution):
 
         Handles loading workflow graph, running the workflow, and updating
         job status throughout the execution lifecycle.
+
+        The workflow runs within a ResourceScope to provide per-execution
+        resource isolation (database adapters, settings, secrets).
         """
+        assert self.runner, "Runner is not set"
         try:
-            # Load workflow graph if not already loaded
-            if self.request.graph is None:
-                log.info(f"Loading workflow graph for {self.request.workflow_id}")
-                workflow = await self.context.get_workflow(self.request.workflow_id)
-                if workflow is None:
-                    raise ValueError(f"Workflow {self.request.workflow_id} not found")
-                self.request.graph = workflow.get_api_graph()
+            # Wrap execution in ResourceScope for per-execution isolation
+            # ResourceScope auto-detects database type and acquires from shared pools
+            # In test mode, inherit db_path from current scope if available
+            async with ResourceScope():
+                # Load workflow graph if not already loaded
+                if self.request.graph is None:
+                    log.info(f"Loading workflow graph for {self.request.workflow_id}")
+                    workflow = await self.context.get_workflow(
+                        self.request.workflow_id
+                    )
+                    if workflow is None:
+                        raise ValueError(
+                            f"Workflow {self.request.workflow_id} not found"
+                        )
+                    self.request.graph = workflow.get_api_graph()
 
-            self._status = "running"
-            await self.runner.run(self.request, self.context)
+                self._status = "running"
+                await self.runner.run(self.request, self.context)
 
-            # Update job status on completion
-            self._status = "completed"
-            await self.job_model.update(status="completed", finished_at=datetime.now())
-            log.info(f"Background job {self.job_id} completed successfully")
+                # Update job status on completion
+                self._status = "completed"
+                await self.job_model.update(
+                    status="completed", finished_at=datetime.now()
+                )
+                log.info(f"Background job {self.job_id} completed successfully")
 
         except asyncio.CancelledError:
             self.runner.status = "cancelled"
@@ -156,6 +171,7 @@ class ThreadedJobExecution(JobExecution):
         log.info(f"Starting background job {job_id} for workflow {request.workflow_id}")
 
         # Create the job record in database
+        # We need a temporary ResourceScope for the initial Job.save()
         job_model = Job(
             id=job_id,
             workflow_id=request.workflow_id,
@@ -165,7 +181,11 @@ class ThreadedJobExecution(JobExecution):
             graph=request.graph.model_dump() if request.graph else {},
             params=request.params or {},
         )
-        await job_model.save()
+
+        # Use a temporary ResourceScope for the initial database operation
+        # In test mode, inherit db_path from current scope if available
+        async with ResourceScope():
+            await job_model.save()
 
         # Create the job instance
         job_instance = cls(

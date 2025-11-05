@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from rich.console import Console
 
+from nodetool.runtime.resources import get_static_auth_provider, get_user_auth_provider
 from nodetool.api.workflow import from_model
 from nodetool.chat.chat_sse_runner import ChatSSERunner
 from nodetool.models.workflow import Workflow as WorkflowModel
@@ -38,7 +39,7 @@ def create_openai_compatible_router(
         """OpenAI-compatible chat completions endpoint mirroring /chat/sse behaviour."""
         try:
             data = await request.json()
-            static_provider = Environment.get_static_auth_provider()
+            static_provider = get_static_auth_provider()
             auth_token = static_provider.extract_token_from_headers(request.headers)
             if auth_token:
                 data["auth_token"] = auth_token

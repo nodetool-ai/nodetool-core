@@ -631,12 +631,14 @@ class TestModelMethods:
             mock_asset.file_name = "model.joblib"
             mock_create.return_value = mock_asset
 
-            with patch.object(Environment, "get_asset_storage") as mock_storage:
+            with patch("nodetool.workflows.processing_context.require_scope") as mock_require_scope:
                 mock_storage_instance = Mock()
                 mock_storage_instance.get_url.return_value = (
                     "http://test.com/model.joblib"
                 )
-                mock_storage.return_value = mock_storage_instance
+                mock_scope = Mock()
+                mock_scope.get_asset_storage.return_value = mock_storage_instance
+                mock_require_scope.return_value = mock_scope
 
                 result = await context.from_estimator(model)
                 assert isinstance(result, ModelRef)

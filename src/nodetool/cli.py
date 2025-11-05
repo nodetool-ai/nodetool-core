@@ -11,6 +11,7 @@ from nodetool.api.workflow import from_model
 from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
 from nodetool.config.settings import load_settings
+from nodetool.runtime.resources import require_scope
 from nodetool.deploy.docker import (
     generate_image_tag,
 )
@@ -2873,7 +2874,7 @@ def deploy_workflows_sync(deployment_name: str, workflow_id: str):
         console.print(f"[cyan]Found {len(asset_ids)} asset(s) to sync[/]")
 
         # Get local storage
-        storage = Environment.get_asset_storage()
+        storage = require_scope().get_asset_storage()
         synced_count = 0
 
         for asset_id in asset_ids:

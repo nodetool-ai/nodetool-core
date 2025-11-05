@@ -45,6 +45,7 @@ import uvicorn
 from fastapi import FastAPI, HTTPException
 from rich.console import Console
 
+from nodetool.runtime.resources import get_static_auth_provider, get_user_auth_provider
 from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
 from nodetool.api.openai import create_openai_compatible_router
@@ -112,8 +113,8 @@ def create_worker_app(
     )
 
     # Add authentication middleware
-    static_provider = Environment.get_static_auth_provider()
-    user_provider = Environment.get_user_auth_provider()
+    static_provider = get_static_auth_provider()
+    user_provider = get_user_auth_provider()
     enforce_auth = Environment.enforce_auth()
     auth_middleware = create_http_auth_middleware(
         static_provider=static_provider,
@@ -149,13 +150,6 @@ def create_worker_app(
     @app.on_event("shutdown")
     async def shutdown_event():
         console.print("NodeTool worker shutting down...")
-
-        # Shutdown thread-local connections to prevent hanging on exit
-        try:
-            await Environment.async_shutdown()
-            log.info("Environment thread-local connections shutdown complete")
-        except Exception as e:
-            log.warning(f"Error during environment shutdown: {e}")
 
     @app.get("/health")
     async def health_check():

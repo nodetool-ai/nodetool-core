@@ -14,6 +14,7 @@ from typing import Any, AsyncIterator, List, Sequence
 
 import httpx
 import openai
+import tiktoken
 from huggingface_hub import hf_hub_download
 
 from nodetool.agents.tools.base import Tool
@@ -58,13 +59,20 @@ class LlamaProvider(BaseProvider, OpenAICompat):
         """
         super().__init__()
         self._manager = self.get_llama_server_manager()
-        self._usage = {
+        self.usage = {
             "prompt_tokens": 0,
             "completion_tokens": 0,
             "total_tokens": 0,
             "cached_prompt_tokens": 0,
             "reasoning_tokens": 0,
         }
+        # Initialize tiktoken encoding for token counting
+        # Using cl100k_base which is used by gpt-4 and modern models
+        try:
+            self._encoding = tiktoken.get_encoding("cl100k_base")
+        except Exception as e:
+            log.warning(f"Failed to load tiktoken encoding: {e}. Token counting may be inaccurate.")
+            self._encoding = None
 
     def _normalize_messages_for_llama(
         self,
@@ -209,6 +217,82 @@ class LlamaProvider(BaseProvider, OpenAICompat):
 
         return fixed
 
+    def _count_tokens_in_text(self, text: str) -> int:
+        """Count tokens in a text string using tiktoken.
+
+        Args:
+            text: Text to count tokens for.
+
+        Returns:
+            Number of tokens in the text. Returns 0 if encoding is not available.
+        """
+        if not self._encoding or not text:
+            return 0
+        try:
+            return len(self._encoding.encode(text))
+        except Exception as e:
+            log.debug(f"Error counting tokens: {e}")
+            return 0
+
+    def _count_tokens_in_messages(self, messages: Sequence[Message]) -> int:
+        """Count tokens in a sequence of messages.
+
+        This approximates the token count for messages as they would be formatted
+        for the chat completion API. The actual token count may vary slightly
+        depending on the specific chat template used by the model.
+
+        Args:
+            messages: Messages to count tokens for.
+
+        Returns:
+            Approximate number of tokens in the messages.
+        """
+        if not self._encoding:
+            return 0
+
+        num_tokens = 0
+        for message in messages:
+            # Account for message formatting tokens (role, separators, etc.)
+            # This is an approximation based on OpenAI's format
+            num_tokens += 4  # Every message has ~4 tokens of overhead
+
+            # Count role tokens
+            if message.role:
+                num_tokens += self._count_tokens_in_text(message.role)
+
+            # Count content tokens
+            if message.content:
+                content_str = message.content if isinstance(message.content, str) else str(message.content)
+                num_tokens += self._count_tokens_in_text(content_str)
+
+            # Count tool call tokens if present
+            if message.tool_calls:
+                for tool_call in message.tool_calls:
+                    if tool_call.name:
+                        num_tokens += self._count_tokens_in_text(tool_call.name)
+                    if tool_call.args:
+                        try:
+                            args_str = json.dumps(tool_call.args)
+                            num_tokens += self._count_tokens_in_text(args_str)
+                        except Exception:
+                            pass
+
+        # Add tokens for the assistant reply primer
+        num_tokens += 2
+
+        return num_tokens
+
+    def _update_usage(self, prompt_tokens: int = 0, completion_tokens: int = 0):
+        """Update the usage statistics.
+
+        Args:
+            prompt_tokens: Number of tokens in the prompt.
+            completion_tokens: Number of tokens in the completion.
+        """
+        self.usage["prompt_tokens"] += prompt_tokens
+        self.usage["completion_tokens"] += completion_tokens
+        self.usage["total_tokens"] += prompt_tokens + completion_tokens
+
     def get_container_env(self, context: ProcessingContext) -> dict[str, str]:
         """Return environment variables for containerized execution.
 
@@ -344,6 +428,9 @@ class LlamaProvider(BaseProvider, OpenAICompat):
         # llama.cpp is sensitive to unsupported fields; pass only necessary ones
         openai_messages = [await self.convert_message(m) for m in messages_normalized]
 
+        # Count prompt tokens before sending
+        prompt_tokens = self._count_tokens_in_messages(messages_normalized)
+
         self._log_api_request("chat_stream", messages_normalized, **_kwargs)
 
         client = self.get_client(base_url)
@@ -354,6 +441,7 @@ class LlamaProvider(BaseProvider, OpenAICompat):
         delta_tool_calls: dict[int, dict[str, Any]] = {}
         current_chunk = ""
         accumulated_content = ""  # For tool emulation parsing
+        completion_text = ""  # Track all generated text for token counting
 
         async for chunk in completion:
             chunk = chunk  # type: ignore
@@ -368,6 +456,7 @@ class LlamaProvider(BaseProvider, OpenAICompat):
             ):
                 content = delta.content or ""
                 current_chunk += content
+                completion_text += content  # Accumulate for token counting
                 # Accumulate content for emulation parsing
                 if use_tool_emulation:
                     accumulated_content += content
@@ -388,6 +477,11 @@ class LlamaProvider(BaseProvider, OpenAICompat):
                             log.debug(f"Yielding emulated tool call: {tool_call.name}")
                             yield tool_call
 
+                    # Count completion tokens and update usage
+                    completion_tokens = self._count_tokens_in_text(completion_text)
+                    self._update_usage(prompt_tokens, completion_tokens)
+                    log.debug(f"Token usage - Prompt: {prompt_tokens}, Completion: {completion_tokens}, Total: {prompt_tokens + completion_tokens}")
+
                 yield Chunk(content=content, done=finish_reason == "stop")
 
             if chunk.choices[0].finish_reason == "tool_calls":
@@ -400,6 +494,15 @@ class LlamaProvider(BaseProvider, OpenAICompat):
                         )
                         self._log_tool_call(tool_call)
                         yield tool_call
+
+                    # Count completion tokens and update usage for tool calls
+                    completion_tokens = self._count_tokens_in_text(completion_text)
+                    # Add tokens for tool call formatting
+                    for tc in delta_tool_calls.values():
+                        if "function" in tc and "arguments" in tc["function"]:
+                            completion_tokens += self._count_tokens_in_text(tc["function"]["arguments"])
+                    self._update_usage(prompt_tokens, completion_tokens)
+                    log.debug(f"Token usage (tool calls) - Prompt: {prompt_tokens}, Completion: {completion_tokens}, Total: {prompt_tokens + completion_tokens}")
 
             if delta.tool_calls:
                 for tool_call in delta.tool_calls:
@@ -464,6 +567,9 @@ class LlamaProvider(BaseProvider, OpenAICompat):
         )
         openai_messages = [await self.convert_message(m) for m in messages_normalized]
 
+        # Count prompt tokens before sending
+        prompt_tokens = self._count_tokens_in_messages(messages_normalized)
+
         # Debug: print the processed messages
         # print("DEBUG: Normalized messages:", [{"role": m.role, "content": m.content} for m in messages_normalized])
         # print("DEBUG: OpenAI messages:", openai_messages)
@@ -504,6 +610,27 @@ class LlamaProvider(BaseProvider, OpenAICompat):
                 tool_calls = emulated_calls
                 log.debug(f"Parsed {len(emulated_calls)} emulated tool calls")
 
+        # Count completion tokens
+        completion_tokens = 0
+        if response_message.content:
+            completion_tokens = self._count_tokens_in_text(response_message.content)
+
+        # Add tokens for tool calls
+        if tool_calls:
+            for tc in tool_calls:
+                if tc.name:
+                    completion_tokens += self._count_tokens_in_text(tc.name)
+                if tc.args:
+                    try:
+                        args_str = json.dumps(tc.args)
+                        completion_tokens += self._count_tokens_in_text(args_str)
+                    except Exception:
+                        pass
+
+        # Update usage statistics
+        self._update_usage(prompt_tokens, completion_tokens)
+        log.debug(f"Token usage - Prompt: {prompt_tokens}, Completion: {completion_tokens}, Total: {prompt_tokens + completion_tokens}")
+
         message = Message(
             role="assistant", content=response_message.content, tool_calls=tool_calls
         )
@@ -512,11 +639,11 @@ class LlamaProvider(BaseProvider, OpenAICompat):
 
     def get_usage(self) -> dict:
         """Return a shallow copy of accumulated usage counters."""
-        return self._usage.copy()
+        return self.usage.copy()
 
     def reset_usage(self) -> None:
         """Reset all usage counters to zero."""
-        self._usage = {
+        self.usage = {
             "prompt_tokens": 0,
             "completion_tokens": 0,
             "total_tokens": 0,
