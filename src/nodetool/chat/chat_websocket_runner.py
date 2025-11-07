@@ -28,6 +28,7 @@ from fastapi import WebSocket
 from fastapi.websockets import WebSocketState
 from nodetool.chat.base_chat_runner import BaseChatRunner
 from nodetool.config.environment import Environment
+from nodetool.runtime.resources import ResourceScope
 
 
 log = get_logger(__name__)
@@ -143,48 +144,50 @@ class ChatWebSocketRunner(BaseChatRunner):
         """
         Handle an incoming WebSocket message by saving to DB and processing using chat history from DB.
         """
-        try:
-            # Extract thread_id from message data and ensure thread exists
-            thread_id = data.get("thread_id")
-            thread_id = await self.ensure_thread_exists(thread_id)
-
-            # Update message data with the thread_id (in case it was created)
-            data["thread_id"] = thread_id
-
-            # Apply defaults if not specified
-            if not data.get("model"):
-                data["model"] = self.default_model
-            if not data.get("provider"):
-                data["provider"] = self.default_provider
-
-            # Save message to database asynchronously
-            await self._save_message_to_db_async(data)
-
-            # Load history from database
-            chat_history = await self.get_chat_history_from_db(thread_id)
-
-            # Call the implementation method with the loaded messages
-            await self.handle_message_impl(chat_history)
-
-        except asyncio.CancelledError:
-            log.info("Message processing cancelled by user")
-            # Send cancellation message
+        # Wrap database operations in ResourceScope for per-execution isolation
+        async with ResourceScope():
             try:
-                await self.send_message(
-                    {
-                        "type": "generation_stopped",
-                        "message": "Generation stopped by user",
-                    }
-                )
-            except Exception:
-                pass
-        except Exception as e:
-            log.error(f"Error processing message: {str(e)}", exc_info=True)
-            error_message = {"type": "error", "message": str(e)}
-            try:
-                await self.send_message(error_message)
-            except Exception:
-                pass
+                # Extract thread_id from message data and ensure thread exists
+                thread_id = data.get("thread_id")
+                thread_id = await self.ensure_thread_exists(thread_id)
+
+                # Update message data with the thread_id (in case it was created)
+                data["thread_id"] = thread_id
+
+                # Apply defaults if not specified
+                if not data.get("model"):
+                    data["model"] = self.default_model
+                if not data.get("provider"):
+                    data["provider"] = self.default_provider
+
+                # Save message to database asynchronously
+                await self._save_message_to_db_async(data)
+
+                # Load history from database
+                chat_history = await self.get_chat_history_from_db(thread_id)
+
+                # Call the implementation method with the loaded messages
+                await self.handle_message_impl(chat_history)
+
+            except asyncio.CancelledError:
+                log.info("Message processing cancelled by user")
+                # Send cancellation message
+                try:
+                    await self.send_message(
+                        {
+                            "type": "generation_stopped",
+                            "message": "Generation stopped by user",
+                        }
+                    )
+                except Exception:
+                    pass
+            except Exception as e:
+                log.error(f"Error processing message: {str(e)}", exc_info=True)
+                error_message = {"type": "error", "message": str(e)}
+                try:
+                    await self.send_message(error_message)
+                except Exception:
+                    pass
 
     async def disconnect(self):
         """
