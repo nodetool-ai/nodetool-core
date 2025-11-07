@@ -266,7 +266,7 @@ class ResourceScope:
                 connection = await self.pool.acquire()
                 return SQLiteScopeResources(connection, self.pool)
 
-    def get_asset_storage(self, use_s3: bool = False) -> Any:
+    def get_asset_storage(self, use_s3: bool = False) -> AbstractStorage:
         """Get or create the asset storage adapter for this scope."""
         if self._asset_storage is None:
             if Environment.is_test():

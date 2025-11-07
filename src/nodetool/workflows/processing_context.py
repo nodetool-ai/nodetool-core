@@ -465,14 +465,14 @@ class ProcessingContext:
         """
         return not self.message_queue.qsize() == 0
 
-    def asset_storage_url(self, key: str) -> str:
+    async def asset_storage_url(self, key: str) -> str:
         """
         Returns the URL of an asset in the asset storage.
 
         Args:
             key (str): The key of the asset.
         """
-        return require_scope().get_asset_storage().get_url(key)
+        return await require_scope().get_asset_storage().get_url(key)
 
     def generate_node_cache_key(
         self,
@@ -572,7 +572,7 @@ class ProcessingContext:
         asset = await self.find_asset(asset_id)  # type: ignore
         if asset is None:
             raise ValueError(f"Asset with ID {asset_id} not found")
-        return self.asset_storage_url(asset.file_name)
+        return await self.asset_storage_url(asset.file_name)
 
     async def get_workflow(self, workflow_id: str):
         """
