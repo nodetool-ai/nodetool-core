@@ -32,7 +32,7 @@ from nodetool.metadata.types import Provider, Task, SubTask
 from nodetool.agents.sub_task_context import SubTaskContext
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import Chunk, TaskUpdate, TaskUpdateEvent
-
+from nodetool.runtime.resources import ResourceScope
 
 # List of websites to scrape - demonstrating batch processing
 WEBSITES_TO_SCRAPE = [
@@ -177,41 +177,15 @@ async def test_batch_website_scraper(
 
 async def main():
     """Run the batch website scraper example."""
-
-    # You can test with different providers and models
-    test_configs = [
-        # OpenAI - Good for general web scraping
-        {"provider": Provider.HuggingFaceCerebras, "model": "openai/gpt-oss-120b"},
-        # Anthropic - Excellent context handling
-        # {
-        #     "provider": Provider.Anthropic,
-        #     "model": "claude-3-5-sonnet-20241022",
-        #     "batch_size": 5
-        # },
-        # Gemini - Fast and efficient
-        # {
-        #     "provider": Provider.Gemini,
-        #     "model": "gemini-2.0-flash",
-        #     "batch_size": 6
-        # }
-    ]
-
-    for config in test_configs:
-        print(f"\n{'#'*80}")
-        print(f"# Testing with {config['provider'].value} - {config['model']}")
-        print(f"{'#'*80}")
+    async with ResourceScope():
+        provider = await get_provider(Provider.HuggingFaceCerebras)
+        model = "openai/gpt-oss-120b"
 
         await test_batch_website_scraper(
-            provider=get_provider(config["provider"]),
-            model=config["model"],
+            provider=provider,
+            model=model,
         )
-
-        # Add a delay between providers to avoid rate limits
-        if len(test_configs) > 1:
-            print("\n⏳ Waiting 10 seconds before next test...")
-            await asyncio.sleep(10)
 
 
 if __name__ == "__main__":
-    # Run the example
     asyncio.run(main())

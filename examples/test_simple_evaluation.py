@@ -11,6 +11,7 @@ from nodetool.agents.graph_planner_evaluator import GraphPlannerEvaluator
 from nodetool.providers.anthropic_provider import AnthropicProvider
 from nodetool.api.types.workflow import GraphInput, GraphOutput
 from nodetool.metadata.types import TypeMetadata
+from nodetool.runtime.resources import ResourceScope
 
 
 async def test_simple_evaluation():
@@ -107,8 +108,13 @@ async def test_simple_evaluation():
         return False
 
 
+async def main() -> bool:
+    async with ResourceScope():
+        return await test_simple_evaluation()
+
+
 if __name__ == "__main__":
-    success = asyncio.run(test_simple_evaluation())
+    success = asyncio.run(main())
     if success:
         print("\n🎉 Test completed successfully!")
     else:

@@ -22,6 +22,7 @@ from nodetool.providers.base import BaseProvider
 from nodetool.providers.huggingface_provider import HuggingFaceProvider
 from nodetool.ui.console import AgentConsole
 from nodetool.workflows.processing_context import ProcessingContext
+from nodetool.runtime.resources import ResourceScope
 
 
 async def test_git_agent(
@@ -69,10 +70,13 @@ async def test_git_agent(
     print(f"\nWorkspace used by the agent: {context.workspace_dir}")
 
 
-if __name__ == "__main__":
-    asyncio.run(
-        test_git_agent(
+async def main():
+    async with ResourceScope():
+        await test_git_agent(
             provider=HuggingFaceProvider("cerebras"),  # pyright: ignore[reportCallIssue]
             model="openai/gpt-oss-120b",
         )
-    )
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

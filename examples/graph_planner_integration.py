@@ -8,13 +8,15 @@ import tempfile
 from typing import Any
 
 from nodetool.agents.graph_planner import GraphInput, GraphOutput, GraphPlanner
+from nodetool.providers import get_provider
 from nodetool.providers.openai_provider import OpenAIProvider
 from nodetool.metadata.type_metadata import TypeMetadata
-from nodetool.metadata.types import ColumnDef, DataframeRef
+from nodetool.metadata.types import ColumnDef, DataframeRef, Provider
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.run_workflow import run_workflow
 from nodetool.workflows.types import Chunk, PlanningUpdate
+from nodetool.runtime.resources import ResourceScope
 
 # Set up logging
 from nodetool.config.logging_config import get_logger
@@ -97,7 +99,8 @@ async def example_data_processing_workflow():
             ],
         )
 
-        provider = OpenAIProvider()
+        provider = await get_provider(Provider.HuggingFaceCerebras)
+        model = "openai/gpt-oss-120b"
 
         # Plan a data analysis workflow
         objective = """
@@ -110,7 +113,7 @@ async def example_data_processing_workflow():
         try:
             await create_and_execute_workflow(
                 provider=provider,
-                model="gpt-4o-mini",
+                model=model,
                 workspace=workspace,
                 objective=objective,
                 inputs={
@@ -135,5 +138,10 @@ async def example_data_processing_workflow():
             logger.error(f"Workflow failed: {e}", exc_info=True)
 
 
+async def main():
+    async with ResourceScope():
+        await example_data_processing_workflow()
+
+
 if __name__ == "__main__":
-    asyncio.run(example_data_processing_workflow())
+    asyncio.run(main())

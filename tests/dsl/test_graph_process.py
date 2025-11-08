@@ -24,7 +24,7 @@ async def test_run_graph_passes_asset_output_mode(monkeypatch):
     monkeypatch.setattr("nodetool.dsl.graph.run_workflow", fake_run_workflow)
 
     graph = Graph(nodes=[], edges=[])
-    result = await run_graph(
+    result = run_graph(
         graph,
         user_id="u1",
         auth_token="token",
@@ -56,7 +56,7 @@ async def test_run_graph_without_mode_uses_default(monkeypatch):
     monkeypatch.setattr("nodetool.dsl.graph.run_workflow", fake_run_workflow)
 
     graph = Graph(nodes=[], edges=[])
-    await run_graph(graph)
+    run_graph(graph)
 
     # When no mode is supplied run_graph should defer to run_workflow defaults.
     assert captured_context is None

@@ -6,11 +6,13 @@ using the AddSubtaskTool and ListSubtasksTool.
 """
 
 import asyncio
+from nodetool.providers import get_provider
 from nodetool.providers.openai_provider import OpenAIProvider
 from nodetool.agents.task_executor import TaskExecutor
 from nodetool.agents.tools import BrowserTool, GoogleSearchTool
-from nodetool.metadata.types import Task, SubTask
+from nodetool.metadata.types import Provider, Task, SubTask
 from nodetool.workflows.processing_context import ProcessingContext
+from nodetool.runtime.resources import ResourceScope
 import dotenv
 from rich.console import Console
 
@@ -61,8 +63,8 @@ async def demonstrate_dynamic_subtasks():
     context = ProcessingContext()
 
     # Set up provider and tools
-    provider = OpenAIProvider()
-    model = "gpt-4o-mini"
+    provider = await get_provider(Provider.HuggingFaceCerebras)
+    model = "openai/gpt-oss-120b"
 
     tools = [
         GoogleSearchTool(),
@@ -165,6 +167,12 @@ async def demonstrate_with_explicit_subtask_addition():
     # (stage_2 will wait for stage_1 to complete due to the dependency)
 
 
+async def main():
+    async with ResourceScope():
+        await demonstrate_dynamic_subtasks()
+        # await demonstrate_with_explicit_subtask_addition()
+
+
 if __name__ == "__main__":
     console.print(
         "[bold blue]NodeTool Dynamic Subtask Example[/bold blue]\n",
@@ -172,8 +180,4 @@ if __name__ == "__main__":
         "\n",
     )
 
-    # Run the main demonstration
-    asyncio.run(demonstrate_dynamic_subtasks())
-
-    # Optionally run the programmatic example
-    # asyncio.run(demonstrate_with_explicit_subtask_addition())
+    asyncio.run(main())

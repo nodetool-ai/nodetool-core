@@ -1,3 +1,4 @@
+import json
 from rich.text import Text
 
 from nodetool.agents.task_planner import (
@@ -80,3 +81,119 @@ def test_task_id_uniqueness(tmp_path):
     # during plan validation - this tests the concept of ID uniqueness
     task_ids = [s.id for s in [s1, s2]]
     assert len(task_ids) != len(set(task_ids))  # Should have duplicates
+
+
+def test_extract_json_from_message_with_code_fence(tmp_path):
+    """Test JSON extraction from code fence"""
+    planner = make_planner(tmp_path)
+
+    # Test with JSON code fence
+    msg = Message(
+        role="assistant",
+        content='Here is the plan:\n```json\n{"title": "Test", "subtasks": []}\n```'
+    )
+    result = planner._extract_json_from_message(msg)
+    assert result is not None
+    assert result["title"] == "Test"
+    assert result["subtasks"] == []
+
+
+def test_extract_json_from_message_with_plain_fence(tmp_path):
+    """Test JSON extraction from plain code fence"""
+    planner = make_planner(tmp_path)
+
+    # Test with plain code fence
+    msg = Message(
+        role="assistant",
+        content='```\n{"title": "Test2", "subtasks": []}\n```'
+    )
+    result = planner._extract_json_from_message(msg)
+    assert result is not None
+    assert result["title"] == "Test2"
+
+
+def test_extract_json_from_message_with_raw_json(tmp_path):
+    """Test JSON extraction from raw JSON in content"""
+    planner = make_planner(tmp_path)
+
+    # Test with raw JSON
+    msg = Message(
+        role="assistant",
+        content='Some text before {"title": "Test3", "subtasks": []} some text after'
+    )
+    result = planner._extract_json_from_message(msg)
+    assert result is not None
+    assert result["title"] == "Test3"
+
+
+def test_extract_json_from_message_with_think_tags(tmp_path):
+    """Test JSON extraction works with think tags"""
+    planner = make_planner(tmp_path)
+
+    # Test that think tags are removed before extraction
+    msg = Message(
+        role="assistant",
+        content='<think>Planning...</think>\n```json\n{"title": "Test4", "subtasks": []}\n```'
+    )
+    result = planner._extract_json_from_message(msg)
+    assert result is not None
+    assert result["title"] == "Test4"
+
+
+def test_extract_json_from_message_none(tmp_path):
+    """Test JSON extraction returns None for invalid input"""
+    planner = make_planner(tmp_path)
+
+    # Test with None message
+    result = planner._extract_json_from_message(None)
+    assert result is None
+
+    # Test with no content
+    msg = Message(role="assistant", content=None)
+    result = planner._extract_json_from_message(msg)
+    assert result is None
+
+    # Test with non-JSON content
+    msg = Message(role="assistant", content="Just plain text, no JSON here")
+    result = planner._extract_json_from_message(msg)
+    assert result is None
+
+
+def test_process_subtask_schema_with_dict(tmp_path):
+    planner = make_planner(tmp_path)
+    schema = {
+        "type": "object",
+        "properties": {
+            "title": {"type": "string"},
+        },
+    }
+
+    schema_str, errors = planner._process_subtask_schema(
+        {"output_schema": schema}, "schema test"
+    )
+
+    assert errors == []
+    parsed = json.loads(schema_str or "{}")
+    assert parsed["type"] == "object"
+    assert parsed["properties"]["title"]["type"] == "string"
+    assert parsed["required"] == ["title"]
+    assert parsed["additionalProperties"] is False
+
+
+def test_process_subtask_schema_with_yaml_fallback(tmp_path):
+    planner = make_planner(tmp_path)
+    yaml_schema = """
+type: object
+properties:
+  summary:
+    type: string
+"""
+
+    schema_str, errors = planner._process_subtask_schema(
+        {"output_schema": yaml_schema}, "schema yaml test"
+    )
+
+    assert errors == []
+    parsed = json.loads(schema_str or "{}")
+    assert parsed["properties"]["summary"]["type"] == "string"
+    assert parsed["required"] == ["summary"]

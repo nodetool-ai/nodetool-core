@@ -15,12 +15,13 @@ from nodetool.agents.tools import GoogleSearchTool, BrowserTool
 from nodetool.metadata.types import Provider
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import Chunk
+from nodetool.runtime.resources import ResourceScope
 
 
-async def main():
+async def run_wikipedia_agent():
     context = ProcessingContext()
 
-    provider = get_provider(Provider.OpenAI)
+    provider = await get_provider(Provider.OpenAI)
     model = "gpt-4o-mini"
 
     # Set up tools for retrieval
@@ -51,6 +52,11 @@ async def main():
 
     print(f"\nWorkspace: {context.workspace_dir}")
     print("Browse llm_fine_tuning.md to see the Wikipedia-style article.")
+
+
+async def main():
+    async with ResourceScope():
+        await run_wikipedia_agent()
 
 
 if __name__ == "__main__":

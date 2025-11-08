@@ -161,6 +161,7 @@ class OllamaProvider(BaseProvider, OpenAICompat):
         model_info = client.show(model=model)
         self._model_info_cache[model] = model_info
         log.debug(f"Cached model info for: {model}")
+        log.debug(f"Model info: {model_info}")
         return model_info
 
     def get_context_length(self, model: str) -> int:
@@ -170,6 +171,7 @@ class OllamaProvider(BaseProvider, OpenAICompat):
             # Use cached model info
             model_response = self._get_model_info(model)
             model_info = model_response.modelinfo
+            log.debug(f"Model info: {model_info}")
             if model_info is None:
                 log.debug("Model info is None, using default context length: 4096")
                 return 4096
@@ -193,7 +195,7 @@ class OllamaProvider(BaseProvider, OpenAICompat):
                     log.debug("No num_ctx parameter found in modelfile")
 
             # Default fallback if we can't determine the context length
-            log.debug("Using default context length: 4096")
+            log.warning("Using default context length: 4096")
             return 4096
         except Exception as e:
             log.error(f"Error determining model context length: {e}")
@@ -411,7 +413,7 @@ class OllamaProvider(BaseProvider, OpenAICompat):
         tools: Sequence[Any] = [],
         response_format: dict | None = None,
         max_tokens: int = 4096,
-        context_window: int = 4096,
+        context_window: int | None = None,
         **kwargs,
     ) -> Dict[str, Any]:
         """
@@ -430,6 +432,8 @@ class OllamaProvider(BaseProvider, OpenAICompat):
             f"Preparing request params for model: {model}, {len(messages)} messages, {len(tools)} tools"
         )
 
+        if context_window is None:
+            context_window = self.get_context_length(model)
         # Check if model supports native tool calling
         use_tool_emulation = False
         if len(tools) > 0 and not self.has_tool_support(model):

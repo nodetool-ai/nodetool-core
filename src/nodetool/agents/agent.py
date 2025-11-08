@@ -44,7 +44,6 @@ from nodetool.metadata.types import (
     ToolCall,
 )
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.workflows.base_node import BaseNode
 from nodetool.ui.console import AgentConsole
 from nodetool.agents.base_agent import BaseAgent
 
@@ -853,18 +852,12 @@ class Agent(BaseAgent):
             )
             config_path = host_config
 
-        # Create a dummy node for the runner
-        class DummyNode(BaseNode):
-            pass
-
-        dummy_node = DummyNode()
-
         # Stream output from the runner
         async for slot, value in runner.stream(
             user_code=config_path,
             env_locals=env_vars,
             context=context,
-            node=dummy_node,
+            node=None,
         ):
             if slot == "stdout":
                 yield Chunk(content=value)

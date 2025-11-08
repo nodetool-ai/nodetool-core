@@ -33,13 +33,14 @@ generate a comprehensive report with all findings.
 
 import asyncio
 from nodetool.agents.agent import Agent
-from nodetool.agents.tools.code_tools import ExecutePythonTool
+from nodetool.agents.tools.code_tools import ExecuteDatascienceTool
 from nodetool.agents.tools.http_tools import DownloadFileTool
 from nodetool.providers.base import BaseProvider
 from nodetool.providers import get_provider
 from nodetool.metadata.types import Provider
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import Chunk
+from nodetool.runtime.resources import ResourceScope
 from pathlib import Path
 
 import dotenv
@@ -48,16 +49,14 @@ import dotenv
 dotenv.load_dotenv()
 
 
-async def run_data_analysis_agent(
+async def run_coding_agent(
     provider: BaseProvider,
     model: str,
-    analysis_type: str = "comprehensive",
-    docker_image: str | None = None,
 ):
     context = ProcessingContext()
 
     code_tools = [
-        ExecutePythonTool(),
+        ExecuteDatascienceTool(),
         DownloadFileTool(),
     ]
 
@@ -92,14 +91,13 @@ async def run_data_analysis_agent(
         """
 
     agent = Agent(
-        name="Data Science Agent",
+        name="Coding Agent",
         objective=analysis_objective,
         enable_analysis_phase=True,
         enable_data_contracts_phase=True,
         provider=provider,
         model=model,
         tools=code_tools,
-        docker_image=docker_image,
         # display_manager=AgentConsole(),
     )
 
@@ -138,7 +136,6 @@ async def run_data_analysis_agent(
 
         # Display summary statistics if available
         print("\n📊 Analysis Summary:")
-        print(f"   - Analysis Type: {analysis_type}")
         print(f"   - Model Used: {model}")
         print(
             f"   - Total Files Generated: {len([f for f in generated_files if f.is_file()])}"
@@ -159,71 +156,20 @@ async def run_data_analysis_agent(
     print(f"\n📂 Full workspace path: {context.workspace_dir}")
 
 
-if __name__ == "__main__":
-    import argparse
-
-    parser = argparse.ArgumentParser(description="Run the data analysis agent example")
-    parser.add_argument(
-        "--analysis-type",
-        choices=["comprehensive", "quick", "ml_focused"],
-        default="comprehensive",
-        help="Type of analysis to perform",
-    )
-    parser.add_argument(
-        "--docker-image",
-        default=None,
-        help="Run the agent inside this Docker image (optional)",
-    )
-
-    args = parser.parse_args()
-
+async def main():
     print("🚀 Starting Data Analysis Agent")
-    print(f"📊 Analysis Type: {args.analysis_type}")
     print("-" * 60)
 
-    try:
-        asyncio.run(
-            run_data_analysis_agent(
-                provider=get_provider(Provider.HuggingFaceCerebras),
+    async with ResourceScope():
+        try:
+            await run_coding_agent(
+                provider=await get_provider(Provider.HuggingFaceCerebras),
                 model="openai/gpt-oss-120b",
-                analysis_type=args.analysis_type,
-                docker_image=args.docker_image,
             )
-        )
-    except Exception as e:
-        print(f"❌ Error during analysis: {e}")
+        except Exception as e:
+            print(f"❌ Error during analysis: {e}")
 
-    # Alternative examples:
 
-    # Quick analysis with OpenAI
-    # asyncio.run(
-    #     run_data_analysis_agent(
-    #         provider=get_provider(Provider.OpenAI),
-    #         model="gpt-4o-mini",
-    #         planning_model="gpt-4o-mini",
-    #         reasoning_model="gpt-4o-mini",
-    #         analysis_type="quick"
-    #     )
-    # )
 
-    # ML-focused analysis with Anthropic Claude
-    # asyncio.run(
-    #     run_data_analysis_agent(
-    #         provider=get_provider(Provider.Anthropic),
-    #         model="claude-3-5-sonnet-20241022",
-    #         planning_model="claude-3-5-sonnet-20241022",
-    #         reasoning_model="claude-3-5-sonnet-20241022",
-    #         analysis_type="ml_focused"
-    #     )
-    # )
-
-    # Comprehensive analysis with Google Gemini
-    # asyncio.run(
-    #     run_data_analysis_agent(
-    #         provider=get_provider(Provider.Gemini),
-    #         model="gemini-2.0-flash",
-    #         planning_model="gemini-2.0-flash",
-    #         reasoning_model="gemini-2.0-flash",
-    #         analysis_type="comprehensive"
-    #     )
-    # )
+if __name__ == "__main__":
+    asyncio.run(main())

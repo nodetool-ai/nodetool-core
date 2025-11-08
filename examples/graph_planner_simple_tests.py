@@ -12,6 +12,7 @@ from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.run_job_request import RunJobRequest
 from nodetool.workflows.run_workflow import run_workflow
 from nodetool.workflows.types import Chunk, PlanningUpdate
+from nodetool.runtime.resources import ResourceScope
 
 # Set up logging
 from nodetool.config.logging_config import get_logger
@@ -157,7 +158,11 @@ async def run_all_simple_tests():
     # await text_formatting_workflow()
 
 
+async def main():
+    async with ResourceScope():
+        # await simple_arithmetic_workflow()
+        await run_all_simple_tests()
+
+
 if __name__ == "__main__":
-    # You can run a specific test or all tests
-    # asyncio.run(simple_arithmetic_workflow())
-    asyncio.run(run_all_simple_tests())
+    asyncio.run(main())

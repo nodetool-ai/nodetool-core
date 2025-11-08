@@ -237,10 +237,23 @@ class SQLiteConnectionPool:
             log.info(f"Closed {connections_closed} connection(s) for {self.db_path} with WAL checkpoint")
 
 
+async def shutdown_all_sqlite_pools() -> None:
+    """Shutdown all SQLite connection pools globally.
+
+    This should be called during application shutdown to ensure
+    all connections are properly closed with WAL checkpointing.
+    """
+    async with SQLiteConnectionPool._pools_lock:
+        for db_path, pool in list(SQLiteConnectionPool._pools.items()):
+            log.info(f"Shutting down SQLite pool for {db_path}")
+            await pool.close_all()
+        SQLiteConnectionPool._pools.clear()
+
+
 class SQLiteScopeResources(DBResources):
     """Per-scope SQLite resources (connection + adapters)."""
 
-    def __init__(self, connection: aiosqlite.Connection, pool: SQLiteConnectionPool | None = None):
+    def __init__(self, pool: SQLiteConnectionPool | None = None):
         """Initialize scope resources.
 
         Args:
@@ -248,7 +261,6 @@ class SQLiteScopeResources(DBResources):
             db_path: Path to database
             pool: The pool to return connection to on cleanup
         """
-        self.connection = connection
         self.pool = pool
         self._adapters: Dict[str, Any] = {}
 
@@ -272,9 +284,10 @@ class SQLiteScopeResources(DBResources):
 
         # Create new adapter
         log.debug(f"Creating new SQLite adapter for table '{table_name}'")
-        assert self.connection is not None
+        assert self.pool is not None
+        connection = await self.pool.acquire()
         adapter = SQLiteAdapter(
-            connection=self.connection,
+            connection=connection,
             fields=model_cls.db_fields(),
             table_schema=model_cls.get_table_schema(),
             indexes=model_cls.get_indexes(),
@@ -284,14 +297,6 @@ class SQLiteScopeResources(DBResources):
         self._adapters[table_name] = adapter
         return adapter
 
-    async def close_all(self) -> None:
-        """Clean up resources and close all connections in the pool.
-
-        This performs a full shutdown with WAL checkpointing.
-        """
-        if self.pool is not None:
-            await self.pool.close_all()
-
     async def cleanup(self) -> None:
         """Clean up scope resources and return connection to pool.
 
@@ -299,38 +304,17 @@ class SQLiteScopeResources(DBResources):
         for reuse. WAL checkpointing happens when the pool is closed
         or connections are evicted.
         """
-        if self.connection is not None:
-            try:
-                # Clear adapter cache
-                self._adapters.clear()
+        try:
+            # First, release all connections held by adapters back to the pool
+            if self.pool is not None:
+                for adapter in self._adapters.values():
+                    if hasattr(adapter, 'connection') and adapter.connection is not None:
+                        await self.pool.release(adapter.connection)
 
-                # Return connection to pool for reuse
-                if self.pool is not None:
-                    await self.pool.release(self.connection)
-                self.connection = None  # type: ignore
-            except Exception as e:
-                log.warning(f"Error releasing SQLite connection: {e}")
+                # Now close all pooled connections
+                await self.pool.close_all()
 
-
-async def shutdown_all_sqlite_pools() -> None:
-    """Shutdown all SQLite connection pools with proper WAL checkpointing.
-
-    This should be called during application shutdown to ensure all
-    WAL files are properly checkpointed and connections are closed.
-    """
-    async with SQLiteConnectionPool._pools_lock:
-        if not SQLiteConnectionPool._pools:
-            return
-
-        log.info(f"Shutting down {len(SQLiteConnectionPool._pools)} SQLite connection pool(s)")
-
-        for db_path, pool in SQLiteConnectionPool._pools.items():
-            try:
-                await pool.close_all()
-                log.info(f"Closed connection pool for {db_path}")
-            except Exception as e:
-                log.error(f"Error closing connection pool for {db_path}: {e}")
-
-        # Clear the pools dictionary
-        SQLiteConnectionPool._pools.clear()
-        log.info("All SQLite connection pools shut down")
+            # Clear adapter cache
+            self._adapters.clear()
+        except Exception as e:
+            log.warning(f"Error releasing SQLite connection: {e}")

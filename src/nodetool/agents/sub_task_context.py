@@ -285,7 +285,6 @@ You have access to `add_subtask` and `list_subtasks` for expanding the task plan
 3. **Consider dynamic expansion:** If you discover substantial additional work beyond current scope, use `add_subtask` to create a focused task for it.
 4. **Finish properly:** When ready, call `finish_subtask` exactly once with:
    - `result`: The final structured object conforming to the output schema
-   - `metadata`: Include `title`, `description`, `sources`, and `notes` (document assumptions and decisions made)
 
 # Stop Conditions
 - Stop immediately after calling `finish_subtask` successfully.
@@ -306,7 +305,6 @@ You are completing the final aggregation task, synthesizing results from prior s
 # Operating Mode
 Persistence and completion:
 - Keep going until the final result is produced; do not hand back early.
-- Resolve ambiguity by making reasonable assumptions and document them in `metadata.notes`.
 - Focus on synthesis and aggregation, not additional research.
 
 Agentic eagerness control:
@@ -357,7 +355,6 @@ You have access to `add_subtask` and `list_subtasks` if critical information is 
 5. **Produce final output:** Generate the complete deliverable matching the task schema.
 6. **Finish properly:** Call `finish_task` exactly once with:
    - `result`: The complete final deliverable conforming to the output schema
-   - `metadata`: Include `title`, `description`, `sources`, and `notes` (document synthesis approach and assumptions)
 
 # Stop Conditions
 - Stop immediately after calling `finish_task` successfully.
@@ -416,20 +413,51 @@ def _validate_and_sanitize_schema(
         result_schema["description"] = default_description
 
     # Validate common schema issues
+    disallowed_extension_keys = {
+        "oneOf",
+        "anyOf",
+        "allOf",
+        "not",
+        "if",
+        "then",
+        "else",
+        "patternProperties",
+    }
+
+    def _should_default_additional_properties(obj: Dict[str, Any]) -> bool:
+        """Determine if we should set additionalProperties to False for this node."""
+        if "additionalProperties" in obj:
+            return False
+
+        if any(key in obj for key in disallowed_extension_keys):
+            return False
+
+        schema_type = obj.get("type")
+        if isinstance(schema_type, list):
+            # Only treat as plain object if the type list exclusively contains "object"
+            if len(schema_type) != 1 or schema_type[0] != "object":
+                return False
+        elif schema_type is not None and schema_type != "object":
+            return False
+
+        # Treat as object if explicitly typed or if properties imply it
+        if schema_type == "object" or (
+            schema_type is None and obj.get("properties") is not None
+        ):
+            return True
+
+        return False
+
     def _clean_schema_recursive(obj: Any) -> Any:
         """Recursively clean schema objects to ensure compatibility."""
         if isinstance(obj, dict):
-            cleaned = {}
-            for key, value in obj.items():
-                if key == "additionalProperties":
-                    cleaned[key] = False
-                else:
-                    cleaned[key] = _clean_schema_recursive(value)
+            cleaned = {key: _clean_schema_recursive(value) for key, value in obj.items()}
+            if _should_default_additional_properties(cleaned):
+                cleaned["additionalProperties"] = False
             return cleaned
-        elif isinstance(obj, list):
+        if isinstance(obj, list):
             return [_clean_schema_recursive(item) for item in obj]
-        else:
-            return obj
+        return obj
 
     result_schema = _clean_schema_recursive(result_schema)
 
@@ -457,8 +485,7 @@ class FinishTaskTool(Tool):
     description: str = """
     Finish a task by saving its final result as an object. Provide the result directly
     in the 'result' parameter - it will be stored as an object and made available to
-    downstream processes. Include relevant 'metadata' with title, description, and sources.
-    This will hold the final aggregated result of all subtasks.
+    downstream processes. 
     """
     input_schema: Dict[str, Any]  # Defined in __init__
 
@@ -495,7 +522,7 @@ class FinishSubTaskTool(Tool):
     description: str = """
     Finish a subtask by saving its final result as an object. Provide the result directly
     in the 'result' parameter - it will be stored as an object and made available to
-    downstream tasks. Include relevant 'metadata' with title, description, and sources.
+    downstream tasks.
     """
     input_schema: Dict[str, Any]  # Defined in __init__
 
@@ -859,12 +886,21 @@ class SubTaskContext:
 
             # Process current iteration
             message = await self._process_iteration()
+
             if message.tool_calls:
                 if self.display_manager:
                     self.display_manager.debug_subtask_only(
                         f"LLM returned {len(message.tool_calls)} tool calls"
                     )
+                message.tool_calls = self._filter_tool_calls_for_current_stage(
+                    message.tool_calls
+                )
 
+            # Add assistant message to history after any tool-call adjustments so the
+            # stored conversation precisely matches what we'll execute/respond to.
+            self.history.append(message)
+
+            if message.tool_calls:
                 # Separate finish tools from other tools - finish tools are always allowed
                 finish_tools = [
                     tc
@@ -903,6 +939,10 @@ class SubTaskContext:
                             log.warning(
                                 f"Tool calls: {self.tool_calls_made}/{self.max_tool_calls}"
                             )
+                            # Remove the assistant message with unprocessed tool calls
+                            # since we won't be responding to them.
+                            if self.history and self.history[-1] is message:
+                                self.history.pop()
                             break
                     else:
                         # Allow remaining non-finish calls plus all finish calls
@@ -919,13 +959,13 @@ class SubTaskContext:
                     if tool_call.name not in ("finish_subtask", "finish_task"):
                         log.debug(f"Executing tool: {tool_call.name}")
                         self.tool_calls_made += 1
-                    message = self._generate_tool_call_message(tool_call)
+                    tool_message = self._generate_tool_call_message(tool_call)
                     yield ToolCall(
                         id=tool_call.id,
                         name=tool_call.name,
                         args=tool_call.args,
                         subtask_id=self.subtask.id,
-                        message=message,
+                        message=tool_message,
                     )
                     if (
                         tool_call.name == "finish_subtask"
@@ -938,8 +978,10 @@ class SubTaskContext:
                             event=TaskUpdateEvent.SUBTASK_COMPLETED,
                         )
                         log.debug(f"Subtask completed: {self.subtask.content}")
-            # Handle potential text chunk yields if provider supports streaming text
+
+                await self._process_tool_call_results(message.tool_calls)
             elif message.content:
+                # Handle potential text chunk yields if provider supports streaming text
                 yield Chunk(content=str(message.content))
 
         # If we've reached the last iteration and haven't completed yet, generate summary
@@ -1064,82 +1106,77 @@ class SubTaskContext:
                         cleaned_text = _remove_think_tags(None)  # Explicitly pass None
                         part_dict["text"] = cleaned_text  # Assigns None back
 
-        # Add the message to history
-        self.history.append(message)
-
-        if message.tool_calls:
-            # Check if finish tool was called in conclusion stage, otherwise filter disallowed tools
-            valid_tool_calls = []
-            if self.in_conclusion_stage:
-                for tc in message.tool_calls:
-                    if tc.name == self.finish_tool.name:
-                        valid_tool_calls.append(tc)
-                    else:
-                        log.warning(
-                            f"LLM attempted to call disallowed tool '{tc.name}' in conclusion stage. Ignoring."
-                        )
-            else:
-                valid_tool_calls = (
-                    message.tool_calls
-                )  # Allow all tools if not in conclusion stage
-
-            if valid_tool_calls:
-                log.debug(f"Processing {len(valid_tool_calls)} valid tool calls")
-
-                # Standard parallel processing for tool calls
-                # Use return_exceptions=True to ensure all tool calls are processed
-                # even if some fail, so we can provide responses for all tool_call_ids
-                tool_results = await asyncio.gather(
-                    *[
-                        self._handle_tool_call(tool_call)
-                        for tool_call in valid_tool_calls
-                    ],
-                    return_exceptions=True,
-                )
-
-                # Process results and handle any exceptions
-                valid_tool_results = []
-                for i, (tool_call, result) in enumerate(
-                    zip(valid_tool_calls, tool_results)
-                ):
-                    if isinstance(result, Exception):
-                        log.error(
-                            f"Tool call {tool_call.id} ({tool_call.name}) failed with exception: {result}"
-                        )
-                        # Create an error tool result message to satisfy OpenAI's requirement
-                        # that all tool_call_ids have corresponding tool messages
-                        error_message = Message(
-                            role="tool",
-                            tool_call_id=tool_call.id,
-                            name=tool_call.name,
-                            content=f"Error executing tool: {str(result)}",
-                        )
-                        valid_tool_results.append(error_message)
-                    elif isinstance(result, Message):
-                        valid_tool_results.append(result)
-                    else:
-                        log.error(
-                            f"Tool call {tool_call.id} ({tool_call.name}) returned unexpected type: {type(result)}"
-                        )
-                        # Create a fallback error message
-                        error_message = Message(
-                            role="tool",
-                            tool_call_id=tool_call.id,
-                            name=tool_call.name,
-                            content=f"Unexpected tool result type: {type(result)}",
-                        )
-                        valid_tool_results.append(error_message)
-
-                self.history.extend(valid_tool_results)
-                log.debug(f"Added {len(valid_tool_results)} tool results to history")
-            elif self.in_conclusion_stage and not valid_tool_calls:
-                # If in conclusion stage and LLM didn't call finish_tool, add a nudge?
-                # Or handle it in the max_iterations logic? For now, let loop continue.
-                log.warning(
-                    "LLM did not call the required finish tool in conclusion stage."
-                )
-
         return message
+
+    def _filter_tool_calls_for_current_stage(
+        self, tool_calls: Optional[list[ToolCall]]
+    ) -> list[ToolCall]:
+        """Filter tool calls based on whether we're in the conclusion stage."""
+        if not tool_calls:
+            return []
+
+        if not self.in_conclusion_stage:
+            return list(tool_calls)
+
+        allowed_calls: list[ToolCall] = []
+        for tc in tool_calls:
+            if tc.name == self.finish_tool.name:
+                allowed_calls.append(tc)
+            else:
+                log.warning(
+                    f"LLM attempted to call disallowed tool '{tc.name}' in conclusion stage. Ignoring."
+                )
+
+        if not allowed_calls:
+            log.warning(
+                "LLM did not call the required finish tool in conclusion stage."
+            )
+
+        return allowed_calls
+
+    async def _process_tool_call_results(
+        self, valid_tool_calls: list[ToolCall]
+    ) -> None:
+        """Execute tool calls and add their results to history."""
+        if not valid_tool_calls:
+            return
+
+        log.debug(f"Processing {len(valid_tool_calls)} valid tool calls")
+
+        tool_results = await asyncio.gather(
+            *[self._handle_tool_call(tool_call) for tool_call in valid_tool_calls],
+            return_exceptions=True,
+        )
+
+        valid_tool_messages: list[Message] = []
+        for tool_call, result in zip(valid_tool_calls, tool_results):
+            if isinstance(result, Exception):
+                log.error(
+                    f"Tool call {tool_call.id} ({tool_call.name}) failed with exception: {result}"
+                )
+                error_message = Message(
+                    role="tool",
+                    tool_call_id=tool_call.id,
+                    name=tool_call.name,
+                    content=f"Error executing tool: {str(result)}",
+                )
+                valid_tool_messages.append(error_message)
+            elif isinstance(result, Message):
+                valid_tool_messages.append(result)
+            else:
+                log.error(
+                    f"Tool call {tool_call.id} ({tool_call.name}) returned unexpected type: {type(result)}"
+                )
+                error_message = Message(
+                    role="tool",
+                    tool_call_id=tool_call.id,
+                    name=tool_call.name,
+                    content=f"Unexpected tool result type: {type(result)}",
+                )
+                valid_tool_messages.append(error_message)
+
+        self.history.extend(valid_tool_messages)
+        log.debug(f"Added {len(valid_tool_messages)} tool results to history")
 
     def _generate_tool_call_message(self, tool_call: ToolCall) -> str:
         """

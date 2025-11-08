@@ -11,7 +11,7 @@ from nodetool.api.workflow import from_model
 from nodetool.config.environment import Environment
 from nodetool.config.logging_config import get_logger
 from nodetool.config.settings import load_settings
-from nodetool.runtime.resources import require_scope
+from nodetool.runtime.resources import ResourceScope, require_scope
 from nodetool.deploy.docker import (
     generate_image_tag,
 )
@@ -862,8 +862,9 @@ def secrets_list(user_id: str, limit: int) -> None:
     from nodetool.models.secret import Secret
 
     async def _list() -> list[Secret]:
-        items, _ = await Secret.list_for_user(user_id=user_id, limit=limit)
-        return items
+        async with ResourceScope():
+            items, _ = await Secret.list_for_user(user_id=user_id, limit=limit)
+            return items
 
     secrets_for_user = asyncio.run(_list())
 
@@ -886,43 +887,27 @@ def secrets_list(user_id: str, limit: int) -> None:
 @click.argument("key")
 @click.option("--user-id", "-u", default="1", help="User ID that owns the secret.")
 @click.option("--description", "-d", default=None, help="Optional description for the secret.")
-@click.option(
-    "--no-confirm",
-    is_flag=True,
-    help="Store the secret without requiring a second confirmation of the value.",
-)
 def secrets_store(
     key: str,
     user_id: str,
     description: Optional[str],
-    no_confirm: bool,
 ) -> None:
     """Store or update a secret value by securely prompting for input."""
     import asyncio
     from nodetool.models.secret import Secret
 
-    prompt_kwargs = {"hide_input": True}
-    if not no_confirm:
-        prompt_kwargs["confirmation_prompt"] = True
-
-    secret_value = click.prompt(f"Enter value for secret '{key}'", **prompt_kwargs)
-
-    if secret_value is None or secret_value == "":
-        console.print("[red]Secret value cannot be empty.[/]")
-        return
+    secret_value: str = click.prompt(f"Enter value for secret '{key}'", hide_input=True)
 
     async def _store() -> None:
-        await Secret.upsert(
-            user_id=user_id,
-            key=key,
-            value=secret_value,
-            description=description,
-        )
+        async with ResourceScope():
+            await Secret.upsert(
+                user_id=user_id,
+                key=key,
+                value=secret_value,
+                description=description,
+            )
 
     asyncio.run(_store())
-
-    # Clear the reference to the value as soon as it is stored
-    secret_value = None
 
     console.print(f"[green]Secret '{key}' stored for user {user_id}.[/]")
 
@@ -989,11 +974,8 @@ def show_settings():
     # Load settings and secrets
     settings_obj = load_settings()
 
-    # Choose which model to display
-    data = secrets_obj if secrets else settings_obj
-
     # Create a rich table
-    table = Table(title="Secrets" if secrets else "Settings")
+    table = Table(title="Settings")
 
     # Add columns
     table.add_column("Setting", style="cyan")
@@ -1003,55 +985,11 @@ def show_settings():
     from nodetool.config.configuration import get_settings_registry
 
     for setting in get_settings_registry():
-        # Get field description from the model
-        description = setting.description
-        table.add_row(setting.env_var, data.get(setting.env_var, ""), description)
+        table.add_row(setting.env_var, settings_obj.get(setting.env_var, ""), setting.description)
 
     # Display the table
     console.print(table)
 
-
-@settings.command("edit")
-@click.option("--secrets", is_flag=True, help="Edit secrets instead of settings.")
-def edit_settings(secrets: bool = False):
-    """Edit settings or secrets."""
-    from nodetool.config.settings import (
-        load_settings,
-        get_system_file_path,
-        SETTINGS_FILE,
-        SECRETS_FILE,
-    )
-    import subprocess
-    import yaml
-    import os
-
-    # Load current settings and secrets
-    settings_obj, secrets_obj = load_settings()
-
-    # If no specific key/value, open the file in an editor
-    file_path = get_system_file_path(SECRETS_FILE if secrets else SETTINGS_FILE)
-
-    if not os.path.exists(file_path):
-        # Create the file with empty content if it doesn't exist
-        os.makedirs(os.path.dirname(file_path), exist_ok=True)
-        with open(file_path, "w") as f:
-            if secrets:
-                yaml.dump(secrets_obj, f)
-            else:
-                yaml.dump(settings_obj, f)
-
-    # Open the file in the default editor
-    click.echo(f"Opening {file_path} in your default editor...")
-
-    # Determine the editor to use
-    editor = os.environ.get("EDITOR", "vi")
-
-    try:
-        subprocess.run([editor, file_path], check=True)
-        click.echo(f"Settings saved to {file_path}")
-
-    except subprocess.CalledProcessError:
-        click.echo("Error: Failed to edit the file", err=True)
 
 
 # Package Commands Group

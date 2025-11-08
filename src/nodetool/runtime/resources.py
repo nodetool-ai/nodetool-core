@@ -259,12 +259,10 @@ class ResourceScope:
             if self.pool is None:
                 # Use provided db_path or fall back to environment config
                 pool = await SQLiteConnectionPool.get_shared(Environment.get_db_path())
-                connection = await pool.acquire()
-                return SQLiteScopeResources(connection, pool)
+                return SQLiteScopeResources(pool)
             else:
                 assert isinstance(self.pool, SQLiteConnectionPool), "Pool must be a SQLiteConnectionPool"
-                connection = await self.pool.acquire()
-                return SQLiteScopeResources(connection, self.pool)
+                return SQLiteScopeResources(self.pool)
 
     def get_asset_storage(self, use_s3: bool = False) -> AbstractStorage:
         """Get or create the asset storage adapter for this scope."""

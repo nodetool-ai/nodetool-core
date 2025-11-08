@@ -103,6 +103,7 @@ separate nodes and edges arrays for execution by the WorkflowRunner.
 """
 
 import json
+import re
 from nodetool.config.logging_config import get_logger
 from typing import Any, AsyncGenerator, Dict, List, Optional, cast
 from nodetool.metadata.type_metadata import TypeMetadata
@@ -303,24 +304,6 @@ def _is_type_compatible(source_type: TypeMetadata, target_type: TypeMetadata) ->
     return False
 
 
-class SubmitDesignResultTool(Tool):
-    """Tool for submitting workflow design results."""
-
-    name: str = "submit_design_result"
-    description: str = "Submit the final workflow design result. Use this tool when you have completed your workflow design and are ready to provide the structured node specifications."
-    input_schema: Dict[str, Any] = WorkflowDesignResult.model_json_schema()
-
-    async def process(
-        self, context: ProcessingContext, params: Dict[str, Any]
-    ) -> WorkflowDesignResult:
-        """Process the design result submission."""
-        try:
-            return WorkflowDesignResult.model_validate(params)
-        except Exception as e:
-            logger.error(f"Error validating design result: {e}")
-            raise ValueError(f"Invalid design result format: {e}")
-
-
 def print_visual_graph(graph: APIGraph) -> None:
     """Print a visual ASCII representation of the workflow graph."""
     logger.info("\n  Visual Graph Structure:")
@@ -448,9 +431,29 @@ Each node type has specific metadata that defines:
 - **is_dynamic**: Boolean flag indicating if the node supports dynamic properties
 
 ## Input and Output Node Mappings
-Input nodes: string→StringInput, int→IntegerInput, float→FloatInput, bool→BooleanInput, list[any]→ListInput, image→ImageInput, video→VideoInput, document→DocumentInput, dataframe→DataFrameInput
+**CRITICAL**: Always use fully-qualified node types from the `nodetool.input` and `nodetool.output` namespaces.
 
-Output nodes: string→StringOutput, int→IntegerOutput, float→FloatOutput, bool→BooleanOutput, list[any]→ListOutput, image→ImageOutput, video→VideoOutput, document→DocumentOutput, dataframe→DataFrameOutput
+Available Input Nodes (use exact `node_type` values):
+- `nodetool.input.StringInput` - For string inputs
+- `nodetool.input.IntegerInput` - For integer inputs
+- `nodetool.input.FloatInput` - For float inputs
+- `nodetool.input.BooleanInput` - For boolean inputs
+- `nodetool.input.ImageInput` - For image inputs
+- `nodetool.input.VideoInput` - For video inputs
+- `nodetool.input.AudioInput` - For audio inputs
+- `nodetool.input.DocumentInput` - For document inputs
+- `nodetool.input.DataframeInput` - For dataframe inputs
+
+Available Output Nodes (use exact `node_type` values):
+- `nodetool.output.StringOutput` - For string outputs
+- `nodetool.output.IntegerOutput` - For integer outputs
+- `nodetool.output.FloatOutput` - For float outputs
+- `nodetool.output.BooleanOutput` - For boolean outputs
+- `nodetool.output.ImageOutput` - For image outputs
+- `nodetool.output.VideoOutput` - For video outputs
+- `nodetool.output.AudioOutput` - For audio outputs
+- `nodetool.output.DocumentOutput` - For document outputs
+- `nodetool.output.DataframeOutput` - For dataframe outputs
 """
 
 WORKFLOW_DESIGN_PROMPT = """
@@ -501,6 +504,7 @@ When using the `search_nodes` tool:
 ## Instructions - Node Selection
 1. **Create ALL nodes including Input and Output nodes.** For Input and Output nodes, use the exact node types from the system prompt mappings (do NOT search for them). Only search for intermediate processing nodes.
    - For each item in the Input Schema, create a corresponding Input node with a `name` matching the schema's `name`.
+     - **REMINDER**: For `dataframe` type inputs, use `nodetool.input.DataframeInput` so the schema can be satisfied
    - For each item in the Output Schema, create a corresponding Output node with a `name` matching the schema's `name`.
 
 2. **Search for intermediate processing nodes using `search_nodes`**. Be strategic with searches - use specific, targeted queries to find the most appropriate nodes. Prefer fewer, more powerful nodes over many simple ones to improve efficiency.
@@ -627,8 +631,28 @@ Before submitting your node specifications, verify:
 **Output Schema:**
 {{ output_schema }}
 
-You MUST use the submit_design_result tool to submit your workflow design. Do not provide JSON output directly - use the tool to submit your structured node specifications.
-Only emit the tool call without extra commentary.
+## Final Output Format
+
+After you have completed your node searches and design work, output your workflow design as a JSON object in a ```json code fence with this exact structure:
+
+```json
+{
+  "node_specifications": [
+    {
+      "node_id": "unique_identifier",
+      "node_type": "exact.node.type.from.search",
+      "purpose": "Brief description",
+      "properties": "{\"property_name\": \"value or edge definition\"}"
+    }
+  ]
+}
+```
+
+**CRITICAL**:
+- Output ONLY the JSON object in a code fence, no additional commentary
+- Use the exact `node_type` values from your search_nodes results
+- Ensure all edge connections are properly defined in the properties JSON
+- The properties field must be a JSON string (use escaped quotes)
 """
 
 
@@ -944,348 +968,92 @@ class GraphPlanner:
         logger.debug(f"Rendered prompt: {len(rendered)} chars")
         return rendered
 
-    async def _run_phase_with_tools(
-        self,
-        phase_name: str,
-        prompt_content: str,
-        response_model: type[BaseModel],
-        tools: List[Any],
-        context: ProcessingContext,
-        history: List[Message],
-        max_iterations: int = 5,
-        max_validation_attempts: int = 5,
-        validation_fn: Optional[Any] = None,
-    ) -> AsyncGenerator[
-        Chunk | ToolCall | tuple[List[Message], BaseModel, Optional[PlanningUpdate]],
-        None,
-    ]:
-        """Generic method for running a phase with single loop tool calling including output tool.
+    def _remove_think_tags(self, text_content: Optional[str]) -> Optional[str]:
+        """Removes <think>...</think> blocks from a string.
 
         Args:
-            phase_name: Name of the phase for display purposes
-            prompt_content: The prompt to send to the LLM
-            response_model: Pydantic model class for structured output
-            tools: List of tools available to the LLM (output tool will be added)
-            context: Processing context
-            history: Message history
-            max_iterations: Maximum tool calling iterations
-            max_validation_attempts: Maximum attempts if validation fails
-            validation_fn: Optional validation function that returns error message or empty string
+            text_content: The string to process.
+
+        Returns:
+            The string with <think> blocks removed, or None if input was None.
         """
-        # Add appropriate output tool based on response model
-        output_tool_name = ""
-        if response_model == WorkflowDesignResult:
-            tools.append(SubmitDesignResultTool())
-            output_tool_name = "submit_design_result"
+        if text_content is None:
+            return None
+        # Use regex to remove <think>...</think> blocks, including newlines within them.
+        # re.DOTALL makes . match newlines.
+        # We also strip leading/trailing whitespace from the result.
+        return re.sub(r"<think>.*?</think>", "", text_content, flags=re.DOTALL).strip()
 
-        if self.verbose:
-            logger.info(
-                f"[{phase_name}] Running: Starting {phase_name.lower()} phase..."
-            )
-            available_tools = [tool.name for tool in tools]
-            logger.info(
-                f"[{phase_name}] Running: Available tools: {available_tools} + {output_tool_name} (output)"
-            )
+    def _extract_json_from_message(self, message: Optional[Message]) -> Optional[dict]:
+        """Extracts JSON from a message's content.
 
-        history.append(Message(role="user", content=prompt_content))
+        Supports extraction from:
+        1. JSON code fences (```json ... ```)
+        2. Plain code fences (``` ... ```)
+        3. Raw JSON in the message content
 
-        result = None
+        Args:
+            message: The Message object containing the JSON.
 
-        try:
-            # Single loop with tool calling including output tool
-            for attempt in range(max_validation_attempts):
-                if self.verbose:
-                    if attempt > 0:
-                        logger.info(
-                            f"[{phase_name}] Running: Retry attempt {attempt + 1}/{max_validation_attempts}..."
-                        )
-                    else:
-                        logger.info(
-                            f"[{phase_name}] Running: Starting validation attempt {attempt + 1}/{max_validation_attempts}..."
-                        )
+        Returns:
+            Parsed JSON dictionary, or None if extraction/parsing fails.
+        """
+        if not message or not message.content:
+            logger.debug("No message content to extract JSON from")
+            return None
 
-                for i in range(max_iterations):
-                    if self.verbose:
-                        logger.info(
-                            f"[{phase_name}] Running: LLM interaction (iteration {i + 1}/{max_iterations})..."
-                        )
+        # Get the raw content as a string
+        raw_content: Optional[str] = None
+        if isinstance(message.content, str):
+            raw_content = message.content
+        elif isinstance(message.content, list):
+            try:
+                raw_content = "\n".join(str(item) for item in message.content)
+            except Exception:
+                raw_content = str(message.content)
+        else:
+            logger.debug("Unexpected content type: %s", type(message.content))
+            return None
 
-                    # Use streaming generate_messages and yield all chunks and tool calls
-                    response_content = ""
-                    tool_calls = []
+        # Remove think tags first
+        cleaned_content = self._remove_think_tags(raw_content)
+        if not cleaned_content:
+            logger.debug("Content is empty after removing think tags")
+            return None
 
-                    async for chunk in self.provider.generate_messages(  # type: ignore
-                        messages=history,
-                        model=self.model,
-                        tools=tools,
-                        max_tokens=self.max_tokens,
-                        context_window=8192,
-                    ):
-                        if isinstance(chunk, Chunk):
-                            if chunk.content:
-                                response_content += chunk.content
-                            # Yield chunk to frontend
-                            yield chunk
-                        elif isinstance(chunk, ToolCall):
-                            tool_calls.append(chunk)
-                            # Yield tool call to frontend
-                            yield chunk
-
-                    # Create response message from accumulated content and tool calls
-                    response = Message(
-                        role="assistant",
-                        content=response_content if response_content else None,
-                        tool_calls=tool_calls if tool_calls else None,
-                    )
-
-                    if not response:
-                        raise Exception("LLM returned no response.")
-
-                    history.append(response)
-
-                    if response.tool_calls:
-                        if self.verbose:
-                            logger.info(
-                                f"[{phase_name}] Running: Executing {len(response.tool_calls)} tool call(s)..."
-                            )
-                            tool_names = [tc.name for tc in response.tool_calls]
-                            logger.info(
-                                f"[{phase_name}] Running: Tool calls: {tool_names}"
-                            )
-                            logger.info(
-                                f"[{phase_name}] Running: Expected output tool: {output_tool_name}"
-                            )
-
-                        tool_messages_for_history: List[Message] = []
-                        for tool_call in response.tool_calls:
-                            logger.debug(
-                                f"Processing tool call: {tool_call.name} (id: {tool_call.id})"
-                            )
-                            tool_output_str = ""
-                            # Execute the tool call
-                            tool_found = False
-                            for tool_instance in tools:
-                                if tool_call.name == tool_instance.name:
-                                    tool_found = True
-                                    logger.debug(
-                                        f"Found matching tool instance for {tool_call.name}"
-                                    )
-                                    try:
-                                        params_for_tool = tool_call.args
-                                        if not isinstance(params_for_tool, dict):
-                                            logger.warning(
-                                                f"Tool call arguments for {tool_call.name} is not a dict: {tool_call.args}. Using empty dict."
-                                            )
-                                            params_for_tool = {}
-
-                                        logger.debug(
-                                            f"Tool {tool_call.name} args: {list(params_for_tool.keys()) if isinstance(params_for_tool, dict) else 'not-dict'}"
-                                        )
-                                        if self.verbose:
-                                            logger.info(
-                                                f"[{phase_name}] Running: Processing tool: {tool_call.name} with args: {params_for_tool}"
-                                            )
-                                        logger.debug(
-                                            f"Calling tool {tool_call.name}.process()"
-                                        )
-                                        tool_output = await tool_instance.process(
-                                            context, params_for_tool
-                                        )
-                                        logger.debug(
-                                            f"Tool {tool_call.name} returned: {type(tool_output)}"
-                                        )
-
-                                        # Check if this is an output tool result
-                                        if (
-                                            tool_call.name == output_tool_name
-                                            and isinstance(tool_output, response_model)
-                                        ):
-                                            result = tool_output
-                                            tool_output_str = (
-                                                "Result submitted successfully."
-                                            )
-                                            logger.debug(
-                                                f"Output tool {output_tool_name} successfully returned {response_model.__name__}"
-                                            )
-                                            if self.verbose:
-                                                logger.info(
-                                                    f"[{phase_name}] Running: ✅ Output tool {output_tool_name} called successfully! Result captured."
-                                                )
-                                        else:
-                                            tool_output_str = (
-                                                json.dumps(tool_output)
-                                                if tool_output is not None
-                                                else "Tool returned no output."
-                                            )
-                                            logger.debug(
-                                                f"Non-output tool {tool_call.name} returned: {len(tool_output_str)} chars"
-                                            )
-                                            if tool_call.name == output_tool_name:
-                                                logger.warning(
-                                                    f"[{phase_name}] Running: ⚠️ Output tool {output_tool_name} was called but result is not the expected type {response_model.__name__}. Got: {type(tool_output)}"
-                                                )
-
-                                        logger.debug(
-                                            f"Tool {tool_call.name} output: {tool_output_str[:200]}..."
-                                        )
-                                    except Exception as e:
-                                        logger.error(
-                                            f"Error executing tool {tool_call.name}: {e}",
-                                            exc_info=True,
-                                        )
-                                        logger.debug(
-                                            f"Tool execution failed for {tool_call.name}: {str(e)}"
-                                        )
-                                        tool_output_str = str(e)
-                                        if self.verbose:
-                                            logger.error(
-                                                f"[{phase_name}] Running: Error in tool {tool_call.name}: {str(e)}"
-                                            )
-                                    break
-
-                            if not tool_found:
-                                logger.warning(
-                                    f"Received unknown tool call: {tool_call.name}"
-                                )
-                                logger.debug(
-                                    f"Available tools: {[t.name for t in tools]}"
-                                )
-                                tool_output_str = (
-                                    f"Error: Unknown tool {tool_call.name} was called."
-                                )
-
-                            tool_messages_for_history.append(
-                                Message(
-                                    role="tool",
-                                    tool_call_id=tool_call.id,
-                                    name=tool_call.name,
-                                    content=tool_output_str,
-                                )
-                            )
-                            logger.debug(
-                                f"Added tool message to history for {tool_call.name}: {len(tool_output_str)} chars"
-                            )
-                        history.extend(tool_messages_for_history)
-
-                        # Check if we got the result from output tool
-                        if result is not None:
-                            if self.verbose:
-                                logger.info(
-                                    f"[{phase_name}] Running: ✅ Result obtained from output tool, breaking out of iteration loop"
-                                )
-                            break
-                        else:
-                            if self.verbose:
-                                logger.info(
-                                    f"[{phase_name}] Running: ❌ No result obtained from output tool {output_tool_name}. Continuing to next iteration (iteration {i + 1}/{max_iterations})."
-                                )
-                            # If this is the last iteration and we still don't have a result, that's a problem
-                            if i == max_iterations - 1:
-                                if self.verbose:
-                                    logger.warning(
-                                        f"[{phase_name}] Running: ⚠️ Reached last iteration ({max_iterations}) without calling output tool {output_tool_name}"
-                                    )
-                        # Continue to the next iteration to get LLM response after tool execution
-                    else:
-                        # LLM didn't call any tools, this is an error - prompt again for output tool
-                        if self.verbose:
-                            logger.warning(
-                                f"[{phase_name}] Running: ⚠️ LLM didn't call any tools (iteration {i + 1}/{max_iterations}). Prompting for {output_tool_name} tool."
-                            )
-                        history.append(
-                            Message(
-                                role="user",
-                                content=f"You must call the {output_tool_name} tool to submit your {phase_name.lower()} result. Please use the tool to provide your structured output.",
-                            )
-                        )
-                        continue
-
-                # Check what happened at the end of this validation attempt
-                if self.verbose:
-                    logger.info(
-                        f"[{phase_name}] Running: Completed iteration loop for attempt {attempt + 1}. Result obtained: {result is not None}"
-                    )
-
-                # If we got here and have a result, validate it
-                if result is not None:
-                    if self.verbose:
-                        logger.info(
-                            f"[{phase_name}] Running: ✅ Result obtained from output tool in attempt {attempt + 1}. Running validation..."
-                        )
-                    # Run validation if provided
-                    if validation_fn:
-                        error_message = validation_fn(result)
-                        if error_message:
-                            if self.verbose:
-                                logger.warning(
-                                    f"[{phase_name}] Running: ❌ Validation failed for attempt {attempt + 1}: {error_message}"
-                                )
-                            logger.warning(
-                                f"{phase_name} validation failed: {error_message}"
-                            )
-                            # Add error to history for next attempt
-                            history.append(
-                                Message(
-                                    role="user",
-                                    content=f"Validation failed: {error_message}. Please fix the issues and call {output_tool_name} again with corrected data.",
-                                )
-                            )
-                            result = None  # Reset result for retry
-                            continue
-                        else:
-                            if self.verbose:
-                                logger.info(
-                                    f"[{phase_name}] Running: ✅ Validation passed for attempt {attempt + 1}"
-                                )
-                    else:
-                        if self.verbose:
-                            logger.info(
-                                f"[{phase_name}] Running: ✅ No validation function provided, accepting result from attempt {attempt + 1}"
-                            )
-
-                    # Success
-                    if self.verbose:
-                        logger.info(f"[{phase_name}] Success: {phase_name} complete")
-                        logger.info(
-                            f"[{phase_name}] Success: Final result type: {type(result).__name__}"
-                        )
-
-                    # Yield the final result as a tuple
-                    yield (
-                        history,
-                        result,
-                        PlanningUpdate(
-                            phase=phase_name,
-                            status="Success",
-                            content=f"{phase_name} complete",
-                        ),
-                    )
-                    return
+        # Try to extract from JSON code fence first
+        json_fence_pattern = r"```json\s*\n(.*?)\n```"
+        match = re.search(json_fence_pattern, cleaned_content, re.DOTALL)
+        if match:
+            json_str = match.group(1).strip()
+            logger.debug("Found JSON in code fence, length: %d", len(json_str))
+        else:
+            # Try plain code fence
+            code_fence_pattern = r"```\s*\n(.*?)\n```"
+            match = re.search(code_fence_pattern, cleaned_content, re.DOTALL)
+            if match:
+                json_str = match.group(1).strip()
+                logger.debug("Found content in plain code fence, length: %d", len(json_str))
+            else:
+                # Try to find JSON object directly in the content
+                # Look for content that starts with { and ends with }
+                json_obj_pattern = r"\{[\s\S]*\}"
+                match = re.search(json_obj_pattern, cleaned_content)
+                if match:
+                    json_str = match.group(0).strip()
+                    logger.debug("Found JSON object in raw content, length: %d", len(json_str))
                 else:
-                    # No result was obtained, add instruction for next attempt
-                    if self.verbose:
-                        logger.warning(
-                            f"[{phase_name}] Running: ❌ No result obtained after {max_iterations} iterations in attempt {attempt + 1}. Adding instruction for next attempt."
-                        )
-                    history.append(
-                        Message(
-                            role="user",
-                            content=f"You must call the {output_tool_name} tool to submit your {phase_name.lower()} result. Please analyze the requirements and submit your structured output using the tool.",
-                        )
-                    )
+                    logger.debug("No JSON pattern found in content")
+                    return None
 
-            # All validation attempts failed
-            if self.verbose:
-                logger.error(
-                    f"[{phase_name}] Running: ❌ All {max_validation_attempts} validation attempts exhausted without obtaining valid result"
-                )
-            raise ValueError(
-                f"{phase_name} failed to produce valid result after {max_validation_attempts} attempts"
-            )
-
-        except Exception as e:
-            logger.error(f"{phase_name} phase failed critically: {e}", exc_info=True)
-            raise e
+        # Try to parse the extracted JSON
+        try:
+            parsed_json = json.loads(json_str)
+            logger.debug("Successfully parsed JSON with keys: %s", list(parsed_json.keys()) if isinstance(parsed_json, dict) else type(parsed_json))
+            return parsed_json
+        except json.JSONDecodeError as e:
+            logger.error("Failed to parse JSON: %s. JSON string: %s...", e, json_str[:200])
+            return None
 
     def _validate_workflow_design(self, result: WorkflowDesignResult) -> str:
         """Validate the complete workflow design (nodes + edges)."""
@@ -1364,7 +1132,7 @@ class GraphPlanner:
         | tuple[List[Message], WorkflowDesignResult, Optional[PlanningUpdate]],
         None,
     ]:
-        """Run the workflow design phase with SearchNodesTool."""
+        """Run the workflow design phase with SearchNodesTool, using JSON output for final result."""
         logger.debug("Starting workflow design phase")
         workflow_design_prompt = self._render_prompt(WORKFLOW_DESIGN_PROMPT)
         logger.debug(
@@ -1381,27 +1149,193 @@ class GraphPlanner:
             f"Created SearchNodesTool with excluded namespaces: {search_tool.exclude_namespaces}"
         )
 
-        async for item in self._run_phase_with_tools(
-            phase_name="Workflow Design",
-            prompt_content=workflow_design_prompt,
-            response_model=WorkflowDesignResult,
-            tools=[search_tool],
-            context=context,
-            history=history,
-            max_iterations=8,
-            max_validation_attempts=5,
-            validation_fn=self._validate_workflow_design,
-        ):
-            if isinstance(item, tuple):
-                # Final result tuple
-                history, result, update = item
-                logger.debug(
-                    f"Workflow design phase completed with result type: {type(result)}"
+        # Add the initial prompt
+        history.append(Message(role="user", content=workflow_design_prompt))
+
+        result = None
+        max_validation_attempts = 5
+        max_tool_iterations = 8
+
+        # Validation retry loop
+        for validation_attempt in range(max_validation_attempts):
+            if self.verbose:
+                logger.info(
+                    f"[Workflow Design] Validation attempt {validation_attempt + 1}/{max_validation_attempts}"
                 )
-                yield (history, cast(WorkflowDesignResult, result), update)
-            else:
-                # Stream chunk or tool call
-                yield item
+
+            # Tool calling loop - allow LLM to use search_nodes tool
+            for tool_iteration in range(max_tool_iterations):
+                if self.verbose:
+                    logger.info(
+                        f"[Workflow Design] Tool iteration {tool_iteration + 1}/{max_tool_iterations}"
+                    )
+
+                # Generate response with tools available
+                response_content = ""
+                tool_calls = []
+
+                async for chunk in self.provider.generate_messages(  # type: ignore
+                    messages=history,
+                    model=self.model,
+                    tools=[search_tool],
+                    max_tokens=self.max_tokens,
+                    context_window=8192,
+                ):
+                    if isinstance(chunk, Chunk):
+                        if chunk.content:
+                            response_content += chunk.content
+                        yield chunk
+                    elif isinstance(chunk, ToolCall):
+                        tool_calls.append(chunk)
+                        yield chunk
+
+                # Create response message
+                response = Message(
+                    role="assistant",
+                    content=response_content if response_content else None,
+                    tool_calls=tool_calls if tool_calls else None,
+                )
+                history.append(response)
+
+                # If no tool calls, check if we got JSON output
+                if not tool_calls:
+                    logger.debug("No tool calls, attempting to extract JSON from response")
+                    json_data = self._extract_json_from_message(response)
+
+                    if json_data:
+                        # Try to validate the JSON as WorkflowDesignResult
+                        logger.debug("JSON extracted, validating as WorkflowDesignResult")
+                        try:
+                            result = WorkflowDesignResult.model_validate(json_data)
+                            logger.debug("Successfully created WorkflowDesignResult from JSON")
+
+                            # Validate the workflow design
+                            error_message = self._validate_workflow_design(result)
+                            if error_message:
+                                logger.warning(
+                                    f"Workflow design validation failed: {error_message}"
+                                )
+                                if validation_attempt < max_validation_attempts - 1:
+                                    # Add error feedback for retry
+                                    history.append(
+                                        Message(
+                                            role="user",
+                                            content=f"Validation failed: {error_message}. Please fix the issues and output the corrected workflow design as JSON.",
+                                        )
+                                    )
+                                    result = None
+                                    break  # Break tool loop to retry validation
+                                else:
+                                    # Last attempt, fail
+                                    yield (
+                                        history,
+                                        result,
+                                        PlanningUpdate(
+                                            phase="Workflow Design",
+                                            status="Failed",
+                                            content=f"Validation failed: {error_message}",
+                                        ),
+                                    )
+                                    return
+                            else:
+                                # Validation passed!
+                                logger.debug("Workflow design validation passed")
+                                yield (
+                                    history,
+                                    result,
+                                    PlanningUpdate(
+                                        phase="Workflow Design",
+                                        status="Success",
+                                        content="Workflow design complete",
+                                    ),
+                                )
+                                return
+                        except Exception as e:
+                            logger.error(f"Error creating WorkflowDesignResult: {e}")
+                            if validation_attempt < max_validation_attempts - 1:
+                                history.append(
+                                    Message(
+                                        role="user",
+                                        content=f"Error parsing workflow design: {e}. Please output valid JSON matching the WorkflowDesignResult schema.",
+                                    )
+                                )
+                                break  # Break tool loop to retry
+                            else:
+                                yield (
+                                    history,
+                                    None,  # type: ignore
+                                    PlanningUpdate(
+                                        phase="Workflow Design",
+                                        status="Failed",
+                                        content=f"Failed to parse JSON: {e}",
+                                    ),
+                                )
+                                return
+                    else:
+                        # No JSON found, prompt for it
+                        logger.debug("No JSON found in response, prompting for JSON output")
+                        history.append(
+                            Message(
+                                role="user",
+                                content="Please output your workflow design as a JSON object in a ```json code fence with the structure: {\"node_specifications\": [...]}",
+                            )
+                        )
+                        continue
+
+                # Handle tool calls
+                else:
+                    logger.debug(f"Processing {len(tool_calls)} tool calls")
+                    for tool_call in tool_calls:
+                        tool_output_str = ""
+                        if tool_call.name == search_tool.name:
+                            try:
+                                params = tool_call.args if isinstance(tool_call.args, dict) else {}
+                                logger.debug(f"Executing search_nodes with params: {params}")
+                                tool_output = await search_tool.process(context, params)
+                                tool_output_str = (
+                                    json.dumps(tool_output)
+                                    if tool_output is not None
+                                    else "No results found"
+                                )
+                            except Exception as e:
+                                logger.error(f"Error executing search_nodes: {e}")
+                                tool_output_str = str(e)
+                        else:
+                            tool_output_str = f"Unknown tool: {tool_call.name}"
+
+                        history.append(
+                            Message(
+                                role="tool",
+                                tool_call_id=tool_call.id,
+                                name=tool_call.name,
+                                content=tool_output_str,
+                            )
+                        )
+
+            # If we got here without a result, the tool loop exhausted
+            if result is None:
+                logger.warning(
+                    f"Tool iteration loop exhausted without result in validation attempt {validation_attempt + 1}"
+                )
+                if validation_attempt < max_validation_attempts - 1:
+                    history.append(
+                        Message(
+                            role="user",
+                            content="Please complete your workflow design and output it as JSON in a ```json code fence.",
+                        )
+                    )
+
+        # All attempts exhausted
+        logger.error("All validation attempts exhausted without valid result")
+        yield (
+            history,
+            None,  # type: ignore
+            PlanningUpdate(
+                phase="Workflow Design",
+                status="Failed",
+                content="Failed to produce valid workflow design after all attempts",
+            ),
+        )
 
     def _validate_graph_edge_types(self, result: WorkflowDesignResult) -> str:
         """Create a real Graph object and validate edge types using Graph.validate_edge_types()."""
@@ -1466,6 +1400,8 @@ class GraphPlanner:
             f"Checking {len(input_nodes)} input nodes against {len(self.input_schema)} schema entries"
         )
         found_input_names = set()
+
+        # Check InputNodes
         for input_node in input_nodes:
             node_name = input_node.name
             node_type = input_node.outputs()[0].type

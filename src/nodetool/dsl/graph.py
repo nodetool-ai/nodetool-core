@@ -5,6 +5,7 @@ import uuid
 from typing import Any, Generic, TypeVar, cast
 
 from nodetool.config.logging_config import get_logger
+from nodetool.runtime.resources import ResourceScope
 from nodetool.types.job import JobUpdate
 from pydantic import BaseModel, Field, ConfigDict
 
@@ -167,43 +168,44 @@ async def run_graph_async(
     Returns:
       Any: The result of the workflow execution.
     """
-    req = RunJobRequest(**kwargs, graph=graph)
+    async with ResourceScope():
+        req = RunJobRequest(**kwargs, graph=graph)
 
-    if "context" in kwargs:
-        context = kwargs["context"]
-    elif "asset_output_mode" in kwargs:
-        # Only construct a ProcessingContext when the caller supplied an explicit
-        # asset_output_mode. Otherwise defer to run_workflow defaults (context=None).
-        context = ProcessingContext(
-            user_id=kwargs.get("user_id"),
-            auth_token=kwargs.get("auth_token"),
-            asset_output_mode=kwargs.get("asset_output_mode"),
-        )
-    else:
-        context = None
+        if "context" in kwargs:
+            context = kwargs["context"]
+        elif "asset_output_mode" in kwargs:
+            # Only construct a ProcessingContext when the caller supplied an explicit
+            # asset_output_mode. Otherwise defer to run_workflow defaults (context=None).
+            context = ProcessingContext(
+                user_id=kwargs.get("user_id"),
+                auth_token=kwargs.get("auth_token"),
+                asset_output_mode=kwargs.get("asset_output_mode"),
+            )
+        else:
+            context = None
 
-    res = {}
-    async for msg in run_workflow(req, context=context):
-        if isinstance(msg, OutputUpdate):
-            res[msg.node_name] = msg.value
-        elif isinstance(msg, PlanningUpdate):
-            log.debug("planning: %s", msg.content)
-        elif isinstance(msg, TaskUpdate):
-            log.debug("task: %s", msg.event)
-        elif isinstance(msg, NodeUpdate):
-            log.debug("node update: %s %s", msg.node_name, msg.status)
-        elif isinstance(msg, ToolCallUpdate):
-            log.debug("tool call: %s", msg.message)
-        elif isinstance(msg, JobUpdate):
-            log.debug("job update: %s", msg.status)
-        elif isinstance(msg, Error):
-            raise Exception(msg.error)
-    return res
+        res = {}
+        async for msg in run_workflow(req, context=context):
+            if isinstance(msg, OutputUpdate):
+                res[msg.node_name] = msg.value
+            elif isinstance(msg, PlanningUpdate):
+                log.debug("planning: %s", msg.content)
+            elif isinstance(msg, TaskUpdate):
+                log.debug("task: %s", msg.event)
+            elif isinstance(msg, NodeUpdate):
+                log.debug("node update: %s %s", msg.node_name, msg.status)
+            elif isinstance(msg, ToolCallUpdate):
+                log.debug("tool call: %s", msg.message)
+            elif isinstance(msg, JobUpdate):
+                log.debug("job update: %s", msg.status)
+            elif isinstance(msg, Error):
+                raise Exception(msg.error)
+        return res
 
 
-async def run_graph(graph: Graph, **kwargs):
+def run_graph(graph: Graph, **kwargs):
     """
-    Run the workflow with the given graph (async).
+    Run the workflow with the given graph (sync).
 
     Args:
       graph (Graph): The graph object representing the workflow.
@@ -212,7 +214,7 @@ async def run_graph(graph: Graph, **kwargs):
     Returns:
       Any: The result of the workflow execution.
     """
-    return await run_graph_async(graph, **kwargs)
+    return run_graph_sync(graph, **kwargs)
 
 
 def run_graph_sync(graph: Graph, **kwargs):
@@ -227,11 +229,11 @@ def graph(*nodes: "GraphNode[Any]") -> Graph:
     return create_graph(*nodes)
 
 
-async def graph_result(node: "GraphNode[Any] | Any", **kwargs):
+def graph_result(node: "GraphNode[Any] | Any", **kwargs):
     """
     Build a graph from a single DSL node and execute it.
 
     For convenience in tests and simple scripts; forwards kwargs to `run_graph`.
     """
     g = graph(node)
-    return await run_graph(g, **kwargs)
+    return run_graph(g, **kwargs)

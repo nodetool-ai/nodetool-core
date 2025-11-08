@@ -21,14 +21,18 @@ from nodetool.providers.base import BaseProvider
 from nodetool.workflows.types import Chunk
 from nodetool.metadata.types import Provider
 from nodetool.workflows.processing_context import ProcessingContext
+from nodetool.runtime.resources import ResourceScope
 from nodetool.agents.tools.pdf_tools import ConvertPDFToMarkdownTool
 from nodetool.agents.tools.chroma_tools import (
     ChromaHybridSearchTool,
+    ChromaIndexTool,
     ChromaMarkdownSplitAndIndexTool,
 )
 from nodetool.integrations.vectorstores.chroma.async_chroma_client import (
     get_async_chroma_client,
 )
+import pymupdf
+import pymupdf4llm
 
 
 async def test_chromadb_research_agent(provider: BaseProvider, model: str):
@@ -37,7 +41,10 @@ async def test_chromadb_research_agent(provider: BaseProvider, model: str):
 
     for paper in os.listdir(os.path.join(os.path.dirname(__file__), "papers")):
         if paper.endswith(".pdf"):
-            input_files.append(os.path.join(os.path.dirname(__file__), "papers", paper))
+            doc = pymupdf.open(os.path.join(os.path.dirname(__file__), "papers", paper))
+            md_text = pymupdf4llm.to_markdown(doc)
+            input_files.append(md_text)
+    input_data = "\n".join(input_files)
 
     chroma_client = await get_async_chroma_client()
 
@@ -47,28 +54,30 @@ async def test_chromadb_research_agent(provider: BaseProvider, model: str):
         pass
 
     collection = await chroma_client.create_collection("test-papers")
+    objective = f"""
+    Index the following markdown content into ChromaDB using chroma_index.
+    ----------------------------------------
+    {input_data}
+    """
 
     ingestion_agent = Agent(
         name="Document Ingestion Agent",
-        objective="""
-        Convert each pdf file into a markdown file and index it into ChromaDB using chroma_markdown_split_and_index.
-        Generate an indexing report.
-        """,
+        objective=objective,
         provider=provider,
         model=model,
         enable_analysis_phase=False,
         enable_data_contracts_phase=False,
         tools=[
-            ConvertPDFToMarkdownTool(),
-            ChromaMarkdownSplitAndIndexTool(collection=collection),
+            ChromaIndexTool(collection=collection),
         ],
     )
 
     research_agent = Agent(
         name="Research Agent",
         objective="""
-        Explain attention in LLMs. How does it work? What are the different types of attention?
-        Generate a research report as a markdown file.
+        Explain attention in LLMs. 
+        How does it work? 
+        What are the different types of attention?
         """,
         provider=provider,
         model=model,
@@ -98,17 +107,13 @@ async def test_chromadb_research_agent(provider: BaseProvider, model: str):
     print(f"\nWorkspace: {context.workspace_dir}")
 
 
-if __name__ == "__main__":
-    asyncio.run(
-        test_chromadb_research_agent(
-            provider=get_provider(Provider.OpenAI),
-            model="gpt-4o-mini",
+async def main():
+    async with ResourceScope():
+        await test_chromadb_research_agent(
+            provider=await get_provider(Provider.HuggingFaceCerebras),
+            model="openai/gpt-oss-120b",
         )
-    )
 
-    # asyncio.run(
-    #     test_chromadb_research_agent(
-    #         provider=get_provider(Provider.Gemini),
-    #         model="gemini-2.0-flash",
-    #     )
-    # )
+
+if __name__ == "__main__":
+    asyncio.run(main())

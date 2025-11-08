@@ -3,6 +3,7 @@ import json
 import dotenv
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.agents.tools import GoogleNewsTool
+from nodetool.runtime.resources import ResourceScope
 
 # Load environment variables from .env file
 dotenv.load_dotenv()
@@ -57,5 +58,10 @@ async def test_google_news_search():
         print(f"\nError during search: {e}")
 
 
+async def main():
+    async with ResourceScope():
+        await test_google_news_search()
+
+
 if __name__ == "__main__":
-    asyncio.run(test_google_news_search())
+    asyncio.run(main())

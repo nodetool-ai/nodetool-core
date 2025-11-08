@@ -19,6 +19,8 @@ discover during execution.
 """
 
 import asyncio
+from nodetool.metadata.types import Provider
+from nodetool.providers import get_provider
 from nodetool.providers.huggingface_provider import HuggingFaceProvider
 from rich.console import Console
 
@@ -29,6 +31,7 @@ from nodetool.agents.tools import (
     GoogleSearchTool,
 )
 from nodetool.workflows.processing_context import ProcessingContext
+from nodetool.runtime.resources import ResourceScope
 import dotenv
 
 
@@ -120,17 +123,13 @@ async def test_task_planner(provider: BaseProvider, model: str):
         raise
 
 
-# Run the test
-if __name__ == "__main__":
-    asyncio.run(
-        test_task_planner(
-            provider=HuggingFaceProvider("cerebras"), model="openai/gpt-oss-120b"
+async def main():
+    async with ResourceScope():
+        await test_task_planner(
+            provider=await get_provider(Provider.HuggingFaceCerebras),
+            model="openai/gpt-oss-120b",
         )
-    )  # pyright: ignore[reportCallIssue]
-    # asyncio.run(test_task_planner(provider=OpenAIProvider(), model="gpt-4o-mini"))
-    # asyncio.run(
-    #     test_task_planner(
-    #         provider=AnthropicProvider(), model="claude-3-5-sonnet-20241022"
-    #     )
-    # )
-    # asyncio.run(test_task_planner(provider=GeminiProvider(), model="gemini-2.0-flash"))
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

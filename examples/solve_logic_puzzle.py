@@ -1,4 +1,5 @@
 import asyncio
+import os
 from nodetool.providers import get_provider
 
 # Assuming ReasoningTool is available alongside other standard tools
@@ -6,6 +7,7 @@ from nodetool.providers.base import BaseProvider
 from nodetool.metadata.types import Provider, Task, SubTask
 from nodetool.agents.sub_task_context import SubTaskContext
 from nodetool.workflows.processing_context import ProcessingContext
+from nodetool.runtime.resources import ResourceScope
 import json
 
 
@@ -94,32 +96,14 @@ async def test_logical_puzzle_task(
     print("--------------------------------")
 
 
-if __name__ == "__main__":
-    # Example usage with OpenAI
-    # asyncio.run(
-    #     test_logical_puzzle_task(
-    #         provider=get_provider(Provider.OpenAI), model="o4-mini"
-    #     )
-    # )
-    asyncio.run(
-        test_logical_puzzle_task(
-            provider=get_provider(Provider.Ollama), model="qwen3:0.6b"
+async def main():
+    os.environ["OLLAMA_API_URL"] = "http://localhost:11434"
+    async with ResourceScope():
+        await test_logical_puzzle_task(
+            provider=await get_provider(Provider.HuggingFaceCerebras),
+            model="openai/gpt-oss-120b"
         )
-    )
 
-    # Example usage with Gemini (uncomment to run)
-    # print("\n\n--------------------------------------------------\n")
-    # asyncio.run(
-    #     test_logical_puzzle_task(
-    #         provider=get_provider(Provider.Gemini), model="gemini-1.5-flash-latest" # Or your preferred Gemini model
-    #     )
-    # )
 
-    # Example usage with Anthropic (uncomment to run)
-    # print("\n\n--------------------------------------------------\n")
-    # asyncio.run(
-    #    test_logical_puzzle_task(
-    #        provider=get_provider(Provider.Anthropic),
-    #        model="claude-3-5-sonnet-20240620", # Or your preferred Anthropic model
-    #    )
-    # )
+if __name__ == "__main__":
+    asyncio.run(main())

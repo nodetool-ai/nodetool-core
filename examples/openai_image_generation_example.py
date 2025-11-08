@@ -18,6 +18,7 @@ from nodetool.providers.base import BaseProvider
 from nodetool.metadata.types import Provider
 from nodetool.ui.console import AgentConsole
 from nodetool.workflows.processing_context import ProcessingContext
+from nodetool.runtime.resources import ResourceScope
 
 
 async def test_openai_image_generation_agent(
@@ -77,15 +78,18 @@ async def test_openai_image_generation_agent(
     print(f"Results: {results}")
 
 
-if __name__ == "__main__":
+async def main():
     IMAGE_PROMPT = (
         "A photorealistic image of a red panda coding on a laptop in a forest"
     )
 
-    asyncio.run(
-        test_openai_image_generation_agent(
-            provider=get_provider(Provider.HuggingFaceCerebras),
+    async with ResourceScope():
+        await test_openai_image_generation_agent(
+            provider=await get_provider(Provider.HuggingFaceCerebras),
             model="openai/gpt-oss-120b",
             image_prompt=IMAGE_PROMPT,
         )
-    )
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

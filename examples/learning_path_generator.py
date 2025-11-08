@@ -21,6 +21,7 @@ from nodetool.providers.base import BaseProvider
 from nodetool.metadata.types import Provider
 from nodetool.ui.console import AgentConsole
 from nodetool.workflows.processing_context import ProcessingContext
+from nodetool.runtime.resources import ResourceScope
 
 import dotenv
 
@@ -74,13 +75,16 @@ async def generate_learning_path(provider: BaseProvider, model: str, topic: str)
         print("No results returned.")
 
 
-if __name__ == "__main__":
-    topic = "Getting Started with Docker"
+async def main():
+    async with ResourceScope():
+        topic = "Getting Started with Docker"
 
-    asyncio.run(
-        generate_learning_path(
-            provider=get_provider(Provider.HuggingFaceCerebras),
+        await generate_learning_path(
+            provider=await get_provider(Provider.HuggingFaceCerebras),
             model="openai/gpt-oss-120b",
             topic=topic,
         )
-    )
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

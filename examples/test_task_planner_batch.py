@@ -23,6 +23,7 @@ from nodetool.providers.base import BaseProvider
 from nodetool.metadata.types import Provider
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import Chunk, TaskUpdate
+from nodetool.runtime.resources import ResourceScope
 
 # Objective designed to trigger batch processing
 objective = """
@@ -200,7 +201,7 @@ async def run_comparison_test():
     print("This test analyzes 20 websites to trigger batch processing logic\n")
 
     # Test configuration
-    provider = get_provider(Provider.OpenAI)
+    provider = await get_provider(Provider.OpenAI)
     model = "gpt-4o-mini"
     planning_model = "gpt-4o-mini"
 
@@ -228,13 +229,16 @@ async def run_comparison_test():
     print(f"\n💡 TIP: Check {results['workspace']} for detailed execution artifacts")
 
 
+async def main():
+    async with ResourceScope():
+        await run_comparison_test()
+        # await test_task_planner_batch_processing(
+        #     provider=await get_provider(Provider.Anthropic),
+        #     model="claude-3-5-sonnet-20241022",
+        #     planning_model="claude-3-5-sonnet-20241022",
+        # )
+
+
 if __name__ == "__main__":
     # Run the batch processing test
-    asyncio.run(run_comparison_test())
-
-    # Alternative: Test with different providers
-    # asyncio.run(test_task_planner_batch_processing(
-    #     provider=get_provider(Provider.Anthropic),
-    #     model="claude-3-5-sonnet-20241022",
-    #     planning_model="claude-3-5-sonnet-20241022"
-    # ))
+    asyncio.run(main())

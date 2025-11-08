@@ -25,6 +25,7 @@ from nodetool.providers.base import BaseProvider
 from nodetool.metadata.types import Provider
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import Chunk
+from nodetool.runtime.resources import ResourceScope
 import json
 
 
@@ -36,7 +37,7 @@ async def test_instagram_scraper_task(
     context = ProcessingContext()
 
     # 3. Set up browser and search tools
-    [
+    tools = [
         BrowserTool(),
         GoogleSearchTool(),
     ]
@@ -55,6 +56,7 @@ async def test_instagram_scraper_task(
         enable_data_contracts_phase=True,
         provider=provider,
         model=model,
+        tools=tools,
         output_schema={
             "type": "object",
             "properties": {
@@ -102,17 +104,13 @@ async def test_instagram_scraper_task(
     )
 
 
-if __name__ == "__main__":
-    asyncio.run(
-        test_instagram_scraper_task(
-            provider=get_provider(Provider.HuggingFaceCerebras),
+async def main():
+    async with ResourceScope():
+        await test_instagram_scraper_task(
+            provider=await get_provider(Provider.HuggingFaceCerebras),
             model="openai/gpt-oss-120b",
         )
-    )
 
-    # asyncio.run(
-    #     test_instagram_scraper_task(
-    #         provider=get_provider(Provider.Anthropic),
-    #         model="claude-3-7-sonnet-20250219",
-    #     )
-    # )
+
+if __name__ == "__main__":
+    asyncio.run(main())

@@ -28,6 +28,7 @@ from nodetool.providers.base import BaseProvider
 from nodetool.metadata.types import Provider
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.ui.console import AgentConsole
+from nodetool.runtime.resources import ResourceScope
 
 
 async def test_product_hunt_ai_extractor_agent(
@@ -119,7 +120,7 @@ async def test_product_hunt_ai_extractor_agent(
     # If the agent saves the final report to a file, it would typically be in the workspace_dir.
 
 
-if __name__ == "__main__":
+async def main():
     # Ensure you have your API key (e.g., OPENAI_API_KEY) set in your environment variables
     # or configure the provider appropriately within the nodetool library.
 
@@ -133,12 +134,15 @@ if __name__ == "__main__":
     print(f"Attempting to process: {target_ph_url}")
     print("Please ensure your API keys for the chosen provider are correctly set.")
 
-    asyncio.run(
-        test_product_hunt_ai_extractor_agent(
-            provider=get_provider(
+    async with ResourceScope():
+        await test_product_hunt_ai_extractor_agent(
+            provider=await get_provider(
                 Provider.HuggingFaceCerebras  # pyright: ignore[reportCallIssue]
             ),  # Specify your provider: Provider.OpenAI, Provider.Gemini, Provider.Anthropic
             model="openai/gpt-oss-120b",
             product_hunt_archive_url=target_ph_url,
         )
-    )
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

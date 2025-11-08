@@ -428,7 +428,8 @@ class TestNodeCaching:
 class TestUtilityMethods:
     """Test utility methods in ProcessingContext."""
 
-    def test_asset_storage_url(self, context: ProcessingContext):
+    @pytest.mark.asyncio
+    async def test_asset_storage_url(self, context: ProcessingContext):
         """Test asset storage URL generation."""
         with patch("nodetool.workflows.processing_context.require_scope") as mock_require_scope:
             mock_storage_instance = Mock()
@@ -437,6 +438,6 @@ class TestUtilityMethods:
             mock_scope.get_asset_storage.return_value = mock_storage_instance
             mock_require_scope.return_value = mock_scope
 
-            url = context.asset_storage_url("test_key")
+            url = await context.asset_storage_url("test_key")
             assert url == "http://test.com/file.png"
             mock_storage_instance.get_url.assert_called_once_with("test_key")

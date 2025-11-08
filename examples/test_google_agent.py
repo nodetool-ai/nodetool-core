@@ -20,6 +20,7 @@ from nodetool.providers.base import BaseProvider
 from nodetool.metadata.types import Provider
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import Chunk
+from nodetool.runtime.resources import ResourceScope
 
 import dotenv
 
@@ -87,30 +88,17 @@ async def test_google_agent(provider: BaseProvider, model: str):
     print(f"Results: {agent.results}")
 
 
-if __name__ == "__main__":
-    # asyncio.run(
-    #     test_google_agent(provider=get_provider(Provider.Ollama), model="qwen3:14b")
-    # )
-    # asyncio.run(
-    #     test_google_agent(
-    #         provider=get_provider(Provider.Gemini), model="gemini-2.0-flash"
-    #     )
-    # )
-    # asyncio.run(
-    #     test_google_agent(
-    #         provider=get_provider(Provider.Anthropic),
-    #         model="claude-3-5-sonnet-20241022",
-    #     )
-    # )
-    asyncio.run(
-        test_google_agent(
-            provider=get_provider(Provider.HuggingFaceCerebras),
+async def main():
+    async with ResourceScope():
+        await test_google_agent(
+            provider=await get_provider(Provider.HuggingFaceCerebras),
             model="openai/gpt-oss-120b",
         )
-    )
-    # asyncio.run(
-    #     test_google_agent(
-    #         provider=get_provider(Provider.Ollama),
-    #         model="gemma3:12b",
-    #     )
-    # )
+        # await test_google_agent(
+        #     provider=await get_provider(Provider.Ollama),
+        #     model="gemma3:12b",
+        # )
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

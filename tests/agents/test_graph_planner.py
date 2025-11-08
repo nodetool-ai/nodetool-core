@@ -274,7 +274,7 @@ class TestGraphPlanner:
             async for update in planner.create_graph(processing_context):
                 pass
 
-        assert "failed to produce valid result" in str(exc_info.value)
+        assert "Failed to produce valid workflow design" in str(exc_info.value)
 
     def test_node_type_mapping_exists(self):
         """Test that get_node_type_for_metadata function exists and is importable"""

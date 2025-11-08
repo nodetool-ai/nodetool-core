@@ -331,10 +331,6 @@ class DockerJobExecution(JobExecution):
             request_json: Serialized RunJobRequest to pass as CLI argument
         """
         try:
-            # Create a dummy node for the runner (required by API but not used)
-            class DummyNode:
-                id = f"docker-job-{self.job_id}"
-
             # Stream output from Docker container
             # Environment variables (settings and secrets) are automatically loaded
             # by NodetoolDockerRunner.build_container_environment()
@@ -342,7 +338,7 @@ class DockerJobExecution(JobExecution):
                 user_code=request_json,  # JSON passed as command argument
                 env_locals={},  # Not used for nodetool workflows
                 context=self._context,
-                node=DummyNode(),  # type: ignore
+                node=None,
                 stdin_stream=None,  # No stdin needed
             ):
                 print(f"slot: {slot}, line: {line}")

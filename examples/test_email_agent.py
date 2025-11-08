@@ -14,12 +14,13 @@ from nodetool.metadata.types import Provider
 from nodetool.ui.console import AgentConsole
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.agents.tools.email_tools import SearchEmailTool
+from nodetool.runtime.resources import ResourceScope
 
 
-async def main():
+async def run_email_agent():
     context = ProcessingContext()
 
-    provider = get_provider(Provider.HuggingFaceCerebras)
+    provider = await get_provider(Provider.HuggingFaceCerebras)
     model = "openai/gpt-oss-120b"
     email_tools = [
         SearchEmailTool(),
@@ -43,6 +44,11 @@ async def main():
 
     print(f"\nResults: {retrieval_agent.results}")
     print(f"\nWorkspace: {context.workspace_dir}")
+
+
+async def main():
+    async with ResourceScope():
+        await run_email_agent()
 
 
 if __name__ == "__main__":

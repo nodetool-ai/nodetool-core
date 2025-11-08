@@ -6,6 +6,7 @@ from nodetool.providers.base import BaseProvider
 from nodetool.metadata.types import Provider
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import Chunk
+from nodetool.runtime.resources import ResourceScope
 import dotenv
 
 dotenv.load_dotenv()
@@ -59,14 +60,15 @@ async def run_simple_agent_test(provider: BaseProvider, model: str):
     print(f"\nFinal Results:\n{results}")
 
 
-if __name__ == "__main__":
-    # Example usage with OpenAI
-    # Ensure your .env file has OPENAI_API_KEY set for this to work
-    asyncio.run(
-        run_simple_agent_test(
-            provider=get_provider(Provider.OpenAI),
+async def main():
+    async with ResourceScope():
+        await run_simple_agent_test(
+            provider=await get_provider(Provider.OpenAI),
             model="gpt-4o-mini",
-            # provider=get_provider(Provider.Ollama), model="mistral"
-            # provider=get_provider(Provider.Groq), model="mixtral-8x7b-32768"
+            # provider=await get_provider(Provider.Ollama), model="mistral"
+            # provider=await get_provider(Provider.Groq), model="mixtral-8x7b-32768"
         )
-    )
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

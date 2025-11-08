@@ -20,22 +20,23 @@ from nodetool.agents.tools import BrowserTool, GoogleGroundedSearchTool
 from nodetool.metadata.types import Provider
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import Chunk
+from nodetool.runtime.resources import ResourceScope
 
 SUMMARIZER_SYSTEM_PROMPT = """You are a specialized Summarization Agent for AI industry intelligence. Your role is to:
 """
 
 
-async def main():
+async def run_google_grounded_agent():
     context = ProcessingContext()
 
-    provider = get_provider(Provider.OpenAI)
+    provider = await get_provider(Provider.OpenAI)
     model = "gpt-4o-mini"
 
-    # provider = get_provider(Provider.Gemini)
+    # provider = await get_provider(Provider.Gemini)
     # model = "gemini-2.5-pro-exp-03-25"
     # model = "gemini-2.0-flash"
 
-    # provider = get_provider(Provider.Ollama)
+    # provider = await get_provider(Provider.Ollama)
     # model = "gemma3:12b"
 
     retrieval_tools = [
@@ -92,6 +93,11 @@ async def main():
 
     print(f"\nWorkspace: {context.workspace_dir}")
     print(f"Results: {agent.results}")
+
+
+async def main():
+    async with ResourceScope():
+        await run_google_grounded_agent()
 
 
 if __name__ == "__main__":

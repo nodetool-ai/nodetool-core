@@ -5,6 +5,7 @@ import tempfile
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.nodes.lib.math import Add, Multiply
 from nodetool.nodes.nodetool.text import Concat, FormatText
+from nodetool.runtime.resources import ResourceScope
 
 # Set up logging
 from nodetool.config.logging_config import get_logger
@@ -71,7 +72,7 @@ async def calculation_chain_example():
         logger.info(f"Step 2: {sum_result} * 3 = {final_result}")
 
 
-async def main():
+async def run_examples():
     """Run all examples"""
 
     print("\n=== Simple Math Example ===")
@@ -87,6 +88,11 @@ async def main():
     print("For workflow-based execution using GraphPlanner, see:")
     print("- graph_planner_simple_tests.py (simple workflows)")
     print("- graph_planner_integration.py (complex workflows)")
+
+
+async def main():
+    async with ResourceScope():
+        await run_examples()
 
 
 if __name__ == "__main__":

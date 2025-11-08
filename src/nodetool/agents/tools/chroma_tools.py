@@ -97,7 +97,7 @@ class ChromaIndexTool(Tool):
         "required": ["text", "source_id"],
     }
 
-    def __init__(self, collection: chromadb.Collection):
+    def __init__(self, collection: AsyncChromaCollection):
         self.collection = collection
 
     def _generate_document_id(self, source_id: str) -> str:
@@ -116,10 +116,10 @@ class ChromaIndexTool(Tool):
 
         document_id = self._generate_document_id(source_id)
 
-        self.collection.add(
+        await self.collection.add(
             ids=[document_id],
             documents=[text],
-            metadatas=[metadata],
+            metadatas=[metadata] if metadata else None,
         )
 
         return {
@@ -371,7 +371,7 @@ class ChromaRecursiveSplitAndIndexTool(Tool):
                 await self.collection.add(
                     ids=[unique_id],
                     documents=[chunk.text],
-                    metadatas=[metadata],
+                    metadatas=[metadata] if metadata else None,
                 )
                 indexed_ids.append(unique_id)
 
@@ -577,7 +577,7 @@ class ChromaBatchIndexTool(Tool):
             await self.collection.add(
                 ids=ids,
                 documents=documents,
-                metadatas=metadatas,
+                metadatas=metadatas if metadatas else None
             )
 
             return {

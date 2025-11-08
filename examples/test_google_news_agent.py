@@ -21,6 +21,7 @@ from nodetool.providers.base import BaseProvider
 from nodetool.metadata.types import Provider
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import Chunk
+from nodetool.runtime.resources import ResourceScope
 
 import dotenv
 
@@ -106,27 +107,23 @@ async def test_google_news_agent(provider: BaseProvider, model: str):
         print("No results returned by the agent.")
 
 
-if __name__ == "__main__":
-    # Example: Run with OpenAI GPT-4o Mini
-    # Ensure DATA_FOR_SEO_LOGIN and DATA_FOR_SEO_PASSWORD are in your .env file or environment
-    asyncio.run(
-        test_google_news_agent(
-            provider=get_provider(Provider.OpenAI), model="gpt-4o-mini"
+async def main():
+    async with ResourceScope():
+        await test_google_news_agent(
+            provider=await get_provider(Provider.OpenAI),
+            model="gpt-4o-mini",
         )
-    )
 
-    # You can uncomment other providers/models to test them:
-    # asyncio.run(
-    #     test_google_news_agent(provider=get_provider(Provider.Ollama), model="qwen3:14b")
-    # )
-    # asyncio.run(
-    #     test_google_news_agent(
-    #         provider=get_provider(Provider.Gemini), model="gemini-2.0-flash"
-    #     )
-    # )
-    # asyncio.run(
-    #     test_google_news_agent(
-    #         provider=get_provider(Provider.Anthropic),
-    #         model="claude-3-5-sonnet-20241022",
-    #     )
-    # )
+        # await test_google_news_agent(provider=await get_provider(Provider.Ollama), model="qwen3:14b")
+        # await test_google_news_agent(
+        #     provider=await get_provider(Provider.Gemini),
+        #     model="gemini-2.0-flash",
+        # )
+        # await test_google_news_agent(
+        #     provider=await get_provider(Provider.Anthropic),
+        #     model="claude-3-5-sonnet-20241022",
+        # )
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

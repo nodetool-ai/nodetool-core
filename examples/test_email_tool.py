@@ -2,6 +2,7 @@ import asyncio
 from nodetool.chat.tools.email import SearchEmailTool
 from nodetool.workflows.processing_context import ProcessingContext
 import tiktoken
+from nodetool.runtime.resources import ResourceScope
 
 
 async def test_email_search():
@@ -37,6 +38,10 @@ async def test_email_search():
         print(f"An error occurred: {str(e)}")
 
 
+async def main():
+    async with ResourceScope():
+        await test_email_search()
+
+
 if __name__ == "__main__":
-    # Run the async test function
-    asyncio.run(test_email_search())
+    asyncio.run(main())

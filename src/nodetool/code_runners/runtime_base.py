@@ -4,7 +4,7 @@ import shlex
 import socket
 import subprocess
 import threading
-from typing import Any, AsyncGenerator, AsyncIterator
+from typing import Any, AsyncGenerator, AsyncIterator, Literal
 
 from nodetool.workflows.base_node import BaseNode
 from nodetool.workflows.processing_context import ProcessingContext
@@ -14,6 +14,14 @@ from nodetool.config.logging_config import get_logger
 
 
 log = get_logger(__name__)
+
+
+class ContainerFailureError(RuntimeError):
+    """Raised when a container execution fails."""
+
+    def __init__(self, message: str, exit_code: int):
+        super().__init__(message)
+        self.exit_code = exit_code
 
 
 class StreamRunnerBase:
@@ -38,6 +46,8 @@ class StreamRunnerBase:
         network_disabled: bool = True,
         ipc_mode: str | None = "host",
         mode: str = "docker",
+        workspace_mount_path: str | Literal["host"] | None = "/workspace",
+        docker_workdir: str | None = "/workspace",
     ) -> None:
         """Initialize the stream runner.
 
@@ -56,6 +66,8 @@ class StreamRunnerBase:
         self.ipc_mode = ipc_mode
         # Explicit execution mode: "docker" or "subprocess"
         self.mode = mode
+        self.workspace_mount_path = workspace_mount_path
+        self.docker_workdir = docker_workdir
         # Runtime / lifecycle tracking for cooperative shutdown
         self._active_container_id: str | None = None
         self._active_sock: Any | None = None
@@ -68,7 +80,7 @@ class StreamRunnerBase:
         user_code: str,
         env_locals: dict[str, Any],
         context: ProcessingContext,
-        node: BaseNode,
+        node: BaseNode | None = None,
         stdin_stream: AsyncIterator[str] | None = None,
     ) -> AsyncGenerator[tuple[str, Any], None]:
         """Run code inside Docker and stream output lines.
@@ -83,7 +95,7 @@ class StreamRunnerBase:
             env_locals: Mapping of local variables or parameters exposed to the
                 container. Subclasses may decide how these are used.
             context: Processing context for posting progress updates.
-            node: Workflow node initiating this run.
+            node: Workflow node initiating this run, if available.
             stdin_stream: Optional async iterator of text chunks to forward to
                 the container stdin. Chunks are encoded as UTF-8 and written in
                 order; EOF is signaled by shutting down the write side.
@@ -133,8 +145,8 @@ class StreamRunnerBase:
             elif msg.get("type") == "final":
                 log.debug("final received: ok=%s", msg.get("ok"))
                 if not msg.get("ok", False):
-                    raise RuntimeError(
-                        f"Execution error: {msg.get('error', 'Unknown error')}"
+                    raise ContainerFailureError(
+                        f"Execution error: {msg.get('error', 'Unknown error')}", msg.get("exit_code", 1) if msg.get("exit_code") else 1
                     )
                 break
 
@@ -216,6 +228,111 @@ class StreamRunnerBase:
         """
         pass
 
+    def get_workspace_host_path(self, context: ProcessingContext) -> str | None:
+        """Return the host workspace path, creating it if necessary."""
+        workspace_dir = getattr(context, "workspace_dir", None)
+        if not workspace_dir:
+            return None
+        try:
+            host_path = os.path.abspath(workspace_dir)
+            os.makedirs(host_path, exist_ok=True)
+            return host_path
+        except Exception:
+            return None
+
+    def resolve_execution_workspace_path(
+        self, context: ProcessingContext
+    ) -> str | None:
+        """Return the path user code should treat as the workspace."""
+        if self.mode == "docker":
+            mount = self._resolve_workspace_mount(context)
+            if mount:
+                return mount[1]
+            return self.docker_workdir
+        return self.get_workspace_host_path(context)
+
+    def _resolve_workspace_mount(
+        self, context: ProcessingContext
+    ) -> tuple[str, str] | None:
+        """Compute the workspace mount tuple (host_path, container_path)."""
+        if self.workspace_mount_path is None:
+            return None
+        host_path = self.get_workspace_host_path(context)
+        if not host_path:
+            return None
+        container_path = (
+            host_path if self.workspace_mount_path == "host" else self.workspace_mount_path
+        )
+        return host_path, container_path
+
+    def _determine_container_workdir(
+        self, workspace_mount: tuple[str, str] | None
+    ) -> str | None:
+        """Decide which directory to set as the container working directory."""
+        if workspace_mount:
+            return workspace_mount[1]
+        return self.docker_workdir
+
+    def _extract_node_metadata(
+        self, node: BaseNode | None
+    ) -> tuple[str, str] | None:
+        """Return (node_id, node_name) if available."""
+        if node is None:
+            return None
+        try:
+            return node.id, node.get_title()
+        except Exception:
+            return None
+
+    def _maybe_post_notification(
+        self,
+        context: ProcessingContext,
+        node: BaseNode | None,
+        *,
+        content: str,
+        severity: str = "info",
+    ) -> None:
+        """Post a notification if node metadata is available."""
+        meta = self._extract_node_metadata(node)
+        if not meta:
+            return
+        node_id, _ = meta
+        try:
+            context.post_message(
+                Notification(
+                    node_id=node_id,
+                    severity=severity,  # type: ignore[arg-type]
+                    content=content,
+                )
+            )
+        except Exception:
+            pass
+
+    def _maybe_post_log(
+        self,
+        context: ProcessingContext,
+        node: BaseNode | None,
+        *,
+        content: str,
+        severity: str = "info",
+    ) -> None:
+        """Post a log update if node metadata is available."""
+        meta = self._extract_node_metadata(node)
+        if not meta:
+            return
+        node_id, node_name = meta
+        try:
+            context.post_message(
+                LogUpdate(
+                    node_id=node_id,
+                    node_name=node_name,
+                    content=content,
+                    severity=severity,  # type: ignore[arg-type]
+                )
+            )
+        except Exception:
+            pass
+
     def build_container_environment(
         self,
         env: dict[str, Any],
@@ -253,7 +370,7 @@ class StreamRunnerBase:
         env: dict[str, Any],
         env_locals: dict[str, Any],
         context: ProcessingContext,
-        node: BaseNode,
+        node: BaseNode | None,
         stdin_stream: AsyncIterator[str] | None = None,
     ) -> None:
         """Blocking Docker workflow executed in a worker thread.
@@ -268,7 +385,7 @@ class StreamRunnerBase:
             env: Environment mapping for the container.
             env_locals: Additional locals for subclass-specific behavior.
             context: Processing context for progress messages.
-            node: Node associated with the execution.
+            node: Node associated with the execution (optional).
             stdin_stream: Optional async iterator feeding container stdin.
         """
         command_str: str | None = None
@@ -308,8 +425,8 @@ class StreamRunnerBase:
 
                 # Check exit code and fail if non-zero
                 if exit_code != 0:
-                    raise RuntimeError(
-                        f"Container exited with non-zero status: {exit_code}"
+                    raise ContainerFailureError(
+                        f"Container exited with non-zero status: {exit_code}", exit_code
                     )
 
                 self._finalize_success(queue, loop)
@@ -333,7 +450,7 @@ class StreamRunnerBase:
         env: dict[str, Any],
         env_locals: dict[str, Any],
         context: ProcessingContext,
-        node: BaseNode,
+        node: BaseNode | None,
         stdin_stream: AsyncIterator[str] | None,
     ) -> None:
         """Execute the command as a local subprocess and stream stdout/stderr.
@@ -442,7 +559,7 @@ class StreamRunnerBase:
             except Exception:
                 pass
             if rc != 0:
-                raise RuntimeError(f"Process exited with code {rc}")
+                raise ContainerFailureError(f"Process exited with code {rc}", rc)
 
             asyncio.run_coroutine_threadsafe(
                 queue.put({"type": "final", "ok": True}), loop
@@ -484,7 +601,7 @@ class StreamRunnerBase:
         queue: asyncio.Queue[dict[str, Any]],
         loop: asyncio.AbstractEventLoop,
         context: ProcessingContext,
-        node: BaseNode,
+        node: BaseNode | None,
     ) -> None:
         """Read lines from a byte stream and emit them as messages/logs."""
         buf = b""
@@ -570,7 +687,7 @@ class StreamRunnerBase:
         client: Any,
         image: str,
         context: ProcessingContext,
-        node: BaseNode,
+        node: BaseNode | None,
     ) -> None:
         """Ensure the Docker image is available locally, pulling if needed.
 
@@ -578,42 +695,24 @@ class StreamRunnerBase:
             client: Docker client.
             image: Image to ensure.
             context: Processing context for progress updates.
-            node: Node used for progress attribution.
+            node: Node used for progress attribution (optional).
         """
         try:
             client.images.get(image)
         except Exception:
             log.debug("pulling image: %s", image)
-            context.post_message(
-                Notification(
-                    node_id=node.id,
-                    severity="info",
-                    content=f"Pulling image: {image}",
-                )
+            self._maybe_post_notification(
+                context, node, content=f"Pulling image: {image}", severity="info"
             )
-            context.post_message(
-                LogUpdate(
-                    node_id=node.id,
-                    node_name=node.get_title(),
-                    content=f"Pulling image: {image}",
-                    severity="info",
-                )
+            self._maybe_post_log(
+                context, node, content=f"Pulling image: {image}", severity="info"
             )
             client.images.pull(image)
-            context.post_message(
-                Notification(
-                    node_id=node.id,
-                    severity="info",
-                    content=f"Downloaded image: {image}",
-                )
+            self._maybe_post_notification(
+                context, node, content=f"Downloaded image: {image}", severity="info"
             )
-            context.post_message(
-                LogUpdate(
-                    node_id=node.id,
-                    node_name=node.get_title(),
-                    content=f"Downloaded image: {image}",
-                    severity="info",
-                )
+            self._maybe_post_log(
+                context, node, content=f"Downloaded image: {image}", severity="info"
             )
 
     def _create_container(
@@ -639,19 +738,23 @@ class StreamRunnerBase:
             The created container object.
         """
         log.debug("creating container")
+        workspace_mount = self._resolve_workspace_mount(context)
+        volumes = {}
+        if workspace_mount:
+            host_path, container_path = workspace_mount
+            volumes[host_path] = {
+                "bind": container_path,
+                "mode": "rw",
+            }
+        working_dir = self._determine_container_workdir(workspace_mount)
         container = client.containers.create(
             image=image,
             command=command,
             network_disabled=self.network_disabled,
             mem_limit=self.mem_limit,
             nano_cpus=self.nano_cpus,
-            volumes={
-                context.workspace_dir: {
-                    "bind": "/workspace",
-                    "mode": "rw",
-                }
-            },
-            working_dir="/workspace",
+            volumes=volumes or None,
+            working_dir=working_dir,
             stdin_open=stdin_stream is not None,
             tty=False,
             detach=True,
@@ -804,7 +907,7 @@ class StreamRunnerBase:
         queue: asyncio.Queue[dict[str, Any]],
         loop: asyncio.AbstractEventLoop,
         context: ProcessingContext,
-        node: BaseNode,
+        node: BaseNode | None,
         slot: str,
         line: str,
     ) -> None:
@@ -823,19 +926,9 @@ class StreamRunnerBase:
             queue.put({"type": "yield", "slot": slot, "value": line}),
             loop,
         )
-        try:
-            content = line[:-1] if line.endswith("\n") else line
-            sev = "info" if slot == "stdout" else "error"
-            context.post_message(
-                LogUpdate(
-                    node_id=node.id,
-                    node_name=node.get_title(),
-                    content=content,
-                    severity=sev,  # type: ignore[arg-type]
-                )
-            )
-        except Exception:
-            pass
+        content = line[:-1] if line.endswith("\n") else line
+        sev = "info" if slot == "stdout" else "error"
+        self._maybe_post_log(context, node, content=content, severity=sev)
 
     def _stream_hijacked_output(
         self,
@@ -843,7 +936,7 @@ class StreamRunnerBase:
         queue: asyncio.Queue[dict[str, Any]],
         loop: asyncio.AbstractEventLoop,
         context: ProcessingContext,
-        node: BaseNode,
+        node: BaseNode | None,
     ) -> None:
         """Read multiplexed stdout/stderr from the hijacked socket and emit lines.
 

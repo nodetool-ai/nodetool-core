@@ -24,12 +24,13 @@ from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import Chunk, TaskUpdate
 from nodetool.providers.openai_provider import OpenAIProvider
 from nodetool.agents.sub_task_context import SubTaskContext
+from nodetool.runtime.resources import ResourceScope
 
 # Create a console for rich output
 console = Console()
 
 
-async def main():
+async def run_web_search_example():
     # Configure test parameters
     context = ProcessingContext()
     workspace_dir = context.workspace_dir
@@ -113,6 +114,11 @@ async def main():
         console.print(json.dumps(result, indent=2))
     else:
         console.print("\n[bold red]Output file was not created![/bold red]")
+
+
+async def main():
+    async with ResourceScope():
+        await run_web_search_example()
 
 
 if __name__ == "__main__":

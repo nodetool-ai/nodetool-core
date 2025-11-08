@@ -12,6 +12,7 @@ from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import PlanningUpdate
 from nodetool.types.graph import Graph as APIGraph
 from nodetool.metadata.types import TypeMetadata
+from nodetool.runtime.resources import ResourceScope
 
 # Set up logging
 from nodetool.config.logging_config import get_logger
@@ -435,7 +436,7 @@ async def test_data_processing_workflow():
             logger.error("Failed to create graph")
 
 
-if __name__ == "__main__":
+def prompt_choice() -> str:
     print("GraphPlanner Test Script")
     print("=" * 50)
     print("\nSelect test to run:")
@@ -445,17 +446,24 @@ if __name__ == "__main__":
     print("4. Personalized greeting workflow")
     print("5. Data processing workflow (tests edge connections)")
 
-    choice = input("\nEnter choice (1-5): ")
+    return input("\nEnter choice (1-5): ")
 
-    if choice == "1":
-        asyncio.run(test_graph_planner())
-    elif choice == "2":
-        asyncio.run(test_simple_graph())
-    elif choice == "3":
-        asyncio.run(test_math_workflow())
-    elif choice == "4":
-        asyncio.run(test_greeting_graph())
-    elif choice == "5":
-        asyncio.run(test_data_processing_workflow())
-    else:
-        print("Invalid choice")
+
+async def run_choice(choice: str):
+    async with ResourceScope():
+        if choice == "1":
+            await test_graph_planner()
+        elif choice == "2":
+            await test_simple_graph()
+        elif choice == "3":
+            await test_math_workflow()
+        elif choice == "4":
+            await test_greeting_graph()
+        elif choice == "5":
+            await test_data_processing_workflow()
+        else:
+            print("Invalid choice")
+
+
+if __name__ == "__main__":
+    asyncio.run(run_choice(prompt_choice()))

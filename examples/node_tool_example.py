@@ -14,6 +14,7 @@ from nodetool.metadata.types import Provider
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.base_node import BaseNode
 from nodetool.workflows.types import Chunk
+from nodetool.runtime.resources import ResourceScope
 from pydantic import Field
 
 
@@ -64,7 +65,7 @@ class MathOperationNode(BaseNode):
         return {"result": result}
 
 
-async def main():
+async def run_node_tool_example():
     """Demonstrate using NodeTool with agents."""
 
     # Create a processing context
@@ -93,8 +94,8 @@ async def main():
     print("2. Creating Agent with NodeTools:")
 
     # Set up provider and model
-    provider = get_provider(Provider.OpenAI)
-    model = "gpt-4o-mini"
+    provider = await get_provider(Provider.HuggingFaceCerebras)
+    model = "openai/gpt-oss-120b"
 
     # Create NodeTools for the agent
     tools = [
@@ -129,6 +130,11 @@ async def main():
 
     print(f"\n\nWorkspace: {context.workspace_dir}")
     print("\nThe agent has completed all tasks using the custom NodeTools.")
+
+
+async def main():
+    async with ResourceScope():
+        await run_node_tool_example()
 
 
 if __name__ == "__main__":

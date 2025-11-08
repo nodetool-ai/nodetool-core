@@ -15,6 +15,7 @@ ensure the generated plan is robust and executable.
 
 from nodetool.config.logging_config import get_logger
 import traceback
+from copy import deepcopy
 from nodetool.providers import BaseProvider
 from nodetool.agents.tools.base import Tool
 from nodetool.metadata.types import (
@@ -75,6 +76,10 @@ Used for concise subtask representation.
 class CreateTaskTool(Tool):
     """
     Task Creator - Tool for generating a task with subtasks
+
+    DEPRECATED: This tool is no longer used by the TaskPlanner.
+    The planner now uses JSON output instead of tool calls.
+    This class is kept for backward compatibility only.
     """
 
     name = "create_task"
@@ -324,62 +329,86 @@ PLAN_CREATION_TEMPLATE = """
 <phase>PHASE 2: PLAN CREATION - Generating the Executable Task</phase>
 
 <goal>
-Transform conceptual subtask plan and data flow from previous phases into concrete, executable task plan via single `create_task` tool call.
+Transform conceptual subtask plan and data flow from previous phases into concrete, executable task plan as JSON output.
 </goal>
 
 <output_format>
 1. Brief Justification (<200 tokens, no chain-of-thought):
    <plan_construction>
-   - How Phase 1 subtasks/data flow translate to `create_task` arguments
+   - How Phase 1 subtasks/data flow translate to task structure
    - Decisions for `content`, `input_tasks`, `output_schema` per subtask
    - Validation criteria met (DAG, final output conformance)
    - Data flow summary based on `input_tasks` dependencies
    - Use '$name' convention for Phase 0 task references
    </plan_construction>
 
-2. `create_task` Tool Call:
-   - Make exactly ONE call immediately after justification
-   - No additional text after tool call
+2. JSON Task Definition:
+   - Output the task as a valid JSON object wrapped in ```json code fence
+   - Include exactly ONE JSON object with the complete task definition
+   - No additional text after the JSON block
+   - Format:
+   ```json
+   {
+     "title": "Task title here",
+     "subtasks": [...]
+   }
+   ```
 </output_format>
 
-<create_task_guidelines>
-General Structure:
-- title: Appropriate title for overall task
-- subtasks: Array of subtask objects
+<json_task_structure>
+Required JSON Structure:
+{
+  "title": "Appropriate title for overall task",
+  "subtasks": [
+    {
+      "id": "unique_identifier",
+      "content": "High-level natural language instructions",
+      "input_tasks": ["dependency_id_or_input_key"],
+      "output_schema": {"type":"object","properties":{...}}
+    }
+  ]
+}
 
-Per Subtask:
-- id: Unique identifier (e.g., "discover_urls", "analyze_results", "compile_report")
-- content: High-level natural language instructions (distinguish planning vs execution)
+Subtask Field Guidelines:
 
-  **For PLANNING tasks (discovery/dynamic expansion):**
-  * Explicitly instruct agent to use `add_subtask` tool after discovery
-  * Example: "Use GoogleSearch to find 3-5 Reddit posts about AI workflows. For each URL found, use the add_subtask tool to create a new subtask with:
-    - content: 'Fetch {{url}}.json with BrowserTool and extract post title, summary, and top 3 comments'
-    - input_tasks: [] (no dependencies)
-    - output_schema describing the extracted data"
-  * Be specific about what data to pass to dynamically created subtasks
-  * Mention which input keys to use if applicable
+**id** (string, required):
+- Unique identifier (e.g., "discover_urls", "analyze_results", "compile_report")
+- Use descriptive snake_case names
 
-  **For EXECUTION tasks (direct implementation):**
-  * Focus on WHAT to achieve, not HOW
-  * Example: "Aggregate results from all URL processing subtasks into markdown report with sections per workflow"
-  * Mention which input keys to use if applicable
+**content** (string, required):
+- High-level natural language instructions (distinguish planning vs execution)
 
-- input_tasks: Array of subtask IDs or input keys this depends on
-  * From Phase 1 data flow graph
-  * Empty array [] for initial subtasks with no dependencies
-  * Can reference input dictionary keys (e.g., "data_file")
-- output_schema: Valid JSON string describing result structure
-  * Example: '{"type": "string"}' for unstructured
-  * Use concise, canonical JSON (no markdown)
+  For PLANNING tasks (discovery/dynamic expansion):
+  - Explicitly instruct agent to use `add_subtask` tool after discovery
+  - Example: "Use GoogleSearch to find 3-5 Reddit posts about AI workflows. For each URL found, use the add_subtask tool to create a new subtask with content describing the fetch/extract operation, empty input_tasks, and output_schema for the extracted data"
+  - Be specific about what data to pass to dynamically created subtasks
+  - Mention which input keys to use if applicable
 
-Pre-Tool-Call Validation Checklist:
+  For EXECUTION tasks (direct implementation):
+  - Focus on WHAT to achieve, not HOW
+  - Example: "Aggregate results from all URL processing subtasks into markdown report with sections per workflow"
+  - Mention which input keys to use if applicable
+
+**input_tasks** (array of strings, required):
+- List of subtask IDs or input keys this depends on
+- From Phase 1 data flow graph
+- Empty array [] for initial subtasks with no dependencies
+- Can reference input dictionary keys (e.g., "data_file")
+
+**output_schema** (JSON schema, required):
+- Provide a JSON schema either as an object literal or a JSON string
+- Example object: {"type":"string"} for unstructured output
+- Example object: {"type":"object","properties":{"results":{"type":"array"}}} for structured data
+- If you return a string, ensure it is valid, escaped JSON
+- Use compact JSON format without line breaks or markdown
+
+Pre-Output Validation Checklist:
 ✓ All subtask IDs are unique
 ✓ Dependencies form valid DAG (no cycles)
 ✓ All referenced task IDs and input keys exist
 ✓ Subtasks are focused and atomic
 ✓ Terminal subtask output matches overall output schema
-✓ Schemas use canonical JSON format
+✓ Schemas are valid JSON strings (not objects)
 
 Agent Execution Model (for awareness):
 - Agents call `finish_subtask` with result objects
@@ -387,10 +416,10 @@ Agent Execution Model (for awareness):
 - `read_result` tool fetches upstream task results or input keys
 - Input dictionary keys accessible same way as task results
 - **Dynamic Planning**: Agents have access to `add_subtask` tool to create new subtasks during execution
-  * Planning tasks should explicitly instruct agent to use this tool
-  * Dynamically added subtasks execute after the planning task completes
-  * This enables adaptive workflows based on discovered data
-</create_task_guidelines>
+  - Planning tasks should explicitly instruct agent to use this tool
+  - Dynamically added subtasks execute after the planning task completes
+  - This enables adaptive workflows based on discovered data
+</json_task_structure>
 
 <context>
 User's Objective: {{ objective }}
@@ -405,13 +434,13 @@ Execution Tools: {{ execution_tools_info }}
 # Final validation checklist for plan creation
 DEFAULT_AGENT_TASK_TEMPLATE = """
 <final_check>
-Before emitting `create_task` tool call, verify each subtask:
+Before outputting the JSON task definition, verify each subtask:
 
 1. Clarity of Purpose: `content` is crystal-clear, high-level objective for autonomous agent
    - Planning tasks: Explicitly instruct to use `add_subtask` after discovery
    - Execution tasks: Clear direct implementation instructions
 2. Self-Containment: `input_tasks` lists all upstream dependencies needed
-3. Output Precision: `output_schema` accurately describes result structure
+3. Output Precision: `output_schema` accurately describes result structure as a JSON STRING
 4. DAG Integrity: All dependencies exist and form acyclic graph (no orphans)
 5. Naming: Subtask `id`s unique, descriptive, consistent with `input_tasks` references
 6. Output Fit: Terminal subtask output matches overall task `output_schema`
@@ -419,7 +448,7 @@ Before emitting `create_task` tool call, verify each subtask:
 
 Verify plan addresses: {{ objective }}
 
-After checklist, immediately emit single `create_task` tool call. No chain-of-thought. No extra commentary.
+After checklist, immediately output the complete task as a JSON object in a ```json code fence. No chain-of-thought after JSON. No extra commentary after the closing ```.
 </final_check>
 """
 
@@ -455,9 +484,8 @@ class TaskPlanner:
     - **Analysis Phase:** High-level strategic breakdown and identification of
       subtask types (Tool vs. Agent).
     - **Data Flow Analysis:** Refining dependencies, inputs/outputs, and data schemas.
-    - **Plan Creation:** Generating the final, concrete `Task` object using the LLM,
-      typically by invoking an internal `CreateTaskTool` or leveraging structured
-      output capabilities if supported by the LLM provider.
+    - **Plan Creation:** Generating the final, concrete `Task` object by instructing
+      the LLM to output a JSON structure, which is then extracted and validated.
 
     **Core Responsibility:** To transform an ambiguous user objective into an unambiguous,
     validated, and machine-executable plan. It prioritizes structure, clear contracts,
@@ -1007,14 +1035,9 @@ class TaskPlanner:
         phase_content: str | Text = "N/A"
         current_phase_name: str = "2. Plan Creation"
 
-        # Adjust prompt/logic for Tier 1 if necessary, e.g., by using a simpler template
-        # or adding specific instructions to the existing template for single-task plans.
-        # For now, we use the same template but the LLM will have less preceding context from skipped phases.
-        # The main effect of Tier 1 will be the lack of Analysis and Data Flow history.
-
-        # Use tool-based generation
+        # Generate plan using JSON output instead of tool calls
         if self.display_manager:
-            self.display_manager.debug("Using tool-based generation for plan creation")
+            self.display_manager.debug("Using JSON-based generation for plan creation")
         plan_creation_prompt_content = self._render_prompt(PLAN_CREATION_TEMPLATE)
         agent_task_prompt_content = await self._build_agent_task_prompt_content()
         if self.display_manager:
@@ -1036,58 +1059,97 @@ class TaskPlanner:
             self.display_manager.update_planning_display(
                 current_phase_name,
                 "Running",
-                "Attempting plan creation using the 'create_task' tool...",
-            )
-        try:
-            log.debug("Starting tool-based plan generation with retry logic")
-            task, final_message = await self._generate_with_retry(
-                history,
-                tools=[CreateTaskTool()],
-                max_retries=max_retries,
+                "Generating task plan as JSON...",
             )
 
-            if task:
-                phase_status = "Success"
-                phase_content = (
-                    self._format_message_content(final_message)
-                    if final_message
-                    else "Plan created using tool calls."
+        # Retry loop for JSON generation and validation
+        for attempt in range(max_retries):
+            try:
+                log.debug("Starting JSON-based plan generation, attempt %d/%d", attempt + 1, max_retries)
+
+                # Call LLM without tools to get JSON response
+                response_message: Message = await self.provider.generate_message(
+                    messages=history,
+                    model=self.model,
+                    tools=[],  # No tools, expecting JSON in content
                 )
+                history.append(response_message)
+                final_message = response_message
+
                 log.debug(
-                    "Tool-based plan creation successful: %d subtasks",
-                    len(task.subtasks),
+                    "LLM response received, content length: %d chars",
+                    len(str(response_message.content)) if response_message.content else 0,
                 )
-            else:
-                failure_reason = "Unknown failure after retries."
-                if final_message and (
-                    final_message.content or final_message.tool_calls
-                ):
-                    formatted_content = self._format_message_content(final_message)
-                    if (
-                        "error" in str(formatted_content).lower()
-                        or "fail" in str(formatted_content).lower()
-                    ):
-                        failure_reason = f"LLM indicated failure: {formatted_content}"
-                    else:
-                        failure_reason = f"LLM did not produce a valid 'create_task' tool call. Last message: {formatted_content}"
-                elif (
-                    plan_creation_error
-                ):  # Check if _generate_with_retry raised an error internally
-                    failure_reason = (
-                        f"Tool call generation failed internally: {plan_creation_error}"
-                    )
 
-                log.warning("Tool-based plan creation failed: %s", failure_reason)
-                plan_creation_error = ValueError(
-                    f"Tool call generation failed: {failure_reason}"
+                # Extract JSON from the message
+                task_data = self._extract_json_from_message(response_message)
+
+                if not task_data:
+                    failure_reason = f"Failed to extract JSON from LLM response on attempt {attempt + 1}/{max_retries}"
+                    log.warning(failure_reason)
+
+                    # Add error feedback to history for retry
+                    if attempt < max_retries - 1:
+                        error_feedback = Message(
+                            role="user",
+                            content=f"Error: {failure_reason}. Please output the task plan as a valid JSON object in a ```json code fence. Ensure the JSON is complete and properly formatted."
+                        )
+                        history.append(error_feedback)
+                        continue
+                    else:
+                        plan_creation_error = ValueError(failure_reason)
+                        phase_content = f"{failure_reason}. Last message: {self._format_message_content(response_message)}"
+                        phase_status = "Failed"
+                        break
+
+                # Validate and build task from extracted JSON
+                log.debug("Validating extracted JSON: %s", list(task_data.keys()) if isinstance(task_data, dict) else type(task_data))
+                validated_task, validation_errors = await self._validate_structured_output_plan(
+                    task_data, objective
                 )
-                phase_content = f"Tool call generation failed: {failure_reason}"
-                phase_status = "Failed"
-        except Exception as e:
-            log.error("Tool-based plan creation failed: %s", e, exc_info=True)
-            plan_creation_error = e
-            phase_status = "Failed"
-            phase_content = f"Tool call generation failed: {str(e)}\n{traceback.format_exc()}"  # Keep traceback for display
+
+                if validated_task and not validation_errors:
+                    task = validated_task
+                    phase_status = "Success"
+                    phase_content = self._format_message_content(final_message)
+                    log.debug(
+                        "JSON-based plan creation successful: %d subtasks",
+                        len(task.subtasks),
+                    )
+                    break
+                else:
+                    # Validation failed, provide feedback for retry
+                    failure_reason = f"Task validation failed on attempt {attempt + 1}/{max_retries}: {'; '.join(validation_errors)}"
+                    log.warning(failure_reason)
+
+                    if attempt < max_retries - 1:
+                        error_feedback = Message(
+                            role="user",
+                            content=f"Error: The task plan has validation errors:\n" + "\n".join(f"- {err}" for err in validation_errors) + "\n\nPlease fix these issues and output the corrected task plan as JSON."
+                        )
+                        history.append(error_feedback)
+                        continue
+                    else:
+                        plan_creation_error = ValueError(failure_reason)
+                        phase_content = f"{failure_reason}"
+                        phase_status = "Failed"
+                        break
+
+            except Exception as e:
+                log.error("JSON-based plan creation failed on attempt %d: %s", attempt + 1, e, exc_info=True)
+
+                if attempt < max_retries - 1:
+                    error_feedback = Message(
+                        role="user",
+                        content=f"Error during plan generation: {str(e)}. Please try again and output a valid JSON task plan."
+                    )
+                    history.append(error_feedback)
+                    continue
+                else:
+                    plan_creation_error = e
+                    phase_status = "Failed"
+                    phase_content = f"JSON generation failed: {str(e)}\n{traceback.format_exc()}"
+                    break
 
         # Update Table for Phase 2
         log.debug("Plan creation phase completed with status: %s", phase_status)
@@ -1294,6 +1356,77 @@ class TaskPlanner:
         # We also strip leading/trailing whitespace from the result.
         return re.sub(r"<think>.*?</think>", "", text_content, flags=re.DOTALL).strip()
 
+    def _extract_json_from_message(self, message: Optional[Message]) -> Optional[dict]:
+        """Extracts JSON from a message's content.
+
+        Supports extraction from:
+        1. JSON code fences (```json ... ```)
+        2. Plain code fences (``` ... ```)
+        3. Raw JSON in the message content
+
+        Args:
+            message: The Message object containing the JSON.
+
+        Returns:
+            Parsed JSON dictionary, or None if extraction/parsing fails.
+        """
+        if not message or not message.content:
+            log.debug("No message content to extract JSON from")
+            return None
+
+        # Get the raw content as a string
+        raw_content: Optional[str] = None
+        if isinstance(message.content, str):
+            raw_content = message.content
+        elif isinstance(message.content, list):
+            try:
+                raw_content = "\n".join(str(item) for item in message.content)
+            except Exception:
+                raw_content = str(message.content)
+        else:
+            log.debug("Unexpected content type: %s", type(message.content))
+            return None
+
+        # Remove think tags first
+        cleaned_content = self._remove_think_tags(raw_content)
+        if not cleaned_content:
+            log.debug("Content is empty after removing think tags")
+            return None
+
+        # Try to extract from JSON code fence first
+        json_fence_pattern = r"```json\s*\n(.*?)\n```"
+        match = re.search(json_fence_pattern, cleaned_content, re.DOTALL)
+        if match:
+            json_str = match.group(1).strip()
+            log.debug("Found JSON in code fence, length: %d", len(json_str))
+        else:
+            # Try plain code fence
+            code_fence_pattern = r"```\s*\n(.*?)\n```"
+            match = re.search(code_fence_pattern, cleaned_content, re.DOTALL)
+            if match:
+                json_str = match.group(1).strip()
+                log.debug("Found content in plain code fence, length: %d", len(json_str))
+            else:
+                # Try to find JSON object directly in the content
+                # Look for content that starts with { and ends with }
+                json_obj_pattern = r"\{[\s\S]*\}"
+                match = re.search(json_obj_pattern, cleaned_content)
+                if match:
+                    json_str = match.group(0).strip()
+                    log.debug("Found JSON object in raw content, length: %d", len(json_str))
+                else:
+                    log.debug("No JSON pattern found in content")
+                    return None
+
+        # Try to parse the extracted JSON
+        try:
+            parsed_json = json.loads(json_str)
+            log.debug("Successfully parsed JSON with keys: %s", list(parsed_json.keys()) if isinstance(parsed_json, dict) else type(parsed_json))
+            return parsed_json
+        except json.JSONDecodeError as e:
+            log.error("Failed to parse JSON: %s. JSON string: %s...", e, json_str[:200])
+            return None
+
     def _format_message_content(self, message: Optional[Message]) -> str | Text:
         """Formats message content for table display.
 
@@ -1317,8 +1450,6 @@ class TaskPlanner:
             for tc in message.tool_calls:
                 # Truncate args if too long for table display
                 args_str = json.dumps(tc.args)
-                if len(args_str) > 200:
-                    args_str = args_str[:200] + "..."
                 calls_summary.append(f"- Tool Call: {tc.name}\\n  Args: {args_str}")
             # Use Text object for potential future styling
             return Text(
@@ -1569,6 +1700,13 @@ class TaskPlanner:
     ) -> tuple[Optional[str], List[str]]:
         """Processes and validates the output_schema for a subtask.
 
+        Accepts schema definitions provided as JSON strings or already-parsed
+        dictionaries. When a schema string cannot be parsed as JSON, the parser
+        will attempt a YAML fallback before defaulting to a generic string
+        schema. Only fatal situations (where no schema can be produced) are
+        returned as validation errors so that non-fatal issues do not halt plan
+        creation.
+
         Args:
             subtask_data: The raw dictionary data for the subtask
             sub_context: A string prefix for error messages.
@@ -1581,74 +1719,102 @@ class TaskPlanner:
         """
         log.debug("%s: Starting schema processing", sub_context)
         validation_errors: List[str] = []
-        current_schema_str: Any = subtask_data.get("output_schema")
+        raw_schema: Any = subtask_data.get("output_schema")
         final_schema_str: Optional[str] = None
         schema_dict: Optional[dict] = None
 
-        # Add logging for the input schema string
-        log.debug(
-            "%s: schema_input='%s' (type: %s)",
-            sub_context,
-            current_schema_str,
-            type(current_schema_str),
-        )
-        log.debug(
-            "%s: Attempting to process output_schema: '%s' of type %s",
-            sub_context,
-            current_schema_str,
-            type(current_schema_str),
-        )
-
-        try:
-            if isinstance(current_schema_str, str) and current_schema_str.strip():
-                log.debug("%s: Parsing string schema", sub_context)
-                log.debug(
-                    "%s: Parsing string schema: '%s'", sub_context, current_schema_str
-                )
-                schema_dict = json.loads(current_schema_str)
-                log.debug(
-                    "%s: Successfully parsed schema dict: %s", sub_context, schema_dict
-                )
-
-                if not isinstance(schema_dict, dict):
-                    raise ValueError(
-                        f"Output schema must be a JSON object, got {type(schema_dict)}"
-                    )
-            else:  # Invalid type for schema string
-                error_msg = f"Output schema must be a JSON string or None, got {type(current_schema_str)}"
-                log.error("%s: %s", sub_context, error_msg)
-                raise ValueError(error_msg)
-
-            # Apply defaults if schema_dict was successfully loaded or generated
-            if schema_dict is not None:
-                log.debug(
-                    "%s: Applying additionalProperties constraints to schema",
-                    sub_context,
-                )
-                schema_dict = self._ensure_additional_properties_false(schema_dict)
-                final_schema_str = json.dumps(schema_dict)
-                log.debug(
-                    "%s: Final schema prepared, length=%d: %s",
-                    sub_context,
-                    len(final_schema_str),
-                    final_schema_str,
-                )
-
-        except (ValueError, json.JSONDecodeError) as e:
-            error_msg = f"Invalid output_schema provided: '{current_schema_str}'. Error: {e}. Using default string schema."
-            validation_errors.append(f"{sub_context}: {error_msg}")
-            log.warning("%s: Schema parsing failed: %s", sub_context, e)
-            # Log the specific error
-            log.debug(
-                "%s: JSONDecodeError or ValueError for schema '%s': %s",
+        def default_schema(reason: str) -> dict:
+            """Return a default schema and log why it was needed."""
+            log.warning(
+                "%s: %s. Using default string schema.",
                 sub_context,
-                current_schema_str,
-                e,
+                reason,
             )
-            schema_dict = {
+            return {
                 "type": "string",
                 "description": "Subtask result",
             }
+
+        log.debug(
+            "%s: schema_input='%s' (type: %s)",
+            sub_context,
+            raw_schema,
+            type(raw_schema),
+        )
+
+        try:
+            if isinstance(raw_schema, dict):
+                log.debug("%s: Schema already provided as dict", sub_context)
+                schema_dict = deepcopy(raw_schema)
+            elif isinstance(raw_schema, str):
+                stripped_schema = raw_schema.strip()
+                if not stripped_schema:
+                    log.debug(
+                        "%s: Empty schema string provided, using default",
+                        sub_context,
+                    )
+                    schema_dict = default_schema("Empty output_schema string")
+                else:
+                    log.debug(
+                        "%s: Parsing string schema: '%s'",
+                        sub_context,
+                        stripped_schema,
+                    )
+                    try:
+                        schema_dict = json.loads(stripped_schema)
+                        log.debug(
+                            "%s: Successfully parsed schema via JSON",
+                            sub_context,
+                        )
+                    except json.JSONDecodeError as json_error:
+                        log.debug(
+                            "%s: JSON parsing failed (%s), attempting YAML",
+                            sub_context,
+                            json_error,
+                        )
+                        try:
+                            yaml_candidate = yaml.safe_load(stripped_schema)
+                        except yaml.YAMLError as yaml_error:
+                            raise ValueError(
+                                "Unable to parse output_schema as JSON or YAML"
+                            ) from yaml_error
+
+                        if not isinstance(yaml_candidate, dict):
+                            raise ValueError(
+                                "Output schema string must describe an object structure"
+                            )
+
+                        schema_dict = yaml_candidate
+                        log.warning(
+                            "%s: Parsed schema using YAML fallback due to JSON error: %s",
+                            sub_context,
+                            json_error,
+                        )
+            elif raw_schema is None:
+                log.debug("%s: No output_schema provided; using default", sub_context)
+                schema_dict = default_schema("Missing output_schema" )
+            else:
+                raise ValueError(
+                    f"Output schema must be a JSON string or dict, got {type(raw_schema)}"
+                )
+
+            if schema_dict is None:
+                raise ValueError("Schema parsing produced no result")
+
+            log.debug(
+                "%s: Applying additionalProperties constraints to schema",
+                sub_context,
+            )
+            schema_dict = self._ensure_additional_properties_false(schema_dict)
+            final_schema_str = json.dumps(schema_dict)
+            log.debug(
+                "%s: Final schema prepared, length=%d",
+                sub_context,
+                len(final_schema_str),
+            )
+
+        except ValueError as e:
+            schema_dict = default_schema(str(e))
             final_schema_str = json.dumps(schema_dict)
 
         log.debug(
@@ -2139,6 +2305,10 @@ class TaskPlanner:
     ) -> tuple[Optional[Task], Optional[Message]]:
         """
         Generates response, processes tool calls with validation and retry logic.
+
+        DEPRECATED: This method is no longer used by the TaskPlanner.
+        The planner now uses JSON output extraction in _run_plan_creation_phase.
+        This method is kept for backward compatibility only.
         """
         log.debug(
             "Starting generation with retry, max_retries=%d, tools=%s",

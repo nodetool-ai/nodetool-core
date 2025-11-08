@@ -23,6 +23,7 @@ from nodetool.integrations.vectorstores.chroma.async_chroma_client import (
 from nodetool.workflows.processing_context import (
     ProcessingContext,
 )  # Assuming a basic context is needed
+from nodetool.runtime.resources import ResourceScope
 
 
 async def run_test():
@@ -101,7 +102,7 @@ Testing how it handles multiple H1 headers.
     # 6. Verification (Query ChromaDB)
     print("\nVerifying results by querying ChromaDB...")
     if result.get("status") == "success":
-        indexed_count = result.get("indexed_count", 0)
+        indexed_count = len(result.get("indexed_ids", []))
         print(f"Tool reported {indexed_count} chunks indexed.")
 
         # Give ChromaDB a moment to process embeddings if necessary
@@ -146,5 +147,10 @@ Testing how it handles multiple H1 headers.
     # print(f"\nCleaned up collection: {collection_name}")
 
 
+async def main():
+    async with ResourceScope():
+        await run_test()
+
+
 if __name__ == "__main__":
-    asyncio.run(run_test())
+    asyncio.run(main())

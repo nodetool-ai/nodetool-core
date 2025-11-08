@@ -43,6 +43,7 @@ from nodetool.providers.base import BaseProvider
 from nodetool.metadata.types import Provider
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import Chunk
+from nodetool.runtime.resources import ResourceScope
 
 import dotenv
 
@@ -79,34 +80,20 @@ async def analyze_reddit_subreddit(
              * "site:reddit.com/r/{subreddit} problem"
              * "site:reddit.com/r/{subreddit} issue"
              * "site:reddit.com/r/{subreddit} help"
-             * "site:reddit.com/r/{subreddit} error"
-             * "site:reddit.com/r/{subreddit} bug"
-             * "site:reddit.com/r/{subreddit} doesn't work"
-             * "site:reddit.com/r/{subreddit} frustrated"
-             * "site:reddit.com/r/{subreddit} confused"
            - Find at least 10-15 relevant posts from the last 6 months
-           - Prioritize posts with high engagement (many comments/upvotes)
 
         2. **Data Collection**:
            - For each Reddit post URL found:
-             * Use BrowserTool to visit the page
+             * Use BrowserTool to visit the page but append ".json" to the url to get the content as a JSON file
              * Extract the post title, author, date, and full text
              * Capture the top 5-10 most relevant comments
-             * Note the number of upvotes (indicates issue prevalence)
-             * Record any solutions or workarounds mentioned
-             * Pay attention to moderator or official responses
 
         3. **Content Analysis**:
            - Categorize pain points by type:
              * Technical issues (bugs, errors, crashes)
              * Feature limitations or missing features
              * Documentation/learning curve problems
-             * Integration difficulties
-             * Performance issues
-             * UX/UI concerns
            - Identify recurring themes across multiple posts
-           - Note the severity and frequency of each issue type
-           - Track user sentiment and frustration levels
 
         4. **Final Output**:
            - Write a brief summary (3-5 sentences) of your overall findings
@@ -194,7 +181,7 @@ async def analyze_reddit_subreddit(
         print(f"Summary: {results.get('summary', 'No summary available')}")
 
 
-if __name__ == "__main__":
+async def main():
     # Configure the subreddit and focus area to analyze
     SUBREDDIT = "webdev"  # Popular, active subreddit with lots of technical discussions
     FOCUS_AREA = "common challenges, frustrations, and technical issues faced by web developers"  # Broader focus for more results
@@ -203,59 +190,57 @@ if __name__ == "__main__":
     print(f"Focus: {FOCUS_AREA}")
     print("-" * 60)
 
-    # Example: Run with OpenAI GPT-4o Mini
-    try:
-        asyncio.run(
-            analyze_reddit_subreddit(
-                provider=get_provider(Provider.HuggingFaceCerebras),
+    async with ResourceScope():
+        try:
+            await analyze_reddit_subreddit(
+                provider=await get_provider(Provider.HuggingFaceCerebras),
                 model="openai/gpt-oss-120b",
                 subreddit=SUBREDDIT,
                 focus_area=FOCUS_AREA,
             )
-        )
-    except Exception as e:
-        print(f"Error during analysis: {e}")
+        except Exception as e:
+            print(f"Error during analysis: {e}")
 
-    # Alternative subreddit examples for different use cases:
+        # Alternative subreddit examples for different use cases:
 
-    # For analyzing programming learning challenges:
-    # SUBREDDIT = "learnprogramming"
-    # FOCUS_AREA = "common obstacles beginners face when learning to code"
+        # For analyzing programming learning challenges:
+        # SUBREDDIT = "learnprogramming"
+        # FOCUS_AREA = "common obstacles beginners face when learning to code"
 
-    # For startup product development insights:
-    # SUBREDDIT = "startups"
-    # FOCUS_AREA = "technical challenges and product development issues"
+        # For startup product development insights:
+        # SUBREDDIT = "startups"
+        # FOCUS_AREA = "technical challenges and product development issues"
 
-    # For small business software needs:
-    # SUBREDDIT = "smallbusiness"
-    # FOCUS_AREA = "software pain points and automation needs"
+        # For small business software needs:
+        # SUBREDDIT = "smallbusiness"
+        # FOCUS_AREA = "software pain points and automation needs"
 
-    # For data science tool feedback:
-    # SUBREDDIT = "datascience"
-    # FOCUS_AREA = "tool limitations and workflow challenges"
+        # For data science tool feedback:
+        # SUBREDDIT = "datascience"
+        # FOCUS_AREA = "tool limitations and workflow challenges"
 
-    # Alternative provider examples:
+        # Alternative provider examples:
 
-    # Example: Run with Anthropic Claude (better for nuanced analysis)
-    # asyncio.run(
-    #     analyze_reddit_subreddit(
-    #         provider=get_provider(Provider.Anthropic),
-    #         model="claude-3-5-sonnet-20241022",
-    #         planning_model="claude-3-5-sonnet-20241022",
-    #         reasoning_model="claude-3-5-sonnet-20241022",
-    #         subreddit=SUBREDDIT,
-    #         focus_area=FOCUS_AREA,
-    #     )
-    # )
+        # Example: Run with Anthropic Claude (better for nuanced analysis)
+        # await analyze_reddit_subreddit(
+        #     provider=await get_provider(Provider.Anthropic),
+        #     model="claude-3-5-sonnet-20241022",
+        #     planning_model="claude-3-5-sonnet-20241022",
+        #     reasoning_model="claude-3-5-sonnet-20241022",
+        #     subreddit=SUBREDDIT,
+        #     focus_area=FOCUS_AREA,
+        # )
 
-    # Example: Run with Google Gemini (good for large-scale analysis)
-    # asyncio.run(
-    #     analyze_reddit_subreddit(
-    #         provider=get_provider(Provider.Gemini),
-    #         model="gemini-2.0-flash",
-    #         planning_model="gemini-2.0-flash",
-    #         reasoning_model="gemini-2.0-flash",
-    #         subreddit=SUBREDDIT,
-    #         focus_area=FOCUS_AREA,
-    #     )
-    # )
+        # Example: Run with Google Gemini (good for large-scale analysis)
+        # await analyze_reddit_subreddit(
+        #     provider=await get_provider(Provider.Gemini),
+        #     model="gemini-2.0-flash",
+        #     planning_model="gemini-2.0-flash",
+        #     reasoning_model="gemini-2.0-flash",
+        #     subreddit=SUBREDDIT,
+        #     focus_area=FOCUS_AREA,
+        # )
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

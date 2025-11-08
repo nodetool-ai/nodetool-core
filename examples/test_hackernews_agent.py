@@ -11,22 +11,23 @@ from nodetool.agents.tools.browser_tools import BrowserTool
 from nodetool.metadata.types import Provider
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import Chunk
+from nodetool.runtime.resources import ResourceScope
 import dotenv
 
 dotenv.load_dotenv()
 
 
-async def main():
+async def run_hn_agent():
     context = ProcessingContext()
 
     # 2. Initialize provider and model
-    # provider = get_provider(Provider.Ollama)
+    # provider = await get_provider(Provider.Ollama)
     # model = "qwen2.5:14b"
-    # provider = get_provider(Provider.Anthropic)
+    # provider = await get_provider(Provider.Anthropic)
     # model = "claude-3-5-sonnet-20241022"
-    provider = get_provider(Provider.OpenAI)
+    provider = await get_provider(Provider.OpenAI)
     model = "gpt-4o-mini"
-    # provider = get_provider(Provider.Ollama)
+    # provider = await get_provider(Provider.Ollama)
     # model = "qwen3:14b"
 
     # 3. Set up browser tool for accessing websites
@@ -76,6 +77,11 @@ async def main():
 
     print(f"\nResults: {json.dumps(agent.results, indent=2)}")
     print(f"\nWorkspace: {context.workspace_dir}")
+
+
+async def main():
+    async with ResourceScope():
+        await run_hn_agent()
 
 
 if __name__ == "__main__":
