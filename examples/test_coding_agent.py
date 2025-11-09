@@ -15,12 +15,6 @@ The agent is capable of:
 - Code optimization and refactoring
 - Automated testing and validation
 
-**NEW: DYNAMIC SUBTASK SUPPORT**
-The agent can now dynamically add subtasks during execution! If the agent discovers
-that additional analysis steps are needed (e.g., deeper statistical tests, additional
-visualizations, model comparisons), it can use the add_subtask tool to create new
-tasks on-the-fly. This enables more adaptive and thorough analysis.
-
 Usage:
     python test_coding_agent.py [--docker-image DOCKER_IMAGE]
 

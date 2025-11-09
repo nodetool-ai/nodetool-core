@@ -203,23 +203,23 @@ async def run_graph_async(
         return res
 
 
-def run_graph(graph: Graph, **kwargs):
+async def run_graph(graph: Graph, **kwargs):
     """
-    Run the workflow with the given graph (sync).
+    Asynchronously run the workflow with the given graph.
 
     Args:
-      graph (Graph): The graph object representing the workflow.
-      **kwargs: Additional keyword arguments to pass to the workflow runner.
+        graph (Graph): The graph object representing the workflow.
+        **kwargs: Additional keyword arguments to pass to the workflow runner.
 
     Returns:
-      Any: The result of the workflow execution.
+        Any: The result of the workflow execution.
     """
-    return run_graph_sync(graph, **kwargs)
+    return await run_graph_async(graph, **kwargs)
 
 
 def run_graph_sync(graph: Graph, **kwargs):
     """
-    Synchronous helper to run a workflow. Prefer `await run_graph(...)` in async contexts.
+    Synchronous helper to run a workflow for scripts without an event loop.
     """
     return asyncio.run(run_graph_async(graph, **kwargs))
 
@@ -229,11 +229,11 @@ def graph(*nodes: "GraphNode[Any]") -> Graph:
     return create_graph(*nodes)
 
 
-def graph_result(node: "GraphNode[Any] | Any", **kwargs):
+async def graph_result(node: "GraphNode[Any] | Any", **kwargs):
     """
-    Build a graph from a single DSL node and execute it.
+    Build a graph from a single DSL node and execute it asynchronously.
 
-    For convenience in tests and simple scripts; forwards kwargs to `run_graph`.
+    Convenience helper that forwards kwargs to `run_graph`.
     """
     g = graph(node)
-    return run_graph(g, **kwargs)
+    return await run_graph(g, **kwargs)

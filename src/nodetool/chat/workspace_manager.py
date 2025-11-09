@@ -3,6 +3,7 @@ import platform
 import shutil
 import subprocess
 import re
+import tempfile
 
 
 class WorkspaceManager:
@@ -37,16 +38,38 @@ class WorkspaceManager:
         else:
             # Use ~/.nodetool-workspaces as the default root
             self.workspace_root = os.path.expanduser("~/.nodetool-workspaces")
-            os.makedirs(self.workspace_root, exist_ok=True)
+            try:
+                os.makedirs(self.workspace_root, exist_ok=True)
+            except PermissionError:
+                self.workspace_root = self._fallback_workspace_root()
 
             if workflow_id:
                 # Create persistent workspace per workflow_id
-                workflow_workspace = os.path.join(self.workspace_root, workflow_id)
-                os.makedirs(workflow_workspace, exist_ok=True)
+                workflow_workspace = self._ensure_workspace_path(workflow_id)
                 self.current_workspace = workflow_workspace
             else:
                 # Create temporary numbered workspace
                 self.create_new_workspace()
+
+    def _fallback_workspace_root(self) -> str:
+        """Return a workspace root inside the temporary directory when the default is not writable."""
+        fallback_root = os.path.join(tempfile.gettempdir(), "nodetool-workspaces")
+        os.makedirs(fallback_root, exist_ok=True)
+        return fallback_root
+
+    def _ensure_workspace_path(self, name: str) -> str:
+        """
+        Ensure a workspace directory exists under the current workspace root.
+        Falls back to a temporary root if creating the directory fails.
+        """
+        workspace_path = os.path.join(self.workspace_root, name)
+        try:
+            os.makedirs(workspace_path, exist_ok=True)
+        except PermissionError:
+            self.workspace_root = self._fallback_workspace_root()
+            workspace_path = os.path.join(self.workspace_root, name)
+            os.makedirs(workspace_path, exist_ok=True)
+        return workspace_path
 
     def create_new_workspace(self):
         """Creates a new workspace named with an incrementing number."""
@@ -66,6 +89,9 @@ class WorkspaceManager:
         except FileNotFoundError:
             # Handle case where workspace_root doesn't exist yet (though __init__ should create it)
             pass
+        except PermissionError:
+            self.workspace_root = self._fallback_workspace_root()
+            existing_workspaces = []
 
         next_num = 1
         if existing_workspaces:
@@ -80,7 +106,7 @@ class WorkspaceManager:
             workspace_name = str(next_num)
             workspace_path = os.path.join(self.workspace_root, workspace_name)
 
-        os.makedirs(workspace_path, exist_ok=True)
+        workspace_path = self._ensure_workspace_path(workspace_name)
         self.current_workspace = workspace_path
 
     def get_current_directory(self) -> str:

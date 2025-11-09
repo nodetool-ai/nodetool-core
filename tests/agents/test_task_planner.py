@@ -1,33 +1,41 @@
 import json
+import uuid
 from rich.text import Text
 
 from nodetool.agents.task_planner import (
     TaskPlanner,
 )
+from nodetool.agents.tools.base import Tool
 from nodetool.providers.base import MockProvider
 from nodetool.metadata.types import Message, ToolCall, SubTask
+from nodetool.utils.message_parsing import (
+    extract_json_from_message,
+    remove_think_tags,
+)
 
 
 # Helper to create a minimal TaskPlanner instance
-def make_planner(tmp_path):
-    workspace = tmp_path / "ws"
+def make_planner(tmp_path, **overrides):
+    workspace = tmp_path / f"ws_{uuid.uuid4().hex}"
     workspace.mkdir()
     provider = MockProvider([])
+    execution_tools = overrides.pop("execution_tools", [])
     return TaskPlanner(
         provider=provider,
         model="gpt-4",
         objective="test",
         workspace_dir=str(workspace),
-        execution_tools=[],
+        execution_tools=execution_tools,
         verbose=False,
+        **overrides,
     )
 
 
 def test_remove_think_tags(tmp_path):
     planner = make_planner(tmp_path)
     text = "Hello <think>secret</think> world"
-    assert planner._remove_think_tags(text) == "Hello  world"
-    assert planner._remove_think_tags(None) is None
+    assert remove_think_tags(text) == "Hello  world"
+    assert remove_think_tags(None) is None
 
 
 def test_format_message_content(tmp_path):
@@ -92,7 +100,7 @@ def test_extract_json_from_message_with_code_fence(tmp_path):
         role="assistant",
         content='Here is the plan:\n```json\n{"title": "Test", "subtasks": []}\n```'
     )
-    result = planner._extract_json_from_message(msg)
+    result = extract_json_from_message(msg)
     assert result is not None
     assert result["title"] == "Test"
     assert result["subtasks"] == []
@@ -107,7 +115,7 @@ def test_extract_json_from_message_with_plain_fence(tmp_path):
         role="assistant",
         content='```\n{"title": "Test2", "subtasks": []}\n```'
     )
-    result = planner._extract_json_from_message(msg)
+    result = extract_json_from_message(msg)
     assert result is not None
     assert result["title"] == "Test2"
 
@@ -121,7 +129,7 @@ def test_extract_json_from_message_with_raw_json(tmp_path):
         role="assistant",
         content='Some text before {"title": "Test3", "subtasks": []} some text after'
     )
-    result = planner._extract_json_from_message(msg)
+    result = extract_json_from_message(msg)
     assert result is not None
     assert result["title"] == "Test3"
 
@@ -135,7 +143,7 @@ def test_extract_json_from_message_with_think_tags(tmp_path):
         role="assistant",
         content='<think>Planning...</think>\n```json\n{"title": "Test4", "subtasks": []}\n```'
     )
-    result = planner._extract_json_from_message(msg)
+    result = extract_json_from_message(msg)
     assert result is not None
     assert result["title"] == "Test4"
 
@@ -145,17 +153,17 @@ def test_extract_json_from_message_none(tmp_path):
     planner = make_planner(tmp_path)
 
     # Test with None message
-    result = planner._extract_json_from_message(None)
+    result = extract_json_from_message(None)
     assert result is None
 
     # Test with no content
     msg = Message(role="assistant", content=None)
-    result = planner._extract_json_from_message(msg)
+    result = extract_json_from_message(msg)
     assert result is None
 
     # Test with non-JSON content
     msg = Message(role="assistant", content="Just plain text, no JSON here")
-    result = planner._extract_json_from_message(msg)
+    result = extract_json_from_message(msg)
     assert result is None
 
 
@@ -197,3 +205,34 @@ properties:
     parsed = json.loads(schema_str or "{}")
     assert parsed["properties"]["summary"]["type"] == "string"
     assert parsed["required"] == ["summary"]
+
+
+class ToolStub(Tool):
+    def __init__(self, name: str):
+        self.name = name
+        self.description = name
+        self.input_schema = None
+
+    async def process(self, context, params):  # pragma: no cover - simple stub
+        return None
+
+
+def test_prepare_subtask_data_filters_tools(tmp_path):
+    planner = make_planner(tmp_path)
+    planner.execution_tools = [ToolStub("browser"), ToolStub("google_search")]
+    available_execution_tools = {tool.name: tool for tool in planner.execution_tools}
+    subtask_data = {
+        "content": "Do work",
+        "input_tasks": [],
+        "model": "gpt",
+        "tools": ["browser", "unknown"],
+    }
+    filtered, errors = planner._prepare_subtask_data(
+        subtask_data,
+        '{"type":"string"}',
+        None,
+        "subtask 0",
+        available_execution_tools,
+    )
+    assert errors == []
+    assert filtered["tools"] == ["browser"]

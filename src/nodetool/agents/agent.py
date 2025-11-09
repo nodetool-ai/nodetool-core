@@ -698,6 +698,7 @@ class Agent(BaseAgent):
                 max_steps=self.max_steps,
                 max_subtask_iterations=self.max_subtask_iterations,
                 max_token_limit=self.max_token_limit,
+                parallel_execution=True,
             )
 
             # Execute all subtasks within this task and yield results
@@ -717,20 +718,15 @@ class Agent(BaseAgent):
 
                 # Yield the item
                 if isinstance(item, ToolCall):
-                    if item.name == "finish_task":
-                        self.results = item.args["result"]
+                    yield item
+                elif isinstance(item, SubTaskResult):
+                    if item.is_task_result:
+                        self.results = item.result
                         yield TaskUpdate(
                             task=self.task,
                             event=TaskUpdateEvent.TASK_COMPLETED,
                         )
-                    if item.name == "finish_subtask" or item.name == "finish_task":
-                        for subtask in self.task.subtasks:
-                            if subtask.id == item.subtask_id and "result" in item.args:
-                                yield SubTaskResult(
-                                    subtask=subtask,
-                                    result=item.args["result"],
-                                    is_task_result=item.name == "finish_task",
-                                )
+                    yield item
                 elif isinstance(item, TaskUpdate):
                     yield item
                     # Update provider log file when a subtask starts/completes
@@ -749,9 +745,9 @@ class Agent(BaseAgent):
                                 )
                             )
                         )
-                elif isinstance(
-                    item, (Chunk, ToolCall)
-                ):  # Yield chunks and other tool calls too
+                elif isinstance(item, Chunk):  # Yield streaming chunks
+                    yield item
+                else:
                     yield item
 
         finally:
@@ -765,11 +761,11 @@ class Agent(BaseAgent):
     def get_results(self) -> Any:
         """
         Get the results produced by this agent.
-        If a final result exists from finish_task, return that.
+        If a final result exists from the concluding subtask, return that.
         Otherwise, return all collected results.
 
         Returns:
-            List[Any]: Results with priority given to finish_task output
+            List[Any]: Results with priority given to the final subtask output
         """
         return self.results
 

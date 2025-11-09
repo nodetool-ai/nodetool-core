@@ -13,16 +13,6 @@ from nodetool.agents.serp_providers.serp_providers import SerpProvider, ErrorRes
 T = TypeVar("T")
 
 
-def _serp_env_vars(context: ProcessingContext) -> Dict[str, str]:
-    env = context.environment
-    result: Dict[str, str] = {}
-    for key in ["DATA_FOR_SEO_LOGIN", "DATA_FOR_SEO_PASSWORD", "SERPAPI_API_KEY"]:
-        val = env.get(key)
-        if val:
-            result[key] = val
-    return result
-
-
 class GoogleSearchTool(Tool):
     name = "google_search"
     description = "Search Google to retrieve organic search results. Uses available SERP provider."
@@ -48,9 +38,6 @@ class GoogleSearchTool(Tool):
     )
     """
 
-    def get_container_env(self, context: ProcessingContext) -> Dict[str, str]:
-        return _serp_env_vars(context)
-
     async def process(self, context: ProcessingContext, params: dict) -> Any:
         keyword = params.get("keyword")
         if not keyword:
@@ -61,18 +48,11 @@ class GoogleSearchTool(Tool):
         provider_instance, error_response = await _get_configured_serp_provider(context)
         if error_response:
             return error_response
-        if (
-            not provider_instance
-        ):  # Should not happen if error_response is None, but as a safeguard
+        if not provider_instance:
             return {"error": "Failed to initialize SERP provider."}
 
         async with provider_instance as provider:
-            result_data = await provider.search(
-                keyword=keyword, num_results=num_results
-            )
-
-        if "error" in result_data:
-            return result_data  # This includes errors from the provider itself
+            result_data = await provider.search(keyword=keyword, num_results=num_results)
 
         return {"success": True, "results": result_data}
 
@@ -108,9 +88,6 @@ class GoogleNewsTool(Tool):
         num_results=5
     )
     """
-
-    def get_container_env(self, context: ProcessingContext) -> Dict[str, str]:
-        return _serp_env_vars(context)
 
     async def process(self, context: ProcessingContext, params: dict) -> Any:
         keyword = params.get("keyword")
@@ -170,9 +147,6 @@ class GoogleImagesTool(Tool):
         num_results=10
     )
     """
-
-    def get_container_env(self, context: ProcessingContext) -> Dict[str, str]:
-        return _serp_env_vars(context)
 
     async def process(self, context: ProcessingContext, params: dict) -> Any:
         keyword = params.get("keyword")
@@ -237,9 +211,6 @@ class GoogleFinanceTool(Tool):
     )
     """
 
-    def get_container_env(self, context: ProcessingContext) -> Dict[str, str]:
-        return _serp_env_vars(context)
-
     async def process(self, context: ProcessingContext, params: dict) -> Any:
         query = params.get("query")
         if not query:
@@ -300,9 +271,6 @@ class GoogleJobsTool(Tool):
     )
     """
 
-    def get_container_env(self, context: ProcessingContext) -> Dict[str, str]:
-        return _serp_env_vars(context)
-
     async def process(self, context: ProcessingContext, params: dict) -> Any:
         query = params.get("query")
         if not query:
@@ -361,9 +329,6 @@ class GoogleLensTool(Tool):
         num_results=5
     )
     """
-
-    def get_container_env(self, context: ProcessingContext) -> Dict[str, str]:
-        return _serp_env_vars(context)
 
     async def process(self, context: ProcessingContext, params: dict) -> Any:
         image_url = params.get("image_url")
@@ -432,9 +397,6 @@ class GoogleMapsTool(Tool):
         data_id="0x89c2589a018531e3:0xb9df1f7387a94119"
     )
     """
-
-    def get_container_env(self, context: ProcessingContext) -> Dict[str, str]:
-        return _serp_env_vars(context)
 
     async def process(self, context: ProcessingContext, params: dict) -> Any:
         query = params.get("query")
@@ -528,9 +490,6 @@ class GoogleShoppingTool(Tool):
         num_results=15
     )
     """
-
-    def get_container_env(self, context: ProcessingContext) -> Dict[str, str]:
-        return _serp_env_vars(context)
 
     async def process(self, context: ProcessingContext, params: dict) -> Any:
         query = params.get("query")
@@ -741,3 +700,4 @@ if __name__ == "__main__":
 
     # Run examples if any provider is configured or to show tool's error message
     asyncio.run(run_all_examples())
+

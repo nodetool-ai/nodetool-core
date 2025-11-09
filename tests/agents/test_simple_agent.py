@@ -3,7 +3,7 @@ import pytest
 from nodetool.agents.simple_agent import SimpleAgent
 from nodetool.providers.base import MockProvider
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.metadata.types import Message, ToolCall
+from nodetool.metadata.types import Message
 from nodetool.agents.tools.base import Tool
 
 
@@ -32,13 +32,8 @@ async def test_execute_yields_results(monkeypatch, tmp_path):
     provider = MockProvider(
         [
             Message(
-                content="I will complete this task by providing the result.",
+                content='```json\n{"status": "completed", "result": "42"}\n```',
                 role="assistant",
-                tool_calls=[
-                    ToolCall(
-                        id="finish_1", name="finish_subtask", args={"result": "42"}
-                    )
-                ],
             )
         ]
     )
@@ -52,8 +47,7 @@ async def test_execute_yields_results(monkeypatch, tmp_path):
         inputs={},
     )
 
-    context = ProcessingContext()
+    context = ProcessingContext(workspace_dir=str(tmp_path))
     async for _ in agent.execute(context):
         pass
-    print(agent.get_results())
     assert agent.get_results() == "42"

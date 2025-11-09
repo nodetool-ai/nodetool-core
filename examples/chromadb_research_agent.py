@@ -6,11 +6,6 @@ This script creates a research agent that works with a ChromaDB collection of ac
 It uses a TaskPlanner to automatically generate and execute a task plan
 based on the research objective, allowing for comprehensive research on the pdf.
 
-**NEW: DYNAMIC SUBTASK SUPPORT**
-The research agent can now dynamically add subtasks during execution! If the agent discovers
-new research directions, related topics, or areas needing deeper investigation while analyzing
-papers, it can use the add_subtask tool to create additional research tasks. This enables
-more thorough literature review and adaptive research exploration.
 """
 
 import os

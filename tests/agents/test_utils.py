@@ -1,7 +1,5 @@
 from nodetool.agents.agent import sanitize_file_path
-from nodetool.agents.sub_task_context import (
-    _remove_think_tags,
-)
+from nodetool.utils.message_parsing import remove_think_tags
 
 
 def test_sanitize_file_path():
@@ -11,5 +9,5 @@ def test_sanitize_file_path():
 
 def test_remove_think_tags():
     text = "start <think>internal</think> end"
-    assert _remove_think_tags(text) == "start  end"
-    assert _remove_think_tags(None) is None
+    assert remove_think_tags(text) == "start  end"
+    assert remove_think_tags(None) is None

@@ -1,9 +1,8 @@
-import json
-
 import pytest
 
-from nodetool.agents.sub_task_context import _remove_think_tags, SubTaskContext
-from nodetool.metadata.types import Task, SubTask, ToolCall
+from nodetool.agents.sub_task_context import SubTaskContext, DEFAULT_MAX_ITERATIONS
+from nodetool.agents.tools.base import Tool
+from nodetool.metadata.types import Task, SubTask, Message
 from nodetool.providers.base import MockProvider
 from nodetool.workflows.processing_context import ProcessingContext
 import tiktoken
@@ -12,6 +11,16 @@ import tiktoken
 class DummyEncoding:
     def encode(self, text: str):
         return list(text.encode())
+
+
+class DummyTool(Tool):
+    def __init__(self, name: str):
+        self.name = name
+        self.description = name
+        self.input_schema = None
+
+    async def process(self, context, params):  # pragma: no cover - simple stub
+        return None
 
 
 def create_context(
@@ -31,13 +40,15 @@ def create_context(
     provider = MockProvider([])
     # Avoid network access when SubTaskContext initializes tiktoken
     tiktoken.get_encoding = lambda name: DummyEncoding()
-    return SubTaskContext(task, subtask, context, [], model="gpt", provider=provider)
-
-
-def test_remove_think_tags():
-    text = "hello <think>ignore</think> world"
-    assert _remove_think_tags(text) == "hello  world".strip()
-    assert _remove_think_tags(None) is None
+    return SubTaskContext(
+        task,
+        subtask,
+        context,
+        [],
+        model="gpt",
+        provider=provider,
+        max_iterations=DEFAULT_MAX_ITERATIONS,
+    )
 
 
 def test_subtask_context_creation(tmp_path):
@@ -61,50 +72,97 @@ def test_subtask_with_dependencies(tmp_path):
     provider = MockProvider([])
     tiktoken.get_encoding = lambda name: DummyEncoding()
 
-    ctx = SubTaskContext(task, subtask, context, [], model="gpt", provider=provider)
+    ctx = SubTaskContext(
+        task,
+        subtask,
+        context,
+        [],
+        model="gpt",
+        provider=provider,
+        max_iterations=DEFAULT_MAX_ITERATIONS,
+    )
     assert ctx.subtask.input_tasks == ["upstream_task"]
     assert len(ctx.subtask.input_tasks) == 1
 
 
-@pytest.mark.asyncio
-async def test_finish_tool_validation_failure(tmp_path):
-    """Ensure invalid finish_subtask payload is rejected and feedback is provided."""
+def test_completion_json_success(tmp_path):
     ctx = create_context(
         tmp_path,
         output_schema='{"type": "object", "properties": {"summary": {"type": "string"}}, "required": ["summary"]}',
     )
-    tool_call = ToolCall(
-        id="finish-invalid",
-        name="finish_subtask",
-        args={"result": {"summary": 123}},
+
+    message = Message(
+        role="assistant",
+        content='```json\n{"status": "completed", "result": {"summary": "done"}}\n```',
     )
 
-    message = await ctx._handle_tool_call(tool_call)
-    payload = json.loads(message.content)
+    completed, normalized = ctx._maybe_finalize_from_message(message)
 
-    assert payload["error"] == "finish_tool_validation_failed"
-    assert ctx.subtask.completed is False
-    assert ctx.processing_context.get(ctx.subtask.id) is None
-    assert payload["submitted_result"]["summary"] == 123
-    assert "expected_schema" in payload
-
-
-@pytest.mark.asyncio
-async def test_finish_tool_validation_success(tmp_path):
-    """Successful finish_subtask call stores result and marks completion."""
-    ctx = create_context(
-        tmp_path,
-        output_schema='{"type": "object", "properties": {"summary": {"type": "string"}}, "required": ["summary"]}',
-    )
-    tool_call = ToolCall(
-        id="finish-valid",
-        name="finish_subtask",
-        args={"result": {"summary": "done"}},
-    )
-
-    message = await ctx._handle_tool_call(tool_call)
-    payload = json.loads(message.content)
-
-    assert payload == {"summary": "done"}
+    assert completed is True
+    assert normalized["summary"] == "done"
     assert ctx.subtask.completed is True
-    assert ctx.processing_context.get(ctx.subtask.id)["summary"] == "done"
+    assert (
+        ctx.processing_context.load_subtask_result(ctx.subtask.id)["summary"]
+        == "done"
+    )
+
+
+def test_completion_json_missing_result_adds_feedback(tmp_path):
+    ctx = create_context(tmp_path)
+    initial_history_len = len(ctx.history)
+
+    message = Message(
+        role="assistant",
+        content='```json\n{"status": "completed"}\n```',
+    )
+
+    completed, normalized = ctx._maybe_finalize_from_message(message)
+
+    assert not completed
+    assert normalized is None
+    assert ctx.subtask.completed is False
+    assert len(ctx.history) == initial_history_len + 1
+    assert "Missing 'result'" in ctx.history[-1].content
+
+
+def test_completion_json_schema_validation_failure(tmp_path):
+    ctx = create_context(tmp_path)
+    initial_history_len = len(ctx.history)
+
+    message = Message(
+        role="assistant",
+        content='```json\n{"status": "completed", "result": {"summary": 123}}\n```',
+    )
+
+    completed, normalized = ctx._maybe_finalize_from_message(message)
+
+    assert not completed
+    assert normalized is None
+    assert ctx.processing_context.load_subtask_result(ctx.subtask.id) is None
+    assert len(ctx.history) == initial_history_len + 1
+    assert "schema" in ctx.history[-1].content.lower()
+
+
+def test_subtask_context_respects_tool_list(tmp_path):
+    task = Task(title="t", description="d", subtasks=[])
+    subtask = SubTask(
+        id="limited_tool_subtask",
+        content="Do browser work",
+        output_schema='{"type": "string"}',
+        tools=["browser"],
+    )
+    context = ProcessingContext(workspace_dir=str(tmp_path))
+    provider = MockProvider([])
+    tiktoken.get_encoding = lambda name: DummyEncoding()
+
+    tools = [DummyTool("browser"), DummyTool("google_search")]
+    subtask_context = SubTaskContext(
+        task,
+        subtask,
+        context,
+        tools,
+        model="gpt",
+        provider=provider,
+    )
+
+    assert [tool.name for tool in subtask_context.tools] == ["browser"]

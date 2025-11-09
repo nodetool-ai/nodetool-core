@@ -29,7 +29,6 @@ async def run_simple_agent_test(provider: BaseProvider, model: str):
         provider=provider,
         model=model,
         tools=[
-            GoogleSearchTool(),
             BrowserTool(),
         ],
         output_schema={

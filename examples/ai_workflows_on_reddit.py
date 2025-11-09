@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """
-Reddit Scraping Agent with Task Planner: Indie Hacker Journey Deconstructor
+Reddit Agent using the discover → process → aggregate pattern.
 
-This script creates a Reddit agent that:
-1. Uses TaskPlanner to generate a dynamic plan for scraping Reddit for indie hacker stories.
-2. Uses GoogleSearchTool to find Reddit posts detailing product journeys, launches, successes, and failures.
-3. Uses BrowserTool to visit each URL and extract the content (post and key comments).
-4. Analyzes these narratives to extract actionable insights, tools used, strategies, and key learnings.
-5. Organizes and saves the results as a structured report.
+Runtime plan:
+- `discover_posts` (mode="discover") gathers Reddit post URLs using search/navigation tools.
+- `process_posts` (mode="process") iterates over the discovered posts using templated natural-language
+  instructions (e.g., "Fetch {post_url}.json via the browser and summarize it").
+- `aggregate_report` (mode="aggregate") formats the collected results into the final markdown.
+
+Discovery happens once at runtime (driven by the discover subtask); the executor automatically expands
+the process subtask template for each discovered item.
 """
 
 import asyncio
@@ -15,20 +17,23 @@ import asyncio
 from nodetool.agents.agent import Agent
 from nodetool.providers import get_provider
 from nodetool.agents.tools import BrowserTool, GoogleSearchTool
-from nodetool.providers.base import BaseProvider
-from nodetool.metadata.types import Provider
+from nodetool.metadata.types import Chunk, Provider
 from nodetool.runtime.resources import ResourceScope
-from nodetool.ui.console import AgentConsole
 from nodetool.workflows.processing_context import ProcessingContext
 
 objective = """
-Find example for AI workflows on Reddit.
+Goal: Find examples of AI workflows on Reddit and compile a markdown report of subreddits, posts, and top comments.
 
-Tasks:
-1. Use Google Search to find examples of AI workflows on Reddit.
-2. For each url, append .json to the url and use the BrowserTool to fetch the content
-3. Summarize each workflow and save workflow as a JSON file with url, title, summary and comments
-4. Collect all workflows and output as a markdown file
+1) discover_posts (mode="discover")
+   - Gather up to 10 recent Reddit posts relevant to "AI workflows".
+
+2) process_posts (mode="process")
+   - For each post, append ".json" and fetch via BrowserTool.
+   - For each post, extract the post title, author, date, and full text.
+
+3) aggregate_report (mode="aggregate")
+    - Aggregate the posts into a markdown string.
+    - If no posts are discovered or fetched, return a short markdown section explaining the limitation.
 """
 
 
@@ -44,17 +49,15 @@ async def main():
             model=model,
             enable_analysis_phase=True,
             enable_data_contracts_phase=True,
-            tools=[
-                GoogleSearchTool(),
-                BrowserTool(),
-            ],
-            display_manager=AgentConsole(),
+            tools=[BrowserTool(), GoogleSearchTool()],
+            output_schema={"type": "string"},
         )
 
         # Execute each task in the plan
         print(f"Starting agent: {search_agent.name}\nObjective: {search_agent.objective}\n")
         async for item in search_agent.execute(context):
-            pass
+            if isinstance(item, Chunk):
+                print(item.content, end="", flush=True)
 
         final_report = search_agent.get_results()
         if final_report:

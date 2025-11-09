@@ -1,21 +1,12 @@
 """
 Task Planner Test Example
 
-This example demonstrates the TaskPlanner and TaskExecutor capabilities,
-including the new DYNAMIC SUBTASK ADDITION feature.
+This example demonstrates the TaskPlanner and TaskExecutor capabilities.
 
 Key Features Demonstrated:
 1. Automatic task planning from objectives
 2. Task execution with progress tracking
-3. **DYNAMIC SUBTASK ADDITION**: Agents can now add subtasks during execution
-   when they discover additional work is needed
-
-The TaskExecutor automatically provides two new tools to all subtasks:
-- add_subtask: Create new subtasks with dependencies
-- list_subtasks: View all current subtasks and their status
-
-This allows agents to adaptively expand their task plan based on what they
-discover during execution.
+3. Inspecting generated plans before execution
 """
 
 import asyncio
@@ -46,9 +37,6 @@ async def test_task_planner(provider: BaseProvider, model: str):
     objective = """
     Search for the best recipes for chicken wings and extract the ingredients and instructions for each recipe.
 
-    Note: You have access to the add_subtask tool. If you discover multiple interesting recipe variations
-    or cooking methods, consider using add_subtask to create dedicated research tasks for each one.
-    This allows for more thorough research and better organized results.
     """
 
     # Optional: Create test tools if needed
@@ -62,7 +50,7 @@ async def test_task_planner(provider: BaseProvider, model: str):
     )
     console.print("[bold]Configuration:[/bold]")
     console.print(f"  - Model: {model}")
-    console.print("  - Dynamic subtasks: Enabled automatically")
+    console.print("  - Dynamic subtasks: Disabled")
 
     context = ProcessingContext()
     # Create TaskPlanner instance with different configurations for testing

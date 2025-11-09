@@ -15,6 +15,7 @@ from nodetool.metadata.types import (
     ToolCall,
 )
 from nodetool.workflows.processing_context import ProcessingContext
+from nodetool.workflows.types import SubTaskResult
 from jinja2 import Environment as JinjaEnvironment, BaseLoader
 from nodetool.agents.base_agent import BaseAgent
 
@@ -93,7 +94,7 @@ class SimpleAgent(BaseAgent):
         Plans (if needed) and executes the single subtask for the agent's objective.
 
         Yields:
-            Union[TaskUpdate, Chunk, ToolCall]: Execution progress from the SubTaskContext.
+            Union[TaskUpdate, Chunk, ToolCall, SubTaskResult]: Execution progress from the SubTaskContext.
         """
         self.subtask = SubTask(
             content=self.objective,
@@ -115,14 +116,12 @@ class SimpleAgent(BaseAgent):
 
         # Execute the subtask and yield all its updates
         async for item in self.subtask_context.execute():
-            if isinstance(item, ToolCall) and item.name in [
-                "finish_subtask",
-            ]:
-                self.results = item.args.get("result")
+            if isinstance(item, SubTaskResult):
+                self.results = item.result
             yield item
 
     def get_results(self) -> Any:
         """
-        Returns the result captured from the finish_subtask tool call, if any.
+        Returns the result captured from the completion JSON, if any.
         """
         return self.results

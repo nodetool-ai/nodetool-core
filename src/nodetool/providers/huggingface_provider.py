@@ -9,8 +9,10 @@ import json
 import asyncio
 import logging
 import traceback
+from functools import lru_cache
 from typing import Any, AsyncGenerator, List, Literal, Sequence
 import aiohttp
+import requests
 from nodetool.workflows.processing_context import ProcessingContext
 import numpy as np
 
@@ -79,6 +81,53 @@ HF_PROVIDER_MAPPING = {
     "together": Provider.HuggingFaceTogether,
     "zai-org": Provider.HuggingFaceZAI,
 }
+
+
+@lru_cache(maxsize=128)
+def get_remote_context_window(model_id: str) -> int | None:
+    """Fetch context window info from the model's Hugging Face config, if available."""
+
+    url = f"https://huggingface.co/{model_id}/raw/main/config.json"
+    try:
+        response = requests.get(url, timeout=5)
+    except Exception as exc:  # pragma: no cover - network failure fallback
+        log.debug("Failed to fetch remote config for %s: %s", model_id, exc)
+        return None
+
+    if response.status_code != 200:
+        log.debug(
+            "Remote config request returned %s for model %s",
+            response.status_code,
+            model_id,
+        )
+        return None
+
+    try:
+        cfg = response.json()
+    except ValueError as exc:  # pragma: no cover - invalid JSON
+        log.debug("Invalid JSON in remote config for %s: %s", model_id, exc)
+        return None
+
+    for key in (
+        "max_position_embeddings",
+        "n_positions",
+        "sequence_length",
+        "context_length",
+    ):
+        if key in cfg:
+            value = cfg[key]
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                log.debug(
+                    "Context length key %s in %s was non-integer: %s",
+                    key,
+                    model_id,
+                    value,
+                )
+                continue
+
+    return None
 
 
 def _message_contains_media(message: Message) -> tuple[bool, str]:
@@ -482,6 +531,15 @@ class HuggingFaceProvider(BaseProvider):
     def get_context_length(self, model: str) -> int:
         """Get the maximum token limit for a given model."""
         log.debug(f"Getting context length for model: {model}")
+
+        remote_context = get_remote_context_window(model)
+        if remote_context:
+            log.debug(
+                "Using remote config context length: %s tokens (model=%s)",
+                remote_context,
+                model,
+            )
+            return remote_context
 
         # Common HuggingFace model limits - this can be expanded based on specific models
         if "llama" in model.lower():

@@ -72,10 +72,6 @@ def _ensure_builtin_tools_registered() -> None:
             "nodetool.agents.tools.asset_tools",
             ("ListAssetsDirectoryTool", "ReadAssetTool", "SaveAssetTool"),
         ),
-        (
-            "nodetool.agents.tools.task_tools",
-            ("AddSubtaskTool", "ListSubtasksTool"),
-        ),
     ]
 
     for module_path, class_names in builtin_modules:

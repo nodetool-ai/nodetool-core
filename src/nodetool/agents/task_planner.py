@@ -54,8 +54,13 @@ from rich.text import Text  # Re-add Text import
 from jinja2 import Environment, BaseLoader
 
 from nodetool.workflows.types import Chunk, PlanningUpdate
+from nodetool.utils.message_parsing import (
+    extract_json_from_message,
+    remove_think_tags,
+)
 
 log = get_logger(__name__)
+
 
 COMPACT_SUBTASK_NOTATION_DESCRIPTION = """
 --- Data Flow Representation (DOT/Graphviz Syntax) ---
@@ -143,7 +148,7 @@ class CreateTaskTool(Tool):
         pass
 
 
-# Simplified and phase-agnostic system prompt (GPT-5 aligned)
+# Planning system prompt with discover → process → aggregate contract
 DEFAULT_PLANNING_SYSTEM_PROMPT = """
 <role>
 You are a TaskArchitect system that transforms user objectives into executable multi-phase plans.
@@ -151,174 +156,140 @@ You are a TaskArchitect system that transforms user objectives into executable m
 
 <goal>
 Transform the user's objective into an executable plan through three phases:
-1. Analysis - Understand objective and break into conceptual subtasks (using two-tier planning: discovery vs execution)
-2. Data Flow - Define dependencies and data contracts
-3. Plan Creation - Generate final executable task plan with planning tasks for dynamic work discovery
+0. Analysis – understand the goal and define the discovery target/output list
+1. Data Flow – describe how discover list → process templated items → aggregate final output will work
+2. Plan Creation – emit a JSON plan with exactly three subtasks (`discover_*`, `process_*`, `aggregate_*`)
 
-**Dynamic Planning Capability:**
-Agents executing subtasks have access to the `add_subtask` tool, enabling adaptive workflows. Use "planning tasks" for work that requires discovery (e.g., finding URLs, identifying items to process). Planning tasks should explicitly instruct agents to use `add_subtask` to create focused subtasks for each discovered item.
+Process subtasks no longer expose explicit fan-out configs. Instead, provide natural-language `content` that references discovery fields via `{placeholder}` syntax; the executor handles per-item execution automatically.
 </goal>
 
 <operating_constraints>
 - Complete all phases without stopping early
 - Resolve ambiguities through reasonable assumptions (document in notes)
-- Use tool calls exclusively; emit `create_task` tool call as final action
-- Stop immediately after emitting the final tool call
+- Output the final plan as a single JSON object in a ```json code fence
+- Stop immediately after outputting the JSON plan
+- Final plan MUST contain exactly three subtasks: `discover_*` (mode="discover"), `process_*` (mode="process"), `aggregate_*` (mode="aggregate`)
+- `discover_*` must describe how to gather a normalized list (array output schema required)
+- `process_*` must depend on `discover_*`, describe templated per-item instructions, and emit another array
+- `aggregate_*` consumes the processed list and produces the final output schema
+- Do not fabricate results; document limitations clearly when discovery yields no items.
 </operating_constraints>
 
 <output_requirements>
-- Begin each phase with one-sentence goal restatement and 1-3 step outline
-- Provide concise justification before final tool call
+- Begin each phase with a short goal restatement
 - Use structured outputs over prose
-- Emit only requested fields and tool calls (no chain-of-thought)
+- Emit only requested fields (no chain-of-thought)
 - Use concise JSON with exact identifiers (no markdown unless specified)
 </output_requirements>
 
 <validation_checklist>
-Before emitting `create_task` tool call, verify:
+Before outputting the final JSON plan, verify:
 - All subtask IDs are unique and descriptive
 - Dependencies form a valid DAG (Directed Acyclic Graph)
 - All referenced task IDs and input keys exist
 - Subtasks are atomic (smallest executable units)
-- Planning tasks explicitly instruct agents to use `add_subtask` for discovered items
-- Execution tasks have clear, direct implementation instructions
+- Plan includes exactly one discover-mode subtask, one process-mode subtask, and one aggregate-mode subtask
+- Discover and process subtasks declare array output schemas; process content includes `{placeholder}` references
+- The aggregate subtask depends on the process subtask and produces the declared overall output schema
+- Execution subtasks do not duplicate discovery logic outside the dedicated discover step
 - Final output conforms to required schema
 </validation_checklist>
 """
 
 # Phase prompts optimized using GPT-5 best practices
 ANALYSIS_PHASE_TEMPLATE = """
-<phase>PHASE 0: OBJECTIVE ANALYSIS & CONCEPTUAL SUBTASK BREAKDOWN</phase>
+<phase>PHASE 0: OBJECTIVE ANALYSIS</phase>
 
 <goal>
-Deeply understand the user's objective and decompose it into atomic conceptual subtasks using a two-tier planning strategy: planning tasks for discovery and execution tasks for known work.
+Understand the user objective, constraints, and assumptions. Describe what must be discovered at runtime without designing the execution graph yet.
 </goal>
 
 <instructions>
-1. Interpret the objective:
-   - State your interpretation of the user's core goal
-   - Identify ambiguities and document assumptions
-   - Consider output requirements and available inputs
-
-2. Devise strategic plan using two-tier task decomposition:
-
-   **Planning Tasks (Discovery & Dynamic Expansion):**
-   Use planning tasks when:
-   - The exact set of work items is unknown upfront (e.g., "find URLs", "discover products")
-   - Multiple similar items need processing (URLs, files, data points)
-   - Work quantity depends on search/discovery results
-
-   Planning tasks should:
-   - Use tools to discover what needs to be done
-   - Use the `add_subtask` tool to create focused subtasks for each discovered item
-   - Have output_schema describing the discovery results
-
-   Example: Instead of creating 10 URL processing subtasks upfront, create:
-   - $discover_urls: "Use GoogleSearch to find relevant URLs, then use add_subtask to create one processing task per URL found"
-
-   **Execution Tasks (Direct Implementation):**
-   Use execution tasks when:
-   - Work is clearly defined and scope is known
-   - No discovery phase needed
-   - Task is truly atomic (single focused action)
-
-   Example: $compile_results: "Aggregate all processing results into final report format"
-
-   **Key Principle:** Prefer planning tasks for iterative/multiple-item work. This enables adaptive planning based on actual discoveries.
+1. Summarize the goal, explicit constraints, and any assumptions.
+2. Outline the discovery approach:
+   - Target sources/domains and desired item types
+   - Query/search patterns or navigation flows
+   - Normalization, deduplication, and caps (e.g., max 10 items, ≤3 per source)
+3. Sketch the structured fields the discover subtask must return (array schema only).
+4. Call out risks and fallbacks.
 </instructions>
 
 <output_format>
-1. Objective Understanding & Strategic Reasoning (concise, <120 tokens):
-   <objective_interpretation>
-   - Core goal interpretation
-   - Key aspects, constraints, desired outcomes
-   - Assumptions made to resolve ambiguities
-   </objective_interpretation>
+<objective_interpretation>
+- Core goal, constraints, assumptions
+</objective_interpretation>
 
-   <input_analysis>
-   - How inputs will be used
-   - Critical inputs per conceptual subtask
-   </input_analysis>
-
-   <subtask_rationale>
-   - How interpretation led to subtask breakdown
-   - Which tasks are planning tasks (discovery) vs execution tasks (direct)
-   - Why planning tasks are used for dynamic work discovery
-   - Parallel processing considerations
-   </subtask_rationale>
-
-   Use '$short_name' convention (e.g., $discover_urls, $compile_results)
-
-2. Task List with Type Classification:
-   - Format: `$task_name [PLANNING|EXECUTION] - Brief description`
-   - Planning Task Example: `$discover_urls [PLANNING] - Search for Reddit AI workflow posts, create subtask per URL using add_subtask`
-   - Execution Task Example: `$compile_report [EXECUTION] - Aggregate all results into markdown report`
+<discovery_plan>
+- Targets / entry points
+- Query or navigation strategy
+- Normalization + caps (list output required)
+- Expected item fields (list schema sketch)
+- Risks & fallback ideas
+</discovery_plan>
 </output_format>
 
 <constraints>
-- Focus on conceptual subtasks only (no detailed schemas yet)
-- Ensure unique, descriptive '$short_name' for each task
-- Output only requested sections, no extra commentary
+- Keep outputs concise and structured
+- No chain-of-thought
+- Do not define concrete subtasks yet
 </constraints>
 
 <context>
 User's Objective: {{ objective }}
 Available Inputs: {{ inputs_info }}
-Output Schema: {{ output_schema }}
 Execution Tools: {{ execution_tools_info }}
 </context>
 """
 
 DATA_FLOW_ANALYSIS_TEMPLATE = """
-<phase>PHASE 1: DATA FLOW ANALYSIS - Defining Dependencies and Contracts</phase>
+<phase>PHASE 1: DATA FLOW ANALYSIS</phase>
 
 <goal>
-Refine conceptual subtask plan from Phase 0 by defining precise data flow and dependencies.
+Describe how the runtime discover → process → aggregate pattern will work, focusing on structured payloads and dependencies (discover outputs list → process templated items → aggregate final output).
 </goal>
 
 <instructions>
-1. Review conceptual subtask list from Phase 0 (in conversation history)
-2. For each subtask:
-   - Determine dependencies on other subtasks (via task IDs)
-   - Identify dependencies on input keys from inputs dictionary
-   - Refine high-level instructions (keep concise)
-3. Ensure final result subtask(s) match overall output requirements
-4. Validate all dependencies form a DAG (no cycles)
+1. Detail the `discover_*` subtask:
+   - Which tools or sites it should use
+   - Item cap + deduplication rules (must emit a JSON array)
+   - Exact top-level JSON shape (e.g., `{ "posts": [...] }`)
+2. Detail the `process_*` subtask:
+   - It must depend on `discover_*`
+   - Identify the list it will iterate (e.g., `posts`)
+   - Specify the natural-language `content` template (use `{field}` placeholders)
+   - List per-item outputs that form the new array
+3. Detail the `aggregate_*` subtask:
+   - Inputs (the processed list)
+   - Final output format (should align with task `output_schema`)
+   - How to handle empty/failed cases
+4. Confirm dependencies form a DAG and reference valid IDs only.
 </instructions>
 
 <output_format>
-1. Reasoning & Data Flow Analysis (concise, <150 tokens):
-   <data_flow_design>
-   - Dependency determination for each Phase 0 subtask
-   - Subtasks using input keys directly
-   - Refinements to subtask instructions
-   - Use '$name' convention for Phase 0 task references
-   </data_flow_design>
+<data_flow_design>
+- Discover output structure (list fields, caps)
+- Process templating strategy + per-item schema
+- Aggregate inputs + final transformation notes
+- Dependency summary
+</data_flow_design>
 
-2. Data Flow (DOT/Graphviz):
-   ```dot
-   digraph DataPipeline {
-     "input:data_file" -> "$process_data";
-     "$fetch_data" -> "$process_data";
-     "$process_data" -> "$analyze_results";
-     "$analyze_results" -> "$generate_report";
-   }
-   ```
-   - Include input keys as source nodes (format: "input:key_name")
-   - Process steps use '$short_name' from Phase 0
+```dot
+digraph DataPipeline {
+  "discover_items" -> "process_items";
+  "process_items" -> "aggregate_results";
+}
+```
 </output_format>
 
 <constraints>
-- Dependencies MUST form a DAG (Directed Acyclic Graph)
-- Input keys reference names from inputs dictionary
-- Clearly link Phase 0 tasks to concrete data flow
-- No chain-of-thought in output
+- Dependencies must form a DAG
+- Refer only to defined subtasks or input keys
+- No chain-of-thought
 </constraints>
 
 <context>
 User's Objective: {{ objective }}
 Available Inputs: {{ inputs_info }}
-Conceptual Subtask Plan: (see conversation history)
 Output Schema: {{ output_schema }}
 Execution Tools: {{ execution_tools_info }}
 DOT/Graphviz Guide: {{ COMPACT_SUBTASK_NOTATION_DESCRIPTION }}
@@ -326,105 +297,69 @@ DOT/Graphviz Guide: {{ COMPACT_SUBTASK_NOTATION_DESCRIPTION }}
 """
 
 PLAN_CREATION_TEMPLATE = """
-<phase>PHASE 2: PLAN CREATION - Generating the Executable Task</phase>
+<phase>PHASE 2: PLAN CREATION</phase>
 
 <goal>
-Transform conceptual subtask plan and data flow from previous phases into concrete, executable task plan as JSON output.
+Emit the executable plan as exactly three subtasks: `discover_*`, `process_*`, `aggregate_*`. Process subtasks must rely on templated natural-language content instead of explicit fan-out configs.
 </goal>
 
 <output_format>
 1. Brief Justification (<200 tokens, no chain-of-thought):
    <plan_construction>
-   - How Phase 1 subtasks/data flow translate to task structure
-   - Decisions for `content`, `input_tasks`, `output_schema` per subtask
-   - Validation criteria met (DAG, final output conformance)
-   - Data flow summary based on `input_tasks` dependencies
-   - Use '$name' convention for Phase 0 task references
+   - How discover/process/aggregate map to subtasks
+   - Key decisions for `content`, `input_tasks`, `output_schema`
+   - Data flow + dependency summary
+   - Validation checklist confirmation
    </plan_construction>
 
 2. JSON Task Definition:
-   - Output the task as a valid JSON object wrapped in ```json code fence
-   - Include exactly ONE JSON object with the complete task definition
-   - No additional text after the JSON block
-   - Format:
+   - Output a single JSON object (```json``` fenced)
+   - Structure:
    ```json
    {
-     "title": "Task title here",
-     "subtasks": [...]
+     "title": "...",
+     "subtasks": [
+       { ... discover ... },
+       { ... process ... },
+       { ... aggregate ... }
+     ]
    }
    ```
 </output_format>
 
 <json_task_structure>
-Required JSON Structure:
-{
-  "title": "Appropriate title for overall task",
-  "subtasks": [
-    {
-      "id": "unique_identifier",
-      "content": "High-level natural language instructions",
-      "input_tasks": ["dependency_id_or_input_key"],
-      "output_schema": {"type":"object","properties":{...}}
-    }
-  ]
-}
+### Shared Rules
+- Exactly three subtasks, ordered discover → process → aggregate.
+- `input_tasks`: discover=[], process=[discover_id], aggregate=[process_id].
+- Every `output_schema` is a JSON string. Discover/process schemas MUST declare `"type": "array"` at the top level.
+- `tools` is optional; include only when restricting execution tools.
 
-Subtask Field Guidelines:
+### Discover Subtask (`mode="discover"`)
+- `content` describes the search/browse workflow, dedup rules, and normalized array output (e.g., `{ "posts": [ { ... } ] }`).
+- Output schema: array describing each discovered item.
 
-**id** (string, required):
-- Unique identifier (e.g., "discover_urls", "analyze_results", "compile_report")
-- Use descriptive snake_case names
+### Process Subtask (`mode="process"`)
+- `content` is a natural-language template that references discovery fields via `{field}` placeholders (e.g., `"Fetch {post_url} via browser and summarize comments."`).
+- Must depend on the discover subtask and treat its result as a list.
+- Output schema: array describing per-item enriched results (this array becomes the subtask's stored result).
 
-**content** (string, required):
-- High-level natural language instructions (distinguish planning vs execution)
-
-  For PLANNING tasks (discovery/dynamic expansion):
-  - Explicitly instruct agent to use `add_subtask` tool after discovery
-  - Example: "Use GoogleSearch to find 3-5 Reddit posts about AI workflows. For each URL found, use the add_subtask tool to create a new subtask with content describing the fetch/extract operation, empty input_tasks, and output_schema for the extracted data"
-  - Be specific about what data to pass to dynamically created subtasks
-  - Mention which input keys to use if applicable
-
-  For EXECUTION tasks (direct implementation):
-  - Focus on WHAT to achieve, not HOW
-  - Example: "Aggregate results from all URL processing subtasks into markdown report with sections per workflow"
-  - Mention which input keys to use if applicable
-
-**input_tasks** (array of strings, required):
-- List of subtask IDs or input keys this depends on
-- From Phase 1 data flow graph
-- Empty array [] for initial subtasks with no dependencies
-- Can reference input dictionary keys (e.g., "data_file")
-
-**output_schema** (JSON schema, required):
-- Provide a JSON schema either as an object literal or a JSON string
-- Example object: {"type":"string"} for unstructured output
-- Example object: {"type":"object","properties":{"results":{"type":"array"}}} for structured data
-- If you return a string, ensure it is valid, escaped JSON
-- Use compact JSON format without line breaks or markdown
+### Aggregate Subtask (`mode="aggregate"`)
+- Depends on the process subtask.
+- `content` explains how to transform the processed list into the final output schema (handle empty lists explicitly).
+- `output_schema` must match the agent's requested overall schema when provided.
 
 Pre-Output Validation Checklist:
-✓ All subtask IDs are unique
-✓ Dependencies form valid DAG (no cycles)
-✓ All referenced task IDs and input keys exist
-✓ Subtasks are focused and atomic
-✓ Terminal subtask output matches overall output schema
-✓ Schemas are valid JSON strings (not objects)
-
-Agent Execution Model (for awareness):
-- Agents call `finish_subtask` with result objects
-- Results auto-pass between subtasks via `input_tasks`
-- `read_result` tool fetches upstream task results or input keys
-- Input dictionary keys accessible same way as task results
-- **Dynamic Planning**: Agents have access to `add_subtask` tool to create new subtasks during execution
-  - Planning tasks should explicitly instruct agent to use this tool
-  - Dynamically added subtasks execute after the planning task completes
-  - This enables adaptive workflows based on discovered data
+✓ Three subtasks present with correct modes/order
+✓ Discover + process output schemas are arrays
+✓ Process `content` references fields from the discover list (templated instructions)
+✓ Aggregate subtask consumes the process result and emits the declared overall schema
+✓ All `output_schema` values are JSON strings
+✓ DAG dependencies are valid and acyclic
 </json_task_structure>
 
 <context>
 User's Objective: {{ objective }}
 Available Inputs: {{ inputs_info }}
-Conceptual Subtasks & Data Flow: (see Phase 1 in conversation history)
 Output Schema: {{ output_schema }}
 LLM Models: Primary={{ model }}, Reasoning={{ reasoning_model }}
 Execution Tools: {{ execution_tools_info }}
@@ -434,24 +369,25 @@ Execution Tools: {{ execution_tools_info }}
 # Final validation checklist for plan creation
 DEFAULT_AGENT_TASK_TEMPLATE = """
 <final_check>
-Before outputting the JSON task definition, verify each subtask:
+Before outputting the JSON task definition, verify:
 
-1. Clarity of Purpose: `content` is crystal-clear, high-level objective for autonomous agent
-   - Planning tasks: Explicitly instruct to use `add_subtask` after discovery
-   - Execution tasks: Clear direct implementation instructions
-2. Self-Containment: `input_tasks` lists all upstream dependencies needed
-3. Output Precision: `output_schema` accurately describes result structure as a JSON STRING
-4. DAG Integrity: All dependencies exist and form acyclic graph (no orphans)
-5. Naming: Subtask `id`s unique, descriptive, consistent with `input_tasks` references
-6. Output Fit: Terminal subtask output matches overall task `output_schema`
-7. Dynamic Planning: Planning tasks explicitly mention using `add_subtask` for discovered items
+1. Clarity of Purpose
+   - `discover_*`: runtime discovery instructions + list output schema
+   - `process_*`: templated content referencing list item fields; list output schema
+   - `aggregate_*`: describes how to turn the processed list into the final schema
+2. Self-Containment: `input_tasks` cover all upstream dependencies
+3. Output Precision: every `output_schema` is a JSON string and matches the described payload
+4. DAG Integrity: dependencies exist and form an acyclic graph
+5. Naming: subtask IDs are unique, descriptive, and consistent with `input_tasks`
+6. Structure: exactly one discover, one process, one aggregate subtask
+7. Discover/process schemas declare `"type": "array"`; aggregate matches {{ output_schema }}
+8. No per-item subtasks enumerated—the executor handles fan-out automatically
 
 Verify plan addresses: {{ objective }}
 
-After checklist, immediately output the complete task as a JSON object in a ```json code fence. No chain-of-thought after JSON. No extra commentary after the closing ```.
+After the checklist, immediately output the JSON plan inside a ```json code fence. No chain-of-thought or commentary after the JSON block.
 </final_check>
 """
-
 
 class TaskPlanner:
     """
@@ -567,6 +503,7 @@ class TaskPlanner:
         self.inputs: dict[str, Any] = inputs
         self.system_prompt: str = system_prompt or DEFAULT_PLANNING_SYSTEM_PROMPT
         self.execution_tools: Sequence[Tool] = execution_tools or []
+        self._planning_context: ProcessingContext | None = None
         self.output_schema: Optional[dict] = output_schema
         self.enable_analysis_phase: bool = enable_analysis_phase
         self.enable_data_contracts_phase: bool = enable_data_contracts_phase
@@ -636,8 +573,8 @@ class TaskPlanner:
 
         return {
             "objective": self.objective,
-            "model": self.model,  # Add planner's primary model
-            "reasoning_model": self.reasoning_model,  # Add planner's reasoning model
+            "model": self.model,
+            "reasoning_model": self.reasoning_model,
             "execution_tools_info": self._get_execution_tools_info(),
             "output_schema": overall_output_schema_str,
             "inputs_info": inputs_info,
@@ -840,6 +777,208 @@ class TaskPlanner:
             )
         return validation_errors
 
+    def _validate_plan_semantics(self, subtasks: List[SubTask]) -> List[str]:
+        """
+        Enforce semantic rules beyond DAG validation.
+
+        All modern plans must specify modes; legacy support remains for backwards compatibility only.
+        """
+        missing_mode = [
+            st.id or f"index_{idx}"
+            for idx, st in enumerate(subtasks)
+            if not getattr(st, "mode", None)
+        ]
+        if missing_mode:
+            return [
+                "Every subtask must declare `mode` = discover | process | aggregate. "
+                f"Missing for: {', '.join(missing_mode)}"
+            ]
+        return self._validate_process_mode_semantics(subtasks)
+
+    def _validate_process_mode_semantics(self, subtasks: List[SubTask]) -> List[str]:
+        """Validate discover/process/aggregate pattern plans."""
+        errors: list[str] = []
+
+        def _parse_schema(schema_str: str | None) -> dict | None:
+            if not schema_str or not isinstance(schema_str, str):
+                return None
+            try:
+                return json.loads(schema_str)
+            except Exception:
+                try:
+                    return yaml.safe_load(schema_str)
+                except Exception:
+                    return None
+
+        discover_subtasks = [st for st in subtasks if st.mode == "discover"]
+        process_subtasks = [st for st in subtasks if st.mode == "process"]
+        aggregate_subtasks = [st for st in subtasks if st.mode == "aggregate"]
+
+        if len(discover_subtasks) != 1:
+            errors.append(
+                f"Plan must contain exactly one discover-mode subtask, found {len(discover_subtasks)}."
+            )
+        if len(process_subtasks) != 1:
+            errors.append(
+                f"Plan must contain exactly one process-mode subtask, found {len(process_subtasks)}."
+            )
+        if len(aggregate_subtasks) != 1:
+            errors.append(
+                f"Plan must contain exactly one aggregate-mode subtask, found {len(aggregate_subtasks)}."
+            )
+
+        discover_subtask = discover_subtasks[0] if discover_subtasks else None
+        process_subtask = process_subtasks[0] if process_subtasks else None
+        aggregate_subtask = aggregate_subtasks[0] if aggregate_subtasks else None
+
+        def _ensure_array_schema(subtask: SubTask | None, label: str) -> None:
+            if not subtask:
+                return
+            schema_dict = _parse_schema(getattr(subtask, "output_schema", None))
+            if not schema_dict:
+                errors.append(
+                    f"{label} subtask '{subtask.id}' must declare an output_schema."
+                )
+                return
+            if schema_dict.get("type") != "array":
+                errors.append(
+                    f"{label} subtask '{subtask.id}' output_schema must declare type 'array'."
+                )
+
+        _ensure_array_schema(discover_subtask, "Discover")
+        _ensure_array_schema(process_subtask, "Process")
+
+        if process_subtask and discover_subtask:
+            discover_id = discover_subtask.id
+            if discover_id not in (process_subtask.input_tasks or []):
+                errors.append(
+                    f"Process subtask '{process_subtask.id}' must depend on discover subtask '{discover_id}'."
+                )
+            content = (process_subtask.content or "").strip()
+            if not content:
+                errors.append(
+                    f"Process subtask '{process_subtask.id}' content must describe the per-item instructions."
+                )
+            elif "{" not in content or "}" not in content:
+                errors.append(
+                    f"Process subtask '{process_subtask.id}' content must include placeholder fields like '{{url}}' referencing discovery items."
+                )
+
+        if aggregate_subtask and process_subtask:
+            process_id = process_subtask.id
+            if process_id not in (aggregate_subtask.input_tasks or []):
+                errors.append(
+                    f"Aggregate subtask '{aggregate_subtask.id}' must depend on process subtask '{process_id}'."
+                )
+            schema_dict = _parse_schema(getattr(aggregate_subtask, "output_schema", None))
+            overall_schema = self.output_schema or None
+            if overall_schema and schema_dict and schema_dict != overall_schema:
+                errors.append(
+                    f"Aggregate subtask '{aggregate_subtask.id}' output_schema must match overall output schema."
+                )
+
+        return errors
+
+    def _validate_legacy_plan_semantics(self, subtasks: List[SubTask]) -> List[str]:
+        """Legacy validation for plans that enumerate per-item subtasks."""
+        errors: list[str] = []
+
+        # Helper: parse JSON schema string into dict (best-effort)
+        def _parse_schema(schema_str: str | None) -> dict | None:
+            if not schema_str or not isinstance(schema_str, str):
+                return None
+            try:
+                return json.loads(schema_str)
+            except Exception:
+                try:
+                    return yaml.safe_load(schema_str)  # permissive fallback
+                except Exception:
+                    return None
+
+        # 1) No discovery/search/find subtasks by id or by content
+        discovery_id_patterns = (
+            "discover",
+            "search",
+            "find",
+        )
+        discovery_content_triggers = (
+            "use google search",
+            "use the google_search tool",
+            "google search",
+            "serp",
+            "search engine",
+            "perform a search",
+            "query google",
+            "site:",
+        )
+
+        for st in subtasks:
+            sid = (st.id or "").lower()
+            scontent = (st.content or "").lower()
+            if any(p in sid for p in discovery_id_patterns):
+                errors.append(
+                    f"Final plan must not include discovery subtasks (found id '{st.id}'). Move discovery to planning phase and fan-out execution subtasks instead."
+                )
+            if any(trigger in scontent for trigger in discovery_content_triggers):
+                errors.append(
+                    f"Subtask '{st.id}' contains discovery/search instructions in content. Discovery must be done during planning; remove runtime discovery."
+                )
+
+        # 2) No looping phrasing in execution subtasks (except aggregator)
+        looping_phrases = (
+            "for each",
+            "for every",
+            "iterate over",
+            "loop over",
+            "for all",
+            "all urls",
+            "list of urls",
+            "urls list",
+            "all discovered",
+        )
+
+        # Identify aggregator candidate(s): schema matches overall output schema or id indicates aggregation
+        overall_schema = self.output_schema or None
+        aggregator_ids: set[str] = set()
+        for st in subtasks:
+            schema_dict = _parse_schema(getattr(st, "output_schema", None))
+            if overall_schema and schema_dict == overall_schema:
+                aggregator_ids.add(st.id)
+            else:
+                sid = (st.id or "").lower()
+                if any(x in sid for x in ("aggregate", "compile", "combine", "merge", "final", "report")):
+                    aggregator_ids.add(st.id)
+
+        for st in subtasks:
+            if st.id in aggregator_ids:
+                continue
+            scontent = (st.content or "").lower()
+            if any(p in scontent for p in looping_phrases):
+                errors.append(
+                    f"Subtask '{st.id}' appears to loop over a collection (e.g., '{scontent[:60]}...'). Emit one subtask per discovered item (fan-out) instead."
+                )
+
+        # 3) Aggregator wiring: if there is an aggregator and extractor-like subtasks, ensure aggregator depends on all
+        extractor_like_ids: list[str] = []
+        for st in subtasks:
+            sid = (st.id or "").lower()
+            if any(x in sid for x in ("extract", "fetch", "scrape", "crawl", "parse", "process")):
+                extractor_like_ids.append(st.id)
+
+        if aggregator_ids and extractor_like_ids:
+            for agg_id in aggregator_ids:
+                agg = next((t for t in subtasks if t.id == agg_id), None)
+                if agg is None:
+                    continue
+                declared_inputs = set(agg.input_tasks or [])
+                missing = [eid for eid in extractor_like_ids if eid not in declared_inputs]
+                if missing:
+                    errors.append(
+                        f"Aggregator '{agg_id}' must depend on all extractor subtasks. Missing dependencies: {missing}"
+                    )
+
+        return errors
+
     async def _run_phase(
         self,
         history: List[Message],
@@ -900,12 +1039,43 @@ class TaskPlanner:
             )
 
         log.debug("Calling LLM for %s using model: %s", phase_name, self.model)
-        response_message: Message = await self.provider.generate_message(
-            messages=history,
-            model=self.model,
-            tools=[],  # Explicitly empty list
-        )
-        history.append(response_message)
+        available_tools: Sequence[Tool] = self.execution_tools
+        response_message: Message | None = None
+        tool_iterations = 0
+        max_tool_iterations = 6
+
+        while True:
+            response_message = await self.provider.generate_message(
+                messages=history,
+                model=self.model,
+                tools=available_tools,
+            )
+            history.append(response_message)
+
+            if not response_message.tool_calls or not available_tools:
+                break
+
+            if tool_iterations >= max_tool_iterations:
+                log.warning(
+                    "%s phase exceeded tool call limit (%d). Continuing without additional tool runs.",
+                    phase_name.capitalize(),
+                    max_tool_iterations,
+                )
+                break
+
+            tool_iterations += 1
+            tool_messages = await self._execute_planning_tool_calls(
+                response_message.tool_calls,
+                phase_name,
+            )
+            history.extend(tool_messages)
+            log.debug(
+                "%s phase processed %d planning tool call(s)",
+                phase_name.capitalize(),
+                len(tool_messages),
+            )
+
+        assert response_message is not None
         log.debug(
             "%s phase LLM response received, content length: %d chars",
             phase_name.capitalize(),
@@ -922,6 +1092,9 @@ class TaskPlanner:
             self.display_manager.update_planning_display(
                 phase_display_name, phase_status, phase_content
             )
+
+        log.info(f"{phase_result_name} phase completed with status: {phase_status}")
+        log.info(f"{phase_result_name} phase content: {phase_content}")
 
         planning_update = PlanningUpdate(
             phase=phase_result_name,
@@ -962,6 +1135,7 @@ class TaskPlanner:
             phase_result_name="Analysis",
         )
 
+
     async def _run_data_flow_phase(
         self, history: List[Message]
     ) -> tuple[List[Message], Optional[PlanningUpdate]]:
@@ -987,7 +1161,7 @@ class TaskPlanner:
         return await self._run_phase(
             history=history,
             phase_name="data flow",
-            phase_display_name="1. Data Contracts",
+            phase_display_name="2. Data Contracts",
             is_enabled=self.enable_data_contracts_phase,
             prompt_template=DATA_FLOW_ANALYSIS_TEMPLATE,
             phase_result_name="Data Flow",
@@ -1033,7 +1207,7 @@ class TaskPlanner:
         plan_creation_error: Optional[Exception] = None
         phase_status: str = "Failed"
         phase_content: str | Text = "N/A"
-        current_phase_name: str = "2. Plan Creation"
+        current_phase_name: str = "3. Plan Creation"
 
         # Generate plan using JSON output instead of tool calls
         if self.display_manager:
@@ -1082,7 +1256,7 @@ class TaskPlanner:
                 )
 
                 # Extract JSON from the message
-                task_data = self._extract_json_from_message(response_message)
+                task_data = extract_json_from_message(response_message)
 
                 if not task_data:
                     failure_reason = f"Failed to extract JSON from LLM response on attempt {attempt + 1}/{max_retries}"
@@ -1189,6 +1363,9 @@ class TaskPlanner:
             max_retries,
         )
 
+        # Preserve processing context for tool execution during planning
+        self._planning_context = context
+
         # Start the live display using the display manager
         if self.display_manager:
             self.display_manager.start_live(
@@ -1253,6 +1430,7 @@ class TaskPlanner:
                 else:
                     log.debug("Plan created successfully.")
                 self.task_plan.tasks.append(task)
+                print(f"Task created: \n{task.to_markdown()}")
             else:
                 # Construct error message based on plan_creation_error or last message
                 if plan_creation_error:
@@ -1292,6 +1470,8 @@ class TaskPlanner:
                             is_error=True,
                         )
                     raise ValueError(error_message)
+
+
 
         except Exception as e:
             # Capture the original exception type and message
@@ -1339,93 +1519,9 @@ class TaskPlanner:
             # Stop the live display using the display manager
             if self.display_manager:
                 self.display_manager.stop_live()
+            self._planning_context = None
 
-    def _remove_think_tags(self, text_content: Optional[str]) -> Optional[str]:
-        """Removes <think>...</think> blocks from a string.
 
-        Args:
-            text_content: The string to process.
-
-        Returns:
-            The string with <think> blocks removed, or None if input was None.
-        """
-        if text_content is None:
-            return None
-        # Use regex to remove <think>...</think> blocks, including newlines within them.
-        # re.DOTALL makes . match newlines.
-        # We also strip leading/trailing whitespace from the result.
-        return re.sub(r"<think>.*?</think>", "", text_content, flags=re.DOTALL).strip()
-
-    def _extract_json_from_message(self, message: Optional[Message]) -> Optional[dict]:
-        """Extracts JSON from a message's content.
-
-        Supports extraction from:
-        1. JSON code fences (```json ... ```)
-        2. Plain code fences (``` ... ```)
-        3. Raw JSON in the message content
-
-        Args:
-            message: The Message object containing the JSON.
-
-        Returns:
-            Parsed JSON dictionary, or None if extraction/parsing fails.
-        """
-        if not message or not message.content:
-            log.debug("No message content to extract JSON from")
-            return None
-
-        # Get the raw content as a string
-        raw_content: Optional[str] = None
-        if isinstance(message.content, str):
-            raw_content = message.content
-        elif isinstance(message.content, list):
-            try:
-                raw_content = "\n".join(str(item) for item in message.content)
-            except Exception:
-                raw_content = str(message.content)
-        else:
-            log.debug("Unexpected content type: %s", type(message.content))
-            return None
-
-        # Remove think tags first
-        cleaned_content = self._remove_think_tags(raw_content)
-        if not cleaned_content:
-            log.debug("Content is empty after removing think tags")
-            return None
-
-        # Try to extract from JSON code fence first
-        json_fence_pattern = r"```json\s*\n(.*?)\n```"
-        match = re.search(json_fence_pattern, cleaned_content, re.DOTALL)
-        if match:
-            json_str = match.group(1).strip()
-            log.debug("Found JSON in code fence, length: %d", len(json_str))
-        else:
-            # Try plain code fence
-            code_fence_pattern = r"```\s*\n(.*?)\n```"
-            match = re.search(code_fence_pattern, cleaned_content, re.DOTALL)
-            if match:
-                json_str = match.group(1).strip()
-                log.debug("Found content in plain code fence, length: %d", len(json_str))
-            else:
-                # Try to find JSON object directly in the content
-                # Look for content that starts with { and ends with }
-                json_obj_pattern = r"\{[\s\S]*\}"
-                match = re.search(json_obj_pattern, cleaned_content)
-                if match:
-                    json_str = match.group(0).strip()
-                    log.debug("Found JSON object in raw content, length: %d", len(json_str))
-                else:
-                    log.debug("No JSON pattern found in content")
-                    return None
-
-        # Try to parse the extracted JSON
-        try:
-            parsed_json = json.loads(json_str)
-            log.debug("Successfully parsed JSON with keys: %s", list(parsed_json.keys()) if isinstance(parsed_json, dict) else type(parsed_json))
-            return parsed_json
-        except json.JSONDecodeError as e:
-            log.error("Failed to parse JSON: %s. JSON string: %s...", e, json_str[:200])
-            return None
 
     def _format_message_content(self, message: Optional[Message]) -> str | Text:
         """Formats message content for table display.
@@ -1474,7 +1570,7 @@ class TaskPlanner:
                     f"Unexpected content type: {type(message.content).__name__}"
                 )
 
-        cleaned_content: Optional[str] = self._remove_think_tags(raw_content_str)
+        cleaned_content: Optional[str] = remove_think_tags(raw_content_str)
 
         if cleaned_content:  # If cleaned_content is not None and not empty
             return Text(cleaned_content)
@@ -1519,7 +1615,75 @@ class TaskPlanner:
                     f"Unexpected content type: {type(message.content).__name__}"
                 )
 
-        return self._remove_think_tags(raw_str_content)
+        return remove_think_tags(raw_str_content)
+
+    async def _execute_planning_tool_calls(
+        self,
+        tool_calls: Sequence[ToolCall],
+        phase_name: str,
+    ) -> List[Message]:
+        """Executes tool calls issued during planning phases."""
+
+        tool_messages: List[Message] = []
+        context = self._planning_context
+        if not context:
+            log.warning(
+                "%s phase received tool calls but planning context is unavailable",
+                phase_name.capitalize(),
+            )
+            return tool_messages
+
+        tool_lookup = {tool.name: tool for tool in self.execution_tools}
+
+        for tool_call in tool_calls:
+            tool = tool_lookup.get(tool_call.name)
+            if not tool:
+                content = json.dumps(
+                    {
+                        "error": f"Tool '{tool_call.name}' is not available during planning.",
+                    }
+                )
+            else:
+                try:
+                    raw_result = await tool.process(context, tool_call.args)
+                    normalized = self._normalize_tool_output(raw_result)
+                    content = json.dumps(normalized, ensure_ascii=False)
+                except Exception as exc:  # pragma: no cover - best effort
+                    log.warning(
+                        "Planning tool '%s' failed during %s phase: %s",
+                        tool_call.name,
+                        phase_name,
+                        exc,
+                    )
+                    content = json.dumps(
+                        {
+                            "error": f"Tool '{tool_call.name}' failed: {exc}",
+                        }
+                    )
+
+            tool_messages.append(
+                Message(
+                    role="tool",
+                    name=tool_call.name,
+                    tool_call_id=tool_call.id,
+                    content=content,
+                )
+            )
+
+        return tool_messages
+
+    def _normalize_tool_output(self, value: Any) -> Any:
+        """Convert tool results into JSON-serializable primitives."""
+
+        if hasattr(value, "model_dump"):
+            return self._normalize_tool_output(value.model_dump())
+        if isinstance(value, dict):
+            return {key: self._normalize_tool_output(val) for key, val in value.items()}
+        if isinstance(value, list):
+            return [self._normalize_tool_output(item) for item in value]
+        if isinstance(value, (str, int, float, bool)) or value is None:
+            return value
+        return str(value)
 
     def _validate_tool_task(
         self,
@@ -1663,7 +1827,7 @@ class TaskPlanner:
         """Validates a subtask intended for agent execution.
 
         Ensures that the `content` for an agent task (which represents
-        natural language instructions) is a non-empty string.
+            natural language instructions) is a non-empty string.
 
         Args:
             content: The content of the subtask (instructions for the agent).
@@ -1831,6 +1995,7 @@ class TaskPlanner:
         final_schema_str: str,
         parsed_tool_content: Optional[dict],
         sub_context: str,
+        available_execution_tools: Dict[str, Tool],
     ) -> tuple[Optional[dict], List[str]]:
         """Prepares the final data dictionary for SubTask creation.
 
@@ -1895,6 +2060,16 @@ class TaskPlanner:
             else:
                 processed_data["model"] = subtask_model.strip()
 
+            allowed_tools = self._sanitize_tools_list(
+                processed_data.get("tools"),
+                available_execution_tools,
+                sub_context,
+            )
+            if allowed_tools is not None:
+                processed_data["tools"] = allowed_tools
+            elif "tools" in processed_data:
+                processed_data.pop("tools", None)
+
             # Filter args based on SubTask model fields
             subtask_model_fields = SubTask.model_fields.keys()
             filtered_data = {
@@ -1922,6 +2097,49 @@ class TaskPlanner:
                 f"{sub_context}: Unexpected error preparing subtask data: {e}"
             )
             return None, validation_errors
+
+    def _sanitize_tools_list(
+        self,
+        requested_tools: Any,
+        available_execution_tools: Dict[str, Tool],
+        sub_context: str,
+    ) -> list[str] | None:
+        """Validate the optional `tools` list for a subtask."""
+
+        if requested_tools in (None, [], ()):  # No restriction requested
+            return None
+
+        if not isinstance(requested_tools, list):
+            log.warning(
+                "%s: Ignoring non-list value for tools (%s)",
+                sub_context,
+                type(requested_tools),
+            )
+            return None
+
+        normalized: list[str] = []
+        for tool_name in requested_tools:
+            if not isinstance(tool_name, str) or not tool_name.strip():
+                log.warning(
+                    "%s: Ignoring invalid tool entry in tools list: %s",
+                    sub_context,
+                    tool_name,
+                )
+                continue
+            tool_name = tool_name.strip()
+            if (
+            tool_name not in available_execution_tools
+            ):
+                log.warning(
+                    "%s: Requested tool '%s' is not available and will be ignored",
+                    sub_context,
+                    tool_name,
+                )
+                continue
+            if tool_name not in normalized:
+                normalized.append(tool_name)
+
+        return normalized or None
 
     async def _process_single_subtask(
         self,
@@ -2008,7 +2226,11 @@ class TaskPlanner:
             # --- Prepare data for SubTask creation (Paths, Filtering, Stringify Tool Args) ---
             log.debug("%s: Preparing data for SubTask creation", sub_context)
             filtered_data, preparation_errors = self._prepare_subtask_data(
-                subtask_data, final_schema_str, parsed_tool_content, sub_context
+                subtask_data,
+                final_schema_str,
+                parsed_tool_content,
+                sub_context,
+                available_execution_tools,
             )
             all_validation_errors.extend(preparation_errors)
             if filtered_data is None:  # Fatal error during data preparation
@@ -2126,6 +2348,9 @@ class TaskPlanner:
         if subtasks:
             dependency_errors = self._validate_dependencies(subtasks)
             all_validation_errors.extend(dependency_errors)
+            # Enforce semantic rules (no discovery in final plan, fan-out, aggregator wiring)
+            semantic_errors = self._validate_plan_semantics(subtasks)
+            all_validation_errors.extend(semantic_errors)
 
         # If any fatal errors occurred anywhere, return None
         if any(
@@ -2163,7 +2388,8 @@ class TaskPlanner:
 
         After processing all `create_task` calls, it:
         4.  Validates dependencies across *all* collected subtasks from *all* calls
-            using `_validate_dependencies`.
+            using `_validate_dependencies`, and applies semantic validation with
+            `_validate_plan_semantics`.
 
         If any validation errors occur at any stage (either within a single
         subtask, a tool call's subtask list, or in the final dependency check),
@@ -2252,6 +2478,8 @@ class TaskPlanner:
         ):
             dependency_errors = self._validate_dependencies(all_subtasks)
             all_validation_errors.extend(dependency_errors)
+            semantic_errors = self._validate_plan_semantics(all_subtasks)
+            all_validation_errors.extend(semantic_errors)
         # --- End Dependency Validation ---
 
         # Check if any errors occurred
@@ -2467,25 +2695,20 @@ class TaskPlanner:
         log.error("Generation with retry exited unexpectedly")
         return None, last_message
 
-    def _get_execution_tools_info(self) -> str:
+    def _format_tools_info(
+        self,
+        tools: Sequence[Tool],
+        heading: str,
+        empty_message: str,
+    ) -> str:
         """
-        Get formatted string information about available execution tools.
-
-        This information is used in prompts to inform the LLM about the tools
-        that agents can use later to execute subtasks. It includes the tool's
-        name, description, and a summary of its arguments (if an input schema
-        is defined).
-
-        Returns:
-            A string detailing the available execution tools, or
-            "No execution tools available" if none are configured.
+        Shared formatter for tool descriptions.
         """
-        if not self.execution_tools:
-            return "No execution tools available"
+        if not tools:
+            return empty_message
 
-        tools_info = "Available execution tools for subtasks:\n"
-        for tool in self.execution_tools:
-            # Add schema if available, keep it concise
+        tools_info = f"{heading}\n"
+        for tool in tools:
             schema_info = ""
             if tool.input_schema and tool.input_schema.get("properties"):
                 props = list(tool.input_schema["properties"].keys())
@@ -2496,7 +2719,17 @@ class TaskPlanner:
                     prop_details.append(f"{p}{is_req}")
                 schema_info = f" | Args: {', '.join(prop_details)}"
             tools_info += f"- {tool.name}: {tool.description}{schema_info}\n"
-        return tools_info.strip()  # Remove trailing newline
+        return tools_info.strip()
+
+    def _get_execution_tools_info(self) -> str:
+        """
+        Describe the tools available to subtasks during execution.
+        """
+        return self._format_tools_info(
+            self.execution_tools,
+            "Available execution tools for subtasks:",
+            "No execution tools available",
+        )
 
     def _get_input_files_info(self) -> str:
         """

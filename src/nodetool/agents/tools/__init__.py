@@ -10,18 +10,18 @@ from .node_tool import NodeTool
 from nodetool.workflows.base_node import get_node_class, sanitize_node_name
 
 from .browser_tools import BrowserTool
+from .google_tools import GoogleGroundedSearchTool, GoogleImageGenerationTool
 from .serp_tools import GoogleSearchTool
 from .workflow_tool import WorkflowTool
-from .task_tools import AddSubtaskTool, ListSubtasksTool
 
 __all__ = [
     "Tool",
     "get_tool_by_name",
     "BrowserTool",
     "GoogleSearchTool",
+    "GoogleGroundedSearchTool",
+    "GoogleImageGenerationTool",
     "WorkflowTool",
-    "AddSubtaskTool",
-    "ListSubtasksTool",
 ]
 
 

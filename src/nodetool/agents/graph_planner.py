@@ -129,6 +129,10 @@ from nodetool.workflows.base_node import (
 )
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import Chunk, PlanningUpdate
+from nodetool.utils.message_parsing import (
+    extract_json_from_message,
+    remove_think_tags,
+)
 from nodetool.types.graph import Graph as APIGraph
 from nodetool.workflows.graph import Graph
 
@@ -968,92 +972,7 @@ class GraphPlanner:
         logger.debug(f"Rendered prompt: {len(rendered)} chars")
         return rendered
 
-    def _remove_think_tags(self, text_content: Optional[str]) -> Optional[str]:
-        """Removes <think>...</think> blocks from a string.
 
-        Args:
-            text_content: The string to process.
-
-        Returns:
-            The string with <think> blocks removed, or None if input was None.
-        """
-        if text_content is None:
-            return None
-        # Use regex to remove <think>...</think> blocks, including newlines within them.
-        # re.DOTALL makes . match newlines.
-        # We also strip leading/trailing whitespace from the result.
-        return re.sub(r"<think>.*?</think>", "", text_content, flags=re.DOTALL).strip()
-
-    def _extract_json_from_message(self, message: Optional[Message]) -> Optional[dict]:
-        """Extracts JSON from a message's content.
-
-        Supports extraction from:
-        1. JSON code fences (```json ... ```)
-        2. Plain code fences (``` ... ```)
-        3. Raw JSON in the message content
-
-        Args:
-            message: The Message object containing the JSON.
-
-        Returns:
-            Parsed JSON dictionary, or None if extraction/parsing fails.
-        """
-        if not message or not message.content:
-            logger.debug("No message content to extract JSON from")
-            return None
-
-        # Get the raw content as a string
-        raw_content: Optional[str] = None
-        if isinstance(message.content, str):
-            raw_content = message.content
-        elif isinstance(message.content, list):
-            try:
-                raw_content = "\n".join(str(item) for item in message.content)
-            except Exception:
-                raw_content = str(message.content)
-        else:
-            logger.debug("Unexpected content type: %s", type(message.content))
-            return None
-
-        # Remove think tags first
-        cleaned_content = self._remove_think_tags(raw_content)
-        if not cleaned_content:
-            logger.debug("Content is empty after removing think tags")
-            return None
-
-        # Try to extract from JSON code fence first
-        json_fence_pattern = r"```json\s*\n(.*?)\n```"
-        match = re.search(json_fence_pattern, cleaned_content, re.DOTALL)
-        if match:
-            json_str = match.group(1).strip()
-            logger.debug("Found JSON in code fence, length: %d", len(json_str))
-        else:
-            # Try plain code fence
-            code_fence_pattern = r"```\s*\n(.*?)\n```"
-            match = re.search(code_fence_pattern, cleaned_content, re.DOTALL)
-            if match:
-                json_str = match.group(1).strip()
-                logger.debug("Found content in plain code fence, length: %d", len(json_str))
-            else:
-                # Try to find JSON object directly in the content
-                # Look for content that starts with { and ends with }
-                json_obj_pattern = r"\{[\s\S]*\}"
-                match = re.search(json_obj_pattern, cleaned_content)
-                if match:
-                    json_str = match.group(0).strip()
-                    logger.debug("Found JSON object in raw content, length: %d", len(json_str))
-                else:
-                    logger.debug("No JSON pattern found in content")
-                    return None
-
-        # Try to parse the extracted JSON
-        try:
-            parsed_json = json.loads(json_str)
-            logger.debug("Successfully parsed JSON with keys: %s", list(parsed_json.keys()) if isinstance(parsed_json, dict) else type(parsed_json))
-            return parsed_json
-        except json.JSONDecodeError as e:
-            logger.error("Failed to parse JSON: %s. JSON string: %s...", e, json_str[:200])
-            return None
 
     def _validate_workflow_design(self, result: WorkflowDesignResult) -> str:
         """Validate the complete workflow design (nodes + edges)."""
@@ -1200,7 +1119,7 @@ class GraphPlanner:
                 # If no tool calls, check if we got JSON output
                 if not tool_calls:
                     logger.debug("No tool calls, attempting to extract JSON from response")
-                    json_data = self._extract_json_from_message(response)
+                    json_data = extract_json_from_message(response)
 
                     if json_data:
                         # Try to validate the JSON as WorkflowDesignResult

@@ -85,9 +85,9 @@ NodeTool consists of several key components working together:
 |   - Call LLM            |        +-----------+-------------+
 |   - Handle Tool Calls   |                    ^
 |   - Check Limits        |                    | Tool Call?
-|   - `finish_subtask()`? |--------------------/ Yes
+|   - Completion JSON?    |--------------------/ Yes
 +-----------+-----------+
-            | Yes (`finish_subtask` called or forced)
+            | Yes (completion JSON emitted or forced)
             V
 +-------------------------+
 | Save Result (Content or |
@@ -108,8 +108,8 @@ NodeTool consists of several key components working together:
 1. **Execution**: Subtasks are executed in order, respecting dependencies. Independent subtasks run in parallel. Each
    subtask runs within a `SubTaskContext`, where an LLM interaction loop determines the necessary steps, potentially
    involving tool calls.
-1. **Completion**: Each subtask explicitly finishes by saving its results (triggered by the `finish_subtask` tool call
-   from the LLM). NodeTool then combines these results to fulfill your original objective.
+1. **Completion**: Each subtask explicitly finishes by emitting a JSON block with `{"status":"completed","result":{...}}`.
+   NodeTool stores these results and combines them to fulfill your original objective.
 
 ## Tools Available
 

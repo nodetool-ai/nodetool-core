@@ -8,6 +8,7 @@ import os
 from typing import Any, Dict, Optional
 import html2text
 import json
+from urllib.parse import urlparse
 
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.agents.tools.base import Tool
@@ -15,6 +16,66 @@ from playwright.async_api import Page, ElementHandle
 from nodetool.metadata.types import Message, ToolCall
 
 import asyncio
+
+import os
+from huggingface_hub import AsyncInferenceClient, InferenceClient
+
+class ReaderTool:
+    """
+    Tool for extracting text from a HTML document.
+    """
+
+    name = "reader_lm"
+    description = (
+        "Send a chat completion request to jinaai/ReaderLM-v2:featherless-ai on HuggingFace Hub."
+    )
+    input_schema = {
+        "type": "object",
+        "properties": {
+            "message": {
+                "type": "string",
+                "description": "The input message for the chatbot.",
+            }
+        },
+        "required": ["message"],
+    }
+    example = """
+    reader_lm(
+        message="What is the capital of France?"
+    )
+    """
+
+    async def get_client(self, context: ProcessingContext) -> AsyncInferenceClient | None:
+        if not hasattr(self, "client") or self.client is None:
+            hf_token = await context.get_secret("HF_TOKEN")
+            if not hf_token:
+                return None
+            self.client = AsyncInferenceClient(api_key=hf_token, provider="featherless-ai")
+        return self.client
+
+    async def process(self, context: ProcessingContext, params: dict) -> str:
+        """
+        params: dict with 'message' key
+        """
+        client = await self.get_client(context)
+        user_message = params.get("message")
+        if not user_message:
+            raise ValueError("Missing required parameter: message")
+        if client is None:
+            return user_message
+
+        # The .chat.completions.create API is synchronous, so run in executor
+        completion = await client.chat.completions.create(
+            model="jinaai/ReaderLM-v2",
+            messages=[{
+                "role": "user",
+                "content": user_message
+            }]
+        )
+        return completion.choices[0].message.content or ""
+
+    def user_message(self, params):
+        return f"Calling ReaderLM-v2 for input: {params.get('message', '')[:60]}..."
 
 
 def generate_css_path(element_info: Dict[str, Any], parent_path: str = "") -> str:
@@ -225,8 +286,19 @@ class BrowserTool(Tool):
     )
     """
 
+    SEARCH_ENGINE_HOSTS = (
+        "google.",
+        "bing.",
+        "search.yahoo",
+        "duckduckgo",
+        "yandex",
+        "baidu",
+        "ask.",
+        "jina.ai",
+    )
+
     def __init__(self):
-        pass
+        self._reader_tool: ReaderTool | None = None
 
     def user_message(self, params: dict) -> str:
         url = params.get("url", "a specific URL")
@@ -257,6 +329,13 @@ class BrowserTool(Tool):
         )
         if not url:
             return {"error": "URL is required"}
+
+        parsed_host = urlparse(url).netloc.lower()
+        if any(host in parsed_host for host in self.SEARCH_ENGINE_HOSTS):
+            return {
+                "error": "Direct browsing of search engine result pages is disabled. Use a SERP tool (e.g., google_search) instead.",
+                "url": url,
+            }
 
         browser_context = None
 
@@ -291,9 +370,10 @@ class BrowserTool(Tool):
             return {
                 "success": True,
                 "url": url,
-                "content": content,
+                "content": content,   
                 "metadata": metadata,
             }
+
         except Exception as e:
             print(e)
             return {"error": f"Error fetching page: {str(e)}"}

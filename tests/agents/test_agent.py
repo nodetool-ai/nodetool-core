@@ -3,7 +3,7 @@ import pytest
 
 from nodetool.agents.agent import Agent
 from nodetool.providers.base import MockProvider
-from nodetool.metadata.types import SubTask, Task, TaskPlan, ToolCall
+from nodetool.metadata.types import SubTask, Task, TaskPlan
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.workflows.types import (
     Chunk,
@@ -25,15 +25,11 @@ async def test_execute_with_initial_task(monkeypatch, tmp_path):
         yield TaskUpdate(
             task=self.task, subtask=sub, event=TaskUpdateEvent.SUBTASK_STARTED
         )
-        yield ToolCall(
-            id="1", name="finish_subtask", args={"result": "part"}, subtask_id=sub.id
-        )
+        yield SubTaskResult(subtask=sub, result="part", is_task_result=False)
         yield TaskUpdate(
             task=self.task, subtask=sub, event=TaskUpdateEvent.SUBTASK_COMPLETED
         )
-        yield ToolCall(
-            id="2", name="finish_task", args={"result": "final"}, subtask_id=sub.id
-        )
+        yield SubTaskResult(subtask=sub, result="final", is_task_result=True)
 
     class DummyExecutor:
         def __init__(self, *args, **kwargs):
@@ -89,16 +85,10 @@ class DummyTaskExecutor:
             task=self.task, subtask=subtask, event=TaskUpdateEvent.SUBTASK_STARTED
         )
         yield Chunk(content="work")
-        yield ToolCall(
-            id="1", name="finish_subtask", args={"result": "42"}, subtask_id=subtask.id
-        )
-        yield ToolCall(
-            id="2", name="finish_task", args={"result": "done"}, subtask_id=subtask.id
-        )
-        subtask.completed = True
         yield TaskUpdate(
             task=self.task, subtask=subtask, event=TaskUpdateEvent.SUBTASK_COMPLETED
         )
+        yield SubTaskResult(subtask=subtask, result="done", is_task_result=True)
 
 
 class DummyTaskPlanner:

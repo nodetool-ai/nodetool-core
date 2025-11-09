@@ -30,12 +30,14 @@ class JobExecutionManager:
     _instance: Optional["JobExecutionManager"] = None
     _jobs: Dict[str, JobExecution] = {}
     _cleanup_task: Optional[asyncio.Task] = None
+    _finalizing_jobs: set[str] = set()
 
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super(JobExecutionManager, cls).__new__(cls)
             cls._instance._jobs = {}
             cls._instance._cleanup_task = None
+            cls._instance._finalizing_jobs = set()
         return cls._instance
 
     @classmethod
@@ -103,8 +105,10 @@ class JobExecutionManager:
                 },
             )
             # Persist state asynchronously to avoid blocking caller
-            asyncio.create_task(self._finalize_job_state(job))
-            return None
+            if job_id not in self._finalizing_jobs:
+                self._finalizing_jobs.add(job_id)
+                asyncio.create_task(self._finalize_job_state(job))
+            return job
 
         return job
 
@@ -118,6 +122,7 @@ class JobExecutionManager:
             stored_job = self._jobs.pop(job_id, None)
             if stored_job:
                 stored_job.cleanup_resources()
+            self._finalizing_jobs.discard(job_id)
 
     def list_jobs(self, user_id: Optional[str] = None) -> list[JobExecution]:
         """

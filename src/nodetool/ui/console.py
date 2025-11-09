@@ -221,16 +221,10 @@ class AgentConsole:
                     call for call in (tool_calls or []) if call.subtask_id == subtask.id
                 ]
 
-                relevant_tool_calls = [
-                    call
-                    for call in subtask_tool_calls
-                    if call.name not in ["finish_task", "finish_subtask"]
-                ]
-
-                if relevant_tool_calls:
+                if subtask_tool_calls:
                     tool_node = subtask_node.add("[cyan]🔧 Tools[/]")
                     for i, call in enumerate(
-                        relevant_tool_calls[-3:]
+                        subtask_tool_calls[-3:]
                     ):  # Show last 3 tool calls
                         tool_name = call.name
                         message = str(call.message)
@@ -238,9 +232,9 @@ class AgentConsole:
                             message = message[:67] + "..."
                         tool_node.add(f"[dim]{tool_name}: {message}[/]")
 
-                    if len(relevant_tool_calls) > 3:
+                    if len(subtask_tool_calls) > 3:
                         tool_node.add(
-                            f"[dim]+ {len(relevant_tool_calls) - 3} more tool calls[/]"
+                            f"[dim]+ {len(subtask_tool_calls) - 3} more tool calls[/]"
                         )
 
         return tree
@@ -741,8 +735,6 @@ class AgentConsole:
             event_styles = {
                 "SUBTASK_STARTED": ("🚀", "green"),
                 "SUBTASK_COMPLETED": ("✅", "green"),
-                "MAX_ITERATIONS_REACHED": ("⏱️", "yellow"),
-                "MAX_TOOL_CALLS_REACHED": ("🔧", "yellow"),
                 "ENTERED_CONCLUSION_STAGE": ("🎯", "magenta"),
                 "ERROR": ("❌", "red"),
             }

@@ -3,7 +3,7 @@
 Test script for the Nodetool Agent class using web search tools.
 
 This script demonstrates the use of a single Agent instance configured with
-web browsing capabilities (GoogleSearchTool, BrowserTool) to perform a specific task.
+web browsing capabilities (BrowserTool) plus GoogleSearch for finding candidate URLs.
 
 This example shows how to:
 1. Set up a single agent with specific tools and an objective.
@@ -19,7 +19,7 @@ from nodetool.agents.tools import GoogleSearchTool, BrowserTool
 from nodetool.providers.base import BaseProvider
 from nodetool.metadata.types import Provider
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.workflows.types import Chunk
+from nodetool.workflows.types import Chunk, PlanningUpdate
 from nodetool.runtime.resources import ResourceScope
 
 import dotenv
@@ -29,11 +29,6 @@ dotenv.load_dotenv()
 
 async def test_google_agent(provider: BaseProvider, model: str):
     context = ProcessingContext()
-
-    retrieval_tools = [
-        GoogleSearchTool(),
-        BrowserTool(),
-    ]
 
     agent = Agent(
         name="Research Agent",
@@ -48,7 +43,7 @@ async def test_google_agent(provider: BaseProvider, model: str):
         """,
         provider=provider,
         model=model,
-        tools=retrieval_tools,
+        tools=[BrowserTool(), GoogleSearchTool()],
         output_schema={
             "type": "object",
             "properties": {
@@ -94,10 +89,6 @@ async def main():
             provider=await get_provider(Provider.HuggingFaceCerebras),
             model="openai/gpt-oss-120b",
         )
-        # await test_google_agent(
-        #     provider=await get_provider(Provider.Ollama),
-        #     model="gemma3:12b",
-        # )
 
 
 if __name__ == "__main__":

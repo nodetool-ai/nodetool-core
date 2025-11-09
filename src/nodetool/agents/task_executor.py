@@ -1,3 +1,12 @@
+"""Execute discover → process → aggregate task plans.
+
+Process-mode subtasks automatically fan out over list inputs produced by the
+preceding discover step. Each item is rendered into the parent subtask's
+natural-language `content` template (``"fetch {url}"``) and executed as an
+ephemeral subtask. Results are aggregated into a simple list that downstream
+aggregate subtasks consume.
+"""
+
 from nodetool.agents.wrap_generators_parallel import (
     wrap_generators_parallel,
 )
@@ -7,41 +16,30 @@ from nodetool.agents.sub_task_context import (
     TaskUpdate,
 )
 from nodetool.agents.tools.base import Tool
-from nodetool.agents.tools.task_tools import AddSubtaskTool, ListSubtasksTool
-from nodetool.metadata.types import (
-    SubTask,
-    Task,
-    ToolCall,
-)
+from nodetool.metadata.types import SubTask, Task, ToolCall
 import os
 import asyncio
+import json
+import time
+import hashlib
 from typing import AsyncGenerator, List, Sequence, Union, Any
 
 from nodetool.workflows.processing_context import ProcessingContext
-from nodetool.workflows.types import Chunk
+from nodetool.workflows.types import Chunk, SubTaskResult, TaskUpdateEvent
 from nodetool.config.logging_config import get_logger
 
 log = get_logger(__name__)
 
+DEFAULT_PROCESS_CONCURRENCY = 4
+
+
+def _short_hash(value: Any) -> str:
+    data = json.dumps(value, sort_keys=True, ensure_ascii=False)
+    return hashlib.sha1(data.encode("utf-8")).hexdigest()[:12]
+
 
 class TaskExecutor:
-    """
-    🚀 The Parallel Orchestrator - Runs multiple subtasks concurrently
-
-    This class manages the execution of an entire task plan, strategically
-    scheduling subtasks to maximize parallelism while respecting dependencies.
-    It's like a project manager who knows exactly which tasks can run in parallel
-    and which ones need to wait for others to finish.
-
-    Features:
-    - Parallel or sequential execution of independent subtasks
-    - Dependency tracking and enforcement
-    - Dynamic subtask addition during execution (via AddSubtaskTool)
-    - Progress persistence through file updates
-    - Result collection and reporting
-    - Workspace file management
-    - Thread-safe subtask list management for parallel execution
-    """
+    """Execute an entire task plan, including process-mode fan-out subtasks."""
 
     def __init__(
         self,
@@ -85,11 +83,10 @@ class TaskExecutor:
         self.max_subtask_iterations = max_subtask_iterations
         self.output_files = []
         self.parallel_execution = parallel_execution
+        self._finish_subtask_id: str | None = None
 
         # Lock for thread-safe subtask list access in parallel mode
         self._subtask_lock = asyncio.Lock()
-        # Track initial subtask count to detect dynamic additions
-        self._initial_subtask_count = len(task.subtasks)
 
     async def execute_tasks(
         self,
@@ -125,23 +122,17 @@ class TaskExecutor:
             finish_subtask_id = context.get("__finish_subtask_id")
             if not finish_subtask_id:
                 context.set("__finish_subtask_id", self.task.subtasks[-1].id)
+            self._finish_subtask_id = context.get("__finish_subtask_id")
+        else:
+            self._finish_subtask_id = None
 
         # Continue until all tasks are complete or we reach max steps
         while not self._all_tasks_complete() and steps_taken < self.max_steps:
             steps_taken += 1
 
-            # Check for dynamically added subtasks and log them
-            current_subtask_count = len(self.task.subtasks)
-            if current_subtask_count > self._initial_subtask_count:
-                new_count = current_subtask_count - self._initial_subtask_count
-                log.info(
-                    f"Detected {new_count} dynamically added subtask(s). Total subtasks: {current_subtask_count}"
-                )
-                # Update the initial count for next iteration
-                self._initial_subtask_count = current_subtask_count
-
             # Find all executable tasks
             executable_tasks = self._get_all_executable_tasks()
+            executable_tasks = self._maybe_defer_finish_subtask(executable_tasks)
 
             if not executable_tasks:
                 # If no tasks are executable but we're not done, there might be a dependency issue
@@ -157,32 +148,24 @@ class TaskExecutor:
 
             # Create execution contexts for all executable subtasks
             for subtask in executable_tasks:
-                # Create enhanced tools list with task management capabilities
-                enhanced_tools = list(self.tools).copy()
-
-                # Add task management tools to allow dynamic subtask creation
-                enhanced_tools.extend(
-                    [
-                        AddSubtaskTool(task=self.task),
-                        ListSubtasksTool(task=self.task),
-                    ]
-                )
-
-                # Create subtask context
-                subtask_context = SubTaskContext(
-                    task=self.task,
-                    subtask=subtask,
-                    processing_context=context,
-                    system_prompt=self.system_prompt,
-                    tools=enhanced_tools,
-                    model=self.model,
-                    provider=self.provider,
-                    max_token_limit=self.max_token_limit,
-                    use_finish_task=(subtask == self.task.subtasks[-1]),
-                )
-
-                # Start the subtask execution and add it to our generators
-                subtask_generators.append(subtask_context.execute())
+                if subtask.mode == "process":
+                    subtask_generators.append(
+                        self._execute_process_mode_subtask(subtask, context)
+                    )
+                else:
+                    enhanced_tools = list(self.tools).copy()
+                    subtask_context = SubTaskContext(
+                        task=self.task,
+                        subtask=subtask,
+                        processing_context=context,
+                        system_prompt=self.system_prompt,
+                        tools=enhanced_tools,
+                        model=self.model,
+                        provider=self.provider,
+                        max_token_limit=self.max_token_limit,
+                        use_finish_task=self._is_finish_subtask(subtask),
+                    )
+                    subtask_generators.append(subtask_context.execute())
 
             if not subtask_generators:
                 continue
@@ -245,7 +228,7 @@ class TaskExecutor:
 
         for task_id in input_tasks:
             subtask = find_task_id(task_id)
-            if not subtask:
+            if not subtask or not subtask.completed:
                 return False
 
         return True
@@ -278,3 +261,231 @@ class TaskExecutor:
             if not subtask.completed:
                 return False
         return True
+
+    def _is_finish_subtask(self, subtask: SubTask) -> bool:
+        if self._finish_subtask_id:
+            return subtask.id == self._finish_subtask_id
+        return bool(self.task.subtasks) and subtask == self.task.subtasks[-1]
+
+    def _maybe_defer_finish_subtask(
+        self, executable_tasks: List[SubTask]
+    ) -> List[SubTask]:
+        if not self._finish_subtask_id:
+            return executable_tasks
+
+        finish_ready = any(
+            task.id == self._finish_subtask_id for task in executable_tasks
+        )
+        if not finish_ready:
+            return executable_tasks
+
+        other_pending = any(
+            not subtask.completed and subtask.id != self._finish_subtask_id
+            for subtask in self.task.subtasks
+        )
+        if not other_pending:
+            return executable_tasks
+
+        log.debug(
+            "Deferring finish subtask %s until all other subtasks complete",
+            self._finish_subtask_id,
+        )
+        return [task for task in executable_tasks if task.id != self._finish_subtask_id]
+
+    async def _run_process_mode(
+        self, subtask: SubTask, context: ProcessingContext
+    ) -> list:
+        """Iterate over the upstream list and run templated subtasks per item."""
+
+        if not subtask.input_tasks:
+            raise ValueError(
+                f"Process subtask '{subtask.id}' must depend on a discover-mode subtask."
+            )
+
+        upstream_id = subtask.input_tasks[0]
+        upstream_value = context.load_subtask_result(upstream_id, default=None)
+        if upstream_value is None:
+            raise ValueError(
+                f"Process subtask '{subtask.id}' could not load upstream result '{upstream_id}'."
+            )
+        if not isinstance(upstream_value, list):
+            raise ValueError(
+                f"Process subtask '{subtask.id}' expected upstream '{upstream_id}' to be a list but received {type(upstream_value).__name__}."
+            )
+
+        if not upstream_value:
+            return []
+
+        concurrency = min(DEFAULT_PROCESS_CONCURRENCY, len(upstream_value))
+        semaphore = asyncio.Semaphore(concurrency)
+        results: list[Any | None] = [None] * len(upstream_value)
+
+        async def run_item(index: int, item: Any) -> None:
+            async with semaphore:
+                try:
+                    results[index] = await self._run_process_item_subtask(
+                        parent_subtask=subtask,
+                        item=item,
+                        index=index,
+                        context=context,
+                    )
+                except Exception as exc:
+                    log.error(
+                        "Process subtask '%s' item %d failed: %s",
+                        subtask.id,
+                        index,
+                        exc,
+                    )
+
+        tasks = [
+            asyncio.create_task(run_item(index, item))
+            for index, item in enumerate(upstream_value)
+        ]
+        await asyncio.gather(*tasks, return_exceptions=False)
+
+        return [result for result in results if result is not None]
+    def _format_process_content(
+        self, subtask: SubTask, item: Any, index: int
+    ) -> str:
+        """Render the process subtask's content template against an item."""
+        template = (subtask.content or "").strip()
+        if not template:
+            raise ValueError(
+                f"Process subtask '{subtask.id}' must define non-empty content with placeholders."
+            )
+        context_vars: dict[str, Any] = {
+            "item": item,
+            "index": index,
+            "item_index": index,
+        }
+        if isinstance(item, dict):
+            for key, value in item.items():
+                if isinstance(key, str):
+                    context_vars.setdefault(key, value)
+        try:
+            return template.format(**context_vars)
+        except KeyError as exc:
+            missing = exc.args[0]
+            raise ValueError(
+                f"Process subtask '{subtask.id}' content references missing field '{missing}'. "
+                "Ensure the discovery output provides this value."
+            ) from exc
+
+    def _item_output_schema(self, process_subtask: SubTask) -> str:
+        """Extract the per-item schema from the parent process subtask."""
+        schema_str = getattr(process_subtask, "output_schema", "") or ""
+        if not schema_str:
+            raise ValueError(
+                f"Process subtask '{process_subtask.id}' must declare an output_schema."
+            )
+        try:
+            schema_obj = json.loads(schema_str)
+        except Exception as exc:  # pragma: no cover - defensive
+            raise ValueError(
+                f"Process subtask '{process_subtask.id}' output_schema is not valid JSON: {exc}"
+            ) from exc
+        if schema_obj.get("type") != "array":
+            raise ValueError(
+                f"Process subtask '{process_subtask.id}' output_schema must declare type 'array'."
+            )
+        item_schema = schema_obj.get("items")
+        if not item_schema:
+            raise ValueError(
+                f"Process subtask '{process_subtask.id}' output_schema must include an 'items' schema."
+            )
+        return json.dumps(item_schema)
+
+    def _select_tools_for_subtask(self, subtask: SubTask) -> list[Tool]:
+        """Filter the global tool list to match the subtask's declared tools."""
+        if not subtask.tools:
+            return list(self.tools)
+        allowed = {tool_name for tool_name in subtask.tools}
+        return [tool for tool in self.tools if tool.name in allowed]
+
+    def _make_ephemeral_subtask(
+        self,
+        parent_subtask: SubTask,
+        content: str,
+        index: int,
+        item_hash: str,
+        item_schema: str,
+    ) -> SubTask:
+        """Create a minimal SubTask instance for a single process item."""
+        ephemeral = SubTask(
+            id=f"{parent_subtask.id}__{index}_{item_hash}",
+            content=content,
+            input_tasks=[],
+            output_schema=item_schema,
+            tools=parent_subtask.tools or [],
+        )
+        return ephemeral
+
+    async def _run_process_item_subtask(
+        self,
+        parent_subtask: SubTask,
+        item: Any,
+        index: int,
+        context: ProcessingContext,
+    ) -> Any | None:
+        """Execute a single item as a regular subtask and return its result."""
+        rendered_content = self._format_process_content(parent_subtask, item, index)
+        item_hash = _short_hash({"index": index, "item": item})
+        item_schema = self._item_output_schema(parent_subtask)
+        ephemeral_subtask = self._make_ephemeral_subtask(
+            parent_subtask=parent_subtask,
+            content=rendered_content,
+            index=index,
+            item_hash=item_hash,
+            item_schema=item_schema,
+        )
+        tools = self._select_tools_for_subtask(parent_subtask)
+        subtask_context = SubTaskContext(
+            task=self.task,
+            subtask=ephemeral_subtask,
+            processing_context=context,
+            system_prompt=self.system_prompt,
+            tools=tools,
+            model=self.model,
+            provider=self.provider,
+            max_token_limit=self.max_token_limit,
+            use_finish_task=False,
+        )
+        result_payload: Any | None = None
+        async for message in subtask_context.execute():
+            if isinstance(message, SubTaskResult):
+                result_payload = message.result
+        if result_payload is None:
+            log.warning(
+                "Process subtask '%s' item %d completed without a result payload.",
+                parent_subtask.id,
+                index,
+            )
+        return result_payload
+
+    async def _execute_process_mode_subtask(
+        self,
+        subtask: SubTask,
+        context: ProcessingContext,
+    ) -> AsyncGenerator[Union[TaskUpdate, Chunk, ToolCall, SubTaskResult], None]:
+        """Run a process-mode subtask end-to-end and emit standard task events."""
+
+        subtask.start_time = int(time.time())
+        yield TaskUpdate(
+            task=self.task,
+            subtask=subtask,
+            event=TaskUpdateEvent.SUBTASK_STARTED,
+        )
+
+        log.debug("Running process-mode subtask %s", subtask.id)
+        result_payload = await self._run_process_mode(subtask, context)
+
+        subtask.completed = True
+        subtask.end_time = int(time.time())
+        context.store_subtask_result(subtask.id, result_payload)
+
+        yield TaskUpdate(
+            task=self.task,
+            subtask=subtask,
+            event=TaskUpdateEvent.SUBTASK_COMPLETED,
+        )
+        yield SubTaskResult(subtask=subtask, result=result_payload, is_task_result=False)

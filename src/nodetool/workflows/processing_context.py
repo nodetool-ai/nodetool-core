@@ -417,6 +417,50 @@ class ProcessingContext:
             value (Any): The value to set.
         """
         self.variables[key] = value
+        self._persist_variable_if_needed(key, value)
+
+    def store_subtask_result(self, key: str, value: Any) -> str:
+        """Persist a subtask result to the workspace root and memoize a reference."""
+
+        path = self._workspace_path(f"{key}.json")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("w", encoding="utf-8") as fp:
+            json.dump(value, fp, ensure_ascii=False, indent=2)
+        rel_name = path.name
+        self.variables[key] = {"__workspace_result__": rel_name}
+        return str(path)
+
+    def load_subtask_result(self, key: str, default: Any = None) -> Any:
+        marker = self.variables.get(key)
+        if isinstance(marker, dict) and "__workspace_result__" in marker:
+            path = self._workspace_path(marker["__workspace_result__"])
+            if path.exists():
+                try:
+                    with path.open("r", encoding="utf-8") as fp:
+                        return json.load(fp)
+                except Exception:
+                    return default
+            return default
+        return self.variables.get(key, default)
+
+    def _persist_variable_if_needed(self, key: str, value: Any) -> None:
+        marker = self.variables.get(key)
+        if isinstance(marker, dict) and "__workspace_result__" in marker:
+            return
+        if not isinstance(value, (dict, list, str, int, float, bool)):
+            return
+        try:
+            path = self._workspace_path(f"var_{key}.json")
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with path.open("w", encoding="utf-8") as fp:
+                json.dump(value, fp, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
+
+    def _workspace_path(self, filename: str) -> Path:
+        if not self.workspace_dir:
+            raise ValueError("workspace_dir is required to store subtask results")
+        return Path(self.workspace_dir) / filename
 
     async def pop_message_async(self) -> ProcessingMessage:
         """

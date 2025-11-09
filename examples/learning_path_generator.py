@@ -1,20 +1,13 @@
 #!/usr/bin/env python3
 """
 Simple Learning Path Generator using Nodetool Agent system.
-
-**NEW: DYNAMIC SUBTASK SUPPORT**
-The agent can now dynamically add subtasks during execution! If the agent discovers
-that certain modules need deeper exploration or finds related topics that should be
-included in the learning path, it can use the add_subtask tool to create additional
-research or content generation tasks. This enables more comprehensive and adaptive
-learning paths.
 """
 
 import asyncio
 from typing import List
 from pydantic import BaseModel
 
-from nodetool.agents.tools import GoogleSearchTool
+from nodetool.agents.tools import BrowserTool, GoogleSearchTool
 from nodetool.agents.agent import Agent
 from nodetool.providers import get_provider
 from nodetool.providers.base import BaseProvider
@@ -47,13 +40,10 @@ async def generate_learning_path(provider: BaseProvider, model: str, topic: str)
         name="Learning Path Generator",
         objective=f"""Create a comprehensive learning path for '{topic}'. Include 3-5 modules with titles, descriptions, and useful web resources.
 
-        You have access to the add_subtask tool. If you discover prerequisite topics, advanced topics,
-        or related skills that would enhance the learning path, you can dynamically add subtasks to
-        research and create additional modules. This allows you to build a more complete and structured
-        learning journey.""",
+        Provide thorough coverage, but keep the plan focused on the learner's core objective.""",
         provider=provider,
         model=model,
-        tools=[GoogleSearchTool()],
+        tools=[BrowserTool(), GoogleSearchTool()],
         display_manager=AgentConsole(),
         output_schema=LearningPath.model_json_schema(),
     )

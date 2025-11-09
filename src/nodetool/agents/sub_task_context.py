@@ -12,11 +12,10 @@ Core Components:
     It maintains an isolated message history, manages available tools, monitors
     resource limits (tokens, iterations), and drives the interaction with the
     chosen language model (LLM).
-*   `FinishSubTaskTool` / `FinishTaskTool`: Special tools injected into the context.
-    The LLM *must* call one of these tools (`finish_subtask` for regular subtasks,
-    `finish_task` for the final aggregation task) to signify completion and provide
-    the final result as an object. The result is stored directly in the processing
-    context and made available to downstream tasks.
+*   Structured completion responses: Instead of calling finish tools, the LLM ends
+    each subtask by emitting a compact JSON block with `"status": "completed"`
+    and a `result` object that matches the declared output schema. The result is
+    stored directly in the processing context and made available to downstream tasks.
 *   Helper Functions (`json_schema_for_output_type`, etc.):
     Utilities for determining output types, generating appropriate JSON schemas for
     tools, and handling object operations.
@@ -24,20 +23,20 @@ Core Components:
 Execution Algorithm:
 --------------------
 1.  **Initialization**: A `SubTaskContext` is created for a specific `SubTask`,
-    equipped with the necessary `ProcessingContext`, `ChatProvider`, tools (including
-    special `finish_subtask` or `finish_task` tools), model, and resource limits.
+    equipped with the necessary `ProcessingContext`, `ChatProvider`, tools,
+    model, and resource limits.
     A system prompt tailored to the subtask (execution vs. final aggregation) is
     generated. The subtask's internal message history is initialized with this
     system prompt.
 
 2.  **LLM-Driven Execution Loop**: The context enters an iterative loop driven by
     interactions with the LLM. The loop continues as long as the subtask is not
-    completed and the number of iterations is less than `max_iterations`:
+    completed:
     a.  **Iteration & Limit Checks (Pre-LLM Call)**:
-        - If `max_iterations` is reached, the context proceeds to step 2.f (Forced Completion).
         - Token count of the history is checked. If it exceeds `max_token_limit`
           and not already in conclusion stage, the context transitions to
-          `in_conclusion_stage` (see step 2.e).
+          `in_conclusion_stage` (see step 2.e), which disables tool calls and
+          asks the LLM to conclude.
     b.  **Prepare Prompt & LLM Call**: The overall task description, current subtask
         instructions, input task results (directly injected), and the current message
         history form the prompt. The LLM processes this history and generates a response.
@@ -51,8 +50,6 @@ Execution Algorithm:
                `user_message` method).
              - The `ToolCall` object, now including this descriptive message,
                is yielded externally from the `execute` method.
-             - If the tool call is for `finish_subtask` or `finish_task`, a
-               `TaskUpdateEvent.SUBTASK_COMPLETED` update is also yielded.
         ii.  Internally, after being yielded, these LLM-generated tool calls are
              processed by `_handle_tool_call`. This method orchestrates:
              - **Execution**: Invokes the tool's logic (`_process_tool_execution`).
@@ -62,41 +59,26 @@ Execution Algorithm:
                (`_handle_binary_artifact`).
              - **Special Side-Effects**: Manages tool-specific actions
                (`_process_special_tool_side_effects`). For `browser` navigation,
-               it logs sources. For `finish_subtask`/`finish_task`, it marks
-               the subtask complete and stores the result object directly in the
-               processing context.
+               it logs sources.
              - **Serialization**: Converts the processed tool result to a JSON
                string (`_serialize_tool_result_for_history`).
         iii. The serialized JSON string (tool output) is then added to the subtask's
              internal message history as a `Message` with role 'tool'.
-    d.  **Continuation**: The loop continues to the next LLM interaction unless a
-        `finish_...` tool completed the subtask or `max_iterations` was reached.
+    d.  **Continuation**: The loop continues to the next LLM interaction unless the
+        subtask has emitted a completion JSON.
     e.  **Conclusion Stage**: If the token limit is exceeded, the context enters a
-        "conclusion stage". In this stage, available tools are restricted to only
-        the `finish_...` tool, and the LLM is prompted to synthesize results and
-        conclude the subtask by providing an object result.
-    f.  **Forced Completion (Max Iterations)**: If `max_iterations` is reached
-        before `finish_...` is called, `_handle_max_iterations_reached` is invoked.
-        This forces completion by:
-        - Requesting a final structured output from the LLM, conforming to the
-          finish tool's schema (which mandates an object result)
-          (`request_structured_output`).
-        - Storing the result object directly in the processing context.
-        - Marking the subtask as complete.
-        - Creating an assistant message with the `ToolCall` for record and adding
-          it to history.
-        - Yielding this record `ToolCall` externally.
-        The subtask loop then terminates.
+        "conclusion stage". Tool calls are disabled and the LLM is instructed to
+        synthesize results and conclude the subtask by providing the completion JSON.
 
-3.  **Object Storage**: When a `finish_...` tool is successfully processed (via
-    `_process_special_tool_side_effects` during `_handle_tool_call`) or when forced
-    completion occurs (`_handle_max_iterations_reached`), the result object is stored
-    directly in the processing context using the task/subtask ID as the key. This
-    makes the result available to downstream tasks via direct context access.
+3.  **Object Storage**: When a completion JSON is accepted (or when forced
+    completion occurs), the result object is stored directly in the processing
+    context using the subtask ID (and the task ID if this is the final aggregation
+    subtask). This makes the result available to downstream tasks via direct
+    context access.
 
-4.  **Completion**: The subtask is marked as `completed` (either by a `finish_...`
-    tool call or by reaching max iterations). Status updates reflecting completion
-    or failure are yielded. The `execute` loop terminates.
+4.  **Completion**: Once a valid completion JSON is captured (or synthesized as a
+    fallback), the subtask is marked `completed`, `SubTaskResult` / `TaskUpdate`
+    events are emitted, and the execution loop terminates.
 
 Key Data Structures:
 --------------------
@@ -181,9 +163,13 @@ import re
 from nodetool.providers import BaseProvider
 from nodetool.agents.tools.base import Tool
 from nodetool.metadata.types import Message, SubTask, Task, ToolCall
-from nodetool.workflows.types import Chunk, TaskUpdate, TaskUpdateEvent
+from nodetool.workflows.types import Chunk, TaskUpdate, TaskUpdateEvent, SubTaskResult
 from nodetool.workflows.processing_context import ProcessingContext
 from nodetool.ui.console import AgentConsole
+from nodetool.utils.message_parsing import (
+    extract_json_from_message,
+    remove_think_tags,
+)
 
 import tiktoken
 
@@ -215,8 +201,9 @@ log.setLevel(logging.DEBUG)
 
 
 DEFAULT_MAX_TOKEN_LIMIT: int = 4096
-DEFAULT_MAX_ITERATIONS: int = 10
 MESSAGE_COMPRESSION_THRESHOLD: int = 4096
+MAX_TOOL_RESULT_CHARS: int = 20000
+VALID_COMPLETION_STATUSES: set[str] = {"completed", "complete", "done", "success"}
 
 DEFAULT_EXECUTION_SYSTEM_PROMPT: str = """
 # Role
@@ -233,7 +220,7 @@ Persistence and completion:
 - Stay focused: avoid unnecessary exploration or tangential work.
 
 Agentic eagerness control:
-- Maximum non-finish tool calls: {{ max_tool_calls }}
+- The token budget is limited; stay focused on high-signal actions.
 - Be efficient and selective with tool usage.
 - Complete work directly when possible rather than adding subtasks for trivial steps.
 
@@ -241,6 +228,23 @@ Output style:
 - Be concise and minimize token usage.
 - Use structured, deterministic outputs over prose.
 - Provide brief reasoning explanations, not extensive chain-of-thought.
+
+# Output Schema
+- The final `result` object MUST match this schema:
+```json
+{{ output_schema_json }}
+```
+
+# Completion Format
+- When the subtask is complete, respond with a single JSON block (no prose) formatted exactly as:
+```json
+{
+  "status": "completed",
+  "result": { ... }  // Matches the schema above
+}
+```
+- Do not emit this JSON until you are fully finished.
+- After you send the completion JSON, stop responding immediately.
 
 # Tool Usage Guidelines
 
@@ -250,45 +254,15 @@ Before making tool calls, provide clear progress updates:
 2. Before each tool call: Emit a one-sentence message describing what you're doing and why.
 3. After tool results: Provide a brief update only if the result changes your plan.
 
-## Dynamic Task Management Tools
-You have access to `add_subtask` and `list_subtasks` for expanding the task plan when necessary.
-
-**When to use `add_subtask`:**
-- You discover substantial, distinct work beyond the current subtask scope (e.g., separate categories requiring focused investigation, new dependencies, or parallel workstreams).
-- The additional work would benefit from isolation with its own context and result tracking.
-- Examples: Discovering multiple product categories each needing research, finding distinct technical issues requiring separate analysis.
-
-**When NOT to use `add_subtask`:**
-- Trivial steps you can complete directly.
-- Sequential operations within the current scope.
-- Simple follow-up actions.
-
-**How to use `add_subtask`:**
-```
-{
-  "name": "add_subtask",
-  "args": {
-    "content": "Clear instructions describing what the subtask should accomplish",
-    "input_tasks": ["list", "of", "subtask_ids", "that", "must", "complete", "first"],
-    "max_tool_calls": 15
-  }
-}
-```
-
-**Use `list_subtasks`:**
-- To understand the broader context and see what work has been completed.
-- To avoid duplicating work or creating redundant subtasks.
-
 # Execution Protocol
 1. **Use provided context:** Upstream task results are already present in context. Do not re-request them.
 2. **Execute the work:** Perform the required steps to produce a result conforming to this subtask's schema.
-3. **Consider dynamic expansion:** If you discover substantial additional work beyond current scope, use `add_subtask` to create a focused task for it.
-4. **Finish properly:** When ready, call `finish_subtask` exactly once with:
-   - `result`: The final structured object conforming to the output schema
+3. **Stay focused:** If you notice missing context, first reason whether it is essential or can be inferred from existing inputs.
+4. **Finish properly:** When ready, output the completion JSON described above. It must include `"status":"completed"` and a `result` that matches the schema.
 
 # Stop Conditions
-- Stop immediately after calling `finish_subtask` successfully.
-- If you reach tool-call limits or enter conclusion stage, prioritize synthesizing available information and finishing.
+- Stop immediately after emitting the completion JSON.
+- If you enter conclusion stage due to token budget pressure, prioritize synthesizing available information and finishing.
 - Do not continue working after successful task completion.
 
 # Output Requirements
@@ -308,7 +282,7 @@ Persistence and completion:
 - Focus on synthesis and aggregation, not additional research.
 
 Agentic eagerness control:
-- Maximum non-finish tool calls: {{ max_tool_calls }}
+- Token budget is limited; stay laser-focused on synthesis.
 - Be highly selective with tool usage during aggregation.
 - Prioritize using existing results over gathering new information.
 
@@ -317,47 +291,39 @@ Output style:
 - Use structured, deterministic outputs.
 - Provide brief reasoning, not extensive explanations.
 
+# Output Schema
+- The final deliverable must match this schema:
+```json
+{{ output_schema_json }}
+```
+
+# Completion Format
+- When aggregation is complete, respond with a single JSON block (no prose) formatted exactly as:
+```json
+{
+  "status": "completed",
+  "result": { ... }  // Matches the schema above
+}
+```
+- Do not emit this JSON until the final deliverable is ready.
+- After sending the completion JSON, stop responding immediately.
+
 # Tool Usage Guidelines
 
 ## Communication Pattern (Tool Preambles)
 1. First assistant message: Restate the overall objective in one sentence, then outline a short aggregation plan (1-3 steps).
 2. Before each tool call: Provide a one-sentence rationale of what you're doing and why.
 
-## Dynamic Task Management Tools
-You have access to `add_subtask` and `list_subtasks` if critical information is missing.
-
-**When to use `add_subtask` during aggregation:**
-- Critical information is missing that prevents producing a complete final result.
-- Additional analysis or data gathering is essential before synthesis.
-- Use sparingly - prefer working with existing results.
-
-**Use `list_subtasks`:**
-- To review what work has been completed and identify any gaps.
-- To understand the full context before aggregating.
-
-**How to use `add_subtask`:**
-```
-{
-  "name": "add_subtask",
-  "args": {
-    "content": "Specific description of critical missing information to obtain",
-    "input_tasks": ["existing", "subtask", "dependencies"],
-    "max_tool_calls": 10
-  }
-}
-```
-
 # Aggregation Protocol
 1. **Use provided results:** Upstream subtask results are already in context. Do not re-request them.
-2. **Review completeness:** Use `list_subtasks` if needed to understand what work has been done.
-3. **Identify gaps:** If critical information is missing and essential for the final result, use `add_subtask` to obtain it.
-4. **Extract and synthesize:** Gather key information from completed subtask results.
-5. **Produce final output:** Generate the complete deliverable matching the task schema.
-6. **Finish properly:** Call `finish_task` exactly once with:
-   - `result`: The complete final deliverable conforming to the output schema
+2. **Review completeness:** Make sure all prerequisite subtasks have produced results before aggregating.
+3. **Extract and synthesize:** Gather key information from completed subtask results.
+4. **Produce final output:** Generate the complete deliverable matching the task schema.
+5. **Finish properly:** Output the completion JSON described above with `"status": "completed"` and the final `result`.
 
 # Stop Conditions
-- Stop immediately after calling `finish_task` successfully.
+- Stop immediately after emitting the completion JSON.
+- If conclusion stage triggers due to token budget pressure, finish with the information already available.
 - Do not continue working after successful completion.
 
 # Output Requirements
@@ -366,17 +332,6 @@ You have access to `add_subtask` and `list_subtasks` if critical information is 
 - Prefer structured, deterministic outputs following the schema.
 - Keep all responses concise and token-efficient.
 """
-
-
-def _remove_think_tags(text_content: Optional[str]) -> Optional[str]:
-    if text_content is None:
-        return None
-    # Use regex to remove <think>...</think> blocks, including newlines within them.
-    # re.DOTALL makes . match newlines.
-    # We also strip leading/trailing whitespace from the result.
-    return re.sub(r"<think>.*?</think>", "", text_content, flags=re.DOTALL).strip()
-
-
 def _validate_and_sanitize_schema(
     schema: Any, default_description: str = "Result object"
 ) -> Dict[str, Any]:
@@ -476,80 +431,9 @@ def _validate_and_sanitize_schema(
     return result_schema
 
 
-class FinishTaskTool(Tool):
-    """
-    🏁 Task Completion Tool - Marks a task as done and saves its results
-    """
-
-    name: str = "finish_task"
-    description: str = """
-    Finish a task by saving its final result as an object. Provide the result directly
-    in the 'result' parameter - it will be stored as an object and made available to
-    downstream processes. 
-    """
-    input_schema: Dict[str, Any]  # Defined in __init__
-
-    def __init__(
-        self,
-        output_schema: Any,
-    ):
-        super().__init__()  # Call parent constructor
-
-        # Validate and prepare the result schema
-        result_schema = _validate_and_sanitize_schema(output_schema, "The task result")
-        self.result_schema = result_schema
-
-        # Final input schema for the tool
-        self.input_schema = {
-            "type": "object",
-            "properties": {
-                "result": result_schema,
-            },
-            "required": ["result"],
-            "additionalProperties": False,
-        }
-
-    async def process(self, context: ProcessingContext, params: Dict[str, Any]):
-        return params.get("result", None)
-
-
-class FinishSubTaskTool(Tool):
-    """
-    🏁 Task Completion Tool - Marks a subtask as done and saves its results
-    """
-
-    name: str = "finish_subtask"
-    description: str = """
-    Finish a subtask by saving its final result as an object. Provide the result directly
-    in the 'result' parameter - it will be stored as an object and made available to
-    downstream tasks.
-    """
-    input_schema: Dict[str, Any]  # Defined in __init__
-
-    def __init__(
-        self,
-        output_schema: Any,
-    ):
-        super().__init__()  # Call parent constructor
-
-        # Validate and prepare the result schema
-        result_schema = _validate_and_sanitize_schema(
-            output_schema, "The subtask result"
-        )
-        self.result_schema = result_schema
-
-        # Final input schema for the tool
-        self.input_schema = {
-            "type": "object",
-            "properties": {
-                "result": result_schema,
-            },
-            "required": ["result"],
-            "additionalProperties": False,
-        }
-
-    async def process(self, context: ProcessingContext, params: Dict[str, Any]):
-        return params.get("result", None)
+def _remove_think_tags(text: str) -> str:
+    """Remove think tags from the text."""
+    return re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
 
 
 class SubTaskContext:
@@ -568,7 +452,7 @@ class SubTaskContext:
     Key Features:
     - Token limit monitoring with automatic context summarization when exceeding thresholds
     - Two-stage execution model: tool calling stage → conclusion stage
-    - Safety limits: iteration tracking, max tool calls, and max token controls
+    - Safety limits: iteration tracking and strict token budget controls
     - Explicit reasoning capabilities for "thinking" subtasks
     - Progress reporting throughout execution
     """
@@ -582,11 +466,9 @@ class SubTaskContext:
     use_finish_task: bool
     jinja_env: Environment
     system_prompt: str
-    finish_tool: Union[FinishTaskTool, FinishSubTaskTool]
     tools: Sequence[Tool]
     history: List[Message]
     iterations: int
-    max_iterations: int
     sources: List[str]
     progress: List[Any]
     encoding: tiktoken.Encoding
@@ -594,8 +476,6 @@ class SubTaskContext:
     _is_buffering_chunks: bool
     in_conclusion_stage: bool
     _output_result: Any
-    tool_calls_made: int
-    max_tool_calls: int
     input_tokens_total: int
     output_tokens_total: int
 
@@ -610,7 +490,7 @@ class SubTaskContext:
         system_prompt: Optional[str] = None,
         use_finish_task: bool = False,
         max_token_limit: int | None = None,
-        max_iterations: int = DEFAULT_MAX_ITERATIONS,
+    max_iterations: int | None = None,
         display_manager: Optional[AgentConsole] = None,
     ):
         """
@@ -624,9 +504,9 @@ class SubTaskContext:
             tools (List[Tool]): Tools available to this subtask
             model (str): The model to use for this subtask
             provider (ChatProvider): The provider to use for this subtask
-            use_finish_task (bool): Whether to use the finish_task tool
+            use_finish_task (bool): Whether this subtask produces the final aggregated task result
             max_token_limit (int): Maximum token limit before summarization
-            max_iterations (int): Maximum iterations for the subtask
+            max_iterations (int): Deprecated; token budget now controls termination
             display_manager (Optional[AgentConsole]): Console for beautiful terminal output
         """
         self.task = task
@@ -640,53 +520,34 @@ class SubTaskContext:
             self.max_token_limit // 4,
             MESSAGE_COMPRESSION_THRESHOLD,
         )
-        self._output_result = None  # Added
+        self._output_result = None
         self.display_manager = display_manager
-
-        # Initialize tool call tracking
-        self.tool_calls_made = 0
-        self.max_tool_calls = subtask.max_tool_calls
+        self.result_schema = self._load_result_schema()
 
         # Initialize token usage tracking
         self.input_tokens_total = 0
         self.output_tokens_total = 0
 
-        # Note: Initialization debug messages will be logged after setting current subtask in execute()
-        self._init_debug_messages = [
-            f"Initializing SubTaskContext for subtask: {subtask.id}",
-            f"Task: {task.title}",
-            f"Subtask content: {subtask.content}",
-            f"Subtask output_schema: {subtask.output_schema}",
-            f"Subtask output_schema type: {type(subtask.output_schema)}",
-            f"Model: {model}, Provider: {provider.__class__.__name__}",
-            f"Max token limit: {self.max_token_limit}",
-            f"Max iterations: {max_iterations}",
-            f"Use finish task: {use_finish_task}",
-            f"Available tools: {[tool.name for tool in tools]}",
-        ]
+        self.tools = self._filter_tools_for_subtask(tools)
+        self._available_tool_names = [tool.name for tool in self.tools]
 
         # --- Prepare prompt templates ---
         self.jinja_env = Environment(loader=BaseLoader())
 
+        schema_json = json.dumps(self.result_schema, indent=2, ensure_ascii=False)
         if use_finish_task:
             base_system_prompt = system_prompt or DEFAULT_FINISH_TASK_SYSTEM_PROMPT
             prompt_context = {
-                "max_tool_calls": self.max_tool_calls,
+                "output_schema_json": schema_json,
             }
-            self.finish_tool = FinishTaskTool(self.subtask.output_schema)
         else:  # Standard execution subtask
             base_system_prompt = system_prompt or DEFAULT_EXECUTION_SYSTEM_PROMPT
             prompt_context = {
                 "subtask_content": self.subtask.content,
-                "max_tool_calls": self.max_tool_calls,
-            }  # Provide subtask content context
-            self.finish_tool = FinishSubTaskTool(self.subtask.output_schema)
+                "output_schema_json": schema_json,
+            }
 
         self.system_prompt = self._render_prompt(base_system_prompt, prompt_context)
-
-        self.tools = list(tools) + [
-            self.finish_tool,
-        ]
         self.system_prompt = (
             self.system_prompt
             + "\n\nToday's date is "
@@ -698,9 +559,11 @@ class SubTaskContext:
 
         # Track iterations for this subtask
         self.iterations = 0
-        if max_iterations < 3:
-            raise ValueError("max_iterations must be at least 3")
-        self.max_iterations = max_iterations
+        if max_iterations is not None:
+            log.debug(
+                "SubTaskContext received deprecated max_iterations=%s; token budget now governs execution.",
+                max_iterations,
+            )
 
         # Track sources for data lineage
         self.sources = []
@@ -760,6 +623,268 @@ class SubTaskContext:
             return value
         return str(value)
 
+    def _log_initial_state(self) -> None:
+        """Emit a single multiline debug entry describing the initial context."""
+
+        summary_lines = [
+            "SubTaskContext initialized:",
+            f"  subtask_id: {self.subtask.id} (final={self.use_finish_task})",
+            f"  task_title: {self.task.title}",
+            f"  instructions: {self.subtask.content}",
+            f"  output_schema: {self.subtask.output_schema}",
+            f"  model: {self.model} ({self.provider.__class__.__name__})",
+            f"  max_tokens: {self.max_token_limit}",
+            f"  tools: {', '.join(self._available_tool_names) if self._available_tool_names else 'none'}",
+        ]
+        log.debug("\n".join(summary_lines))
+
+    def _filter_tools_for_subtask(self, tools: Sequence[Tool]) -> list[Tool]:
+        requested = getattr(self.subtask, "tools", None) or []
+        if not isinstance(requested, list) or not requested:
+            return list(tools)
+
+        normalized = [tool_name.strip() for tool_name in requested if isinstance(tool_name, str) and tool_name.strip()]
+        if not normalized:
+            return list(tools)
+
+        allowed = set(normalized)
+        filtered = [tool for tool in tools if tool.name in allowed]
+        missing = allowed - {tool.name for tool in filtered}
+        if missing:
+            log.warning(
+                "Subtask %s requested unavailable tools: %s",
+                self.subtask.id,
+                ", ".join(sorted(missing)),
+            )
+        if not filtered:
+            log.warning(
+                "Subtask %s restricted tool list leaves no execution tools available",
+                self.subtask.id,
+            )
+        return filtered
+
+    async def _summarize_messages(self, messages: list[Message]) -> str:
+        """Summarize older messages into a concise, factual summary."""
+
+        joined = "\n".join(
+            f"{m.role.upper()}: {m.content}" for m in messages if m.content
+        )
+        prompt = (
+            "Summarize the following conversation concisely while preserving key facts, "
+            "decisions, and results:\n\n" + joined
+        )
+        try:
+            msg = await self.provider.generate_message(
+                messages=[
+                    Message(role="system", content="Summarize previous context."),
+                    Message(role="user", content=prompt),
+                ],
+                model=self.model,
+                tools=[],
+                max_tokens=512,
+            )
+            return str(msg.content).strip()
+        except Exception as e:  # pragma: no cover - best effort
+            log.warning(f"Failed to summarize history: {e}")
+            return "Summary unavailable due to compression error."
+
+    async def _trim_history_if_needed(self) -> None:
+        """Trim or summarize older messages to stay within token limits."""
+
+        token_count = self._count_tokens(self.history)
+        if token_count < self.max_token_limit * 0.9:
+            return
+
+        log.debug(
+            "Trimming history (tokens=%d/%d)", token_count, self.max_token_limit
+        )
+
+        preserved: list[Message] = []
+        for msg in reversed(self.history):
+            preserved.insert(0, msg)
+            if len(preserved) >= 6:
+                break
+
+        earlier_count = len(self.history) - len(preserved)
+        earlier_context = (
+            self.history[1:earlier_count] if earlier_count > 1 else []
+        )  # exclude initial system prompt
+
+        if earlier_context:
+            summary = await self._summarize_messages(earlier_context)
+            system_prompt = self.history[0] if self.history else None
+            self.history = []
+            if system_prompt:
+                self.history.append(system_prompt)
+            self.history.append(
+                Message(
+                    role="system",
+                    content=f"Summary of previous context:\n{summary}",
+                )
+            )
+        else:
+            self.history = self.history[:1]
+
+        self.history.extend(preserved)
+        current_tokens = self._count_tokens(self.history)
+        trimmed_messages = 0
+        while (
+            current_tokens > self.max_token_limit * 0.85
+            and len(self.history) > 2
+        ):
+            removed = self.history.pop(2)
+            trimmed_messages += 1
+            current_tokens = self._count_tokens(self.history)
+            log.debug(
+                "Dropped older message (%s) to control history size",
+                removed.role,
+            )
+
+        if trimmed_messages:
+            log.warning(
+                "Removed %d additional history entries to stay within context",
+                trimmed_messages,
+            )
+
+        log.info(
+            "History trimmed at iteration %d. Token count reset.", self.iterations
+        )
+
+    def _load_result_schema(self) -> Dict[str, Any]:
+        """Parse and sanitize the declared output schema for this subtask."""
+
+        default_description = (
+            "The task result" if self.use_finish_task else "The subtask result"
+        )
+        raw_schema: Any = self.subtask.output_schema or {"type": "string"}
+
+        try:
+            return _validate_and_sanitize_schema(raw_schema, default_description)
+        except Exception as exc:  # pragma: no cover - defensive fallback
+            log.warning(
+                "Failed to parse output_schema for subtask %s: %s. Using fallback string schema.",
+                self.subtask.id,
+                exc,
+            )
+            return {
+                "type": "string",
+                "description": default_description,
+            }
+
+    def _validate_result_payload(
+        self, result_payload: Any
+    ) -> tuple[bool, Optional[str], Any]:
+        """Validate the provided result payload against the declared schema."""
+
+        normalized_result = self._normalize_tool_result(result_payload)
+
+        try:
+            jsonschema_validate(normalized_result, self.result_schema)
+            return True, None, normalized_result
+        except ValidationError as exc:
+            return False, exc.message, normalized_result
+        except Exception as exc:  # pragma: no cover - unexpected errors
+            return False, str(exc), normalized_result
+
+    def _store_completion_result(self, normalized_result: Any) -> None:
+        """Persist the final result and mark the subtask as completed."""
+
+        self.subtask.completed = True
+        self.subtask.end_time = int(time.time())
+        self.processing_context.store_subtask_result(
+            self.subtask.id, normalized_result
+        )
+        if self.use_finish_task:
+            self.processing_context.store_subtask_result(
+                self.task.id, normalized_result
+            )
+        self._output_result = normalized_result
+
+    def _append_completion_feedback(
+        self, detail: str, submitted_result: Any | None = None
+    ) -> None:
+        """Append a system message instructing the LLM to correct its JSON output."""
+
+        schema_str = json.dumps(self.result_schema, indent=2, ensure_ascii=False)
+        message_lines = [
+            "SYSTEM: The final JSON response was invalid.",
+            f"Detail: {detail}",
+            "Respond with a single JSON block formatted exactly as:",
+            "```json",
+            '{"status":"completed","result":{...}}',
+            "```",
+            "Schema for `result`:",
+            "```json",
+            schema_str,
+            "```",
+        ]
+
+        if submitted_result is not None:
+            try:
+                preview = json.dumps(
+                    self._normalize_tool_result(submitted_result),
+                    indent=2,
+                    ensure_ascii=False,
+                )
+            except Exception:  # pragma: no cover
+                preview = str(submitted_result)
+            message_lines.extend([
+                "Previous submission preview:",
+                preview,
+            ])
+
+        self.history.append(Message(role="system", content="\n".join(message_lines)))
+
+    def _maybe_finalize_from_message(
+        self, message: Optional[Message]
+    ) -> tuple[bool, Optional[Any]]:
+        """Attempt to parse and store a completion payload from the assistant message."""
+
+        if not message:
+            return False, None
+
+        parsed = extract_json_from_message(message)
+        if not isinstance(parsed, dict):
+            return False, None
+
+        status_value = str(parsed.get("status", "")).strip().lower()
+        if status_value not in VALID_COMPLETION_STATUSES:
+            return False, None
+
+        if "result" not in parsed:
+            self._append_completion_feedback(
+                "Missing 'result' field in completion payload.", parsed
+            )
+            return False, None
+
+        is_valid, error_detail, normalized_result = self._validate_result_payload(
+            parsed["result"]
+        )
+
+        if not is_valid or normalized_result is None:
+            self._append_completion_feedback(
+                error_detail or "Result failed schema validation.",
+                parsed.get("result"),
+            )
+            return False, None
+
+        self._store_completion_result(normalized_result)
+        return True, normalized_result
+
+    def _emit_completion_events(self, normalized_result: Any):
+        """Yield completion updates and a SubTaskResult message."""
+
+        yield TaskUpdate(
+            task=self.task,
+            subtask=self.subtask,
+            event=TaskUpdateEvent.SUBTASK_COMPLETED,
+        )
+        yield SubTaskResult(
+            subtask=self.subtask,
+            result=normalized_result,
+            is_task_result=self.use_finish_task,
+        )
+
     def get_result(self) -> Any | None:
         """
         Returns the stored result object.
@@ -768,12 +893,12 @@ class SubTaskContext:
 
     async def execute(
         self,
-    ) -> AsyncGenerator[Union[Chunk, ToolCall, TaskUpdate], None]:
+    ) -> AsyncGenerator[Union[Chunk, ToolCall, TaskUpdate, SubTaskResult], None]:
         """
         Runs a single subtask to completion using the LLM-driven execution loop.
 
         Yields:
-            Union[Chunk, ToolCall, TaskUpdate]: Live updates during task execution
+            Union[Chunk, ToolCall, TaskUpdate, SubTaskResult]: Live updates during task execution
         """
         # Record the start time of the subtask
         current_time = int(time.time())
@@ -787,9 +912,7 @@ class SubTaskContext:
         if self.display_manager:
             self.display_manager.set_current_subtask(self.subtask)
 
-        # Log initialization messages now that current subtask is set
-        for msg in self._init_debug_messages:
-            log.debug(msg)
+        self._log_initial_state()
 
         # Display beautiful subtask start panel
         if self.display_manager:
@@ -797,42 +920,20 @@ class SubTaskContext:
 
         # --- LLM-based Execution Logic ---
         prompt_parts = [
-            f"**Overall Task:**\nTitle: {self.task.title}\nDescription: {self.task.description}\n",
-            f"**Current Subtask Instructions:**\n{self.subtask.content}\n",  # Treat content as instructions
+            self.subtask.content,
         ]
+        input_tasks_str = ", ".join(self.subtask.input_tasks)
 
         if self.subtask.input_tasks:
-            input_tasks_str = ", ".join(self.subtask.input_tasks)
-            prompt_parts.append(
-                f"**Input Tasks for this Subtask:**\n{input_tasks_str}\n"
-            )
-
             # Fetch and inject input results directly into the prompt
-            input_results = []
             for input_task_id in self.subtask.input_tasks:
-                try:
-                    result = self.processing_context.get(input_task_id)
-                    if result is not None:
-                        input_results.append(
-                            f"**Result from Task {input_task_id}:**\n{json.dumps(result, indent=2, ensure_ascii=False)}\n"
-                        )
-                    else:
-                        input_results.append(
-                            f"**Result from Task {input_task_id}:** No result available\n"
-                        )
-                except Exception as e:
-                    if self.display_manager:
-                        self.display_manager.warning(
-                            f"Failed to fetch result for task {input_task_id}: {e}"
-                        )
-                    input_results.append(
-                        f"**Result from Task {input_task_id}:** Error fetching result: {e}\n"
-                    )
-
-            if input_results:
-                prompt_parts.append(
-                    "**Input Data from Upstream Tasks:**\n" + "\n".join(input_results)
+                result = self.processing_context.load_subtask_result(
+                    input_task_id
                 )
+                if result is not None:
+                    prompt_parts.append(
+                        f"**Result from Task {input_task_id}:**\n{json.dumps(result, indent=2, ensure_ascii=False)}\n"
+                    )
 
         prompt_parts.append(
             "Please perform the subtask based on the provided context, instructions, and upstream task results."
@@ -841,8 +942,6 @@ class SubTaskContext:
 
         # Add the task prompt to this subtask's history
         self.history.append(Message(role="user", content=task_prompt))
-
-        log.debug(f"Task prompt added to history: {task_prompt[:200]}...")
 
         # Yield task update for subtask start
         yield TaskUpdate(
@@ -857,17 +956,22 @@ class SubTaskContext:
                 "SUBTASK_STARTED", self.subtask.content
             )
 
-        # Continue executing until the task is completed or max iterations reached
-        while not self.subtask.completed and self.iterations < self.max_iterations:
+        # Continue executing until the task is completed (token budget enforces termination)
+        while not self.subtask.completed:
             self.iterations += 1
-            log.debug(f"Starting iteration {self.iterations}/{self.max_iterations}")
-
-            # Calculate total token count AFTER potential compression
             token_count = self._count_tokens(self.history)
+            log.debug(
+                "%s | iteration %d | history=%d msgs | tokens=%d/%d",
+                self.subtask.id,
+                self.iterations,
+                len(self.history),
+                token_count,
+                self.max_token_limit,
+            )
 
             # Display beautiful iteration status
             # self.display_manager.display_iteration_status(
-            #     self.iterations, self.max_iterations, token_count, self.max_token_limit
+            #     self.iterations, token_count, self.max_token_limit
             # )
 
             # Check if we need to transition to conclusion stage
@@ -887,78 +991,18 @@ class SubTaskContext:
             # Process current iteration
             message = await self._process_iteration()
 
-            if message.tool_calls:
-                if self.display_manager:
-                    self.display_manager.debug_subtask_only(
-                        f"LLM returned {len(message.tool_calls)} tool calls"
-                    )
-                message.tool_calls = self._filter_tool_calls_for_current_stage(
-                    message.tool_calls
-                )
+            message.tool_calls = self._filter_tool_calls_for_current_stage(
+                message.tool_calls
+            )
 
             # Add assistant message to history after any tool-call adjustments so the
             # stored conversation precisely matches what we'll execute/respond to.
             self.history.append(message)
 
             if message.tool_calls:
-                # Separate finish tools from other tools - finish tools are always allowed
-                finish_tools = [
-                    tc
-                    for tc in message.tool_calls
-                    if tc.name in ("finish_subtask", "finish_task")
-                ]
-                other_tools = [
-                    tc
-                    for tc in message.tool_calls
-                    if tc.name not in ("finish_subtask", "finish_task")
-                ]
-
-                # Check if we would exceed the tool call limit for non-finish tools
-                if self.tool_calls_made + len(other_tools) > self.max_tool_calls:
-                    remaining_calls = self.max_tool_calls - self.tool_calls_made
-                    if remaining_calls <= 0:
-                        # No more non-finish tool calls allowed
-                        if finish_tools:
-                            # Allow only finish tools
-                            message.tool_calls = finish_tools
-                            log.warning(
-                                f"Tool call limit ({self.max_tool_calls}) reached. Only allowing finish tools."
-                            )
-                        else:
-                            # Force completion if no finish tools available
-                            log.warning(
-                                f"Tool call limit ({self.max_tool_calls}) reached. Forcing completion."
-                            )
-                            tool_call = await self._handle_max_tool_calls_reached()
-                            yield tool_call
-                            yield TaskUpdate(
-                                task=self.task,
-                                subtask=self.subtask,
-                                event=TaskUpdateEvent.MAX_TOOL_CALLS_REACHED,
-                            )
-                            log.warning(
-                                f"Tool calls: {self.tool_calls_made}/{self.max_tool_calls}"
-                            )
-                            # Remove the assistant message with unprocessed tool calls
-                            # since we won't be responding to them.
-                            if self.history and self.history[-1] is message:
-                                self.history.pop()
-                            break
-                    else:
-                        # Allow remaining non-finish calls plus all finish calls
-                        allowed_other_tools = other_tools[:remaining_calls]
-                        message.tool_calls = finish_tools + allowed_other_tools
-                        log.warning(
-                            f"Tool call limit approaching. Processing {len(finish_tools)} finish tools and {len(allowed_other_tools)} of {len(other_tools)} other tool calls."
-                        )
-
                 if message.content:
                     yield Chunk(content=str(message.content))
                 for tool_call in message.tool_calls:
-                    # Log tool execution only to subtask (not phase)
-                    if tool_call.name not in ("finish_subtask", "finish_task"):
-                        log.debug(f"Executing tool: {tool_call.name}")
-                        self.tool_calls_made += 1
                     tool_message = self._generate_tool_call_message(tool_call)
                     yield ToolCall(
                         id=tool_call.id,
@@ -967,46 +1011,22 @@ class SubTaskContext:
                         subtask_id=self.subtask.id,
                         message=tool_message,
                     )
-                    if (
-                        tool_call.name == "finish_subtask"
-                        or tool_call.name == "finish_task"
-                    ):
-                        log.debug(f"Subtask completed via {tool_call.name}")
-                        yield TaskUpdate(
-                            task=self.task,
-                            subtask=self.subtask,
-                            event=TaskUpdateEvent.SUBTASK_COMPLETED,
-                        )
-                        log.debug(f"Subtask completed: {self.subtask.content}")
-
                 await self._process_tool_call_results(message.tool_calls)
             elif message.content:
                 # Handle potential text chunk yields if provider supports streaming text
                 yield Chunk(content=str(message.content))
 
-        # If we've reached the last iteration and haven't completed yet, generate summary
-        if self.iterations >= self.max_iterations and not self.subtask.completed:
-            tool_call = await self._handle_max_iterations_reached()
-            yield tool_call
-            yield TaskUpdate(
-                task=self.task,
-                subtask=self.subtask,
-                event=TaskUpdateEvent.MAX_ITERATIONS_REACHED,
-            )
-            if self.display_manager:
-                self.display_manager.display_task_update(
-                    "MAX_ITERATIONS_REACHED",
-                    f"Iterations: {self.iterations}/{self.max_iterations}",
-                )
-            yield tool_call
+            completed, normalized_result = self._maybe_finalize_from_message(message)
+            if completed and normalized_result is not None:
+                for event in self._emit_completion_events(normalized_result):
+                    yield event
+                break
 
         # Display completion event
         if self.display_manager:
             self.display_manager.display_completion_event(
                 self.subtask, self.subtask.completed, self._output_result
             )
-            log.debug(f"Total iterations: {self.iterations}")
-            log.debug(f"Total messages in history: {len(self.history)}")
 
         # Useful debug printing
         # for m in self.history:
@@ -1022,14 +1042,14 @@ class SubTaskContext:
         1. Sets the conclusion stage flag
         2. Adds a clear transition message to the conversation history
         3. Logs the transition to the console
-        4. Restricts available tools to only finish_subtask
+        4. Restricts available tools entirely so the LLM must produce the final JSON
         """
         self.in_conclusion_stage = True
         transition_message = f"""
         SYSTEM: The conversation history is approaching the token limit ({self.max_token_limit} tokens).
         ENTERING CONCLUSION STAGE: You MUST now synthesize all gathered information and finalize the subtask.
-        Your ONLY available tool is '{self.finish_tool.name}'. Use it to provide the final result.
-        Do not request any other tools. Focus on generating the complete output based on the work done so far.
+        Tools are no longer available. Respond directly with the completion JSON:
+        {{"status":"completed","result":{{...}}}} matching the declared schema.
         """
         # Check if the message already exists to prevent duplicates if called multiple times
         if not any(
@@ -1046,64 +1066,45 @@ class SubTaskContext:
         """
         Process a single iteration of the task.
         """
-        tools_for_iteration = (
-            [self.finish_tool]  # Only allow finish tool in conclusion stage
-            if self.in_conclusion_stage
-            else self.tools  # Allow all tools otherwise
-        )
+        await self._trim_history_if_needed()
+        tools_for_iteration = [] if self.in_conclusion_stage else self.tools
 
         # Create a dictionary to track unique tools by name
         unique_tools = {tool.name: tool for tool in tools_for_iteration}
         final_tools = list(unique_tools.values())
 
         try:
-            log.debug(f"Calling LLM with {len(self.history)} messages in history")
-            # Count input tokens from current history prior to generation
-            try:
-                input_tokens_now = self._count_tokens(self.history)
-                self.input_tokens_total += input_tokens_now
-                log.debug(
-                    f"Input tokens this call: {input_tokens_now} (cumulative: {self.input_tokens_total})"
-                )
-            except Exception as e:
-                log.warning(f"Failed to count input tokens: {e}")
+            input_tokens_now = self._count_tokens(self.history)
+            self.input_tokens_total += input_tokens_now
+        except Exception as e:
+            log.warning(f"Failed to count input tokens: {e}")
+
+        try:
             message = await self.provider.generate_message(
                 messages=self.history,
                 model=self.model,
                 tools=final_tools,
             )
-            log.debug(
-                f"LLM response received - content length: {len(str(message.content)) if message.content else 0}"
-            )
-            # Count output tokens from returned assistant message
-            try:
-                output_tokens_now = self._count_single_message_tokens(message)
-                self.output_tokens_total += output_tokens_now
-                log.debug(
-                    f"Output tokens this call: {output_tokens_now} (cumulative: {self.output_tokens_total})"
-                )
-            except Exception as e:
-                log.warning(f"Failed to count output tokens: {e}")
-            if message.tool_calls:
-                log.debug(
-                    f"LLM requested tool calls: {[tc.name for tc in message.tool_calls]}"
-                )
         except Exception as e:
-            log.error(f"Error generating message: {e}", exc_info=True)
-            raise e
+            log.error(f"Failed to generate message: {e}")
+            return Message(role="assistant", content=f"Error generating message: {e}")
 
-        # Clean assistant message content
+        if message.tool_calls:
+            for tool_call in message.tool_calls:
+                log.debug(f"{self.subtask.id} | {tool_call.name}: {tool_call.args}")
+
+        # Clean message content from think tags to save tokens for local models
         if isinstance(message.content, str):
-            message.content = _remove_think_tags(message.content)
+            message.content = remove_think_tags(message.content)
         elif isinstance(message.content, list):
             for part_dict in message.content:  # Iterate directly over parts
                 if isinstance(part_dict, dict) and part_dict.get("type") == "text":
                     text_val = part_dict.get("text")
                     if isinstance(text_val, str):
-                        cleaned_text = _remove_think_tags(text_val)
+                        cleaned_text = remove_think_tags(text_val)
                         part_dict["text"] = cleaned_text
                     elif text_val is None:
-                        cleaned_text = _remove_think_tags(None)  # Explicitly pass None
+                        cleaned_text = remove_think_tags(None)  # Explicitly pass None
                         part_dict["text"] = cleaned_text  # Assigns None back
 
         return message
@@ -1118,21 +1119,11 @@ class SubTaskContext:
         if not self.in_conclusion_stage:
             return list(tool_calls)
 
-        allowed_calls: list[ToolCall] = []
-        for tc in tool_calls:
-            if tc.name == self.finish_tool.name:
-                allowed_calls.append(tc)
-            else:
-                log.warning(
-                    f"LLM attempted to call disallowed tool '{tc.name}' in conclusion stage. Ignoring."
-                )
-
-        if not allowed_calls:
+        if tool_calls:
             log.warning(
-                "LLM did not call the required finish tool in conclusion stage."
+                "LLM attempted to call tools during conclusion stage; all tool calls are ignored while finalizing."
             )
-
-        return allowed_calls
+        return []
 
     async def _process_tool_call_results(
         self, valid_tool_calls: list[ToolCall]
@@ -1140,8 +1131,6 @@ class SubTaskContext:
         """Execute tool calls and add their results to history."""
         if not valid_tool_calls:
             return
-
-        log.debug(f"Processing {len(valid_tool_calls)} valid tool calls")
 
         tool_results = await asyncio.gather(
             *[self._handle_tool_call(tool_call) for tool_call in valid_tool_calls],
@@ -1176,7 +1165,6 @@ class SubTaskContext:
                 valid_tool_messages.append(error_message)
 
         self.history.extend(valid_tool_messages)
-        log.debug(f"Added {len(valid_tool_messages)} tool results to history")
 
     def _generate_tool_call_message(self, tool_call: ToolCall) -> str:
         """
@@ -1187,49 +1175,6 @@ class SubTaskContext:
                 return tool.user_message(tool_call.args)
 
         raise ValueError(f"Tool '{tool_call.name}' not found in available tools.")
-
-    def _validate_finish_tool_result(
-        self, tool_result: Any, tool_call: ToolCall
-    ) -> tuple[bool, Optional[str], Optional[Dict[str, Any]], Any]:
-        """
-        Validate finish tool results against the declared schema.
-        """
-        tool_instance: Optional[Tool] = None
-        for tool in self.tools:
-            if tool.name == tool_call.name:
-                tool_instance = tool
-                break
-
-        schema: Optional[Dict[str, Any]] = None
-        if tool_instance is not None:
-            schema = getattr(tool_instance, "result_schema", None)
-            if schema is None:
-                schema = (
-                    getattr(tool_instance, "input_schema", {})
-                    .get("properties", {})
-                    .get("result")
-                )
-
-        normalized_result = self._normalize_tool_result(tool_result)
-
-        if not schema:
-            log.debug(
-                "No result schema available for finish tool %s; skipping validation",
-                tool_call.name,
-            )
-            return True, None, None, normalized_result
-
-        try:
-            jsonschema_validate(normalized_result, schema)
-            return True, None, schema, normalized_result
-        except ValidationError as exc:
-            error_detail = exc.message
-            json_path = getattr(exc, "json_path", None)
-            if json_path:
-                error_detail = f"{json_path}: {exc.message}"
-            return False, error_detail, schema, normalized_result
-        except Exception as exc:  # pragma: no cover - unexpected errors
-            return False, str(exc), schema, normalized_result
 
     async def _handle_tool_call(self, tool_call: ToolCall) -> Message:
         """
@@ -1255,44 +1200,8 @@ class SubTaskContext:
                 f"Tool {tool_call.name} execution completed"
             )
 
-        is_finish_tool = tool_call.name in ("finish_task", "finish_subtask")
-        is_valid_finish = True
-        finish_error_detail: Optional[str] = None
-        expected_schema: Optional[Dict[str, Any]] = None
-        normalized_result: Any = None
-
-        if is_finish_tool:
-            (
-                is_valid_finish,
-                finish_error_detail,
-                expected_schema,
-                normalized_result,
-            ) = self._validate_finish_tool_result(tool_result, tool_call)
-
-            if not is_valid_finish:
-                if self.display_manager:
-                    self.display_manager.warning(
-                        f"{tool_call.name} result failed validation: {finish_error_detail}"
-                    )
-                log.warning(
-                    "Finish tool %s result failed schema validation: %s",
-                    tool_call.name,
-                    finish_error_detail,
-                )
-                error_payload: Dict[str, Any] = {
-                    "error": "finish_tool_validation_failed",
-                    "detail": finish_error_detail
-                    or "Result did not match the expected schema.",
-                    "resolution": "Adjust the result to match the expected schema and call the finish tool again.",
-                }
-                if expected_schema is not None:
-                    error_payload["expected_schema"] = expected_schema
-                if normalized_result is not None:
-                    error_payload["submitted_result"] = normalized_result
-                tool_result = error_payload
-
         # 3. Handle binary artifacts (images, audio)
-        if isinstance(tool_result, dict) and (not is_finish_tool or is_valid_finish):
+        if isinstance(tool_result, dict):
             if "image" in tool_result:
                 tool_result = self._handle_binary_artifact(
                     tool_result, tool_call.name, "image"
@@ -1302,21 +1211,14 @@ class SubTaskContext:
                     tool_result, tool_call.name, "audio"
                 )
 
-        # 4. Process special tool side-effects (e.g., finish_task, browser navigation)
-        if not is_finish_tool or is_valid_finish:
-            self._process_special_tool_side_effects(tool_result, tool_call)
-        else:
-            log.debug(
-                "Skipping special side effects for %s due to validation failure",
-                tool_call.name,
-            )
+        # 4. Process special tool side-effects (e.g., browser navigation)
+        self._process_special_tool_side_effects(tool_result, tool_call)
 
         # Log tool result only to subtask tree (not phase)
-        if tool_call.name not in ("finish_subtask", "finish_task"):
-            if self.display_manager:
-                self.display_manager.info_subtask_only(
-                    f"Tool result received from {tool_call.name}"
-                )
+        if self.display_manager:
+            self.display_manager.info_subtask_only(
+                f"Tool result received from {tool_call.name}"
+            )
 
         # 5. Serialize the final processed result for history
         content_str = self._serialize_tool_result_for_history(
@@ -1410,33 +1312,12 @@ class SubTaskContext:
 
     def _process_special_tool_side_effects(self, tool_result: Any, tool_call: ToolCall):
         """Handles side effects for specific tools, like 'browser' or 'finish_*'."""
-        log.debug(f"Processing special side effects for tool: {tool_call.name}")
 
         if tool_call.name == "browser" and isinstance(tool_call.args, dict):
             action = tool_call.args.get("action", "")
             url = tool_call.args.get("url", "")
-            if action == "navigate" and url:
-                if url not in self.sources:  # Avoid duplicates
-                    self.sources.append(url)
-                    log.debug(f"Added browser source: {url}")
-
-        if tool_call.name == "finish_task":
-            log.debug("Processing finish_task - marking subtask as completed")
-            self.subtask.completed = True
-            self.subtask.end_time = int(time.time())
-            # Store the result object directly
-            self.processing_context.set(self.task.id, tool_result)
-            self.processing_context.set(self.subtask.id, tool_result)
-            self._output_result = tool_result  # Store for completion display
-
-        if tool_call.name == "finish_subtask":
-            log.debug("Processing finish_subtask - marking subtask as completed")
-            self.subtask.completed = True
-            self.subtask.end_time = int(time.time())
-            # Store the result object directly
-            self.processing_context.set(self.subtask.id, tool_result)
-            self._output_result = tool_result  # Store for completion display
-            log.debug(f"Subtask {self.subtask.id} completed with result: {tool_result}")
+            if url and url not in self.sources:  # Avoid duplicates
+                self.sources.append(url)
 
     def _serialize_tool_result_for_history(
         self, tool_result: Any, tool_name: str
@@ -1447,7 +1328,17 @@ class SubTaskContext:
             if tool_result is None:
                 return "Tool returned no output."
             normalized = self._normalize_tool_result(tool_result)
-            return json.dumps(normalized, ensure_ascii=False)
+            serialized = json.dumps(normalized, ensure_ascii=False)
+            if len(serialized) > MAX_TOOL_RESULT_CHARS:
+                log.warning(
+                    "Truncating tool result (%d chars) for history entry",
+                    len(serialized),
+                )
+                serialized = (
+                    serialized[:MAX_TOOL_RESULT_CHARS]
+                    + "... [truncated to maintain context size]"
+                )
+            return serialized
         except (TypeError, ValueError) as e:
             log.error(
                 f"Failed to serialize tool result for '{tool_name}' to JSON: {e}. Result: {tool_result}"
@@ -1459,171 +1350,42 @@ class SubTaskContext:
                 }
             )
 
-    async def _handle_max_iterations_reached(self):
-        """
-        Handle the case where max iterations are reached without completion by prompting
-        the LLM to call the finish tool.
-        """
-        log.warning(
-            f"Subtask '{self.subtask.content}' reached max iterations ({self.max_iterations}). Forcing completion."
-        )
+    async def _request_completion_response(
+        self, system_prompt: str
+    ) -> Optional[Any]:
+        """Ask the LLM to provide the final completion JSON and return the parsed result."""
 
-        log.debug(f"Max iterations reached for subtask {self.subtask.id}")
-        log.debug("Prompting LLM to call finish tool")
+        self.history.append(Message(role="system", content=system_prompt))
 
-        # Determine the appropriate finish tool name
-        tool_name = "finish_task" if self.use_finish_task else "finish_subtask"
-
-        # Add a system message prompting the LLM to finish
-        force_completion_prompt = f"""
-SYSTEM: You have reached the maximum allowed iterations ({self.max_iterations}) for this subtask.
-You MUST now call the '{tool_name}' tool to complete the task.
-Synthesize all the work done so far and provide the best possible result based on the conversation history.
-Do not attempt any other tool calls - only call '{tool_name}' with your final result.
-"""
-
-        self.history.append(Message(role="system", content=force_completion_prompt))
-
-        # Get the LLM to generate the finish tool call
         try:
-            # Count input tokens for finish prompt call
             input_tokens_now = self._count_tokens(self.history)
             self.input_tokens_total += input_tokens_now
             log.debug(
-                f"Input tokens (max iterations finish): {input_tokens_now} (cumulative: {self.input_tokens_total})"
+                f"Input tokens (forced completion): {input_tokens_now} (cumulative: {self.input_tokens_total})"
             )
-        except Exception as e:
-            log.warning(f"Failed to count input tokens (max iterations): {e}")
+        except Exception as exc:  # pragma: no cover
+            log.warning(f"Failed to count input tokens (forced completion): {exc}")
 
         message = await self.provider.generate_message(
             messages=self.history,
             model=self.model,
-            tools=[self.finish_tool],  # Only allow the finish tool
+            tools=[],
         )
 
         try:
             output_tokens_now = self._count_single_message_tokens(message)
             self.output_tokens_total += output_tokens_now
             log.debug(
-                f"Output tokens (max iterations finish): {output_tokens_now} (cumulative: {self.output_tokens_total})"
+                f"Output tokens (forced completion): {output_tokens_now} (cumulative: {self.output_tokens_total})"
             )
-        except Exception as e:
-            log.warning(f"Failed to count output tokens (max iterations): {e}")
+        except Exception as exc:  # pragma: no cover
+            log.warning(f"Failed to count output tokens (forced completion): {exc}")
 
-        # Add the assistant message to history
         self.history.append(message)
-
-        # Process the tool calls if any
-        if message.tool_calls:
-            tool_call = message.tool_calls[0]  # Should be the finish tool call
-            await self._handle_tool_call(tool_call)
-            return tool_call
-        else:
-            # If LLM didn't call the tool, create a fallback
-            log.warning(
-                "LLM failed to call finish tool at max iterations, creating fallback"
-            )
-            fallback_result = {
-                "result": {
-                    "status": "completed_at_max_iterations_fallback",
-                    "message": f"Task completed after reaching maximum iterations ({self.max_iterations}) - LLM failed to generate proper finish call",
-                    "iteration_count": self.iterations,
-                }
-            }
-
-            tool_call = ToolCall(
-                id=f"max_iterations_fallback_{tool_name}",
-                name=tool_name,
-                args=fallback_result,
-            )
-
-            await self._handle_tool_call(tool_call)
-            return tool_call
-
-    async def _handle_max_tool_calls_reached(self):
-        """
-        Handle the case where max tool calls are reached without completion by prompting
-        the LLM to call the finish tool.
-        """
-        if self.display_manager:
-            self.display_manager.warning(
-                f"Subtask '{self.subtask.content}' reached max tool calls ({self.max_tool_calls}). Forcing completion."
-            )
-
-        if self.display_manager:
-            self.display_manager.debug(
-                f"Max tool calls reached for subtask {self.subtask.id}"
-            )
-            self.display_manager.debug("Prompting LLM to call finish tool")
-
-        # Determine the appropriate finish tool name
-        tool_name = "finish_task" if self.use_finish_task else "finish_subtask"
-
-        # Add a system message prompting the LLM to finish
-        force_completion_prompt = f"""
-SYSTEM: You have reached the maximum allowed tool calls ({self.max_tool_calls}) for this subtask.
-You MUST now call the '{tool_name}' tool to complete the task.
-Synthesize all the work done so far and provide the best possible result based on the conversation history.
-Do not attempt any other tool calls - only call '{tool_name}' with your final result.
-"""
-
-        self.history.append(Message(role="system", content=force_completion_prompt))
-
-        # Get the LLM to generate the finish tool call
-        try:
-            # Count input tokens for finish prompt call
-            input_tokens_now = self._count_tokens(self.history)
-            self.input_tokens_total += input_tokens_now
-            log.debug(
-                f"Input tokens (max tool calls finish): {input_tokens_now} (cumulative: {self.input_tokens_total})"
-            )
-        except Exception as e:
-            log.warning(f"Failed to count input tokens (max tool calls): {e}")
-
-        message = await self.provider.generate_message(
-            messages=self.history,
-            model=self.model,
-            tools=[self.finish_tool],  # Only allow the finish tool
-        )
-
-        try:
-            output_tokens_now = self._count_single_message_tokens(message)
-            self.output_tokens_total += output_tokens_now
-            log.debug(
-                f"Output tokens (max tool calls finish): {output_tokens_now} (cumulative: {self.output_tokens_total})"
-            )
-        except Exception as e:
-            log.warning(f"Failed to count output tokens (max tool calls): {e}")
-
-        # Add the assistant message to history
-        self.history.append(message)
-
-        # Process the tool calls if any
-        if message.tool_calls:
-            tool_call = message.tool_calls[0]  # Should be the finish tool call
-            await self._handle_tool_call(tool_call)
-            return tool_call
-        else:
-            # If LLM didn't call the tool, create a fallback
-            log.warning(
-                "LLM failed to call finish tool at max tool calls, creating fallback"
-            )
-            fallback_result = {
-                "result": {
-                    "status": "completed_at_max_tool_calls_fallback",
-                    "message": f"Task completed after reaching maximum tool calls ({self.max_tool_calls}) - LLM failed to generate proper finish call",
-                    "tool_calls_made": self.tool_calls_made,
-                }
-            }
-
-            tool_call = ToolCall(
-                id=f"max_tool_calls_fallback_{tool_name}",
-                name=tool_name,
-                args=fallback_result,
-            )
-
-            await self._handle_tool_call(tool_call)
-            return tool_call
+        completed, normalized_result = self._maybe_finalize_from_message(message)
+        if completed:
+            return normalized_result
+        return None
 
     async def _execute_tool(self, tool_call: ToolCall) -> Any:
         """

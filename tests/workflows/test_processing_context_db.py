@@ -433,7 +433,9 @@ class TestUtilityMethods:
         """Test asset storage URL generation."""
         with patch("nodetool.workflows.processing_context.require_scope") as mock_require_scope:
             mock_storage_instance = Mock()
-            mock_storage_instance.get_url.return_value = "http://test.com/file.png"
+            mock_storage_instance.get_url = AsyncMock(
+                return_value="http://test.com/file.png"
+            )
             mock_scope = Mock()
             mock_scope.get_asset_storage.return_value = mock_storage_instance
             mock_require_scope.return_value = mock_scope

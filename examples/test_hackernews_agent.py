@@ -20,20 +20,10 @@ dotenv.load_dotenv()
 async def run_hn_agent():
     context = ProcessingContext()
 
-    # 2. Initialize provider and model
-    # provider = await get_provider(Provider.Ollama)
-    # model = "qwen2.5:14b"
-    # provider = await get_provider(Provider.Anthropic)
-    # model = "claude-3-5-sonnet-20241022"
-    provider = await get_provider(Provider.OpenAI)
-    model = "gpt-4o-mini"
-    # provider = await get_provider(Provider.Ollama)
-    # model = "qwen3:14b"
-
-    # 3. Set up browser tool for accessing websites
+    provider = await get_provider(Provider.HuggingFaceCerebras)
+    model = "openai/gpt-oss-120b"
     browser_tool = BrowserTool()
 
-    # 5. Create a Hacker News agent for collecting posts
     agent = Agent(
         name="Hacker News Agent",
         objective="""

@@ -5,7 +5,7 @@ from types import NoneType
 import numpy as np
 import pandas as pd
 from pydantic import BaseModel, Field
-from typing import Any, Literal, Optional, Type, Union
+from typing import Any, Dict, List, Literal, Optional, Type, Union
 import base64
 from pathlib import Path
 
@@ -1141,6 +1141,40 @@ class LogEntry(BaseType):
     timestamp: int = Field(default=0, description="The timestamp of the log entry")
 
 
+class CollectConfig(BaseModel):
+    """Configuration describing how to collect per-item results."""
+
+    as_: str = Field(
+        alias="as",
+        description="Key name for the collected payload (e.g., 'recipes').",
+    )
+    merge: Literal["array", "object"] = Field(
+        default="array",
+        description="Whether to collect results as an array or object keyed by ephemeral id.",
+    )
+    include_errors: bool = Field(
+        default=True,
+        description="Whether to include error envelopes alongside successes.",
+    )
+    include_metadata: bool = Field(
+        default=True,
+        description="Include per-item metadata (attempts, duration, etc.).",
+    )
+    fail_policy: Literal["continue", "fail_fast", "quorum"] = Field(
+        default="continue",
+        description="Handling strategy when per-item failures occur.",
+    )
+    quorum: Optional[int] = Field(
+        default=None,
+        ge=1,
+        description="Required number of successes when fail_policy='quorum'.",
+    )
+
+    class Config:
+        allow_population_by_field_name = True
+        extra = "forbid"
+
+
 class SubTask(BaseType):
     """A subtask item with completion status, dependencies, and tools."""
 
@@ -1152,10 +1186,7 @@ class SubTask(BaseType):
 
     content: str = Field(description="Instructions for the subtask")
     logs: list[LogEntry] = Field(default=[], description="The logs of the subtask")
-    max_tool_calls: int = Field(
-        default=10,
-        description="The maximum number of tool calls for the subtask",
-    )
+    tools: list[str] = Field(default=[], description="The tools available to the subtask")
     completed: bool = Field(
         default=False, description="Whether the subtask is completed"
     )
@@ -1173,6 +1204,10 @@ class SubTask(BaseType):
     output_schema: str = Field(
         default="",
         description="The JSON schema of the output of the subtask",
+    )
+    mode: Optional[Literal["discover", "process", "aggregate"]] = Field(
+        default=None,
+        description="Optional execution mode hint (discover/process/aggregate).",
     )
 
     def to_markdown(self) -> str:
@@ -1226,6 +1261,7 @@ class Task(BaseType):
     def to_markdown(self) -> str:
         """Converts task and subtasks to markdown format with headings and checkboxes."""
         lines = f"# Task: {self.title}\n"
+        lines += f"Description: {self.description}\n"
         if self.description:
             lines += f"{self.description}\n"
         if self.subtasks:
@@ -1580,7 +1616,7 @@ class Message(BaseType):
     Independent of the underlying chat system, such as OpenAI or Anthropic.
     """
 
-    type: str = "message"
+    type: Literal["message"] = "message"
     id: str | None = None
     """
     The unique identifier of the message.
